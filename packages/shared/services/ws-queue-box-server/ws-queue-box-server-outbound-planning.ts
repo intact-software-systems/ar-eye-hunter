@@ -1,10 +1,4 @@
 import { Either } from '@shared/resilience/Either.ts';
-import { computeALOutboundAckRefusal } from '../../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
-import {
-    toALOutboundTransportMessage,
-    type ALOutboundTransportMessage
-} from '../../alm/outbound/al-outbound-transport-message.ts';
-import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
 
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
@@ -13,11 +7,13 @@ import {
     resolveALQosNormalizationInput,
     resolveSupersedenceKey,
     shouldAwaitALRoute,
+    type ALQosEffectivePolicy,
     type ALQosInputProvider,
     type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
 import { resolveALOutboundScopeAuthority } from '../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import type { ALSessionInvalidationAuthority } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
+import { computeALOutboundAckRefusal } from '../../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundDispatchPlan,
@@ -25,16 +21,18 @@ import type {
     ALOutboundRepairTrackingPlan,
     ALOutboundSupersedenceTrackingPlan
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
+import {
+    toALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '../../alm/outbound/al-outbound-transport-message.ts';
+import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { Key } from '../../queuebox/ResourceEntry.ts';
 import {
     isWsQueueBoxServerDirectScopedBroadcastRow,
     validateWsQueueBoxServerRecipientAuthority
 } from './scope/requires-ws-queue-box-server-recipient-scope.ts';
-import {
-    toWsQueueBoxServerRecipientPreparedMessages,
-    toWsQueueBoxServerUnscopedPreparedMessages
-} from './scope/to-ws-queue-box-server-recipient-prepared-messages.ts';
+import { toWsQueueBoxServerRecipientPreparedMessages } from './scope/to-ws-queue-box-server-recipient-prepared-messages.ts';
 import type { WsServerResolvedRecipient } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerDeliveryReporting } from './ws-queue-box-server-delivery-reporting.ts';
 import { isWsQueueBoxServerReceiptRow } from './ws-queue-box-server-receipt-row.ts';
@@ -77,12 +75,19 @@ export type WsQueueBoxServerPreparedMessage =
         message: ALOutboundTransportMessage;
     }>
     | Readonly<{
-        /** A receipt whose origin has no session here: sent here once it has one, published to the cluster until then. */
+        /** A receipt published by whichever worker claims it, resolving its origin at execution. */
         kind: 'cluster-receipt';
         message: ALOutboundTransportMessage;
     }>;
 
 export type WsQueueBoxServerOutboundPhase = 'immediate' | 'dequeue';
+
+interface ToExpectedPeerIdsInput {
+    readonly message: ALMessage;
+    readonly recipients: readonly WsServerResolvedRecipient[];
+    readonly audience: readonly string[] | undefined;
+    readonly effective: ALQosEffectivePolicy;
+}
 
 export namespace WsQueueBoxServerOutboundPlanning {
     export interface Dependencies {
@@ -184,7 +189,7 @@ export class WsQueueBoxServerOutboundPlanning {
             dropReasonCode: undefined,
             persist,
             preparedMessages: phase === 'dequeue' && clusterPublisherRegistered
-                ? toClusterPreparedMessages(message, recipients)
+                ? toClusterPreparedMessages(message)
                 : this.toPreparedRecipients(message, recipients, { ...request, recipientScope }),
             ackTracking: toAckTrackingPlan(
                 normalized.effective,
@@ -341,13 +346,6 @@ function toNoRouteDispatchPlan(
     return { msg: message, dropReason, dropReasonCode: 'no-route', persist: false, preparedMessages: [] };
 }
 
-interface ToExpectedPeerIdsInput {
-    readonly message: ALMessage;
-    readonly recipients: readonly WsServerResolvedRecipient[];
-    readonly audience: readonly string[] | undefined;
-    readonly effective: ReturnType<typeof normalizeALQosPolicy>['effective'];
-}
-
 /**
  * A `receiver` receipt counts logical recipients, so a message admitted to an audience expects all of it,
  * connected here or not; every other receipt counts the hops this instance sends to.
@@ -365,19 +363,16 @@ function toExpectedPeerIds(input: ToExpectedPeerIdsInput): readonly string[] {
  * the row expires.
  */
 function toClusterPreparedMessages(
-    message: ALMessage,
-    recipients: readonly WsServerResolvedRecipient[]
+    message: ALMessage
 ): readonly WsQueueBoxServerPreparedMessage[] {
     if (!isWsQueueBoxServerReceiptRow(message)) {
         return [{ kind: 'cluster-local-complete', message: toALOutboundTransportMessage(message) }];
     }
-    return recipients.length > 0
-        ? toWsQueueBoxServerUnscopedPreparedMessages(message, recipients)
-        : [{ kind: 'cluster-receipt', message: toALOutboundTransportMessage(message) }];
+    return [{ kind: 'cluster-receipt', message: toALOutboundTransportMessage(message) }];
 }
 
 function toAckTrackingPlan(
-    effective: ReturnType<typeof normalizeALQosPolicy>['effective'],
+    effective: ALQosEffectivePolicy,
     expectedPeerIds: readonly string[],
     expectedPeerIdsUpdate?: 'merge' | 'replace'
 ): ALOutboundAckTrackingPlan | undefined {
@@ -397,7 +392,7 @@ function toAckTrackingPlan(
 }
 
 function toRepairTrackingPlan(
-    effective: ReturnType<typeof normalizeALQosPolicy>['effective']
+    effective: ALQosEffectivePolicy
 ): ALOutboundRepairTrackingPlan | undefined {
     return effective.repair.algo === 'none'
         ? undefined
@@ -409,7 +404,7 @@ function toRepairTrackingPlan(
 }
 
 function toSupersedenceTrackingPlan(
-    effective: ReturnType<typeof normalizeALQosPolicy>['effective'],
+    effective: ALQosEffectivePolicy,
     message: ALMessage
 ): ALOutboundSupersedenceTrackingPlan | undefined {
     return effective.supersedence.algo === 'none'

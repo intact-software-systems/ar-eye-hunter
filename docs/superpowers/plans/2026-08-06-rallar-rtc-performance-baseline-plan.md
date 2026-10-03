@@ -231,8 +231,60 @@ await and separate owned AL dispositions while preserving the published dispatch
 signature. Consumer evidence is deliberately message/type/actual-agent scoped:
 claim, attempt, lane and unique claim pairing remain unknown at that boundary.
 A receiver can catch errors and native lifetime retirement can release awaiters,
-so consumer return still does not establish native application. Task 24 is the
-next exact-source diagnostic proof, after fresh independent review.
+so consumer return still does not establish native application. Task 23 fix1
+received independent SPEC PASS / QUALITY APPROVED at
+`72945dd6a198afacb68979914cb3cba7d8ab5612`; fix2 received the same zero-finding
+verdict at `7b92d236c03e7d88c10706033aef9cbe98887f25`. Fix2 changed only the
+measured private headless Brotli test ceiling from 299 to 300 KiB and plan facts;
+runtime and diagnostic-budget bytes remain 729.
+
+Task 24's exact-source non-publishing diagnostic
+[37147329195](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37147329195),
+attempt 1 on 72945dd6a198afacb68979914cb3cba7d8ab5612, is terminal
+COMPLETED/FAILURE. Source passed, all three diagnostic jobs failed and accepted
+capture/publication skipped. Watcher 19683 exited 1 and retired. Independent
+verification matched all 81 original files / 4,262,002 inner bytes against their
+complete inventories, lengths, hashes and source. Outer digests are GitHub-recorded,
+not locally recomputed. Original retention failures occurred at cycles 1/8/1;
+none completed 100 cycles. Later health contains all three actual agents; normal
+failure collection preserves original readiness rejection before cleanup.
+
+The 293 retained mixed events occupy 238,781 compact serialized bytes, including
+38 exact-consumer terminal observations (36 returned, two retry), 38 separate
+AL port decisions (36 returned, two retry) and 37 qualified claims. These prove
+actual callback invocation/settlement and message/type/actual-agent correspondence,
+not unique consumer claim/attempt/lane pairing or native application. R2 accepted
+11,866,033 response bytes and retained the bounded 8,388,608-byte suffix; all
+three histories also omit oversized rows. Missing rows remain unknown. Twenty-seven
+successful/periodic health captures omit history. Rare deadline, unavailable,
+output and direct-spec finalizer failures remain source/unit scope. The audit
+passes diagnostic usefulness and the contract, not E3 acceptance or native cause.
+Validated-routing/native-application-versus-retirement investigation remains
+design-only and deferred until the receipt repair is reviewed and an unchanged
+exact-source B06 proof completes.
+
+The controller separately verified BranchRelease 37149660443 and CodeQL/API
+formation 37149660367 PASS at feature 7b92d236. Independent medium-scale
+37149660315 attempt 1 failed: 2,757 medium-scale assertions passed, then the
+cluster phase had 11 passed / one failed. Alice received the correct original
+message/Bob-audience receipt with `timed-out` instead of `admitted`; Bob's room
+frame arrived 57 ms after send, and the explicit ACK step was never attempted.
+The managed runner exited before its fairness verification callback, so no
+current-run fairness proof exists; the raw overdue fixture alone proves no
+node-C acceptance. This is not an ACK defect, accepted load/performance result,
+or a proved historical worker handoff.
+
+Fix3 independently reproduced a concrete shared-worker defect at a fixed clock:
+A dequeued the receipt while Alice remained open on A; B claimed that receipt's
+committed local-recipient send and Alice received no admitted receipt. The same
+literal semantic RED occurred with shared memory and separate production
+PostgreSQL stores in one namespace. The existing planner now keeps clustered
+receipt work process-independent via the existing cluster-receipt execution owner,
+which resolves origin presence and publishes the canonical row when claimed.
+The controlled tests pass after that minimum policy correction. Timing, authority,
+receipt phases, persisted/public/wire contracts and diagnostic budgets are unchanged.
+Fresh fix3 independent review and the unchanged broader gates remain pending;
+this controlled reproduction does not establish the historical CI cause.
 
 Recorder origin/continuity, native application/generation, deletion issuer,
 cross-agent causal order and one-way network latency remain unknown. No native
@@ -255,7 +307,7 @@ observation publication in
 [PR #636](https://github.com/intact-software-systems/ar-eye-hunter/pull/636),
 [PR #637](https://github.com/intact-software-systems/ar-eye-hunter/pull/637), and
 [PR #638](https://github.com/intact-software-systems/ar-eye-hunter/pull/638).
-A controller GitHub API read on October 3 at 18:03 UTC confirms all six recovery
+A controller GitHub API read on October 3 at 20:51 UTC confirms all six recovery
 PRs #634–639 remain OPEN, merged=false and merged_at=null. They are proposed
 observations; the checked-in corpus counts above remain unchanged. Required repeats passed where needed. Oct 2 duration and first-open,
 and Sep 29 first-open remain noisy/inconclusive. The publication HTTP 401 is
@@ -324,6 +376,14 @@ catches nested errors, and native lifetime retirement can release awaiters.
 The private consumer remains
 `tests/playwright/rallar-black-box/live-rtc-agent-diagnostics.ts`, exercised by its
 pure tests and literal `live-rtc-control-client.test.ts` capture HTTP boundary.
+
+Shared WS receipt preparation belongs to
+`packages/shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts`;
+`ws-queue-box-server-cluster-publication.ts#writeReceiptRow` owns canonical cluster
+publication and execution-time origin resolution. Real AL work claims can cross
+server instances. Receipt preparation therefore retains the existing cluster-receipt
+work kind whenever a cluster publisher is registered; ordinary nonreceipt
+cluster-local-complete and noncluster recipient delivery remain unchanged.
 
 ## 4. Implemented Harness Coverage And Timing Boundaries
 
@@ -1050,112 +1110,94 @@ justified yet.”
 
 ## 10. Delivered Outcomes And Remaining Acceptance
 
-| Task    | Delivered outcome / remaining state                                                                                                                                                                                                                                                                                                                                                                            |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0       | Execution authorization and initial foundations delivered; no renewed exact-blob activation ceremony.                                                                                                                                                                                                                                                                                                          |
-| 1       | One canonical dense artifact/configuration/identity/accounting/finalization boundary delivered.                                                                                                                                                                                                                                                                                                                |
-| 2       | B01 signaling/ICE/listener workers and semantic assertions delivered.                                                                                                                                                                                                                                                                                                                                          |
-| 3       | B02 queue replacement/drain/close/error workers delivered.                                                                                                                                                                                                                                                                                                                                                     |
-| 4       | B03 topology/RTT/filter/inactive-churn workers delivered.                                                                                                                                                                                                                                                                                                                                                      |
-| 4A / 4B | Private package ownership and standards/legacy review delivered; current canonical owners replace old scripts. No relocation/migration slice remains.                                                                                                                                                                                                                                                          |
-| 5       | B04 multicast/group/cache/heartbeat instrumentation delivered.                                                                                                                                                                                                                                                                                                                                                 |
-| 6       | B05 per-iteration native lifecycle instrumentation delivered.                                                                                                                                                                                                                                                                                                                                                  |
-| 7       | Measurement gates/source-fingerprint tooling delivered. Current captures use their own immutable source snapshot, not a final-main anchor.                                                                                                                                                                                                                                                                     |
-| 8       | E1 capture unverified: recover and validate retained evidence or perform governed capture after representative E3 succeeds. Tool availability cannot mark this complete.                                                                                                                                                                                                                                       |
-| 9       | E2 stream active with 31 checked-in passed observations; five recovered Sep 28–Oct 2 archives are proposed in PRs #634–638. Retain noisy/inconclusive classification.                                                                                                                                                                                                                                          |
-| 10      | E3 has no accepted primary/repeat. Run 37108696378 recovery is proposed in PR #639. Tasks 17/18 delivered reviewed bounded lifecycle preservation and exact-head normal-path proof; Tasks 19/20 delivered independently approved event observations and exact-head normal-path proof; Tasks 21/22 delivered bounded AL evidence and exact-source proof; selected-consumer distinction and its proof come next. |
-| 11      | B07 held pending its separate human decision; no remote run in the current horizon.                                                                                                                                                                                                                                                                                                                            |
-| 12      | Ranking gated on accepted E3 and required repeat plus reconciled relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                                                                                                                                                                                                                                                       |
-| 17      | Bounded canonical lifecycle preservation delivered and independently approved with zero findings; one shared sanitized sequence, completed-health-first and failure-only capture.                                                                                                                                                                                                                              |
-| 18      | Exact-head non-publishing proof delivered: run 37123318628 attempt 1, source bbf0f6b007a85234f9b9e970ab535ff3b4b391e2, all 82 files verified, 122 useful events; normal-path scope and incomplete coverage retained.                                                                                                                                                                                           |
-| 19      | Existing peer/lane notification observations delivered; final independent specification PASS and quality APPROVED after the import-only fix, zero remaining findings. Retained 105 tests / 1,434-file zero-error typecheck are attributed to the pre-fix source.                                                                                                                                               |
-| 20      | Exact-head non-publishing proof delivered: run 37130139368 attempt 1 on 7214bdd0288005bac4f34c4964f995adaa188d4e, 81 verified original files / 4,081,384 inner bytes, 100 useful events / 117,722 bytes; all three original retention failures and honest losses preserved, watcher retired.                                                                                                                   |
-| 21      | Bounded RTC AL preservation delivered; final independent specification PASS and quality APPROVED at dd2d9371b8146947548b9346027d05338c55a905 (C0/I0/M0). Original 119 tests belong to 99524; final dd2d has 69 affected tests and 1,434-file zero-error maintained typecheck plus declaration equivalence review.                                                                                              |
-| 22      | Final exact-source diagnostic run 37138465392 attempt 1: all three original failures at cycles 10/5/1, 81 verified unchanged files / 4,243,068 bytes, 256 events / 218,633 bytes; 53 commits, 49 admissions, 56 qualified claims (47 completed / nine retry), 103 matched / two unknown links. Normal-path scope and honest loss remain; watcher retired, no accepted metrics.                                 |
+| Task    | Delivered outcome / remaining state                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0       | Execution authorization and initial foundations delivered; no renewed exact-blob activation ceremony.                                                                                                                                                                                                                                                                                                                                                                               |
+| 1       | One canonical dense artifact/configuration/identity/accounting/finalization boundary delivered.                                                                                                                                                                                                                                                                                                                                                                                     |
+| 2       | B01 signaling/ICE/listener workers and semantic assertions delivered.                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 3       | B02 queue replacement/drain/close/error workers delivered.                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 4       | B03 topology/RTT/filter/inactive-churn workers delivered.                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 4A / 4B | Private package ownership and standards/legacy review delivered; current canonical owners replace old scripts. No relocation/migration slice remains.                                                                                                                                                                                                                                                                                                                               |
+| 5       | B04 multicast/group/cache/heartbeat instrumentation delivered.                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 6       | B05 per-iteration native lifecycle instrumentation delivered.                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 7       | Measurement gates/source-fingerprint tooling delivered. Current captures use their own immutable source snapshot, not a final-main anchor.                                                                                                                                                                                                                                                                                                                                          |
+| 8       | E1 capture unverified: recover and validate retained evidence or perform governed capture after representative E3 succeeds. Tool availability cannot mark this complete.                                                                                                                                                                                                                                                                                                            |
+| 9       | E2 stream active with 31 checked-in passed observations; five recovered Sep 28–Oct 2 archives are proposed in PRs #634–638. Retain noisy/inconclusive classification.                                                                                                                                                                                                                                                                                                               |
+| 10      | E3 has no accepted primary/repeat. Run 37108696378 recovery is proposed in PR #639. Tasks 17/18 delivered reviewed bounded lifecycle preservation and exact-head normal-path proof; Tasks 19/20 delivered independently approved event observations and exact-head normal-path proof; Tasks 21/22 delivered bounded AL evidence and exact-source proof; Tasks 23/24 delivered selected-consumer observations and exact-source diagnostic proof; native application remains unknown. |
+| 11      | B07 held pending its separate human decision; no remote run in the current horizon.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 12      | Ranking gated on accepted E3 and required repeat plus reconciled relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                                                                                                                                                                                                                                                                                                                            |
+| 17      | Bounded canonical lifecycle preservation delivered and independently approved with zero findings; one shared sanitized sequence, completed-health-first and failure-only capture.                                                                                                                                                                                                                                                                                                   |
+| 18      | Exact-head non-publishing proof delivered: run 37123318628 attempt 1, source bbf0f6b007a85234f9b9e970ab535ff3b4b391e2, all 82 files verified, 122 useful events; normal-path scope and incomplete coverage retained.                                                                                                                                                                                                                                                                |
+| 19      | Existing peer/lane notification observations delivered; final independent specification PASS and quality APPROVED after the import-only fix, zero remaining findings. Retained 105 tests / 1,434-file zero-error typecheck are attributed to the pre-fix source.                                                                                                                                                                                                                    |
+| 20      | Exact-head non-publishing proof delivered: run 37130139368 attempt 1 on 7214bdd0288005bac4f34c4964f995adaa188d4e, 81 verified original files / 4,081,384 inner bytes, 100 useful events / 117,722 bytes; all three original retention failures and honest losses preserved, watcher retired.                                                                                                                                                                                        |
+| 21      | Bounded RTC AL preservation delivered; final independent specification PASS and quality APPROVED at dd2d9371b8146947548b9346027d05338c55a905 (C0/I0/M0). Original 119 tests belong to 99524; final dd2d has 69 affected tests and 1,434-file zero-error maintained typecheck plus declaration equivalence review.                                                                                                                                                                   |
+| 22      | Final exact-source diagnostic run 37138465392 attempt 1: all three original failures at cycles 10/5/1, 81 verified unchanged files / 4,243,068 bytes, 256 events / 218,633 bytes; 53 commits, 49 admissions, 56 qualified claims (47 completed / nine retry), 103 matched / two unknown links. Normal-path scope and honest loss remain; watcher retired, no accepted metrics.                                                                                                      |
+| 23      | Selected-consumer/AL distinction delivered; fix1 and fix2 independently approved with zero findings. Feature 7b92d236 BranchRelease and CodeQL/API formation passed; separate medium-scale cluster receipt phase failed. Fix3 controlled memory/Postgres worker-handoff RED and minimum existing-policy GREEN are local evidence, with fresh review and broader acceptance pending.                                                                                                 |
+| 24      | Final exact-source diagnostic 37147329195 attempt 1 on 72945dd: 81 originals / 4,262,002 inner bytes verified; all three failures at cycles 1/8/1, 293 events / 238,781 bytes, 38 consumer terminals and 38 AL decisions / 37 claims. Normal-path proof, honest loss/identity/native unknowns and original failures preserved; watcher retired, no accepted baseline.                                                                                                               |
 
 ## 11. Next Two Useful Slices
 
-### Task 23: Distinguish actual selected RTC consumer invocation from AL settlement
+### Task 23: Close the separately failed CI receipt phase
 
-**Files:** Existing AL admitted-delivery, diagnostic contract and lane composition;
-WS queue-box concrete consumer selection; existing pure projector and literal
-HTTP tests; focused producer tests and their affected support; this factual plan.
-The published runtime dispatch signature and public callbacks remain compatible.
+**Files:** Existing WS outbound planning owner; real receipt/cluster fixture and
+memory regression; focused PostgreSQL handoff integration; this factual plan.
 
-**Behavior:** At the real WS exact-type callback await, emit a terminal immutable
-message/type/carrier observation using the injected producer clock and finite
-returned/retry/threw outcome. Deferred invocation has no terminal fact before
-settlement; missing data remains unknown. Positive absent exact-type selection is
-distinct from ALL_IN/onAny delivery. Separately observe finite owned AL pre-port
-gates and port outcomes with real worker/lane/effect/attempt identity. The WS
-consumer boundary lacks those identities: retain explicit unknowns and never
-invent a unique claim pair, counter, side table or generation. A returned receiver
-is invocation evidence only; caught errors and native retirement are not receipts.
+**Behavior:** With a cluster publisher registered, every receipt prepared at
+dequeue uses the existing process-independent cluster-receipt work. Whichever
+worker claims it publishes its canonical row and resolves the origin at execution.
+Normal nonreceipt cluster completion, noncluster delivery, frozen audience,
+authority, receipt phase, deadline/grace, ACK, duplicate and reconnect semantics
+remain. No new kind, migration reader, worker affinity or timing policy is added.
 
-One existing sink/topic/envelope/recorder/allowlisted projection carries the facts.
-Keep the single accepted HTTP 67,108,864-byte / 30,000-ms response, 8,388,608-byte
-retained suffix, last 20,000 nonblank rows, 16,384-byte row cap, latest 600 TOTAL
-mixed permitted events / 262,144 TOTAL serialized event bytes and 256-character
-identities. New facts share retention/eviction and exact count/byte/loss accounting.
-Real agent partitions, frozen interval, later health, failure-only read and current
-finalizer remain. No arbitrary error/reason, payload/route, SDP/ICE/address or secret
-escapes the allowlist; all producer, runtime and recorder clocks remain separate.
+- [x] Preserve the actual CI failure and distinguish its unproved cause from a
+      controlled reproduction. Witness literal admitted-receipt RED with real A/B
+      services, actual queue claims, one shared namespace and fixed clock; confirm
+      the same causal handoff with separate PostgreSQL stores.
+- [x] Apply the minimum existing planner correction; pass both storage boundaries
+      and focused receipt/ACK/addressed/reconnect/deadline regressions.
+- [x] Complete local full-file standards closure and covering validation: 1,596
+      tests across 137 service/ALM/bridge files, 19 PostgreSQL tests across two
+      files, maintained test types (1,437 files, zero errors), shared/shared-server
+      types and changed-style/structure/navigation checks pass. Preserve actual
+      intermediate failures and source attribution.
+- [ ] Obtain controller-owned independent fix3 review and final exact-commit
+      legacy review; local author closure is not independent approval.
+- [ ] Complete the unchanged medium-scale/fairness and applicable fresh state-write
+      candidate/comparison gates through the controller's delivery routing after independent review/publication.
+      The controller's October 3 20:45:54 UTC delivery status passed with action
+      WORK on draft PR #633. Local validation proceeds; hosted medium-scale and
+      pinned fresh-database state-write comparison remain required and pending. No
+      local unit pass replaces them or relabels the original failed CI attempt.
 
-- [x] Witness semantic producer RED with independent callback assertions and literal pure/
-      capture HTTP RED; obtain minimum GREEN for disabled/dropped/ordered bypass,
-      pre-port retry, exact return/retry/throw, wildcard/onAny-only selection and
-      privacy/identity/clock/retention distinctions. Three parameterized WS REDs
-      fail at the missing-event poll before their later callback-count assertions;
-      passing tests establish both the actual calls and the new observations.
-- [x] Run covering semantic and maintained type checks on the implementation;
-      review every changed authored file and recursively affected support in full.
-- [x] Resolve the changed-style gate's admitted-delivery cohesion warning through
-      same-owner simplification (63 to 49, original base 49); required changed-style
-      now passes. Fix validation passes 554 tests / 29 files, maintained test types
-      (1,436 files, zero errors) and shared package types.
-- [x] Obtain independent fix1 SPEC PASS / QUALITY APPROVED, C0/I0/M0, at
-      72945dd6a198afacb68979914cb3cba7d8ab5612. The original review's style-gate
-      failure is resolved; its earlier outcome remains part of the evidence.
-- [x] Reproduce the sole exact-729 CI unit failure: headless Brotli size
-      299.4833984375 KiB exceeds the adjustable private test ceiling of 299 KiB;
-      all operator-UI dependency exclusions passed. BranchRelease 37147176526
-      unit results remain one failed / 12,715 passed / 12 skipped. Raise only
-      that private test JSON ceiling to 300 KiB under the measured fix2 ruling;
-      the same strict bundle test and existing four-test headless pair pass locally.
-      Runtime and diagnostic-budget
-      bytes remain unchanged from 72945dd; no accepted workload gate changes.
-- [ ] Obtain independent scoped fix2 review and new published-source CI. Local
-      validation does not relabel the failed exact-729 CI or prove live behavior.
+**Exit:** Independently reviewed, validated receipt correctness repair. No native
+RTC fix, accepted E3 primary or evidence-limit increase is earned.
 
-**Exit:** Independently reviewed diagnostic refinement with original expiry,
-shutdown, ordering, retry, readiness, error identity/precedence and cleanup
-semantics preserved. No native fix or limit increase is earned by this evidence.
+### Task 25: Prove unchanged exact-source behavior after receipt closure
 
-### Task 24: Prove exact-source selected-consumer evidence without accepted publication
+**Files:** Controller-owned one exact-source, non-publishing all-three B06 diagnostic
+proof and ignored unchanged-original audit, only after Task 23 independent review,
+required hosted gates and publication of its validated feature commit.
 
-**Files:** Controller-owned one exact-source non-publishing all-three diagnostic
-proof and ignored unchanged-original audit, only after Task 23 clean independent
-review, published feature SHA and confirmation that no producer is live.
+**Behavior:** Use the existing producer, consumer/AL evidence contract, accepted
+workload and unchanged bounds. Preserve every original attempt and verify complete
+source/inventory/length/hash facts, first failure/cycle/rejection, useful positive
+consumer/AL facts, later health, loss/unknowns and normal history suppression.
+No instrumentation, native policy, public dependency or schema changes accompany
+this proof. Historical CI and B06 causes remain unproved by the receipt reproduction.
 
-The controller launched run 37147329195 attempt 1 on exact source
-72945dd6a198afacb68979914cb3cba7d8ab5612 after fix1 approval/publication. The
-controller's fix2 brief records source PASS, all three
-jobs started, accepted capture/publication SKIPPED and no terminal result or
-artifact audit yet. The same producer continues; the private test/doc-only fix
-does not restart it or relabel its source. New-source CI remains separate.
+- [ ] Confirm no active producer, reviewed published source and required delivery
+      gates before the controller starts the single unchanged diagnostic proof.
+- [ ] Independently audit all original artifacts and terminal outcomes without
+      reconstructing missing rows, inferring native application or consumer claim
+      pairing, or replacing a failed original with a retry.
+- [ ] Preserve native-boundary design as ignored, deferred preparation. Reassess
+      the next two useful slices only from the actual post-repair proof; no native
+      implementation or Task 26 is activated.
 
-- [ ] Verify exact source and complete original inventory/length/hash/privacy;
-      preserve first failure/cycle/rejection, useful actual selected-consumer
-      and AL decision facts, message-level limits, loss/eviction/unknowns,
-      complete later health and normal success/periodic history suppression.
-- [ ] Keep rare deadline/unavailable/output/direct-spec faults in source/unit
-      scope unless exercised. Do not infer native application, claim pairing or
-      causal order, reconstruct missing rows, or widen evidence budgets.
-
-**Exit:** Honest exact-source diagnostic proof. No Task 25 or native correction
-is yet causally earned. Full B01–B06 primary plus required-repeat acceptance,
-relevant E1 reconciliation, ranking and human completion remain; B07 stays held,
-E4 conditional. No workload/noise/environment/artifact/completion gate changes.
+**Exit:** Honest exact-source diagnostic evidence; success is not presumed. Full
+B01–B06 accepted primary plus required repeats, relevant E1 reconciliation,
+homogeneous noise handling, ranking and human completion remain. B07 stays held,
+E4 conditional; no workload, evidence or completion contract changes.
 
 ## 12. Baseline Completion Gate
 
