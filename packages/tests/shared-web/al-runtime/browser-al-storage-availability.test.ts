@@ -262,11 +262,34 @@ describe('the checkpoint lane a connect may skip', () => {
         expect(storage.getCheckpointLaneSkip()).toEqual(CHECKPOINT_LAG);
     });
 
-    // A failed checkpoint write is retried by the next one; only the lag beyond the bound refuses new admissions.
-    it('skips nothing for a checkpoint store failing for another cause, or for an event that is no health', () => {
+    // A store already failing (a restore it could not read, an evicted database) states no later lag, so any
+    // failing checkpoint store skips the lane; `delayed` is a checkpoint that is late, not one that is lost.
+    it('skips it while a checkpoint store fails for any cause, until that store reads delayed or healthy', () => {
         const storage = createStorageAvailability(AVAILABLE, undefined, () => {});
 
-        storage.recordCheckpointHealth(toCheckpointHealth(WS_CHECKPOINT, 'failing', { cause: 'quota', detail: 'QuotaExceededError' }));
+        storage.recordCheckpointHealth(toCheckpointHealth(WS_CHECKPOINT, 'failing', QUOTA_FAILURE));
+        const failing = storage.getCheckpointLaneSkip();
+        storage.recordCheckpointHealth(toCheckpointHealth(WS_CHECKPOINT, 'delayed', QUOTA_FAILURE));
+        const delayed = storage.getCheckpointLaneSkip();
+        storage.recordCheckpointHealth(toCheckpointHealth(WS_CHECKPOINT, 'failing', QUOTA_FAILURE));
+        storage.recordCheckpointHealth(toCheckpointHealth(WS_CHECKPOINT, 'healthy', QUOTA_FAILURE));
+
+        expect(failing).toEqual(QUOTA_FAILURE);
+        expect(delayed).toBeUndefined();
+        expect(storage.getCheckpointLaneSkip()).toBeUndefined();
+    });
+
+    it('names a failing store that carries no failure as transaction-failed', () => {
+        const storage = createStorageAvailability(AVAILABLE, undefined, () => {});
+
+        storage.recordCheckpointHealth(toCheckpointHealth(WS_CHECKPOINT, 'failing', undefined));
+
+        expect(storage.getCheckpointLaneSkip()).toEqual({ cause: 'transaction-failed', detail: expect.stringContaining(WS_CHECKPOINT) });
+    });
+
+    it('skips nothing for an event that is no health', () => {
+        const storage = createStorageAvailability(AVAILABLE, undefined, () => {});
+
         storage.recordCheckpointHealth({ kind: 'persist', outcome: 'granted' });
 
         expect(storage.getCheckpointLaneSkip()).toBeUndefined();
@@ -285,6 +308,7 @@ describe('the checkpoint lane a connect may skip', () => {
 const WS_CHECKPOINT = 'browser-ws-client-checkpoint:session-1';
 const RTC_CHECKPOINT = 'browser-rtc-overlay-checkpoint:session-1';
 const CHECKPOINT_LAG = { cause: 'checkpoint-lag', detail: 'unsaved for 12000 ms' } as const;
+const QUOTA_FAILURE = { cause: 'quota', detail: 'QuotaExceededError' } as const;
 
 function toCheckpointHealth(
     storeId: string,

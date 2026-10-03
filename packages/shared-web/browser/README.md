@@ -182,8 +182,9 @@ The browser transport storage and WebSocket owners are feature-colocated:
   [browser-al-storage-availability.ts](./al-runtime/browser-al-storage-availability.ts)
   owns the connect's storage availability (`missing` without IndexedDB, any
   other cause re-decided by the next durable admission), the checkpoint lane's
-  skip (`missing`, or a checkpoint store whose health reads `failing` with cause
-  `checkpoint-lag`, until that store reads `healthy` or `delayed` again) and its
+  skip (`missing`, or a checkpoint store whose health reads `failing`, for a lag
+  beyond its bound or any other cause, until that store reads `healthy` or
+  `delayed` again) and its
   one request for persistent storage, asked by the first durable or
   `local-checkpoint` admission;
   [browser-al-checkpoint-stores.ts](./al-runtime/browser-al-checkpoint-stores.ts)
@@ -191,9 +192,10 @@ The browser transport storage and WebSocket owners are feature-colocated:
   store ids `browser-ws-client-checkpoint:<sessionId>` and
   `browser-rtc-overlay-checkpoint:<sessionId>`: a memory pair a
   `local-checkpoint` admission goes to, whose writer checkpoints it into the
-  scope's database while the connect owns the session's work. The settings
-  `checkpointIntervalMs` (1,000 ms) and `checkpointLagBoundMs` (10,000 ms) sit on
-  the store factory input and default there. The pairs are built once per connect
+  scope's database while the connect owns the session's work. The browser
+  composition sets `checkpointIntervalMs` and `checkpointLagBoundMs` on the store
+  factory input, which default to `AL_CHECKPOINT_DEFAULT_SETTINGS` (1,000 ms and
+  10,000 ms); no app-facing option exposes them yet. The pairs are built once per connect
   under its claim, after `configureBrowserALRuntimeStores` registered their
   factories beside each outbound scope's durable pair, and the WS client and the
   RTC overlay each take their own;

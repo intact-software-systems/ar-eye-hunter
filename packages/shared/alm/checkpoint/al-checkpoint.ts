@@ -14,7 +14,7 @@ import {
     createALStorageRecoveryReporter,
     type ALStorageRecoveryReporter
 } from '../storage/al-storage-recovery-reporter.ts';
-import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
+import { toALStorageFailure } from '../storage/al-storage-unavailable.ts';
 import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
 import { ALCheckpointDirtySet } from './al-checkpoint-dirty-set.ts';
 import { ALCheckpointWriter } from './al-checkpoint-writer.ts';
@@ -27,14 +27,17 @@ export interface ALCheckpointStorage {
     readonly selection: IndexedDbAdmissionBackend.NamespaceSelection;
     readonly health: ALStorageHealth;
     readonly settings: ALCheckpointWriter.Settings;
+    readonly newWriteToken: () => string;
     readonly timers: ALCheckpointWriter.Timers;
 }
 
 /**
  * What a checkpoint lane and the page lifecycle hold of a memory pair's checkpoint. `restore` and the
- * first-batch report run once; `flush` starts a checkpoint now and is never awaited.
+ * first-batch report run once; `flush` starts a checkpoint now and is never awaited, and `dispose`
+ * flushes the same way before it stops the checkpoint.
  */
 export interface ALCheckpointPort extends ALStorageRecoveryReporter {
+    /** Never rejects: a store that cannot be read or decoded is stated on its health, and the lane opens from memory. */
     restore(): Promise<void>;
     flush(): void;
     dispose(): void;
@@ -120,10 +123,15 @@ export class ALCheckpoint implements ALCheckpointPort {
         this.tracking?.writer.flush();
     }
 
+    /** A disconnect inside the interval still saves what the interval has not; the write is not awaited. */
     dispose(): void {
         this.disposed = true;
-        this.tracking?.writer.dispose();
-        this.tracking?.dirty.dispose();
+        if (this.tracking === undefined) {
+            return;
+        }
+        this.tracking.writer.flush();
+        this.tracking.writer.dispose();
+        this.tracking.dirty.dispose();
     }
 
     private createTracking(): ALCheckpointTracking {
@@ -136,6 +144,7 @@ export class ALCheckpoint implements ALCheckpointPort {
             health: storage.health,
             settings: storage.settings,
             nowMs,
+            newWriteToken: storage.newWriteToken,
             timers: storage.timers
         });
         return { dirty, writer };
@@ -149,34 +158,40 @@ export class ALCheckpoint implements ALCheckpointPort {
         this.tracking.dirty.markHeld();
     }
 
-    /** A store that cannot be read is stated on its health; the lane runs from what memory holds. */
+    /**
+     * A store that cannot be read, or a saved row that cannot be decoded, is stated on the store's health
+     * and the lane runs from what memory holds: the runtime's readiness awaits every lane, so a rejection
+     * here would fail every send of the carrier.
+     */
     private async readAndLoad(): Promise<void> {
         const { saved, selection, health } = this.input.storage;
         try {
             const read = await saved.readNamespaceRows(selection);
-            this.restored = { opening: saved.getStorageOpening(), expiredWorkCount: this.load(read) };
+            this.restored = { opening: saved.getStorageOpening(), expiredWorkCount: this.loadLiveRows(read) };
         }
         catch (error) {
-            const unavailable = toALStorageUnavailable(toError(error));
-            if (unavailable === undefined) {
-                throw error;
-            }
-            health.recordFailure(unavailable);
+            health.recordFailure(toALStorageFailure(toError(error)));
         }
     }
 
-    /** One synchronous turn: the live rows load beside what the pair holds, and the expired work rows are counted. */
-    private load(read: IndexedDbAdmissionBackend.NamespaceRows): number {
+    /**
+     * One synchronous turn: every live row is decoded before any loads, so a corrupt row leaves the pair
+     * as it was; the live rows then load beside what the pair holds, and the expired work rows are counted.
+     */
+    private loadLiveRows(read: IndexedDbAdmissionBackend.NamespaceRows): number {
         const nowMs = this.input.nowMs();
         const now = Temporal.Instant.fromEpochMilliseconds(nowMs);
-        const live = read.workRows.filter((row) => !isStoredQueueEntryExpired(row, now));
-        const loadLive = () =>
-            this.input.storage.memory.loadIfAbsent(
-                read.rows.filter((row) => row.expireAtTimestamp > nowMs).map(toALAdmissionStoredValue),
-                live.map((row) => decodeStoredResourceEntry(row))
-            );
-        this.tracking === undefined ? loadLive() : this.tracking.dirty.loadWithoutMarking(loadLive);
-        return read.workRows.filter((row) => row.key.topicId === 'AL_OUTBOUND' && !live.includes(row)).length;
+        const liveWorkRows = read.workRows.filter((row) => !isStoredQueueEntryExpired(row, now));
+        const liveRows = read.rows.filter((row) => row.expireAtTimestamp > nowMs).map(toALAdmissionStoredValue);
+        const liveEntries = liveWorkRows.map((row) => decodeStoredResourceEntry(row));
+        const loadLive = () => this.input.storage.memory.loadIfAbsent(liveRows, liveEntries);
+        if (this.tracking === undefined) {
+            loadLive();
+        }
+        else {
+            this.tracking.dirty.loadWithoutMarking(loadLive);
+        }
+        return read.workRows.filter((row) => row.key.topicId === 'AL_OUTBOUND' && !liveWorkRows.includes(row)).length;
     }
 
     private async write(mutations: ALCheckpointMutations): Promise<void> {

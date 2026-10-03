@@ -2,7 +2,7 @@ import type { Unsubscribe } from '../../cache/RepositoryInterfaces.ts';
 import { toError } from '../../resilience/to-error.ts';
 import type { InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
-import { toALStorageUnavailable, type ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
+import { toALStorageFailure, type ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALCheckpointDirtySet } from './al-checkpoint-dirty-set.ts';
 import { computeALCheckpointMutations, type ALCheckpointMutations } from './compute-al-checkpoint-mutations.ts';
 
@@ -28,6 +28,8 @@ export namespace ALCheckpointWriter {
         readonly health: ALStorageHealth;
         readonly settings: Settings;
         readonly nowMs: () => number;
+        /** Names each write once, so a restore can tell the rows of one checkpoint apart. */
+        readonly newWriteToken: () => string;
         readonly timers: Timers;
     }
 }
@@ -37,7 +39,10 @@ export namespace ALCheckpointWriter {
  * owns its session's durable work. The oldest unsaved change arms one checkpoint an interval after it, so no later change
  * postpones it, and nothing runs while the pair is clean. One write is in flight at a time and changes
  * made during it reach the next one; a completed write clears only the keys still at the revision it
- * captured.
+ * captured. The store reads `delayed` once a write failed or the oldest unsaved change is two intervals
+ * old (a throttled timer), and `failing` with `checkpoint-lag` once it is past the lag bound; a
+ * checkpoint that starts on time and completes reads `healthy` throughout. No lag check runs while a
+ * write is in flight: its completion or failure is the next one (IndexedDB aborts a hung transaction).
  */
 export class ALCheckpointWriter {
     private readonly input: ALCheckpointWriter.Input;
@@ -130,7 +135,7 @@ export class ALCheckpointWriter {
             snapshot,
             peekAdmission: (key) => memory.peek(key),
             peekQueueEntry: (key) => memory.workQueue.peek(key),
-            writeToken: crypto.randomUUID()
+            writeToken: this.input.newWriteToken()
         });
         this.inFlight = snapshot;
         this.disarm();
@@ -154,25 +159,29 @@ export class ALCheckpointWriter {
     private failWrite(error: Error): void {
         this.inFlight = undefined;
         this.retryNotBeforeMs = this.input.nowMs() + this.input.settings.intervalMs;
-        this.lastWriteFailure = toALStorageUnavailable(error) ?? { cause: 'transaction-failed', detail: error.message };
+        this.lastWriteFailure = toALStorageFailure(error);
         this.continueAfterWrite();
     }
 
+    /** A flush asked for during the write still runs after a dispose: it is the disposing page's last save. */
     private continueAfterWrite(): void {
         this.disarm();
-        if (this.disposed) {
-            return;
-        }
-        this.recordLag();
         if (this.flushRequested) {
             this.flushRequested = false;
             this.startWrite();
             return;
         }
+        if (this.disposed) {
+            return;
+        }
+        this.recordLag();
         this.arm();
     }
 
-    /** `delayed` once past the interval, `failing` once past the bound; a completed write ends either. */
+    /**
+     * `failing` once past the bound; else `delayed` once a write failed or the oldest unsaved change is two
+     * intervals old, never for a timer a few milliseconds late. A completed write ends either.
+     */
     private recordLag(): void {
         const oldestAtMs = this.input.dirty.getOldestDirtiedAtMs();
         if (oldestAtMs === undefined) {
@@ -184,7 +193,7 @@ export class ALCheckpointWriter {
             this.lagStated = true;
             health.recordLagFailure(computeALCheckpointLagFailure(ageMs, settings, this.lastWriteFailure), ageMs);
         }
-        else if (ageMs > settings.intervalMs) {
+        else if (this.lastWriteFailure !== undefined || ageMs >= 2 * settings.intervalMs) {
             health.recordDelayed(ageMs, this.lastWriteFailure);
         }
     }

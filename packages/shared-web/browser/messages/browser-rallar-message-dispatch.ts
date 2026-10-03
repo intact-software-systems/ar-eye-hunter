@@ -237,7 +237,7 @@ async function writeStorageAdmission(
 ): Promise<ALOutboundEnqueueResult> {
     const storage = delivery.context.middleware.storageAvailability;
     const durability = toRequestedDurability(delivery.message);
-    const skipped = readStorageLaneSkip(storage, durability);
+    const skipped = resolveStorageLaneSkip(storage, durability);
     if (skipped !== undefined) {
         const verdict: ALDeliveryAdmissionVerdict = { kind: 'storage-unavailable', ...skipped };
         return { verdict, message: delivery.message, entries: [], trackedReceiptAlgo: 'none' };
@@ -247,7 +247,7 @@ async function writeStorageAdmission(
     return admitted;
 }
 
-function readStorageLaneSkip(
+function resolveStorageLaneSkip(
     storage: BrowserALStorageAvailability,
     durability: ALDurabilityAlgo
 ): ALStorageUnavailable | undefined {

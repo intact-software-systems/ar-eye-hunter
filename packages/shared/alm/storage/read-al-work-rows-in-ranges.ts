@@ -9,7 +9,7 @@ import { AL_ADMISSION_WORK_STORE_NAME } from '../open-indexed-db-admission-datab
 import { toALOutboundWorkKey } from '../outbound/al-outbound-work-entry.ts';
 
 /** High sentinel code point: bounds a string-prefix IndexedDB key range from above. */
-const KEY_RANGE_UPPER_SENTINEL = '￿';
+const KEY_RANGE_UPPER_SENTINEL = '\uFFFF';
 
 export interface ALWorkKeyRangesInput {
     readonly namespacePrefixes: readonly string[];

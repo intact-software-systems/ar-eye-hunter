@@ -24,13 +24,14 @@ export namespace BrowserALStorageAvailability {
 
 /**
  * Storage missing for the document holds until the next connect; any other cause is tried again by
- * the next durable admission, whose verdict re-decides it. A checkpoint store that lags beyond its
- * bound skips the checkpoint lane until that store reads healthy or delayed again.
+ * the next durable admission, whose verdict re-decides it. A checkpoint store that reads `failing`,
+ * for a lag beyond its bound or any other cause, skips the checkpoint lane until that store reads
+ * `healthy` or `delayed` again; `delayed` alone never skips it.
  */
 export class BrowserALStorageAvailability {
     readonly availability = new ObservableLatestValue<ALStorageAvailability>();
     private readonly input: BrowserALStorageAvailability.Input;
-    private readonly checkpointLags = new LatestRepository<string, ALStorageUnavailable>();
+    private readonly checkpointFailures = new LatestRepository<string, ALStorageUnavailable>();
     private persistRequested = false;
 
     constructor(input: BrowserALStorageAvailability.Input) {
@@ -46,20 +47,26 @@ export class BrowserALStorageAvailability {
     }
 
     getCheckpointLaneSkip(): ALStorageUnavailable | undefined {
-        const [lag] = this.checkpointLags.values();
-        return this.getDurableLaneSkip() ?? lag?.peek();
+        const [failure] = this.checkpointFailures.values();
+        return this.getDurableLaneSkip() ?? failure?.peek();
     }
 
-    /** Only a lag beyond the bound skips the lane: a failed checkpoint write is retried by the next one. */
+    /**
+     * A store's health states only a change of status, so a store already failing never states a later
+     * lag: every `failing` of a checkpoint store skips the lane, and `delayed` or `healthy` ends the skip.
+     */
     recordCheckpointHealth(event: ALStorageEvent): void {
         if (event.kind !== 'health') {
             return;
         }
-        if (event.status === 'failing' && event.lastFailure?.cause === 'checkpoint-lag') {
-            this.checkpointLags.accept(event.storeId, event.lastFailure);
+        if (event.status === 'failing') {
+            this.checkpointFailures.accept(
+                event.storeId,
+                event.lastFailure ?? toUnstatedCheckpointFailure(event.storeId)
+            );
             return;
         }
-        this.checkpointLags.delete(event.storeId);
+        this.checkpointFailures.delete(event.storeId);
     }
 
     /** Never awaited: a browser may answer `persist()` only after prompting the user. */
@@ -108,6 +115,11 @@ export function toBrowserStoragePersistRequest(
     }
     const persisted = storageManager?.persisted;
     return async () => (await persisted?.call(storageManager)) === true || await persist.call(storageManager);
+}
+
+/** A failing state carries its failure; an ended session's purge is the one that may state none. */
+function toUnstatedCheckpointFailure(storeId: string): ALStorageUnavailable {
+    return { cause: 'transaction-failed', detail: `The checkpoint store ${storeId} is failing` };
 }
 
 async function readStoragePersistOutcome(

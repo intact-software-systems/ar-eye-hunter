@@ -181,7 +181,12 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
                 throw new ALAdmissionBackendConflictError('In-memory AL admission work write conflicted');
             }
             for (const [key, stored] of mutations) {
-                stored === undefined ? this.deleteStored(key) : this.setStored(key, stored);
+                if (stored === undefined) {
+                    this.deleteStored(key);
+                }
+                else {
+                    this.setStored(key, stored);
+                }
             }
             return result;
         }

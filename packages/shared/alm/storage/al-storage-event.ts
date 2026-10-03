@@ -1,7 +1,7 @@
 import type { ALStorageResetEvent } from '../open-indexed-db-admission-database.ts';
 import type { ALStorageUnavailable } from './al-storage-unavailable.ts';
 
-/** `delayed` only on a checkpoint store: its oldest unsaved change outlived the interval, within the lag bound. */
+/** `delayed` only on a checkpoint store: a write failed or the oldest unsaved change is two intervals old, within the lag bound. */
 export type ALStorageHealthStatus = 'healthy' | 'delayed' | 'failing';
 
 export interface ALStorageHealthState {

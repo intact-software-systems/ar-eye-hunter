@@ -10,10 +10,7 @@ import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 
-import {
-    GLOBAL_CHECKPOINT_TIMERS,
-    TEST_CHECKPOINT_SETTINGS
-} from './al-checkpoint-test-support.ts';
+import { TEST_CHECKPOINT_SETTINGS } from './al-checkpoint-test-support.ts';
 
 const STORE_ID = 'browser-ws-client-checkpoint:session-1';
 const QUOTA = new DOMException('full', 'QuotaExceededError');
@@ -181,6 +178,48 @@ describe('ALCheckpointWriter', () => {
         expect(fixture.writes.map(toWrittenValues)).toEqual([{ a: 'one' }, { b: 'two' }]);
     });
 
+    // A real timer fires a few milliseconds late, so the change is just past the interval when its checkpoint starts.
+    it('reads healthy throughout a checkpoint whose timer fires a few milliseconds late', async () => {
+        const fixture = createWriterFixture(5);
+        await fixture.change('a', 'one');
+
+        await vi.advanceTimersByTimeAsync(1_005);
+        fixture.writes[0]!.resolve();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(fixture.writes).toHaveLength(1);
+        expect(fixture.events).toEqual([]);
+    });
+
+    it('states delayed when a throttled timer fires two intervals after the change, and healthy when its write completes', async () => {
+        const fixture = createWriterFixture(1_000);
+        await fixture.change('a', 'one');
+
+        await vi.advanceTimersByTimeAsync(2_000);
+        fixture.writes[0]!.resolve();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(fixture.events.map(toHealthSummary)).toEqual([
+            { status: 'delayed', oldestUnsavedAgeMs: 2_000, lastFailure: undefined },
+            { status: 'healthy', oldestUnsavedAgeMs: undefined, lastFailure: undefined }
+        ]);
+    });
+
+    it('runs a flush requested during a write when disposed before that write completes', async () => {
+        const fixture = createWriterFixture();
+        await fixture.change('a', 'one');
+        fixture.writer.flush();
+        await fixture.change('b', 'two');
+        fixture.writer.flush();
+
+        fixture.writer.dispose();
+        fixture.writes[0]!.resolve();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(fixture.writes.map(toWrittenValues)).toEqual([{ a: 'one' }, { b: 'two' }]);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
     it('cancels its armed checkpoint when disposed', async () => {
         const fixture = createWriterFixture();
         await fixture.change('a', 'one');
@@ -199,13 +238,20 @@ interface HeldWrite {
     reject(error: Error): void;
 }
 
-function createWriterFixture(): Readonly<{
+/** `timerLateMs` fires every armed checkpoint that much after its delay, as a busy or throttled page does. */
+function createWriterFixture(timerLateMs = 0): Readonly<{
     writer: ALCheckpointWriter;
     writes: readonly HeldWrite[];
     events: readonly ALStorageEvent[];
     change(key: string, value: string | undefined): Promise<void>;
 }> {
     const nowMs = () => Date.now();
+    const timers: ALCheckpointWriter.Timers = {
+        schedule: (run, delayMs) => {
+            const handle = setTimeout(run, delayMs + timerLateMs);
+            return () => clearTimeout(handle);
+        }
+    };
     const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs()));
     const memory = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(queue), nowMs);
     const writes: HeldWrite[] = [];
@@ -221,12 +267,19 @@ function createWriterFixture(): Readonly<{
         health: new ALStorageHealth({ storeId: STORE_ID, storage: (event) => events.push(event) }),
         settings: TEST_CHECKPOINT_SETTINGS,
         nowMs,
-        timers: GLOBAL_CHECKPOINT_TIMERS
+        newWriteToken: () => crypto.randomUUID(),
+        timers
     });
     const change = async (key: string, value: string | undefined): Promise<void> => {
         await memory.write(async (tx) => value === undefined ? await tx.remove(key) : await tx.set(key, value, ROW_EXPIRY_MS));
     };
     return { writer, writes, events, change };
+}
+
+function toHealthSummary(event: ALStorageEvent): Readonly<Record<string, unknown>> {
+    return event.kind === 'health'
+        ? { status: event.status, oldestUnsavedAgeMs: event.oldestUnsavedAgeMs, lastFailure: event.lastFailure }
+        : { kind: event.kind };
 }
 
 function toWrittenValues(write: HeldWrite): Readonly<Record<string, string>> {

@@ -49,6 +49,14 @@ export function toALStorageUnavailable(error: Error): ALStorageUnavailable | und
     return cause === undefined ? undefined : { cause, detail: `${error.name}: ${error.message}` };
 }
 
+/**
+ * For a store that states every failure, the checkpoint: a corrupt row, a conflict or a defect that
+ * `toALStorageUnavailable` leaves unmapped reads `transaction-failed` with the error's own message.
+ */
+export function toALStorageFailure(error: Error): ALStorageUnavailable {
+    return toALStorageUnavailable(error) ?? { cause: 'transaction-failed', detail: error.message };
+}
+
 function isDOMException(error: Error): error is DOMException {
     return typeof DOMException !== 'undefined' && error instanceof DOMException;
 }

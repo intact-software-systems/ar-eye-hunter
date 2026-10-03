@@ -697,18 +697,20 @@ a restored message has no handle. Receivers keep it in memory, as they keep
 - **No positions.** A send that states a `seq` is refused `unsupported`, since a
   restored copy could reuse a position the receiver already saw; the ordering
   key alone and latest-wins sends are admitted.
-- **Lag follows `onStorageUnavailable`.** While a checkpoint store's oldest
-  unsaved change is older than the interval target its `health` reads
-  `delayed`; beyond the recovery-lag bound (10 s) it reads `failing` with cause
-  `checkpoint-lag`, and new `local-checkpoint` sends follow the channel's
-  `onStorageUnavailable` (`failed` with `storage-unavailable`, or one volatile
-  send with a `durabilityDowngrade`) until a checkpoint completes. A browser
-  without IndexedDB refuses them with cause `missing`, as it refuses durable
-  sends.
+- **Lag follows `onStorageUnavailable`.** A checkpoint store's `health` reads
+  `delayed` once a checkpoint write failed or its oldest unsaved change is two
+  interval targets old (a throttled timer); beyond the recovery-lag bound (10 s)
+  it reads `failing` with cause `checkpoint-lag`. While a checkpoint store reads
+  `failing`, for that lag or any other cause, new `local-checkpoint` sends
+  follow the channel's `onStorageUnavailable` (`failed` with
+  `storage-unavailable`, or one volatile send with a `durabilityDowngrade`)
+  until a checkpoint completes. A browser without IndexedDB refuses them with
+  cause `missing`, as it refuses durable sends.
 
-The interval target and the recovery-lag bound are settings of the browser
-composition (`checkpointIntervalMs`, `checkpointLagBoundMs` on the store
-factory's input), 1,000 ms and 10,000 ms by default.
+The browser composition sets the interval target and the recovery-lag bound on
+the store factory's input (`checkpointIntervalMs`, `checkpointLagBoundMs`),
+1,000 ms and 10,000 ms by default
+(`AL_CHECKPOINT_DEFAULT_SETTINGS`); no app-facing option exposes them yet.
 
 Two tabs of one session share its durable stores, and one of them drains them:
 where the browser has the Locks API, the tab holding the session's
@@ -756,10 +758,10 @@ every `ALStorageEvent`:
   `healthy` at the first commit after it, with the failure as `lastFailure`; a
   database evicted under the document reads `failing` with cause `evicted`. A
   checkpoint store (`browser-ws-client-checkpoint:<sessionId>`,
-  `browser-rtc-overlay-checkpoint:<sessionId>`) also reads `delayed` while its
-  oldest unsaved change is older than the interval target, with that age as
-  `oldestUnsavedAgeMs`, and `failing` with cause `checkpoint-lag` beyond the
-  recovery-lag bound;
+  `browser-rtc-overlay-checkpoint:<sessionId>`) also reads `delayed` once a
+  checkpoint write failed or its oldest unsaved change is two interval targets
+  old, with that age as `oldestUnsavedAgeMs`, and `failing` with cause
+  `checkpoint-lag` beyond the recovery-lag bound;
 - `persist`: the outcome of the connect's one persistence request
   (`ALStoragePersistOutcome`).
 

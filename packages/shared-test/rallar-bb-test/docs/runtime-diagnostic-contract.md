@@ -506,16 +506,18 @@ are the sync points of a paired `agent.reload`.
   `lastFailure` is absent when the purge failed for a reason other than
   storage; the browser logs that error instead.
 
-  A checkpoint store states `delayed` once its oldest unsaved change is older
-  than the checkpoint interval (1 s by default) and `failing` with
+  A checkpoint store states `delayed` once a checkpoint write failed or its
+  oldest unsaved change is two checkpoint intervals old (2 s by default; a
+  timer a few milliseconds late states nothing) and `failing` with
   `lastFailure.cause: 'checkpoint-lag'` once it is older than the recovery-lag
   bound (10 s by default); a completed checkpoint reads `healthy` again. While
-  it is `failing`, a new `local-checkpoint` admission follows its channel's
-  `onStorageUnavailable`. `checkpoint-lag` holds the `quota` storage fault on
-  the sender's page, admits one send from memory, waits for its checkpoint
-  store's `delayed` and then `failing` with that cause, proves the next send
-  refused `storage-unavailable` with cause `checkpoint-lag`, releases the fault,
-  and waits for the store's `healthy`.
+  it is `failing`, for that lag or any other cause, a new `local-checkpoint`
+  admission follows its channel's `onStorageUnavailable`. `checkpoint-lag`
+  holds the `quota` storage fault on the sender's page, admits one send from
+  memory, waits for its checkpoint store's `delayed` and then `failing` with
+  that cause, proves the next send refused `storage-unavailable` with cause
+  `checkpoint-lag`, releases the fault, waits for the store's `healthy`, and
+  then proves the next send admitted and delivered.
 
 - `persist`: `outcome` (`granted`, `denied` or `unsupported`), once per connect
   after its first durable admission: `granted` when the origin already

@@ -85,6 +85,46 @@ describe('ALCheckpoint', () => {
         await vi.waitFor(async () => expect(await readSaved(dbName, clock)).toEqual({ row: 'two', work: '{"effectId":"changed"}' }));
     });
 
+    // A corrupt row is no storage failure, yet the lane must open: the runtime's readiness awaits every lane.
+    it('opens from memory when the saved rows cannot be decoded, and states the store failing with that error', async () => {
+        const dbName = newDbName();
+        const clock = { nowMs: START_MS };
+        const restoring = openCheckpoint({ dbName, clock, owned: true });
+        await restoring.writeRow('own');
+        restoring.storage.saved.readNamespaceRows = async () => {
+            throw new TypeError('Stored resource entry is malformed');
+        };
+
+        await restoring.checkpoint.restore();
+
+        expect(restoring.readRow()).toBe('own');
+        expect(await restoring.memory.workQueue.getItem(workKey('effect-1'))).toBeUndefined();
+        await vi.waitFor(() =>
+            expect(restoring.events).toEqual([
+                expect.objectContaining({
+                    kind: 'health',
+                    storeId: STORE_ID,
+                    status: 'failing',
+                    lastFailure: { cause: 'transaction-failed', detail: 'Stored resource entry is malformed' }
+                })
+            ])
+        );
+    });
+
+    // A disconnect disposes the checkpoint inside the interval; what the interval has not saved goes with it unless the dispose flushes.
+    it('flushes its unsaved rows when disposed before the interval', async () => {
+        const dbName = newDbName();
+        const clock = { nowMs: START_MS };
+        const saving = openCheckpoint({ dbName, clock, owned: true });
+        await saving.checkpoint.restore();
+        await saving.writeRow('one');
+
+        saving.checkpoint.dispose();
+
+        expect(saving.writes).toEqual([[`set ${ROW_KEY}`]]);
+        await vi.waitFor(async () => expect(await readSaved(dbName, clock)).toMatchObject({ row: 'one' }));
+    });
+
     it('loads only live rows, and counts the work rows past their expiry on its first batch', async () => {
         const dbName = newDbName();
         const clock = { nowMs: START_MS };
@@ -202,6 +242,7 @@ function openCheckpoint(input: { dbName: string; clock: { nowMs: number; }; owne
         },
         health: new ALStorageHealth({ storeId: STORE_ID, storage: (event) => events.push(event) }),
         settings: TEST_CHECKPOINT_SETTINGS,
+        newWriteToken: () => crypto.randomUUID(),
         timers: GLOBAL_CHECKPOINT_TIMERS
     };
     const ownership = createTakeableDurableWorkOwnership(input.owned);

@@ -347,6 +347,7 @@ function toALCheckpointStorage<TPrepared>(
         health: options.storageHealth ??
             new ALStorageHealth({ storeId: namespace, storage: createPassThroughALStorageEventSink() }),
         settings: { intervalMs: options.intervalMs, lagBoundMs: options.lagBoundMs },
+        newWriteToken: crypto.randomUUID.bind(crypto),
         timers: options.timers
     };
 }

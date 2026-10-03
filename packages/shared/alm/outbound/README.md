@@ -93,8 +93,9 @@ every server message keeps its one backend.
   browser planner states `lane` as `resolveALOutboundStoreDurability(effective.durability.algo)`: the
   message's effective durability alone. `local-outbox` and `local-inbox` name `durable` and go to
   IndexedDB; `volatile`, the default for every send that names none, goes to memory; `local-checkpoint`
-  names `checkpoint` and goes to the checkpoint lane, or to the volatile lane, `durable: false`, in a
-  runtime that holds no checkpoint lane; never to the durable lane. A
+  names `checkpoint` and goes to the checkpoint lane; a runtime without one sends it to its volatile
+  lane, `durable: false`, and a runtime with neither memory pair (the one-lane Node compositions, whose
+  server planner never produces a checkpoint plan) to its only lane, the durable one. A
   dropping plan names `volatile`. A captured policy row keeps only whether its copy outlives memory
   (`persist`), so a re-plan under it keeps its own lane when the two agree and reads `durable` or
   `volatile` when they do not. Reliability no longer implies durability: a default
@@ -174,11 +175,12 @@ holds). A `checkpoint` plan
   as expired. The first batch after the restore reports `restored` (or `expired-at-recovery`) under the
   checkpoint store's id. On takeover the restore runs when ownership turns true and wakes the lane. A
   store that cannot be read is stated on the checkpoint store's health, and the lane runs from memory.
-- **Lag.** The checkpoint store's health reads `delayed` past the interval (a failed write is retried an
-  interval later and is named on it) and `failing` with cause `checkpoint-lag` past the recovery-lag
-  bound; a completed checkpoint ends either. The lane keeps admitting from memory: the browser dispatch,
-  which reads the store's health, refuses or downgrades a new checkpointed send while it reads `failing`
-  with `checkpoint-lag`, as the channel's `onStorageUnavailable` says.
+- **Lag.** The checkpoint store's health reads `delayed` once a write failed (it is retried an interval
+  later and named on the state) or the oldest unsaved change is two intervals old, a throttled timer; a
+  timer a few milliseconds late states nothing. Past the recovery-lag bound it reads `failing` with cause
+  `checkpoint-lag`; a completed checkpoint ends either. The lane keeps admitting from memory: the browser
+  dispatch, which reads the store's health, refuses or downgrades a new checkpointed send while the store
+  reads `failing`, for the lag or any other cause, as the channel's `onStorageUnavailable` says.
 - **Flush.** `flushCheckpoint()` starts a checkpoint now, or right after the one in flight, and is never
   awaited: a write the page does not finish leaves the saved rows as they were.
 
