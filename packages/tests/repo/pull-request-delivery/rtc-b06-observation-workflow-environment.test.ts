@@ -100,7 +100,8 @@ describe('RTC-B06 observation workflow environment', () => {
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100',
-                RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR: null
+                RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR: null,
+                RALLAR_BLACK_BOX_STORAGE_DIR: null
             }
         ]);
     });
@@ -118,12 +119,20 @@ describe('RTC-B06 observation workflow environment', () => {
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                 RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
                 RTC_B06_FAKE_EXIT_STATUS: '23',
-                RTC_DIAGNOSTIC_OUTPUT: outputDirectory
+                RTC_DIAGNOSTIC_OUTPUT: outputDirectory,
+                RUNNER_TEMP: fixtureRoot
             }
         });
 
         expect(result.status).toBe(23);
-        expect(readEnvironmentRecords(fixtureRoot)).toEqual([
+        const records = readEnvironmentRecords(fixtureRoot);
+        const storageDirectories = records.map((record) => record.RALLAR_BLACK_BOX_STORAGE_DIR);
+        expect(new Set(storageDirectories).size).toBe(3);
+        for (const directory of storageDirectories) {
+            expect(directory?.startsWith(path.join(fixtureRoot, 'rtc-b06-recorder-'))).toBe(true);
+            expect(directory?.startsWith(outputDirectory + path.sep)).toBe(false);
+        }
+        expect(records.map(({ RALLAR_BLACK_BOX_STORAGE_DIR, ...environment }) => environment)).toEqual([
             {
                 DATABASE_URL: null,
                 RALLAR_ICE_MODE: null,
@@ -202,7 +211,8 @@ const names = [
     'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS',
     'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK',
     'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES',
-    'RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR'
+    'RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR',
+    'RALLAR_BLACK_BOX_STORAGE_DIR'
 ];
 appendFileSync(
     process.env.RTC_B06_ENVIRONMENT_RECORD,

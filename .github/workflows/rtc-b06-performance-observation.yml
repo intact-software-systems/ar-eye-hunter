@@ -157,11 +157,13 @@ jobs:
           diagnostic_status=0
 
           mkdir -p "$RTC_DIAGNOSTIC_OUTPUT/default"
+          recorder_storage=$(mktemp -d "$RUNNER_TEMP/rtc-b06-recorder-default-XXXXXX")
           if env -u DATABASE_URL \
             -u RALLAR_ICE_MODE \
             -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
+            RALLAR_BLACK_BOX_STORAGE_DIR="$recorder_storage" \
             RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/default/failure-diagnostics" \
             npm run test:rallar:full-stack:memory:live-rtc-3 -- \
             --retries=0 \
@@ -173,11 +175,13 @@ jobs:
           fi
 
           mkdir -p "$RTC_DIAGNOSTIC_OUTPUT/all-scenarios"
+          recorder_storage=$(mktemp -d "$RUNNER_TEMP/rtc-b06-recorder-all-scenarios-XXXXXX")
           if env -u DATABASE_URL \
             -u RALLAR_ICE_MODE \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 \
+            RALLAR_BLACK_BOX_STORAGE_DIR="$recorder_storage" \
             RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/all-scenarios/failure-diagnostics" \
             npm run test:rallar:full-stack:memory:live-rtc-3 -- \
             --retries=0 \
@@ -192,11 +196,13 @@ jobs:
           fi
 
           mkdir -p "$RTC_DIAGNOSTIC_OUTPUT/retention-100"
+          recorder_storage=$(mktemp -d "$RUNNER_TEMP/rtc-b06-recorder-retention-100-XXXXXX")
           if env -u DATABASE_URL \
             -u RALLAR_ICE_MODE \
             -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 \
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
+            RALLAR_BLACK_BOX_STORAGE_DIR="$recorder_storage" \
             RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/retention-100/failure-diagnostics" \
             npm run test:rallar:full-stack:memory:live-rtc-3 -- \
             --retries=0 \

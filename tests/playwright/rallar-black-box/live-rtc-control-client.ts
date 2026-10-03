@@ -6,9 +6,12 @@ import {
     type TestInfo
 } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { get as readHttp, type ClientRequest, type IncomingMessage } from 'node:http';
+import { get as readHttps } from 'node:https';
 import { resolve } from 'node:path';
 
 import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
@@ -17,7 +20,10 @@ import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/ra
 
 import {
     buildLiveRtcAgentDiagnostics,
-    type LiveRtcAgentDiagnostics
+    LIVE_RTC_LIFECYCLE_LIMITS,
+    toLiveRtcLifecycleHistory,
+    type LiveRtcAgentDiagnostics,
+    type LiveRtcLifecycleFailureInterval
 } from './live-rtc-agent-diagnostics.ts';
 import {
     jsonRecord,
@@ -49,6 +55,31 @@ import type {
     LiveRtcSendResultSummary
 } from './live-rtc-performance-evidence.ts';
 import { summarizeLiveRtcNackWireObservation } from './live-rtc-wire-observation.ts';
+
+interface FirstMessageFailureCase {
+    readonly senderAgentId: string;
+    readonly transport: 'realtime' | 'messages.rtc';
+    readonly matrixId: string;
+    readonly deliveryMode: string;
+    readonly possibleReceiverAgentIds: readonly string[];
+}
+
+interface ToMessageFailureDiagnosticInput {
+    readonly waitForMessage: LiveRtcControlClient.WaitForMessageInput;
+    readonly healthByAgentId: Readonly<Record<string, LiveRtcMessageFailureAgentHealth>>;
+    readonly runCapture: LiveRtcControlClient.RunCapture;
+    readonly capturedAtEpochMs: number;
+}
+
+const MESSAGE_DELIVERY_FAILURE: LiveRtcDiagnosticFailure = {
+    name: 'message-delivery-failed',
+    message: 'RTC message delivery observation failed.'
+};
+
+const HEALTH_CAPTURE_FAILURE: LiveRtcDiagnosticFailure = {
+    name: 'health-capture-failed',
+    message: 'RTC health diagnostic capture failed.'
+};
 
 export namespace LiveRtcControlClient {
     export interface FormationAgent {
@@ -188,6 +219,7 @@ export namespace LiveRtcControlClient {
         agents: readonly Pick<FormationAgent, 'agentId' | 'prefix'>[];
         label: string;
         cycle: number | null;
+        readonly failureInterval?: LiveRtcLifecycleFailureInterval;
     }
 
     export interface CapturedDiagnostics {
@@ -202,31 +234,6 @@ export namespace LiveRtcControlClient {
         readonly timeoutMs: number;
     }
 }
-
-interface FirstMessageFailureCase {
-    readonly senderAgentId: string;
-    readonly transport: 'realtime' | 'messages.rtc';
-    readonly matrixId: string;
-    readonly deliveryMode: string;
-    readonly possibleReceiverAgentIds: readonly string[];
-}
-
-interface ToMessageFailureDiagnosticInput {
-    readonly waitForMessage: LiveRtcControlClient.WaitForMessageInput;
-    readonly healthByAgentId: Readonly<Record<string, LiveRtcMessageFailureAgentHealth>>;
-    readonly runCapture: LiveRtcControlClient.RunCapture;
-    readonly capturedAtEpochMs: number;
-}
-
-const MESSAGE_DELIVERY_FAILURE: LiveRtcDiagnosticFailure = {
-    name: 'message-delivery-failed',
-    message: 'RTC message delivery observation failed.'
-};
-
-const HEALTH_CAPTURE_FAILURE: LiveRtcDiagnosticFailure = {
-    name: 'health-capture-failed',
-    message: 'RTC health diagnostic capture failed.'
-};
 
 export class LiveRtcControlClient {
     readonly #request: APIRequestContext;
@@ -342,7 +349,7 @@ export class LiveRtcControlClient {
 
     runtimeTopics(run: LiveRtcControlClient.RunSnapshot): readonly string[] {
         return run.events
-            .map((event) => stringValue(runtimeEventPayload(event).topic))
+            .map((event) => stringValue(jsonRecord(event.payload)?.topic))
             .filter((topic): topic is string => Boolean(topic));
     }
 
@@ -723,7 +730,10 @@ export class LiveRtcControlClient {
         if (input.agents.length !== 3 || new Set(input.agents.map((agent) => agent.agentId)).size !== 3) {
             throw new Error('RTC diagnostics require three distinct agents.');
         }
-        const captured = await this.#readDiagnostics(input);
+        const health = await this.#readDiagnostics(input);
+        const captured = input.failureInterval
+            ? await this.#readFailureLifecycleHistory(input, health)
+            : health;
         const body = JSON.stringify(
             {
                 runId: input.runId,
@@ -774,6 +784,42 @@ export class LiveRtcControlClient {
             agents
         };
         return { commandIds, checkpoint };
+    }
+
+    async #readFailureLifecycleHistory(
+        input: LiveRtcControlClient.CaptureDiagnosticsInput,
+        health: LiveRtcControlClient.CapturedDiagnostics
+    ): Promise<LiveRtcControlClient.CapturedDiagnostics> {
+        if (!input.failureInterval) {
+            return health;
+        }
+        const read = await readLiveRtcRecorderJsonl(
+            `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}/events.jsonl`
+        );
+        const recorder = read.right;
+        const historyByAgentId = toLiveRtcLifecycleHistory({
+            jsonl: recorder?.jsonl ?? null,
+            bytesRead: recorder?.bytesRead ?? 0,
+            retainedBytes: recorder?.retainedBytes ?? 0,
+            retainedPrefixDropped: recorder?.retainedPrefixDropped ?? false,
+            transportTruncated: recorder?.transportTruncated ?? false,
+            failureInterval: input.failureInterval,
+            cycle: input.cycle,
+            agentIds: input.agents.map((agent) => agent.agentId)
+        });
+        return {
+            ...health,
+            checkpoint: {
+                ...health.checkpoint,
+                agents: health.checkpoint.agents.map((agent) => ({
+                    ...agent,
+                    details: normalizeJson({
+                        ...requiredJsonRecord(agent.details, 'RTC diagnostic details'),
+                        lifecycleHistory: historyByAgentId[agent.agentId]
+                    })
+                }))
+            }
+        };
     }
 
     async #readAgentDiagnostics(
@@ -982,19 +1028,10 @@ function decodeControlRunSnapshot(
     return { agents, results, events };
 }
 
-function runtimeEventPayload(
-    event: LiveRtcControlClient.Event
-): LiveRtcJsonRecord {
-    const payload = jsonRecord(event.payload) ?? {};
-    return typeof payload.kind === 'string'
-        ? payload
-        : (jsonRecord(payload.payload) ?? payload);
-}
-
 function messageData(event: LiveRtcControlClient.Event): LiveRtcJsonRecord {
-    const runtimeEvent = runtimeEventPayload(event);
-    const runtimePayload = jsonRecord(runtimeEvent.payload) ?? {};
-    return jsonRecord(runtimePayload.data ?? runtimeEvent.data) ?? {};
+    const runtimeEvent = jsonRecord(event.payload);
+    const runtimePayload = jsonRecord(runtimeEvent?.payload);
+    return jsonRecord(runtimePayload?.data) ?? {};
 }
 
 function summarizeLiveRtcFailureAgentHealth(
@@ -1095,7 +1132,7 @@ function classifyNackEvent(
     event: LiveRtcControlClient.Event,
     input: LiveRtcControlClient.CaptureNackFailureInput
 ): LiveRtcNackEventClassification {
-    const runtimeEvent = runtimeEventPayload(event);
+    const runtimeEvent = jsonRecord(event.payload) ?? {};
     const data = messageData(event);
     return {
         agentRole: classifyNackAgentRole(event.agentId, input),
@@ -1163,7 +1200,7 @@ function classifyNackDeliveryMode(
 function summarizeMessageFailureEvent(
     event: LiveRtcControlClient.Event
 ): LiveRtcMessageFailureEventSummary {
-    const runtimeEvent = runtimeEventPayload(event);
+    const runtimeEvent = jsonRecord(event.payload) ?? {};
     const data = messageData(event);
     return {
         agentId: event.agentId ?? null,
@@ -1298,7 +1335,7 @@ function isMessageFor(
     event: LiveRtcControlClient.Event,
     input: LiveRtcControlClient.WaitForMessageInput
 ): boolean {
-    const runtimeEvent = runtimeEventPayload(event);
+    const runtimeEvent = jsonRecord(event.payload) ?? {};
     const data = messageData(event);
     return (
         event.agentId === input.agentId &&
@@ -1311,4 +1348,89 @@ function isMessageFor(
 
 function safeFileName(value: string): string {
     return value.replace(/[^a-zA-Z0-9_.-]+/g, '-');
+}
+
+interface LiveRtcRecorderRead {
+    readonly jsonl: string;
+    readonly bytesRead: number;
+    readonly retainedBytes: number;
+    readonly retainedPrefixDropped: boolean;
+    readonly transportTruncated: boolean;
+}
+
+interface LiveRtcRecorderFailure {
+    readonly code: 'unsupported-endpoint' | 'http-unavailable' | 'runtime-read-failed';
+    readonly cause: Error | null;
+}
+
+async function readLiveRtcRecorderJsonl(url: string): Promise<Either<LiveRtcRecorderFailure, LiveRtcRecorderRead>> {
+    let response: IncomingMessage | undefined;
+    let request: ClientRequest | undefined;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+        const endpoint = new URL(url);
+        if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password) {
+            return Either.ofLeft({ code: 'unsupported-endpoint', cause: null });
+        }
+        request = (endpoint.protocol === 'https:' ? readHttps : readHttp)(endpoint);
+        deadline = setTimeout(() => {
+            response?.destroy(new Error('RTC recorder deadline reached.'));
+            request?.destroy(new Error('RTC recorder deadline reached.'));
+        }, LIVE_RTC_LIFECYCLE_LIMITS.transportTimeoutMs);
+        const pending = request;
+        response = await new Promise<IncomingMessage>((resolve, reject) => {
+            pending.once('response', resolve);
+            pending.once('error', reject);
+        });
+        if (response.statusCode !== 200) {
+            return Either.ofLeft({ code: 'http-unavailable', cause: null });
+        }
+        return Either.ofRight(await readLiveRtcRecorderBody(response));
+    }
+    catch (cause) {
+        return Either.ofLeft({ code: 'runtime-read-failed', cause: toError(cause) });
+    }
+    finally {
+        clearTimeout(deadline);
+        response?.destroy();
+        request?.destroy();
+    }
+}
+
+async function readLiveRtcRecorderBody(response: IncomingMessage): Promise<LiveRtcRecorderRead> {
+    const chunks: Buffer[] = [];
+    let bytesRead = 0;
+    let retainedBytes = 0;
+    let retainedPrefixDropped = false;
+    let transportTruncated = false;
+    for await (const chunk of response) {
+        const bytes = Buffer.from(chunk);
+        const remaining = LIVE_RTC_LIFECYCLE_LIMITS.transportBytes - bytesRead;
+        chunks.push(bytes.subarray(0, remaining));
+        bytesRead += Math.min(bytes.length, remaining);
+        retainedBytes += Math.min(bytes.length, remaining);
+        while (retainedBytes > LIVE_RTC_LIFECYCLE_LIMITS.inputBytes) {
+            const oldest = chunks[0];
+            const discarded = Math.min(oldest.length, retainedBytes - LIVE_RTC_LIFECYCLE_LIMITS.inputBytes);
+            if (discarded === oldest.length) {
+                chunks.shift();
+            }
+            else {
+                chunks[0] = oldest.subarray(discarded);
+            }
+            retainedBytes -= discarded;
+            retainedPrefixDropped = true;
+        }
+        if (bytes.length > remaining) {
+            transportTruncated = true;
+            break;
+        }
+    }
+    return {
+        jsonl: Buffer.concat(chunks).toString('utf8'),
+        bytesRead,
+        retainedBytes,
+        retainedPrefixDropped,
+        transportTruncated
+    };
 }

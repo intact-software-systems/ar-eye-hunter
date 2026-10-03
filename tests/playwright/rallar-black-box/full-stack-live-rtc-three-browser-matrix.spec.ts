@@ -1,5 +1,6 @@
 import { expect, test, type TestInfo } from '@playwright/test';
 import { toError } from '@shared/resilience/to-error.ts';
+import type { LiveRtcLifecycleFailureInterval } from './live-rtc-agent-diagnostics.ts';
 import {
     agentAuth,
     apiBaseUrl,
@@ -149,6 +150,7 @@ interface FinalizeLiveRtcAttemptInput extends WriteAttemptEvidenceInput {
     readonly agents: readonly LiveRtcControlClient.Agent[];
     readonly suffix: string;
     readonly failureCycle: number | null;
+    readonly failureInterval: LiveRtcLifecycleFailureInterval | undefined;
 }
 
 async function finalizeLiveRtcAttempt(
@@ -194,7 +196,8 @@ async function captureLiveRtcAttemptFailureHealth(
             runId: input.runId,
             agents: input.agents,
             label,
-            cycle: input.failureCycle
+            cycle: input.failureCycle,
+            failureInterval: input.failureInterval
         });
         return [...input.diagnostics, captured.checkpoint];
     }
@@ -349,6 +352,8 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
         const scenarios: LiveRtcControlClient.DeliveryScenario[] = [];
         let producerExitStatus = 0;
+        const attemptStartedAtEpochMs = Date.now();
+        let failureInterval: LiveRtcLifecycleFailureInterval | undefined;
         let matrixPassed = false;
         let artifactBundlePassed = false;
         let unexpectedDeliveryCount = 0;
@@ -515,6 +520,12 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             matrixPassed = true;
         }
         catch (error) {
+            failureInterval = {
+                caseId: 'default',
+                startedAtEpochMs: attemptStartedAtEpochMs,
+                failedAtEpochMs: Date.now(),
+                precision: 'attempt-phase-unspecified'
+            };
             producerExitStatus = 1;
             if (error instanceof LiveRtcNackProbeFailure) {
                 failureDiagnostics.push(error.diagnostic);
@@ -529,6 +540,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 agents: openHandles,
                 suffix,
                 failureCycle: null,
+                failureInterval,
                 context: evidenceContext,
                 producerExitStatus,
                 timings,
@@ -582,6 +594,8 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
         let producerExitStatus = 0;
+        const attemptStartedAtEpochMs = Date.now();
+        let failureInterval: LiveRtcLifecycleFailureInterval | undefined;
         let matrixPassed = false;
         let artifactBundlePassed = false;
         let reconnectPassed = false;
@@ -820,6 +834,12 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             matrixPassed = true;
         }
         catch (error) {
+            failureInterval = {
+                caseId: 'all-scenarios',
+                startedAtEpochMs: attemptStartedAtEpochMs,
+                failedAtEpochMs: Date.now(),
+                precision: 'attempt-phase-unspecified'
+            };
             producerExitStatus = 1;
             if (error instanceof LiveRtcNackProbeFailure) {
                 failureDiagnostics.push(error.diagnostic);
@@ -834,6 +854,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 agents: openHandles,
                 suffix,
                 failureCycle: null,
+                failureInterval,
                 context: evidenceContext,
                 producerExitStatus,
                 timings,
@@ -885,8 +906,11 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
         const checkpoints: LiveRtcRetentionCheckpoint[] = [];
         let currentRetentionCycle = 0;
+        let currentCycleStartedAtEpochMs = Date.now();
         const openHandles: LiveRtcControlClient.Agent[] = [];
         let producerExitStatus = 0;
+        const attemptStartedAtEpochMs = Date.now();
+        let failureInterval: LiveRtcLifecycleFailureInterval | undefined;
         let matrixPassed = false;
         let artifactBundlePassed = false;
         let reconnectPassed = false;
@@ -976,6 +1000,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             let currentSessionId = initialFormation.sessions.C;
             for (let cycle = 1; cycle <= 100; cycle += 1) {
                 currentRetentionCycle = cycle;
+                currentCycleStartedAtEpochMs = Date.now();
                 const closeCommandId = `retention-close-c-${cycle}-${suffix}`;
                 await runRetentionPhase(
                     `retention-100 cycle ${cycle}: close peer C`,
@@ -1063,6 +1088,12 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             );
         }
         catch (error) {
+            failureInterval = {
+                caseId: 'retention-100',
+                startedAtEpochMs: currentRetentionCycle === 0 ? attemptStartedAtEpochMs : currentCycleStartedAtEpochMs,
+                failedAtEpochMs: Date.now(),
+                precision: currentRetentionCycle === 0 ? 'initial-attempt' : 'current-cycle-before-close'
+            };
             producerExitStatus = 1;
             if (error instanceof LiveRtcNackProbeFailure) {
                 failureDiagnostics.push(error.diagnostic);
@@ -1080,6 +1111,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         agents: openHandles,
                         suffix,
                         failureCycle: currentRetentionCycle,
+                        failureInterval,
                         context: evidenceContext,
                         producerExitStatus,
                         timings,
