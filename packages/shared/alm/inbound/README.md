@@ -446,14 +446,28 @@ surface therefore never throws `ALAdmissionBackendConflictError`, so the admissi
 the outbound control admission of an ACK included — reaches its own commit and its own typed
 conflict.
 
-What makes that commit conditional: the backend records, for every key the write phase read or
-wrote, the revision and write token it observed there (or that the key was absent), and for every
-prefix it listed, the exact key set that listing returned. Before the transaction commits it
-re-reads exactly those rows and prefixes and rolls back as a typed conflict only when one of them
-moved; an admission, send, or ACK against a different message's rows and a different listed range
-touches none of that and commits alongside it. The three backends are conflict-equivalent under
-this fence: the in-memory backend serializes writers on its own write-tail promise, and IndexedDB
-and PostgreSQL both compare per row instead.
+What makes that commit conditional differs by backend. On memory and IndexedDB every key the
+write phase read or wrote is compared: the in-memory backend serializes writers on its own
+write-tail promise, so what the write phase reads is what its commit sees; IndexedDB records, for
+every key the write phase read or wrote, the revision and write token it observed there (or that
+the key was absent), and for every prefix it listed, the exact key set that listing returned, then
+re-reads exactly those rows and prefixes before the transaction commits and rolls back as a typed
+conflict only when one of them moved. PostgreSQL guards the keys a write touched and not the keys it
+only read: `PSqlAdmissionMutationCollector` emits one insert-if-absent, replace-if-revision or
+delete-if-revision guard per written key, while the store-level re-read of the observed surface
+runs before the transaction opens and fences nothing by itself. The arbitration rests on what the
+three share: every key the two writers of the stale-read then sequential-commit schedule arbitrate
+on — the dedup key, the supersedence latest, the ordering track, the message owner, and on the
+outbound side the supersedence latest and the sender version — is one both writers write, so the
+written-key guard decides the schedule alike on all three. The schedule module
+[`al-shared-key-arbitration.test.ts`](../../../tests/shared/alm/al-shared-key-arbitration.test.ts)
+is the proof: it runs that schedule over memory, IndexedDB and pglite for both stores and names,
+per case, the written key whose guard decides it — the dedup key, the supersedence latest, the
+ordering track, the outbound supersedence latest and the outbound sender version; the same-message
+case of
+[`inbound-supersedence-concurrency.test.ts`](../../../tests/shared/alm/inbound-supersedence-concurrency.test.ts)
+covers the message owner on the same three backends. An admission, send, or ACK against a different
+message's rows and a different listed range touches none of that and commits alongside it.
 
 Every stored key is `topicId/resourceId/contextId`, and inbound work is
 `AL_INBOUND/<namespace>/<effectId>` so one session's rows are a bounded key range.
