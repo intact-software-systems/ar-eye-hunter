@@ -1,4 +1,5 @@
 import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundPlanner,
@@ -41,7 +42,11 @@ export namespace ALOutboundRepairRetransmission {
     }
 }
 
-/** Turns a repair hint into a new dispatch admission; the retry schedule that emitted the hint is elsewhere. */
+/**
+ * Turns a repair hint into a new dispatch admission; the retry schedule that emitted the hint is elsewhere.
+ * Without a repair planner a room-scoped message is retried along the sender's own hop only, so a retry
+ * never widens a room audience.
+ */
 export class ALOutboundRepairRetransmission<TPrepared> {
     private readonly dependencies: ALOutboundRepairRetransmission.Dependencies<TPrepared>;
 
@@ -157,21 +162,22 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         const msg = read.sentSnapshot?.msg;
         const plan = read.plan;
         const repair = plan?.repairTracking;
-        if (!msg || !plan || !repair || (!this.dependencies.planRepairMessage && isRoomScopedALMessage(msg))) {
+        if (!msg || !plan || !repair) {
             return undefined;
         }
-        return this.dependencies.planRepairMessage
-            ? await this.dependencies.planRepairMessage(msg, {
-                ...request,
-                completedHopPeerIds: [],
-                repair,
-                recipientScope: plan.recipientScope,
-                principalTargetId: plan.principalTargetId,
-                sessionInvalidation: plan.sessionInvalidation,
-                admittedAudience: plan.admittedAudience,
-                referenceKey: read.storedMessage?.reference.key
-            })
-            : plan;
+        if (!this.dependencies.planRepairMessage) {
+            return isRoomScopedALMessage(msg) && !isOwnHopRetry(plan, read.pendingAck) ? undefined : plan;
+        }
+        return await this.dependencies.planRepairMessage(msg, {
+            ...request,
+            completedHopPeerIds: [],
+            repair,
+            recipientScope: plan.recipientScope,
+            principalTargetId: plan.principalTargetId,
+            sessionInvalidation: plan.sessionInvalidation,
+            admittedAudience: plan.admittedAudience,
+            referenceKey: read.storedMessage?.reference.key
+        });
     }
 
     private async retryMissingAcknowledgements(
@@ -185,7 +191,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         if (!pending || !msg || !plan || isALOutboundReceiptComplete(pending) || pending.maxAttempts <= 0) {
             return;
         }
-        if (!this.dependencies.planRepairMessage && isRoomScopedALMessage(msg)) {
+        if (!this.dependencies.planRepairMessage && isRoomScopedALMessage(msg) && !isOwnHopRetry(plan, pending)) {
             return;
         }
         const retryPlan = this.dependencies.planRepairMessage
@@ -196,7 +202,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 sessionInvalidation: plan.sessionInvalidation,
                 admittedAudience: plan.admittedAudience,
                 referenceKey: read.storedMessage?.reference.key,
-                failedPeerIds: pending.expectedPeerIds.filter((peerId) => !pending.ackedPeerIds.includes(peerId)),
+                failedPeerIds: toFailedPeerIds(pending),
                 completedHopPeerIds: toALOutboundCompletedHopPeerIds(read.acks),
                 repair: { enabled: true, algo: 'retransmit', maxAttempts: pending.maxAttempts }
             })
@@ -229,4 +235,25 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             }
         });
     }
+}
+
+/**
+ * Whether the retry replays the sender's own hop: every peer still owed is one of the next hops the captured
+ * plan sends through. Such a retry resends the same prepared frame to the same hop, which re-checks room
+ * authority at ingress and deduplicates the repeat, so it cannot widen a room audience.
+ */
+function isOwnHopRetry<TPrepared>(
+    plan: ALOutboundDispatchPlan<TPrepared>,
+    pending: ALOutboundPendingAckSnapshot | undefined
+): boolean {
+    if (pending === undefined) {
+        return false;
+    }
+    const nextHopPeerIds = plan.ackTracking?.nextHopPeerIds ?? [];
+    const failedPeerIds = toFailedPeerIds(pending);
+    return failedPeerIds.length > 0 && failedPeerIds.every((peerId) => nextHopPeerIds.includes(peerId));
+}
+
+function toFailedPeerIds(pending: ALOutboundPendingAckSnapshot): readonly string[] {
+    return pending.expectedPeerIds.filter((peerId) => !pending.ackedPeerIds.includes(peerId));
 }

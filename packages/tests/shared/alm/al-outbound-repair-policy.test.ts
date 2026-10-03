@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import { newALBroadcastMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundRepairTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
@@ -59,5 +60,50 @@ describe('AL outbound repair policy', () => {
         );
 
         expect(sent).toEqual([{ kind: 'send', msgId: message.id.msgId }]);
+    });
+
+    it('sends nothing for a room gap repair without a planner when the failed peers are not the next hops', async () => {
+        const sent: OutboundTestPayload[] = [];
+        const roomSend = newALBroadcastMessage(
+            'self',
+            { topicId: 'room.chat', resourceId: 'repair-policy-room', contextId: 'room-1' },
+            'room',
+            'chat.message.v1',
+            { text: 'room' },
+            { groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' }, ttlMs: 30_000 }
+        );
+        const runtime = createDefaultOutboundTestRuntime({
+            planOutgoingMessage: (msg) => ({
+                msg: msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                ackTracking: {
+                    enabled: true,
+                    timeoutMs: 60_000,
+                    maxAttempts: 1,
+                    expectedPeerIds: ['peer-1', 'peer-2'],
+                    nextHopPeerIds: [],
+                    mode: 'receiver'
+                },
+                repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 3 }
+            }),
+            sendPreparedMessage: async (prepared) => {
+                sent.push(prepared);
+
+                return { status: 'sent' as const, submissionAttempted: true };
+            }
+        });
+        await enqueueOutboundOrThrow(runtime, roomSend);
+
+        await runtime.acceptControlMessage(
+            newALNackControlMessage(
+                { v: 2, msgId: 'room-gap-control', senderId: 'peer-1', ts: 1 },
+                { msgId: roomSend.id.msgId, fromPeerId: 'peer-1', toPeerId: 'self', reason: 'gap', observedAtEpochMs: 1 }
+            ),
+            'peer'
+        );
+
+        expect(sent).toEqual([{ kind: 'send', msgId: roomSend.id.msgId }]);
     });
 });
