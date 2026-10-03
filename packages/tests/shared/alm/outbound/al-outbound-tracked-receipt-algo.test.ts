@@ -31,7 +31,7 @@ async function computeTrackedReceiptAlgo(
         planner: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: false,
+            lane: 'volatile',
             preparedMessages: [{ message: 'frame' }],
             ackTracking
         }),

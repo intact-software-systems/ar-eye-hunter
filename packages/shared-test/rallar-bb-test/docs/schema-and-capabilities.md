@@ -154,7 +154,7 @@ that refusal fails the step.
 and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`,
 `reliability`, `ack`, `durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
 `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason? }`.
-`durability` (`volatile`, `local-outbox`, `local-inbox`) declares the typed
+`durability` (`volatile`, `local-checkpoint`, `local-outbox`, `local-inbox`) declares the typed
 channel's durability; absent, the send is volatile. `onStorageUnavailable`
 (`refuse`, `volatile`) is the channel's choice when its storage cannot hold a
 durable send: `refuse` fails the send with `failure.kind: 'storage-unavailable'`,
@@ -387,7 +387,9 @@ peer, as the sender's and the receiver's do, since both pages are one session an
 server keeps one WebSocket per auth session and a second upgrade closes the first with `connection-replaced`, after
 which the first page reconnects and replaces the second. The lane therefore starts the receiver, runs the sender's
 recipe, closes the sender's page from Playwright, and only then runs the successor's recipe, whose prologue waits out
-the owner page's last work lease before its connect; no control command closes a page. No `reset` runs on a successor
+the owner page's last work lease before its connect; no control command closes a page. For `flush-on-hide` the lane
+ends the sender's page instead by firing its `freeze` event, waiting 250 ms and crashing it over CDP (`Page.crash`), so
+no `pagehide` listener and no later timer of that page runs. No `reset` runs on a successor
 page, since it would clear the storage both pages share. Each scenario opens its own successor, which owns the session
 for the next one. The Hetzner entries select their scenarios by lane family (`two-agent` and `addressed` for manifest
 18, `three-agent` for manifest 22), so neither carries this family: a hosted agent has no second page in its context.
@@ -547,6 +549,23 @@ lifetime, then proves for an absence window that no second copy arrives. A takeo
 stands, recovered by a later batch at the lease end plus at most 19.1 s, is not run by the lane: that path claims in a
 batch that reports nothing, and the server keeps one socket per auth session, so the successor cannot connect before
 the owner's page is gone.
+
+`checkpoint-recovery` runs over every carrier as a paired reload, like `delivery-reload`. The sender holds its carrier,
+resets the storage counters, sends one `local-checkpoint` original with `ack: 'receiver'` and the same lifetime as the
+takeover's, proves it admitted, enqueued, retained and unsubmitted, waits out the checkpoint interval (1 s) and a
+margin, and asserts the counters' `byKind.write` above 0: the send path writes nothing, so that write is the
+interval's checkpoint. It then reloads; the reload's own `pagehide` flush is best effort and not what the cell proves.
+The reloaded page waits out one lease (the checkpoint holds the row reserved), reconnects with the restored session,
+reads the old handle `unobservable` and the checkpoint store of the held original `restored` with `claimed` above 0.
+The receiver proves the original absent before the reload, receives it once after, and proves no second copy.
+`checkpoint-lag` is described with the storage diagnostics. `flush-on-hide` runs over `ws` and `rtc` in the
+same-context family: the owner page holds its carrier, sends one `local-checkpoint` original and ends its recipe at
+once, inside the interval; the lane fires the page's `freeze` event and crashes it, and the successor restores the
+checkpoint store with `claimed` above 0. A headless page is never hidden and CDP `Page.setWebLifecycleState` freezes no
+visible page, so the cell drives the event the flush listens for, not a frozen page; that the write is the flush's and
+not the interval's rests on the lane ending the page inside the interval. Over `rtc-with-ws-fallback` a held original
+moves to the WS lane at no known moment, so the cell does not run there. All three are `full` only and withheld from
+the hosted manifests, so manifests 18 and 22 are unchanged.
 
 `agent.reload` asks the control agent to reload its page and resume the run. The
 agent records the run id, its agent id and the command ids it already completed

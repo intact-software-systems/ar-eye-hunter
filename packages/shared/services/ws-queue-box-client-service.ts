@@ -26,6 +26,7 @@ import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundCancelOutcome } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type {
+    ALCheckpointOutboundRuntimeStores,
     ALOutboundRuntimeDiagnosticsSink,
     ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
@@ -131,6 +132,8 @@ export namespace WsQueueBoxClientService {
         readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
         readonly outboundStores?: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
         readonly outboundVolatileStores?: ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage>;
+        /** The memory pair a `local-checkpoint` admission goes to; absent, this client has no checkpoint lane. */
+        readonly outboundCheckpointStores?: ALCheckpointOutboundRuntimeStores<ALOutboundTransportMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
         readonly outboundSettlements?: ALDeliverySettlementSink;
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
@@ -618,6 +621,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
             canonicalQueue: input.outbox,
             stores: input.outboundStores,
             volatileStores: input.outboundVolatileStores,
+            checkpointStores: input.outboundCheckpointStores,
             queueEngine: input.queueEngine,
             durableWorkOwnership: input.durableWorkOwnership
         }),

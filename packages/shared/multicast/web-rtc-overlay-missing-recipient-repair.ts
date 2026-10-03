@@ -96,7 +96,7 @@ export function toRtcRetriedCopyRetransmission(
         ? {
             dropReason: `No RTC forwarding route for the retried copy of ${copy.msg.id.msgId}`,
             dropReasonCode: 'no-route',
-            persist: false,
+            lane: 'volatile',
             msg: copy.msg,
             preparedMessages: []
         }

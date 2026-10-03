@@ -5,7 +5,7 @@ import {
     type ALFrozenMulticastAudience
 } from '../al-contracts/al-frozen-multicast-audience.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
-import { shouldPersistOutbox, type ALQosEffectivePolicy } from '../al-contracts/al-policy.ts';
+import { resolveALOutboundStoreDurability, type ALQosEffectivePolicy } from '../al-contracts/al-policy.ts';
 import type { ALOutboundDispatchPlan } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '../alm/outbound/al-outbound-transport-message.ts';
 import { Either } from '../resilience/Either.ts';
@@ -73,7 +73,7 @@ export function computeRtcFrozenAudienceRefusal(
             dropReason:
                 `RTC room multicast audience of ${recipientCount} recipients exceeds the RTC room limit of ${limit}`,
             dropReasonCode: 'unsupported',
-            persist: false,
+            lane: 'volatile',
             preparedMessages: []
         });
 }
@@ -126,7 +126,7 @@ export function toRtcEmptyAudienceDispatchPlan(
     }
     return {
         dropReasonCode: undefined,
-        persist: shouldPersistOutbox(effective),
+        lane: resolveALOutboundStoreDurability(effective.durability.algo),
         msg: plan.msg,
         preparedMessages: [],
         ackTracking: toRtcAckTrackingPlan(effective, [])

@@ -3,10 +3,15 @@ import {
     BrowserALSessionChannel,
     openBrowserALSessionChannelPort
 } from '@shared-web/browser/al-runtime/browser-al-session-channel.ts';
+import {
+    BrowserPageLifecycleFlush,
+    readBrowserPageLifecycle
+} from '@shared-web/browser/al-runtime/browser-page-lifecycle-flush.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import {
     initialiseMiddleware,
+    type BrowserConnectedMiddleware,
     type BrowserConnectOptions,
     type MiddlewareInitOptions
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
@@ -33,6 +38,12 @@ export interface BrowserTransportRuntimePort {
     shutdown(reason?: string): void;
 }
 
+/** One connect's middleware as the facade holds it, and the checkpoints its page lifecycle flushes. */
+interface BrowserTransportConnect {
+    readonly middleware: ApiMiddleware;
+    readonly checkpoints: BrowserConnectedMiddleware['checkpoints'];
+}
+
 export namespace BrowserTransportRuntime {
     export interface Input {
         /** Opens each connect's session channel to the session's other tabs. */
@@ -45,6 +56,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     private readonly input: BrowserTransportRuntime.Input;
     private activeMiddleware: ApiMiddleware | undefined;
     private activeDurableWork: BrowserALDurableWorkClaim | undefined;
+    private activePageLifecycle: BrowserPageLifecycleFlush | undefined;
     private pendingMiddleware: Promise<ApiMiddleware> | undefined;
     private generation = 0;
 
@@ -97,7 +109,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
             deliverySettlements: epoch.settlements,
             durableWorkOwnership: durableWork
         })
-            .then((middleware) => {
+            .then(({ middleware, checkpoints }) => {
                 const currentSession = readSession();
                 if (
                     generation !== this.generation ||
@@ -110,6 +122,11 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
 
                 this.activeMiddleware = middleware;
                 this.activeDurableWork = durableWork;
+                this.activePageLifecycle = new BrowserPageLifecycleFlush({
+                    page: readBrowserPageLifecycle(),
+                    ownership: durableWork,
+                    checkpoints
+                });
                 return middleware;
             })
             .catch((error) => {
@@ -133,8 +150,10 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         this.pendingMiddleware = undefined;
         const middleware = this.activeMiddleware;
         const durableWork = this.activeDurableWork;
+        this.activePageLifecycle?.release();
         this.activeMiddleware = undefined;
         this.activeDurableWork = undefined;
+        this.activePageLifecycle = undefined;
 
         if (middleware) {
             this.shutdownMiddleware(middleware.middleware, reason);
@@ -177,16 +196,16 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     private async createMiddleware(
         session: AuthSession,
         options: BrowserConnectOptions
-    ): Promise<ApiMiddleware> {
+    ): Promise<BrowserTransportConnect> {
         const authFetch: ApiMiddleware['authFetch'] = (input, init) => {
             const headers = new Headers(init?.headers);
             headers.set('authorization', `Bearer ${session.accessToken}`);
             headers.set('x-client-id', session.clientId);
             return fetch(input, { ...init, headers });
         };
-        const middleware = await initialiseMiddleware(session, AppTopics.rtcSignaling, options);
+        const { middleware, checkpoints } = await initialiseMiddleware(session, AppTopics.rtcSignaling, options);
 
-        return { session, authFetch, middleware };
+        return { middleware: { session, authFetch, middleware }, checkpoints };
     }
 
     private shutdownMiddleware(

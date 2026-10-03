@@ -1,3 +1,4 @@
+import type { Unsubscribe } from '../cache/RepositoryInterfaces.ts';
 import { requireLivePersistenceWrite } from '../persistence/persistence-write-deadline.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
 import { InMemoryQueueBox } from '../queuebox/in-memory-queue-box.ts';
@@ -64,6 +65,7 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
     readonly workQueue: InMemoryQueueBox;
     private readonly state: ALAdmissionMemoryState;
     private readonly nowMs: () => number;
+    private readonly changeListeners = new Set<(key: string) => void>();
 
     constructor(
         state: ALAdmissionMemoryState,
@@ -78,12 +80,28 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
     async ready(): Promise<void> {
     }
 
+    /** Names, in the turn it happens, every admission key a write sets or removes or an expiry removes. */
+    onChangeDo(listener: (key: string) => void): Unsubscribe {
+        this.changeListeners.add(listener);
+        return { unsubscribe: () => this.changeListeners.delete(listener) };
+    }
+
+    /** The row as held now, expired or not; unlike `read` it removes nothing. */
+    peek(key: string): ALAdmissionStoredValue | undefined {
+        return this.state.data.get(key);
+    }
+
+    /** Every key held now, expired or not; unlike `list` it removes nothing. */
+    peekKeys(): readonly string[] {
+        return [...this.state.data.keys()];
+    }
+
     /** The lazy expiry `read` and `list` apply, run over the whole pair; the owning lane calls it. */
     evictExpired(): void {
         const nowMs = this.nowMs();
         for (const [key, stored] of this.state.data) {
             if (stored.expireAtTimestamp <= nowMs) {
-                this.state.data.delete(key);
+                this.deleteStored(key);
             }
         }
         this.workQueue.cleanup();
@@ -110,7 +128,7 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
         const decoded = decodeALAdmissionValue(stored.value, key, decode);
 
         if (stored.expireAtTimestamp <= this.nowMs()) {
-            this.state.data.delete(key);
+            this.deleteStored(key);
             return undefined;
         }
 
@@ -128,7 +146,7 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
             const decoded = decodeALAdmissionValue(stored.value, key, decode);
 
             if (stored.expireAtTimestamp <= this.nowMs()) {
-                this.state.data.delete(key);
+                this.deleteStored(key);
                 continue;
             }
 
@@ -163,12 +181,46 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
                 throw new ALAdmissionBackendConflictError('In-memory AL admission work write conflicted');
             }
             for (const [key, stored] of mutations) {
-                stored === undefined ? this.state.data.delete(key) : this.state.data.set(key, stored);
+                if (stored === undefined) {
+                    this.deleteStored(key);
+                }
+                else {
+                    this.setStored(key, stored);
+                }
             }
             return result;
         }
         finally {
             release?.();
+        }
+    }
+
+    /** Rows a checkpoint saved: a key the pair already holds keeps its own value. */
+    loadIfAbsent(rows: readonly ALAdmissionStoredValue[], entries: readonly ResourceEntry[]): void {
+        for (const row of rows) {
+            if (!this.state.data.has(row.key)) {
+                this.setStored(row.key, row);
+            }
+        }
+        for (const entry of entries) {
+            this.workQueue.writeIfAllObserved([{ expected: undefined, entry }]);
+        }
+    }
+
+    private setStored(key: string, stored: ALAdmissionStoredValue): void {
+        this.state.data.set(key, stored);
+        this.notifyChange(key);
+    }
+
+    private deleteStored(key: string): void {
+        if (this.state.data.delete(key)) {
+            this.notifyChange(key);
+        }
+    }
+
+    private notifyChange(key: string): void {
+        for (const listener of this.changeListeners) {
+            listener(key);
         }
     }
 }

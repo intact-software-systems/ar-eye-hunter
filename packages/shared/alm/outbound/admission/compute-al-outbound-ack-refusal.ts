@@ -28,7 +28,7 @@ export function computeALOutboundAckRefusal<TPrepared>(
             msg,
             dropReason: issue.detail,
             dropReasonCode: 'unsupported',
-            persist: false,
+            lane: 'volatile',
             preparedMessages: []
         });
 }

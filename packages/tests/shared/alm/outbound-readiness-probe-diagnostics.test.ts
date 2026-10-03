@@ -138,7 +138,7 @@ function createProbedRuntime(input: ProbedRuntimeInput): ALOutboundMessageRuntim
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [{ kind: 'send' }],
             ackTracking: input.ackTracking
         }),

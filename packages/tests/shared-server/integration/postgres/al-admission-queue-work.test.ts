@@ -573,7 +573,7 @@ async function runOutboundWorkBatch(
         decodePreparedMessage: decodeALOutboundTransportMessage,
         toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
         sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
     try {
@@ -655,7 +655,7 @@ async function readSupersedenceDecision(
         planner: () => ({
             msg: message,
             dropReasonCode: undefined,
-            persist: false,
+            lane: 'volatile',
             preparedMessages: [toALOutboundTransportMessage(message)],
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: supersedenceKey }
         }),

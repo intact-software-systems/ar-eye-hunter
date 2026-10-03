@@ -106,7 +106,7 @@ vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     async (importOriginal) => ({
         ...await importOriginal(),
-        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
+        initialiseMiddleware: async (_session, _topic, options) => ({ middleware: (await mocks.initialiseApiMiddleware(options)).middleware, checkpoints: [] })
     })
 );
 

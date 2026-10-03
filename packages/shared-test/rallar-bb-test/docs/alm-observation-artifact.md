@@ -78,7 +78,8 @@ records what the runner was doing while the cell ran:
   [outbound admission diagnostics](./runtime-diagnostic-contract.md). It is `too-few-samples` below
   `ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT` samples. Only `send`-origin commits count, because a
   drain's commit measures a different read chain than a caller's own admission.
-  - Only commits whose `lane` is `durable` count (R-S3a-15). The 30 / 35 ms thresholds were
+  - Only commits whose `lane` is `durable` count (R-S3a-15); a `checkpoint` lane commits to its memory
+    pair, as `volatile` does, and is left out with it. The 30 / 35 ms thresholds were
     calibrated on IndexedDB read chains; a memory lane's commit reads no IndexedDB, and its cost is
     the page's event-loop contention instead: 0–5 ms per operation for a send and up to 39 ms for a
     repair on a local run, figures that say nothing about the runner's storage. An event recorded

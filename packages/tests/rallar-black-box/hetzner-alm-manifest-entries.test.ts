@@ -144,13 +144,14 @@ function toStartedCells(entry: ReturnType<typeof createAlmConformance2AgentEntry
 }
 
 describe('ALM conformance hosted lane families', () => {
-    it('withholds exactly the named cells: the refresh variant over rtc and rtc-with-ws-fallback', () => {
+    it('withholds exactly the named cells: the refresh variant over the RTC carriers and both checkpoint cells everywhere', () => {
         const defined = toFamilyCells(['two-agent', 'addressed']);
         // Removing a withheld cell from hosted manifest 18 is a deliberate act: no plain-member write advances the
-        // snapshot version for the refresh variant.
+        // snapshot version for the refresh variant, and the checkpoint cells keep manifest 18 as recorded.
         const withheld = [
             'alm-rtc-not-yet-in-sync-delivered-after-refresh',
-            'alm-rtc-with-ws-fallback-not-yet-in-sync-delivered-after-refresh'
+            'alm-rtc-with-ws-fallback-not-yet-in-sync-delivered-after-refresh',
+            ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) => ['checkpoint-recovery', 'checkpoint-lag'].map((key) => `alm-${carrier}-${key}`))
         ];
         const cells = toStartedCells(createAlmConformance2AgentEntry());
 

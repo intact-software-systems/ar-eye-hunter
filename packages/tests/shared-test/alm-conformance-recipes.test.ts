@@ -124,6 +124,8 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'durable-opt-in',
         'delivery-reload',
         'storage-unavailable',
+        'checkpoint-recovery',
+        'checkpoint-lag',
         'ordering-resync',
         'ws-unicast-receipt',
         'server-command',
@@ -138,6 +140,8 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'durable-opt-in',
         'delivery-reload',
         'storage-unavailable',
+        'checkpoint-recovery',
+        'checkpoint-lag',
         'ordering-resync',
         'not-yet-in-sync-delivered-after-refresh',
         'not-yet-in-sync-expires',
@@ -153,6 +157,8 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'durable-opt-in',
         'delivery-reload',
         'storage-unavailable',
+        'checkpoint-recovery',
+        'checkpoint-lag',
         'ordering-resync',
         'cross-carrier-duplicate-rtc-then-ws',
         'cross-carrier-duplicate-ws-then-rtc',
@@ -202,16 +208,19 @@ describe('alm-conformance recipe family', () => {
                     ...RECEIPTED_AUDIENCE_KEYS_BY_CARRIER[carrier].flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     ),
-                    ...['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-durable-takeover-${role}`)
+                    ...['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-durable-takeover-${role}`),
+                    ...(carrier === 'rtc-with-ws-fallback'
+                        ? []
+                        : ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-flush-on-hide-${role}`))
                 ]);
         }
     });
 
-    it('declares recipient-b on the receipted-audience scenarios and successor on durable-takeover only; every other scenario keeps one sender and one receiver', () => {
+    it('declares recipient-b on the receipted-audience scenarios and successor on durable-takeover and flush-on-hide only; every other scenario keeps one sender and one receiver', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
                 const threeRoles = scenario.scenarioId === 'receipted-audience';
-                const twoPages = scenario.scenarioId === 'durable-takeover';
+                const twoPages = scenario.scenarioId === 'durable-takeover' || scenario.scenarioId === 'flush-on-hide';
                 expect(scenario.roles, scenario.scenarioKey).toEqual(
                     threeRoles
                         ? ['sender', 'receiver', 'recipient-b']
@@ -400,7 +409,7 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('keeps reload, storage-unavailable, ordering-resync and the takeover full-only while preserving the smoke scenarios', () => {
+    it('keeps reload, storage-unavailable, the checkpoint scenarios, ordering-resync and the takeover full-only while preserving the smoke scenarios', () => {
         expect(
             createAlmConformanceRecipes(toConformanceInput('ws'))
                 .filter((scenario) => scenario.tags.includes('smoke'))
@@ -420,6 +429,8 @@ describe('alm-conformance recipe family', () => {
         ).toEqual([
             'delivery-reload',
             'storage-unavailable',
+            'checkpoint-recovery',
+            'checkpoint-lag',
             'ordering-resync',
             'cross-carrier-duplicate',
             'cross-carrier-duplicate',
@@ -445,6 +456,9 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
+            ['full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],

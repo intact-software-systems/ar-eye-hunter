@@ -195,7 +195,7 @@ function toDurablePlan(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTranspo
     return {
         msg,
         dropReasonCode: undefined,
-        persist: true,
+        lane: 'durable',
         preparedMessages: [toALOutboundTransportMessage(msg)]
     };
 }

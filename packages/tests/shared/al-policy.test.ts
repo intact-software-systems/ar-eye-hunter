@@ -14,10 +14,10 @@ import {
 import {
     normalizeALQosPolicy,
     planALMessageHandling,
+    resolveALOutboundStoreDurability,
     resolveALQosNormalizationInput,
     shouldAwaitALRoute,
     shouldPersistInbox,
-    shouldPersistOutbox,
     type ALMessagePlanningContext,
     type ALQosInputProvider,
     type ALQosNormalizationInput
@@ -729,15 +729,16 @@ describe('durability decoupled from retry (S3a)', () => {
 
         expect(effective.durability.algo).toBe('volatile');
         expect(effective.retry.algo).toBe('exp-backoff');
-        expect(shouldPersistOutbox(effective)).toBe(false);
+        expect(resolveALOutboundStoreDurability(effective.durability.algo)).toBe('volatile');
         expect(shouldAwaitALRoute(effective)).toBe(true);
     });
 
     it.each([
-        { algo: 'volatile' as const, outbox: false, inbox: false },
-        { algo: 'local-outbox' as const, outbox: true, inbox: false },
-        { algo: 'local-inbox' as const, outbox: true, inbox: true }
-    ])('honours a requested $algo: outbox $outbox, inbox $inbox', ({ algo, outbox, inbox }) => {
+        { algo: 'volatile' as const, outbox: 'volatile', inbox: false },
+        { algo: 'local-checkpoint' as const, outbox: 'checkpoint', inbox: false },
+        { algo: 'local-outbox' as const, outbox: 'durable', inbox: false },
+        { algo: 'local-inbox' as const, outbox: 'durable', inbox: true }
+    ])('honours a requested $algo: outbox lane $outbox, inbox $inbox', ({ algo, outbox, inbox }) => {
         const message = newALMulticastMessage('self', route, room, 'chat.message.v1', {}, {
             reliability: 'at-least-once',
             qos: { durability: { algo } }
@@ -746,8 +747,43 @@ describe('durability decoupled from retry (S3a)', () => {
         const { effective } = normalizeALQosPolicy(message);
 
         expect(effective.durability.algo).toBe(algo);
-        expect(shouldPersistOutbox(effective)).toBe(outbox);
+        expect(resolveALOutboundStoreDurability(effective.durability.algo)).toBe(outbox);
         expect(shouldPersistInbox(effective)).toBe(inbox);
+    });
+
+    it('lets a best-effort checkpointed message wait for a route and forwards it as kept beyond memory', () => {
+        const message = newALMulticastMessage('self', route, room, 'chat.message.v1', {}, {
+            qos: { durability: { algo: 'local-checkpoint' } }
+        });
+        const { effective } = normalizeALQosPolicy(message);
+
+        const plan = planALMessageHandling(message, {
+            nowMs: message.id.ts,
+            selfPeerId: 'self',
+            groupMemberPeerIds: ['self', 'peer'],
+            overlayNeighborPeerIds: ['peer'],
+            connectedPeerIds: ['peer']
+        });
+
+        expect(shouldAwaitALRoute(effective)).toBe(true);
+        expect(plan.forwarding.persist).toBe(true);
+        expect(plan.localDelivery.persist).toBe(false);
+    });
+
+    it.each([
+        { requested: 'local-outbox' as const, maxDurability: 'local-checkpoint' as const, effective: 'local-checkpoint' },
+        { requested: 'local-checkpoint' as const, maxDurability: 'volatile' as const, effective: 'volatile' },
+        { requested: 'local-checkpoint' as const, maxDurability: 'local-outbox' as const, effective: 'local-checkpoint' }
+    ])('ranks local-checkpoint between volatile and local-outbox: $requested under $maxDurability is $effective', (
+        { requested, maxDurability, effective }
+    ) => {
+        const message = newALMulticastMessage('self', route, room, 'chat.message.v1', {}, {
+            qos: { durability: { algo: requested } }
+        });
+
+        const normalized = normalizeALQosPolicy(message, { authorization: { maxDurability } });
+
+        expect(normalized.effective.durability.algo).toBe(effective);
     });
 
     it('lets a best-effort volatile message be refused for lacking a route', () => {

@@ -1,4 +1,4 @@
-import type { TestInfo } from '@playwright/test';
+import type { Page, TestInfo } from '@playwright/test';
 
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
@@ -15,10 +15,20 @@ import {
     type TwoAgentRunParticipant
 } from './full-stack-helpers.ts';
 
+/**
+ * How the owner's page ends: closed, or through a lifecycle flush and a renderer crash, which runs no `pagehide`
+ * listener and no later timer, so the successor restores only what the page saved before the crash.
+ */
+export type SameContextOwnerEnd = 'close' | 'flush-and-crash';
+
+/** Well under the checkpoint interval: the flush's one readwrite commits in milliseconds on an idle page. */
+const FLUSH_COMMIT_SETTLE_MS = 250;
+
 /** The page that owns the sender's session for one scenario, and the page of the same context that follows it. */
 export interface SameContextPages {
     readonly owner: TwoAgentRunParticipant;
     readonly successor: TwoAgentRunParticipant;
+    readonly ownerEnd: SameContextOwnerEnd;
 }
 
 export interface SameContextRecipes extends RecipePair {
@@ -73,10 +83,26 @@ export async function runRecipeTrioOnSameContext(
 ): Promise<SameContextOutcome> {
     const receiverRun = await startRecipientRecipeRun(run, run.receiver, recipes.receiver);
     const sender = await runRecipeOnAgent(run, pages.owner, recipes.sender);
-    await pages.owner.page.close();
+    await endOwnerPage(pages.owner.page, pages.ownerEnd);
     const [successor, receiver] = await Promise.all([
         runRecipeOnAgent(run, pages.successor, recipes.successor),
         receiverRun.outcome
     ]);
     return { sender, receiver, successor };
+}
+
+/**
+ * A headless page is never hidden, and `Page.setWebLifecycleState` freezes no visible page, so the lane fires the
+ * page's own `freeze` event, gives the readwrite it starts time to commit, and crashes the renderer.
+ */
+async function endOwnerPage(page: Page, end: SameContextOwnerEnd): Promise<void> {
+    if (end === 'flush-and-crash') {
+        await page.evaluate((eventType) => document.dispatchEvent(new Event(eventType)), 'freeze');
+        await page.waitForTimeout(FLUSH_COMMIT_SETTLE_MS);
+        const cdp = await page.context().newCDPSession(page);
+        const crashed = page.waitForEvent('crash');
+        void cdp.send('Page.crash').catch(() => undefined);
+        await crashed;
+    }
+    await page.close();
 }

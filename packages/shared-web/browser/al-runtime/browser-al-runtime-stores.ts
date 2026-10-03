@@ -4,14 +4,13 @@ import {
     createDefaultIndexedDbALInboundRuntimeStores,
     createDefaultIndexedDbALOutboundRuntimeStores,
     createVolatileALInboundRuntimeStores,
-    createVolatileALOutboundRuntimeStores,
-    isIndexedDbALRuntimeStoreSupported
+    createVolatileALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
 import {
     configureALRuntimeStoreScopes,
     resolveALInboundRuntimeStores,
     resolveALOutboundRuntimeStores,
-    type ALRuntimeStoreFactories,
+    type ALRuntimeStoreId,
     type ALRuntimeStoreScope
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
 import type {
@@ -31,7 +30,18 @@ import { toALStorageResetSink, type ALStorageEventSink } from '@shared/alm/stora
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 
+import {
+    toBrowserRtcOverlayALCheckpointRuntimeStoreId,
+    toBrowserWsClientALCheckpointRuntimeStoreId
+} from './browser-al-checkpoint-store-ids.ts';
+import {
+    createBrowserALCheckpointOutboundRuntimeStores,
+    resolveBrowserALCheckpointSettings,
+    type BrowserALCheckpointSettings,
+    type BrowserALCheckpointSettingsInput
+} from './browser-al-checkpoint-stores.ts';
 import {
     toBrowserALRuntimeDbName,
     toBrowserRtcOverlayALRuntimeStoreId,
@@ -50,64 +60,79 @@ interface BrowserALRuntimeOptions extends Omit<CreateDefaultALRuntimeStoresInput
 
 export interface ConfigureBrowserALRuntimeStoresInput
     extends
-        Omit<BrowserALRuntimeOptions, 'dbName' | 'observer' | 'onStorageReset' | 'storageHealth' | 'connectOpenings'> {
+        Omit<BrowserALRuntimeOptions, 'dbName' | 'observer' | 'onStorageReset' | 'storageHealth' | 'connectOpenings'>,
+        BrowserALCheckpointSettingsInput {
     readonly scope: StateScope;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
 }
 
-function createBrowserRuntimeStoreFactories(
-    name: string,
-    directions: Readonly<{
-        inbound?: boolean;
-        outbound?: boolean;
-    }>,
-    options: BrowserALRuntimeOptions
-): ALRuntimeStoreFactories<ALOutboundTransportMessage> {
-    return {
-        createInboundStores: directions.inbound
-            ? () => createBrowserALInboundRuntimeStores(name, options)
-            : undefined,
-        createOutboundStores: directions.outbound
-            ? () => createBrowserALOutboundRuntimeStores(name, options)
-            : undefined
-    };
+/** Where one connect's stores report, and how its checkpoint lanes run. */
+interface BrowserRuntimeStoreReporting {
+    readonly storage: ALStorageEventSink;
+    /** A checkpoint store's events also reach the connect's availability, which skips its lane on a lag. */
+    readonly checkpointStorage: ALStorageEventSink;
+    readonly checkpoint: BrowserALCheckpointSettings;
 }
 
 function toBrowserRuntimeStoreScopes(
     sessionId: string,
     options: BrowserALRuntimeOptions,
-    storage: ALStorageEventSink
+    reporting: BrowserRuntimeStoreReporting
 ): readonly ALRuntimeStoreScope<ALOutboundTransportMessage>[] {
     const sessionInboundId = toBrowserSessionALInboundRuntimeStoreId(sessionId);
-    const wsClientId = toBrowserWsClientALRuntimeStoreId(sessionId);
-    const rtcOverlayId = toBrowserRtcOverlayALRuntimeStoreId(sessionId);
+    const inboundOptions = createBrowserStoreOptions(sessionInboundId, options, reporting.storage);
 
     return [
         {
             id: sessionInboundId,
-            factories: createBrowserRuntimeStoreFactories(
-                sessionInboundId,
-                { inbound: true },
-                createBrowserStoreOptions(sessionInboundId, options, storage)
-            )
+            factories: {
+                createInboundStores: () => createBrowserALInboundRuntimeStores(sessionInboundId, inboundOptions)
+            }
         },
-        {
-            id: wsClientId,
-            factories: createBrowserRuntimeStoreFactories(
-                wsClientId,
-                { outbound: true },
-                createBrowserStoreOptions(wsClientId, options, storage)
-            )
-        },
-        {
-            id: rtcOverlayId,
-            factories: createBrowserRuntimeStoreFactories(
-                rtcOverlayId,
-                { outbound: true },
-                createBrowserStoreOptions(rtcOverlayId, options, storage)
-            )
-        }
+        toBrowserOutboundStoreScope(
+            {
+                id: toBrowserWsClientALRuntimeStoreId(sessionId),
+                checkpointId: toBrowserWsClientALCheckpointRuntimeStoreId(sessionId)
+            },
+            options,
+            reporting
+        ),
+        toBrowserOutboundStoreScope(
+            {
+                id: toBrowserRtcOverlayALRuntimeStoreId(sessionId),
+                checkpointId: toBrowserRtcOverlayALCheckpointRuntimeStoreId(sessionId)
+            },
+            options,
+            reporting
+        )
     ];
+}
+
+interface BrowserOutboundStoreIds {
+    readonly id: ALRuntimeStoreId<ALOutboundTransportMessage>;
+    readonly checkpointId: ALRuntimeStoreId<ALOutboundTransportMessage>;
+}
+
+/** An outbound carrier's durable pair and its checkpoint pair, each under its own store id and health. */
+function toBrowserOutboundStoreScope(
+    ids: BrowserOutboundStoreIds,
+    options: BrowserALRuntimeOptions,
+    reporting: BrowserRuntimeStoreReporting
+): ALRuntimeStoreScope<ALOutboundTransportMessage> {
+    const outboundOptions = createBrowserStoreOptions(ids.id, options, reporting.storage);
+    const checkpointOptions = createBrowserStoreOptions(ids.checkpointId, options, reporting.checkpointStorage);
+    return {
+        id: ids.id,
+        factories: {
+            createOutboundStores: () => createBrowserALOutboundRuntimeStores(ids.id, outboundOptions),
+            createCheckpointStores: (ownership) =>
+                createBrowserALCheckpointOutboundRuntimeStores(ids.checkpointId, {
+                    options: checkpointOptions,
+                    settings: reporting.checkpoint,
+                    ownership
+                })
+        }
+    };
 }
 
 /** One health per store and connect, shared by every resolve of it; its events and resets name the store. */
@@ -170,7 +195,7 @@ export function configureBrowserALRuntimeStores(
     sessionId: string,
     input: ConfigureBrowserALRuntimeStoresInput
 ): BrowserALStorageAvailability {
-    const { diagnosticsPorts, scope, ...options } = input;
+    const { diagnosticsPorts, scope, checkpointIntervalMs, checkpointLagBoundMs, ...options } = input;
     const scoped: BrowserALRuntimeOptions = {
         ...options,
         dbName: toBrowserALRuntimeDbName(scope),
@@ -178,12 +203,21 @@ export function configureBrowserALRuntimeStores(
         canonicalScope: `browser-session:${sessionId}`,
         connectOpenings: new ALStorageConnectOpenings()
     };
-    configureALRuntimeStoreScopes(toBrowserRuntimeStoreScopes(sessionId, scoped, diagnosticsPorts.storage));
-    return new BrowserALStorageAvailability({
-        initial: toInitialALStorageAvailability(isIndexedDbALRuntimeStoreSupported()),
+    const { storage } = diagnosticsPorts;
+    const availability = new BrowserALStorageAvailability({
+        initial: toInitialALStorageAvailability(IndexedDbStringPersistenceProvider.isSupported()),
         requestPersist: toBrowserStoragePersistRequest(globalThis.navigator?.storage),
-        storage: diagnosticsPorts.storage
+        storage
     });
+    configureALRuntimeStoreScopes(toBrowserRuntimeStoreScopes(sessionId, scoped, {
+        storage,
+        checkpointStorage: (event) => {
+            availability.recordCheckpointHealth(event);
+            storage(event);
+        },
+        checkpoint: resolveBrowserALCheckpointSettings({ checkpointIntervalMs, checkpointLagBoundMs })
+    }));
+    return availability;
 }
 
 export function resolveBrowserSessionALInboundRuntimeStores(

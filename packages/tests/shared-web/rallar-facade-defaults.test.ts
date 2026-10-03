@@ -29,7 +29,7 @@ const mocks = await vi.hoisted(async () => {
     return {
         context,
         hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(() => Promise.resolve()),
-        initialiseMiddleware: vi.fn<typeof MiddlewareModule.initialiseMiddleware>(() => Promise.resolve(context.middleware)),
+        initialiseMiddleware: vi.fn<typeof MiddlewareModule.initialiseMiddleware>(() => Promise.resolve({ middleware: context.middleware, checkpoints: [] })),
         onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.onChange>(() => vi.fn()),
         readSession: vi.fn<typeof AuthModule.readSession>(() => context.session),
         refreshStateSnapshots: vi.fn<typeof RefreshStateSnapshotsModule.refreshStateSnapshots>(
@@ -115,7 +115,7 @@ describe('Rallar facade default scope behavior', () => {
         mocks.getAllGroupStateSnapshots.mockReturnValue([]);
         mocks.findAcceptedOverlayById.mockReturnValue(undefined);
         mocks.hydrateStateCache.mockResolvedValue(undefined);
-        mocks.initialiseMiddleware.mockResolvedValue(mocks.context.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.context.middleware, checkpoints: [] });
         mocks.readSession.mockReturnValue(mocks.context.session);
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
         connection.ensurePeerLaneOpen.mockReset().mockImplementation(async (peerId, laneId = 'reliable') => ({

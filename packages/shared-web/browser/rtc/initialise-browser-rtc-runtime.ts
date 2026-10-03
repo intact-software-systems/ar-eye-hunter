@@ -14,8 +14,14 @@ import type {
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type {
+    ALCheckpointOutboundRuntimeStores,
+    ALOutboundRuntimeDiagnosticsSink
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    decodeALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -53,6 +59,8 @@ import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signal
 export interface InitialiseRtcOverlayMulticastManagerInput {
     readonly qosProvider: ALQosInputProvider | undefined;
     readonly volatileBudget: ALVolatileSessionBudget;
+    /** The connect's checkpoint pair of the RTC overlay, which its `local-checkpoint` admissions go to. */
+    readonly checkpointStores: ALCheckpointOutboundRuntimeStores<ALOutboundTransportMessage>;
     readonly outboundSettlements: ALDeliverySettlementSink;
     readonly webRtcConnectionService: WebRtcConnectionService;
     readonly qboxEngine: InboxOutboxEngine;
@@ -80,6 +88,7 @@ export function initialiseRtcOverlayMulticastManager(
                 toBrowserRtcOverlayALRuntimeStoreId(webRtcConnectionService.input.sessionId),
                 input.volatileBudget
             ),
+            checkpointStores: input.checkpointStores,
             durableWorkOwnership: input.durableWorkOwnership
         }),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),

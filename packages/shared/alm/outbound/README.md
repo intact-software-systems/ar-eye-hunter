@@ -43,8 +43,9 @@ engine remains available to its other tasks; a runtime-owned engine stops. An
 interrupted durable claim remains recoverable after its lease expires.
 
 **One durable owner per session.** The resources carry `durableWorkOwnership`
-([`ALDurableWorkOwnership`](../work/al-durable-work-ownership.ts)), and only the durable lane takes
-it; the memory lane always owns its pair. The default, `ALWAYS_OWNED_AL_DURABLE_WORK`, is the
+([`ALDurableWorkOwnership`](../work/al-durable-work-ownership.ts)). The durable lane's work follows
+it; the memory lanes always run their own pairs, and the checkpoint of the checkpoint lane follows it
+(see "The checkpoint lane"). The default, `ALWAYS_OWNED_AL_DURABLE_WORK`, is the
 server's, Node's and every runtime's whose durable store no other runtime drains, and keeps the
 handler's construction-time registration. While another runtime of the session owns the work, the
 durable lane's [`ALWorkHandler`](../work/al-work-handler.ts) joins no engine round, its `ready()`
@@ -88,17 +89,28 @@ admission, repair retransmission, work handler and engine task over its one pair
 shared engine. The WS server builds the runtime without a memory pair (`volatileStores: undefined`), so
 every server message keeps its one backend.
 
-- **Routing by durability.** An admission goes to the lane its plan's `persist` names, and every
-  browser planner states `persist` as `shouldPersistOutbox(effective)`: the message's effective
-  durability alone. `local-outbox` and `local-inbox` go to IndexedDB; `volatile`, the default for
-  every send that names none, goes to memory. Reliability no longer implies durability: a default
+- **Routing by durability.** An admission goes to the lane its plan's `lane` names, and every
+  browser planner states `lane` as `resolveALOutboundStoreDurability(effective.durability.algo)`: the
+  message's effective durability alone. `local-outbox` and `local-inbox` name `durable` and go to
+  IndexedDB; `volatile`, the default for every send that names none, goes to memory; `local-checkpoint`
+  names `checkpoint` and goes to the checkpoint lane; a runtime without one sends it to its volatile
+  lane, `durable: false`, and a runtime with neither memory pair (the one-lane Node compositions, whose
+  server planner never produces a checkpoint plan) to its only lane, the durable one. A
+  dropping plan names `volatile`. A captured policy row keeps only whether its copy outlives memory
+  (`persist`), so a re-plan under it keeps its own lane when the two agree and reads `durable` or
+  `volatile` when they do not. Reliability no longer implies durability: a default
   typed send is at-least-once, receipted and volatile (D2, D52), and a lane send that names no
   durability is volatile too (R-S3a-0). The plan is computed once and handed to that lane's admission. The admission verdict's
   `durable` says whether rows were persisted: the memory lane states every admission `durable: false`.
+- **A `local-checkpoint` send carries no client sequence.** A restored checkpoint could send a `seq`
+  again for different content, so both browser planners refuse a `local-checkpoint` send that carries
+  one as `unsupported` ([`computeALOutboundOrderingRefusal`](./admission/compute-al-outbound-ordering-refusal.ts)).
+  An ordering key alone carries no position (every room send carries its group key), and a superseded
+  unsent copy was never seen outside the runtime, so both pass.
 - **Grouped sends.** A group whose members differ in durability commits as one group per lane: there
   is no cross-store atomicity. No caller mixes today; an ACK batch is all volatile.
-- **Controls, receipts and retransmission** go to the volatile lane when it owns the target message
-  (one memory read), else to the durable lane.
+- **Controls, receipts and retransmission** go to the memory lane, volatile or checkpoint, that owns
+  the target message (a memory read each), else to the durable lane.
 - **One cancel.** `cancel(msgId)` is runtime-wide: one set of send controls serves both lanes.
 - **Only the durable lane admits foreign dequeue rows.** The volatile lane names no dequeue type and
   takes no browser lock: Web Locks guard cross-tab IndexedDB commits, and memory is per tab. A
@@ -128,13 +140,56 @@ every server message keeps its one backend.
   so it completes within the caller's microtask chain, and a loop of awaited volatile sends yields no
   task turn until it ends (R-S3a-7). A burst loop should yield or batch; fairness is V1's.
 - **Every lane-emitted diagnostic names its lane.** `commit-phases`, `effect-drain` and
-  `readiness-probe` carry a required `lane: 'durable' | 'volatile'` (R-S3a-15), so a reader of the
-  runner's storage speed can leave the memory lane out.
+  `readiness-probe` carry a required `lane` (`ALStoreDurability`: `durable`, `checkpoint` or
+  `volatile`) (R-S3a-15), so a reader of the runner's storage speed can leave the memory lanes out.
+
+### The checkpoint lane
+
+A carrier runtime given `checkpointStores` holds a third pair: a memory pair built as the volatile one
+is, without the budget and with the memory retention rule, whose rows a checkpoint saves to IndexedDB
+([`createCheckpointALOutboundRuntimeStores`](../al-runtime-stores.ts), built once per connect under the
+connect's claim, which the pair's `checkpoint` port, an [`ALCheckpoint`](../checkpoint/al-checkpoint.ts),
+holds). A `checkpoint` plan
+(`local-checkpoint`) is admitted, dispatched, receipted and cleaned up from memory by the lane
+`${effectWorkerId}/checkpoint`, in every runtime of the session.
+
+- **Saved rows.** The checkpoint owns the pair's
+  [`ALCheckpointDirtySet`](../checkpoint/al-checkpoint-dirty-set.ts) and its
+  [`ALCheckpointWriter`](../checkpoint/al-checkpoint-writer.ts), which saves the dirty keys in one
+  readwrite over `entries` and `alm-work`
+  ([`IndexedDbAdmissionBackend.writeUnfencedMutations`](../indexed-db-admission-backend.ts), one
+  `al-admission` `write`): the row shapes the durable pair writes, under the pair's own namespace
+  (`browser:<checkpoint store id>`), which is also its canonical scope, so two memory pairs never save
+  one row. The oldest unsaved change arms one checkpoint an interval after it; nothing runs while the
+  pair is clean; one write is in flight; a completed write clears only the keys still at the revision it
+  captured.
+- **Owner only.** Only the runtime that owns the session's durable work (`durableWorkOwnership`) saves
+  and restores the checkpoint. Another runtime's checkpointed sends run from its memory and its
+  `admitted` verdicts read `durable: false`; what it changed is saved once ownership turns to it. A
+  checkpoint lane's settlement is relayed to the session's other tabs as a durable lane's is.
+- **Restore.** The lane's readiness restores before its first work batch: one `al-admission` `list`
+  ([`IndexedDbAdmissionBackend.readNamespaceRows`](../indexed-db-admission-backend.ts) over
+  [`readALWorkRowsInRanges`](../storage/read-al-work-rows-in-ranges.ts)) reads the pair's rows, and the
+  live ones load into the memory pair without marking, keeping every key the pair already holds. A
+  reserved row is claimed once its lease ends; a work row past its expiry is not loaded and is counted
+  as expired. The first batch after the restore reports `restored` (or `expired-at-recovery`) under the
+  checkpoint store's id. On takeover the restore runs when ownership turns true and wakes the lane. A
+  store that cannot be read is stated on the checkpoint store's health, and the lane runs from memory.
+- **Lag.** The checkpoint store's health reads `delayed` once a write failed (it is retried an interval
+  later and named on the state) or the oldest unsaved change is two intervals old, a throttled timer; a
+  timer a few milliseconds late states nothing. Past the recovery-lag bound it reads `failing` with cause
+  `checkpoint-lag`; a completed checkpoint ends either. The lane keeps admitting from memory: the browser
+  dispatch, which reads the store's health, refuses or downgrades a new checkpointed send while the store
+  reads `failing`, for the lag or any other cause, as the channel's `onStorageUnavailable` says.
+- **Flush.** `flushCheckpoint()` starts a checkpoint now, or right after the one in flight, and is never
+  awaited: a write the page does not finish leaves the saved rows as they were.
 
 The storage cost is pinned in
 [`al-indexeddb-operation-counts.test.ts`](../../../tests/shared/alm/al-indexeddb-operation-counts.test.ts):
-one durable send spends 10 `al-admission` and 11 `al-work` IndexedDB operations; one
-volatile send beside a durable pair spends 0 `al-admission` and 0 non-probe `al-work` operations. The
+one durable send spends 10 `al-admission` and 9 `al-work` IndexedDB operations; one
+volatile send beside a durable pair spends 0 `al-admission` and 0 non-probe `al-work` operations, and
+so do `local-checkpoint` sends on the checkpoint lane, whose checkpoint is counted on its own: one
+IndexedDB `write` per interval, whatever the sends changed, and none while the lane is clean. The
 idle durable owner's probes (`work-page`, `work-probe`) are reported beside that zero, never inside it
 (D55): a cold runtime's first volatile send runs the durable owner's one-time bootstrap batch over an
 empty queue, which spends only probes, and its second send spends nothing. A queue read that reserves,

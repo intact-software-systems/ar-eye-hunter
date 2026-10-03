@@ -323,15 +323,18 @@ export class ALOutboundAdmissionMutations {
     }
 
     /**
-     * A durable pair answers a late control for the row's TTL past the send; the volatile pair only until the message
-     * deadline plus the receipt grace (D74). An admission always names the deadline, so only a bare store write
-     * reaches the volatile branch without one, and keeps just the grace.
+     * A durable pair answers a late control for the row's TTL past the send; a memory pair, volatile or
+     * checkpointed, only until the message deadline plus the receipt grace (D74). An admission always names
+     * the deadline, so only a bare store write reaches the memory branch without one, and keeps just the grace.
      */
     private computeMessageRowExpiryMs(deadlineAtMs: number | undefined, nowMs: number, rowTtlMs: number): number {
-        if (this.durability === 'volatile') {
-            return computeALReceiptRetentionExpiryMs(deadlineAtMs ?? nowMs);
+        switch (this.durability) {
+            case 'volatile':
+            case 'checkpoint':
+                return computeALReceiptRetentionExpiryMs(deadlineAtMs ?? nowMs);
+            case 'durable':
+                return Math.max(deadlineAtMs ?? 0, nowMs + rowTtlMs, nowMs + this.retention.controlHistoryTtlMs);
         }
-        return Math.max(deadlineAtMs ?? 0, nowMs + rowTtlMs, nowMs + this.retention.controlHistoryTtlMs);
     }
 
     private computeSupersedenceWrite(

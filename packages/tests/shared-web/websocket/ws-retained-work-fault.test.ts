@@ -9,6 +9,7 @@ import {
 } from 'vitest';
 
 import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
+import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
@@ -83,6 +84,7 @@ describe('WS retained-work faults', () => {
                 createDefaultVolatileSessionBudget()
             ),
             volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
             connectTimeoutMs: 0
         });
         await vi.advanceTimersByTimeAsync(0);
@@ -166,6 +168,7 @@ describe('WS retained-work faults', () => {
                 createDefaultVolatileSessionBudget()
             ),
             volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
             connectTimeoutMs: 0
         });
         await vi.advanceTimersByTimeAsync(0);

@@ -168,7 +168,7 @@ describe('WS server outbound planning', () => {
             admittedAudience: undefined
         });
 
-        expect(plan).toMatchObject({ dropReasonCode: undefined, persist: true, preparedMessages: [] });
+        expect(plan).toMatchObject({ dropReasonCode: undefined, lane: 'durable', preparedMessages: [] });
     });
 
     it('repairs a room message only to a requester of the audience it was admitted to, never to a later joiner (D24, D43)', () => {

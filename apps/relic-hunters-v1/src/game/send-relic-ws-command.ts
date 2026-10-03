@@ -30,7 +30,7 @@ export async function sendRelicWsCommand(
             typeId: RELIC_TYPES.command,
             purpose: 'command',
             roomId,
-            durability: 'local-outbox',
+            durability: 'local-checkpoint',
             onStorageUnavailable: 'refuse'
         })
         .sendWs(command, { peerId: serverPeerId });

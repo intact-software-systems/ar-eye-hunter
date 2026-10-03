@@ -7,7 +7,10 @@ import {
     validateComputedIndexedDbQueueMutations,
     type ComputedIndexedDbQueueMutation
 } from '../queuebox/indexed-db-queue-box-entry.ts';
-import { submitComputedIndexedDbQueueMutations } from '../queuebox/write-computed-indexed-db-queue-mutations.ts';
+import {
+    submitComputedIndexedDbQueueMutations,
+    type IndexedDbQueueWriteState
+} from '../queuebox/write-computed-indexed-db-queue-mutations.ts';
 import { toError } from '../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from './al-admission-decoder.ts';
 import type { IndexedDbAdmissionFence } from './indexed-db-admission-fence.ts';
@@ -43,6 +46,8 @@ interface IndexedDbAdmissionWriteContext {
     readonly transaction: IDBTransaction;
     conflict: boolean;
     storedValueError: Error | undefined;
+    /** The admission store's requests and the queue's, each issued once its reads matched. */
+    unissuedParts: number;
 }
 
 export async function writeIndexedDbAdmissionMutations(
@@ -61,24 +66,28 @@ export async function writeIndexedDbAdmissionMutations(
         : [input.storeName, AL_ADMISSION_WORK_STORE_NAME];
     const transaction = input.db.transaction(storeNames, 'readwrite');
     const completed = waitForIndexedDbTransaction(transaction);
-    const store = transaction.objectStore(input.storeName);
+    // A request that throws ends this call before `await completed`; the abort it leaves is still handled.
+    completed.catch(() => undefined);
     const eligibility = new IndexedDbWriteDeadline(transaction, input.deadline);
-    const queueWrite = input.queueMutations.length === 0
-        ? undefined
-        : submitComputedIndexedDbQueueMutations(
-            transaction.objectStore(AL_ADMISSION_WORK_STORE_NAME),
-            input.queueMutations,
-            eligibility
-        );
     const context: IndexedDbAdmissionWriteContext = {
         eligibility,
         guardedRemovals,
         input,
-        store,
+        store: transaction.objectStore(input.storeName),
         transaction,
         conflict: false,
-        storedValueError: undefined
+        storedValueError: undefined,
+        unissuedParts: input.queueMutations.length === 0 ? 1 : 2
     };
+    const queueWrite = input.queueMutations.length === 0
+        ? undefined
+        : submitComputedIndexedDbQueueMutations({
+            store: transaction.objectStore(AL_ADMISSION_WORK_STORE_NAME),
+            mutations: input.queueMutations,
+            eligibility,
+            onIssued: () => commitIssuedIndexedDbAdmissionWrite(context)
+        });
+    const { store } = context;
     readIndexedDbAdmissionWriteFence({
         eligibility,
         fence: input.fence,
@@ -93,20 +102,33 @@ export async function writeIndexedDbAdmissionMutations(
         return true;
     }
     catch (error) {
-        if (eligibility.expired) {
-            throw eligibility.expired;
-        }
-        if (context.storedValueError) {
-            throw context.storedValueError;
-        }
-        if (queueWrite?.storedValueError) {
-            throw queueWrite.storedValueError;
-        }
-        if (context.conflict || queueWrite?.conflict) {
+        const failure = toIndexedDbAdmissionWriteFailure(context, queueWrite, toError(error));
+        if (failure === undefined) {
             return false;
         }
-        throw transaction.error ?? toError(error);
+        throw failure;
     }
+}
+
+/** What a rolled-back write reports; `undefined` is a conflict, which the write answers as `false`. */
+function toIndexedDbAdmissionWriteFailure(
+    context: IndexedDbAdmissionWriteContext,
+    queueWrite: Readonly<IndexedDbQueueWriteState> | undefined,
+    caught: Error
+): Error | undefined {
+    if (context.eligibility.expired) {
+        return context.eligibility.expired;
+    }
+    if (context.storedValueError) {
+        return context.storedValueError;
+    }
+    if (queueWrite?.storedValueError) {
+        return queueWrite.storedValueError;
+    }
+    if (context.conflict || queueWrite?.conflict) {
+        return undefined;
+    }
+    return context.transaction.error ?? caught;
 }
 
 function continueIndexedDbAdmissionWrite(context: IndexedDbAdmissionWriteContext): void {
@@ -203,5 +225,18 @@ function applyIndexedDbAdmissionMutations(
         mutation.kind === 'set'
             ? eligibility.observe(store.put(mutation.stored))
             : eligibility.observe(store.delete(mutation.key));
+    }
+    commitIssuedIndexedDbAdmissionWrite(context);
+}
+
+/**
+ * `commit()` is requested once the last request is issued, so a write started while the page is hidden
+ * or unloading can land without waiting for the page's next task, and never for a write with a
+ * deadline: its expiry aborts it from a request's success, and an abort after `commit()` would throw.
+ */
+function commitIssuedIndexedDbAdmissionWrite(context: IndexedDbAdmissionWriteContext): void {
+    context.unissuedParts -= 1;
+    if (context.unissuedParts === 0 && context.input.deadline === undefined) {
+        context.transaction.commit?.();
     }
 }

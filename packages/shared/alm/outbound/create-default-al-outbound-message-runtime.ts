@@ -11,6 +11,7 @@ import { ALWAYS_OWNED_AL_DURABLE_WORK, type ALDurableWorkOwnership } from '../wo
 import type { ALOutboundPreparedMessageDecoder } from './admission/al-outbound-admission-store.ts';
 import {
     ALOutboundMessageRuntime,
+    type ALCheckpointOutboundRuntimeStores,
     type ALOutboundRuntimeStores,
     type ALVolatileOutboundRuntimeStores
 } from './al-outbound-message-runtime.ts';
@@ -40,6 +41,8 @@ export interface DefaultALOutboundRuntimeResourceInput<TPrepared> {
     readonly stores?: ALOutboundRuntimeStores<TPrepared>;
     /** The memory pair a browser carrier routes volatile admissions to; a server keeps one backend. */
     readonly volatileStores?: ALVolatileOutboundRuntimeStores<TPrepared>;
+    /** The memory pair a browser carrier routes checkpointed admissions to; absent, they go to `stores`. */
+    readonly checkpointStores?: ALCheckpointOutboundRuntimeStores<TPrepared>;
     readonly canonicalQueue?: QueueBoxResourceEntryRepository;
     readonly nowMs?: () => number;
     readonly random?: () => number;
@@ -120,6 +123,7 @@ export function createDefaultALOutboundRuntimeResources<TPrepared>(
         storageHealth: stores.storageHealth,
         storageRecovery: stores.storageRecovery,
         volatileStores: input.volatileStores,
+        checkpointStores: input.checkpointStores,
         effectWorkerId: `al-outbound:${crypto.randomUUID()}`,
         clock: { nowMs },
         random: input.random ?? Math.random,

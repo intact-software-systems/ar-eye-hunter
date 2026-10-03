@@ -32,7 +32,9 @@ const mocks = await vi.hoisted(async () => {
     return {
         apiMiddleware,
         hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(() => Promise.resolve()),
-        initialiseMiddleware: vi.fn<typeof MiddlewareModule.initialiseMiddleware>(() => Promise.resolve(apiMiddleware.middleware)),
+        initialiseMiddleware: vi.fn<typeof MiddlewareModule.initialiseMiddleware>(() =>
+            Promise.resolve({ middleware: apiMiddleware.middleware, checkpoints: [] })
+        ),
         onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.onChange>(() => vi.fn()),
         refreshStateSnapshots: vi.fn<typeof RefreshStateSnapshotsModule.refreshStateSnapshots>(() => Promise.resolve({ clients: [], groups: [] })),
         findClientStateSnapshotByPrincipalId: vi.fn<typeof ClientStateSnapshotsRepositoryModule.findClientStateSnapshotByPrincipalId>(() => undefined),
@@ -99,7 +101,7 @@ describe('Rallar startup lifecycle behavior', () => {
         mocks.getAllClientStateSnapshots.mockReturnValue([]);
         mockGroupSnapshots([]);
         mocks.hydrateStateCache.mockResolvedValue(undefined);
-        mocks.initialiseMiddleware.mockResolvedValue(mocks.apiMiddleware.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.apiMiddleware.middleware, checkpoints: [] });
         const storage = new Map<string, string>();
         vi.stubGlobal('localStorage', {
             getItem: (key: string) => storage.get(key) ?? null,

@@ -50,7 +50,7 @@ describe('outbound message expiry', () => {
         const store = stores.admissionStore;
         const read = await store.readOutgoingMessage({
             msg: original,
-            planner: () => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }),
+            planner: () => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ message: JSON.stringify(msg) }] }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
@@ -107,7 +107,7 @@ describe('outbound message expiry', () => {
             planner: () => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' }))
             }),
             observedCanonicalEntry: undefined,
@@ -154,7 +154,7 @@ describe('outbound message expiry', () => {
             planner: () => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' }))
             }),
             observedCanonicalEntry: undefined,
@@ -230,7 +230,7 @@ describe('outbound message expiry', () => {
                 settlements: () => {},
                 carrier: 'ws'
             }),
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
             planRepairMessage: undefined,
             diagnostics: undefined,
             settlements: () => {}
@@ -324,7 +324,7 @@ describe('outbound message expiry', () => {
         const plan: ALOutboundDispatchPlan<OutboundTestPayload> = {
             msg: msg,
             dropReasonCode: undefined,
-            persist: false,
+            lane: 'volatile',
             preparedMessages: [{ message: JSON.stringify(msg) }]
         };
         const read = await store.readOutgoingMessage({ msg: msg, planner: () => plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
@@ -365,7 +365,7 @@ describe('outbound message expiry', () => {
             planner: () => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ message: JSON.stringify(msg) }]
             }),
             observedCanonicalEntry: undefined,
@@ -401,7 +401,7 @@ describe('outbound message expiry', () => {
             planner: () => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: []
             }),
             observedCanonicalEntry: undefined,
@@ -433,7 +433,7 @@ describe('outbound message expiry', () => {
             planner: () => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ message: JSON.stringify(msg) }]
             }),
             observedCanonicalEntry: undefined,

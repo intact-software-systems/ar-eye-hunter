@@ -194,7 +194,7 @@ function createTwoTabSession(
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: [{ transport: 'ws', msgId: msg.id.msgId }]
             }),
             sendPreparedMessage: async (prepared) => {

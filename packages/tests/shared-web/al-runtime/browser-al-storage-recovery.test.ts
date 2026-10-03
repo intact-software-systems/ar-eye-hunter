@@ -146,7 +146,8 @@ function toEvictedHealthEvent(storeId: string): ALStorageEvent {
         storeId,
         status: 'failing',
         lastFailure: { cause: 'evicted', detail: expect.any(String) },
-        lastRecoveryPointAtMs: undefined
+        lastRecoveryPointAtMs: undefined,
+        oldestUnsavedAgeMs: undefined
     };
 }
 

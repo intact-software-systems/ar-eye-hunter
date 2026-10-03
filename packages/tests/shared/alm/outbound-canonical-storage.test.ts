@@ -68,7 +68,7 @@ describe('canonical outbound payload storage', () => {
         });
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore: store, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'captured' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ peer: 'captured' }] }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
         onTestFinished(() => runtime.dispose());
@@ -97,7 +97,7 @@ describe('canonical outbound payload storage', () => {
         });
         const otherRuntime = createDefaultOutboundTestRuntime({
             stores: { admissionStore: otherStore, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'other-session' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ peer: 'other-session' }] }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
         onTestFinished(() => otherRuntime.dispose());
@@ -165,7 +165,7 @@ describe('canonical outbound payload storage', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: [{ peer: 'first' }, { peer: 'second' }, { peer: 'third' }]
             }),
             sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
@@ -203,7 +203,7 @@ describe('canonical outbound payload storage', () => {
             planOutgoingMessage: (msg) => ({
                 msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: selectedDeadline } },
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ peer: 'captured' }]
             }),
             sendPreparedMessage: async () => {
@@ -251,7 +251,7 @@ describe('canonical outbound payload storage', () => {
         const createRuntime = () =>
             createDefaultOutboundTestRuntime({
                 stores,
-                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'captured' }] }),
+                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ peer: 'captured' }] }),
                 sendPreparedMessage: async () => {
                     throw new Error('Expired work must never send');
                 }
@@ -331,7 +331,7 @@ describe('canonical outbound payload storage', () => {
         const runtime = createDefaultOutboundTestRuntime({
             queueEngine: new InboxOutboxEngine(),
             stores: { admissionStore, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'receiver' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ peer: 'receiver' }] }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
                 return { status: 'sent', submissionAttempted: true };
@@ -395,7 +395,7 @@ describe('canonical outbound payload storage', () => {
             const runtime = createDefaultOutboundTestRuntime({
                 queueEngine: new InboxOutboxEngine(),
                 stores: { admissionStore, workQueue: backend.workQueue },
-                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: namespace }] }),
+                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ peer: namespace }] }),
                 sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
             });
             onTestFinished(() => runtime.dispose());

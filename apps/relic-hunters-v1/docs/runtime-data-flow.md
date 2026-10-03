@@ -48,11 +48,17 @@ unicast to the WS server's peer id from `/api/config`, D57 as applied). The serv
 the server admitted it. The server applies it under the sender's session username and publishes the new snapshot
 through the outbox with receipts.
 
-The command channel is `local-outbox` with `onStorageUnavailable: 'refuse'`: the command is stored before it leaves, so
-a reload resumes it under the same message id and deadline (30 s), and a browser whose storage is unavailable reports
-the command failed instead of sending it unstored. There is no command id in the model, so only the ALM message-id dedup
-within the deadline plus grace stops a repeat: the server re-acknowledges a resumed command it already admitted without
-applying it again, and drops one past its deadline as expired.
+The command channel is `local-checkpoint` with `onStorageUnavailable: 'refuse'`: the command is admitted and sent from
+memory, with no storage work on the send, and the session's checkpoint saves it within one interval (1 s by default); a
+page that is hidden or frozen starts a checkpoint at once, and one started as the page unloads is best effort. A reload
+after the save resumes the command under the same message id and deadline (30 s). A command admitted inside the last
+interval before the page ends is lost with the page, and its handle reads `unobservable`. A checkpoint that lags past
+its bound (10 s by default) makes the next command fail with `storage-unavailable` instead of being sent. There is no
+command id in the model, so only the ALM message-id dedup within the deadline plus grace stops a repeat: the server
+re-acknowledges a resumed command it already admitted without applying it again, and drops one past its deadline as
+expired. The full-stack spec's reload-mid-command case holds a start command's WS frame, reloads the page past one
+interval and expects the expedition to start exactly once; it stays red until the lane retransmits a receipted WS
+unicast whose frame the transport accepted but the server never received, which it does under neither tier today.
 
 ```text
 command -> WS unicast to the server -> server ACK (receipt) -> applyCommand -> persisted state -> outbox snapshot (receiver) -> WS snapshot subscription
