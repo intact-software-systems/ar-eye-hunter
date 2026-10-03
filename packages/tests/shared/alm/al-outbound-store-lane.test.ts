@@ -157,7 +157,7 @@ function createObservedVolatileStores() {
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention(),
             decodePrepared: decodeOutboundTestPayload
-        }),
+        }, 'volatile'),
         workQueue: backend.workQueue,
         evictExpired,
         budget: undefined

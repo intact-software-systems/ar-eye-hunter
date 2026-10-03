@@ -368,10 +368,12 @@ export function createALOutboundAdmissionStore<TPrepared>(
     return new ProviderBackedALOutboundAdmissionStore({ ...input, durability: 'durable' });
 }
 
+/** A memory pair's store: the volatile lane's, or the checkpoint lane's, whose rows a checkpoint saves. */
 export function createVolatileALOutboundAdmissionStore<TPrepared>(
-    input: CreateALOutboundAdmissionStoreInput<TPrepared>
+    input: CreateALOutboundAdmissionStoreInput<TPrepared>,
+    durability: Exclude<ALStoreDurability, 'durable'>
 ): ALOutboundAdmissionStore<TPrepared> {
-    return new ProviderBackedALOutboundAdmissionStore({ ...input, durability: 'volatile' });
+    return new ProviderBackedALOutboundAdmissionStore({ ...input, durability });
 }
 
 interface ALOutboundPairAdmissionStoreInput<TPrepared> extends CreateALOutboundAdmissionStoreInput<TPrepared> {

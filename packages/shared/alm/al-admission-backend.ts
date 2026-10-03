@@ -91,6 +91,11 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
         return this.state.data.get(key);
     }
 
+    /** Every key held now, expired or not; unlike `list` it removes nothing. */
+    peekKeys(): readonly string[] {
+        return [...this.state.data.keys()];
+    }
+
     /** The lazy expiry `read` and `list` apply, run over the whole pair; the owning lane calls it. */
     evictExpired(): void {
         const nowMs = this.nowMs();
@@ -182,6 +187,18 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
         }
         finally {
             release?.();
+        }
+    }
+
+    /** Rows a checkpoint saved: a key the pair already holds keeps its own value. */
+    loadIfAbsent(rows: readonly ALAdmissionStoredValue[], entries: readonly ResourceEntry[]): void {
+        for (const row of rows) {
+            if (!this.state.data.has(row.key)) {
+                this.setStored(row.key, row);
+            }
+        }
+        for (const entry of entries) {
+            this.workQueue.writeIfAllObserved([{ expected: undefined, entry }]);
         }
     }
 

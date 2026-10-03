@@ -12,6 +12,7 @@ import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/reso
 import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
+import type { ALCheckpointPort } from '../checkpoint/al-checkpoint.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryCarrier,
@@ -195,6 +196,12 @@ export interface ALVolatileOutboundRuntimeStores<TPrepared> extends ALOutboundRu
     readonly budget: ALVolatileSessionBudget | undefined;
 }
 
+/** The memory pair a checkpointed admission goes to: its lane sweeps it, and its checkpoint saves it. */
+export interface ALCheckpointOutboundRuntimeStores<TPrepared> extends ALOutboundRuntimeStores<TPrepared> {
+    evictExpired(): void;
+    readonly checkpoint: ALCheckpointPort;
+}
+
 /** The call path that asked for a commit, so its wait and its hold are charged to the work behind it. */
 export type ALOutboundCommitOrigin = 'send' | 'drain' | 'repair';
 
@@ -345,13 +352,15 @@ export namespace ALOutboundMessageRuntime {
         readonly storageRecovery: ALStorageRecoveryReporter | undefined;
         /** The memory pair a volatile admission goes to; `undefined` keeps one backend for every admission. */
         readonly volatileStores: ALVolatileOutboundRuntimeStores<TPrepared> | undefined;
+        /** The memory pair a checkpointed admission goes to; `undefined` sends it to the volatile pair. */
+        readonly checkpointStores: ALCheckpointOutboundRuntimeStores<TPrepared> | undefined;
         readonly effectWorkerId: string;
         readonly clock: Clock;
         readonly random: () => number;
         readonly queueEngine: InboxOutboxEngine;
         readonly ownsQueueEngine: boolean;
         readonly browserLocks: ALBrowserLocks | undefined;
-        /** Which runtime of the session drains the durable pair; only the durable lane takes it. */
+        /** Which runtime of the session drains the durable pair; only the durable lane's work follows it. */
         readonly durableWorkOwnership: ALDurableWorkOwnership;
     }
 
@@ -401,18 +410,22 @@ export namespace ALOutboundMessageRuntime {
  *
  * - An admission (`enqueueIfAbsent`, each member of `enqueueAllIfAbsent`) goes to the lane its plan's
  *   `lane` names: the durability decision (`resolveALOutboundStoreDurability`) on every browser planner.
- *   Until the runtime holds a checkpoint lane, a `checkpoint` plan goes to the durable lane. The plan
- *   is computed once and handed to that lane's admission of the same message, so the admission never
- *   plans the message twice. The lane over the memory pair states no admission durable.
+ *   A runtime without a checkpoint pair sends a `checkpoint` plan to its volatile lane, and one without
+ *   either to its only lane, the durable one (the server's planner never names `checkpoint`). The plan is
+ *   computed once and handed to that lane's admission of the same message, so the admission never plans
+ *   the message twice. The volatile lane states no admission durable; the
+ *   checkpoint lane states one durable only in the runtime that owns the session's work, which saves it.
  * - Members with different durability plans stay in one logical enqueue group but route to separate store lanes.
  *   Each lane may commit its members together or individually; there is no cross-store atomicity.
- * - A control, a receipt and a retransmission go to the volatile lane when it owns the target
- *   message (a memory read), else to the durable lane.
+ * - A control, a receipt and a retransmission go to the memory lane that owns the target message (a
+ *   memory read), else to the durable lane.
  * - `cancel(msgId)` and `handOver(msgId)` are runtime-wide: one set of send controls serves both lanes.
  * - Only the durable lane admits foreign dequeue rows. The volatile lane names none and takes no
  *   browser lock, since Web Locks guard cross-tab IndexedDB commits and memory is per tab.
- * - The volatile lane's worker id is `${effectWorkerId}/volatile`. It sweeps its expired rows from its
- *   own work round, at most once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` of its clock.
+ * - The volatile lane's worker id is `${effectWorkerId}/volatile`, the checkpoint lane's
+ *   `${effectWorkerId}/checkpoint`. Each sweeps its expired rows from its own work round, at most once per
+ *   `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` of its clock. Every runtime of the session runs its
+ *   checkpoint lane's work from its own memory.
  * - An ordering or supersedence track whose messages declare different durabilities is split between
  *   the lanes; no caller declares one that way.
  * - Duplicate detection is per lane: a msgId the memory lane admitted is invisible to the IndexedDB lane,
@@ -426,6 +439,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private readonly sendControls = new ALOutboundSendControls();
     private readonly durable: ALOutboundStoreLane<TPrepared>;
     private readonly volatile: ALOutboundStoreLane<TPrepared> | undefined;
+    private readonly checkpoint: ALOutboundStoreLane<TPrepared> | undefined;
     private disposed = false;
     private readonly dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>;
 
@@ -439,6 +453,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             browserLocks: dependencies.browserLocks,
             durableWorkOwnership: dependencies.durableWorkOwnership,
             evictExpired: undefined,
+            checkpoint: undefined,
             canonicalHandoff: new ALOutboundCanonicalHandoff({
                 namespace: dependencies.admissionStore.namespace,
                 limit: AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT
@@ -455,16 +470,23 @@ export class ALOutboundMessageRuntime<TPrepared> {
             browserLocks: undefined,
             durableWorkOwnership: undefined,
             evictExpired: dependencies.volatileStores.evictExpired,
+            checkpoint: undefined,
             canonicalHandoff: undefined,
             runtime: dependencies,
             sendControls: this.sendControls,
             settlements: (fact) => this.emitSettlement(fact, 'volatile')
         });
+        this.checkpoint = dependencies.checkpointStores === undefined
+            ? undefined
+            : this.createCheckpointLane(dependencies.checkpointStores);
     }
 
-    /** What the storage of the durable lane answered; the memory pair of the volatile lane is always ready. */
+    /**
+     * What the storage of the durable lane answered. The memory pairs are always ready; the checkpoint
+     * lane's readiness is its restore, which states a failure of its own on the checkpoint store's health.
+     */
     async ready(): Promise<ALStorageReadiness.Outcome> {
-        const [durable] = await Promise.all([this.durable.ready(), this.volatile?.ready()]);
+        const [durable] = await Promise.all([this.durable.ready(), this.volatile?.ready(), this.checkpoint?.ready()]);
         return durable;
     }
 
@@ -472,7 +494,13 @@ export class ALOutboundMessageRuntime<TPrepared> {
         this.disposed = true;
         this.durable.dispose();
         this.volatile?.dispose();
+        this.checkpoint?.dispose();
         this.sendControls.dispose();
+    }
+
+    /** Starts the checkpoint now, as a hidden or frozen page may run nothing later; never awaited. */
+    flushCheckpoint(): void {
+        this.checkpoint?.flushCheckpoint();
     }
 
     get sendSignal(): AbortSignal {
@@ -624,14 +652,48 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return { lane, planner: toPlannedOnce(msg, bounded, planOutgoingMessage) };
     }
 
-    /** The memory lane for a volatile plan; every other plan, and every plan of a one-backend runtime, is durable. */
+    /**
+     * The lane a plan names. A checkpointed plan without a checkpoint pair stays in memory; a runtime with
+     * one backend sends every plan to it.
+     */
     private resolveLaneForPlan(plan: ALOutboundDispatchPlan<TPrepared>): ALOutboundStoreLane<TPrepared> {
-        return plan.lane === 'volatile' && this.volatile !== undefined ? this.volatile : this.durable;
+        switch (plan.lane) {
+            case 'volatile':
+                return this.volatile ?? this.durable;
+            case 'checkpoint':
+                return this.checkpoint ?? this.volatile ?? this.durable;
+            case 'durable':
+                return this.durable;
+        }
     }
 
-    /** A memory read, so a control about a volatile message never reaches IndexedDB. */
+    /** Memory reads, so a control about a message in memory never reaches IndexedDB. */
     private async readLaneForMessage(msgId: string): Promise<ALOutboundStoreLane<TPrepared>> {
-        return this.volatile !== undefined && await this.volatile.ownsMessage(msgId) ? this.volatile : this.durable;
+        for (const lane of [this.volatile, this.checkpoint]) {
+            if (lane !== undefined && await lane.ownsMessage(msgId)) {
+                return lane;
+            }
+        }
+        return this.durable;
+    }
+
+    /** Admits from memory in every runtime of the session; the pair's checkpoint was built under the connect's claim. */
+    private createCheckpointLane(stores: ALCheckpointOutboundRuntimeStores<TPrepared>): ALOutboundStoreLane<TPrepared> {
+        const { dependencies } = this;
+        return new ALOutboundStoreLane({
+            lane: 'checkpoint',
+            stores,
+            workerId: `${dependencies.effectWorkerId}/checkpoint`,
+            dequeueTypes: new Set<string>(),
+            browserLocks: undefined,
+            durableWorkOwnership: undefined,
+            evictExpired: stores.evictExpired,
+            checkpoint: stores.checkpoint,
+            canonicalHandoff: undefined,
+            runtime: dependencies,
+            sendControls: this.sendControls,
+            settlements: (fact) => this.emitSettlement(fact, 'checkpoint')
+        });
     }
 
     /** An undecodable control goes to the durable lane, which answers it `not-handled`. */

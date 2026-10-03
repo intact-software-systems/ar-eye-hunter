@@ -12,6 +12,8 @@ import {
 import type { ALAdmissionWorkBackend } from './al-admission-work-backend.ts';
 import type { ALRuntimeStoreRetentionConfig } from './ALStoreRetention.ts';
 import { normalizeALRuntimeStoreRetention } from './ALStoreRetention.ts';
+import type { ALCheckpointWriter } from './checkpoint/al-checkpoint-writer.ts';
+import { ALCheckpoint, type ALCheckpointStorage } from './checkpoint/al-checkpoint.ts';
 import {
     createALInboundAdmissionStore,
     createVolatileALInboundAdmissionStore,
@@ -36,17 +38,20 @@ import {
     type CreateALOutboundAdmissionStoreInput
 } from './outbound/admission/al-outbound-admission-store.ts';
 import type {
+    ALCheckpointOutboundRuntimeStores,
     ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
 } from './outbound/al-outbound-message-runtime.ts';
 import type { ALStorageConnectOpenings } from './storage/al-storage-connect-openings.ts';
-import type { ALStorageHealth } from './storage/al-storage-health.ts';
+import { createPassThroughALStorageEventSink } from './storage/al-storage-event.ts';
+import { ALStorageHealth } from './storage/al-storage-health.ts';
 import {
     createALStorageRecoveryReporter,
     type ALStorageRecoveryLane,
     type ALStorageRecoveryReporter
 } from './storage/al-storage-recovery-reporter.ts';
 import type { ALVolatileSessionBudget } from './volatile-budget/al-volatile-session-budget.ts';
+import type { ALDurableWorkOwnership } from './work/al-durable-work-ownership.ts';
 
 /**
  * Which store pair of a runtime a lane runs over: the IndexedDB pair (`durable`), the session's memory
@@ -279,10 +284,70 @@ export function createVolatileALOutboundRuntimeStores<TPrepared>(
     const input = { ...toDefaultInMemoryInput(options), decodePrepared: options.decodePrepared };
     const backend = createVolatileALAdmissionBackend(input.nowMs);
     return {
-        admissionStore: createVolatileALOutboundAdmissionStore(toInMemoryALOutboundAdmissionStoreInput(input, backend)),
+        admissionStore: createVolatileALOutboundAdmissionStore(
+            toInMemoryALOutboundAdmissionStoreInput(input, backend),
+            'volatile'
+        ),
         workQueue: backend.workQueue,
         evictExpired: () => backend.evictExpired(),
         budget
+    };
+}
+
+export interface CreateCheckpointALOutboundRuntimeStoresInput<TPrepared>
+    extends CreateDefaultALOutboundRuntimeStoresInput<TPrepared>, ALCheckpointWriter.Settings {
+    /** The connect's claim: only the runtime that owns the session's durable work saves and restores. */
+    readonly ownership: ALDurableWorkOwnership;
+    readonly timers: ALCheckpointWriter.Timers;
+}
+
+/**
+ * The memory pair a browser carrier routes checkpointed admissions to, and its checkpoint: the rows a
+ * durable pair writes, saved under this pair's own namespace, which is also its canonical scope (two
+ * memory pairs never save one row), in the session's database. Built once per connect, under its claim.
+ */
+export function createCheckpointALOutboundRuntimeStores<TPrepared>(
+    options: CreateCheckpointALOutboundRuntimeStoresInput<TPrepared>
+): ALCheckpointOutboundRuntimeStores<TPrepared> {
+    const defaults = toDefaultInMemoryInput(options);
+    const input = { ...defaults, canonicalScope: defaults.namespace, decodePrepared: options.decodePrepared };
+    const memory = createVolatileALAdmissionBackend(input.nowMs);
+    const admissionStore = createVolatileALOutboundAdmissionStore(
+        toInMemoryALOutboundAdmissionStoreInput(input, memory),
+        'checkpoint'
+    );
+    const checkpoint = new ALCheckpoint({
+        storage: toALCheckpointStorage(options, memory, admissionStore.namespace),
+        ownership: options.ownership,
+        nowMs: input.nowMs
+    });
+    return {
+        admissionStore,
+        workQueue: memory.workQueue,
+        storageRecovery: checkpoint,
+        evictExpired: () => memory.evictExpired(),
+        checkpoint
+    };
+}
+
+function toALCheckpointStorage<TPrepared>(
+    options: CreateCheckpointALOutboundRuntimeStoresInput<TPrepared>,
+    memory: InMemoryAdmissionBackend,
+    workNamespace: string
+): ALCheckpointStorage {
+    const indexedDb = toDefaultIndexedDbInput(options);
+    const { namespace } = indexedDb;
+    return {
+        memory,
+        saved: createIndexedDbAdmissionBackend(indexedDb, `${namespace}:checkpoint`, indexedDb.onStorageReset),
+        selection: {
+            keyPrefix: `${namespace}:`,
+            workRanges: { namespacePrefixes: [workNamespace], canonicalScopes: [namespace] }
+        },
+        health: options.storageHealth ??
+            new ALStorageHealth({ storeId: namespace, storage: createPassThroughALStorageEventSink() }),
+        settings: { intervalMs: options.intervalMs, lagBoundMs: options.lagBoundMs },
+        timers: options.timers
     };
 }
 
@@ -352,10 +417,6 @@ export function createDefaultIndexedDbALOutboundRuntimeStores<TPrepared>(
         ...toDefaultIndexedDbInput(options),
         decodePrepared: options.decodePrepared
     });
-}
-
-export function isIndexedDbALRuntimeStoreSupported(): boolean {
-    return IndexedDbStringPersistenceProvider.isSupported();
 }
 
 function toDefaultInMemoryInput(

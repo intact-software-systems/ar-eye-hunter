@@ -4,8 +4,7 @@ import {
     createDefaultIndexedDbALInboundRuntimeStores,
     createDefaultIndexedDbALOutboundRuntimeStores,
     createVolatileALInboundRuntimeStores,
-    createVolatileALOutboundRuntimeStores,
-    isIndexedDbALRuntimeStoreSupported
+    createVolatileALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
 import {
     configureALRuntimeStoreScopes,
@@ -31,6 +30,7 @@ import { toALStorageResetSink, type ALStorageEventSink } from '@shared/alm/stora
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 
 import {
     toBrowserALRuntimeDbName,
@@ -180,7 +180,7 @@ export function configureBrowserALRuntimeStores(
     };
     configureALRuntimeStoreScopes(toBrowserRuntimeStoreScopes(sessionId, scoped, diagnosticsPorts.storage));
     return new BrowserALStorageAvailability({
-        initial: toInitialALStorageAvailability(isIndexedDbALRuntimeStoreSupported()),
+        initial: toInitialALStorageAvailability(IndexedDbStringPersistenceProvider.isSupported()),
         requestPersist: toBrowserStoragePersistRequest(globalThis.navigator?.storage),
         storage: diagnosticsPorts.storage
     });

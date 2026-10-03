@@ -120,6 +120,11 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return entry === undefined ? undefined : toResourceEntrySnapshot(entry);
     }
 
+    /** Every key held now, expired or not; unlike `getAllKeys` it removes nothing. */
+    peekKeys(): readonly ResourceEntryKeyString[] {
+        return [...this.data.keys()];
+    }
+
     private storeEntry(key: string, entry: ResourceEntry): void {
         this.workIndex.replace(key, this.data.get(key), entry);
         this.data.set(key, entry);

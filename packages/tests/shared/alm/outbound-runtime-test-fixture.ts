@@ -10,6 +10,7 @@ import type { ALDeliveryCarrier, ALDeliverySettlementSink } from '@shared/alm/de
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID, type ALStorageResetListeners } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type {
+    ALCheckpointOutboundRuntimeStores,
     ALOutboundAckTrackingPlan,
     ALOutboundRuntimeDiagnosticsSink,
     ALOutboundRuntimeStores,
@@ -76,6 +77,8 @@ interface OutboundTestRuntimeInput<TPrepared> {
     readonly stores?: ALOutboundRuntimeStores<TPrepared>;
     /** The memory pair a volatile plan is admitted to; absent, every admission uses `stores`. */
     readonly volatileStores?: ALVolatileOutboundRuntimeStores<TPrepared>;
+    /** The memory pair a checkpointed plan is admitted to; absent, such a plan stays in the volatile pair. */
+    readonly checkpointStores?: ALCheckpointOutboundRuntimeStores<TPrepared>;
     readonly dequeue?: ALOutboundMessageRuntime.DequeueSource;
     readonly diagnostics?: ALOutboundRuntimeDiagnosticsSink;
     /** The carrier every settlement this runtime states is stamped with; `ws` unless a test says otherwise. */
@@ -180,6 +183,7 @@ export function createOutboundTestRuntimeFor<TPrepared>(
             outbox: options.outbox ?? new InMemoryQueueBox(new Map()),
             stores: options.stores,
             volatileStores: options.volatileStores,
+            checkpointStores: options.checkpointStores,
             dequeue: options.dequeue,
             diagnostics: options.diagnostics,
             carrier: options.carrier ?? 'ws',

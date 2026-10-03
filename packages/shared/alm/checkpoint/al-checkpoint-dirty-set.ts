@@ -20,7 +20,7 @@ export namespace ALCheckpointDirtySet {
 
     export interface Input {
         /** The memory pair whose admission rows and work queue the set follows. */
-        readonly backend: Pick<InMemoryAdmissionBackend, 'onChangeDo' | 'workQueue'>;
+        readonly backend: Pick<InMemoryAdmissionBackend, 'onChangeDo' | 'peekKeys' | 'workQueue'>;
         readonly nowMs: () => number;
     }
 }
@@ -35,14 +35,17 @@ interface ALCheckpointDirtyRow {
  * times is one mark at its latest revision, so a save that captured an older revision leaves it dirty.
  */
 export class ALCheckpointDirtySet {
+    private readonly backend: ALCheckpointDirtySet.Input['backend'];
     private readonly nowMs: () => number;
     private readonly admissionRows = new LatestRepository<string, ALCheckpointDirtyRow>();
     private readonly queueRows = new LatestRepository<string, ALCheckpointDirtyRow>();
     private readonly markedListeners = new Set<() => void>();
     private readonly subscriptions: readonly Unsubscribe[];
     private revision = 0;
+    private loading = false;
 
     constructor(input: ALCheckpointDirtySet.Input) {
+        this.backend = input.backend;
         this.nowMs = input.nowMs;
         this.subscriptions = [
             input.backend.onChangeDo((key) => this.mark(this.admissionRows, key)),
@@ -92,6 +95,27 @@ export class ALCheckpointDirtySet {
         }
     }
 
+    /** Runs a synchronous load of rows the checkpoint already holds: the changes it makes mark nothing. */
+    loadWithoutMarking(load: () => void): void {
+        this.loading = true;
+        try {
+            load();
+        }
+        finally {
+            this.loading = false;
+        }
+    }
+
+    /** Marks every row the pair holds now, so the next save writes all of them. */
+    markHeld(): void {
+        for (const key of this.backend.peekKeys()) {
+            this.mark(this.admissionRows, key);
+        }
+        for (const key of this.backend.workQueue.peekKeys()) {
+            this.mark(this.queueRows, key);
+        }
+    }
+
     dispose(): void {
         for (const subscription of this.subscriptions) {
             subscription.unsubscribe();
@@ -99,6 +123,9 @@ export class ALCheckpointDirtySet {
     }
 
     private mark(rows: LatestRepository<string, ALCheckpointDirtyRow>, key: string): void {
+        if (this.loading) {
+            return;
+        }
         this.revision += 1;
         const dirtiedAtMs = rows.peek(key)?.dirtiedAtMs ?? this.nowMs();
         rows.set(key, { revision: this.revision, dirtiedAtMs });

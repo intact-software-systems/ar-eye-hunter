@@ -160,7 +160,7 @@ function createObservedOutboundPair(durability: 'durable' | 'volatile'): Observe
         state,
         stores: {
             admissionStore: durability === 'volatile'
-                ? createVolatileALOutboundAdmissionStore(input)
+                ? createVolatileALOutboundAdmissionStore(input, 'volatile')
                 : createALOutboundAdmissionStore(input),
             workQueue: backend.workQueue,
             evictExpired: () => backend.evictExpired(),

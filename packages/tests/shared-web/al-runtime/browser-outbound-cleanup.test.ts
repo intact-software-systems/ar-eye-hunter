@@ -12,6 +12,7 @@ import {
 
 import '../../setup-browser-indexeddb.ts';
 
+import { toBrowserWsClientALCheckpointRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-checkpoint-store-ids.ts';
 import {
     deleteBrowserALRuntimeEntriesForSession,
     deleteExpiredBrowserALRuntimeEntries,
@@ -24,19 +25,26 @@ import {
     resolveBrowserSessionALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
-import {
-    readBrowserALWorkCleanupRows,
-    writeBrowserALWorkExpiryCleanup
-} from '@shared-web/browser/al-runtime/browser-al-work-cleanup.ts';
+import { writeBrowserALWorkExpiryCleanup } from '@shared-web/browser/al-runtime/browser-al-work-cleanup.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import {
+    createCheckpointALOutboundRuntimeStores,
+    createDefaultInMemoryALOutboundRuntimeStores
+} from '@shared/alm/al-runtime-stores.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
     AL_ADMISSION_WORK_STORE_NAME,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { decodeALOutboundIdentityFact, toALOutboundIdentityKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
-import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { readIndexedDbAdmissionSnapshot } from '@shared/alm/read-indexed-db-admission-snapshot.ts';
+import { readALWorkRowsInRanges } from '@shared/alm/storage/read-al-work-rows-in-ranges.ts';
+import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
+import {
+    createCountingIndexedDbOperationObserver,
+    createPassThroughIndexedDbOperationObserver
+} from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
 import { IndexedDbConnection } from '@shared/persistence/open-indexed-db.ts';
 import {
@@ -52,6 +60,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { GLOBAL_CHECKPOINT_TIMERS, TEST_CHECKPOINT_SETTINGS } from '../../shared/alm/checkpoint/al-checkpoint-test-support.ts';
 import { createOutboundMessage, createOutboundTestRuntimeFor } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 
 interface RawWorkRow {
@@ -142,7 +151,7 @@ describe('browser canonical outbound cleanup', () => {
             const ownerKey = await retainPendingUnderNamespace(db, ownerNamespace, 'x');
             const impostorKey = await retainPendingUnderNamespace(db, impostorNamespace, 'y');
 
-            const rows = await readBrowserALWorkCleanupRows(db, {
+            const rows = await readALWorkRowsInRanges(db, {
                 namespacePrefixes: [ownerNamespace],
                 canonicalScopes: []
             });
@@ -213,6 +222,22 @@ describe('browser canonical outbound cleanup', () => {
         expect(remaining.filter((row) => target.keys.has(row.keyString))).toEqual([]);
         expect(remaining.filter((row) => other.keys.has(row.keyString))).toHaveLength(other.keys.size);
         expect(remaining.some((row) => row.keyString.includes(unrelated.key.resourceId))).toBe(true);
+    });
+
+    it('removes one session\'s checkpoint rows with its durable rows', async () => {
+        const target = await saveCheckpointForSession(`checkpoint-target-${crypto.randomUUID()}`);
+        const other = await saveCheckpointForSession(`checkpoint-other-${crypto.randomUUID()}`);
+
+        await deleteBrowserALRuntimeEntriesForSession(target.sessionId, {
+            currentScope: SCOPE,
+            storage: diagnosticsPorts.storage
+        });
+        const remaining = await readRawWorkRows();
+
+        expect(remaining.filter((row) => target.keys.has(row.keyString))).toEqual([]);
+        expect(remaining.filter((row) => other.keys.has(row.keyString))).toHaveLength(other.keys.size);
+        expect(await target.readAdmissionKeys()).toEqual([]);
+        expect(await other.readAdmissionKeys()).not.toEqual([]);
     });
 
     it('re-arms the per-run deletion budget until every expired work row is drained', async () => {
@@ -320,6 +345,59 @@ async function admitForSession(sessionId: string, ttlMs: number) {
     const keys = new Set((await readRawWorkRows()).map((row) => row.keyString).filter((key) => !before.has(key)));
     expect(keys.size).toBe(3);
     return { store, keys };
+}
+
+/** A send on the session's WS checkpoint lane, saved by its owner: its canonical, identity and work rows. */
+async function saveCheckpointForSession(sessionId: string) {
+    const storeId = toBrowserWsClientALCheckpointRuntimeStoreId(sessionId);
+    const observer = createCountingIndexedDbOperationObserver();
+    const stores = createCheckpointALOutboundRuntimeStores({
+        dbName: SCOPE_DB_NAME,
+        namespace: `browser:${storeId}`,
+        observer,
+        decodePrepared: decodeALOutboundTransportMessage,
+        ownership: ALWAYS_OWNED_AL_DURABLE_WORK,
+        ...TEST_CHECKPOINT_SETTINGS,
+        timers: GLOBAL_CHECKPOINT_TIMERS
+    });
+    const before = new Set((await readRawWorkRows()).map((row) => row.keyString));
+    const runtime = createOutboundTestRuntimeFor({
+        queueEngine: new InboxOutboxEngine(),
+        stores: createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage }),
+        checkpointStores: stores,
+        decodePreparedMessage: decodeALOutboundTransportMessage,
+        planOutgoingMessage: (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            lane: 'checkpoint',
+            preparedMessages: [toALOutboundTransportMessage(msg)]
+        }),
+        sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
+    });
+    await runtime.enqueueIfAbsent(createOutboundMessage(sessionId, { ttlMs: 60_000 }));
+    runtime.flushCheckpoint();
+    await vi.waitFor(() => expect(observer.getCounts().byKind.write).toBe(1));
+    runtime.dispose();
+    const keys = new Set((await readRawWorkRows()).map((row) => row.keyString).filter((key) => !before.has(key)));
+    expect(keys.size).toBe(3);
+    const readAdmissionKeys = async () => await readRawAdmissionKeys(`browser:${storeId}:`);
+    return { sessionId, keys, readAdmissionKeys };
+}
+
+async function readRawAdmissionKeys(prefix: string): Promise<readonly string[]> {
+    const db = await openIndexedDbAdmissionDatabase({
+        dbName: SCOPE_DB_NAME,
+        storeName: BROWSER_AL_RUNTIME_STORE_NAME,
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {}
+    });
+    try {
+        const rows = await readIndexedDbAdmissionSnapshot(db, BROWSER_AL_RUNTIME_STORE_NAME, { kind: 'prefixes', prefixes: [prefix] });
+        return rows.map((row) => row.key);
+    }
+    finally {
+        db.close();
+    }
 }
 
 async function readRawWorkRows(): Promise<readonly RawWorkRow[]> {
