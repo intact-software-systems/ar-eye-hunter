@@ -19,7 +19,47 @@ export type ALInboundAdmissionOutcome =
     | 'unauthorized'
     | 'pending';
 
+export type ALInboundDispatchDisposition =
+    | 'shutdown'
+    | 'expired'
+    | 'plan-retry'
+    | 'plan-dropped'
+    | 'local-disabled'
+    | 'ordering-completed'
+    | 'ordering-retry'
+    | 'consumer-unavailable'
+    | 'port-returned'
+    | 'port-retry'
+    | 'port-threw';
+
+export interface ALInboundDispatchDecision {
+    readonly kind: 'dispatch-decision';
+    readonly lane: ALStoreDurability;
+    readonly workerId: string;
+    readonly effectId: string;
+    readonly msgId: string | null;
+    readonly typeId: string | null;
+    readonly carrier: ALDeliveryCarrier;
+    readonly attempts: number;
+    readonly atEpochMs: number;
+    readonly disposition: ALInboundDispatchDisposition;
+}
+
+/** One concrete WS selection; exact callback settlement is not a native application receipt. */
+export interface ALInboundConsumerInvocation {
+    readonly kind: 'consumer-invocation';
+    readonly msgId: string;
+    readonly typeId: string;
+    readonly carrier: 'ws';
+    readonly selection: 'exact-type' | 'absent';
+    readonly outcome: 'returned' | 'retry' | 'threw' | 'not-invoked';
+    readonly beganAtMs: number;
+    readonly settledAtMs: number;
+}
+
 export type ALInboundRuntimeDiagnosticsEvent =
+    | ALInboundDispatchDecision
+    | ALInboundConsumerInvocation
     | Readonly<{
         kind: 'admission-outcome';
         workerId: string;
@@ -113,6 +153,11 @@ export interface ALInboundDeferredEffect {
     readonly dueAtMs: number;
 }
 
+export interface ALInboundAdmissionDiagnostics {
+    readonly outcome: ALInboundAdmissionOutcome;
+    readonly reason: string;
+}
+
 export type ALInboundRuntimeDiagnosticsSink = (event: ALInboundRuntimeDiagnosticsEvent) => void;
 
 /**
@@ -164,11 +209,6 @@ function toALControlSubjectMsgId(msg: ALMessage): string | null {
     return control.type === 'ack' ? control.payload.ackedMsgId : control.payload.msgId;
 }
 
-export interface ALInboundAdmissionDiagnostics {
-    readonly outcome: ALInboundAdmissionOutcome;
-    readonly reason: string;
-}
-
 /**
  * Names an ending that otherwise leaves no trace at all: an `unauthorized` drop writes nothing,
  * sends no NACK and returns no error, so without this it reads exactly like a delivery still coming.
@@ -207,5 +247,18 @@ function toAcceptanceDiagnostics(
             return { outcome: 'not-handled', reason: `storage-unavailable: ${acceptance.unavailable.cause}` };
         default:
             return { outcome: 'not-handled', reason: acceptance.kind };
+    }
+}
+
+/** Diagnostics are supplemental: a failed sink must not change delivery or replace its original error. */
+export function recordALInboundDiagnostic(
+    sink: ALInboundRuntimeDiagnosticsSink | undefined,
+    event: ALInboundRuntimeDiagnosticsEvent
+): void {
+    try {
+        sink?.(event);
+    }
+    catch {
+        // No second sink or arbitrary error text escapes this optional observation boundary.
     }
 }

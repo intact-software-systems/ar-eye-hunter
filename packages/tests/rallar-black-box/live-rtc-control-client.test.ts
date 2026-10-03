@@ -119,6 +119,59 @@ describe('live RTC control client', () => {
         expect(captureEffects).toEqual(['health:agent-a', 'health:agent-b', 'health:agent-c', 'history', 'output']);
     });
 
+    it('captures literal selected-consumer and pre-dispatch facts once without inventing a claim receipt', async () => {
+        recorderJsonl = [
+            '{"name":"bypass","agentId":"agent-a","atEpochMs":110,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"atEpochMs":109,"data":{"kind":"dispatch-decision","workerId":"worker","effectId":"effect","msgId":"signal","typeId":"rtc-signaling","carrier":"ws","lane":"durable","attempts":1,"atEpochMs":10,"disposition":"local-disabled","reason":"private-consumer-sentinel"}}}}',
+            '{"name":"consumer","agentId":"agent-b","atEpochMs":120,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"atEpochMs":119,"data":{"kind":"consumer-invocation","msgId":"signal","typeId":"rtc-signaling","carrier":"ws","selection":"exact-type","outcome":"returned","beganAtMs":0,"settledAtMs":5,"error":"private-consumer-sentinel","workerId":"not-an-owned-claim"}}}}',
+            '{"name":"wildcard","agentId":"agent-c","atEpochMs":130,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"data":{"kind":"consumer-invocation","msgId":"signal","typeId":"rtc-signaling","carrier":"ws","selection":"absent","outcome":"not-invoked","beganAtMs":0,"settledAtMs":0}}}}',
+            '{"name":"wrong-type","agentId":"agent-b","atEpochMs":121,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"data":{"kind":"consumer-invocation","msgId":"signal","typeId":null,"selection":"exact-type","outcome":"returned"}}}}'
+        ].join('\n');
+        const captured = await control.captureDiagnostics({
+            testInfo: {
+                attach: async () => {
+                    captureEffects.push('output');
+                }
+            },
+            runId: 'consumer-evidence',
+            agents: [{ prefix: 'A', agentId: 'agent-a' }, { prefix: 'B', agentId: 'agent-b' }, { prefix: 'C', agentId: 'agent-c' }],
+            label: 'attempt-failure',
+            cycle: 8,
+            failureInterval: { caseId: 'retention-100', startedAtEpochMs: 100, failedAtEpochMs: 150, precision: 'current-cycle-before-close' }
+        });
+        expect(captured.checkpoint.agents[0].details).toMatchObject({
+            lifecycleHistory: {
+                events: [{ kind: 'dispatch-decision', disposition: 'local-disabled', workerId: 'worker', effectId: 'effect', producerAtEpochMs: 10 }]
+            }
+        });
+        expect(captured.checkpoint.agents[1].details).toMatchObject({
+            lifecycleHistory: {
+                nativeApplication: 'unknown',
+                consumerClaimAssociation: 'unknown-message-level-observation-only',
+                events: [{
+                    eventId: 'consumer',
+                    controlAtEpochMs: 120,
+                    runtimeAtEpochMs: 119,
+                    kind: 'consumer-invocation',
+                    msgId: 'signal',
+                    typeId: 'rtc-signaling',
+                    selection: 'exact-type',
+                    outcome: 'returned',
+                    beganAtMs: 0,
+                    settledAtMs: 5,
+                    workerId: null,
+                    effectId: null,
+                    lane: null,
+                    attempts: null
+                }]
+            }
+        });
+        expect(captured.checkpoint.agents[2].details).toMatchObject({ lifecycleHistory: { events: [{ selection: 'absent', outcome: 'not-invoked' }] } });
+        expect(JSON.stringify(captured)).not.toContain('private-consumer-sentinel');
+        expect(JSON.stringify(captured)).not.toContain('not-an-owned-claim');
+        expect(recorderReads).toBe(1);
+        expect(captureEffects).toEqual(['health:agent-a', 'health:agent-b', 'health:agent-c', 'history', 'output']);
+    });
+
     it('preserves existing RTC commit admission and owned dispatch facts at capture HTTP without implying native application', async () => {
         rtcDiagnosticPeers = [{ peerId: 'session-b', connection: { state: 'Closed', reconnecting: false }, lanes: [] }];
         recorderJsonl = [
@@ -195,7 +248,7 @@ describe('live RTC control client', () => {
                         batchStartedAtMs: 1007,
                         startedAtMs: 1010,
                         intraBatchWaitMs: 3,
-                        observation: 'awaited-owned-dispatch-return-not-native-application',
+                        observation: 'owned-work-settlement-not-selected-consumer-invocation',
                         admissionLink: { sourceObserved: 'matched', retained: 'matched' }
                     },
                     { eventId: 'timeout', peerObservation: { connection: { state: 'Connecting', hasRemoteDescription: false } } }

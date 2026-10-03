@@ -189,17 +189,55 @@ normal collection/publication paths and current notification state; rare
 output/transport/direct-spec finalizer faults remain source/unit scope. They do
 not prove an incorrect timeout guard or the native establishment cause.
 
-The next missing fact is where existing signaling work stops before native
-application. Canonical recorder producers already emit RTC AL local
-commit-phases, remote admission-outcome, and owned dispatch claim-settled rows;
-the lifecycle-only projection omitted them and uploaded summaries retain only
-counts. Source-proven availability does not reconstruct omitted original rows.
-Task 21 preserves bounded allowlisted facts at the existing consumer, and Task
-22 proves its independently reviewed exact head. Recorder origin/continuity,
-native application/generation, deletion issuer, cross-agent causal order and
-one-way network latency remain unknown. No runtime policy change, accepted
-primary/repeat, E1 reconciliation, ranking completion, new checked-in corpus
-count or completed E3 baseline follows.
+Task 21 delivered bounded RTC AL commit/admission/qualified claim preservation.
+Final independent specification PASS and quality APPROVED (C0/I0/M0) apply to
+`dd2d9371b8146947548b9346027d05338c55a905`. The original nine-file 119-test
+run belongs to behavior commit `99524`; final `dd2d` has 69 affected tests,
+1,434 enforced test files with zero type errors, and declaration/body/import/
+initializer equivalence plus layout/initialization review. Exact-source branch
+release 37138443066 and both CodeQL analyses passed separately from runtime
+acceptance.
+
+Task 22's exact-source non-publishing diagnostic
+[37138465392](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37138465392),
+attempt 1 on `dd2d9371b8146947548b9346027d05338c55a905`, is final
+COMPLETED/FAILURE: source passed, all three diagnostic jobs failed, accepted
+capture/publication skipped. Watcher 29626 exited 1 and retired; no producer
+remains. All 81 unchanged originals / 4,243,068 inner bytes passed independent
+complete inventory/source/length/SHA256 verification; outer digests remain
+GitHub-recorded only. Twelve scenario participations passed, original retention
+failures occurred at cycles 10/5/1, and twelve gated participations skipped.
+Twenty-seven non-failure snapshots / 81 agent entries omit history. Each failure
+preserves complete three-agent later health, the frozen current-cycle-before-close
+interval and original readiness rejection before normal cleanup. Rare deadline,
+unavailable, output and direct-spec faults remain source/unit scope.
+
+All 256 retained mixed events / 218,633 serialized bytes satisfy the unchanged
+per-case combined bounds, schema, identity, link, clock and privacy checks:
+53 commits, 49 admissions, 56 qualified claims (47 completed / nine retry),
+103 matched and two unknown links. All 49 admissions have unique retained
+other-agent same-message/type commit correspondence; 47 distinct admitted
+messages have qualified completed work. R1 has 19 completed claims and zero
+retry yet still fails. R2/R3 retry identities later complete and A–C establishes;
+no causal B–C retry fix follows. R1 has prefix loss plus six oversized rows;
+R2/R3 each have twelve oversized rows. No output, row or transport cap fired.
+
+Completed AL work can bypass the dispatch port when local delivery is disabled,
+a plan drops the message, or ordering is already complete. Retry can precede
+or occur inside the port. The WS owner separately selects an exact-type callback,
+ALL_IN fallback/wildcard and onAny observers; port settlement cannot establish
+that the actual selected RTC consumer ran. Task 23 observes the exact callback
+await and separate owned AL dispositions while preserving the published dispatch
+signature. Consumer evidence is deliberately message/type/actual-agent scoped:
+claim, attempt, lane and unique claim pairing remain unknown at that boundary.
+A receiver can catch errors and native lifetime retirement can release awaiters,
+so consumer return still does not establish native application. Task 24 is the
+next exact-source diagnostic proof, after fresh independent review.
+
+Recorder origin/continuity, native application/generation, deletion issuer,
+cross-agent causal order and one-way network latency remain unknown. No native
+cause, accepted E3 primary/repeat, E1 reconciliation, ranking completion, checked-in
+corpus increment or completed baseline follows.
 
 Newer merged ALM work [#627](https://github.com/intact-software-systems/ar-eye-hunter/pull/627),
 [#628](https://github.com/intact-software-systems/ar-eye-hunter/pull/628),
@@ -217,8 +255,9 @@ observation publication in
 [PR #636](https://github.com/intact-software-systems/ar-eye-hunter/pull/636),
 [PR #637](https://github.com/intact-software-systems/ar-eye-hunter/pull/637), and
 [PR #638](https://github.com/intact-software-systems/ar-eye-hunter/pull/638).
-They are proposed observations; the checked-in corpus counts above remain
-unchanged. Required repeats passed where needed. Oct 2 duration and first-open,
+A controller GitHub API read on October 3 at 18:03 UTC confirms all six recovery
+PRs #634–639 remain OPEN, merged=false and merged_at=null. They are proposed
+observations; the checked-in corpus counts above remain unchanged. Required repeats passed where needed. Oct 2 duration and first-open,
 and Sep 29 first-open remain noisy/inconclusive. The publication HTTP 401 is
 separate from capture outcomes; artifact recovery does not require replacing
 capture identity.
@@ -274,7 +313,15 @@ and `packages/shared/alm/inbound/lane/al-inbound-store-lane.ts#recordClaimSettle
 `al-inbound-runtime-diagnostics.ts#toALInboundClaimIdentity` owns message identity;
 `black-box-rallar-diagnostics.ts#createBlackBoxRallarDiagnosticsPorts` emits through
 the existing runtime recorder. `AppTopics.rtcSignaling` owns `rtc-signaling`;
-native Offer/Answer/IceCandidate kinds are separate. The private consumer remains
+native Offer/Answer/IceCandidate kinds are separate.
+`al-inbound-admitted-delivery.ts#dispatchAdmittedMessage` observes owned pre-port
+dispositions and port outcomes; `ws-queue-box-client-service.ts#dispatchExactConsumer`
+observes the actual selected callback await. `ALInboundMessageRuntime` is publicly
+exported by `packages/shared/mod.ts`; its three-argument dispatch signature and
+public callbacks stay unchanged. The separate WS fact has no claim/lane identity
+or unique claim join. `WsRtcSignalingTransportUsingWsQBox#registerInboxReceiver`
+catches nested errors, and native lifetime retirement can release awaiters.
+The private consumer remains
 `tests/playwright/rallar-black-box/live-rtc-agent-diagnostics.ts`, exercised by its
 pure tests and literal `live-rtc-control-client.test.ts` capture HTTP boundary.
 
@@ -1016,93 +1063,78 @@ justified yet.”
 | 7       | Measurement gates/source-fingerprint tooling delivered. Current captures use their own immutable source snapshot, not a final-main anchor.                                                                                                                                                                                         |
 | 8       | E1 capture unverified: recover and validate retained evidence or perform governed capture after representative E3 succeeds. Tool availability cannot mark this complete.                                                                                                                                                           |
 | 9       | E2 stream active with 31 checked-in passed observations; five recovered Sep 28–Oct 2 archives are proposed in PRs #634–638. Retain noisy/inconclusive classification.                                                                                                                                                              |
-| 10      | E3 has no accepted primary/repeat. Run 37108696378 recovery is proposed in PR #639. Tasks 17/18 delivered reviewed bounded lifecycle preservation and exact-head normal-path proof; Tasks 19/20 delivered independently approved event observations and exact-head normal-path proof; bounded AL evidence and its proof come next. |
+| 10      | E3 has no accepted primary/repeat. Run 37108696378 recovery is proposed in PR #639. Tasks 17/18 delivered reviewed bounded lifecycle preservation and exact-head normal-path proof; Tasks 19/20 delivered independently approved event observations and exact-head normal-path proof; Tasks 21/22 delivered bounded AL evidence and exact-source proof; selected-consumer distinction and its proof come next. |
 | 11      | B07 held pending its separate human decision; no remote run in the current horizon.                                                                                                                                                                                                                                                |
 | 12      | Ranking gated on accepted E3 and required repeat plus reconciled relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                                                                                                                                                                           |
 | 17      | Bounded canonical lifecycle preservation delivered and independently approved with zero findings; one shared sanitized sequence, completed-health-first and failure-only capture.                                                                                                                                                  |
 | 18      | Exact-head non-publishing proof delivered: run 37123318628 attempt 1, source bbf0f6b007a85234f9b9e970ab535ff3b4b391e2, all 82 files verified, 122 useful events; normal-path scope and incomplete coverage retained.                                                                                                               |
 | 19      | Existing peer/lane notification observations delivered; final independent specification PASS and quality APPROVED after the import-only fix, zero remaining findings. Retained 105 tests / 1,434-file zero-error typecheck are attributed to the pre-fix source.                                                                   |
 | 20      | Exact-head non-publishing proof delivered: run 37130139368 attempt 1 on 7214bdd0288005bac4f34c4964f995adaa188d4e, 81 verified original files / 4,081,384 inner bytes, 100 useful events / 117,722 bytes; all three original retention failures and honest losses preserved, watcher retired.                                       |
+| 21      | Bounded RTC AL preservation delivered; final independent specification PASS and quality APPROVED at dd2d9371b8146947548b9346027d05338c55a905 (C0/I0/M0). Original 119 tests belong to 99524; final dd2d has 69 affected tests and 1,434-file zero-error maintained typecheck plus declaration equivalence review. |
+| 22      | Final exact-source diagnostic run 37138465392 attempt 1: all three original failures at cycles 10/5/1, 81 verified unchanged files / 4,243,068 bytes, 256 events / 218,633 bytes; 53 commits, 49 admissions, 56 qualified claims (47 completed / nine retry), 103 matched / two unknown links. Normal-path scope and honest loss remain; watcher retired, no accepted metrics. |
 
 ## 11. Next Two Useful Slices
 
-### Task 21: Preserve bounded existing RTC AL evidence and obtain independent review
+### Task 23: Distinguish actual selected RTC consumer invocation from AL settlement
 
-**Files:** The existing pure agent diagnostics projector and literal capture HTTP
-and pure projection tests, plus this factual plan refresh. Recorder, HTTP reader,
-canonical spec finalizer, workflow and native/public producers keep their owners.
+**Files:** Existing AL admitted-delivery, diagnostic contract and lane composition;
+WS queue-box concrete consumer selection; existing pure projector and literal
+HTTP tests; focused producer tests and their affected support; this factual plan.
+The published runtime dispatch signature and public callbacks remain compatible.
 
-**Behavior:** Preserve allowlisted `rallar.browser.alm.outbound_diagnostics`
-commit-phases and `rallar.browser.alm.inbound_diagnostics` admission-outcome for
-positively typed `AppTopics.rtcSignaling` (`rtc-signaling`). Qualify dispatch-local
-claim-settled with its canonical equal msgId/subjectMsgId, null typeId and an RTC
-admission in the same emitting agent and exact lane/worker ownership: durable
-uses the carrier effectWorkerId; volatile uses exactly its `/volatile` child.
-Missing/null type is not a wildcard. Exclude unrelated AL/app/control traffic
-and unqualified claims. Preserve source observations and repeated admission
-facts; conflicting admission types stay ambiguous. Report source-observed versus
-retained counterpart linkage separately when eviction removes a row. Do not
-fabricate sender-peer, OfferID or native-generation pairing.
+**Behavior:** At the real WS exact-type callback await, emit a terminal immutable
+message/type/carrier observation using the injected producer clock and finite
+returned/retry/threw outcome. Deferred invocation has no terminal fact before
+settlement; missing data remains unknown. Positive absent exact-type selection is
+distinct from ALL_IN/onAny delivery. Separately observe finite owned AL pre-port
+gates and port outcomes with real worker/lane/effect/attempt identity. The WS
+consumer boundary lacks those identities: retain explicit unknowns and never
+invent a unique claim pair, counter, side table or generation. A returned receiver
+is invocation evidence only; caught errors and native retirement are not receipts.
 
-Keep local admission-store commit distinct from network delivery, remote admitted
-owned work distinct from dispatch, and awaited owned dispatch return distinct
-from native application. Receiver error catches and native retirement can release
-the dispatch caller. Keep AL producer clock/timing, runtime emitter clock and
-control-event clock distinct; queueWaitMs is clamped batchStartedAtMs minus
-dueAtMs, intra-batch wait is startedAtMs minus batchStartedAtMs, and durationMs
-surrounds the awaited effect. Native application, generation and deletion issuer
-remain unknown. Missing settlement cannot prove signaling loss or blocked work.
+One existing sink/topic/envelope/recorder/allowlisted projection carries the facts.
+Keep the single accepted HTTP 67,108,864-byte / 30,000-ms response, 8,388,608-byte
+retained suffix, last 20,000 nonblank rows, 16,384-byte row cap, latest 600 TOTAL
+mixed permitted events / 262,144 TOTAL serialized event bytes and 256-character
+identities. New facts share retention/eviction and exact count/byte/loss accounting.
+Real agent partitions, frozen interval, later health, failure-only read and current
+finalizer remain. No arbitrary error/reason, payload/route, SDP/ICE/address or secret
+escapes the allowlist; all producer, runtime and recorder clocks remain separate.
 
-Keep bounds verbatim: accepted HTTP 67,108,864 bytes / 30,000 ms; retained suffix
-8,388,608 bytes; last 20,000 nonblank rows / 16,384 bytes per source row; latest
-600 permitted events / 262,144 serialized event-output bytes; identities at most
-256 characters. Correlation fields share the same event budget and oldest-event
-eviction. The temporary compact identity index is bounded by those selected
-source rows; no new collector, emitter, read, persistent store or uncapped buffer.
-Keep inclusive frozen interval, real agent partitions, lifecycle observations,
-later health, all accounting/loss flags and unknown/incomplete/unavailable
-coverage. Exclude raw signal roots, SDP/candidates/addresses/ICE contents, route,
-payload/content, arbitrary reasons/errors, credentials and environment values.
+- [x] Witness independent callback-count semantic producer RED and literal pure/
+      capture HTTP RED; obtain minimum GREEN for disabled/dropped/ordered bypass,
+      pre-port retry, exact return/retry/throw, wildcard/onAny-only selection and
+      privacy/identity/clock/retention distinctions.
+- [x] Run covering semantic and maintained type checks on the implementation;
+      review every changed authored file and recursively affected support in full.
+- [ ] Resolve the changed-style gate's admitted-delivery cohesion warning
+      (cognitive load 63 versus base 49), then obtain fresh controller-owned
+      specification and quality review. No artificial owner split, affected legacy
+      exception, public migration or policy change is authorized. Local work
+      cannot self-certify independent review, required gate passage or live proof.
 
-- [x] Witness literal semantic RED at actual capture HTTP for missing commit,
-      admission and dispatch facts; obtain minimum GREEN and mixed-event
-      identity/privacy/clock/ownership/linkage/loss/byte/row regression coverage.
-- [ ] Obtain fresh independent specification/quality review after covering final
-      checks and maintained `npm run typecheck:tests`. Every changed authored file
-      is reviewed/remediated in full; every modified remediation support file
-      enters closure recursively; independent untouched code remains outside
-      closure. No affected legacy retention is authorized. Local implementation
-      cannot self-certify independent review or live proof.
+**Exit:** Independently reviewed diagnostic refinement with original expiry,
+shutdown, ordering, retry, readiness, error identity/precedence and cleanup
+semantics preserved. No native fix or limit increase is earned by this evidence.
 
-**Exit:** Independently reviewed bounded private evidence projection. One completed
-three-agent health capture precedes one failure-only recorder read; frozen end
-precedes finalizer health/cleanup. Success/ordinary/periodic suppression, real
-cycle/phase, optional-output independence, original readiness rejection and
-mandatory cleanup/evidence failures remain visible. No retry/watchdog/timer,
-readiness budget, workload/sample/environment or native-policy change is earned.
+### Task 24: Prove exact-source selected-consumer evidence without accepted publication
 
-### Task 22: Prove exact-head AL evidence without publishing accepted metrics
+**Files:** Controller-owned one exact-source non-publishing all-three diagnostic
+proof and ignored unchanged-original audit, only after Task 23 clean independent
+review, published feature SHA and confirmation that no producer is live.
 
-**Files:** Controller-owned exact-head non-publishing proof and ignored original
-artifact analysis, after Task 21 clean independent review and exact remote feature
-SHA with no live producer. No producer is authorized by the implementation slice.
+- [ ] Verify exact source and complete original inventory/length/hash/privacy;
+      preserve first failure/cycle/rejection, useful actual selected-consumer
+      and AL decision facts, message-level limits, loss/eviction/unknowns,
+      complete later health and normal success/periodic history suppression.
+- [ ] Keep rare deadline/unavailable/output/direct-spec faults in source/unit
+      scope unless exercised. Do not infer native application, claim pairing or
+      causal order, reconstruct missing rows, or widen evidence budgets.
 
-- [ ] Verify exact source, complete original inventories/inner hashes and privacy;
-      inspect useful positively identified RTC commit/admission/dispatch facts
-      when actually retained, honest source-versus-retained links, event budgets,
-      timeout-local observations and complete three-agent later health in the
-      frozen window. Do not reconstruct absent rows or widen a loss boundary.
-- [ ] Preserve original first scenario failure, cycle and rejection; verify normal
-      success/periodic suppression and keep unexercised transport/output/rare
-      direct-spec faults in source/unit scope. No partial run proves cycle 100,
-      native application, accepted E3 primary/repeat or baseline completion.
-
-**Exit:** Honest exact-head proof and first-failure analysis. Any further native
-correction requires a causally earned semantic RED, full closure and independent
-review. A real public/persisted/protocol conflict requires explicit compatibility
-direction. Full B01–B06 acceptance, E1 reconciliation, required E3 repeat, ranking
-and human completion remain required; B07 stays held and E4 conditional. No
-accepted workload/noise/accounting/completion gate is changed by this horizon.
+**Exit:** Honest exact-source diagnostic proof. No Task 25 or native correction
+is yet causally earned. Full B01–B06 primary plus required-repeat acceptance,
+relevant E1 reconciliation, ranking and human completion remain; B07 stays held,
+E4 conditional. No workload/noise/environment/artifact/completion gate changes.
 
 ## 12. Baseline Completion Gate
 

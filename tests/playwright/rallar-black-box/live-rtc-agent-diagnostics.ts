@@ -123,6 +123,21 @@ const AL_COMMIT_ORIGINS = ['send', 'drain', 'repair'] as const;
 const AL_COMMIT_OUTCOMES = ['committed', 'conflict', 'expired', 'not-attempted'] as const;
 const AL_CARRIERS = ['rtc', 'ws'] as const;
 const AL_ADMISSION_OUTCOMES = ['committed', 'not-handled', 'rejected', 'unauthorized', 'pending'] as const;
+const AL_DISPATCH_DISPOSITIONS = [
+    'shutdown',
+    'expired',
+    'plan-retry',
+    'plan-dropped',
+    'local-disabled',
+    'ordering-completed',
+    'ordering-retry',
+    'consumer-unavailable',
+    'port-returned',
+    'port-retry',
+    'port-threw'
+] as const;
+const AL_CONSUMER_SELECTIONS = ['exact-type', 'absent'] as const;
+const AL_CONSUMER_OUTCOMES = ['returned', 'retry', 'threw', 'not-invoked'] as const;
 const AL_CLAIM_OUTCOMES = ['completed', 'non-retryable', 'retry', 'not-ready'] as const;
 
 const RTC_LIFECYCLE_KINDS: Readonly<Record<RallarRtcLifecycleKind, true>> = {
@@ -447,6 +462,7 @@ function toLiveRtcLifecycleHistoryMetadata(
         eventSelection: 'latest-permitted-events-in-stream-order',
         nativeGenerationAndDeletionIssuer: 'unknown',
         nativeApplication: 'unknown',
+        consumerClaimAssociation: 'unknown-message-level-observation-only',
         signalingClock: 'AL-producer-clock-separate-from-runtime-emission-and-control-event',
         signalingJoin: 'same-agent-message-exact-lane-worker-all-admission-types-agree-duplicates-preserved',
         signalingIndexSelection: 'compact-identities-from-at-most-20000-selected-source-rows',
@@ -701,6 +717,12 @@ function toLiveRtcSignalingInbound(
 ): LiveRtcJsonRecord | null {
     const key = toLiveRtcInboundIdentityKey(event, agentId);
     const observations = key === null ? undefined : sourceIdentities.get(key);
+    if (event.kind === 'consumer-invocation') {
+        return event.typeId === AppTopics.rtcSignaling ? toLiveRtcConsumerInvocation(event) : null;
+    }
+    if (event.kind === 'dispatch-decision') {
+        return event.typeId === AppTopics.rtcSignaling ? toLiveRtcDispatchDecision(event) : null;
+    }
     const link = { sourceObserved: resolveLiveRtcSignalingLink(observations), retained: 'unknown' };
     if (event.kind === 'admission-outcome' && event.typeId === AppTopics.rtcSignaling) {
         return {
@@ -737,8 +759,40 @@ function toLiveRtcSignalingInbound(
         intraBatchWaitMs: startedAtMs !== null && batchStartedAtMs !== null && startedAtMs >= batchStartedAtMs
             ? startedAtMs - batchStartedAtMs
             : null,
-        observation: 'awaited-owned-dispatch-return-not-native-application',
+        observation: 'owned-work-settlement-not-selected-consumer-invocation',
         admissionLink: link
+    };
+}
+
+function toLiveRtcConsumerInvocation(event: LiveRtcJsonRecord): LiveRtcJsonRecord {
+    return {
+        msgId: toBoundedIdentity(event.msgId),
+        typeId: AppTopics.rtcSignaling,
+        carrier: event.carrier === 'ws' ? 'ws' : null,
+        workerId: null,
+        effectId: null,
+        lane: null,
+        attempts: null,
+        selection: toAllowedLifecycleState(event.selection, AL_CONSUMER_SELECTIONS),
+        outcome: toAllowedLifecycleState(event.outcome, AL_CONSUMER_OUTCOMES),
+        beganAtMs: toFiniteNonnegativeObservation(event.beganAtMs),
+        settledAtMs: toFiniteNonnegativeObservation(event.settledAtMs),
+        observation: 'exact-type-consumer-settlement-not-native-application'
+    };
+}
+
+function toLiveRtcDispatchDecision(event: LiveRtcJsonRecord): LiveRtcJsonRecord {
+    return {
+        workerId: toBoundedIdentity(event.workerId),
+        effectId: toBoundedIdentity(event.effectId),
+        msgId: toBoundedIdentity(event.msgId),
+        typeId: AppTopics.rtcSignaling,
+        lane: toAllowedLifecycleState(event.lane, AL_LANES),
+        carrier: toAllowedLifecycleState(event.carrier, AL_CARRIERS),
+        attempts: toFiniteNonnegativeObservation(event.attempts),
+        producerAtEpochMs: toFiniteNonnegativeObservation(event.atEpochMs),
+        disposition: toAllowedLifecycleState(event.disposition, AL_DISPATCH_DISPOSITIONS),
+        observation: 'owned-dispatch-decision-not-selected-consumer-invocation'
     };
 }
 

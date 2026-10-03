@@ -576,7 +576,7 @@ describe('RTC signaling evidence correlation', () => {
                     batchStartedAtMs: 5,
                     startedAtMs: 5,
                     intraBatchWaitMs: 0,
-                    observation: 'awaited-owned-dispatch-return-not-native-application',
+                    observation: 'owned-work-settlement-not-selected-consumer-invocation',
                     admissionLink: { sourceObserved: 'matched', retained: 'unknown' }
                 }
             ])
@@ -616,10 +616,10 @@ describe('shared RTC signaling output and loss limits', () => {
         const first = requiredJsonRecord(histories['agent-a'], 'agent-a');
         const second = requiredJsonRecord(histories['agent-b'], 'agent-b');
         const events = [...requiredJsonArray(first.events, 'events'), ...requiredJsonArray(second.events, 'events')];
-        expect(first).toMatchObject({ observed: { scannedRows: 602, retainedRows: 119, outputDroppedRows: 483, outputBytes: 261116 } });
-        expect(second).toMatchObject({ observed: { retainedRows: 119, outputBytes: 261116 } });
+        expect(first).toMatchObject({ observed: { scannedRows: 602, retainedRows: 119, outputDroppedRows: 483, outputBytes: 261234 } });
+        expect(second).toMatchObject({ observed: { retainedRows: 119, outputBytes: 261234 } });
         expect(events).toHaveLength(119);
-        expect(events.reduce<number>((bytes, event) => bytes + Buffer.byteLength(JSON.stringify(event)), 0)).toBe(261116);
+        expect(events.reduce<number>((bytes, event) => bytes + Buffer.byteLength(JSON.stringify(event)), 0)).toBe(261234);
         expect(requiredJsonArray(second.events, 'agent-b events')[0]).toMatchObject({ eventId: 'admission-241', streamRow: 484 });
         expect(JSON.stringify(histories)).not.toContain('admission-240');
         expect(first).toMatchObject({ events: expect.arrayContaining([expect.objectContaining({ eventId: 'last-lifecycle', streamRow: 602 })]) });
@@ -670,5 +670,139 @@ describe('shared RTC signaling output and loss limits', () => {
                 : []
         });
         expect(JSON.stringify(history)).not.toContain('private');
+    });
+});
+
+describe('actual RTC consumer evidence', () => {
+    const consumer = {
+        kind: 'consumer-invocation',
+        msgId: 'signal',
+        typeId: 'rtc-signaling',
+        carrier: 'ws',
+        selection: 'exact-type',
+        outcome: 'returned',
+        beganAtMs: 0,
+        settledAtMs: 5
+    };
+    const decision = {
+        kind: 'dispatch-decision',
+        msgId: 'signal',
+        typeId: 'rtc-signaling',
+        workerId: 'worker/volatile',
+        effectId: 'dispatch',
+        lane: 'volatile',
+        carrier: 'ws',
+        attempts: 1,
+        atEpochMs: 4,
+        disposition: 'port-returned'
+    };
+
+    it('keeps source-owned consumer settlement distinct from AL port completion without inventing a claim join', () => {
+        const jsonl = [toSignalingRow(admittedSignal), toSignalingRow(decision), toSignalingRow(consumer)].join('\n');
+        const history = requiredJsonRecord(toNotificationHistory(jsonl), 'history');
+        expect(history).toMatchObject({ consumerClaimAssociation: 'unknown-message-level-observation-only', nativeApplication: 'unknown' });
+        expect(requiredJsonArray(history.events, 'events')).toMatchObject([
+            { kind: 'admission-outcome', dispatchLink: { sourceObserved: 'unknown', retained: 'unknown' } },
+            {
+                kind: 'dispatch-decision',
+                workerId: 'worker/volatile',
+                effectId: 'dispatch',
+                lane: 'volatile',
+                attempts: 1,
+                producerAtEpochMs: 4,
+                disposition: 'port-returned',
+                observation: 'owned-dispatch-decision-not-selected-consumer-invocation'
+            },
+            {
+                kind: 'consumer-invocation',
+                msgId: 'signal',
+                typeId: 'rtc-signaling',
+                workerId: null,
+                lane: null,
+                effectId: null,
+                attempts: null,
+                selection: 'exact-type',
+                outcome: 'returned',
+                beganAtMs: 0,
+                settledAtMs: 5,
+                observation: 'exact-type-consumer-settlement-not-native-application'
+            }
+        ]);
+    });
+
+    it.each(['returned', 'retry', 'threw', 'not-invoked'])('retains literal %s with no arbitrary content', (outcome) => {
+        const selection = outcome === 'not-invoked' ? 'absent' : 'exact-type';
+        const history = toNotificationHistory(
+            toSignalingRow({
+                ...consumer,
+                selection,
+                outcome,
+                error: 'private-sentinel',
+                route: { credential: 'private-sentinel' },
+                signal: { sdp: 'private-sentinel' }
+            })
+        );
+        expect(history).toMatchObject({ events: [{ selection, outcome }] });
+        expect(JSON.stringify(history)).not.toContain('private-sentinel');
+    });
+
+    it('does not fabricate unknown identity or timing from null, false, numeric overflow, or oversized values', () => {
+        const jsonl = toSignalingRow({
+            ...consumer,
+            msgId: 'm'.repeat(257),
+            beganAtMs: false,
+            settledAtMs: null,
+            selection: 'private-sentinel',
+            outcome: 'private-sentinel',
+            workerId: 'invented',
+            attempts: 99
+        });
+        expect(toNotificationHistory(jsonl)).toMatchObject({
+            events: [{ msgId: null, workerId: null, attempts: null, selection: null, outcome: null, beganAtMs: null, settledAtMs: null }]
+        });
+        expect(toNotificationHistory(toSignalingRow({ ...decision, workerId: null, effectId: false, attempts: 0, atEpochMs: -1 }))).toMatchObject({
+            events: [{ workerId: null, effectId: null, attempts: 0, producerAtEpochMs: null }]
+        });
+        expect(toNotificationHistory(toSignalingRow(consumer).replace('"settledAtMs":5', '"settledAtMs":1e400'))).toMatchObject({
+            events: [{ settledAtMs: null }]
+        });
+    });
+
+    it('does not borrow type or identity from another message, worker, agent or conflicting admission', () => {
+        const rows = [
+            toSignalingRow({ ...admittedSignal, typeId: 'app-type' }),
+            toSignalingRow(admittedSignal),
+            toSignalingRow({ ...consumer, typeId: null }),
+            toSignalingRow({ ...consumer, typeId: 'app-type' }),
+            toSignalingRow({ ...consumer, msgId: 'other' }, 'other-message'),
+            toSignalingRow(consumer, 'other-agent', 'agent-z'),
+            toSignalingRow({ ...decision, workerId: 'other-worker', typeId: null }),
+            toSignalingRow({ ...decision, msgId: 'other', typeId: null }),
+            toSignalingRow({ ...decision, typeId: null }, 'ambiguous-decision'),
+            toSignalingRow(consumer, 'typed-consumer')
+        ];
+        expect(toNotificationHistory(rows.join('\n'))).toMatchObject({
+            events: [
+                { kind: 'admission-outcome' },
+                { eventId: 'other-message', msgId: 'other', typeId: 'rtc-signaling' },
+                { eventId: 'typed-consumer', msgId: 'signal', typeId: 'rtc-signaling' }
+            ]
+        });
+    });
+
+    it('leaves missing and evicted consumer counterparts unknown under the one mixed event budget', () => {
+        const rows = [toSignalingRow(consumer), ...Array.from({ length: 600 }, (_, index) => toSignalingRow({ ...decision, msgId: `signal-${index}` }))];
+        const history = requiredJsonRecord(toNotificationHistory(rows.join('\n')), 'history');
+        const events = requiredJsonArray(history.events, 'events');
+        expect(events.length).toBeGreaterThan(0);
+        expect(events.length).toBeLessThanOrEqual(600);
+        expect(events.every((event) => requiredJsonRecord(event, 'event').kind === 'dispatch-decision')).toBe(true);
+        expect(history).toMatchObject({
+            consumerClaimAssociation: 'unknown-message-level-observation-only',
+            observed: { outputDroppedRows: 601 - events.length, retainedRows: events.length }
+        });
+        expect(requiredJsonRecord(history.observed, 'observed').outputBytes).toBe(
+            events.reduce<number>((sum, event) => sum + Buffer.byteLength(JSON.stringify(event)), 0)
+        );
     });
 });
