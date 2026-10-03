@@ -101,7 +101,10 @@ Realtime data puts three demands on every tier, and I2b's and A1's designs are j
 - **Capture and write.** The capture is taken synchronously at the memory backend's serialized write
   tail, so it is one state that existed. The write is one IndexedDB readwrite transaction that
   replaces the previous point, and its value is complete before the transaction opens. An
-  interrupted write leaves the previous point intact.
+  interrupted write leaves the previous point intact. **Decided (D129, 2026-10-02):** the point is the
+  lane's changed rows in the existing `entries` and `alm-work` stores under the checkpoint lane's own
+  store id (section 7.5, item 4), so an interrupted write leaves the prior rows intact and no row shape
+  or schema id changes.
 - **Dispatch never waits.**
   - Admission, dispatch, receipts and cleanup run from memory.
   - At most one checkpoint is in flight, and changes made during it coalesce into the next one.
@@ -122,9 +125,9 @@ Realtime data puts three demands on every tier, and I2b's and A1's designs are j
   - Restored messages have no handle, like a resumed durable message (D13, D64).
 - **Restrictions.** A send with an ordering key or sequence (`seq`, `orderingKey`) or with
   latest-wins supersedence is refused with a typed `unsupported` on `local-checkpoint`. Such
-  traffic uses `volatile` or `local-outbox` (D85). A superseded unsent copy was never seen outside
-  the runtime, so I2b's design revisits the latest-wins refusal and narrows it to sequence and
-  ordering keys (D118, section 3.1).
+  traffic uses `volatile` or `local-outbox` (D85). **Decided (D131, 2026-10-02):** only a send with a
+  client `seq` is refused; an ordering key alone carries no position (every room send carries the
+  default group key) and a superseded unsent copy was never seen outside the runtime, so both pass.
 - **Wire.**
   - `local-checkpoint` joins `AL_DURABILITY_ALGOS`, so the persisted-QoS validator and the
     envelope's `qos.durability` accept it.
@@ -168,8 +171,8 @@ different content, and never retracts a delivery (D85). For ALM that means four 
 | -------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------- | ---------------- |
 | `durability`               | channel, send | `volatile`, `local-checkpoint`, `local-outbox`, `local-inbox`                                                 | `volatile` (D2)  |
 | `onStorageUnavailable`     | channel       | `refuse`, ending with a typed `storage-unavailable`; `volatile`, admitted with a downgrade note on the handle | `refuse`         |
-| Checkpoint interval target | session store | milliseconds                                                                                                  | set by H4 and H5 |
-| Recovery-lag bound         | session store | milliseconds; beyond it the store reads `failing` and new admissions follow `onStorageUnavailable`            | set by H4 and H5 |
+| Checkpoint interval target | session store | milliseconds                                                                                                  | 1,000 ms (D133)  |
+| Recovery-lag bound         | session store | milliseconds; beyond it the store reads `failing` and new admissions follow `onStorageUnavailable`            | 10,000 ms (D133) |
 | Commit batch window        | session store | adopted only if P1 measures a gain                                                                            | none             |
 
 The session-store settings belong to the browser composition root, next to the application's QoS
@@ -530,7 +533,7 @@ which the roadmap renumbers 5 to 8 (D88). Its slices are:
   sweeps behind a lock-limiter pair per outbound lane, the hand-off on the cache library and the
   receipted reading recorded as I2b evidence.
 - **I2a, storage lifetime:** section 8.
-- **I2b, checkpointed durability:** sections 4 and 5, after I2a (D115).
+- **I2b, checkpointed durability:** sections 4 and 5, after I2a (D115). Delivered (I2b, d6cb46a7a).
 
 The roadmap's "Releases 4 to 8" table states each slice's outcome and exit evidence.
 
@@ -552,6 +555,10 @@ on the minimal plan. The reading states its machine and that it is not a phone.
   absorb the repeat.
 - **Relic before I2b.** Relic's commands move to `local-outbox` with I2a, whose recovery outcome
   the reload proof needs; I2b's own consumer proof comes with I2b (D115).
+- **Decided (D134, 2026-10-02).** Relic's command channel moves to `local-checkpoint` with
+  `onStorageUnavailable: 'refuse'`; the proof is a reload mid-command in the Relic full-stack
+  Playwright spec; a command admitted inside the last interval is lost with the page and reads
+  `unobservable`. The design is [alm-i2b-design-proposal.md](alm-i2b-design-proposal.md).
 
 ### 10.3 Beside S3c, now
 

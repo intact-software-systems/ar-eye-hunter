@@ -57,7 +57,10 @@ interface HetznerWithheldAlmScenario {
 const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     // Reads red by a recorded gap: no plain-member write advances the snapshot version, so a floor one past it is
     // never reached.
-    { scenarioKey: 'not-yet-in-sync-delivered-after-refresh', carriers: ALM_CONFORMANCE_CARRIERS }
+    { scenarioKey: 'not-yet-in-sync-delivered-after-refresh', carriers: ALM_CONFORMANCE_CARRIERS },
+    // The checkpoint tier's lane evidence is local and the hosted full read's; manifest 18 keeps its recorded cells.
+    { scenarioKey: 'checkpoint-recovery', carriers: ALM_CONFORMANCE_CARRIERS },
+    { scenarioKey: 'checkpoint-lag', carriers: ALM_CONFORMANCE_CARRIERS }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {

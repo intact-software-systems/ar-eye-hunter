@@ -212,7 +212,7 @@ async function sendOutboundWorkload(
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: volatileStores === undefined,
+            lane: volatileStores === undefined ? 'durable' : 'volatile',
             preparedMessages: [{ message: JSON.stringify(msg) }],
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: toSupersedenceKey(msg) }
         }),

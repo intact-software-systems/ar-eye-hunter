@@ -1,5 +1,5 @@
 import { toBrowserSessionALRuntimeStoreIds } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
-import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarWsLifecycleEvent } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import {
@@ -212,7 +212,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         });
         mocks.initialiseMiddleware.mockImplementation(async (session) => {
             initializedSessionIds.push(session.sessionId);
-            return mocks.ctx.middleware;
+            return { middleware: mocks.ctx.middleware, checkpoints: [] };
         });
         const facade = createRallarFacade();
 
@@ -235,7 +235,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
 
     it('shuts down middleware that resolves after logout during connect', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const deferred = createDeferred<RallarBrowserMiddleware>();
+        const deferred = createDeferred<BrowserConnectedMiddleware>();
         const cleanupState = {
             heartbeatStopped: false,
             rtcReceiverDisposed: false,
@@ -274,7 +274,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
             'Rallar connection was cancelled because auth ended.'
         );
 
-        deferred.resolve(mocks.ctx.middleware);
+        deferred.resolve({ middleware: mocks.ctx.middleware, checkpoints: [] });
         await expectation;
 
         expect(facade.status()).toBe('idle');
@@ -290,7 +290,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
 
     it('cancels a pending connection before replacing credentials and reconnects with the replacement', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const pendingMiddleware = createDeferred<RallarBrowserMiddleware>();
+        const pendingMiddleware = createDeferred<BrowserConnectedMiddleware>();
         const replacementSession = {
             ...mocks.ctx.session,
             sessionId: 'session-2',
@@ -311,7 +311,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
             })
             .mockImplementationOnce(async (session) => {
                 initializedSessionIds.push(session.sessionId);
-                return mocks.ctx.middleware;
+                return { middleware: mocks.ctx.middleware, checkpoints: [] };
             });
         mocks.loginToApi.mockResolvedValue(replacementSession);
         const facade = createRallarFacade();
@@ -329,7 +329,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         expect(facade.status()).toBe('idle');
         expect(facade.isConnected()).toBe(false);
 
-        pendingMiddleware.resolve(mocks.ctx.middleware);
+        pendingMiddleware.resolve({ middleware: mocks.ctx.middleware, checkpoints: [] });
         await expect(pendingConnect).rejects.toThrow(
             'Rallar connection was cancelled because auth ended.'
         );

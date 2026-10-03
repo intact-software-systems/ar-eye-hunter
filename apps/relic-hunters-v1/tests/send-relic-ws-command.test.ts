@@ -52,7 +52,7 @@ describe('a Relic command to the server (D57 as applied, D72)', () => {
             typeId: RELIC_TYPES.command,
             purpose: 'command',
             roomId: 'room-42',
-            durability: 'local-outbox',
+            durability: 'local-checkpoint',
             onStorageUnavailable: 'refuse'
         }]);
         expect(sendWs).toHaveBeenCalledWith(COMMAND, { peerId: 'default-qbox-server' });

@@ -1,4 +1,3 @@
-import { isIndexedDbALRuntimeStoreSupported } from '@shared/alm/al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { EMPTY_INDEXED_DB_ADMISSION_FENCE } from '@shared/alm/indexed-db-admission-fence.ts';
 import {
@@ -7,11 +6,13 @@ import {
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from '@shared/alm/read-indexed-db-admission-snapshot.ts';
 import { toALStorageResetSink, type ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
+import { readALWorkRowsInRanges } from '@shared/alm/storage/read-al-work-rows-in-ranges.ts';
 import {
     writeIndexedDbAdmissionMutations,
     type IndexedDbAdmissionMutation
 } from '@shared/alm/write-indexed-db-admission-mutations.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 import type { StoredResourceEntry } from '@shared/queuebox/indexed-db-queue-box-entry-codec.ts';
 import type { ComputedIndexedDbQueueMutation } from '@shared/queuebox/indexed-db-queue-box-entry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
@@ -19,10 +20,13 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 import {
     computeBrowserALWorkCleanupMutations,
-    readBrowserALWorkCleanupRows,
     writeBrowserALWorkExpiryCleanup
 } from './browser-al-work-cleanup.ts';
 
+import {
+    toBrowserRtcOverlayALCheckpointRuntimeStoreId,
+    toBrowserWsClientALCheckpointRuntimeStoreId
+} from './browser-al-checkpoint-store-ids.ts';
 import {
     BROWSER_AL_RUNTIME_DB_NAME_PREFIX,
     BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX,
@@ -135,10 +139,22 @@ export async function deleteBrowserALRuntimeEntriesForSession(
     return await deleteBrowserALRuntimeEntriesInEveryDatabase(options.currentScope, {
         keyPrefixes: toBrowserSessionALRuntimeEntryKeyPrefixes(sessionId),
         workNamespaces: toBrowserSessionALRuntimeWorkNamespaces(sessionId),
-        canonicalScopes: [`browser-session:${sessionId}`],
+        canonicalScopes: toBrowserSessionALCanonicalScopes(sessionId),
         deletionPolicy: { kind: 'all' },
         storage: options.storage
     });
+}
+
+/**
+ * The durable pairs share the session's canonical scope; each checkpoint pair keeps its namespace as its
+ * own, as two memory pairs never save one row.
+ */
+function toBrowserSessionALCanonicalScopes(sessionId: string): readonly string[] {
+    return [
+        `browser-session:${sessionId}`,
+        `${BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX}${toBrowserWsClientALCheckpointRuntimeStoreId(sessionId)}`,
+        `${BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX}${toBrowserRtcOverlayALCheckpointRuntimeStoreId(sessionId)}`
+    ];
 }
 
 export async function evictExpiredBrowserALRuntimeEntries(
@@ -232,7 +248,7 @@ async function deleteBrowserALRuntimeEntriesInEveryDatabase(
     deletion: BrowserALRuntimeEntriesDeletion
 ): Promise<BrowserALRuntimeCleanupResult> {
     const keyPrefixes = [...new Set(deletion.keyPrefixes)].filter((prefix) => prefix.length > 0);
-    if (keyPrefixes.length === 0 || !isIndexedDbALRuntimeStoreSupported()) {
+    if (keyPrefixes.length === 0 || !IndexedDbStringPersistenceProvider.isSupported()) {
         return toBrowserALRuntimeCleanupResult([], keyPrefixes, []);
     }
     const dbNames = await readBrowserALRuntimeDbNames(currentScope);
@@ -302,7 +318,7 @@ async function readBrowserALRuntimeCleanup(
     return {
         // The 'expired' policy hands AL work rows to writeBrowserALWorkExpiryCleanup instead.
         workRows: policy.kind === 'all'
-            ? await readBrowserALWorkCleanupRows(db, { namespacePrefixes: workNamespaces, canonicalScopes })
+            ? await readALWorkRowsInRanges(db, { namespacePrefixes: workNamespaces, canonicalScopes })
             : [],
         rows: rows
             .filter((stored) => matchesAnyBrowserALRuntimePrefix(stored.key, keyPrefixes))

@@ -26,7 +26,7 @@ const mocks = await vi.hoisted(async () => {
 });
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), (): Partial<MiddlewareModule> => ({
-    initialiseMiddleware: async () => (await mocks.initialiseApiMiddleware()).middleware
+    initialiseMiddleware: async () => ({ middleware: (await mocks.initialiseApiMiddleware()).middleware, checkpoints: [] })
 }));
 
 vi.mock(

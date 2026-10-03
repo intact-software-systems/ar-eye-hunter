@@ -4,6 +4,7 @@ import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-cont
 import type { AlmConformanceCarrier } from './alm-conformance-carriers.ts';
 import type { AlmConformanceReceiptRoles } from './alm-conformance-receipt-commands.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
+import type { AlmReloadCheckpoint } from './alm-reload-pair.ts';
 
 export interface CreateAlmConformanceRecipesInput {
     readonly group: RallarBlackBoxDistributedGroupRef;
@@ -18,6 +19,8 @@ export interface CreateAlmConformanceRecipesInput {
 export type AlmConformanceScenarioId =
     | 'bounded-rejection'
     | 'capacity'
+    | 'checkpoint-lag'
+    | 'checkpoint-recovery'
     | 'cross-carrier-duplicate'
     | 'deadline-expiry'
     | 'delivery-baseline'
@@ -26,6 +29,7 @@ export type AlmConformanceScenarioId =
     | 'durable-opt-in'
     | 'durable-takeover'
     | 'fallback-within-deadline'
+    | 'flush-on-hide'
     | 'no-fallback-after-deadline'
     | 'not-yet-in-sync'
     | 'ordering-resync'
@@ -82,6 +86,8 @@ export interface AlmConformanceScenarioDefinition {
      * confirms and leaves unconfirmed, which the identity assessment joins to their sessions after the run.
      */
     readonly toReceiptRoles?: (carrier: AlmConformanceCarrier) => AlmConformanceReceiptRoles;
+    /** Absent when the sender keeps its page. Otherwise the sync points both roles carry around its one reload. */
+    readonly toReloadCheckpoint?: (step: AlmConformanceStepInput) => AlmReloadCheckpoint;
 }
 
 export const SMOKE_TAGS: readonly AlmConformanceTag[] = ['smoke', 'full'];

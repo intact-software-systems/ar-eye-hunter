@@ -90,7 +90,7 @@ async function createFixture(admittedAudience: readonly string[] | undefined, re
         policy: captureALOutboundPolicy({
             msg: message,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [],
             admittedAudience,
             ...(recipientScope === undefined ? {} : { recipientScope })

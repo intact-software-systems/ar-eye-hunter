@@ -595,7 +595,7 @@ function createGeneratedSendLedger(sender: NativeAuthorityEndpoint): BlackBoxRal
     };
     vi.spyOn(auth, 'readSession').mockReturnValue(context.session);
     vi.spyOn(auth, 'isLoggedIn').mockReturnValue(true);
-    vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockResolvedValue(context.middleware);
+    vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockResolvedValue({ middleware: context.middleware, checkpoints: [] });
     const facade = createRallarFacade();
     const resources = createBlackBoxRallarMessagingResourceController({ generation: () => 1, isCurrent: (generation) => generation === 1 });
     onTestFinished(() => {
@@ -861,7 +861,7 @@ async function refreshNormalRoom(): Promise<void> {
     });
     vi.spyOn(auth, 'readSession').mockReturnValue(context.session);
     vi.spyOn(auth, 'isLoggedIn').mockReturnValue(true);
-    vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockResolvedValue(context.middleware);
+    vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockResolvedValue({ middleware: context.middleware, checkpoints: [] });
     const facade = createRallarFacade();
     await facade.rooms.session(room).refresh();
 }

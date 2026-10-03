@@ -14,6 +14,7 @@ import '../../setup-browser-indexeddb.ts';
 
 import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 
+import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
@@ -192,6 +193,7 @@ describe('browser RTC runtime composition', () => {
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
             volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
             outboundSettlements: (event) => registry.record(event),
             webRtcConnectionService: fixture.service,
             qboxEngine
@@ -270,6 +272,7 @@ describe('browser RTC runtime composition', () => {
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
             outboundSettlements: () => {},
             webRtcConnectionService: fixture.service,
             qboxEngine
@@ -350,6 +353,7 @@ describe('browser RTC runtime composition', () => {
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             volatileBudget: budget,
+            checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
             outboundSettlements: () => {},
             webRtcConnectionService: fixture.service,
             qboxEngine: new InboxOutboxEngine()
@@ -370,7 +374,75 @@ describe('browser RTC runtime composition', () => {
         expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(budget.readUsage(Date.now()).admissions).toBe(1);
     });
+
+    it('admits a local-checkpoint send to the checkpoint pair it is handed, outside the volatile budget', async () => {
+        const group = createAcceptedGroupSnapshotFixture(['self', 'accepted-peer']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        overlaysRepository.setAcceptedOverlayById(
+            toScopedOverlayId(group.group),
+            createAcceptedOverlayFixture(group, 1, ['accepted-peer'])
+        );
+        const fixture = openConnectedPeer('accepted-peer');
+        const budget = createDefaultVolatileSessionBudget();
+        const checkpointStores = resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay;
+        const manager = initialiseRtcOverlayMulticastManager({
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
+            qosProvider: undefined,
+            volatileBudget: budget,
+            checkpointStores,
+            outboundSettlements: () => {},
+            webRtcConnectionService: fixture.service,
+            qboxEngine: new InboxOutboxEngine()
+        });
+        onTestFinished(() => manager.dispose());
+
+        const result = await manager.enqueueIfAbsent(
+            newALMulticastMessage(
+                'self',
+                { topicId: 'chat', resourceId: 'checkpointed', contextId: group.group.groupId },
+                group.group,
+                'chat.message.v1',
+                { text: 'checkpointed' },
+                { ttlMs: 30_000, qos: { durability: { algo: 'local-checkpoint' } } }
+            )
+        );
+
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        expect(await checkpointStores.admissionStore.hasSentMessageAdmission(result.message.id.msgId)).toBe(true);
+        expect(budget.readUsage(Date.now()).admissions).toBe(0);
+    });
 });
+
+/** A native peer connection to `peerId` whose channels are open, torn down with the test. */
+function openConnectedPeer(peerId: string): ReturnType<typeof createNativeRtcConnectionFixture> {
+    const nativeRuntime = installNativeRtcRuntime();
+    const fixture = createNativeRtcConnectionFixture(
+        {
+            sessionId: 'self',
+            token: 'fixture-token',
+            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc'
+        },
+        nativeRuntime,
+        createPassThroughTransportFaultPort()
+    );
+    onTestFinished(() => {
+        try {
+            fixture.dispose();
+        }
+        finally {
+            nativeRuntime.dispose();
+        }
+    });
+    fixture.service.ensurePeerConnectionStarted(peerId, true);
+    const nativePeer = fixture.nativePeer(peerId);
+    nativePeer.setConnected();
+    for (const channel of nativePeer.channels) {
+        channel.open();
+    }
+    return fixture;
+}
 
 async function receiveOffer(queueBox: WsQueueBoxClientService, peerId: string): Promise<void> {
     const signal: QRtcSignalingMessage = {

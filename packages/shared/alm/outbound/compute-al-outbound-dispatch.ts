@@ -92,7 +92,11 @@ export function computeALOutboundDispatch<TPrepared>(
         durableEffects.push(...ackTracking.durableEffects);
     }
 
-    const verdict = computeALOutboundRouteVerdict(read, awaitPhysicalDispatch || read.plan.persist, queuedAttempts);
+    const verdict = computeALOutboundRouteVerdict(
+        read,
+        awaitPhysicalDispatch || read.plan.lane !== 'volatile',
+        queuedAttempts
+    );
     return {
         ...toALOutboundComputedResult(
             verdict,

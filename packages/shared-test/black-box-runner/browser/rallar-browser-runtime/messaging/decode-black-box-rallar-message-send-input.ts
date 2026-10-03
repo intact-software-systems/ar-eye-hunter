@@ -176,7 +176,7 @@ function decodeMessageSendOptions(
     const durability = decodeKnownSendOption(
         record.durability,
         AL_DURABILITY_ALGOS,
-        'durability must be volatile, local-outbox or local-inbox'
+        'durability must be volatile, local-checkpoint, local-outbox or local-inbox'
     );
     const onStorageUnavailable = decodeKnownSendOption(
         record.onStorageUnavailable,

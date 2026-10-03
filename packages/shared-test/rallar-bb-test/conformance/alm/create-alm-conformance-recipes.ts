@@ -29,16 +29,20 @@ import {
     toStatsCommand
 } from './alm-conformance-session-commands.ts';
 import { toRoomRef, toSendHandleId } from './alm-conformance-step-identities.ts';
+import type { AlmReloadCheckpoint } from './alm-reload-pair.ts';
 import { boundedRejection } from './scenarios/bounded-rejection.ts';
 import { capacity } from './scenarios/capacity.ts';
 import { crossCarrierDuplicate } from './scenarios/cross-carrier-duplicate.ts';
 import { deadlineExpiry } from './scenarios/deadline-expiry.ts';
 import { deliveryBaseline } from './scenarios/delivery-baseline.ts';
 import { deliveryLifecycle } from './scenarios/delivery-lifecycle.ts';
-import { deliveryReload, toReloadCheckpoint } from './scenarios/delivery-reload.ts';
+import { deliveryReload } from './scenarios/delivery-reload.ts';
 import { durableOptIn } from './scenarios/durable-opt-in.ts';
 import { durableTakeover } from './scenarios/durable-takeover.ts';
 import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts';
+import { checkpointLag } from './scenarios/local-checkpoint/checkpoint-lag.ts';
+import { checkpointRecovery } from './scenarios/local-checkpoint/checkpoint-recovery.ts';
+import { flushOnHide } from './scenarios/local-checkpoint/flush-on-hide.ts';
 import { noFallbackAfterDeadline } from './scenarios/no-fallback-after-deadline.ts';
 import { notYetInSync } from './scenarios/not-yet-in-sync.ts';
 import { orderingResync } from './scenarios/ordering-resync.ts';
@@ -69,6 +73,8 @@ interface AlmConformanceRecipeInput extends AlmConformanceStepInput {
     readonly commands: readonly RallarBlackBoxTestCommand[];
     /** Set only on the sender of a scenario that pins its receipt identity. */
     readonly receiptRoles: AlmConformanceReceiptRoles | undefined;
+    /** Set on both roles of a scenario whose sender reloads its page. */
+    readonly reloadCheckpoint: AlmReloadCheckpoint | undefined;
 }
 
 /** RTC-with-WS-fallback injects one fault per carrier before starting the expiring send. */
@@ -92,6 +98,8 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     durableOptIn,
     deliveryReload,
     storageUnavailable,
+    checkpointRecovery,
+    checkpointLag,
     orderingResync,
     ...crossCarrierDuplicate,
     ...notYetInSync,
@@ -103,7 +111,8 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     serverCommand,
     capacity,
     ...receiptedAudience,
-    durableTakeover
+    durableTakeover,
+    flushOnHide
 ];
 
 export function createAlmConformanceRecipes(
@@ -143,7 +152,8 @@ function toAlmConformanceScenario(
             ? definition.toSenderCommands(step)
             : definition.toRecipientCommands(step);
         const receiptRoles = role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined;
-        return toAlmConformanceRecipe({ ...step, commands, receiptRoles });
+        const reloadCheckpoint = definition.toReloadCheckpoint?.(step);
+        return toAlmConformanceRecipe({ ...step, commands, receiptRoles, reloadCheckpoint });
     };
     return {
         scenarioId: definition.scenarioId,
@@ -170,9 +180,9 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
             carrier,
             scenarioId: recipe.scenarioId,
             group: toRoomRef(recipe.input.group),
-            ...(recipe.scenarioId === 'delivery-reload'
-                ? { almReloadCheckpoints: [{ ...toReloadCheckpoint(recipe) }] }
-                : {}),
+            ...(recipe.reloadCheckpoint === undefined
+                ? {}
+                : { almReloadCheckpoints: [{ ...recipe.reloadCheckpoint }] }),
             ...(recipe.receiptRoles === undefined
                 ? {}
                 : { almReceiptRoles: [toReceiptRolesMetadata(recipe, recipe.receiptRoles)] })

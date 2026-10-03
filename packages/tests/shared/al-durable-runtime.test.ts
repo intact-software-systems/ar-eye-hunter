@@ -361,7 +361,7 @@ function createDefaultOutboundRuntime(
             planRepairMessage: async (msg, request) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [
                     {
                         kind: 'repair',
@@ -386,7 +386,7 @@ function planOutboundTestMessage(msg: ALMessage): ALOutboundDispatchPlan<Outboun
         return {
             msg,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [],
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: `presence:${msg.route.contextId}` }
         };
@@ -394,7 +394,7 @@ function planOutboundTestMessage(msg: ALMessage): ALOutboundDispatchPlan<Outboun
     return {
         msg,
         dropReasonCode: undefined,
-        persist: false,
+        lane: 'volatile',
         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
         ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['peer-1'], nextHopPeerIds: ['peer-1'], mode: 'hop' },
         repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 }

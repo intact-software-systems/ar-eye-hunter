@@ -60,7 +60,7 @@ describe('browser runtime construction', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         configureTestCacheRepositories();
-        runtime.initialiseMiddleware.mockResolvedValue(runtime.middleware.middleware);
+        runtime.initialiseMiddleware.mockResolvedValue({ middleware: runtime.middleware.middleware, checkpoints: [] });
         runtime.readSession.mockReturnValue(runtime.middleware.session);
     });
 
@@ -96,7 +96,7 @@ describe('browser runtime construction', () => {
                 normalizeALQosPolicy(message, resolveALQosNormalizationInput(message, { direction: 'outbound' }, options.qosProvider)).effective.supersedence
                     .algo
             );
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, checkpoints: [] };
         });
         const blackBox = createBlackBoxBrowserRallarRuntimeDependency({
             readVolatileSessionLimits: new BlackBoxRallarVolatileLimits().get
@@ -120,7 +120,7 @@ describe('browser runtime construction', () => {
         const read: (ALVolatileSessionLimits | undefined)[] = [];
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
             read.push(options.readVolatileSessionLimits?.());
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, checkpoints: [] };
         });
         const blackBox = createBlackBoxBrowserRallarRuntimeDependency({
             readVolatileSessionLimits: volatileLimits.get
@@ -151,7 +151,7 @@ describe('browser runtime construction', () => {
         const sinks: ALDeliverySettlementSink[] = [];
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
             sinks.push(options.deliverySettlements.ws);
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, checkpoints: [] };
         });
         const first = createRallarFacade();
         const second = createRallarFacade();
@@ -217,7 +217,7 @@ describe('browser runtime construction', () => {
                 unconfirmedRecipientPeerIds: [],
                 complete: true
             });
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, checkpoints: [] };
         });
         await second.connect();
         expect(handle.lifecycle().state).toBe('acknowledged');
@@ -264,7 +264,7 @@ describe('browser runtime construction', () => {
         let oldSink: ALDeliverySettlementSink | undefined;
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
             oldSink = options.deliverySettlements.ws;
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, checkpoints: [] };
         });
         const handle = await facade.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true, ack: 'receiver' });
         await handle.wait({ until: ['queued'] });
@@ -298,7 +298,7 @@ describe('browser runtime construction', () => {
                 complete: true
             });
             expect(handle.lifecycle().state).toBe('acknowledged');
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, checkpoints: [] };
         });
         await facade.connect();
         expect(handle.lifecycle().evidence.confirmedHopPeerIds).toEqual(['current']);
@@ -346,7 +346,7 @@ describe('browser runtime construction', () => {
                 unconfirmedRecipientPeerIds: [],
                 complete: true
             });
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, checkpoints: [] };
         });
         await first.connect();
         expect(handle.lifecycle().state).toBe('acknowledged');
@@ -394,7 +394,7 @@ describe('browser runtime construction', () => {
                 unconfirmedRecipientPeerIds: [],
                 complete: true
             });
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, checkpoints: [] };
         });
         await facade.connect();
         expect(handle.lifecycle().evidence.confirmedHopPeerIds).toEqual(['retry']);
@@ -446,7 +446,7 @@ describe('browser runtime construction', () => {
             if (!facadeConstructionCompleted) {
                 throw new Error('Transport dependency was used before facade construction completed.');
             }
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, checkpoints: [] };
         });
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();

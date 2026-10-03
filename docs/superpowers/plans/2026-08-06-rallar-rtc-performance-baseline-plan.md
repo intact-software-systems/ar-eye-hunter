@@ -76,7 +76,12 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
 ## 1. Current Outcome And Evidence
 
-The audited main snapshot is `c727caad561347a151a426579cf0d598e39f8ac4`.
+The earlier audited main snapshot is `c727caad561347a151a426579cf0d598e39f8ac4`.
+The current Task 23 integration incorporates fetched upstream
+`54adf4dd191c7102092b1bae4f9b3f77d943a8e1` into the reviewed feature source
+`80fa09acf5f9cc641d6ab67ff373f36d1296d924` after a real PR merge conflict.
+Earlier exact-source acceptance remains historical; current merged-source
+independent review, publication and hosted acceptance are pending.
 Tasks 0-7 and observation tooling are delivered. This plan remains incomplete:
 E1 measurement evidence remains unverified, E3 has no accepted primary, Task 12
 is gated, and B07 remains held. A package check proves tooling, not capture.
@@ -283,8 +288,28 @@ receipt work process-independent via the existing cluster-receipt execution owne
 which resolves origin presence and publishes the canonical row when claimed.
 The controlled tests pass after that minimum policy correction. Timing, authority,
 receipt phases, persisted/public/wire contracts and diagnostic budgets are unchanged.
-Fresh fix3 independent review and the unchanged broader gates remain pending;
-this controlled reproduction does not establish the historical CI cause.
+Fix3 independent review passed specification and approved quality with zero
+findings at `80fa09acf5f9cc641d6ab67ff373f36d1296d924`. Its normal CI gates,
+unchanged medium-scale/fairness gate and full-PR state-write comparison against
+`c727caad561347a151a426579cf0d598e39f8ac4` passed. Independent original-artifact
+review verified all 99 medium-scale files, literal admitted/ACK/complete receipts,
+actual overdue FAIRNESS selection on B and substantive C participation. The
+state-write audit accepted all 108 measured samples / 75,600 commands, four
+A-B-B-A positions, complete durable/retry bindings and unchanged performance
+and resource comparisons. These passes belong only to those source identities;
+they neither establish the historical CI cause nor isolate receipt-fix speedup.
+
+A subsequent real conflict with fetched upstream
+`54adf4dd191c7102092b1bae4f9b3f77d943a8e1` requires feature-branch integration.
+The two co-changed WS owners combine the existing consumer observations and
+process-independent receipt work with upstream's explicit outbound lanes and
+checkpoint store wiring. The merged headless entry measures 302.769 KiB Brotli;
+its adjustable private budget is 303 KiB, the declared next-whole-KiB minimum.
+Semantic bundle exclusions and all diagnostic/workload limits remain unchanged.
+Current merged-source review, publication, normal CI, medium-scale/fairness and
+fresh full-PR state-write acceptance remain pending with the controller.
+Task 25 has not been activated; prior-source passes do not satisfy its new-source
+entry gates.
 
 Recorder origin/continuity, native application/generation, deletion issuer,
 cross-agent causal order and one-way network latency remain unknown. No native
@@ -1132,45 +1157,46 @@ justified yet.”
 | 20      | Exact-head non-publishing proof delivered: run 37130139368 attempt 1 on 7214bdd0288005bac4f34c4964f995adaa188d4e, 81 verified original files / 4,081,384 inner bytes, 100 useful events / 117,722 bytes; all three original retention failures and honest losses preserved, watcher retired.                                                                                                                                                                                        |
 | 21      | Bounded RTC AL preservation delivered; final independent specification PASS and quality APPROVED at dd2d9371b8146947548b9346027d05338c55a905 (C0/I0/M0). Original 119 tests belong to 99524; final dd2d has 69 affected tests and 1,434-file zero-error maintained typecheck plus declaration equivalence review.                                                                                                                                                                   |
 | 22      | Final exact-source diagnostic run 37138465392 attempt 1: all three original failures at cycles 10/5/1, 81 verified unchanged files / 4,243,068 bytes, 256 events / 218,633 bytes; 53 commits, 49 admissions, 56 qualified claims (47 completed / nine retry), 103 matched / two unknown links. Normal-path scope and honest loss remain; watcher retired, no accepted metrics.                                                                                                      |
-| 23      | Selected-consumer/AL distinction delivered; fix1 and fix2 independently approved with zero findings. Feature 7b92d236 BranchRelease and CodeQL/API formation passed; separate medium-scale cluster receipt phase failed. Fix3 controlled memory/Postgres worker-handoff RED and minimum existing-policy GREEN are local evidence, with fresh review and broader acceptance pending.                                                                                                 |
+| 23      | Selected-consumer/AL distinction and receipt handoff repair independently approved. Feature 80fa09ac passed normal CI, medium-scale/fairness and full-PR A-B-B-A state-write acceptance against c727caad; historical 7b92d236 failure remains distinct. A real upstream conflict now requires integration of 54adf4dd; current merged-source review/publication/hosted gates remain pending. Task 25 is unactivated.                                                                |
 | 24      | Final exact-source diagnostic 37147329195 attempt 1 on 72945dd: 81 originals / 4,262,002 inner bytes verified; all three failures at cycles 1/8/1, 293 events / 238,781 bytes, 38 consumer terminals and 38 AL decisions / 37 claims. Normal-path proof, honest loss/identity/native unknowns and original failures preserved; watcher retired, no accepted baseline.                                                                                                               |
 
 ## 11. Next Two Useful Slices
 
-### Task 23: Close the separately failed CI receipt phase
+### Task 23: Integrate upstream and close current-source validation
 
-**Files:** Existing WS outbound planning owner; real receipt/cluster fixture and
-memory regression; focused PostgreSQL handoff integration; this factual plan.
+**Files:** Co-changed WS client and outbound planning owners; private headless
+bundle budget; this factual plan. Independent incoming files remain outside
+manual standards closure unless a dependent remediation changes them.
 
-**Behavior:** With a cluster publisher registered, every receipt prepared at
-dequeue uses the existing process-independent cluster-receipt work. Whichever
-worker claims it publishes its canonical row and resolves the origin at execution.
-Normal nonreceipt cluster completion, noncluster delivery, frozen audience,
-authority, receipt phase, deadline/grace, ACK, duplicate and reconnect semantics
-remain. No new kind, migration reader, worker affinity or timing policy is added.
+**Behavior:** Preserve selected-consumer/AL observations and the existing
+process-independent clustered-receipt repair while adopting current upstream
+outbound lane and checkpoint contracts. Merge the exact fetched upstream into
+the feature branch, preserving both histories. Resolve the private bundle budget
+from the actual merged entry under its existing adjustment rule. No migration,
+compatibility fallback, receipt timing, diagnostic bound or workload change.
 
-- [x] Preserve the actual CI failure and distinguish its unproved cause from a
-      controlled reproduction. Witness literal admitted-receipt RED with real A/B
-      services, actual queue claims, one shared namespace and fixed clock; confirm
-      the same causal handoff with separate PostgreSQL stores.
-- [x] Apply the minimum existing planner correction; pass both storage boundaries
-      and focused receipt/ACK/addressed/reconnect/deadline regressions.
-- [x] Complete local full-file standards closure and covering validation: 1,596
-      tests across 137 service/ALM/bridge files, 19 PostgreSQL tests across two
-      files, maintained test types (1,437 files, zero errors), shared/shared-server
-      types and changed-style/structure/navigation checks pass. Preserve actual
-      intermediate failures and source attribution.
-- [ ] Obtain controller-owned independent fix3 review and final exact-commit
-      legacy review; local author closure is not independent approval.
-- [ ] Complete the unchanged medium-scale/fairness and applicable fresh state-write
-      candidate/comparison gates through the controller's delivery routing after independent review/publication.
-      The controller's October 3 20:45:54 UTC delivery status passed with action
-      WORK on draft PR #633. Local validation proceeds; hosted medium-scale and
-      pinned fresh-database state-write comparison remain required and pending. No
-      local unit pass replaces them or relabels the original failed CI attempt.
+- [x] Preserve historical controlled memory/PostgreSQL receipt RED and minimum
+      existing-policy GREEN, independent fix3 review and exact-source 80fa/c727
+      hosted correctness/load and full-PR performance acceptance. Do not relabel
+      these as merged-source gates or proof of the original failure's cause.
+- [x] Complete exact-upstream integration and full-file closure of co-changed
+      owners, recursively including any remediated support. Verify actual receipt,
+      consumer and checkpoint behavior, bundle exclusions, native compilation and
+      affected boundary/style checks before a feature-branch merge commit.
+      Local merged-source evidence includes 3,026 affected tests / 310 files,
+      19 PostgreSQL tests / two files, the full unit suite (14,313 passed, 12
+      skipped), 1,448 maintained test files with zero type errors, package/API
+      and harness native checks, and browser/headless bundle checks. These local
+      results do not substitute for the pending hosted gates below.
+- [ ] Obtain fresh controller-owned independent review of the committed merged
+      source and publish it. Then complete normal CI, unchanged medium-scale/
+      fairness and fresh pinned full-PR state-write candidate/comparison gates.
+      The controller's October 3 22:41 UTC delivery status reported
+      REPAIR_CONFLICT on PR #633, so the source conflict is repaired first.
+      Earlier source passes and local unit checks do not replace these gates.
 
-**Exit:** Independently reviewed, validated receipt correctness repair. No native
-RTC fix, accepted E3 primary or evidence-limit increase is earned.
+**Exit:** Independently reviewed and validated current-source integration. No
+native RTC fix, accepted E3 primary or evidence-limit increase is earned.
 
 ### Task 25: Prove unchanged exact-source behavior after receipt closure
 

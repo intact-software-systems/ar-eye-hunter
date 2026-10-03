@@ -277,7 +277,7 @@ export async function readBlackBoxRtcMessageNacks(
         (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: false,
+            lane: 'volatile',
             preparedMessages: []
         })
     );

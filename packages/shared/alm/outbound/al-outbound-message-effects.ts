@@ -10,6 +10,7 @@ import type {
     ALOutboundDurableEffect,
     ALOutboundEffectSnapshot
 } from './admission/al-outbound-admission-store.ts';
+import { toALOutboundCapturedLane } from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
 import type {
     ALOutboundDispatchPlan,
@@ -401,7 +402,7 @@ function toALOutboundRetainedDispatchPlan<TPrepared>(
     return {
         msg,
         dropReasonCode: undefined,
-        persist: pending.policy.persist,
+        lane: toALOutboundCapturedLane(pending.policy),
         preparedMessages: pending.preparedMessages,
         ackTracking: pending.policy.ackTracking ?? undefined,
         retryTracking: pending.policy.retryTracking ?? undefined,

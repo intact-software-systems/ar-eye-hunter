@@ -18,7 +18,9 @@ const mocks = await vi.hoisted(async () => {
         webRtcConnectionService: vi.mocked(ctx.middleware.webRtcConnectionService),
         webSocketQueueBox: vi.mocked(ctx.middleware.webSocketQueueBox),
         webSocket: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
-        initialiseMiddleware: vi.fn<ContractModules.BrowserMiddlewareModule['initialiseMiddleware']>(() => Promise.resolve(ctx.middleware)),
+        initialiseMiddleware: vi.fn<ContractModules.BrowserMiddlewareModule['initialiseMiddleware']>(() =>
+            Promise.resolve({ middleware: ctx.middleware, checkpoints: [] })
+        ),
         clearSession: vi.fn<ContractModules.Auth['clearSession']>(),
         readSession: vi.fn<ContractModules.Auth['readSession']>(() => session),
         writeSession: vi.fn<ContractModules.Auth['writeSession']>(),
@@ -180,7 +182,7 @@ function resetSessionAndRoomMocks(): void {
     mocks.getAllClientStateSnapshots.mockReturnValue([]);
     installGroupSnapshotRepositoryMocks(mocks, []);
     mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
-    mocks.initialiseMiddleware.mockResolvedValue(mocks.ctx.middleware);
+    mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.ctx.middleware, checkpoints: [] });
     mocks.clearSession.mockImplementation(() => undefined);
     mocks.readSession.mockReturnValue(mocks.ctx.session);
     mocks.logoutFromApi.mockResolvedValue({ loggedOut: true });

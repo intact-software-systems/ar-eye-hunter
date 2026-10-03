@@ -131,7 +131,7 @@ function pendingInput(store: ALOutboundAdmissionStore<OutboundTestPayload>) {
         payload: {
             kind: 'admit-message' as const,
             message: toALOutboundMessageReference(store.canonicalScope, canonicalEntry, message),
-            policy: captureALOutboundPolicy({ msg: message, dropReasonCode: undefined, persist: false, preparedMessages: [{ peer: 'captured' }] }),
+            policy: captureALOutboundPolicy({ msg: message, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ peer: 'captured' }] }),
             preparedMessages: [{ peer: 'captured' }]
         }
     };

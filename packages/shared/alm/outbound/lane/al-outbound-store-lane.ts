@@ -1,9 +1,11 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { Unsubscribe } from '../../../cache/RepositoryInterfaces.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
-import { toKeyAsString, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
+import type { ALCheckpointPort } from '../../checkpoint/al-checkpoint.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALBrowserLocks } from '../../storage/al-browser-locks.ts';
 import { ALStorageReadiness } from '../../storage/al-storage-readiness.ts';
@@ -44,7 +46,6 @@ import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
     readALOutboundWorkReadyAt,
     toALOutboundDequeueWork,
-    toALOutboundWorkKey,
     toALOutboundWorkType,
     type ALOutboundDequeueDeferral,
     type ALOutboundWorkDeferral
@@ -55,6 +56,7 @@ import type { ALOutboundControlAdmissionResult } from '../control/al-outbound-co
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
 import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
 import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
+import { computeALOutboundCommittedRows, hasWrittenWork } from './compute-al-outbound-committed-rows.ts';
 
 export namespace ALOutboundStoreLane {
     export interface Input<TPrepared> {
@@ -69,6 +71,8 @@ export namespace ALOutboundStoreLane {
         readonly durableWorkOwnership: ALDurableWorkOwnership | undefined;
         /** The memory pair's sweep; undefined for a lane over a durable pair. */
         readonly evictExpired: (() => void) | undefined;
+        /** What saves and restores the checkpoint lane's memory pair; undefined for every other lane. */
+        readonly checkpoint: ALCheckpointPort | undefined;
         /** What this lane's commits hand its own claims; the memory pair's lane reads memory and has none. */
         readonly canonicalHandoff: ALOutboundCanonicalHandoff | undefined;
         readonly runtime: ALOutboundMessageRuntime.Dependencies<TPrepared>;
@@ -79,8 +83,9 @@ export namespace ALOutboundStoreLane {
 
 /**
  * One store pair of an outbound owner and the work that runs over it: admission, controls, receipts and
- * the owner's engine task. A lane over the memory pair persists nothing, so no admission it states is
- * durable, and it sweeps its own expired rows on its work round.
+ * the owner's engine task. A lane over a memory pair sweeps its own expired rows on its work round. The
+ * volatile lane persists nothing, so no admission it states is durable; the checkpoint lane's admission
+ * is durable only in the runtime that saves its checkpoint.
  */
 export class ALOutboundStoreLane<TPrepared> {
     private readonly input: ALOutboundStoreLane.Input<TPrepared>;
@@ -95,6 +100,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly effects: ALOutboundMessageEffects<TPrepared>;
     private readonly removeStorageResetListener: (() => void) | undefined;
     private readonly removeForeignCommitListener: (() => void) | undefined;
+    private readonly takeOverSubscription: Unsubscribe | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
     private disposed = false;
 
@@ -116,10 +122,13 @@ export class ALOutboundStoreLane<TPrepared> {
             (rows) => this.applyForeignCommit(rows)
         );
         this.readiness = new ALStorageReadiness({
-            openStores: () => stores.admissionStore.ready(),
+            openStores: () => this.openStores(),
             startWork: () => this.work.ready(),
             storageHealth: stores.storageHealth
         });
+        this.takeOverSubscription = input.checkpoint?.onTakenOverDo(
+            () => this.work.committed(AL_WORK_UNDESCRIBED_COMMIT)
+        );
         this.effects = new ALOutboundMessageEffects({
             runtime,
             admissionStore: stores.admissionStore,
@@ -144,7 +153,19 @@ export class ALOutboundStoreLane<TPrepared> {
         this.dispatchAdmission.dispose();
         this.removeStorageResetListener?.();
         this.removeForeignCommitListener?.();
+        this.takeOverSubscription?.unsubscribe();
+        this.input.checkpoint?.dispose();
         this.input.canonicalHandoff?.clear();
+    }
+
+    flushCheckpoint(): void {
+        this.input.checkpoint?.flush();
+    }
+
+    /** The checkpoint's restore runs before the lane's first work batch, which then claims what it loaded. */
+    private async openStores(): Promise<void> {
+        await this.input.stores.admissionStore.ready();
+        await this.input.checkpoint?.restore();
     }
 
     /** Rows another runtime of the session committed to this lane's work type, for this owner to run. */
@@ -250,10 +271,10 @@ export class ALOutboundStoreLane<TPrepared> {
         return fact.kind === 'admission' ? { ...fact, verdict: this.toStoreVerdict(fact.verdict) } : fact;
     }
 
+    /** Only the durable lane's admission, and the checkpoint lane's where this runtime saves it, is durable. */
     private toStoreVerdict(verdict: ALDeliveryAdmissionVerdict): ALDeliveryAdmissionVerdict {
-        return verdict.kind === 'admitted' && this.input.lane === 'volatile'
-            ? { ...verdict, durable: false }
-            : verdict;
+        const durable = this.input.checkpoint?.isOwned() ?? this.input.lane === 'durable';
+        return verdict.kind === 'admitted' && !durable ? { ...verdict, durable: false } : verdict;
     }
 
     /** The outbound owner reserves straight from the queue, so it reads no page and observes no row's wait. */
@@ -598,37 +619,6 @@ function createALOutboundLaneRepairAdmission<TPrepared>(
         diagnostics: runtime.diagnostics,
         settlements
     });
-}
-
-function hasWrittenWork<TPrepared>(result: ALOutboundDispatchAdmission.Result<TPrepared>): boolean {
-    return result.committed || result.computed.verdict.kind === 'pending';
-}
-
-/**
- * The work rows these commits wrote, as their batch must account for them, or an undescribed commit
- * when one of them wrote work its result does not describe. A receipted send's acknowledgement
- * timeout is due after its send, so the batch that sends it cannot have claimed it.
- */
-function computeALOutboundCommittedRows<TPrepared>(
-    namespace: string,
-    results: readonly ALOutboundDispatchAdmission.Result<TPrepared>[]
-): ALWorkCommittedRows {
-    let dueByMs = 0;
-    const writtenKeys: string[] = [];
-    for (const result of results.filter(hasWrittenWork)) {
-        const effects = result.committed ? result.computed.bundle?.durableEffects : undefined;
-        if (effects === undefined) {
-            return AL_WORK_UNDESCRIBED_COMMIT;
-        }
-        for (const { effectId, retryAtMs } of effects) {
-            if (retryAtMs === undefined) {
-                return AL_WORK_UNDESCRIBED_COMMIT;
-            }
-            dueByMs = Math.max(dueByMs, retryAtMs);
-            writtenKeys.push(toKeyAsString(toALOutboundWorkKey(namespace, effectId)));
-        }
-    }
-    return { dueByMs, writtenKeys };
 }
 
 /**
