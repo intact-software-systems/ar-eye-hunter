@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import {
+    computeALSeqRangePage,
     countALSeqsInRanges,
     decodeALSeqRanges,
     toALSeqRanges,
@@ -27,6 +28,17 @@ describe('AL sequence ranges', () => {
         expect(countALSeqsInRanges([])).toBe(0);
         expect(countALSeqsInRanges(ranges)).toBe(4);
         expect(toALSeqsInRanges(ranges)).toEqual([2, 4, 5, 6]);
+    });
+
+    it('pages the first sequences of a range list and keeps exactly the rest as ranges', () => {
+        const ranges: readonly ALSeqRange[] = [{ from: 2, to: 4 }, { from: 7, to: 7 }, { from: 9, to: 12 }];
+        expect(computeALSeqRangePage(ranges, 5)).toEqual({ page: [2, 3, 4, 7, 9], remaining: [{ from: 10, to: 12 }] });
+        expect(computeALSeqRangePage(ranges, 3)).toEqual({
+            page: [2, 3, 4],
+            remaining: [{ from: 7, to: 7 }, { from: 9, to: 12 }]
+        });
+        expect(computeALSeqRangePage(ranges, 8)).toEqual({ page: toALSeqsInRanges(ranges), remaining: [] });
+        expect(computeALSeqRangePage([], 8)).toEqual({ page: [], remaining: [] });
     });
 
     it('round-trips a sequence list through ranges and back', () => {

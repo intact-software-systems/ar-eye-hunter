@@ -2,6 +2,12 @@ import { Either } from '../resilience/Either.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from './al-message-resource-limits.ts';
 import type { ALSeqRange } from './al-runtime.ts';
 
+/** The first sequences of a range list, and the ranges that cover exactly what the page left. */
+export interface ALSeqRangePage {
+    readonly page: readonly number[];
+    readonly remaining: readonly ALSeqRange[];
+}
+
 /** The sorted, merged inclusive ranges that cover exactly the given sequences. */
 export function toALSeqRanges(seqs: Iterable<number>): readonly ALSeqRange[] {
     const ranges: ALSeqRange[] = [];
@@ -29,6 +35,26 @@ export function toALSeqsInRanges(ranges: readonly ALSeqRange[]): readonly number
 
 export function countALSeqsInRanges(ranges: readonly ALSeqRange[]): number {
     return ranges.reduce((count, range) => count + range.to - range.from + 1, 0);
+}
+
+/** The first `pageSize` sequences of sorted, disjoint ranges, ascending, and the ranges of the rest. */
+export function computeALSeqRangePage(ranges: readonly ALSeqRange[], pageSize: number): ALSeqRangePage {
+    const page: number[] = [];
+    const remaining: ALSeqRange[] = [];
+    for (const range of ranges) {
+        if (page.length >= pageSize) {
+            remaining.push(range);
+            continue;
+        }
+        const pageEnd = Math.min(range.to, range.from + pageSize - page.length - 1);
+        for (let seq = range.from; seq <= pageEnd; seq += 1) {
+            page.push(seq);
+        }
+        if (pageEnd < range.to) {
+            remaining.push({ from: pageEnd + 1, to: range.to });
+        }
+    }
+    return { page, remaining };
 }
 
 /** Ranges joined as `from-to` with `,`, the bounded text an effect identity carries. */

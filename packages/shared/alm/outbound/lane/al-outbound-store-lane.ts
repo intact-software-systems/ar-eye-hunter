@@ -593,7 +593,8 @@ function createALOutboundLaneAdmissions<TPrepared>(
             admissionStore: stores.admissionStore,
             dispatchAdmission,
             planOutgoingMessage: runtime.planOutgoingMessage,
-            planRepairMessage: runtime.planRepairMessage
+            planRepairMessage: runtime.planRepairMessage,
+            settlements
         })
     };
 }

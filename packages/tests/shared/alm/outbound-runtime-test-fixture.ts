@@ -271,6 +271,19 @@ export async function peekOutboundWorkReadyAt(
     );
 }
 
+/**
+ * Resolves once the owner advertises no work at all: nothing new, nothing retried and nothing claimed
+ * in flight, so every effect the runtime's own engine owed has run and committed whatever followed it.
+ */
+export async function waitForOutboundWorkDrained(
+    stores: ALOutboundRuntimeStores<OutboundTestPayload>
+): Promise<void> {
+    await expect.poll(
+        () => peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace),
+        { timeout: 5_000, interval: 10 }
+    ).toBeUndefined();
+}
+
 /** Claims and decodes work the way the owner's batch does. */
 export async function claimOutboundTestWork<TPrepared>(
     stores: ALOutboundRuntimeStores<TPrepared>,

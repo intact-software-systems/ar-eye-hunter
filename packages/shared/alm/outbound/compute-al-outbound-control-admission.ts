@@ -19,7 +19,7 @@ import type {
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
-import { toALOutboundAckTimeoutEffectId, toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
+import { toALOutboundAckTimeoutEffectId, toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
     acceptALOutboundPendingAckSnapshot,
     isALOutboundReceiptComplete,
@@ -279,14 +279,7 @@ function toRepairHintEffect(
         failedPeerIds: []
     };
     return {
-        effectId: toALOutboundEffectId([
-            'repair-hint',
-            read.targetMsgId,
-            request.trigger,
-            request.requestedByPeerId ?? '-',
-            request.orderingTrackKey ?? '-',
-            toALSeqRangesText(request.missingRanges)
-        ]),
+        effectId: toALOutboundRepairHintEffectId(read.targetMsgId, request),
         payload: { kind: 'repair-hint', msgId: read.targetMsgId, request },
         retryAtMs: read.nowMs,
         expireAtTimestamp: read.sent.reference.expiresAtMs
