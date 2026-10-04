@@ -161,6 +161,14 @@ missing readiness reason and first-result-agent association remain unknown.
 The earlier local pipeline
 profile did not exercise B06. Local diagnostic evidence is separate from governed
 baseline acceptance; E3 still has zero accepted cohorts.
+Task 42's source trace and bounded follow-through identify the later current-session
+connection between agent ordinals1 and3 as nonopen on both configured lanes;
+each remains ready to ordinal2. Retained Offer/Answer returns and peer-timeout
+notifications narrow that observation, without identifying a native generation,
+captured wait peer or cause. Captured idle can reflect either unavailable current
+layout coverage or timeout/abort suppression in the canonical status owner.
+The existing projection lacks the captured discriminator; no correctness fix or
+new producer is selected from this read-only trace.
 Tasks 0-7 and observation tooling are delivered. The full baseline remains incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
 is gated, and B07 remains held. A package check proves tooling, not capture.
@@ -1584,8 +1592,9 @@ justified yet.”
 | 39      | Complete independently reviewed finite failure-detail interpretation: genuine RED/GREEN and final 32 PASS, separate same-log release with three EXIT0 executions / 813 output bytes. All three record generic Error and reconnect/canonical-readiness/formation-request frames; original operation/cycle and cause stay unknown. All 88 originals remain unchanged; no new producer, correction or accepted cohort.                                                                    |
 | 40      | Complete independently reviewed read-only readiness source trace at inspection3f58/runtime62: all 39 bound owners unchanged; refresh, budget, command/result, cancellation and room-predicate boundaries recovered. Short/exhausted-budget mechanisms remain untested candidates; no historical causal defect, runtime correction or accepted cohort.                                                                                                                                  |
 | 41      | Complete bounded local B06 reproduction at inspection3f58/runtime62: EXIT1/634.695s, one PASS/one FAIL/one selector SKIP, zero retries. Retention uniquely fails cycle17 reconnect/readiness with formation-not-ready message; two captured idle-room rejections have summary available and desired2/ready1. Native cause/first-error association unknown. Fresh memory services teardown verified; local environment differs from CI, zero accepted E3 cohorts.                       |
+| 42      | Complete read-only source trace and bounded existing-projection review at inspection64/runtime62: 32 source/test/example owners unchanged; later ordinals1/3 have both lanes nonopen while ready to2. Captured idle does not distinguish layout coverage from timeout/abort suppression; captured peer/lane/terminal and native cause remain unknown. Originals unchanged; no regression, correction, new producer or accepted cohort.                                                 |
 
-## 11. Next Two Useful Actions After Task 41
+## 11. Next Two Useful Actions After Task 42
 
 Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
@@ -1596,7 +1605,9 @@ inferring an operation. Task 39 locates recorded result-error frames at canonica
 readiness; it does not recover the unique original step or cause. Task 40 traces
 the existing readiness owners and tests without earning a historical causal
 defect. Task 41 reproduces a local cycle17 readiness failure and retains two
-captured shortages without identifying their native cause. Section 9's
+captured shortages. Task 42 identifies a later unready current-session connection
+and the missing captured authority/terminal discriminator, without earning a
+native cause or correction. Section 9's
 correctness/tier stop still prevents optimization.
 Task 33's owned-code correction
 remains accepted at c3b3; the human's required-clock approval persists.
@@ -1874,19 +1885,49 @@ does not replace three independent CI runners or governed B06 capture. The short
 exhausted-budget source candidates remain independent and unassigned to this
 formation-not-ready failure; no correction or optimization is accepted from them.
 
-**Next action 1:** Trace the minimum already-projected local signaling/native
-observations and canonical room-readiness path for the missing desired lane.
-Establish a source-bound current-operation/peer association only when existing
-finite evidence supports it. Preserve local provenance and unknown terminal/native
-cause; do not read the whole oversized recorder, bypass finite input bounds or
-invent GitHub provenance to reuse a hosted-only release.
+### Task 42: Local connection and readiness discriminator
 
-**Next action 2:** Prove one discriminating existing-owner regression for an actual
-correctness mechanism earned by that trace or a verified contract. Use semantic
-TDD, recursive touched/support closure, proportional validation and independent
-review before accepting the minimum correction. Otherwise preserve explicit
-unknowns. No speculative timeout/retry, native DI, policy or workload relaxation
-or optimization follows; no remote producer is selected.
+**Current outcome:** The read-only source trace binds32 unchanged source/test/
+example owners to runtime62 at docs-only inspection64. Root separately inspected
+only the existing309,123-byte projected failure-health attachment. Later current
+session identities affirm that ordinals1 and3 desire each other but are ready only
+to ordinal2; both configured lanes between1/3 are nonopen, while ordinal2's lanes
+are open. The selected projected observations lie within the recorded cycle17
+current-cycle-before-close interval. Two Offers return on1 and two Answers on3,
+each with captured/current-PC true at its own record. Peer-timeout notifications
+occur twice on1 and once on3; their current-at-notification snapshots show wrapper
+Connecting/native new/ICE new. They do not pair native invocations, generations,
+retired resources or deletion issuers. Deleted notifications are deferred and
+re-read current facade state, so adjacent created/deleted rows are not a native
+generation history. Producer/runtime/control clocks and recorder order retain
+their separate meanings.
+
+The canonical status owner suppresses accepted-layout eligibility after an
+observed timeout/abort; it also requires accepted layout coverage of current
+presence. Either path can produce captured idle before lane-count decisions.
+The captured rejection does not retain desired/ready identities, lane or wait
+status. Later formation retains accepted layout identity but drops current causal
+revision, and is not an atomic captured wait snapshot. Thus the captured authority,
+peer/lane and terminal discriminator remains unavailable. History is incomplete
+with retained-prefix loss and six oversized rows; absence is not missing action.
+All22 files in the initial inventory /40,145,497 bytes remain unchanged. Retained author
+source analysis and root actual-value review remain separate after fresh-agent
+dispatch failed at capacity. No test, causal regression, correction, optimization
+or new producer follows; all baseline acceptance gates remain intact.
+
+**Next action 1:** Resolve the smallest captured-readiness evidence gap in the
+existing private controller/projector. Examine whether the returned canonical
+room reason and peer/lane facts can be retained as finite supplemental observations
+that distinguish wait termination from current layout coverage. Keep observations
+separate from causal claims; do not duplicate readiness policy, add a collector,
+change a public RTC contract or infer missing native generation/issuer data.
+
+**Next action 2:** Prove the selected existing-owner observation or correctness
+contract with semantic TDD, recursive touched/support closure, proportional
+validation and independent review before accepting a correction. A further local
+B06 run needs a reviewed change that answers the named missing fact; another
+unchanged producer is not selected. No speculative timeout/retry, native DI,
+policy/workload relaxation or optimization follows.
 
 Full B01–B06 accepted primaries and all required repeats, relevant E1
 recovery/reconciliation after representative E3 succeeds, homogeneous noise
