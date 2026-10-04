@@ -464,6 +464,16 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'decodeRepairReason'
     }),
     Object.freeze({
+        path: 'packages/shared/al-contracts/al-control-value-codec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeReceiptPhase'
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-control-value-codec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeALDeliveryCarrier'
+    }),
+    Object.freeze({
         path: 'packages/shared/al-contracts/al-control.ts',
         rule: 'boundary.unknown',
         symbol: 'parseControlPayload'
@@ -487,6 +497,11 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
         rule: 'boundary.unknown',
         symbol: 'validateALMessageResourceLimits'
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
+        rule: 'boundary.unknown',
+        symbol: 'computeALMessageEnvelopeBytes'
     }),
     Object.freeze({
         path: 'packages/shared/al-contracts/al-message-resource-limits.ts',

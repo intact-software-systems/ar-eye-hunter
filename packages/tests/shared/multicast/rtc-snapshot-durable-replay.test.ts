@@ -256,7 +256,7 @@ describe('RTC admitted-message consumption', () => {
                 return fixture.controls.map(parseALControlMessage);
             }).toContainEqual({
                 type: 'nack',
-                payload: expect.objectContaining({ msgId: second.id.msgId, reason: 'resync-required', missingSeqs: [] })
+                payload: expect.objectContaining({ msgId: second.id.msgId, reason: 'resync-required', missingRanges: [] })
             });
         }
         finally {

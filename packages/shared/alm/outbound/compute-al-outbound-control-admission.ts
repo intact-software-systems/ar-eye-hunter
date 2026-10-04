@@ -6,6 +6,7 @@ import type {
     ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
+import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
 import type {
     ALOutboundPendingAckSnapshot
 } from '../al-runtime-state-stores.ts';
@@ -274,7 +275,7 @@ function toRepairHintEffect(
         trigger: read.parsed.type === 'nack' ? 'nack' : 'repair',
         requestedByPeerId: payload.fromPeerId,
         orderingTrackKey: payload.orderingKey,
-        missingSeqs: payload.missingSeqs ?? [],
+        missingRanges: payload.missingRanges ?? [],
         failedPeerIds: []
     };
     return {
@@ -284,7 +285,7 @@ function toRepairHintEffect(
             request.trigger,
             request.requestedByPeerId ?? '-',
             request.orderingTrackKey ?? '-',
-            request.missingSeqs.join(',')
+            toALSeqRangesText(request.missingRanges)
         ]),
         payload: { kind: 'repair-hint', msgId: read.targetMsgId, request },
         retryAtMs: read.nowMs,

@@ -152,7 +152,7 @@ export class ALInboundOrderedDelivery {
                     toPeerId: read.source.kind === 'trusted-server' ? msg.id.senderId : read.source.peerId,
                     msgId: msg.id.msgId,
                     reason: 'resync-required',
-                    ordering: { status: 'resync-required', trackKey, seq, missingSeqs: [], releasableSeqs: [] }
+                    ordering: { status: 'resync-required', trackKey, seq, missingRanges: [], releasableSeqs: [] }
                 }
             }]
         });

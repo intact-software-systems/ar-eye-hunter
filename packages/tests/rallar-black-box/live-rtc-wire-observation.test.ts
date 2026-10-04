@@ -70,7 +70,7 @@ describe('live RTC wire observation', () => {
 describe('received not-yet-in-sync NACK proof', () => {
     const probe = { messageId: 'sent-message', senderSessionId: 'session-a', targetSessionId: 'session-b' };
     const nack = { msgId: 'sent-message', reason: 'not-yet-in-sync', fromPeerId: 'session-b', toPeerId: 'session-a' };
-    const frame = JSON.stringify({ payload: { typeId: 'al.control.nack.v1', resource: JSON.stringify(nack) } });
+    const frame = JSON.stringify({ payload: { typeId: 'al.control.nack.v2', resource: JSON.stringify(nack) } });
 
     it('accepts only the received protocol NACK matching message and both sessions', () => {
         expect(hasLiveRtcNotYetInSyncNack({ ...probe, frames: [frame] })).toBe(true);
@@ -89,8 +89,8 @@ describe('received not-yet-in-sync NACK proof', () => {
         JSON.stringify({ commandId: 'nack-not-yet-in-sync-command', ok: false, error: { message: 'unrelated failure' } }),
         JSON.stringify({ minSnapshotVersion: 9_999_999, message: { id: { msgId: 'sent-message' } } }),
         JSON.stringify({ payload: { typeId: 'manual.type', resource: JSON.stringify(nack) } }),
-        JSON.stringify({ payload: { typeId: 'al.control.nack.v1', resource: 'invalid resource' } }),
-        JSON.stringify({ payload: { typeId: 'al.control.nack.v1', resource: JSON.stringify({ ...nack, reason: 'unauthorized' }) } })
+        JSON.stringify({ payload: { typeId: 'al.control.nack.v2', resource: 'invalid resource' } }),
+        JSON.stringify({ payload: { typeId: 'al.control.nack.v2', resource: JSON.stringify({ ...nack, reason: 'unauthorized' }) } })
     ])('rejects malformed, echoed, or different protocol evidence %#', (unrelated) => {
         expect(hasLiveRtcNotYetInSyncNack({ ...probe, frames: [unrelated] })).toBe(false);
     });
@@ -99,7 +99,7 @@ describe('received not-yet-in-sync NACK proof', () => {
         const unrelatedSecret = 'credential=must-not-be-retained';
         const mismatchedNack = JSON.stringify({
             payload: {
-                typeId: 'al.control.nack.v1',
+                typeId: 'al.control.nack.v2',
                 resource: JSON.stringify({
                     ...nack,
                     msgId: 'another-message',
@@ -118,7 +118,7 @@ describe('received not-yet-in-sync NACK proof', () => {
                     }
                 }),
                 mismatchedNack,
-                JSON.stringify({ payload: { typeId: 'al.control.nack.v1', resource: 'invalid resource' } })
+                JSON.stringify({ payload: { typeId: 'al.control.nack.v2', resource: 'invalid resource' } })
             ]
         });
 
@@ -146,7 +146,7 @@ describe('received not-yet-in-sync NACK proof', () => {
         const frames = Array.from({ length: 25 }, (_, index) =>
             JSON.stringify({
                 payload: {
-                    typeId: 'al.control.nack.v1',
+                    typeId: 'al.control.nack.v2',
                     resource: JSON.stringify({ ...nack, msgId: `other-${index}` })
                 }
             }));

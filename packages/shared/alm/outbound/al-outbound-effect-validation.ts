@@ -12,7 +12,8 @@ import { jsonEquals } from '../../repository/state-utils.ts';
 import {
     decodeALAdmissionArray,
     decodeALAdmissionNumber,
-    decodeALAdmissionRecord
+    decodeALAdmissionRecord,
+    decodeALAdmissionSeqRanges
 } from '../al-admission-value-validation.ts';
 import type {
     ALOutboundDurableEffect,
@@ -273,7 +274,7 @@ function requireALOutboundSendEffectIdentity(
 }
 
 function decodeALOutboundRepairHint(value: unknown): ALOutboundRepairHint {
-    const request = decodeALAdmissionRecord(value, ['trigger', 'failedPeerIds', 'missingSeqs'], [
+    const request = decodeALAdmissionRecord(value, ['trigger', 'failedPeerIds', 'missingRanges'], [
         'requestedByPeerId',
         'orderingTrackKey'
     ]);
@@ -286,6 +287,6 @@ function decodeALOutboundRepairHint(value: unknown): ALOutboundRepairHint {
         throw new TypeError('Persisted AL repair peer or sequence array is missing');
     }
     requireOptionalPersistedALStringArray(request.failedPeerIds, 'failed repair peers');
-    decodeALAdmissionArray(request.missingSeqs, decodeALAdmissionNumber);
+    decodeALAdmissionSeqRanges(request.missingRanges);
     return value as ALOutboundRepairHint;
 }

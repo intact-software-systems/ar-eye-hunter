@@ -34,7 +34,7 @@ describe('WS ingress scope refusal', () => {
         expect(controls).toMatchObject([{
             id: { senderId: 'server' },
             targets: { mode: 'unicast', toPeerId: 'session-1' },
-            payload: { typeId: 'al.control.nack.v1' }
+            payload: { typeId: 'al.control.nack.v2' }
         }]);
         expect(decodeALNackPayload(JSON.parse(controls[0]!.payload.resource))).toMatchObject({
             fromPeerId: 'server',

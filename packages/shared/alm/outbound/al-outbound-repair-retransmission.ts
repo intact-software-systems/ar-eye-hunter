@@ -1,4 +1,5 @@
 import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
+import { toALSeqsInRanges } from '../../al-contracts/al-seq-range.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -59,10 +60,10 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         request: ALOutboundRepairHint,
         attemptIdentity: string
     ): Promise<void> {
-        if (request.orderingTrackKey && request.missingSeqs.length > 0) {
+        if (request.orderingTrackKey && request.missingRanges.length > 0) {
             let retransmitted = false;
 
-            for (const seq of request.missingSeqs) {
+            for (const seq of toALSeqsInRanges(request.missingRanges)) {
                 const cached = await this.dependencies.admissionStore.readSentMessageByOrdering(
                     request.orderingTrackKey,
                     seq

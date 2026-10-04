@@ -438,12 +438,12 @@ describe('inbound admission persisted values', () => {
         { localDelivery: { enabled: 'yes', persist: false, deferred: false } },
         { forwarding: { enabled: true, persist: false, nextHopPeerIds: [1] } },
         { ack: { enabled: true, algo: 'hop', deferred: 1 } },
-        { nack: { enabled: false, missingSeqs: [-1] } },
+        { nack: { enabled: false, missingRanges: [{ from: 1, to: 0 }] } },
         { repair: { enabled: true, algo: 'unknown' } },
         { supersedence: { enabled: true, algo: 'latest-wins', status: 'unknown' } },
         { congestion: { overloaded: false, action: 'none', priority: Number.NaN } },
         { ownership: { algo: 'shared', exclusive: 1 } },
-        { orderingRuntime: { status: 'gap', missingSeqs: [1], releasableSeqs: ['2'] } }
+        { orderingRuntime: { status: 'gap', missingRanges: [{ from: 1, to: 1 }], releasableSeqs: ['2'] } }
     ])('rejects malformed persisted handling-plan sections before buffered release', async (corruption) => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();

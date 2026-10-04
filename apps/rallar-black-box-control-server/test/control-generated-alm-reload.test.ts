@@ -657,7 +657,7 @@ class GeneratedAlmPorts {
                     data: {
                         kind: 'control-admission',
                         msgId: `${message.msgId}-nack`,
-                        typeId: 'al.control.nack.v1',
+                        typeId: 'al.control.nack.v2',
                         targetMsgId: message.msgId,
                         outcome: 'committed',
                         reason: 'none'

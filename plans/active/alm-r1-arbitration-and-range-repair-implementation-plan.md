@@ -88,8 +88,8 @@ observation shape; 6 consumes 1, 3, 4 and 5 through the browser only.
   `plan.ackTracking.nextHopPeerIds` is the sender's own hop. _Cost if wrong:_ a room gap repair without a
   planner would also replay the frame to the hop that already holds it, which the hop deduplicates.
 - **R-R1-2:** `ALSeqRange` lives in `al-contracts/al-runtime.ts` beside `ALOrderingObservation`; the
-  pure translations `toALSeqRanges(seqs)` and `toALSeqsInRanges(ranges)` live in a new
-  `al-contracts/al-seq-range.ts`. _Cost if wrong:_ one file moves.
+  pure translations `toALSeqRanges(seqs)`, `toALSeqsInRanges(ranges)`, `toALSeqRangesText(ranges)` and the
+  decoder live in a new `al-contracts/al-seq-range.ts`. _Cost if wrong:_ one file moves.
 - **R-R1-3:** The codec caps a payload at `AL_MESSAGE_RESOURCE_LIMITS.repairRanges = 128` ranges and
   rejects a range with `from > to` or a non-integer bound as malformed. _Cost if wrong:_ a constant
   changes.
@@ -110,9 +110,7 @@ observation shape; 6 consumes 1, 3, 4 and 5 through the browser only.
   through the browser ALM diagnostics port the storage events use, under the kind
   `'recovery-owner-invoked'` with the cursor, so the lane observes it on its existing topic. _Cost if
   wrong:_ the harness waits on a different topic.
-- **R-R1-9:** The new two-agent cells are withheld from hosted manifests 18 and 22, which stay
-  byte-identical (as I2b's were); they run locally and in the observation's full read. _Cost if wrong:_
-  no hosted proof of the new cells.
+- **R-R1-9:** The new two-agent cells are withheld from hosted manifests 18 and 22 (as I2b's were); they run locally and in the observation's full read. Manifest 18 is regenerated once in Task 3 where its `ordering-resync` cell waits on the NACK type id, which moves to `v2`; no other manifest line moves. _Cost if wrong:_ no hosted proof of the new cells; the hosted run of 18 is a regression read of the `v2` id.
 - **R-R1-10:** The Relic full-stack case runs once in Task 1 (it needs `RALLAR_AUTH_CREDENTIAL_SECRET`
   and Chromium build 1228); its summary line goes to the PR body; a red there is diagnosed before any
   change. _Cost if wrong:_ one manual run.
@@ -126,7 +124,7 @@ observation shape; 6 consumes 1, 3, 4 and 5 through the browser only.
 - A reload re-invokes the recovery owner once (the once-mark is per runtime, D142).
 - ALM resets no ordering track after a resync; the sender's new epoch closes it (D142).
 - The WS server has no recovery owner and keeps NACKing `resync-required`.
-- Hosted manifests 18 and 22 carry none of the new cells (R-R1-9).
+- Hosted manifests 18 and 22 carry none of the new cells; 18 changes only by the `v2` NACK id (R-R1-9).
 
 ---
 
@@ -233,8 +231,8 @@ D8 reuse: the existing three-backend matrix, pglite storage and real-PostgreSQL 
 
 - Create: `packages/shared/al-contracts/al-seq-range.ts` — `toALSeqRanges(seqs: Iterable<number>):
   ALSeqRange[]` (sorted, merged, inclusive), `toALSeqsInRanges(ranges): number[]`,
-  `countALSeqsInRanges(ranges): number`, `validateALSeqRanges(value: unknown): Either<TypeError,
-  readonly ALSeqRange[]>` (bounded by `repairRanges`, R-R1-3).
+  `countALSeqsInRanges(ranges): number`, `decodeALSeqRanges(value: unknown): Either<TypeError,
+  readonly ALSeqRange[]>` (the one bounded range decoder for wire and rows, R-R1-3).
 - Modify: `al-runtime.ts` — `ALSeqRange { from, to }`; `ALOrderingObservation.missingRanges` replaces
   `missingSeqs`.
 - Modify: `al-control.ts`, `al-control-type-ids.ts` (`v2` ids; `v1` refused), `al-control-value-codec.ts`

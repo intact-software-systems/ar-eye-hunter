@@ -452,7 +452,7 @@
             "toPeerId": "{bobSessionId}"
           },
           "payload": {
-            "typeId": "al.control.nack.v1"
+            "typeId": "al.control.nack.v2"
           }
         },
         "consume": true
@@ -1239,7 +1239,7 @@
             "toPeerId": "{bobSessionId}"
           },
           "payload": {
-            "typeId": "al.control.nack.v1"
+            "typeId": "al.control.nack.v2"
           }
         },
         "consume": true

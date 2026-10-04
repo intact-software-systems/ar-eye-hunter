@@ -10,6 +10,8 @@ import type {
     ALRepairReason
 } from './al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from './al-message-resource-limits.ts';
+import type { ALSeqRange } from './al-runtime.ts';
+import { decodeALSeqRanges } from './al-seq-range.ts';
 
 export function decodeALAckPayload(value: unknown): ALAckPayload {
     const record = decodeControlRecord(value, [
@@ -72,14 +74,14 @@ export function decodeALNackPayload(value: unknown): ALNackPayload {
     const record = decodeControlRecord(
         value,
         ['msgId', 'fromPeerId', 'toPeerId', 'reason', 'observedAtEpochMs'],
-        ['orderingKey', 'expectedSeq', 'missingSeqs', 'serverSnapshotVersion']
+        ['orderingKey', 'expectedSeq', 'missingRanges', 'serverSnapshotVersion']
     );
     return {
         ...decodeControlRoute(record, 'NACK'),
         reason: decodeNackReason(record.reason),
         ...decodeOptionalIdentifier(record, 'orderingKey', 'NACK ordering key'),
         ...decodeOptionalNumber(record, 'expectedSeq', 'NACK expected sequence'),
-        ...decodeOptionalNumberArray(record, 'missingSeqs', 'NACK missing sequences'),
+        ...decodeOptionalSeqRanges(record, 'missingRanges', 'NACK missing ranges'),
         ...decodeOptionalNumber(record, 'serverSnapshotVersion', 'NACK server snapshot version')
     };
 }
@@ -88,14 +90,14 @@ export function decodeALRepairPayload(value: unknown): ALRepairPayload {
     const record = decodeControlRecord(
         value,
         ['msgId', 'fromPeerId', 'toPeerId', 'reason', 'observedAtEpochMs'],
-        ['orderingKey', 'expectedSeq', 'missingSeqs']
+        ['orderingKey', 'expectedSeq', 'missingRanges']
     );
     return {
         ...decodeControlRoute(record, 'repair'),
         reason: decodeRepairReason(record.reason),
         ...decodeOptionalIdentifier(record, 'orderingKey', 'repair ordering key'),
         ...decodeOptionalNumber(record, 'expectedSeq', 'repair expected sequence'),
-        ...decodeOptionalNumberArray(record, 'missingSeqs', 'repair missing sequences')
+        ...decodeOptionalSeqRanges(record, 'missingRanges', 'repair missing ranges')
     };
 }
 
@@ -206,12 +208,19 @@ function decodeOptionalNumber(
     return Object.hasOwn(record, key) ? { [key]: decodeControlNumber(record[key], label) } : {};
 }
 
-function decodeOptionalNumberArray(
+function decodeOptionalSeqRanges(
     record: ControlRecord,
     key: string,
     label: string
-): Readonly<Record<string, readonly number[]>> {
-    return Object.hasOwn(record, key) ? { [key]: decodeControlNumberArray(record[key], label) } : {};
+): Readonly<Record<string, readonly ALSeqRange[]>> {
+    if (!Object.hasOwn(record, key)) {
+        return {};
+    }
+    const validated = decodeALSeqRanges(record[key]);
+    if (validated.left) {
+        throw new TypeError(`${label} are invalid: ${validated.left.message}`);
+    }
+    return { [key]: validated.right! };
 }
 
 function decodeControlIdentifierArray(value: unknown, label: string): readonly string[] {
@@ -219,15 +228,6 @@ function decodeControlIdentifierArray(value: unknown, label: string): readonly s
     const result: string[] = [];
     for (const entry of entries) {
         result.push(decodeControlIdentifier(entry, label));
-    }
-    return result;
-}
-
-function decodeControlNumberArray(value: unknown, label: string): readonly number[] {
-    const entries = readControlArrayEntries(value, AL_MESSAGE_RESOURCE_LIMITS.repairWindow, label);
-    const result: number[] = [];
-    for (const entry of entries) {
-        result.push(decodeControlNumber(entry, label));
     }
     return result;
 }

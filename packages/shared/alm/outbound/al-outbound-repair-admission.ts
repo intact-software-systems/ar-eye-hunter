@@ -132,7 +132,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             trigger: control.type,
             requestedByPeerId: control.payload.fromPeerId,
             orderingTrackKey: control.payload.orderingKey,
-            missingSeqs: control.payload.missingSeqs ?? [],
+            missingRanges: control.payload.missingRanges ?? [],
             failedPeerIds: [],
             completedHopPeerIds: [],
             repair: read.plan?.repairTracking ?? { enabled: false, algo: 'none', maxAttempts: 0 }
@@ -286,7 +286,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
                     payload: {
                         kind: 'repair-hint',
                         msgId: msg.id.msgId,
-                        request: { trigger: 'ack-timeout', failedPeerIds, missingSeqs: [] }
+                        request: { trigger: 'ack-timeout', failedPeerIds, missingRanges: [] }
                     }
                 }
             ]

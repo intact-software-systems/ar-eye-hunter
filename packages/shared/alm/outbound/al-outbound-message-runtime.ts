@@ -6,6 +6,7 @@ import type {
     ALRepairAlgo,
     ALSupersedenceAlgo
 } from '../../al-contracts/al-policy.ts';
+import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -133,7 +134,7 @@ export interface ALOutboundRepairRequest {
     /** The next hops whose subtree the receipt saw complete; empty for a retry no receipt timed out. */
     readonly completedHopPeerIds: readonly string[];
     readonly orderingTrackKey?: string;
-    readonly missingSeqs: readonly number[];
+    readonly missingRanges: readonly ALSeqRange[];
 }
 
 /** Why a planner dropped the message. `rtc-room-snapshot-admission.ts` sets its two shared values from `ALMessageDropReasonCode`; `'planner-drop'` covers a drop that fits no other code. */

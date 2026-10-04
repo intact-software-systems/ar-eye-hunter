@@ -17,6 +17,8 @@ export const AL_MESSAGE_RESOURCE_LIMITS = {
     visitedPeers: 64,
     hops: 64,
     repairWindow: 256,
+    /** The most disjoint missing ranges a `repairWindow` can hold: every other sequence missing. */
+    repairRanges: 128,
     bufferedMessages: 256,
     bufferedBytes: 1024 * 1024
 } as const;

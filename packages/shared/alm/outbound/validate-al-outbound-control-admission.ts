@@ -1,5 +1,6 @@
 import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
+import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import {
@@ -94,7 +95,7 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
                     prior.fromPeerId === payload.fromPeerId && prior.reason === payload.reason &&
                     prior.orderingKey === payload.orderingKey && prior.expectedSeq === payload.expectedSeq &&
                     prior.serverSnapshotVersion === payload.serverSnapshotVersion &&
-                    equalNumbers(prior.missingSeqs, payload.missingSeqs)
+                    equalSeqRanges(prior.missingRanges, payload.missingRanges)
                 );
         }
         case 'repair': {
@@ -103,7 +104,7 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
                 read.history.values.some((prior) =>
                     prior.fromPeerId === payload.fromPeerId && prior.reason === payload.reason &&
                     prior.orderingKey === payload.orderingKey && prior.expectedSeq === payload.expectedSeq &&
-                    equalNumbers(prior.missingSeqs, payload.missingSeqs)
+                    equalSeqRanges(prior.missingRanges, payload.missingRanges)
                 );
         }
     }
@@ -132,8 +133,8 @@ function hasValidOrderingHints(
     sent: ALStoredOutboundMessage,
     payload: ALNackPayload | ALRepairPayload
 ): boolean {
-    const missingSeqs = payload.missingSeqs ?? [];
-    const hasHints = payload.orderingKey !== undefined || payload.expectedSeq !== undefined || missingSeqs.length > 0;
+    const missingRanges = payload.missingRanges ?? [];
+    const hasHints = payload.orderingKey !== undefined || payload.expectedSeq !== undefined || missingRanges.length > 0;
     if (!hasHints) {
         return true;
     }
@@ -145,13 +146,16 @@ function hasValidOrderingHints(
     if (payload.expectedSeq !== undefined && payload.expectedSeq > triggerSeq) {
         return false;
     }
-    return missingSeqs.every((seq) =>
-        seq < triggerSeq && (payload.expectedSeq === undefined || seq >= payload.expectedSeq)
+    return missingRanges.every((range) =>
+        range.to < triggerSeq && (payload.expectedSeq === undefined || range.from >= payload.expectedSeq)
     );
 }
 
-function equalNumbers(left: readonly number[] | undefined, right: readonly number[] | undefined): boolean {
-    const leftValues = left ?? [];
-    const rightValues = right ?? [];
-    return leftValues.length === rightValues.length && leftValues.every((value, index) => value === rightValues[index]);
+function equalSeqRanges(left: readonly ALSeqRange[] | undefined, right: readonly ALSeqRange[] | undefined): boolean {
+    const leftRanges = left ?? [];
+    const rightRanges = right ?? [];
+    return leftRanges.length === rightRanges.length &&
+        leftRanges.every((range, index) =>
+            range.from === rightRanges[index].from && range.to === rightRanges[index].to
+        );
 }

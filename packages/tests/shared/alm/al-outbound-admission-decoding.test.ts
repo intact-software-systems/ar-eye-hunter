@@ -304,7 +304,7 @@ describe('outbound admission persisted-record validation', () => {
             ? { kind, msgId: msg.id.msgId }
             : kind === 'nack-retry'
             ? { kind, msgId: msg.id.msgId, reason: 'not-yet-in-sync' }
-            : { kind, msgId: msg.id.msgId, request: { trigger: 'repair', failedPeerIds: [], missingSeqs: [] } };
+            : { kind, msgId: msg.id.msgId, request: { trigger: 'repair', failedPeerIds: [], missingRanges: [] } };
         const effect = createEffect(msg);
         await backend.write(async (tx) => {
             await tx.set(`outbound:sent:${msg.id.msgId}`, { msgId: msg.id.msgId, msg: { ...msg, payload: {} } });

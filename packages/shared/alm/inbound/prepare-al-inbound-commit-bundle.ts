@@ -5,7 +5,7 @@ import {
     newALRepairControlMessage
 } from '../../al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
-import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
+import type { ALOrderingObservation, ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type {
@@ -41,7 +41,7 @@ export interface PrepareALInboundCommitBundleInput {
 interface ALInboundControlOrdering {
     readonly orderingKey?: string;
     readonly expectedSeq?: number;
-    readonly missingSeqs?: readonly number[];
+    readonly missingRanges?: readonly ALSeqRange[];
 }
 
 interface PrepareALInboundDurableEffectInput {
@@ -208,7 +208,7 @@ function toControlOrdering(ordering: ALOrderingObservation | undefined): ALInbou
     return {
         ...(ordering?.trackKey === undefined ? {} : { orderingKey: ordering.trackKey }),
         ...(ordering?.expectedSeq === undefined ? {} : { expectedSeq: ordering.expectedSeq }),
-        ...(ordering === undefined ? {} : { missingSeqs: ordering.missingSeqs })
+        ...(ordering === undefined ? {} : { missingRanges: ordering.missingRanges })
     };
 }
 

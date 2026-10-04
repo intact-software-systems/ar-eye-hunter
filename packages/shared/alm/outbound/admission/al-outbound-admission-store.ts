@@ -5,7 +5,7 @@ import type {
     ALRepairPayload
 } from '../../../al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '../../../al-contracts/al-message-persistence-validation.ts';
-import type { ALReadyable } from '../../../al-contracts/al-runtime.ts';
+import type { ALReadyable, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { PersistenceWriteExpiredError } from '../../../persistence/persistence-write-deadline.ts';
 import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';
@@ -193,7 +193,7 @@ export interface ALOutboundRepairHint {
     readonly requestedByPeerId?: string;
     readonly failedPeerIds: readonly string[];
     readonly orderingTrackKey?: string;
-    readonly missingSeqs: readonly number[];
+    readonly missingRanges: readonly ALSeqRange[];
 }
 
 export type ALOutboundDurableEffect<TPrepared> =

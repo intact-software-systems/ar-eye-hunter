@@ -308,13 +308,13 @@ cap the cost is redundant relays, never a deadlock. The RTC per-copy cost of
 the list is estimated at about 117 B in a three-session star and at most about
 2.5 KB, well inside every envelope limit; it has not been measured on the wire.
 
-**Repair requests.** A peer attaches an `al.control.repair.v1` retransmit
+**Repair requests.** A peer attaches an `al.control.repair.v2` retransmit
 request to its ACK only for owned children it could not reach (R-S2c-ii-9). A
 peer that owns no children never asks: the retry of a recipient the origin
 already counted is the origin's decision from its receipt (see the outbound
 README for the origin's `no-route` verdict when it owns no child).
 
-The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-scoped-delivery'`. An
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-10-range-repair'`. An
 existing browser database at a different schema identity is deleted and
 recreated once, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
@@ -325,6 +325,11 @@ server's rows gained fields older decoders refuse: the captured policy's `recipi
 `principalTargetId` and `sessionInvalidation`, the `ws-client` source's `authenticatedScope`,
 and the prepared recipient kinds `scoped-recipient`, `room-recipient` and `invalidated-session`.
 A row whose targets name a group stores none of the three captured fields: its `groupRef` scopes it.
+The range-repair bump (D139) followed because the buffered slot rows persist the handling plan,
+whose NACK plan and ordering observation now carry `missingRanges` (inclusive `{ from, to }`
+ranges, at most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges`) where they carried `missingSeqs`
+lists; the retained `repair-hint` work and the outbound control history carry the same field.
+No row is migrated: an older row's `missingSeqs` fails strict decoding.
 
 **The deploy window.** No row kind this change touches lacks an expiry, so
 nothing the WS server's PostgreSQL store holds from before the deploy stays
@@ -363,6 +368,15 @@ scoped-delivery bump resets browsers only. On the server:
   its first dequeue (D103).
 - `ws-client` work an older build retained carries no `authenticatedScope`, fails strict decoding and is
   dropped once as corrupt.
+
+**The range-repair window.** PostgreSQL rows carry no schema identity here either, so the
+range-repair bump resets browsers only. On the server, a buffered-slot row, a retained
+`repair-hint` and a `nacks`/`repairs` control history row written by the old build fail strict
+decoding until they expire: the ordering track TTL (`orderingTrackTtlMs`, 5 minutes by default)
+bounds the buffered slots of a track, and the message deadlines bound the retained work and the
+control history, so the window closes without a migration. A NACK or repair a page still running
+the old build sends is refused `unsupported` (`al.control.nack.v1`, `al.control.repair.v1`) until
+that page reloads, symmetrically with the acknowledgement cutover above.
 
 Web and API deploy together.
 

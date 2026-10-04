@@ -317,7 +317,7 @@ Over `rtc` and `rtc-with-ws-fallback` the receiver is that hop: it waits for its
 `admission-outcome` refusing the send as `not-handled`/`resync-required`. Over `ws` the WS server
 is that hop: it keeps its own ordering track, refuses the gapped send without relaying it, and NACKs
 the sender, so the sender waits for its `rallar.browser.alm.outbound_diagnostics`
-`control-admission` of that `al.control.nack.v1`, pinned on the gapped send's msgId through a wait
+`control-admission` of that `al.control.nack.v2`, pinned on the gapped send's msgId through a wait
 result reference. The sender admits that NACK as the word of its trusted server and states the
 relay rejection (`relayRejection: { relay: 'trusted-server' }`); the send requested no ACK, so its
 handle is already `transport-accepted` and keeps that state.
