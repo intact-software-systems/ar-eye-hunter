@@ -35,14 +35,6 @@ export interface BlackBoxRallarFormationControllerDependencies {
     now(): number;
 }
 
-export interface FormationReadinessCapturedFactsInput {
-    readonly returnedRoomReason: unknown;
-    readonly laneId: unknown;
-    readonly desiredPeerIds: unknown;
-    readonly readyPeerIds: unknown;
-    readonly peerIdentitiesTruncated: unknown;
-}
-
 export interface FormationReadinessCapturedFacts {
     readonly returnedRoomReason: string | null;
     readonly laneId: string | null;
@@ -246,39 +238,33 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
 
 /** Sanitizes only supplemental returned-room facts; readiness policy and counts stay with their owners. */
 export function toFormationReadinessCapturedFacts(
-    input: FormationReadinessCapturedFactsInput
+    input: FormationReadinessCapturedFacts
 ): FormationReadinessCapturedFacts {
     const desiredCandidates = toCapturedPeerIdentities(input.desiredPeerIds);
     const readyCandidates = toCapturedPeerIdentities(input.readyPeerIds);
     const desiredPeerIds: string[] | null = desiredCandidates === null ? null : [];
     const readyPeerIds: string[] | null = readyCandidates === null ? null : [];
     const facts = {
-        returnedRoomReason: typeof input.returnedRoomReason === 'string' &&
-                FORMATION_CAPTURED_ROOM_REASONS.includes(input.returnedRoomReason)
-            ? input.returnedRoomReason
-            : null,
+        returnedRoomReason: FORMATION_CAPTURED_ROOM_REASONS.find((reason) => reason === input.returnedRoomReason) ??
+            null,
         laneId: isCapturedPeerIdentity(input.laneId) ? input.laneId : null,
         desiredPeerIds,
         readyPeerIds,
-        peerIdentitiesTruncated: typeof input.peerIdentitiesTruncated === 'boolean'
-            ? input.peerIdentitiesTruncated
-            : null
+        peerIdentitiesTruncated: input.peerIdentitiesTruncated
     };
     if (desiredPeerIds === null || readyPeerIds === null) {
         facts.peerIdentitiesTruncated = facts.peerIdentitiesTruncated === true ? true : null;
     }
     if (
-        (desiredPeerIds !== null && Array.isArray(input.desiredPeerIds) &&
-            input.desiredPeerIds.length > 10) ||
-        (readyPeerIds !== null && Array.isArray(input.readyPeerIds) &&
-            input.readyPeerIds.length > 10)
+        (desiredCandidates !== null && desiredCandidates.length > 10) ||
+        (readyCandidates !== null && readyCandidates.length > 10)
     ) {
         facts.peerIdentitiesTruncated = true;
     }
-    if (desiredPeerIds && desiredCandidates && appendCapturedPeerIdentities(facts, desiredPeerIds, desiredCandidates)) {
+    if (appendCapturedPeerIdentities(facts, desiredPeerIds, desiredCandidates)) {
         facts.peerIdentitiesTruncated = true;
     }
-    if (readyPeerIds && readyCandidates && appendCapturedPeerIdentities(facts, readyPeerIds, readyCandidates)) {
+    if (appendCapturedPeerIdentities(facts, readyPeerIds, readyCandidates)) {
         facts.peerIdentitiesTruncated = true;
     }
     return facts;
@@ -287,10 +273,13 @@ export function toFormationReadinessCapturedFacts(
 /** Each list retains its longest prefix that fits beside previously retained facts. */
 function appendCapturedPeerIdentities(
     facts: FormationReadinessCapturedFacts,
-    retained: string[],
-    candidates: readonly string[]
+    retained: string[] | null,
+    candidates: readonly string[] | null
 ): boolean {
-    for (const identity of candidates) {
+    if (retained === null || candidates === null) {
+        return false;
+    }
+    for (const identity of candidates.slice(0, 10)) {
         retained.push(identity);
         // This caps the facts payload, not its recorder envelope or unrelated metadata.
         if (new TextEncoder().encode(JSON.stringify(facts)).byteLength > 8_192) {
@@ -301,14 +290,14 @@ function appendCapturedPeerIdentities(
     return false;
 }
 
-function toCapturedPeerIdentities(value: unknown): string[] | null {
-    return Array.isArray(value) && value.every(isCapturedPeerIdentity)
-        ? value.slice(0, 10)
+function toCapturedPeerIdentities(value: readonly string[] | null): readonly string[] | null {
+    return value !== null && value.every(isCapturedPeerIdentity)
+        ? value
         : null;
 }
 
-function isCapturedPeerIdentity(value: unknown): value is string {
-    return typeof value === 'string' && value.length > 0 && value.length <= 256;
+function isCapturedPeerIdentity(value: string | null): boolean {
+    return value !== null && value.length > 0 && value.length <= 256;
 }
 
 function toFormationReadinessRejection(
@@ -325,7 +314,7 @@ function toFormationReadinessRejection(
         readyPeerCount: room.readyPeerIds.length,
         waitTerminalCause: 'unknown',
         ...toFormationReadinessCapturedFacts({
-            returnedRoomReason: room.reason,
+            returnedRoomReason: room.reason ?? null,
             laneId: room.laneId,
             desiredPeerIds: room.desiredPeerIds,
             readyPeerIds: room.readyPeerIds,

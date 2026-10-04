@@ -22,6 +22,7 @@ import {
     requiredNonnegativeNumber,
     requiredString,
     requiredStringArray,
+    stringValue,
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
 
@@ -772,11 +773,11 @@ function toHttpRequestFailureObservation(event: LiveRtcJsonRecord): LiveRtcJsonR
 
 function toFormationReadinessRejectionObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord {
     const captured = toFormationReadinessCapturedFacts({
-        returnedRoomReason: event.returnedRoomReason,
-        laneId: event.laneId,
-        desiredPeerIds: event.desiredPeerIds,
-        readyPeerIds: event.readyPeerIds,
-        peerIdentitiesTruncated: event.peerIdentitiesTruncated
+        returnedRoomReason: stringValue(event.returnedRoomReason) ?? null,
+        laneId: stringValue(event.laneId) ?? null,
+        desiredPeerIds: exactStringArray(event.desiredPeerIds),
+        readyPeerIds: exactStringArray(event.readyPeerIds),
+        peerIdentitiesTruncated: toLifecycleBoolean(event.peerIdentitiesTruncated)
     });
     return {
         roomTransportState: typeof event.roomTransportState === 'string' &&
