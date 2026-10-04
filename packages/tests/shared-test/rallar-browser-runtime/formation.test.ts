@@ -1,3 +1,12 @@
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { BlackBoxRallarRuntimeDiagnostics } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarEvent,
@@ -9,7 +18,11 @@ import { BlackBoxRallarFormationController } from '@shared-test/black-box-runner
 import { installSpaBrowserRallarEventBridge } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import { toControlEventEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
-import type { RallarRoomTransportStatus, RallarRtcRoomTransportStatus, RallarRtcStatusListener } from '@shared-web/browser/rallar-rtc-facade.ts';
+import type {
+    RallarRoomTransportStatus,
+    RallarRtcRoomTransportStatus,
+    RallarRtcStatusListener
+} from '@shared-web/browser/rallar-rtc-facade.ts';
 import type {
     RallarStateListener,
     RallarUnsubscribe
@@ -23,13 +36,18 @@ import type {
     RallarRoomLayoutListener,
     RallarRoomReconfigureOptions
 } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
+import { BrowserRtcRoomRuntime } from '@shared-web/browser/rtc/browser-rtc-room-runtime.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { controlEventArtifactJsonl } from '../../../../apps/rallar-black-box-control-server/src/control-artifacts.ts';
 import { toLiveRtcLifecycleHistory } from '../../../../tests/playwright/rallar-black-box/live-rtc-agent-diagnostics.ts';
+import {
+    requiredJsonArray,
+    requiredJsonRecord,
+    type LiveRtcJsonRecord
+} from '../../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import { createAcceptedOverlayFixture, createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 import {
     facade,
@@ -436,7 +454,7 @@ it('retains the rejected captured room result when the later live view is open',
     await expect(harness.controller.readiness({ roomRef, timeoutMs: 50 })).rejects.toThrow('state open');
     expect(harness.emitted).toContainEqual(expect.objectContaining({
         topic: 'rallar.browser.formation.not-ready',
-        data: {
+        data: expect.objectContaining({
             kind: 'formation-readiness-rejected',
             roomTransportState: 'idle',
             summaryAvailable: true,
@@ -445,7 +463,7 @@ it('retains the rejected captured room result when the later live view is open',
             desiredPeerCount: 1,
             readyPeerCount: 0,
             waitTerminalCause: 'unknown'
-        }
+        })
     }));
 });
 
@@ -637,39 +655,9 @@ it('keeps the formation rejection when the supplemental sink throws and does not
 });
 
 it('carries the actual formation observation through diagnostics, browser receipt, recorder serialization and bounded projection', async () => {
-    const runtime = createRallarBlackBoxBrowserTestRuntime({ now: () => 120 });
-    const target: BlackBoxRallarRuntimeInstallationTarget = {};
-    vi.stubGlobal('window', target);
-    const cleanup = installSpaBrowserRallarEventBridge(runtime);
-    const diagnostics = new BlackBoxRallarRuntimeDiagnostics({
-        now: () => 119,
-        publish: (event) => target.__blackBoxRallarEmit?.(event),
-        onPublishError: (error) => {
-            throw error;
-        },
-        transportOf: () => 'realtime',
-        laneIdOf: () => 'realtime',
-        scopeDiagnostics: () => ({})
-    });
     const harness = new FormationHarness({ stage: 'active', formationEpoch: 1, desiredPeerIds: ['b'] });
-    harness.emit.mockImplementation(diagnostics.emit);
-    await expect(harness.controller.readiness({ roomRef, timeoutMs: 50 })).rejects.toThrow('RALLAR_BLACK_BOX_FORMATION_NOT_READY');
-    const event = runtime.state().events.find((event) => event.topic === 'rallar.browser.formation.not-ready');
-    if (!event) {
-        throw new Error('Expected actual formation diagnostic in runtime history.');
-    }
-    const jsonl = controlEventArtifactJsonl(toControlEventEnvelope(event, 'run', 'agent-a'));
-    const history = toLiveRtcLifecycleHistory({
-        jsonl,
-        bytesRead: Buffer.byteLength(jsonl),
-        retainedBytes: Buffer.byteLength(jsonl),
-        retainedPrefixDropped: false,
-        transportTruncated: false,
-        agentIds: ['agent-a'],
-        cycle: null,
-        failureInterval: { caseId: 'all-scenarios', startedAtEpochMs: 100, failedAtEpochMs: 150, precision: 'attempt-phase-unspecified' }
-    });
-    expect(history['agent-a']).toMatchObject({
+    const recorded = await recordCapturedRejection(harness);
+    expect(recorded.history['agent-a']).toMatchObject({
         events: [{
             kind: 'formation-readiness-rejected',
             runtimeAtEpochMs: 119,
@@ -683,7 +671,169 @@ it('carries the actual formation observation through diagnostics, browser receip
             waitTerminalCause: 'unknown'
         }]
     });
-    expect(JSON.stringify(history)).not.toContain('private-unknown-reason');
+    expect(JSON.stringify(recorded.history)).not.toContain('private-unknown-reason');
+});
+
+function createCapturedRoomRuntime(harness: FormationHarness, accepted: boolean): BrowserRtcRoomRuntime {
+    return new BrowserRtcRoomRuntime({
+        isConnected: () => true,
+        readWsStatus: () => harness.roomStatus().ws,
+        readRtcStatus: () => ({
+            laneId: 'captured-lane',
+            knownPeerIds: ['b', 'c'],
+            activePeerIds: ['b'],
+            readyPeerIds: ['b'],
+            peerIdsWithNoReconnectableLanes: [],
+            peers: []
+        }),
+        subscribeRtcStatus: () => () => {},
+        subscribeRoomTransportTarget: () => () => {},
+        resolveRoomTransportTarget: () => ({ acceptedLayoutCoversCurrentPresence: accepted, peerIds: ['b', 'c'] }),
+        resolveRoomRef: () => roomRef,
+        toRoomId: () => roomRef.groupId,
+        resolveWaitTimeoutMs: (timeoutMs) => timeoutMs,
+        waitForRoomLane: () => Promise.reject(new Error('Unexpected connecting wait.'))
+    });
+}
+
+interface RecordedFormationRejection {
+    readonly jsonl: string;
+    readonly history: Readonly<LiveRtcJsonRecord>;
+}
+
+async function recordCapturedRejection(harness: FormationHarness): Promise<RecordedFormationRejection> {
+    const runtime = createRallarBlackBoxBrowserTestRuntime({ now: () => 120 });
+    const target: BlackBoxRallarRuntimeInstallationTarget = {};
+    vi.stubGlobal('window', target);
+    const cleanup = installSpaBrowserRallarEventBridge(runtime);
+    onTestFinished(cleanup);
+    const diagnostics = new BlackBoxRallarRuntimeDiagnostics({
+        now: () => 119,
+        publish: (event) => target.__blackBoxRallarEmit?.(event),
+        onPublishError: (error) => {
+            throw error;
+        },
+        transportOf: () => 'realtime',
+        laneIdOf: () => 'realtime',
+        scopeDiagnostics: () => ({})
+    });
+    harness.emit.mockImplementation(diagnostics.emit);
+    await expect(harness.controller.readiness({ roomRef, timeoutMs: 50 })).rejects.toThrow('RALLAR_BLACK_BOX_FORMATION_NOT_READY');
+    const event = runtime.state().events.find((event) => event.topic === 'rallar.browser.formation.not-ready');
+    if (!event) {
+        throw new Error('Expected recorded formation rejection.');
+    }
+    const jsonl = controlEventArtifactJsonl(toControlEventEnvelope(event, 'run', 'agent-a'));
+    const history = toLiveRtcLifecycleHistory({
+        jsonl,
+        bytesRead: Buffer.byteLength(jsonl),
+        retainedBytes: Buffer.byteLength(jsonl),
+        retainedPrefixDropped: false,
+        transportTruncated: false,
+        agentIds: ['agent-a'],
+        cycle: null,
+        failureInterval: { caseId: 'all-scenarios', startedAtEpochMs: 100, failedAtEpochMs: 150, precision: 'attempt-phase-unspecified' }
+    });
     cleanup();
     expect(target.__blackBoxRallarEmit).toBeUndefined();
+    return { jsonl, history };
+}
+
+it.each(
+    [
+        { annotation: 'timeout', reason: 'Room RTC wait ended with timeout.' },
+        { annotation: 'aborted', reason: 'Room RTC wait ended with aborted.' },
+        { annotation: 'authority', reason: 'Room RTC has not started connecting yet.' }
+    ] as const
+)('records the returned $annotation room facts before a later open view', async ({ annotation, reason }) => {
+    const harness = new FormationHarness({ stage: 'active', formationEpoch: 1, desiredPeerIds: ['later'] });
+    const rooms = createCapturedRoomRuntime(harness, annotation !== 'authority');
+    const abort = new AbortController();
+    abort.abort();
+    const captured = annotation === 'authority'
+        ? rooms.status(roomRef, { laneId: 'captured-lane' })
+        : await rooms.wait(roomRef, { connect: false, laneId: 'captured-lane', timeoutMs: 0, signal: annotation === 'aborted' ? abort.signal : undefined });
+    expect(captured.rtc).toMatchObject({ state: 'idle', reason, desiredPeerIds: ['b', 'c'], readyPeerIds: ['b'] });
+    harness.waitForRoom.mockImplementationOnce(async () => {
+        harness.updateRoomAndNotify({ state: 'open', desiredPeerIds: ['later'], readyPeerIds: ['later'], laneId: 'later-lane' });
+        return captured;
+    });
+    const recorded = await recordCapturedRejection(harness);
+    expect(recorded.history['agent-a']).toMatchObject({
+        events: [{
+            returnedRoomReason: reason,
+            laneId: 'captured-lane',
+            desiredPeerIds: ['b', 'c'],
+            readyPeerIds: ['b'],
+            desiredPeerCount: 2,
+            readyPeerCount: 1,
+            peerIdentitiesTruncated: false,
+            waitTerminalCause: 'unknown'
+        }]
+    });
+    expect(recorded.jsonl).toContain(reason);
+    expect(recorded.jsonl).not.toContain('private-unknown-reason');
+    expect(recorded.jsonl).not.toContain('later-lane');
+});
+
+it('bounds escaped and UTF8 captured facts in the actual recorder row while preserving original counts', async () => {
+    const identities = Array.from({ length: 12 }, (_, index) => index % 2 === 0 ? '\u0000'.repeat(256) : '界'.repeat(256));
+    const harness = new FormationHarness({ stage: 'active', formationEpoch: 1, desiredPeerIds: identities, readyPeerIds: identities });
+    const recorded = await recordCapturedRejection(harness);
+    const projected = requiredJsonRecord(recorded.history['agent-a'], 'history');
+    const capture = requiredJsonRecord(requiredJsonArray(projected.events, 'events')[0], 'capture');
+    const desired = requiredJsonArray(capture.desiredPeerIds, 'desired');
+    expect(capture).toMatchObject({ peerIdentitiesTruncated: true, desiredPeerCount: 12, readyPeerCount: 12 });
+    expect(desired).toEqual(['\u0000'.repeat(256), '界'.repeat(256), '\u0000'.repeat(256), '界'.repeat(256), '\u0000'.repeat(256), '界'.repeat(256)]);
+    expect(capture.readyPeerIds).toEqual([]);
+    const recorder = requiredJsonRecord(JSON.parse(recorded.jsonl), 'recorder');
+    const runtime = requiredJsonRecord(recorder.value, 'runtime');
+    const payload = requiredJsonRecord(runtime.payload, 'payload');
+    const captured = requiredJsonRecord(payload.data, 'captured');
+    expect(Buffer.byteLength(JSON.stringify({
+        returnedRoomReason: captured.returnedRoomReason,
+        laneId: captured.laneId,
+        desiredPeerIds: captured.desiredPeerIds,
+        readyPeerIds: captured.readyPeerIds,
+        peerIdentitiesTruncated: captured.peerIdentitiesTruncated
+    }))).toBeLessThanOrEqual(8_192);
+    expect(Buffer.byteLength(recorded.jsonl)).toBeLessThanOrEqual(16_384);
+    expect(recorded.history['agent-a']).toMatchObject({ observed: { oversizedRows: 0, retainedRows: 1 } });
+});
+
+it('keeps the short ready prefix after the long desired suffix reaches the encoded byte cap', async () => {
+    const desired = Array(10).fill('\u0000'.repeat(256));
+    const harness = new FormationHarness({ stage: 'active', formationEpoch: 1, desiredPeerIds: desired, readyPeerIds: ['b'] });
+    const recorded = await recordCapturedRejection(harness);
+    expect(recorded.history['agent-a']).toMatchObject({
+        events: [{
+            returnedRoomReason: null,
+            laneId: 'lane-1',
+            desiredPeerIds: ['\u0000'.repeat(256), '\u0000'.repeat(256), '\u0000'.repeat(256), '\u0000'.repeat(256), '\u0000'.repeat(256)],
+            readyPeerIds: ['b'],
+            desiredPeerCount: 10,
+            readyPeerCount: 1,
+            peerIdentitiesTruncated: true
+        }]
+    });
+    expect(Buffer.byteLength(recorded.jsonl)).toBeLessThanOrEqual(16_384);
+});
+
+it('retains exactly the first ten short desired and ready identities in original order', async () => {
+    const harness = new FormationHarness({
+        stage: 'active',
+        formationEpoch: 1,
+        desiredPeerIds: ['c', 'b', 'b', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'],
+        readyPeerIds: ['j', 'j', 'i', 'h', 'g', 'f', 'e', 'd', 'c', 'b', 'a', 'z']
+    });
+    const recorded = await recordCapturedRejection(harness);
+    expect(recorded.history['agent-a']).toMatchObject({
+        events: [{
+            desiredPeerIds: ['c', 'b', 'b', 'd', 'e', 'f', 'g', 'h', 'i', 'j'],
+            readyPeerIds: ['j', 'j', 'i', 'h', 'g', 'f', 'e', 'd', 'c', 'b'],
+            desiredPeerCount: 12,
+            readyPeerCount: 12,
+            peerIdentitiesTruncated: true
+        }]
+    });
 });

@@ -981,3 +981,81 @@ describe('owned native signaling projection', () => {
         );
     });
 });
+
+describe('captured readiness identity validation', () => {
+    function row(data: object): string {
+        return JSON.stringify({
+            agentId: 'agent-a',
+            atEpochMs: 120,
+            name: 'capture',
+            value: {
+                topic: 'rallar.browser.formation.not-ready',
+                payload: { atEpochMs: 119, data: { kind: 'formation-readiness-rejected', ...data } }
+            }
+        });
+    }
+
+    it('keeps upstream identity loss and duplicates across repeated projection', () => {
+        const first = requiredJsonRecord(
+            toNotificationHistory(row({
+                returnedRoomReason: 'Room RTC wait ended with timeout.',
+                laneId: 'messages.rtc',
+                desiredPeerIds: ['c', 'b', 'b'],
+                readyPeerIds: ['b'],
+                peerIdentitiesTruncated: true,
+                error: 'private-sentinel',
+                native: { sdp: 'private-sentinel' }
+            })),
+            'history'
+        );
+        const event = requiredJsonRecord(requiredJsonArray(first.events, 'events')[0], 'event');
+        expect(event).toMatchObject({
+            returnedRoomReason: 'Room RTC wait ended with timeout.',
+            laneId: 'messages.rtc',
+            desiredPeerIds: ['c', 'b', 'b'],
+            readyPeerIds: ['b'],
+            peerIdentitiesTruncated: true,
+            waitTerminalCause: 'unknown'
+        });
+        const second = toNotificationHistory(row(event));
+        expect(requiredJsonRecord(second, 'second history').events).toEqual(first.events);
+        expect(JSON.stringify(second)).not.toContain('private-sentinel');
+    });
+
+    it.each([
+        {},
+        { returnedRoomReason: 'private-sentinel', laneId: '', desiredPeerIds: ['b', 3], readyPeerIds: false, peerIdentitiesTruncated: 'false' },
+        { returnedRoomReason: false, laneId: 'l'.repeat(257), desiredPeerIds: ['p'.repeat(257)], readyPeerIds: null, peerIdentitiesTruncated: null }
+    ])('leaves invalid or absent captured facts unavailable: %o', (facts) => {
+        const history = toNotificationHistory(row(facts));
+        expect(history).toMatchObject({
+            events: [{
+                returnedRoomReason: null,
+                laneId: null,
+                desiredPeerIds: null,
+                readyPeerIds: null,
+                peerIdentitiesTruncated: null,
+                waitTerminalCause: 'unknown'
+            }]
+        });
+        expect(JSON.stringify(history)).not.toContain('private-sentinel');
+    });
+});
+
+describe('partial captured readiness association', () => {
+    it.each([
+        { facts: { desiredPeerIds: ['c', 'b', 'b'], peerIdentitiesTruncated: false }, expected: { desiredPeerIds: ['c', 'b', 'b'], readyPeerIds: null } },
+        { facts: { desiredPeerIds: [3], readyPeerIds: ['b'], peerIdentitiesTruncated: false }, expected: { desiredPeerIds: null, readyPeerIds: ['b'] } }
+    ])('retains the valid list while the unavailable counterpart stays unknown: %o', ({ facts, expected }) => {
+        const jsonl = JSON.stringify({
+            agentId: 'agent-a',
+            atEpochMs: 120,
+            name: 'partial',
+            value: {
+                topic: 'rallar.browser.formation.not-ready',
+                payload: { atEpochMs: 119, data: { kind: 'formation-readiness-rejected', ...facts } }
+            }
+        });
+        expect(toNotificationHistory(jsonl)).toMatchObject({ events: [{ ...expected, peerIdentitiesTruncated: null, waitTerminalCause: 'unknown' }] });
+    });
+});

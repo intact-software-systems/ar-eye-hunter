@@ -1,4 +1,5 @@
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
+import { toFormationReadinessCapturedFacts } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/formation/formation-controller.ts';
 import type { RallarRtcLifecycleKind } from '../../../packages/shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomTransportState } from '../../../packages/shared-web/browser/rallar-rtc-facade.ts';
 import { AppTopics } from '../../../packages/shared/api/api-config.ts';
@@ -770,6 +771,13 @@ function toHttpRequestFailureObservation(event: LiveRtcJsonRecord): LiveRtcJsonR
 }
 
 function toFormationReadinessRejectionObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord {
+    const captured = toFormationReadinessCapturedFacts({
+        returnedRoomReason: event.returnedRoomReason,
+        laneId: event.laneId,
+        desiredPeerIds: event.desiredPeerIds,
+        readyPeerIds: event.readyPeerIds,
+        peerIdentitiesTruncated: event.peerIdentitiesTruncated
+    });
     return {
         roomTransportState: typeof event.roomTransportState === 'string' &&
                 Object.hasOwn(ROOM_TRANSPORT_STATES, event.roomTransportState)
@@ -781,7 +789,12 @@ function toFormationReadinessRejectionObservation(event: LiveRtcJsonRecord): Liv
         desiredPeerCount: toFiniteNonnegativeObservation(event.desiredPeerCount),
         readyPeerCount: toFiniteNonnegativeObservation(event.readyPeerCount),
         waitTerminalCause: 'unknown',
-        observation: 'captured-room-wait-result-at-formation-rejection'
+        observation: 'captured-room-wait-result-at-formation-rejection',
+        returnedRoomReason: captured.returnedRoomReason,
+        laneId: captured.laneId,
+        desiredPeerIds: captured.desiredPeerIds === null ? null : [...captured.desiredPeerIds],
+        readyPeerIds: captured.readyPeerIds === null ? null : [...captured.readyPeerIds],
+        peerIdentitiesTruncated: captured.peerIdentitiesTruncated
     };
 }
 

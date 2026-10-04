@@ -169,6 +169,16 @@ captured wait peer or cause. Captured idle can reflect either unavailable curren
 layout coverage or timeout/abort suppression in the canonical status owner.
 The existing projection lacks the captured discriminator; no correctness fix or
 new producer is selected from this read-only trace.
+Task 43 implements bounded supplemental captured returned canonical room reason,
+lane and desired/ready peer facts in the existing private controller/projector.
+The shared sanitizer preserves unavailable facts, order, duplicates and explicit
+truncation under an actual UTF-8 8 KiB facts cap and ten identities per list.
+Semantic and asymmetric-prefix RED/GREEN, scoped tests and maintained types pass.
+Both retained independent fix reviews and final broad validation passed. Task 43
+is complete at its local implementation/TDD/closure/validation/review scope;
+publication, new-source hosted correctness and the proposed changed-source local
+diagnostic remain pending. No new captured facts are retrofitted onto Task 41 or
+establish a cause.
 Tasks 0-7 and observation tooling are delivered. The full baseline remains incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
 is gated, and B07 remains held. A package check proves tooling, not capture.
@@ -1593,8 +1603,9 @@ justified yet.”
 | 40      | Complete independently reviewed read-only readiness source trace at inspection3f58/runtime62: all 39 bound owners unchanged; refresh, budget, command/result, cancellation and room-predicate boundaries recovered. Short/exhausted-budget mechanisms remain untested candidates; no historical causal defect, runtime correction or accepted cohort.                                                                                                                                  |
 | 41      | Complete bounded local B06 reproduction at inspection3f58/runtime62: EXIT1/634.695s, one PASS/one FAIL/one selector SKIP, zero retries. Retention uniquely fails cycle17 reconnect/readiness with formation-not-ready message; two captured idle-room rejections have summary available and desired2/ready1. Native cause/first-error association unknown. Fresh memory services teardown verified; local environment differs from CI, zero accepted E3 cohorts.                       |
 | 42      | Complete read-only source trace and bounded existing-projection review at inspection64/runtime62: 32 source/test/example owners unchanged; later ordinals1/3 have both lanes nonopen while ready to2. Captured idle does not distinguish layout coverage from timeout/abort suppression; captured peer/lane/terminal and native cause remain unknown. Originals unchanged; no regression, correction, new producer or accepted cohort.                                                 |
+| 43      | Complete locally validated/reviewed bounded captured reason/lane/peer observations; semantic and asymmetric RED/GREEN, focused 96/combined 97/Fix2 100 PASS, maintained zero errors and full suite 14374 PASS/12 SKIP. Both fix reviews approved; publication/new-source hosted/local diagnostic pending. Adjustable headless 304→305 KiB at 311543 B/777 B headroom; no causal/E3 acceptance.                                                                                         |
 
-## 11. Next Two Useful Actions After Task 42
+## 11. Next Two Useful Actions After Task 43
 
 Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
@@ -1607,8 +1618,10 @@ the existing readiness owners and tests without earning a historical causal
 defect. Task 41 reproduces a local cycle17 readiness failure and retains two
 captured shortages. Task 42 identifies a later unready current-session connection
 and the missing captured authority/terminal discriminator, without earning a
-native cause or correction. Section 9's
-correctness/tier stop still prevents optimization.
+native cause or correction. Task 43 completes local implementation, TDD, closure,
+validation and retained independent review of bounded captured facts; publication,
+new-source hosted correctness and the changed-source local diagnostic remain
+pending. Section 9's correctness/tier stop still prevents optimization.
 Task 33's owned-code correction
 remains accepted at c3b3; the human's required-clock approval persists.
 Whole-file closure covers every changed human-authored file and recursively changed
@@ -1915,19 +1928,56 @@ source analysis and root actual-value review remain separate after fresh-agent
 dispatch failed at capacity. No test, causal regression, correction, optimization
 or new producer follows; all baseline acceptance gates remain intact.
 
-**Next action 1:** Resolve the smallest captured-readiness evidence gap in the
-existing private controller/projector. Examine whether the returned canonical
-room reason and peer/lane facts can be retained as finite supplemental observations
-that distinguish wait termination from current layout coverage. Keep observations
-separate from causal claims; do not duplicate readiness policy, add a collector,
-change a public RTC contract or infer missing native generation/issuer data.
+### Task 43: Bounded captured readiness observations locally validated and reviewed
 
-**Next action 2:** Prove the selected existing-owner observation or correctness
-contract with semantic TDD, recursive touched/support closure, proportional
-validation and independent review before accepting a correction. A further local
-B06 run needs a reviewed change that answers the named missing fact; another
-unchanged producer is not selected. No speculative timeout/retry, native DI,
-policy/workload relaxation or optimization follows.
+The existing private controller captures the returned canonical room reason, lane
+and cloned desired/ready peer identities before rereading a later live view. One
+colocated sanitizer owns only those new facts; existing state/count capture and
+projection stay in their owners. Invalid or missing facts remain null, with original
+counts, explicit truncation and at most ten identities per list in original order,
+including duplicates. The facts payload is bounded to 8192 actual UTF-8 JSON bytes;
+that cap does not guarantee every complete envelope fits. A composed controller→
+bridge→recorder→projector test separately verifies its actual row fits the unchanged
+16384-byte limit. Upstream truncation survives repeated projection. Bounded append
+preserves a short ready prefix beside the final desired prefix.
+
+The initial semantic RED witnessed eight absent-field assertion failures with
+84 passing controls; later byte/prefix assertions were reached in GREEN, rather
+than retrospectively counted as RED. The asymmetric long-desired/short-ready
+regression then witnessed one failure with 95 passing controls. Final formation/
+projector tests pass 96; the combined headless check passes 97. Fix2's package-
+boundary RED 3 PASS/1 FAIL earned only an erased fixture type correction; architecture
+plus the pair passes 100, and maintained types enforce 1450 files with zero debt
+or errors. Intermediate type, expectation and bundle failures remain preserved.
+
+The candidate headless Brotli size is 311543 bytes; its explicitly adjustable
+allowance changes 304→305 KiB, leaving 777 bytes of headroom. This is a candidate
+size/allowance, not a measured delta from runtime62 or a performance improvement.
+Recorder/history/transport/workload caps, public RTC contracts, canonical readiness
+behavior and native policies remain unchanged. Recursive touched/support closure
+and retained independent review are complete: both fix reviews passed specification
+and approved quality, with R1–R4 and the reverse import addressed. No fresh-reviewer
+context is claimed. Final npm test passed 1479 files with four skipped; 14374 tests
+passed, 12 skipped and zero failed in 205.03s. Shared-test types, maintained types,
+nine Deno roots, UI/headless builds and structure checks passed. Directory style
+warnings remain advisory; actual touched-file review found no unresolved violation.
+Initial full-suite failures and the unchanged isolated timeout recheck remain
+preserved as their own evidence, rather than relabeled. Publication, new-source
+hosted correctness and the local diagnostic are pending. No observation is
+retrofitted onto Task 41; wait terminal cause, historical native cause and accepted
+E3 metrics remain unknown/unearned.
+
+**Next action 1:** Publish the locally validated, independently reviewed capture,
+then execute one changed-source local memory B06 diagnostic with fresh owned
+services. Ask whether the returned reason and captured peer/lane
+facts distinguish the named readiness gap. Keep the existing three-browser,
+100-cycle workload and zero retries; another unchanged producer is not selected.
+
+**Next action 2:** Inspect only bounded newly retained returned-reason/peer/lane
+observations under their actual local provenance and loss limits. Select semantic
+TDD only for an evidence-earned causal or mechanism contract. Missing/truncated
+facts remain unknown; no speculative timeout/retry, native DI, policy/workload
+relaxation or optimization follows.
 
 Full B01–B06 accepted primaries and all required repeats, relevant E1
 recovery/reconciliation after representative E3 succeeds, homogeneous noise
