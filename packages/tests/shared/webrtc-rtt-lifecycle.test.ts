@@ -1,4 +1,3 @@
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     afterEach,
     beforeEach,
@@ -8,9 +7,9 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
-import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -26,6 +25,8 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
+
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 interface StreamingEndpoint {
     readonly streamer: WebRtcRxStreamerService;
@@ -198,7 +199,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         dataChannelName: 'rtc-test',
 
         rtcSignalingTopicId: 'rtc-signaling'
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId, nowEpochMs: () => Date.now() });
     const multicast = new WebRtcOverlayMulticastManager({
         connectionService: connectionService,
         groupCache: new LatestRepository(),

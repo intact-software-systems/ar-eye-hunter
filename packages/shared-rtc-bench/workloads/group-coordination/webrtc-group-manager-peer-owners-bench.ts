@@ -2,15 +2,11 @@ import { dirname } from 'node:path';
 
 import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
-import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
-
-import { installRtcBenchmarkNativeRuntime } from '../native-rtc/rtc-benchmark-native-peer.ts';
 
 import {
     parseRtcBaselineAcceptedWorker,
@@ -26,6 +22,8 @@ import {
     type RtcBaselineResult,
     type RtcBaselineSampleDto
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
+import { installRtcBenchmarkNativeRuntime } from '../native-rtc/rtc-benchmark-native-peer.ts';
+import { createRtcGroupCoordinationSnapshot } from './create-rtc-group-coordination-snapshot.ts';
 
 export interface WebRtcGroupManagerPeerOwnersInput {
     readonly groups: number;
@@ -112,7 +110,17 @@ async function seedPeerOwnerGroups(
             const peerId = `peer-${(groupIndex + peerIndex) % input.groups}`;
             return peerId;
         });
-        const group = createGroupSnapshot(`group-${groupIndex}`, 1, ['self', ...peerIds]);
+        const memberSessionIds = ['self', ...peerIds];
+        const group = createRtcGroupCoordinationSnapshot({
+            groupId: `group-${groupIndex}`,
+            membershipVersion: 1,
+            memberSessionIds,
+            presenceVersion: 1,
+            formationElectorate: memberSessionIds,
+            acceptedLayoutIdentity: { groupRevision: 1, presenceRevision: 1, version: 1, state: 'active' },
+            ownerSessionId: memberSessionIds[0],
+            connectedAtEpochMs: 1
+        });
         acceptedOverlayCache.set(
             toScopedOverlayId(group.group),
             createAcceptedOverlay(group, peerIds)
@@ -207,7 +215,11 @@ function createSimulatedConnections(sessionId: string): SimulatedConnections {
         dataChannelName: 'benchmark',
 
         rtcSignalingTopicId: 'rtc'
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: () => crypto.randomUUID() });
+    }, {
+        faultPort: createPassThroughTransportFaultPort(),
+        createOfferId: () => crypto.randomUUID(),
+        nowEpochMs: () => Date.now()
+    });
     return {
         service,
         dispose: () => {
@@ -217,141 +229,6 @@ function createSimulatedConnections(sessionId: string): SimulatedConnections {
             nativeRuntime.restore();
         }
     };
-}
-
-function createGroupSnapshot(
-    groupId: string,
-    membershipVersion: number,
-    memberSessionIds: readonly string[]
-): GroupSnapshot {
-    return {
-        causalRevision: {
-            groupRevision: membershipVersion,
-            presenceRevision: membershipVersion
-        },
-        group: createGroupSnapshotGroup(groupId, membershipVersion, memberSessionIds),
-        members: createGroupSnapshotMembers(groupId, membershipVersion, memberSessionIds),
-        activeSessions: createGroupSnapshotSessions(groupId, membershipVersion, memberSessionIds),
-        memberCount: memberSessionIds.length,
-        onlineMemberCount: memberSessionIds.length
-    };
-}
-
-function createGroupSnapshotGroup(
-    groupId: string,
-    membershipVersion: number,
-    memberSessionIds: readonly string[]
-): GroupSnapshot['group'] {
-    return {
-        applicationId: 'app-1',
-        workspaceId: 'workspace-1',
-        groupId,
-        slug: groupId,
-        displayName: groupId,
-        description: null,
-        kind: 'room',
-        status: 'active',
-        archived: null,
-        deleted: null,
-        joinMode: 'open',
-        maxMembers: null,
-        maxSessionsPerMember: null,
-        metadata: {},
-        activeMemberCount: memberSessionIds.length,
-        ownerPrincipalId: memberSessionIds[0] ?? 'creator',
-        snapshotVersion: membershipVersion,
-        metadataVersion: 0,
-        rosterVersion: membershipVersion,
-        presenceVersion: membershipVersion,
-        created: {
-            atEpochMs: 1,
-            actor: { kind: 'principal', principalId: 'creator' },
-            reason: null,
-            traceId: null,
-            requestId: null
-        },
-        updated: {
-            atEpochMs: membershipVersion,
-            actor: { kind: 'principal', principalId: 'creator' },
-            reason: null,
-            traceId: null,
-            requestId: null
-        },
-        expiresAtEpochMs: null,
-        emptySinceEpochMs: null,
-        purgeAfterEpochMs: null,
-        lifecycleState: 'active',
-        formationEpoch: 0,
-        formationAttemptCount: 0,
-        lastFormationOutcome: null,
-        establishmentStartedAtEpochMs: null,
-        formationElectorate: [...memberSessionIds],
-        acceptedLayoutIdentity: {
-            groupRevision: membershipVersion,
-            presenceRevision: membershipVersion,
-            version: 1,
-            state: 'active'
-        },
-        transportState: 'flowing',
-        memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy()),
-        activationStatus: null
-    };
-}
-
-function createGroupSnapshotMembers(
-    groupId: string,
-    membershipVersion: number,
-    memberSessionIds: readonly string[]
-): GroupSnapshot['members'] {
-    return memberSessionIds.map((sessionId) => ({
-        applicationId: 'app-1',
-        workspaceId: 'workspace-1',
-        groupId,
-        principalId: sessionId,
-        role: sessionId === memberSessionIds[0] ? 'owner' : 'member',
-        status: 'active',
-        joined: {
-            atEpochMs: 1,
-            actor: { kind: 'principal', principalId: 'creator' },
-            reason: null,
-            traceId: null,
-            requestId: null
-        },
-        updated: {
-            atEpochMs: membershipVersion,
-            actor: { kind: 'principal', principalId: 'creator' },
-            reason: null,
-            traceId: null,
-            requestId: null
-        },
-        invitedByPrincipalId: null,
-        invitationExpiresAtEpochMs: null,
-        left: null,
-        removed: null,
-        banned: null
-    }));
-}
-
-function createGroupSnapshotSessions(
-    groupId: string,
-    membershipVersion: number,
-    memberSessionIds: readonly string[]
-): GroupSnapshot['activeSessions'] {
-    return memberSessionIds.map((sessionId) => ({
-        applicationId: 'app-1',
-        workspaceId: 'workspace-1',
-        groupId,
-        sessionId,
-        principalId: sessionId,
-        generationId: `generation-${sessionId}`,
-        generationVersion: membershipVersion,
-        status: 'active',
-        connectedAtEpochMs: membershipVersion,
-        lastHeartbeatAtEpochMs: membershipVersion,
-        expiresAtEpochMs: membershipVersion + 60_000,
-        disconnectedAtEpochMs: null,
-        disconnectReason: null
-    }));
 }
 
 function parseDiagnosticArguments(

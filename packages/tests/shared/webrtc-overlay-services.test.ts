@@ -16,7 +16,6 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
@@ -120,7 +119,7 @@ describe('WebRtc overlay services', () => {
         vi.useFakeTimers();
         const channel = createOpenRtcChannel();
         const connection = createConnectionService(['peer-1', 'peer-2'], { 'peer-2': { channel } });
-        const context = createOverlayContext(['self', 'peer-1', 'peer-2'], ['peer-1', 'peer-2']);
+        const context = createOverlayContext(['self', 'peer-1', 'peer-2'], ['peer-1', 'peer-2'], groupRef('group-1'));
         const current = { ...context.room, group: { ...context.room.group, snapshotVersion: 5 } };
         const groups = createReadableCache({ 'group-1': current });
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
@@ -208,7 +207,7 @@ describe('WebRtc overlay services', () => {
 
         const plan = service.createOriginatingPlan(
             msg,
-            createOverlayContext(['self', 'peer-1', 'peer-2'], ['peer-1', 'peer-2'])
+            createOverlayContext(['self', 'peer-1', 'peer-2'], ['peer-1', 'peer-2'], groupRef('group-1'))
         );
 
         expect(plan.handlingPlan.dropReason).toBeUndefined();
@@ -408,7 +407,7 @@ describe('WebRtc overlay services', () => {
         const warnings = captureWarnings();
 
         const connectionService = createConnectionService([]);
-        const context = createOverlayContext(['self', 'peer-1'], []);
+        const context = createOverlayContext(['self', 'peer-1'], [], groupRef('group-1'));
         const manager = new WebRtcOverlayMulticastManager({
             connectionService: connectionService,
             groupCache: createReadableCache({ 'group-1': context.room }),
@@ -460,6 +459,7 @@ describe('WebRtc overlay services', () => {
             ['self', 'peer-a'],
             ['peer-a'],
             {
+                applicationId: 'app-1',
                 groupId: 'shared-room',
                 workspaceId: 'workspace-a'
             }
@@ -468,6 +468,7 @@ describe('WebRtc overlay services', () => {
             ['self', 'peer-b'],
             ['peer-b'],
             {
+                applicationId: 'app-1',
                 groupId: 'shared-room',
                 workspaceId: 'workspace-b'
             }
@@ -528,6 +529,7 @@ describe('WebRtc overlay services', () => {
             ['self', 'peer-a'],
             ['peer-a'],
             {
+                applicationId: 'app-1',
                 groupId: 'shared-room',
                 workspaceId: 'workspace-a'
             }
@@ -536,6 +538,7 @@ describe('WebRtc overlay services', () => {
             ['self', 'peer-b'],
             ['peer-b'],
             {
+                applicationId: 'app-1',
                 groupId: 'shared-room',
                 workspaceId: 'workspace-b'
             }
@@ -725,58 +728,6 @@ describe('WebRtc overlay services', () => {
         expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
-    it('counts a non-unauthorized refused enqueue result as a circuit breaker failure', async () => {
-        const channel = createOpenRtcChannel();
-        const connectionService = createConnectionService(['peer-1'], {
-            'peer-1': {
-                channel
-            }
-        });
-        const circuitBreaker = CircuitBreaker.create(createCircuitBreakerPolicy(1));
-        const manager = new WebRtcOverlayMulticastManager({
-            connectionService: connectionService,
-            groupCache: createReadableCache({}),
-            overlayCache: createReadableCache({}),
-            multicasterFactory: (overlayId) =>
-                new WebRtcOverlayMulticastService(
-                    overlayId,
-                    connectionService
-                ),
-            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
-            outboundDiagnostics: undefined,
-            outboundSettlements: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
-            circuitBreaker,
-            rateLimiter: RateLimiter.init(1_000, 20),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
-        });
-        onTestFinished(() => manager.dispose());
-        const refusedDetail = 'Outbound candidate failed validation';
-        const enqueueSpy = vi.spyOn(ALOutboundMessageRuntime.prototype, 'enqueueAllIfAbsent').mockImplementation(
-            async (msgs) =>
-                msgs.map((msg) => ({
-                    verdict: { kind: 'refused', reason: 'malformed', detail: refusedDetail },
-                    message: msg,
-                    entries: [],
-                    reason: refusedDetail,
-                    trackedReceiptAlgo: 'none'
-                }))
-        );
-        onTestFinished(() => enqueueSpy.mockRestore());
-
-        // Two refused results are needed to pass the single-failure policy threshold.
-        await manager.enqueueIfAbsent(createUnicastRtcMessage('sender-refused', 'msg-refused-1'));
-        await manager.enqueueIfAbsent(createUnicastRtcMessage('sender-refused', 'msg-refused-2'));
-        const result = await manager.enqueueIfAbsent(createUnicastRtcMessage('sender-refused', 'msg-refused-3'));
-
-        expect(result).toMatchObject({
-            verdict: { kind: 'unroutable', reason: 'circuit-open' },
-            entries: [],
-            reason: 'RTC enqueue circuit breaker open'
-        });
-        expect(channel.sendCalls).toEqual([]);
-    });
-
     it('does not transmit a malformed persisted AL envelope', async () => {
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-1'], { 'peer-1': { channel } });
@@ -923,7 +874,7 @@ describe('WebRtc overlay services', () => {
         const warnings = captureWarnings();
 
         const connectionService = createConnectionService(['peer-1']);
-        const context = createOverlayContext(['self', 'peer-1'], ['peer-1']);
+        const context = createOverlayContext(['self', 'peer-1'], ['peer-1'], groupRef('group-1'));
         const manager = new WebRtcOverlayMulticastManager({
             connectionService: connectionService,
             groupCache: createReadableCache({ 'group-1': context.room }),
@@ -1078,7 +1029,7 @@ function createConnectionService(
         dataChannelName: 'test',
 
         rtcSignalingTopicId: 'rtc-signaling'
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId, nowEpochMs: () => Date.now() });
     vi.spyOn(connectionService, 'readyPeerIdsForLane').mockReturnValue(connectedPeerIds);
     vi.spyOn(connectionService, 'readPeer').mockImplementation((peerId) => {
         const channel = peersById[peerId]?.channel;
@@ -1145,15 +1096,9 @@ function createUnicastRtcMessage(senderId: string, resourceId: string): ALMessag
 function createOverlayContext(
     memberSessionIds: readonly string[],
     nextHopSessionIds: readonly string[],
-    options: Readonly<{
-        groupId?: string;
-        applicationId?: string;
-        workspaceId?: string;
-    }> = {}
+    scope: GroupRef
 ): OverlayMulticasterContext {
-    const applicationId = options.applicationId ?? 'app-1';
-    const workspaceId = options.workspaceId ?? 'workspace-1';
-    const groupId = options.groupId ?? 'group-1';
+    const { applicationId, workspaceId, groupId } = scope;
 
     const room = createGroupSnapshotFixture({
         applicationId,

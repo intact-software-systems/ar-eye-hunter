@@ -1,7 +1,11 @@
 import { onTestFinished, vi } from 'vitest';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
-import { newALMulticastMessage, type ALMessage, type ALTargets } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALMulticastMessage,
+    type ALMessage,
+    type ALTargets
+} from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
@@ -199,7 +203,7 @@ function createConnectionService(
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc-signaling'
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: crypto.randomUUID.bind(crypto) });
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: crypto.randomUUID.bind(crypto), nowEpochMs: () => Date.now() });
     vi.spyOn(connection, 'readyPeerIdsForLane').mockImplementation(() => ready.peerIds);
     vi.spyOn(connection, 'readPeer').mockImplementation((peerId) => {
         const channel = ready.peerIds.includes(peerId) ? channels[peerId]?.channel : undefined;

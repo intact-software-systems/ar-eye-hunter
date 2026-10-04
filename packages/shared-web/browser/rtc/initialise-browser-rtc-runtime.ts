@@ -148,12 +148,18 @@ export interface InitialiseRtcConnectionServiceInput {
 export async function initialiseRtcConnectionService(
     input: InitialiseRtcConnectionServiceInput
 ): Promise<WebRtcConnectionService> {
-    const rtcQBox = new WebRtcConnectionService(
-        new WsRtcSignalingTransportUsingWsQBox(
-            input.webSocketQueueBox,
-            input.rtcSignalingTopicId,
-            () => input.qboxEngine.wake()
-        ),
+    const signaler = new WsRtcSignalingTransportUsingWsQBox(
+        input.webSocketQueueBox,
+        input.rtcSignalingTopicId,
+        () => input.qboxEngine.wake()
+    );
+    const dependencies = {
+        faultPort: input.faultPort,
+        createOfferId: () => crypto.randomUUID(),
+        nowEpochMs: () => Date.now()
+    };
+    const connectionService = new WebRtcConnectionService(
+        signaler,
         {
             sessionId: input.clientData.sessionId,
             token: 'NOT_CREATED_YET',
@@ -171,18 +177,18 @@ export async function initialiseRtcConnectionService(
             },
             maxPeerConnections: input.maxPeerConnections
         },
-        { faultPort: input.faultPort, createOfferId: () => crypto.randomUUID() }
+        dependencies
     );
 
-    rtcQBox.setInboundPeerCreationPolicy(() => ({
+    connectionService.setInboundPeerCreationPolicy(() => ({
         decision: 'retry',
         reason: 'browser-runtime-initializing'
     }));
-    rtcQBox.setOutboundDialPolicy(() => ({
+    connectionService.setOutboundDialPolicy(() => ({
         decision: 'deny',
         reason: 'browser-runtime-initializing'
     }));
-    await rtcQBox.connectSignaler();
+    await connectionService.connectSignaler();
 
-    return rtcQBox;
+    return connectionService;
 }

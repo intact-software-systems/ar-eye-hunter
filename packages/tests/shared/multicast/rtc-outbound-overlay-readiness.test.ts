@@ -7,7 +7,6 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
-import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import {
@@ -39,6 +38,7 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 import { computeOutboundTestAdmission } from '../alm/outbound-runtime-test-fixture.ts';
 import { installNativeRtcRuntime, type NativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
+import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const overlayId = toScopedOverlayId(roomRef);
@@ -808,7 +808,7 @@ async function createFixture(qosProvider?: ALQosInputProvider): Promise<OverlayF
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'alm',
         rtcSignalingTopicId: 'rtc'
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId, nowEpochMs: () => Date.now() });
     for (const peerId of ['peer-1', 'peer-2']) {
         connection.ensurePeerConnectionStarted(peerId, true);
     }

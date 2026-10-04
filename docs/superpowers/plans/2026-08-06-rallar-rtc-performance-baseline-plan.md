@@ -95,7 +95,14 @@ retains its own source and limits. Task 29 completed reviewed factual reconcilia
 and feature publication at `21fd11987cb9fac818c766b63a3ee72db79a0204`, tree
 `fae860e6ebf1840ee15f4ade1ccaa8464b759f14`; only plan prose differs from 93fc.
 Tasks 30 and 31 are complete at their accepted read-only scopes below.
-Tasks 0-7 and observation tooling are delivered. The full goal remains ACTIVE/incomplete:
+Task 32's factual reconciliation was independently reviewed and published at
+`e89a57b85e415450291cc376778d31418435b6eb`. Task 33 is incomplete local
+uncommitted work: ownership and approved-clock RED/GREEN, full recursive
+changed-file/support closure, scoped independent source review and local validation
+are accepted. Final plan review, ordinary feature publication and required
+published-head hosted correctness gates remain pending. These local results do
+not inherit 93fc's hosted gates or establish a historical diagnostic cause.
+Tasks 0-7 and observation tooling are delivered. The full baseline remains incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
 is gated, and B07 remains held. A package check proves tooling, not capture.
 
@@ -564,18 +571,71 @@ current status after a microtask and cannot identify the deleted native generati
 Wrapper counters, AL consumer return and peer identity do not prove native
 application, generation, deletion issuer or historical cause.
 
-Task 31 separately established a current service ownership defect by source:
-a watchdog scoped to original peer P checks current object identity before
-synchronous timeout notifications; a legal one-shot listener can remove P without
-refunding attempts, then admit Q for the same ID. The subsequent unconditional
-ID-only timeout removal disposes Q. Public synchronous callback/removal/ensure
-contracts and existing deletion-observer replacement semantics establish the hole.
-No checked production timeout listener replaces a peer: browser notification is
-synchronous and the black-box consumer only emits diagnostics. No timeout
-replacement regression or fix has run, and no retained capture is associated with
-this trigger. Task 33 must prove and correct that independent ownership contract
-through separately reviewed genuine TDD; this does not establish B06's cause or
-restore its acceptance.
+At Task 31's source-only checkpoint, a watchdog scoped to original peer P checked
+current object identity before synchronous timeout notifications. A legal one-shot
+listener could remove P without refunding attempts, then admit Q for the same ID;
+the subsequent unconditional ID-only removal disposed Q. Public synchronous
+callback/removal/ensure contracts and existing deletion-observer replacement
+semantics established the independent ownership hole. No checked production
+timeout listener replaced a peer: browser notification was synchronous and the
+black-box consumer only emitted diagnostics. No new replacement regression or fix
+had run at that checkpoint, and no retained capture was associated with this trigger.
+
+Subsequent Task 33 local uncommitted work witnessed two genuine original-production
+RED failures, then two focused GREEN passes: timeout-listener replacement and
+awaited lane-failure replacement. The two current-resource identity guards dispose
+only the original resource and preserve a separately admitted Q, including Q's own
+watchdog/attempt accounting. Independent scoped review accepted the minimum
+correction and later non-clock closure: typed expected exhaustion, completed
+constructor inputs/dependencies before owned construction, native failure-port
+tests, removal of the fabricated overlay refusal test with the broader classifier
+preserved, and required existing GroupRef fixture scope preserving eight identities.
+No legacy adapter, migration or new production owner was introduced.
+
+The human explicitly Approved the explained required readonly
+`nowEpochMs: () => number` on exported `WebRtcConnectionService.Dependencies`.
+One owned epoch source now serves the attempt budget, setup, once-established
+state and entry-owned timeout event; timeout epochs are captured before synchronous
+listeners, while relative scheduling remains AsyncCommand's existing timer.
+Dynamic `() => Date.now()` reaches all 15 existing constructors; the new custom-clock
+composer makes 16 sites. The initial 14-site inventory missed the namespace-qualified
+public consumer: the maintained compiler exposed it, its required clock was added,
+and the current maintained check passes. This approved external TypeScript dependency
+adds no optional fallback, adapter, migration, native DI or policy expansion.
+
+Checks retain their distinct scopes: ownership RED two failures / 65 skipped →
+GREEN two passes / 65 skipped; approved-clock RED three genuine first-assertion
+failures / 67 skipped → GREEN three passes / 67 skipped with all later assertions
+reached. Historical post-non-clock service 67 PASS, overlay/classifier deletion
+28 PASS and required-scope overlay 20 PASS stay stage evidence. Current local
+focused lifecycle passed four files / 107 tests; consumers 23 / 276;
+native-fixture/browser consumers 28 / 413; public boundaries three / 32;
+additional public multicast consumer one / 16; benchmark contracts two / 18.
+The latter include bounded 10-peer Node and one-item Deno diagnostic/overwrite
+smokes plus synthetic contract cases, not accepted measurement cohorts.
+Overlapping and historical checks are not summed.
+
+Current shared, shared-web, benchmark TypeScript and 25 Deno entry-root checks
+passed. Maintained types passed 1,449 enforced files / zero debt / zero errors.
+Browser budgets and operator/headless builds passed; both builds retain existing
+chunk-size warnings. Delivery status returned Action WORK before broad validation.
+All 19 touched code owners pass formatting; changed style HEAD→WORKTREE passes
+without new findings. Exact touched-source review disposed 14 legitimate cognitive
+and callback signals with no layout finding; navigation reported zero findings,
+and four construction warnings concern independently untouched adjacent owners.
+Full default style exited zero with 3,400 warnings and a 200-finding display cap;
+it does not prove whole-repository compliance. Structure passed; the singleton
+multicast workload remains a direct, coherent domain/protocol owner.
+
+Full recursive changed-file/support closure and scoped independent root source
+review are accepted. Author and root remain separate; fresh reviewer dispatch
+failed the service thread limit, and retained context is disclosed without a
+fresh-context or review waiver claim. Completed exhaustion shape, native signaling
+lifecycle ownership, canonical paired coordination snapshots with five explicit
+variants, cache types and imports preserve values, inputs, timing, counters and
+permissive diagnostic grammar. Final plan review, feature publication and new-head
+hosted correctness remain pending; no captured B06 cause, native generation,
+application/deletion issuer or restored performance acceptance follows.
 
 Newer merged ALM work [#627](https://github.com/intact-software-systems/ar-eye-hunter/pull/627),
 [#628](https://github.com/intact-software-systems/ar-eye-hunter/pull/628),
@@ -1428,79 +1488,61 @@ justified yet.”
 | 28      | Complete exercised observation/usefulness proof: run 37180571619/a1/source93fc FAILURE; 81 originals / 4,312,437 bytes verified, 12 PASS / three FAIL / 12 SKIP, retention cycles 1/4/8. Three failure windows / 340 events / 268,243 bytes retain four idle/non-open formation wait results. Loss, HTTP/terminal/native/claim/cleanup/privacy unknowns remain; sole watcher retired, zero accepted cohorts.                                                        |
 | 29      | Complete independently reviewed factual reconciliation and feature publication at 21fd/fae; sole prose child of 93fc, all protected acceptance regions unchanged. No runtime or hosted metric relabel.                                                                                                                                                                                                                                                              |
 | 30      | Complete accepted source/finite later-health diagnosis: seven files / 101 existing tests, 11 synthetic utility tests, one reviewed execution EXIT0 / empty stderr / 72 safe rows. Four captured failures remain separate; later coverage/native lifetime/application/issuer unknown, histories incomplete. No cause, causal RED, fix or performance acceptance.                                                                                                     |
-| 31      | Complete independently accepted handshake/lifecycle source diagnosis at byte-equal 93fc/21fd; three files / 37 existing tests PASS. Separate synchronous timeout-listener replacement ownership hole established by source, with no executed new regression/fix or historical capture association. Genuine service TDD remains separately scoped.                                                                                                                   |
+| 31      | Complete accepted source-only handshake/lifecycle diagnosis at byte-equal 93fc/21fd; three files / 37 tests PASS. Independent timeout-listener replacement hole established; no new regression/fix had run at that checkpoint, and no historical capture association follows.                                                                                                                                                                                       |
+| 32      | Complete independently reviewed factual reconciliation, published at e89a57b85e415450291cc376778d31418435b6eb; protected acceptance regions unchanged.                                                                                                                                                                                                                                                                                                              |
+| 33      | Incomplete local uncommitted ownership/approved-clock correction: distinct ownership 2 FAIL→2 PASS and clock 3 FAIL→3 PASS; full recursive closure and scoped independent source review accepted, current local validation passed. Required epoch clock reaches15 existing+1custom sites. Final plan review, feature publication and published-head hosted correctness gates pending; no historical cause or E3 acceptance.                                         |
 
-## 11. Next Two Useful Slices
+## 11. Next Two Useful Actions Within Task 33
 
-Tasks 29–31 are complete at their distinct accepted scopes: published factual
-plan reconciliation, accepted source/finite later-health diagnosis, then accepted
-source-owned handshake/lifecycle diagnosis. Historical producer failures, native
-application/lifetime/issuer unknowns and zero accepted E3 cohorts remain. Task 31
-established an independent current timeout ownership hole, with no executed new
-regression or fix and no attribution to the historical captures. Only the next
-two useful slices are concrete: this factual reconciliation and separately scoped
-service ownership TDD. Further work remains outcome-shaped.
+Tasks 29–32 are complete at their distinct accepted scopes. Task 33 remains
+local, uncommitted and incomplete; the human's exact required-clock approval is
+resolved and persists. The independent ownership correction and current local
+passes do not prove the historical B06 cause or inherit old-source hosted gates.
+Only the next two useful actions are concrete; further work remains outcome-shaped.
 
-### Task 32: Reconcile accepted diagnosis and unchanged baseline obligations
+### Task 33: Accepted local correction and publication gates
 
-**File:** This existing RTC baseline plan, mutable Sections 1, 10 and 11 only.
-Title/intro, Review Focus, Global Constraints, Sections 2–9 and the completion
-contract in Section 12 remain unchanged.
+**Accepted local outcome:** Both genuine ownership regressions passed after the
+current-resource identity guards, preserving original disposal and replacement
+survival/watchdog/attempt accounting. Approved custom-clock semantic RED three
+failures / 67 skipped became GREEN three passes / 67 skipped. The service and
+private budget share one explicit epoch source, with entry-owned timeout epochs
+captured before listeners and unchanged relative scheduling. Required dynamic
+clocks reach 15 existing roots plus one custom composer; the compiler-discovered
+namespace consumer is corrected. Full changed-file/support closure and scoped
+independent actual root review are accepted; independent untouched code remains
+outside closure. Same-author context and failed fresh-reviewer dispatch remain
+transparent, with no review or standards waiver.
 
-**Outcome:** Record complete published Task 29 prose and accepted Task 30/31
-source/evidence diagnosis, keeping the four captured formation rejections distinct
-from later health. Preserve original failures, source-specific gates, loss/unknowns,
-last-verified recovery PR status and all incomplete baseline acceptance. State the
-independent timeout replacement defect without historical causal attribution,
-native schema activation or a runtime implementation release.
+- [x] Complete ownership TDD, scoped non-clock closure and approved-clock TDD;
+      preserve distinct historical 67/28/20 stage checks and both filtered scopes.
+- [x] Complete recursive changed-file/support closure, all 16 clock sites and
+      actual local lifecycle/consumer/public/benchmark/type/build/style/structure
+      validation at the distinct scopes recorded in Section 1.
+- [ ] Complete factual plan review and ordinary feature publication.
+- [ ] Prove required hosted/native/controller semantic correctness on the exact
+      published head; historical 93fc passes remain historical.
 
-- [x] Read/review the whole plan against accepted actual reports; preserve all ten
-      exact raw protected regions and unchanged title/intro/Review Focus.
-- [ ] Validate canonical formatting, sole-file diff and source bindings; complete
-      full changed-file/support closure and self-review, then obtain independent
-      scoped review and ordinary feature publication through the controller.
-      Human prose requires no artificial behavioral RED or unrelated producer.
+**Next action 1:** Finish this factual checkpoint and final source review, then
+ordinary feature publication through the controller. Local uncommitted changes
+are not a published source or a final Task 33 completion. No optional fallback,
+legacy adapter, migration, new native DI or policy expansion is selected.
 
-**Exit:** A truthful current plan with unchanged workload, sample, environment,
-timing, resource, noise, privacy, correctness and completion requirements. No
-baseline completion, ready operation or new artifact contract follows.
+**Next action 2:** Obtain required hosted/native/controller semantic correctness
+proof on that exact published head before any separately released B06 producer.
+Current local diagnostic smokes are not accepted cohorts or a restored B06 result.
+No Task 34, collector, optimization or new accepted workload is concretized.
 
-### Task 33: Prove and correct timeout disposal ownership through genuine TDD
-
-**Canonical owners:** `packages/shared/services/web-rtc-connection-service.ts`,
-existing `packages/tests/shared/webrtc-connection-service.test.ts` and
-`packages/tests/shared/native-rtc-connection-fixture.ts`; support enters full
-recursive closure only when the actual correction requires it.
-
-**Observable invariant:** Timeout disposal belongs to the timed-out peer resource
-and cannot remove a separately admitted replacement created synchronously by a
-listener. Establish the legal one-shot callback removing original P without
-refunding attempts and admitting Q for the same ID. Assert original disposal,
-Q surviving P's deadline, Q's own watchdog/attempt accounting and later expiry.
-The test must exercise the owned boundary and allow equivalent implementations.
-This independent service contract is not a demonstrated historical B06 cause.
-
-- [ ] Before edits, complete FULL applicable preflight, canonical source/nearby
-      semantic tests/examples, full closure and design preparation; obtain the
-      controller's independent full preparation review and separate TDD release.
-- [ ] Witness a meaningful semantic regression RED, then minimum same-owner GREEN
-      and refactor. Preserve public contracts and existing watchdog/attempt policy;
-      no source-copy assertion, alias, migration, parallel lifecycle, producer or
-      native collector. No production authorization comes from this prose alone.
-- [ ] Complete full touched/support closure, focused affected package/type/style
-      checks, required navigation review and independent actual production task
-      review. Select further validation/evidence from changed surfaces only after
-      accepted TDD/review; do not claim the correction restores B06.
-
-**Exit:** An independently tested/reviewed current ownership correction, or a
-truthful falsified trigger/contract outcome without speculative implementation.
-No Task 34, native schema, producer or optimization is concretized.
+**Exit:** Closed, independently tested/reviewed and published ownership/clock
+correction with required exact-head correctness proof. Current work has not yet
+satisfied publication and hosted gates. No Issue was created or reused.
 
 Full B01–B06 accepted primaries and all required repeats, relevant E1
-recovery/reconciliation, homogeneous noise handling/comparison, ranking and
-human follow-up/no-optimization acceptance remain required. Any fresh E1 capture
-waits for representative E3 success. E4 stays conditional to the exact candidate,
-B07 held. Failed diagnostic preservation satisfies none of those completion gates.
+recovery/reconciliation after representative E3 succeeds, homogeneous noise
+handling/comparison, ranking and human follow-up/no-optimization acceptance remain.
+E3 has zero accepted cohorts; historical cause/native lifetime/application/issuer
+remain unknown. E4 stays conditional to the exact candidate, B07 held. Failed
+diagnostic preservation satisfies none of those baseline completion gates.
 
 ## 12. Baseline Completion Gate
 

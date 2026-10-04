@@ -1,4 +1,9 @@
-import { describe, expect, it, onTestFinished } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
 
 import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
@@ -151,6 +156,7 @@ function createConnectionService(): WebRtcConnectionService {
         rtcSignalingTopicId: 'rtc-signaling'
     }, {
         faultPort: createPassThroughTransportFaultPort(),
-        createOfferId: new DeterministicRtcOfferIds().createOfferId
+        createOfferId: new DeterministicRtcOfferIds().createOfferId,
+        nowEpochMs: () => Date.now()
     });
 }
