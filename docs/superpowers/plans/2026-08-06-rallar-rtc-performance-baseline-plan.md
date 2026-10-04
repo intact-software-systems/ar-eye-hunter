@@ -124,6 +124,29 @@ Three caller retirements and one current-PC Answer rejection with offer mismatch
 are recorded observations, not a causal diagnosis. Bound later health and
 incomplete history remain distinct from the still-unclassified failed phase.
 No additional producer, accepted primary/repeat, or historical cause follows.
+Task 37's independently reviewed local Chromium profile measures the existing
+diagnostic event pipeline at docs-only source `d97131dc1`; all 15 relevant owners
+are byte-equal to 62f067706. Sixty fresh-fixture samples and four separate sampled
+CPU passes preserve exact event/transport effects. At seed histories 0/1,000/10,000,
+the median 500-event control-client burst costs 13.8/19.8/106.3 ms; retained-history
+scanning dominates sampled control CPU. Actual headless DOM bursts cost
+32.2/39.9/132.0 ms. These are local observation costs, with no network or native
+RTC work, historical failure explanation, accepted E3 metrics or optimization.
+Task 38 independently reviewed the canonical finite failed-step reader and executed
+it once per runner on only the three retained retention logs / 48,250 bytes. All
+three rows remain unclassified: each retained failure header omits the unique
+errored-step suffix. All 88 originals and three archives remain byte-unchanged.
+A source-authentic long-header separator defect then earned one meaningful
+27-PASS/one-FAIL RED and final 28 PASS; that amendment did not repeat or relabel
+original execution. Neither missing step metadata nor supporting printed frames
+can establish the original failed operation or a native cause.
+Task 39's separately reviewed failure-detail amendment preserves the absent step
+while exposing finite recorded text. Final 32 synthetic tests passed after genuine
+semantic, mixed-class and assertion-label REDs. A new bounded release executed
+once per runner on the same three logs: each 271-byte row records a generic Error
+and reconnect/canonical-readiness/formation-request frames. The connect frame is
+unavailable; it does not prove the call was absent. Operation and cycle remain
+unclassified, and no failing predicate, native cause or accepted cohort follows.
 Tasks 0-7 and observation tooling are delivered. The full baseline remains incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
 is gated, and B07 remains held. A package check proves tooling, not capture.
@@ -1542,13 +1565,21 @@ justified yet.”
 | 34      | Complete bounded unchanged diagnostic/retained finite review: 37209071043/a1/sourcec3b3 FAILURE; all three jobs failed/uploads succeeded, 81 originals / 4,317,090 bytes verified, 12 PASS / three FAIL / 12 selector SKIP, retention cycles 4/5/1. Bound later health available; incomplete history retains oversized rows 12/11/12 and R2 prefix loss. No native/clock/lifetime cause or accepted primary/repeat.                                                                    |
 | 35      | Complete independently reviewed signaling observations published at 62f067706; required current Branch Release, formation, medium/fairness and supported correctness passed. Core semantic RED/GREEN, 201 focused passes and final 14-test/type cleanup verified. Browser Brotli cost +396 bytes; adjustable ceiling 238→239 KiB. Optional ALM cause remains unclassified; no causal or performance acceptance.                                                                        |
 | 36      | Complete bounded changed-source diagnostic and finite retained review: all three runners failed/uploads passed; 88 originals / 5,980,973 bytes verified, 10 PASS / five FAIL / 12 selector SKIP, retention cycles 7/3/1. Reviewed reader earns 18 PASS and once-per-runner execution; 134 of 148 decisions retained with 14 tail omissions. Three caller retirements and one offer-mismatch Answer rejection observed; first failed phase/cause unknown, zero accepted primary/repeat. |
+| 37      | Complete independently reviewed local event-pipeline measurement at docs-only d971/runtime62: four focused suites / 40 PASS, 60 fresh-fixture samples and four separate sampled CPU passes. Existing control-client retained-history scanning dominates large-history local cost; actual headless DOM included. Timing/noise/GC/fidelity limits preserved; no historical cause, E3 acceptance, optimization or new producer.                                                           |
+| 38      | Complete independently reviewed finite failed-step interpretation of the same three retention logs / 48,250 bytes: three original CLI executions EXIT0, each result unclassified because no unique errored-step suffix is printed. All 88 originals remain unchanged. Source-authentic separator RED27/1→GREEN28/0 fixes reader formatting without an original rerun, phase/cause claim or E3 acceptance.                                                                              |
+| 39      | Complete independently reviewed finite failure-detail interpretation: genuine RED/GREEN and final 32 PASS, separate same-log release with three EXIT0 executions / 813 output bytes. All three record generic Error and reconnect/canonical-readiness/formation-request frames; original operation/cycle and cause stay unknown. All 88 originals remain unchanged; no new producer, correction or accepted cohort.                                                                    |
 
-## 11. Next Two Useful Actions After Task 36
+## 11. Next Two Useful Actions After Task 39
 
-Tasks 29–36 are complete at their distinct accepted scopes. Task 35 is independently
+Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
 correctness. Task 36 preserves a failed diagnostic and finite observations; it
-accepts no performance cohort or causal diagnosis. Task 33's owned-code correction
+accepts no performance cohort or causal diagnosis. Task 37 measures a local
+observation cost; Task 38 preserves unavailable failed-step metadata rather than
+inferring an operation. Task 39 locates recorded result-error frames at canonical
+readiness; it does not recover the unique original step or cause. Section 9's
+correctness/tier stop still prevents optimization.
+Task 33's owned-code correction
 remains accepted at c3b3; the human's required-clock approval persists.
 Whole-file closure covers every changed human-authored file and recursively changed
 support file; independently untouched code remains outside closure. Author/root
@@ -1670,16 +1701,110 @@ the failed phase, so the original readiness-specific question is not yet certifi
 Producer/runtime/control clocks remain distinct; adjacent timestamps are not paired
 call durations. No Issue was created or reused; no further producer is selected.
 
-**Next action 1:** Recover the exact source paths behind observed caller retirement,
-offer ownership and the diagnostics sink, plus source-owned finite markers that can
-establish the first failure phase. Use the accepted finite output and code facts;
-do not infer a cause from timestamp gaps, later health or missing history.
+### Task 37: Existing diagnostic event pipeline measured locally
 
-**Next action 2:** Select one discriminating existing-owner regression test or focused
-profile for a concrete mechanism earned by that audit, then apply TDD and recursive
-closure if a defect is established. Reuse retained evidence where it can answer the
-question; another unchanged E3 diagnostic or governed primary is not selected by
-this milestone.
+The source audit recovered caller-retirement and offer-ownership paths without
+identifying their historical issuer. It also found synchronous event publication:
+runtime history append, control-client retained-history scan and browser-agent
+notifications reaching the headless status renderer. The focused local profile uses
+these actual owners and a local socket capture port. Four existing suites / 40 tests
+passed before the sole measurement invocation. Its 60 fresh fixtures cover four
+variants, three seed histories and five repetitions; four separate CPU-sampled
+passes retain their instrumented timings separately. All 64 bursts preserve 500
+ordered events, redaction and expected transport effects.
+
+At seed history 10,000, control/agent/DOM median burst times are 106.3/110.7/132.0 ms,
+with sample CV 1.38%/3.05%/1.85%; mapped `sendNewEvents` accounts for 230/299,
+244/302 and 242/360 CPU self samples. Runtime seed-zero CV 16.11% stays noisy.
+Later assertions record 1,000 agent/DOM notifications per burst; their synchronous
+execution is a separate source fact. Timer quantization, broader CDP task timing,
+unusable zero ScriptDuration and variable live-heap deltas remain explicit limits.
+Network/server/native RTC, CSS/layout/paint, allocations and historical causality
+are unmeasured. Generated profiles remain ignored; no product change, original
+reread, optimization or E3 producer ran. First failed retention phase is still
+unclassified. No Issue was created or reused.
+
+### Task 38: Retained reporter headers do not identify a unique failed step
+
+The existing ignored reader/test pair adds a finite retention-failure-phase
+interpretation behind its canonical CLI and source/inventory guards. Genuine
+semantic, provenance, membership, private-output, purpose, source-override and
+function-boundary REDs precede the final 27-test GREEN. Original artifact source
+62f067706 and actual docs-only inspection head d971 remain explicitly distinct;
+11 tracked source owners match the artifact source, the installed reporter and
+both locks/config remain hash-bound, and the helper/test pair has its own digests.
+All three inventories, source markers, ZIPs and members verify before interpretation.
+
+Root reviewed the complete source/test pair, patch, report, bindings and actual
+validation chronology before the separate phase release. One execution per runner
+passed with empty stdout/stderr and one fixed 212-byte row. All three report
+headerAvailable false, operation unclassified and nullable cycle/frame facts.
+The 88 original files / 5,980,973 bytes and all three archives remain byte-unchanged
+after execution. Only the three retention logs / 48,250 bytes were interpreted;
+no additional history, sidecar association, remote job log or producer was selected.
+
+A bounded header-structure check then confirms one known retention failure header
+and one error-detail line per runner, but zero step delimiters. The reporter can
+omit a unique step when the recorded error-step tree has no eligible unique path;
+one printed result error does not establish one errored step. The source audit
+identifies possible conditions, not which occurred in these runs. Phase-start
+markers and later health cannot supply the missing original operation.
+
+The review also found a source-authentic formatting defect: the reporter leaves
+one ASCII separator space on over-100-column headers with no rule bars. One new
+effect-first assertion earned 27 PASS / one FAIL before the minimal regex fix,
+then 28 PASS / zero FAIL; the no-step same-space control remains unclassified.
+Root independently reviewed the complete amendment and formatter checks. That
+post-execution correction does not create a second original execution or alter
+the three preserved unknown outputs. Author/root separation and exact reused
+unchanged-source reads remain disclosed. No product code, Issue or cause claim.
+
+### Task 39: Recorded result error points through canonical readiness
+
+The same ignored reader, purpose and CLI now expose finite failure-detail
+availability/class separately from failed-step classification. A unique reconciled
+retention result with one recognized known printed error marker before attachments
+can retain exact allowlisted source-frame presence even when its step suffix is
+absent. Optional async stack decoration changes no function/file/body bound.
+Unknown or conflicting detail remains unavailable; arbitrary message/path/identity
+text is omitted. Recognizable printed grammar does not certify a logical exception
+count or complete reporter step history.
+
+Three genuine missing-detail REDs preceded the initial 31-test GREEN. Closure
+then earned a mixed unknown-class RED (30 PASS / one FAIL) and an assertion-label
+RED (31 PASS / one FAIL); final 32 PASS preserves Expected/Received payload labels
+without counting them as error classes. Root reviewed the complete delta, new
+tests, before hashes, source ranges and every consequential raw validation log.
+The unchanged fully reviewed owner/guard/CLI code is reused through exact hashes.
+Explicit ignored-pair formatting checks passed; no production code changed.
+
+A separately reviewed source/helper/test/inventory release executed once per
+runner on the same three retention logs / 48,250 bytes. All three CLI calls passed
+with empty stdout/stderr and one 271-byte row each. Each result records generic
+Error plus reconnectFormationAgent, waitForCanonicalFormationReadiness and
+Object.readiness frames. The connectFormationAgent frame is unavailable, which
+does not establish whether that call ran. The known printed frames locate the
+reported result error path; they do not identify the original failing step, the
+specific readiness predicate, an application receipt or native/clock/lifetime cause.
+All three keep headerAvailable false, operation unclassified and cycle null.
+
+The 88 originals / 5,980,973 bytes and three archives remain byte-unchanged after
+execution. Task 38's earlier outputs/releases/receipts remain preserved; Task 39
+is a distinct reviewed interpretation rather than an unchanged reader rerun. No
+additional history, sidecar association, job log, producer, optimization or Issue.
+
+**Next action 1:** Audit the canonical readiness operation, actual browser
+formation waiter and their existing tests. Trace refresh, finite budget, command,
+cancellation and room-predicate ownership before selecting a mechanism. The
+recorded frames justify this source target, without certifying the original
+operation or historical native cause.
+
+**Next action 2:** Prove one discriminating existing-owner regression for a
+concrete correctness mechanism earned by that audit or retained evidence. Use
+TDD and recursive closure before the correction, then proportional affected
+validation and independent review. No speculative timeout/retry or workload
+relaxation; local scan cost alone releases no optimization, and another unchanged
+E3 diagnostic or governed primary remains unselected.
 
 Full B01–B06 accepted primaries and all required repeats, relevant E1
 recovery/reconciliation after representative E3 succeeds, homogeneous noise
