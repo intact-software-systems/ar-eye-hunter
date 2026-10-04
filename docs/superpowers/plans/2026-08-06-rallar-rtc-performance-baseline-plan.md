@@ -84,14 +84,17 @@ The published merge is `13b59557121ae8b8bc2b1d8dccccd54927afbc61`, tree
 `d5451616ce7aee445430d0da22c9dfaf31b8cdbc`, with those exact two parents.
 Those 13b independent review, publication, normal CI, medium-scale/fairness and
 full-PR state-write passes remain source-attributed historical evidence.
-Task 27 and both fixes are independently reviewed and published at current
+Task 27 and both fixes are independently reviewed and published at diagnostic source
 `93fc50196e9cb6f4e345a39fca3b82876240d4a9`, tree
 `24a259fe0873b7092f346f6b5081de50da4c2276`. Required exact-source native workflows
 and the narrow medium/supported semantic correctness gates passed. Task 28's
 unchanged diagnostic proof is complete only at its exercised observation/usefulness
 scope: producer FAILURE, captured formation evidence useful, native cause
 UNCLASSIFIED and zero accepted performance cohorts. Task 25's earlier proof
-retains its own source and limits.
+retains its own source and limits. Task 29 completed reviewed factual reconciliation
+and feature publication at `21fd11987cb9fac818c766b63a3ee72db79a0204`, tree
+`fae860e6ebf1840ee15f4ade1ccaa8464b759f14`; only plan prose differs from 93fc.
+Tasks 30 and 31 are complete at their accepted read-only scopes below.
 Tasks 0-7 and observation tooling are delivered. The full goal remains ACTIVE/incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
 is gated, and B07 remains held. A package check proves tooling, not capture.
@@ -523,6 +526,56 @@ Recorder origin/continuity, native application/generation, deletion issuer,
 cross-agent causal order and one-way network latency remain unknown. No native
 cause, accepted E3 primary/repeat, E1 reconciliation, ranking completion, checked-in
 corpus increment or completed baseline follows.
+
+Task 30 completed source-owned formation/wait diagnosis and one independently
+reviewed finite later-health selector execution. Existing intended wait/formation
+semantics passed seven files / 101 tests; meaningful synthetic utility REDs were
+followed by 11 passing tests and independent full utility review. The one released
+original-value execution exited zero with empty stderr and 72 safe rows: nine
+later-agent, 18 peer, 36 lane and nine retained-lifecycle observations. Root accepted
+the bounded interpretation and verified all 81 originals / 4,312,437 bytes unchanged.
+The selector release is exhausted; no new producer or native/public-DI design was
+activated. These are source/utility/evidence passes, not causal RED or performance
+acceptance.
+
+The four captured idle/non-open/desired2/ready1 rejections remain distinct from
+nine later room snapshots. Later runner 1 has A/C connecting2/1 and B open2/2;
+runner 2 has A/B connecting2/1 and C connecting2/0; runner 3 has all three open2/2.
+Of 18 desired directed peers, 12 are ready and six are not; wrappers report 11 Open
+and seven Connecting, with 24 of 36 lanes open. Runner 1/2 A-to-C is nativeNew /
+ICENew / stable, without descriptions or aggregate offers; runner 2 queues one ICE
+candidate. Runner 2 C-to-A has a local description / have-local-offer / absent
+remote description alongside aggregate inboundAnswer1. These finite facts do not
+identify offer initiation, native application or resource lifetime. All 18 reset,
+stale-answer and signaling-error aggregates are zero, which cannot exclude prior
+wrappers, explicit diagnostic reset or hidden work. All nine histories are
+incomplete: 30 shared oversized rows plus runner 3 prefix loss, not 90 rows.
+Current coverage remains UNKNOWN because current presence revision is absent.
+Whole-health non-atomicity is not a proved explanation for runner 3's particular
+nativeNew / ICEconnected / open-lane combination; connection fields read one PC
+synchronously.
+
+Task 31 completed independently accepted canonical handshake/lifecycle diagnosis
+at byte-identical 93fc/21fd source. Existing QRtc offer-correlation/retirement,
+retained-peer redial and lane recovery tests passed three files / 37 tests. Peer
+admission, native negotiation, signaling receipt, native application, retirement
+and notification are separate owned boundaries. A peer-deleted facade event reads
+current status after a microtask and cannot identify the deleted native generation.
+Wrapper counters, AL consumer return and peer identity do not prove native
+application, generation, deletion issuer or historical cause.
+
+Task 31 separately established a current service ownership defect by source:
+a watchdog scoped to original peer P checks current object identity before
+synchronous timeout notifications; a legal one-shot listener can remove P without
+refunding attempts, then admit Q for the same ID. The subsequent unconditional
+ID-only timeout removal disposes Q. Public synchronous callback/removal/ensure
+contracts and existing deletion-observer replacement semantics establish the hole.
+No checked production timeout listener replaces a peer: browser notification is
+synchronous and the black-box consumer only emits diagnostics. No timeout
+replacement regression or fix has run, and no retained capture is associated with
+this trigger. Task 33 must prove and correct that independent ownership contract
+through separately reviewed genuine TDD; this does not establish B06's cause or
+restore its acceptance.
 
 Newer merged ALM work [#627](https://github.com/intact-software-systems/ar-eye-hunter/pull/627),
 [#628](https://github.com/intact-software-systems/ar-eye-hunter/pull/628),
@@ -1358,7 +1411,7 @@ justified yet.”
 | 7       | Measurement gates/source-fingerprint tooling delivered. Current captures use their own immutable source snapshot, not a final-main anchor.                                                                                                                                                                                                                                                                                                                          |
 | 8       | E1 capture unverified: recover and validate retained evidence or perform governed capture after representative E3 succeeds. Tool availability cannot mark this complete.                                                                                                                                                                                                                                                                                            |
 | 9       | E2 stream active with 31 checked-in passed observations; five recovered Sep 28–Oct 2 archives are proposed in PRs #634–638. Retain noisy/inconclusive classification.                                                                                                                                                                                                                                                                                               |
-| 10      | E3 has zero accepted primaries/repeats. Run 37108696378 recovery remains proposed in PR #639 at its last verified OPEN/unmerged status. Tasks 17–28 delivered reviewed bounded observations and exact-source diagnostic proofs; current Task 28 retains producer FAILURE and exercised observation/usefulness PASS only. Native cause/application and unseen/lost facts remain unknown.                                                                             |
+| 10      | E3 has zero accepted primaries/repeats. Run 37108696378 recovery remains proposed in PR #639 at its last verified OPEN/unmerged status. Tasks 17–28 delivered reviewed bounded observations and exact-source proofs; Task 28 producer FAILURE retains usefulness PASS only. Tasks 30/31 completed source/evidence diagnosis; historical cause/native application/lifetime/issuer and unseen facts remain unknown.                                                   |
 | 11      | B07 held pending its separate human decision; no remote run in the current horizon.                                                                                                                                                                                                                                                                                                                                                                                 |
 | 12      | Ranking gated on accepted E3 and required repeat plus reconciled relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                                                                                                                                                                                                                                                                                                            |
 | 17      | Bounded canonical lifecycle preservation delivered and independently approved with zero findings; one shared sanitized sequence, completed-health-first and failure-only capture.                                                                                                                                                                                                                                                                                   |
@@ -1373,71 +1426,75 @@ justified yet.”
 | 26      | Complete accepted read-only first-failure diagnosis at exact 13b; no causal defect/correction or causal RED earned. HTTP phase/abort provenance and actual captured formation wait result were missing at 13b; printed connecting state is a fresh live summary. Task 27 delivered bounded existing-owner evidence; native/public-DI design stays deferred.                                                                                                         |
 | 27      | Finite HTTP/formation evidence, fix1 and fix2 independently reviewed/published; exact 93fc required native workflows SUCCESS and medium/supported correctness acceptance PASS at narrow scopes. Current fix2 local checks are 98/3 focused, 298/26 affected and 1,449-file zero-error types. Historical 0f Branch Release FAILURE stays distinct. Current nonblocking ALM FAILURE remains UNVERIFIED/UNCLASSIFIED.                                                  |
 | 28      | Complete exercised observation/usefulness proof: run 37180571619/a1/source93fc FAILURE; 81 originals / 4,312,437 bytes verified, 12 PASS / three FAIL / 12 SKIP, retention cycles 1/4/8. Three failure windows / 340 events / 268,243 bytes retain four idle/non-open formation wait results. Loss, HTTP/terminal/native/claim/cleanup/privacy unknowns remain; sole watcher retired, zero accepted cohorts.                                                        |
+| 29      | Complete independently reviewed factual reconciliation and feature publication at 21fd/fae; sole prose child of 93fc, all protected acceptance regions unchanged. No runtime or hosted metric relabel.                                                                                                                                                                                                                                                              |
+| 30      | Complete accepted source/finite later-health diagnosis: seven files / 101 existing tests, 11 synthetic utility tests, one reviewed execution EXIT0 / empty stderr / 72 safe rows. Four captured failures remain separate; later coverage/native lifetime/application/issuer unknown, histories incomplete. No cause, causal RED, fix or performance acceptance.                                                                                                     |
+| 31      | Complete independently accepted handshake/lifecycle source diagnosis at byte-equal 93fc/21fd; three files / 37 existing tests PASS. Separate synchronous timeout-listener replacement ownership hole established by source, with no executed new regression/fix or historical capture association. Genuine service TDD remains separately scoped.                                                                                                                   |
 
 ## 11. Next Two Useful Slices
 
-Tasks 27 and 28 are closed at their distinct accepted scopes: reviewed/published
-bounded evidence with required source-specific correctness gates, then one
-unchanged diagnostic proof with authentic producer FAILURE. Useful captured
-formation facts earn read-only diagnosis; they establish no causal B06 defect,
-causal RED, native fix or accepted performance cohort. The next two useful slices
-are this factual reconciliation and diagnosis of the actual returned formation
-rejection. Later work stays outcome-shaped until that diagnosis earns it.
+Tasks 29–31 are complete at their distinct accepted scopes: published factual
+plan reconciliation, accepted source/finite later-health diagnosis, then accepted
+source-owned handshake/lifecycle diagnosis. Historical producer failures, native
+application/lifetime/issuer unknowns and zero accepted E3 cohorts remain. Task 31
+established an independent current timeout ownership hole, with no executed new
+regression or fix and no attribution to the historical captures. Only the next
+two useful slices are concrete: this factual reconciliation and separately scoped
+service ownership TDD. Further work remains outcome-shaped.
 
-### Task 29: Reconcile accepted current evidence and remaining obligations
+### Task 32: Reconcile accepted diagnosis and unchanged baseline obligations
 
 **File:** This existing RTC baseline plan, mutable Sections 1, 10 and 11 only.
 Title/intro, Review Focus, Global Constraints, Sections 2–9 and the completion
 contract in Section 12 remain unchanged.
 
-**Outcome:** Record accepted Task 27 review/publication and exact-source gates,
-then Task 28's exercised observation/usefulness result with its authentic failed
-producer, useful captured formation facts and explicit loss/unknowns. Preserve
-historical source attribution, the separate nonblocking ALM failure, all original
-failures and the incomplete baseline. Remove stale pending/inactive statements
-without a catalog, receipt, approval fence, new artifact contract or runtime edit.
+**Outcome:** Record complete published Task 29 prose and accepted Task 30/31
+source/evidence diagnosis, keeping the four captured formation rejections distinct
+from later health. Preserve original failures, source-specific gates, loss/unknowns,
+last-verified recovery PR status and all incomplete baseline acceptance. State the
+independent timeout replacement defect without historical causal attribution,
+native schema activation or a runtime implementation release.
 
-- [x] Complete whole-file claim/acceptance review against the actual accepted
-      reports; independently verify all ten protected raw regions byte-identical.
-- [ ] Validate plan formatting and sole-file diff, then obtain independent scoped
-      review and ordinary feature publication through the controller. Prose needs
-      no manufactured behavioral RED or unrelated suite/producer.
+- [x] Read/review the whole plan against accepted actual reports; preserve all ten
+      exact raw protected regions and unchanged title/intro/Review Focus.
+- [ ] Validate canonical formatting, sole-file diff and source bindings; complete
+      full changed-file/support closure and self-review, then obtain independent
+      scoped review and ordinary feature publication through the controller.
+      Human prose requires no artificial behavioral RED or unrelated producer.
 
-**Exit:** A truthful current plan with unchanged accepted workloads, samples,
-cycles, environments, timing/resource/noise/privacy/correctness and completion
-requirements. This reconciliation does not complete the baseline or call ready.
+**Exit:** A truthful current plan with unchanged workload, sample, environment,
+timing, resource, noise, privacy, correctness and completion requirements. No
+baseline completion, ready operation or new artifact contract follows.
 
-### Task 30: Diagnose the actual captured formation rejection read-only
+### Task 33: Prove and correct timeout disposal ownership through genuine TDD
 
-**Owners to trace:** Current canonical RTC `waitForRoom`/wait-return and formation
-lifecycle/acceptance owners, their real callers and nearby meaningful semantic
-tests. Use accepted exact-93fc Task 28 observations; historical printed live
-summaries and later health remain separate snapshots.
+**Canonical owners:** `packages/shared/services/web-rtc-connection-service.ts`,
+existing `packages/tests/shared/webrtc-connection-service.test.ts` and
+`packages/tests/shared/native-rtc-connection-fixture.ts`; support enters full
+recursive closure only when the actual correction requires it.
 
-**Outcome:** Compare the captured `idle` / non-open result, available summary,
-two desired peers and one ready peer with intended lifecycle/readiness semantics
-before asserting a defect. Trace how the result is produced, how formation rejects
-it and what current tests prove. Separate the inner wait decision, outer deadline,
-printed live state, native application, cleanup and evidence loss. A state label,
-positive callback return or missing cleanup marker is not a causal explanation.
+**Observable invariant:** Timeout disposal belongs to the timed-out peer resource
+and cannot remove a separately admitted replacement created synchronously by a
+listener. Establish the legal one-shot callback removing original P without
+refunding attempts and admitting Q for the same ID. Assert original disposal,
+Q surviving P's deadline, Q's own watchdog/attempt accounting and later expiry.
+The test must exercise the owned boundary and allow equivalent implementations.
+This independent service contract is not a demonstrated historical B06 cause.
 
-- [ ] Load current applicable source/domain/testing guidance before decisions,
-      then read actual canonical owners and nearby semantic tests. Reconcile
-      captured versus returned/printed/later state and name every unproved branch.
-- [ ] Use only accepted bounded observations or an unchanged root-reviewed
-      selector for any artifact-derived values. Any new selector requires the
-      controller's full actual read and release before execution. No ad-hoc value
-      projection or inferred missing fact.
-- [ ] Deliver the complete read-only diagnosis for the controller's full actual
-      acceptance. Only then select the smallest genuinely earned TDD correction
-      or evidence boundary. If no causal defect is established, preserve that
-      outcome and its remaining unknowns.
+- [ ] Before edits, complete FULL applicable preflight, canonical source/nearby
+      semantic tests/examples, full closure and design preparation; obtain the
+      controller's independent full preparation review and separate TDD release.
+- [ ] Witness a meaningful semantic regression RED, then minimum same-owner GREEN
+      and refactor. Preserve public contracts and existing watchdog/attempt policy;
+      no source-copy assertion, alias, migration, parallel lifecycle, producer or
+      native collector. No production authorization comes from this prose alone.
+- [ ] Complete full touched/support closure, focused affected package/type/style
+      checks, required navigation review and independent actual production task
+      review. Select further validation/evidence from changed surfaces only after
+      accepted TDD/review; do not claim the correction restores B06.
 
-**Exit:** Source- and observation-bound diagnosis that distinguishes intended
-behavior, any independently demonstrated defect and missing evidence. No runtime
-fix, native/public-DI design, timer/retry/watchdog/workload change, selector
-production change or additional producer is presumed. No later implementation
-or code design is concretized before the diagnosis is accepted.
+**Exit:** An independently tested/reviewed current ownership correction, or a
+truthful falsified trigger/contract outcome without speculative implementation.
+No Task 34, native schema, producer or optimization is concretized.
 
 Full B01–B06 accepted primaries and all required repeats, relevant E1
 recovery/reconciliation, homogeneous noise handling/comparison, ranking and
