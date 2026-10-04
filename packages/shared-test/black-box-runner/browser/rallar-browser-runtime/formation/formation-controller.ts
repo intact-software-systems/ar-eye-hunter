@@ -9,7 +9,6 @@ import type {
 } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
-import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarEvent,
     BlackBoxRallarFormationCommandDiagnostics,
@@ -32,8 +31,18 @@ export interface BlackBoxRallarFormationControllerDependencies {
     formation(roomRef: GroupRef): RallarRoomFormation;
     readonly rtc: Pick<RallarRtcFacade, 'roomStatus' | 'waitForRoom' | 'onStatus'>;
     emit(event: Omit<BlackBoxRallarEvent, 'atEpochMs'>): void;
-    readonly emitError: BlackBoxRallarRuntimeDiagnostics['emitError'];
     now(): number;
+}
+
+interface FormationReadinessRejection {
+    readonly kind: 'formation-readiness-rejected';
+    readonly roomTransportState: RallarRtcRoomTransportStatus['state'];
+    readonly summaryAvailable: boolean;
+    readonly roomOpen: boolean;
+    readonly hasDesiredPeers: boolean;
+    readonly desiredPeerCount: number;
+    readonly readyPeerCount: number;
+    readonly waitTerminalCause: 'unknown';
 }
 
 /**
@@ -67,13 +76,21 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
         const formationStatus = this.#dependencies.formation(room.roomRef).status();
         const summary = formationStatus === undefined
             ? undefined
-            : this.#toSummary(room.roomRef, formationStatus, status.rtc);
+            : toFormationSummary(room.roomRef, formationStatus, status.rtc);
         if (
             summary === undefined ||
             summary.room.state !== 'open' ||
             summary.room.desiredPeerIds.length === 0
         ) {
-            throw this.#notReady(room);
+            const observation = toFormationReadinessRejection(status.rtc, summary !== undefined);
+            const error = this.#notReady(room);
+            try {
+                this.#emit('rallar.browser.formation.not-ready', room.roomRef, observation);
+            }
+            catch {
+                // The captured observation must not replace the original readiness failure.
+            }
+            throw error;
         }
 
         const diagnostics: BlackBoxRallarFormationReadinessDiagnostics = {
@@ -90,7 +107,9 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
 
     summary = (roomRef: GroupRef): BlackBoxRallarFormationSummary | undefined => {
         const status = this.#dependencies.formation(roomRef).status();
-        return status === undefined ? undefined : this.#toSummary(roomRef, status);
+        return status === undefined
+            ? undefined
+            : toFormationSummary(roomRef, status, this.#dependencies.rtc.roomStatus(roomRef).rtc);
     };
 
     installDiagnostics = (roomRef: GroupRef): RallarUnsubscribe => {
@@ -100,7 +119,7 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
                 this.#emit(
                     BLACK_BOX_RALLAR_FORMATION_TOPICS.changed,
                     roomRef,
-                    this.#toSummary(roomRef, status)
+                    toFormationSummary(roomRef, status, this.#dependencies.rtc.roomStatus(roomRef).rtc)
                 )
             ),
             handle.onLayout((event) =>
@@ -184,58 +203,6 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
         return summary;
     };
 
-    /**
-     * Built field by field rather than spread: the status declares its absent-capable fields as
-     * required-with-`undefined`, and a spread would carry explicit `undefined` keys into the block
-     * that a recipe's `exists` operator then reads as present.
-     */
-    #toSummary = (
-        roomRef: GroupRef,
-        status: RallarRoomFormationStatus,
-        room: RallarRtcRoomTransportStatus = this.#dependencies.rtc.roomStatus(
-            roomRef
-        ).rtc
-    ): BlackBoxRallarFormationSummary => {
-        return {
-            roomRef,
-            stage: status.stage,
-            formationEpoch: status.formationEpoch,
-            formationAttemptCount: status.formationAttemptCount,
-            ...(status.lastFormationOutcome !== undefined
-                ? { lastFormationOutcome: status.lastFormationOutcome }
-                : {}),
-            causalRevision: status.snapshot.causalRevision,
-            transportState: status.transportState,
-            dialing: status.dialing,
-            memberPolicy: status.memberPolicy,
-            ...(status.accepted !== undefined ? { accepted: status.accepted } : {}),
-            ...(status.planned !== undefined ? { planned: status.planned } : {}),
-            ...(status.condition !== undefined
-                ? { condition: status.condition }
-                : {}),
-            ...(status.coverageRate !== undefined
-                ? { coverageRate: status.coverageRate }
-                : {}),
-            room: this.#toRoomStatus(room)
-        };
-    };
-
-    /** The room block a pin may assert on; the peers array, lane id and read-time clock are dropped. */
-    #toRoomStatus = (
-        room: RallarRtcRoomTransportStatus
-    ): BlackBoxRallarFormationRoomStatus => {
-        return {
-            state: room.state,
-            ...(room.acceptedLayoutIdentity !== undefined
-                ? { acceptedLayoutIdentity: room.acceptedLayoutIdentity }
-                : {}),
-            desiredPeerIds: room.desiredPeerIds,
-            readyPeerIds: room.readyPeerIds,
-            activePeerIds: room.activePeerIds,
-            failedPeerIds: room.failedPeerIds
-        };
-    };
-
     #emit = (topic: string, roomRef: GroupRef, data: object): void => {
         this.#dependencies.emit({
             kind: 'diagnostic',
@@ -245,5 +212,71 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
             workspaceId: roomRef.workspaceId,
             data
         });
+    };
+}
+
+function toFormationReadinessRejection(
+    room: RallarRtcRoomTransportStatus,
+    summaryAvailable: boolean
+): FormationReadinessRejection {
+    return {
+        kind: 'formation-readiness-rejected',
+        roomTransportState: room.state,
+        summaryAvailable,
+        roomOpen: room.state === 'open',
+        hasDesiredPeers: room.desiredPeerIds.length > 0,
+        desiredPeerCount: room.desiredPeerIds.length,
+        readyPeerCount: room.readyPeerIds.length,
+        waitTerminalCause: 'unknown'
+    };
+}
+
+/**
+ * Built field by field rather than spread: the status declares its absent-capable fields as
+ * required-with-`undefined`, and a spread would carry explicit `undefined` keys into the block
+ * that a recipe's `exists` operator then reads as present.
+ */
+function toFormationSummary(
+    roomRef: GroupRef,
+    status: RallarRoomFormationStatus,
+    room: RallarRtcRoomTransportStatus
+): BlackBoxRallarFormationSummary {
+    return {
+        roomRef,
+        stage: status.stage,
+        formationEpoch: status.formationEpoch,
+        formationAttemptCount: status.formationAttemptCount,
+        ...(status.lastFormationOutcome !== undefined
+            ? { lastFormationOutcome: status.lastFormationOutcome }
+            : {}),
+        causalRevision: status.snapshot.causalRevision,
+        transportState: status.transportState,
+        dialing: status.dialing,
+        memberPolicy: status.memberPolicy,
+        ...(status.accepted !== undefined ? { accepted: status.accepted } : {}),
+        ...(status.planned !== undefined ? { planned: status.planned } : {}),
+        ...(status.condition !== undefined
+            ? { condition: status.condition }
+            : {}),
+        ...(status.coverageRate !== undefined
+            ? { coverageRate: status.coverageRate }
+            : {}),
+        room: toFormationRoomStatus(room)
+    };
+}
+
+/** The room block a pin may assert on; the peers array, lane id and read-time clock are dropped. */
+function toFormationRoomStatus(
+    room: RallarRtcRoomTransportStatus
+): BlackBoxRallarFormationRoomStatus {
+    return {
+        state: room.state,
+        ...(room.acceptedLayoutIdentity !== undefined
+            ? { acceptedLayoutIdentity: room.acceptedLayoutIdentity }
+            : {}),
+        desiredPeerIds: room.desiredPeerIds,
+        readyPeerIds: room.readyPeerIds,
+        activePeerIds: room.activePeerIds,
+        failedPeerIds: room.failedPeerIds
     };
 }

@@ -806,3 +806,119 @@ describe('actual RTC consumer evidence', () => {
         );
     });
 });
+
+describe('existing-owner command failure evidence', () => {
+    const http = {
+        kind: 'http-request-failed',
+        commandId: 'http',
+        phase: 'body',
+        scopeAborted: true,
+        scopeAbortOrigin: 'timeout'
+    };
+    const formation = {
+        kind: 'formation-readiness-rejected',
+        roomTransportState: 'idle',
+        summaryAvailable: true,
+        roomOpen: false,
+        hasDesiredPeers: true,
+        desiredPeerCount: 2,
+        readyPeerCount: 0,
+        waitTerminalCause: 'unknown'
+    };
+    const row = (topic: string, data: object) =>
+        JSON.stringify({
+            agentId: 'agent-a',
+            atEpochMs: 120,
+            name: 'failure',
+            value: { topic, payload: { atEpochMs: 119, data } }
+        });
+
+    it('retains finite HTTP and captured formation facts in the same history while excluding raw failure data', () => {
+        const history = toNotificationHistory([
+            row('rallar.bb.http.failure', { ...http, error: 'private-sentinel', url: 'private-sentinel' }),
+            row('rallar.browser.formation.not-ready', { ...formation, reason: 'private-sentinel', peers: ['private-sentinel'] })
+        ].join('\n'));
+        expect(history).toMatchObject({
+            events: [
+                { ...http, observation: 'http-request-failure-with-owned-scope-state' },
+                { ...formation, observation: 'captured-room-wait-result-at-formation-rejection' }
+            ]
+        });
+        expect(JSON.stringify(history)).not.toContain('private-sentinel');
+    });
+
+    it('does not infer an abort or terminal wait cause from invalid or arbitrary values', () => {
+        const history = toNotificationHistory([
+            row('rallar.bb.http.failure', {
+                ...http,
+                commandId: 'x'.repeat(257),
+                phase: 'private-phase',
+                scopeAborted: 'false',
+                scopeAbortOrigin: 'AbortError'
+            }),
+            row('rallar.browser.formation.not-ready', {
+                ...formation,
+                roomTransportState: 'private-state',
+                summaryAvailable: 0,
+                desiredPeerCount: false,
+                readyPeerCount: -1,
+                waitTerminalCause: 'timeout'
+            }),
+            row('unrelated', http)
+        ].join('\n'));
+        expect(history).toMatchObject({
+            observed: { retainedRows: 2, filteredRows: 1 },
+            events: [
+                { commandId: null, phase: null, scopeAborted: null, scopeAbortOrigin: null },
+                { roomTransportState: null, summaryAvailable: null, desiredPeerCount: null, readyPeerCount: null, waitTerminalCause: 'unknown' }
+            ]
+        });
+    });
+
+    it('charges new failure facts to the existing mixed row budget', () => {
+        const history = toNotificationHistory([
+            toSignalingRow(admittedSignal),
+            ...Array.from({ length: 599 }, () => row('rallar.bb.http.failure', http)),
+            row('rallar.browser.formation.not-ready', formation)
+        ].join('\n'));
+        expect(history).toMatchObject({ coverage: 'incomplete', observed: { retainedRows: 600, outputDroppedRows: 1 } });
+        const retained = requiredJsonRecord(history, 'history');
+        const events = requiredJsonArray(retained.events, 'events');
+        expect(events[0]).toMatchObject({ kind: 'http-request-failed' });
+        expect(events.at(-1)).toMatchObject({ kind: 'formation-readiness-rejected' });
+        expect(requiredJsonRecord(retained.observed, 'observed').outputBytes).toBe(
+            events.reduce<number>((sum, event) => sum + Buffer.byteLength(JSON.stringify(event)), 0)
+        );
+    });
+
+    it('shares the compact UTF-8 byte budget across agents and failure kinds', () => {
+        const jsonl = Array.from({ length: 600 }, (_, index) =>
+            JSON.stringify({
+                agentId: ['agent-a', 'agent-b', 'agent-c'][index % 3],
+                atEpochMs: 120,
+                name: `failure-${index}`,
+                value: {
+                    topic: index % 10 === 0 ? 'rallar.browser.formation.not-ready' : 'rallar.bb.http.failure',
+                    payload: { atEpochMs: 119, data: index % 10 === 0 ? formation : { ...http, commandId: '界'.repeat(256) } }
+                }
+            })).join('\n');
+        const histories = toLiveRtcLifecycleHistory({
+            jsonl,
+            bytesRead: Buffer.byteLength(jsonl),
+            retainedBytes: Buffer.byteLength(jsonl),
+            retainedPrefixDropped: false,
+            transportTruncated: false,
+            agentIds: ['agent-a', 'agent-b', 'agent-c'],
+            cycle: null,
+            failureInterval: { caseId: 'all-scenarios', startedAtEpochMs: 100, failedAtEpochMs: 150, precision: 'attempt-phase-unspecified' }
+        });
+        const events = Object.values(histories).flatMap((history) => requiredJsonArray(requiredJsonRecord(history, 'history').events, 'events'));
+        const bytes = events.reduce<number>((total, event) => total + Buffer.byteLength(JSON.stringify(event)), 0);
+        expect(events.length).toBeLessThan(600);
+        expect(bytes).toBeLessThanOrEqual(262_144);
+        expect(events.some((event) => requiredJsonRecord(event, 'event').kind === 'formation-readiness-rejected')).toBe(true);
+        for (const history of Object.values(histories)) {
+            expect(history).toMatchObject({ coverage: 'incomplete', observed: { outputDroppedRows: 600 - events.length, outputBytes: bytes } });
+        }
+    });
+});

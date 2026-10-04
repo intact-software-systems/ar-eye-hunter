@@ -669,6 +669,12 @@ function toLiveRtcDiagnosticEvent(
         controlAtEpochMs: scoped.controlAtEpochMs,
         runtimeAtEpochMs: scoped.runtimeAtEpochMs
     };
+    if (topic === 'rallar.bb.http.failure' && event.kind === 'http-request-failed') {
+        return { ...identity, ...toHttpRequestFailureObservation(event) };
+    }
+    if (topic === 'rallar.browser.formation.not-ready' && event.kind === 'formation-readiness-rejected') {
+        return { ...identity, ...toFormationReadinessRejectionObservation(event) };
+    }
     if (topic === RTC_AL_OUTBOUND_TOPIC && event.kind === 'commit-phases' && event.typeId === AppTopics.rtcSignaling) {
         return { ...identity, ...toLiveRtcSignalingCommit(event) };
     }
@@ -692,6 +698,32 @@ function toLiveRtcDiagnosticEvent(
         observation: 'facade-current-at-notification',
         peerObservation: toLifecyclePeerObservation(event.peer, peerId),
         laneObservation: laneId === null ? null : toLifecycleLaneObservation(event.lane, peerId, laneId)
+    };
+}
+
+function toHttpRequestFailureObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord {
+    return {
+        commandId: toBoundedIdentity(event.commandId),
+        phase: toAllowedLifecycleState(event.phase, ['fetch', 'body', 'response']),
+        scopeAborted: toLifecycleBoolean(event.scopeAborted),
+        scopeAbortOrigin: toAllowedLifecycleState(event.scopeAbortOrigin, ['timeout', 'parent']),
+        observation: 'http-request-failure-with-owned-scope-state'
+    };
+}
+
+function toFormationReadinessRejectionObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord {
+    return {
+        roomTransportState: typeof event.roomTransportState === 'string' &&
+                Object.hasOwn(ROOM_TRANSPORT_STATES, event.roomTransportState)
+            ? event.roomTransportState
+            : null,
+        summaryAvailable: toLifecycleBoolean(event.summaryAvailable),
+        roomOpen: toLifecycleBoolean(event.roomOpen),
+        hasDesiredPeers: toLifecycleBoolean(event.hasDesiredPeers),
+        desiredPeerCount: toFiniteNonnegativeObservation(event.desiredPeerCount),
+        readyPeerCount: toFiniteNonnegativeObservation(event.readyPeerCount),
+        waitTerminalCause: 'unknown',
+        observation: 'captured-room-wait-result-at-formation-rejection'
     };
 }
 

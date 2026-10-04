@@ -370,7 +370,6 @@ function createProductControllers(
             formation: (roomRef) => rallar.rooms.formation(roomRef),
             rtc: rallar.rtc,
             emit: diagnostics.emit,
-            emitError: diagnostics.emitError,
             now: input.clock.now
         }),
         ...createMessagingControllers(foundation, input.clock)
