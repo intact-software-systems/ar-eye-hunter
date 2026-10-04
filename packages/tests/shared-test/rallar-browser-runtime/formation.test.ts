@@ -515,7 +515,7 @@ it('installs the formation diagnostics for a room-scoped connection and tears th
         }
     });
 
-    expect([...active]).toEqual(['change', 'layout']);
+    expect(active).toEqual(new Set(['change', 'layout']));
     await runtime.close();
     expect([...active]).toEqual([]);
 });
@@ -537,7 +537,7 @@ it('removes the formation diagnostics when the connection fails after installing
     });
     facade.behavior.rtcOnStatus.mockImplementation(() => track('rtc.status'));
     facade.behavior.roomJoin.mockImplementation(async () => {
-        expect([...activeSubscriptions]).toEqual(['formation.change', 'formation.layout', 'rtc.status']);
+        expect(activeSubscriptions).toEqual(new Set(['formation.change', 'formation.layout', 'rtc.status']));
         throw new Error('Room join failed.');
     });
 
@@ -559,6 +559,16 @@ it('removes the formation diagnostics when the connection fails after installing
 
 it('installs no formation diagnostics when the connection resolves no room ref', async () => {
     const runtime = await loadRuntime();
+    const changeListeners: RallarStateListener<RallarRoomFormationStatus>[] = [];
+    const layoutListeners: RallarRoomLayoutListener[] = [];
+    const statusListeners: RallarRtcStatusListener[] = [];
+    const held = facade.rallar.rooms.formation(roomRef);
+    facade.behavior.roomFormation.mockReturnValue({
+        ...held,
+        onChange: (listener) => subscribe(changeListeners, listener),
+        onLayout: (listener) => subscribe(layoutListeners, listener)
+    });
+    facade.behavior.rtcOnStatus.mockImplementation((listener) => subscribe(statusListeners, listener));
     await runtime.connect({
         connection: 'aliceRtc',
         actor: 'alice',
@@ -570,8 +580,17 @@ it('installs no formation diagnostics when the connection resolves no room ref',
         }
     });
 
-    expect(facade.behavior.roomFormation).not.toHaveBeenCalled();
+    expect({ changeListeners, layoutListeners, statusListeners }).toEqual({
+        changeListeners: [],
+        layoutListeners: [],
+        statusListeners: []
+    });
     await runtime.close();
+    expect({ changeListeners, layoutListeners, statusListeners }).toEqual({
+        changeListeners: [],
+        layoutListeners: [],
+        statusListeners: []
+    });
 });
 
 it.each(
@@ -602,17 +621,19 @@ it.each(
 
 it('keeps the formation rejection when the supplemental sink throws and does not observe a rejected wait promise as a returned result', async () => {
     const harness = new FormationHarness({ stage: 'active', formationEpoch: 1 });
-    harness.emit.mockImplementation(() => {
+    harness.emit.mockImplementationOnce((event) => {
+        harness.emitted.push(event);
         throw new Error('supplemental sink failed');
     });
     await expect(harness.controller.readiness({ roomRef, timeoutMs: 50 })).rejects.toThrow(
         'RALLAR_BLACK_BOX_FORMATION_NOT_READY: the room did not open within 50 ms (state idle).'
     );
-    harness.emit.mockClear();
+    expect(harness.emitted.map((event) => event.topic)).toEqual(['rallar.browser.formation.not-ready']);
+    harness.emitted.length = 0;
     const waitFailure = new Error('wait rejected without a returned result');
     harness.waitForRoom.mockRejectedValueOnce(waitFailure);
     await expect(harness.controller.readiness({ roomRef, timeoutMs: 50 })).rejects.toBe(waitFailure);
-    expect(harness.emit).not.toHaveBeenCalled();
+    expect(harness.emitted).toEqual([]);
 });
 
 it('carries the actual formation observation through diagnostics, browser receipt, recorder serialization and bounded projection', async () => {

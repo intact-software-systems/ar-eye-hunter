@@ -415,13 +415,29 @@ operation's rejection (I1), plus a fixture setter name hiding notification (M1).
 Fix1 reproduced both immediate and later losing rejections: cancellation identity
 and immediate delivery held, but each operation raised one unhandled rejection.
 The canonical helper now observes that losing promise without awaiting it; the
-fixture operation is named `updateRoomAndNotify`. Regression GREEN is 17/1,
+fixture operation is named `updateRoomAndNotify`. At published fix1 source
+`0f6720afe82753044451527ce8fa6a32ce042e1c`, regression GREEN is 17/1,
 focused validation 98/3 and affected auth/RTC/feature/AL/stream/runtime/boundary
 validation 940/77, with zero maintained type errors across 1,449 files. The
 historical normal suite is not attributed to this amended source. M2's disclosed
 Node/Vite validation noise remains informational. No fix identifies a historical
-B06 cause. Scoped independent re-review, publication and changed-source hosted
-gates remain pending.
+B06 cause. Fix1's scoped independent review passed and publication completed.
+At exact 0f, Branch Release 37175853020 failed its unchanged structure-coupling
+checker on two formation mock-absence assertions; later static steps were skipped.
+The supported-distributed 37175918004, formation 37175852897 and medium
+37175852871 workflows reached SUCCESS. Medium artifact acceptance remains pending
+controller-vetted audit; workflow success alone does not complete the required
+gates or repair Branch Release.
+
+Fix2 replaces the two incidental mock-invocation assertions with actual owned
+formation/RTC subscription state and captured diagnostic output, including a
+capturing sink after the first injected sink failure. The exact immutable 0f
+checker reproduced both reported candidates. Refined semantic coverage is already
+GREEN without production changes: 98 focused tests in three files and 298 affected
+runtime/readiness tests in 26 files; maintained types enforce 1,449 files with zero
+errors. The unchanged selected-file checker reports zero candidates. Scoped fix2
+re-review, publication and required hosted gate acceptance remain separate;
+Task 28 is inactive.
 
 At the original Task 27 implementation, the unchanged private headless bundle
 test measured 310,471 Brotli bytes /
@@ -433,7 +449,7 @@ exclusion and measurement preserved.
 This changes no frozen workload, timing, sampling, evidence or performance-resource
 budget. Task 28 remains one unchanged exact-source all-three non-publishing B06
 proof after independent review, publication and required changed-source gates.
-No native/public-DI design, causal correction or producer is activated here.
+No native/public-DI design, causal B06 correction or producer is activated here.
 
 Recorder origin/continuity, native application/generation, deletion issuer,
 cross-agent causal order and one-way network latency remain unknown. No native
@@ -1287,7 +1303,7 @@ justified yet.”
 | 24      | Final exact-source diagnostic 37147329195 attempt 1 on 72945dd: 81 originals / 4,262,002 inner bytes verified; all three failures at cycles 1/8/1, 293 events / 238,781 bytes, 38 consumer terminals and 38 AL decisions / 37 claims. Normal-path proof, honest loss/identity/native unknowns and original failures preserved; watcher retired, no accepted baseline.                                                                                               |
 | 25      | Complete unchanged diagnostic proof: run 37165604475 attempt 1 on 13b; 82 originals / 4,725,160 bytes verified; nine ordinary PASS, R1/R3 all-scenarios topology AbortError and retention failures 5/2/5. Five windows / 443 events / 353,717 compact bytes, 23 normal captures omit 69 histories. Contract/usefulness PASS with recorded loss/identity/privacy/branch limits; producer FAILURE, native cause INCONCLUSIVE, zero accepted cohorts; watcher retired. |
 | 26      | Complete accepted read-only first-failure diagnosis at exact 13b; no causal defect/correction or causal RED earned. HTTP phase/abort provenance and actual captured formation wait result were missing at 13b; printed connecting state is a fresh live summary. Task 27 adds bounded existing-owner evidence; native/public-DI design stays deferred.                                                                                                              |
-| 27      | Finite HTTP/formation evidence implemented after observation RED/GREEN. Independent review required I1 cancellation rejection handling and M1 fixture vocabulary closure; fix1 has regression 17/1, focused 98/3 and affected 940/77 PASS, plus maintained 1,449-file zero-error types. Historical normal-suite evidence stays attributed to 7ef. Scoped re-review, publication and changed-source hosted gates remain pending; no causal B06 correction.           |
+| 27      | Finite HTTP/formation evidence and fix1 reviewed/published at 0f. Required 0f Branch Release failed two formation coupling candidates. Fix2 uses owned subscription/diagnostic assertions: 98/3 focused, 298/26 affected and zero maintained type errors; no production change. Prior evidence keeps its own source. Scoped re-review/publication/hosted acceptance pending; Task 28 inactive.                                                                      |
 | 28      | One unchanged exact-source all-three non-publishing B06 proof only after reviewed, published, validated Task 27 source and fresh source/delivery/no-live entry. Not activated; retain every original outcome and all evidence limits.                                                                                                                                                                                                                               |
 
 ## 11. Next Two Useful Slices
@@ -1297,8 +1313,9 @@ integration/review/publication/hosted gates, unchanged diagnostic proof, then
 read-only first-failure diagnosis. Task 26 earned no causal B06 correction or causal
 RED. The next two selected outcomes are bounded existing-owner evidence and its
 unchanged exact-source diagnostic proof. The accepted compatible design now has
-a local implementation; independent review and changed-source delivery gates
-remain before Task 28 can run.
+a reviewed/published 0f implementation, followed by a required static-gate
+repair. Scoped fix2 review and changed-source delivery gates remain before Task 28
+can run.
 
 ### Task 27: Preserve finite existing HTTP and formation failure evidence
 
@@ -1347,7 +1364,13 @@ is invented; open/nonempty acceptance and terminal observation policy remain.
       losing promise cannot escape as unhandled, while cancellation remains
       immediate with the same reason. Correct M1 to expose fixture update and
       notification at its call sites; preserve M2 pass-with-warnings attribution.
-- [ ] Obtain scoped fix1 re-review and publish the validated feature. Existing 13b gates do not
+- [x] Complete scoped fix1 review and feature publication at 0f; retain its actual
+      Branch Release failure and distinct other workflow successes.
+- [x] Replace both hosted structure-coupling findings with semantic owned-effect
+      assertions; preserve exact immutable checker RED and local semantic GREEN.
+      No production behavior or registry exception changes.
+- [ ] Obtain scoped fix2 re-review, publish and satisfy required changed-source
+      gates. Existing 13b or 0f gates do not
       certify changed source. Exact additional gate selection follows the actual
       design/implementation; no unrelated producer or benchmark is prescribed.
 
