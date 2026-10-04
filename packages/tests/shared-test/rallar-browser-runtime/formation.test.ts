@@ -187,7 +187,7 @@ class FormationHarness {
         }
     }
 
-    setRoom(next: Partial<RallarRtcRoomTransportStatus>): void {
+    updateRoomAndNotify(next: Partial<RallarRtcRoomTransportStatus>): void {
         this.#room = { ...this.#room, ...next };
         for (const listener of [...this.#statusListeners]) {
             listener({
@@ -373,7 +373,7 @@ it('returns the room status captured by the canonical wait when the live view ch
         throw new Error('Expected the fixture to expose its ready room.');
     }
     harness.waitForRoom.mockImplementationOnce(async () => {
-        harness.setRoom({
+        harness.updateRoomAndNotify({
             state: 'idle',
             desiredPeerIds: [],
             readyPeerIds: []
@@ -430,7 +430,7 @@ it('retains the rejected captured room result when the later live view is open',
     const harness = new FormationHarness({ stage: 'active', formationEpoch: 3, state: 'idle', desiredPeerIds: ['b'] });
     const captured = await harness.waitForRoom();
     harness.waitForRoom.mockImplementationOnce(async () => {
-        harness.setRoom({ state: 'open', desiredPeerIds: ['b'], readyPeerIds: ['b'] });
+        harness.updateRoomAndNotify({ state: 'open', desiredPeerIds: ['b'], readyPeerIds: ['b'] });
         return captured;
     });
     await expect(harness.controller.readiness({ roomRef, timeoutMs: 50 })).rejects.toThrow('state open');
@@ -462,10 +462,10 @@ it('forwards changes, layout events and room status as diagnostics', () => {
         roomRef,
         layout: { role: 'accepted', identity: PLANNED, overlay: createAcceptedOverlayFixture(harness.snapshot, 2, []) }
     });
-    harness.setRoom({ readyPeerIds: ['b'] });
+    harness.updateRoomAndNotify({ readyPeerIds: ['b'] });
     unsubscribe();
     harness.emitChange({ stage: 'active' });
-    harness.setRoom({ readyPeerIds: [] });
+    harness.updateRoomAndNotify({ readyPeerIds: [] });
 
     expect(harness.emitted.map((event) => event.topic)).toEqual([
         'rallar.browser.formation.changed',

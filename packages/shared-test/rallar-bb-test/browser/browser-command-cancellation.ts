@@ -109,6 +109,8 @@ export async function withBrowserCommandAbort<T>(
         return await promise;
     }
     if (signal.aborted) {
+        // The operation is already running; handle its rejection without delaying cancellation.
+        void promise.catch(() => undefined);
         throw decodeAbortReason(signal.reason);
     }
 

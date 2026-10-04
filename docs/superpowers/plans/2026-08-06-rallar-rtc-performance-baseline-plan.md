@@ -271,7 +271,7 @@ output and direct-spec finalizer failures remain source/unit scope. The audit
 passes diagnostic usefulness and the contract, not E3 acceptance or native cause.
 Validated-routing/native-application-versus-retirement investigation remains
 ignored, design-only preparation. Task 26 completed read-only diagnosis of the
-actual first failure owners and earned no causal correction, native
+actual first failure owners and earned no causal B06 correction, native
 implementation or public dependency decision.
 
 The controller separately verified BranchRelease 37149660443 and CodeQL/API
@@ -401,22 +401,35 @@ strict projection and shared mixed history budget.
 
 Nine genuine missing-observation assertions failed against unchanged 13b while
 72 controls passed; minimum GREEN passed all 81. Expanded focused validation
-passes 96 tests in three files. These REDs establish an evidence contract, not a
+passed 96 tests in three files at the original implementation. These REDs establish an evidence contract, not a
 reproduced B06 causal defect. Full touched-file closure removes unused internal
 formation error injection, makes summary I/O explicit and gives abort forwarding
-one owned lifecycle. Local validation has 96/3 focused PASS, 14,338 normal-suite
+one owned lifecycle. Original-implementation validation at `7ef3354e3fa57a13ce951ea26b83304d1c7ba6f5`
+has 96/3 focused PASS, 14,338 normal-suite
 PASS with 12 skips, a 1,449-file zero-error maintained typecheck, passing shared-test
 compilation and black-box/headless builds. The affected run had 4,143 PASS plus
 the sole packaging-threshold RED, subsequently GREEN under its unchanged test.
 Node localStorage experimental and Vite large-chunk warnings remain disclosed.
-Local validation, independent task review and validated publication have distinct evidence; independent review/publication and
-changed-source hosted gates remain pending at this implementation handoff.
+Independent review found an already-aborted helper path could abandon a started
+operation's rejection (I1), plus a fixture setter name hiding notification (M1).
+Fix1 reproduced both immediate and later losing rejections: cancellation identity
+and immediate delivery held, but each operation raised one unhandled rejection.
+The canonical helper now observes that losing promise without awaiting it; the
+fixture operation is named `updateRoomAndNotify`. Regression GREEN is 17/1,
+focused validation 98/3 and affected auth/RTC/feature/AL/stream/runtime/boundary
+validation 940/77, with zero maintained type errors across 1,449 files. The
+historical normal suite is not attributed to this amended source. M2's disclosed
+Node/Vite validation noise remains informational. No fix identifies a historical
+B06 cause. Scoped independent re-review, publication and changed-source hosted
+gates remain pending.
 
-The unchanged private headless bundle test measured 310,471 Brotli bytes /
+At the original Task 27 implementation, the unchanged private headless bundle
+test measured 310,471 Brotli bytes /
 303.1943359375 KiB, 436 bytes above accepted 13b's 310,035 bytes. Its existing
 adjustable packaging policy therefore sets the minimum strict whole-KiB threshold
 to 304, from 303; the controller confirmed this bounded adjustment. The unchanged
-boundary test passes with every operator-UI exclusion and measurement preserved.
+boundary test also passes for fix1 at unchanged 304 KiB, with every operator-UI
+exclusion and measurement preserved.
 This changes no frozen workload, timing, sampling, evidence or performance-resource
 budget. Task 28 remains one unchanged exact-source all-three non-publishing B06
 proof after independent review, publication and required changed-source gates.
@@ -1274,14 +1287,14 @@ justified yet.”
 | 24      | Final exact-source diagnostic 37147329195 attempt 1 on 72945dd: 81 originals / 4,262,002 inner bytes verified; all three failures at cycles 1/8/1, 293 events / 238,781 bytes, 38 consumer terminals and 38 AL decisions / 37 claims. Normal-path proof, honest loss/identity/native unknowns and original failures preserved; watcher retired, no accepted baseline.                                                                                               |
 | 25      | Complete unchanged diagnostic proof: run 37165604475 attempt 1 on 13b; 82 originals / 4,725,160 bytes verified; nine ordinary PASS, R1/R3 all-scenarios topology AbortError and retention failures 5/2/5. Five windows / 443 events / 353,717 compact bytes, 23 normal captures omit 69 histories. Contract/usefulness PASS with recorded loss/identity/privacy/branch limits; producer FAILURE, native cause INCONCLUSIVE, zero accepted cohorts; watcher retired. |
 | 26      | Complete accepted read-only first-failure diagnosis at exact 13b; no causal defect/correction or causal RED earned. HTTP phase/abort provenance and actual captured formation wait result were missing at 13b; printed connecting state is a fresh live summary. Task 27 adds bounded existing-owner evidence; native/public-DI design stays deferred.                                                                                                              |
-| 27      | Local finite HTTP failure-phase/first winning owned-abort and captured formation rejection evidence implemented after accepted design and genuine observation RED/GREEN. Focused 96/3 and normal 14,338 PASS / 12 SKIP; maintained 1,449-file zero-error typecheck and consumer builds pass. Recursive closure complete. Independent review, publication and changed-source hosted gates remain pending. This is not a causal B06 correction.                       |
+| 27      | Finite HTTP/formation evidence implemented after observation RED/GREEN. Independent review required I1 cancellation rejection handling and M1 fixture vocabulary closure; fix1 has regression 17/1, focused 98/3 and affected 940/77 PASS, plus maintained 1,449-file zero-error types. Historical normal-suite evidence stays attributed to 7ef. Scoped re-review, publication and changed-source hosted gates remain pending; no causal B06 correction.           |
 | 28      | One unchanged exact-source all-three non-publishing B06 proof only after reviewed, published, validated Task 27 source and fresh source/delivery/no-live entry. Not activated; retain every original outcome and all evidence limits.                                                                                                                                                                                                                               |
 
 ## 11. Next Two Useful Slices
 
 Tasks 23, 25 and 26 are closed at their distinct recorded scopes: current-source
 integration/review/publication/hosted gates, unchanged diagnostic proof, then
-read-only first-failure diagnosis. Task 26 earned no causal correction or causal
+read-only first-failure diagnosis. Task 26 earned no causal B06 correction or causal
 RED. The next two selected outcomes are bounded existing-owner evidence and its
 unchanged exact-source diagnostic proof. The accepted compatible design now has
 a local implementation; independent review and changed-source delivery gates
@@ -1330,7 +1343,11 @@ is invented; open/nonempty acceptance and terminal observation policy remain.
 - [x] Run focused semantic checks and actual affected package/control/app/public
       checks selected by the verified changed surfaces. Local checks are reported
       separately from independent task review and validated feature publication.
-- [ ] Obtain independent task review and publish the validated feature. Existing 13b gates do not
+- [x] Repair review I1 with genuine regression RED/GREEN: an already-started
+      losing promise cannot escape as unhandled, while cancellation remains
+      immediate with the same reason. Correct M1 to expose fixture update and
+      notification at its call sites; preserve M2 pass-with-warnings attribution.
+- [ ] Obtain scoped fix1 re-review and publish the validated feature. Existing 13b gates do not
       certify changed source. Exact additional gate selection follows the actual
       design/implementation; no unrelated producer or benchmark is prescribed.
 

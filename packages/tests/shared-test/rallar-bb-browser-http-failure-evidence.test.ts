@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process';
+
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { controlEventArtifactJsonl } from '../../../apps/rallar-black-box-control-server/src/control-artifacts.ts';
@@ -236,6 +238,47 @@ it('records response-phase failure without replacing the response recorder error
     };
     await expect(new BrowserHttpRequests(createEnvironment(async () => new Response('{}'))).httpRequest(command, context)).rejects.toBe(failure);
     expect(observations).toMatchObject([{ payload: { data: { phase: 'response', scopeAborted: false, scopeAbortOrigin: null } } }]);
+});
+
+it.each(['before', 'after'] as const)('observes a losing operation rejected %s already-aborted cancellation without delaying its reason', (rejectionTiming) => {
+    // Isolate Node's real unhandled-rejection event from the test runner's own rejection listener.
+    const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module'], {
+        encoding: 'utf8',
+        timeout: 5_000,
+        input: `
+            import { setImmediate } from 'node:timers/promises';
+            import { withBrowserCommandAbort } from './packages/shared-test/rallar-bb-test/browser/browser-command-cancellation.ts';
+            const controller = new AbortController();
+            const cancellation = new Error('primary cancellation');
+            controller.abort(cancellation);
+            const operation = Promise.withResolvers();
+            const operationFailure = new Error('losing operation');
+            let unhandledOperationRejections = 0;
+            const recordUnhandled = () => { unhandledOperationRejections += 1; };
+            process.on('unhandledRejection', recordUnhandled);
+            try {
+                if (${rejectionTiming === 'before'}) operation.reject(operationFailure);
+                let primaryFailure;
+                void withBrowserCommandAbort(operation.promise, controller.signal).catch((error) => { primaryFailure = error; });
+                await Promise.resolve();
+                await Promise.resolve();
+                const primaryCancellationPreservedBeforeRelease = primaryFailure === cancellation;
+                if (${rejectionTiming === 'after'}) operation.reject(operationFailure);
+                await setImmediate();
+                console.log(JSON.stringify({ primaryCancellationPreservedBeforeRelease, unhandledOperationRejections }));
+            }
+            finally {
+                process.off('unhandledRejection', recordUnhandled);
+            }
+        `
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual({
+        primaryCancellationPreservedBeforeRelease: true,
+        unhandledOperationRejections: 0
+    });
 });
 
 function createContext(): RallarBlackBoxTestCommandContext {
