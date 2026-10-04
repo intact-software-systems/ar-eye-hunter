@@ -147,6 +147,20 @@ once per runner on the same three logs: each 271-byte row records a generic Erro
 and reconnect/canonical-readiness/formation-request frames. The connect frame is
 unavailable; it does not prove the call was absent. Operation and cycle remain
 unclassified, and no failing predicate, native cause or accepted cohort follows.
+Task 40's independently reviewed source trace binds 39 unchanged owners to runtime
+62f067706 and recovers refresh, remaining budget, command/result, cancellation and
+canonical room-readiness ownership. Short/exhausted-budget harness boundaries
+remain candidates for a discriminating regression; no historical cause or native
+correction is established. Task 41's existing local memory-mode three-browser,
+100-cycle retention diagnostic finished EXIT1 after 634.695s with zero retries
+and fresh owned API/SPA/control services: one PASS, one FAIL, one selector SKIP.
+Its unique errored step is cycle17 reconnect/readiness; the reported Error message
+begins RALLAR_BLACK_BOX_FORMATION_NOT_READY. Two existing captured rejection
+observations have held summaries and desired2/ready1 with roomOpen false; the
+missing readiness reason and first-result-agent association remain unknown.
+The earlier local pipeline
+profile did not exercise B06. Local diagnostic evidence is separate from governed
+baseline acceptance; E3 still has zero accepted cohorts.
 Tasks 0-7 and observation tooling are delivered. The full baseline remains incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
 is gated, and B07 remains held. A package check proves tooling, not capture.
@@ -1568,8 +1582,10 @@ justified yet.”
 | 37      | Complete independently reviewed local event-pipeline measurement at docs-only d971/runtime62: four focused suites / 40 PASS, 60 fresh-fixture samples and four separate sampled CPU passes. Existing control-client retained-history scanning dominates large-history local cost; actual headless DOM included. Timing/noise/GC/fidelity limits preserved; no historical cause, E3 acceptance, optimization or new producer.                                                           |
 | 38      | Complete independently reviewed finite failed-step interpretation of the same three retention logs / 48,250 bytes: three original CLI executions EXIT0, each result unclassified because no unique errored-step suffix is printed. All 88 originals remain unchanged. Source-authentic separator RED27/1→GREEN28/0 fixes reader formatting without an original rerun, phase/cause claim or E3 acceptance.                                                                              |
 | 39      | Complete independently reviewed finite failure-detail interpretation: genuine RED/GREEN and final 32 PASS, separate same-log release with three EXIT0 executions / 813 output bytes. All three record generic Error and reconnect/canonical-readiness/formation-request frames; original operation/cycle and cause stay unknown. All 88 originals remain unchanged; no new producer, correction or accepted cohort.                                                                    |
+| 40      | Complete independently reviewed read-only readiness source trace at inspection3f58/runtime62: all 39 bound owners unchanged; refresh, budget, command/result, cancellation and room-predicate boundaries recovered. Short/exhausted-budget mechanisms remain untested candidates; no historical causal defect, runtime correction or accepted cohort.                                                                                                                                  |
+| 41      | Complete bounded local B06 reproduction at inspection3f58/runtime62: EXIT1/634.695s, one PASS/one FAIL/one selector SKIP, zero retries. Retention uniquely fails cycle17 reconnect/readiness with formation-not-ready message; two captured idle-room rejections have summary available and desired2/ready1. Native cause/first-error association unknown. Fresh memory services teardown verified; local environment differs from CI, zero accepted E3 cohorts.                       |
 
-## 11. Next Two Useful Actions After Task 39
+## 11. Next Two Useful Actions After Task 41
 
 Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
@@ -1577,7 +1593,10 @@ correctness. Task 36 preserves a failed diagnostic and finite observations; it
 accepts no performance cohort or causal diagnosis. Task 37 measures a local
 observation cost; Task 38 preserves unavailable failed-step metadata rather than
 inferring an operation. Task 39 locates recorded result-error frames at canonical
-readiness; it does not recover the unique original step or cause. Section 9's
+readiness; it does not recover the unique original step or cause. Task 40 traces
+the existing readiness owners and tests without earning a historical causal
+defect. Task 41 reproduces a local cycle17 readiness failure and retains two
+captured shortages without identifying their native cause. Section 9's
 correctness/tier stop still prevents optimization.
 Task 33's owned-code correction
 remains accepted at c3b3; the human's required-clock approval persists.
@@ -1793,18 +1812,81 @@ execution. Task 38's earlier outputs/releases/receipts remain preserved; Task 39
 is a distinct reviewed interpretation rather than an unchanged reader rerun. No
 additional history, sidecar association, job log, producer, optimization or Issue.
 
-**Next action 1:** Audit the canonical readiness operation, actual browser
-formation waiter and their existing tests. Trace refresh, finite budget, command,
-cancellation and room-predicate ownership before selecting a mechanism. The
-recorded frames justify this source target, without certifying the original
-operation or historical native cause.
+### Task 40: Readiness source trace and local reproduction selection
 
-**Next action 2:** Prove one discriminating existing-owner regression for a
-concrete correctness mechanism earned by that audit or retained evidence. Use
-TDD and recursive closure before the correction, then proportional affected
-validation and independent review. No speculative timeout/retry or workload
-relaxation; local scan cost alone releases no optimization, and another unchanged
-E3 diagnostic or governed primary remains unselected.
+**Current outcome:** The read-only source audit and independent root review bind
+39 source/test/config owners to runtime62 at inspection HEAD3f58. The harness
+refreshes the exact room once, subtracts elapsed monotonic refresh time, issues a
+fresh readiness command and polls its result. The browser observes accepted
+layout/presence coverage and desired-peer readiness with subscription and terminal
+cleanup safeguards; existing tests cover late peers, authority changes and
+timeout/abort during cleanup. No missing-wakeup or native defect was earned.
+
+Exhausted refresh can leave timeout0, which the formation decoder refuses; a
+positive remaining budget below1000ms can lose to the adapter before the minimum
+1000ms browser wait. Adapter cancellation races the running formation promise
+without forwarding its signal to that browser waiter. These are source-reachable
+boundaries, not an executed regression or an explanation of the retained failures.
+
+Task 41 uses the existing memory three-browser script locally, with retention100,
+all-scenarios unset and zero retries. Existing CI=1 startup disables service reuse;
+the previously free API18080/SPA5177/control5180 ports are owned by this invocation.
+Clean allowlisted OS inputs clear inherited database, ICE, cluster, credentials,
+API profile and governed-attempt selectors. Unique ignored recorder/diagnostic
+directories preserve this invocation's evidence. Installed Node26.10.0/Deno2.9.5/
+Playwright1.61.1 and macOS arm64 differ from GitHub's Node24/Linux environment.
+The existing JSON reporter supplements list steps; its recording cost remains a
+diagnostic limit. This is one invocation with three browsers, rather than three
+independent runners. No earlier full local B06 execution was recovered; the local
+pipeline profile and test-list discovery were narrower checks.
+
+### Task 41: Local B06 retention reproduction
+
+**Current outcome:** One unchanged-source local diagnostic at inspection3f58/
+runtime62 finished EXIT1 in634.695s. The default live matrix passed in85.671s;
+all-scenarios was selector-skipped; retention failed in544.089s. Every result has
+retry0, with no flaky or top-level reporter error. The existing JSON reporter
+records one result error and one errored step: `retention-100 cycle 17: reconnect
+peer C and wait for readiness`. Its generic Error contains a message beginning
+RALLAR_BLACK_BOX_FORMATION_NOT_READY, rather than a reported generic adapter
+timeout. This identifies the local failed operation; the old hosted failures
+retain their separate unknown operation/cause. The intended100 cycles did not
+complete, and no primary/repeat or successful E3 cohort is accepted.
+
+The bounded309,123-byte later-health attachment already contains the producer's
+canonical lifecycle projection. Root inspected only those existing finite values,
+without re-reading the oversized recorder or adding a parser. Two projected
+formation-readiness-rejected observations, at agent ordinals1 and3, record
+roomTransportState idle, summaryAvailable true, roomOpen false, desiredPeerCount2,
+readyPeerCount1 and hasDesiredPeers true. Their waitTerminalCause and association
+with the first result error remain unknown. Separate later health records
+settled2/2/2, ready1/2/1 and all connection timers false; it does not establish
+the earlier rejection's native cause or terminal trigger. Checkpoints0/10, the
+run summary, raw list/JSON result and failure evidence remain in unique ignored
+local outputs. Raw result integrity and all39 unchanged source bindings were
+verified after execution; owned API/SPA/control listeners were gone after normal
+Playwright teardown. No retry, workload relaxation, source mutation or new remote
+producer occurred.
+
+Local Node26.10.0/Deno2.9.5/Chromium149.0.7827.55/Playwright1.61.1/macOS arm64
+and the additional JSON reporter remain explicit fidelity limits. One invocation
+does not replace three independent CI runners or governed B06 capture. The short/
+exhausted-budget source candidates remain independent and unassigned to this
+formation-not-ready failure; no correction or optimization is accepted from them.
+
+**Next action 1:** Trace the minimum already-projected local signaling/native
+observations and canonical room-readiness path for the missing desired lane.
+Establish a source-bound current-operation/peer association only when existing
+finite evidence supports it. Preserve local provenance and unknown terminal/native
+cause; do not read the whole oversized recorder, bypass finite input bounds or
+invent GitHub provenance to reuse a hosted-only release.
+
+**Next action 2:** Prove one discriminating existing-owner regression for an actual
+correctness mechanism earned by that trace or a verified contract. Use semantic
+TDD, recursive touched/support closure, proportional validation and independent
+review before accepting the minimum correction. Otherwise preserve explicit
+unknowns. No speculative timeout/retry, native DI, policy or workload relaxation
+or optimization follows; no remote producer is selected.
 
 Full B01–B06 accepted primaries and all required repeats, relevant E1
 recovery/reconciliation after representative E3 succeeds, homogeneous noise
