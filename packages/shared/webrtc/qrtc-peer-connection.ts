@@ -10,6 +10,7 @@ import {
     QRtcSignalingSender,
     QRtcSignalingType
 } from './qrtc-signaling-contracts.ts';
+import { recordRtcSignalingObservation, type RtcSignalingDiagnostics } from './rtc-signaling-diagnostics.ts';
 
 const QRtcSessionState = {
     Idle: 'Idle',
@@ -54,6 +55,7 @@ type QRtcPeerConnectionDiagnosticCounters = {
 export namespace QRtcPeerConnection {
     export interface Dependencies {
         createOfferId(): string;
+        readonly signalingDiagnostics?: RtcSignalingDiagnostics;
     }
 
     export interface StateCallbacks {
@@ -144,7 +146,7 @@ export class QRtcPeerConnection {
     private readonly MAX_RECONNECT_ATTEMPTS: number = 5;
     private readonly DISCONNECT_TIMEOUT_MSECS: number = 5000;
 
-    private signalingChain = Promise.resolve();
+    private signalingChain: Promise<void | RtcSignalingDiagnostics.CallerRelease> = Promise.resolve();
     private signalingLifetime = new AbortController();
     private outboundSignalingChain = Promise.resolve();
     private outstandingOfferId: string | undefined;
@@ -272,10 +274,6 @@ export class QRtcPeerConnection {
         }
     }
 
-    // ----------------------------------------
-    // Callback registry
-    // ----------------------------------------
-
     onDataChannelDo(id: string, onDataChannel: QRtcOnDataChannelCallback): QRtcPeerConnection {
         this.onDataChannelCallbacks.set(id, onDataChannel);
         return this;
@@ -302,10 +300,6 @@ export class QRtcPeerConnection {
     removeOnRemoteStreamCallbackById(id: string): boolean {
         return this.onRemoteStreamCallbacks.delete(id);
     }
-
-    // ----------------------------------------
-    // Connect logic
-    // ----------------------------------------
 
     connect(callbacks: QRtcPeerConnection.StateCallbacks = {}): void {
         this.diagnostics.connectCallCount++;
@@ -512,23 +506,29 @@ export class QRtcPeerConnection {
             : pc.createDataChannel(label, dataChannelDict);
     }
 
-    async handleSignal(signal: QRtcSignal) {
+    async handleSignal(signal: QRtcSignal): Promise<void> {
         const pc = this.status.pc;
         const application = this.signalingChain
-            .then(
-                async () => {
-                    if (pc && this.status.pc === pc) {
-                        await this.processSignal(pc, signal);
-                    }
+            .then(async () => {
+                if (!pc || this.status.pc !== pc) {
+                    this.observeNativeSignal(pc ? 'retired-before-application' : 'no-native-peer', pc, signal);
+                    return;
                 }
-            );
-        // Native description promises can remain pending after close. Reset releases this
-        // lifetime's callers; native-PC identity guards discard any eventual continuation.
+                this.observeNativeSignal('application-started', pc, signal);
+                try {
+                    await this.processSignal(pc, signal);
+                    this.observeNativeSignal('application-returned', pc, signal);
+                }
+                catch (caught) {
+                    this.observeNativeSignal('application-threw', pc, signal);
+                    throw caught;
+                }
+            });
         const lifetime = this.signalingLifetime.signal;
-        const run = new Promise<void>((resolve, reject) => {
-            const retire = () => resolve();
+        const run = new Promise<RtcSignalingDiagnostics.CallerRelease>((resolve, reject) => {
+            const retire = () => resolve('lifetime-retired');
             lifetime.addEventListener('abort', retire, { once: true });
-            void application.then(resolve, reject).then(() => {
+            void application.then(() => resolve('application-returned'), reject).then(() => {
                 lifetime.removeEventListener('abort', retire);
             });
         });
@@ -536,7 +536,50 @@ export class QRtcPeerConnection {
             this.diagnostics.inboundSignalingErrorCount++;
             console.error('Signaling chain error', toError(caught));
         });
-        await run;
+        try {
+            const release = await run;
+            this.observeCallerRelease(release, pc, signal);
+        }
+        catch (caught) {
+            this.observeCallerRelease('application-threw', pc, signal);
+            throw caught;
+        }
+    }
+
+    private observeNativeSignal(
+        disposition: RtcSignalingDiagnostics.NativeDisposition,
+        pc: RTCPeerConnection | undefined,
+        signal: QRtcSignal
+    ): void {
+        recordRtcSignalingObservation(this.dependencies.signalingDiagnostics, {
+            kind: 'native-signal-decision',
+            disposition,
+            localSessionId: this.input.sessionId,
+            peerSessionId: this.input.peerSessionId,
+            signalType: signal.signalType,
+            offerId: signal.signalType === 'IceCandidate' ? undefined : signal.offerId,
+            capturedPeerConnection: pc !== undefined,
+            currentPeerConnection: pc === undefined ? undefined : this.status.pc === pc,
+            offerMatches: undefined,
+            signalingState: undefined
+        });
+    }
+
+    private observeCallerRelease(
+        disposition: RtcSignalingDiagnostics.CallerRelease,
+        pc: RTCPeerConnection | undefined,
+        signal: QRtcSignal
+    ): void {
+        recordRtcSignalingObservation(this.dependencies.signalingDiagnostics, {
+            kind: 'signal-caller-release',
+            disposition,
+            localSessionId: this.input.sessionId,
+            peerSessionId: this.input.peerSessionId,
+            signalType: signal.signalType,
+            offerId: signal.signalType === 'IceCandidate' ? undefined : signal.offerId,
+            capturedPeerConnection: pc !== undefined,
+            currentPeerConnection: pc === undefined ? undefined : this.status.pc === pc
+        });
     }
 
     private async processSignal(pc: RTCPeerConnection, signal: QRtcSignal): Promise<void> {
@@ -547,7 +590,7 @@ export class QRtcPeerConnection {
             await this.handleOffer(pc, signal);
         }
         else {
-            await this.handleInboundIceCandidate(pc, signal.payload.candidate);
+            await this.handleInboundIceCandidate(pc, signal);
         }
     }
 
@@ -556,20 +599,35 @@ export class QRtcPeerConnection {
         signal: Extract<QRtcSignal, { signalType: 'Answer'; }>
     ): Promise<void> {
         this.diagnostics.inboundAnswerCount++;
-        if (
-            this.status.pc !== pc || signal.offerId !== this.outstandingOfferId ||
-            pc.signalingState !== 'have-local-offer'
-        ) {
+        const currentPeerConnection = this.status.pc === pc;
+        const offerMatches = signal.offerId === this.outstandingOfferId;
+        const signalingState = pc.signalingState;
+        if (!currentPeerConnection || !offerMatches || signalingState !== 'have-local-offer') {
             this.diagnostics.staleAnswerIgnoredCount++;
+            recordRtcSignalingObservation(this.dependencies.signalingDiagnostics, {
+                kind: 'native-signal-decision',
+                disposition: 'answer-ineligible',
+                localSessionId: this.input.sessionId,
+                peerSessionId: this.input.peerSessionId,
+                signalType: signal.signalType,
+                offerId: signal.offerId,
+                capturedPeerConnection: true,
+                currentPeerConnection,
+                offerMatches,
+                signalingState
+            });
             return;
         }
         await pc.setRemoteDescription(signal.payload.description);
+        this.observeNativeSignal('remote-description-returned', pc, signal);
         if (this.status.pc !== pc) {
+            this.observeNativeSignal('retired-after-remote-description', pc, signal);
             return;
         }
         this.outstandingOfferId = undefined;
         await this.flushIceCandidates(pc);
         if (this.status.pc !== pc) {
+            this.observeNativeSignal('retired-after-ice-flush', pc, signal);
             return;
         }
         this.status.makingOffer = false;
@@ -588,6 +646,7 @@ export class QRtcPeerConnection {
         this.status.ignoreOffer = !this.input.isPolite && collision;
         if (this.status.ignoreOffer) {
             this.diagnostics.ignoredOfferCollisionCount++;
+            this.observeNativeSignal('impolite-offer-ignored', pc, signal);
             return;
         }
         if (collision) {
@@ -597,19 +656,25 @@ export class QRtcPeerConnection {
                 pc.setLocalDescription({ type: 'rollback' }),
                 pc.setRemoteDescription(signal.payload.description)
             ]);
+            this.observeNativeSignal('rollback-and-remote-description-returned', pc, signal);
         }
         else {
             await pc.setRemoteDescription(signal.payload.description);
+            this.observeNativeSignal('remote-description-returned', pc, signal);
         }
         if (this.status.pc !== pc) {
+            this.observeNativeSignal('retired-after-remote-description', pc, signal);
             return;
         }
         await this.flushIceCandidates(pc);
         if (this.status.pc !== pc) {
+            this.observeNativeSignal('retired-after-ice-flush', pc, signal);
             return;
         }
         await pc.setLocalDescription();
+        this.observeNativeSignal('local-answer-description-returned', pc, signal);
         if (this.status.pc !== pc) {
+            this.observeNativeSignal('retired-after-local-description', pc, signal);
             return;
         }
         this.status.makingOffer = false;
@@ -658,22 +723,28 @@ export class QRtcPeerConnection {
         }
     }
 
-    private async handleInboundIceCandidate(pc: RTCPeerConnection, candidate: RTCIceCandidateInit): Promise<void> {
+    private async handleInboundIceCandidate(
+        pc: RTCPeerConnection,
+        signal: Extract<QRtcSignal, { signalType: 'IceCandidate'; }>
+    ): Promise<void> {
         this.diagnostics.inboundIceCandidateCount++;
         if (this.status.ignoreOffer) {
             this.diagnostics.ignoredIceCandidateForIgnoredOfferCount++;
+            this.observeNativeSignal('ice-ignored', pc, signal);
             return;
         }
         try {
             if (pc.remoteDescription?.type) {
-                await pc.addIceCandidate(candidate);
+                await pc.addIceCandidate(signal.payload.candidate);
+                this.observeNativeSignal('ice-added', pc, signal);
                 if (this.status.pc === pc) {
                     this.diagnostics.addedIceCandidateCount++;
                 }
             }
             else {
-                this.status.iceCandidateQueue.push(candidate);
+                this.status.iceCandidateQueue.push(signal.payload.candidate);
                 this.diagnostics.queuedIceCandidateCount++;
+                this.observeNativeSignal('ice-queued', pc, signal);
             }
         }
         catch (caught) {
@@ -823,7 +894,6 @@ export class QRtcPeerConnection {
             throw new Error('PeerConnection not initialized');
         }
 
-        // Replace local stream reference
         this.status.localStream = stream;
 
         // Add or replace tracks per kind (audio/video). ReplaceTrack supports device switching.
@@ -854,8 +924,8 @@ export class QRtcPeerConnection {
             return;
         }
 
-        for (const t of stream.getAudioTracks()) {
-            t.enabled = enabled;
+        for (const track of stream.getAudioTracks()) {
+            track.enabled = enabled;
         }
     }
 
@@ -865,8 +935,8 @@ export class QRtcPeerConnection {
             return;
         }
 
-        for (const t of stream.getVideoTracks()) {
-            t.enabled = enabled;
+        for (const track of stream.getVideoTracks()) {
+            track.enabled = enabled;
         }
     }
 
@@ -882,9 +952,9 @@ export class QRtcPeerConnection {
             ? stream.getAudioTracks()
             : stream.getVideoTracks();
 
-        for (const t of tracks) {
+        for (const track of tracks) {
             try {
-                t.stop();
+                track.stop();
             }
             catch {
                 // ignore

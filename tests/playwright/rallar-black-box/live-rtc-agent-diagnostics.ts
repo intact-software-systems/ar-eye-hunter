@@ -4,7 +4,11 @@ import type { RallarRoomTransportState } from '../../../packages/shared-web/brow
 import { AppTopics } from '../../../packages/shared/api/api-config.ts';
 import { isGroupLayoutIdentity } from '../../../packages/shared/api/group-lifecycle/group-layout-identity.ts';
 import { GROUP_LIFECYCLE_STATES } from '../../../packages/shared/api/group-lifecycle/group-lifecycle-policy.ts';
-
+import {
+    RTC_NATIVE_SIGNAL_DISPOSITIONS,
+    RTC_SERVICE_SIGNAL_DISPOSITIONS,
+    RTC_SIGNAL_CALLER_RELEASES
+} from '../../../packages/shared/webrtc/rtc-signaling-diagnostics.ts';
 import {
     exactStringArray,
     isFiniteNonnegativeNumber,
@@ -669,6 +673,10 @@ function toLiveRtcDiagnosticEvent(
         controlAtEpochMs: scoped.controlAtEpochMs,
         runtimeAtEpochMs: scoped.runtimeAtEpochMs
     };
+    if (topic === 'rallar.browser.rtc.signaling_diagnostics') {
+        const signaling = toRtcSignalingObservation(event);
+        return signaling ? { ...identity, ...signaling } : null;
+    }
     if (topic === 'rallar.bb.http.failure' && event.kind === 'http-request-failed') {
         return { ...identity, ...toHttpRequestFailureObservation(event) };
     }
@@ -699,6 +707,56 @@ function toLiveRtcDiagnosticEvent(
         peerObservation: toLifecyclePeerObservation(event.peer, peerId),
         laneObservation: laneId === null ? null : toLifecycleLaneObservation(event.lane, peerId, laneId)
     };
+}
+
+function toRtcSignalingObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord | null {
+    const signalType = toAllowedLifecycleState(event.signalType, ['Offer', 'Answer', 'IceCandidate']);
+    const common = {
+        producerAtEpochMs: toFiniteNonnegativeObservation(event.atEpochMs),
+        localSessionId: toBoundedIdentity(event.localSessionId),
+        peerSessionId: toBoundedIdentity(event.peerSessionId),
+        signalType,
+        offerId: signalType === 'Offer' || signalType === 'Answer' ? toBoundedIdentity(event.offerId) : null,
+        observation: 'owned-signal-decision-not-application-receipt'
+    };
+    if (event.kind === 'service-signal-route') {
+        const disposition = toAllowedLifecycleState(event.disposition, RTC_SERVICE_SIGNAL_DISPOSITIONS);
+        return disposition === null ? null : {
+            ...common,
+            disposition,
+            result: toAllowedLifecycleState(event.result, [
+                'self',
+                'dial-denied',
+                'connect-failed',
+                'connect-exhausted',
+                'signal-handle-failed',
+                'setup-started',
+                'setup-in-flight',
+                'setup-established'
+            ])
+        };
+    }
+    if (event.kind === 'native-signal-decision') {
+        const disposition = toAllowedLifecycleState(event.disposition, RTC_NATIVE_SIGNAL_DISPOSITIONS);
+        return disposition === null ? null : {
+            ...common,
+            disposition,
+            capturedPeerConnection: toLifecycleBoolean(event.capturedPeerConnection),
+            currentPeerConnection: toLifecycleBoolean(event.currentPeerConnection),
+            offerMatches: toLifecycleBoolean(event.offerMatches),
+            signalingState: toAllowedLifecycleState(event.signalingState, RTC_SIGNALING_STATES)
+        };
+    }
+    if (event.kind === 'signal-caller-release') {
+        const disposition = toAllowedLifecycleState(event.disposition, RTC_SIGNAL_CALLER_RELEASES);
+        return disposition === null ? null : {
+            ...common,
+            disposition,
+            capturedPeerConnection: toLifecycleBoolean(event.capturedPeerConnection),
+            currentPeerConnection: toLifecycleBoolean(event.currentPeerConnection)
+        };
+    }
+    return null;
 }
 
 function toHttpRequestFailureObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord {

@@ -54,6 +54,7 @@ import {
 } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import type { TransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 
 export interface InitialiseRtcOverlayMulticastManagerInput {
@@ -141,6 +142,7 @@ export interface InitialiseRtcConnectionServiceInput {
     readonly dataChannelName: string;
     readonly rtcSignalingTopicId: string;
     readonly faultPort: TransportFaultPort;
+    readonly signalingDiagnostics?: RtcSignalingDiagnostics['record'];
     readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
     readonly maxPeerConnections?: number;
 }
@@ -153,10 +155,15 @@ export async function initialiseRtcConnectionService(
         input.rtcSignalingTopicId,
         () => input.qboxEngine.wake()
     );
+    const nowEpochMs = () => Date.now();
+    const signalingDiagnostics = input.signalingDiagnostics
+        ? { nowEpochMs, record: input.signalingDiagnostics }
+        : undefined;
     const dependencies = {
         faultPort: input.faultPort,
         createOfferId: () => crypto.randomUUID(),
-        nowEpochMs: () => Date.now()
+        nowEpochMs,
+        signalingDiagnostics
     };
     const connectionService = new WebRtcConnectionService(
         signaler,

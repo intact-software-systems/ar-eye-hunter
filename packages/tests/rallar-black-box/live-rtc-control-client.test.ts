@@ -119,6 +119,42 @@ describe('live RTC control client', () => {
         expect(captureEffects).toEqual(['health:agent-a', 'health:agent-b', 'health:agent-c', 'history', 'output']);
     });
 
+    it('captures owned native decisions once after health without claiming application receipts', async () => {
+        recorderJsonl =
+            '{"name":"native","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"atEpochMs":119,"data":{"kind":"native-signal-decision","disposition":"answer-ineligible","atEpochMs":118,"localSessionId":"a","peerSessionId":"b","signalType":"Answer","offerId":"offer","capturedPeerConnection":true,"currentPeerConnection":true,"offerMatches":false,"signalingState":"have-local-offer","error":"private-native-sentinel","payload":"private-native-sentinel"}}}}';
+        const captured = await control.captureDiagnostics({
+            testInfo: {
+                attach: async () => {
+                    captureEffects.push('output');
+                }
+            },
+            runId: 'failure-run',
+            agents: [{ prefix: 'A', agentId: 'agent-a' }, { prefix: 'B', agentId: 'agent-b' }, { prefix: 'C', agentId: 'agent-c' }],
+            label: 'attempt-failure-later-health',
+            cycle: 1,
+            failureInterval: { caseId: 'retention-100', startedAtEpochMs: 100, failedAtEpochMs: 150, precision: 'current-cycle-before-close' }
+        });
+        expect(recorderReads).toBe(1);
+        expect(captureEffects).toEqual(['health:agent-a', 'health:agent-b', 'health:agent-c', 'history', 'output']);
+        expect(captured.checkpoint.agents[0].details).toMatchObject({
+            lifecycleHistory: {
+                nativeApplication: 'unknown',
+                nativeGenerationAndDeletionIssuer: 'unknown',
+                events: [{
+                    kind: 'native-signal-decision',
+                    disposition: 'answer-ineligible',
+                    producerAtEpochMs: 118,
+                    runtimeAtEpochMs: 119,
+                    controlAtEpochMs: 120,
+                    currentPeerConnection: true,
+                    offerMatches: false,
+                    signalingState: 'have-local-offer'
+                }]
+            }
+        });
+        expect(JSON.stringify(captured)).not.toContain('private-native-sentinel');
+    });
+
     it('captures literal selected-consumer and pre-dispatch facts once without inventing a claim receipt', async () => {
         recorderJsonl = [
             '{"name":"bypass","agentId":"agent-a","atEpochMs":110,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"atEpochMs":109,"data":{"kind":"dispatch-decision","workerId":"worker","effectId":"effect","msgId":"signal","typeId":"rtc-signaling","carrier":"ws","lane":"durable","attempts":1,"atEpochMs":10,"disposition":"local-disabled","reason":"private-consumer-sentinel"}}}}',

@@ -922,3 +922,62 @@ describe('existing-owner command failure evidence', () => {
         }
     });
 });
+
+describe('owned native signaling projection', () => {
+    it('keeps three distinct clocks and finite eligibility/release facts without raw data or an AL join', () => {
+        const history = toNotificationHistory([
+            '{"name":"route","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"atEpochMs":119,"data":{"kind":"service-signal-route","disposition":"reuse-selected","atEpochMs":118,"localSessionId":"a","peerSessionId":"b","signalType":"Answer","offerId":"offer","msgId":"private-sentinel","reason":"private-sentinel"}}}}',
+            '{"name":"native","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"atEpochMs":119,"data":{"kind":"native-signal-decision","disposition":"answer-ineligible","atEpochMs":0,"localSessionId":"a","peerSessionId":"b","signalType":"Answer","offerId":"offer","capturedPeerConnection":true,"currentPeerConnection":true,"offerMatches":false,"signalingState":"have-local-offer","outstandingOfferId":"private-sentinel","payload":"private-sentinel"}}}}',
+            '{"name":"release","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"atEpochMs":119,"data":{"kind":"signal-caller-release","disposition":"lifetime-retired","atEpochMs":118,"localSessionId":"a","peerSessionId":"b","signalType":"IceCandidate","capturedPeerConnection":true,"currentPeerConnection":false,"error":"private-sentinel","generation":"private-sentinel"}}}}'
+        ].join('\n'));
+        expect(history).toMatchObject({
+            nativeApplication: 'unknown',
+            nativeGenerationAndDeletionIssuer: 'unknown',
+            consumerClaimAssociation: 'unknown-message-level-observation-only',
+            events: [
+                { kind: 'service-signal-route', disposition: 'reuse-selected', producerAtEpochMs: 118, runtimeAtEpochMs: 119, controlAtEpochMs: 120 },
+                { kind: 'native-signal-decision', currentPeerConnection: true, offerMatches: false, signalingState: 'have-local-offer', producerAtEpochMs: 0 },
+                { kind: 'signal-caller-release', disposition: 'lifetime-retired', currentPeerConnection: false, offerId: null }
+            ]
+        });
+        expect(JSON.stringify(history)).not.toContain('private-sentinel');
+    });
+
+    it('keeps absent invalid and nonfinite native facts unavailable instead of inventing success', () => {
+        const history = toNotificationHistory([
+            '{"name":"invalid","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"answer-ineligible","atEpochMs":1e999,"currentPeerConnection":"false","offerMatches":0,"signalingState":"private-sentinel","signalType":"private-sentinel","offerId":"private-offer-sentinel"}}}}',
+            '{"name":"absent-type","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"application-returned","offerId":"private-offer-sentinel"}}}}',
+            '{"name":"unknown","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"private-sentinel"}}}}'
+        ].join('\n'));
+        expect(history).toMatchObject({
+            events: [{
+                disposition: 'answer-ineligible',
+                offerId: null,
+                producerAtEpochMs: null,
+                capturedPeerConnection: null,
+                currentPeerConnection: null,
+                offerMatches: null,
+                signalingState: null,
+                signalType: null,
+                localSessionId: null,
+                peerSessionId: null
+            }, { offerId: null, signalType: null }]
+        });
+        expect(JSON.stringify(history)).not.toContain('private-sentinel');
+    });
+
+    it('shares old and new mixed retention rather than adding a second native history', () => {
+        const nativeRow =
+            '{"name":"release","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"signal-caller-release","disposition":"application-returned","atEpochMs":118,"capturedPeerConnection":true,"currentPeerConnection":true}}}}';
+        const oldRow =
+            '{"name":"created","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.lifecycle","payload":{"data":{"kind":"peer-created","peerId":"b"}}}}';
+        const history = requiredJsonRecord(toNotificationHistory([oldRow, ...Array.from({ length: 600 }, () => nativeRow)].join('\n')), 'history');
+        const events = requiredJsonArray(history.events, 'events');
+        expect(events).toHaveLength(600);
+        expect(events.every((event) => requiredJsonRecord(event, 'event').kind === 'signal-caller-release')).toBe(true);
+        expect(history).toMatchObject({ coverage: 'incomplete', observed: { outputDroppedRows: 1, retainedRows: 600 } });
+        expect(requiredJsonRecord(history.observed, 'observed').outputBytes).toBe(
+            events.reduce<number>((n, event) => n + Buffer.byteLength(JSON.stringify(event)), 0)
+        );
+    });
+});

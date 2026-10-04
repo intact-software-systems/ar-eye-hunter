@@ -1,5 +1,3 @@
-import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
-import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import {
     afterEach,
     beforeEach,
@@ -10,15 +8,13 @@ import {
     vi
 } from 'vitest';
 
-import '../../setup-browser-indexeddb.ts';
-
-import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
-
+import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
 import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import {
     initialiseRtcConnectionService,
     initialiseRtcOverlayMulticastManager
@@ -29,6 +25,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import {
     AL_VOLATILE_SESSION_MAX_ADMISSIONS,
     AL_VOLATILE_SESSION_MAX_BYTES,
@@ -48,9 +45,12 @@ import {
 } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort, createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { QRtcSignalingMessage } from '@shared/webrtc/qrtc-signaling-contracts.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
+import '../../setup-browser-indexeddb.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import {
     createNativeRtcConnectionFixture,
     installNativeRtcRuntime
@@ -69,6 +69,11 @@ describe('browser RTC runtime composition', () => {
 
     it('retains an incoming offer while signaling starts and admits it after the selected layout is ready', async () => {
         const nativeRuntime = installNativeRtcRuntime();
+        const signalingEvents: RtcSignalingDiagnostics.Event[] = [];
+        const consumerEvents: ALInboundRuntimeDiagnosticsEvent[] = [];
+        const configuredDiagnostics = toRallarDiagnosticsPorts({
+            signalingDiagnostics: (event) => signalingEvents.push(event)
+        });
         const networkConnectStarted = Promise.withResolvers<void>();
         const networkConnect = Promise.withResolvers<void>();
         const socket = new JsonWebSocketClient('ws://rtc-fixture.invalid', createPassThroughTransportFaultPort());
@@ -80,7 +85,8 @@ describe('browser RTC runtime composition', () => {
             outbox: new InMemoryQueueBox(),
             socket,
             sessionId: 'self',
-            serverPeerId: 'server'
+            serverPeerId: 'server',
+            inboundDiagnostics: (event) => consumerEvents.push(event)
         });
         const initializing = initialiseRtcConnectionService({
             webSocketQueueBox: queueBox,
@@ -89,7 +95,8 @@ describe('browser RTC runtime composition', () => {
             iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
             dataChannelName: 'test',
             rtcSignalingTopicId: 'rtc',
-            faultPort: diagnosticsPorts.transportFaultPort
+            faultPort: diagnosticsPorts.transportFaultPort,
+            signalingDiagnostics: configuredDiagnostics.signalingDiagnostics
         });
 
         try {
@@ -101,6 +108,19 @@ describe('browser RTC runtime composition', () => {
             expect(service.knownPeerIds()).toEqual([]);
             expect(nativeRuntime.createdConnections).toHaveLength(0);
             expect(service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
+            await vi.waitFor(() =>
+                expect(consumerEvents).toContainEqual(expect.objectContaining({
+                    kind: 'consumer-invocation',
+                    outcome: 'retry'
+                }))
+            );
+            expect(signalingEvents).toContainEqual(expect.objectContaining({
+                kind: 'service-signal-route',
+                disposition: 'policy-retry',
+                localSessionId: 'self',
+                peerSessionId: 'startup-peer',
+                atEpochMs: expect.any(Number)
+            }));
             expect(service.ensurePeerConnectionStarted('direct-startup-peer').left).toMatchObject({
                 kind: 'dial-denied',
                 reason: 'browser-runtime-initializing'

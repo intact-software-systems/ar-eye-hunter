@@ -21,6 +21,7 @@ import {
     QRtcSignalingTransportCallbacks,
     QRtcSignalingType
 } from '../webrtc/qrtc-signaling-contracts.ts';
+import { recordRtcSignalingObservation, type RtcSignalingDiagnostics } from '../webrtc/rtc-signaling-diagnostics.ts';
 import { toPeerLaneOpenResultFromError, waitForRtcPeerLane } from '../webrtc/wait-for-rtc-peer-lane.ts';
 import { RtcPeerConnectionAttemptBudget } from './rtc-peer-connection-attempt-budget.ts';
 
@@ -514,10 +515,12 @@ export class WebRtcConnectionService {
             },
             onMessage: async (sessionId, _token, message) => {
                 if (this.input.sessionId !== sessionId) {
+                    this.observeSignalRoute('wrong-session', undefined, undefined);
                     throw new Error('Message received for wrong session id');
                 }
                 const signal = decodeRtcSignalingEnvelope(message);
                 if (signal.left) {
+                    this.observeSignalRoute('decode-rejected', undefined, undefined);
                     throw new TypeError(signal.left.message);
                 }
                 if (signal.right) {
@@ -529,12 +532,25 @@ export class WebRtcConnectionService {
 
     private async receiveSignal(message: QRtcSignalingMessage): Promise<void | 'retry'> {
         const peerId = message.fromId;
-        if (message.toId !== this.input.sessionId || peerId === this.input.sessionId) {
+        if (message.toId !== this.input.sessionId) {
+            this.observeSignalRoute('wrong-target', message, undefined);
+            return;
+        }
+        if (peerId === this.input.sessionId) {
+            this.observeSignalRoute('self', message, undefined);
             return;
         }
         const entry = this.reuseOrRemovePeer(peerId);
         if (entry) {
-            await entry.peer.connection.handleSignal(message);
+            this.observeSignalRoute('reuse-selected', message, undefined);
+            try {
+                await entry.peer.connection.handleSignal(message);
+                this.observeSignalRoute('reuse-returned', message, undefined);
+            }
+            catch (caught) {
+                this.observeSignalRoute('reuse-threw', message, undefined);
+                throw caught;
+            }
             return;
         }
         const admission = this.shouldCreatePeerFromInboundSignal(peerId, message);
@@ -542,9 +558,29 @@ export class WebRtcConnectionService {
             return admission.retryInboundSignal ? 'retry' : undefined;
         }
         const accepted = await this.acceptPeerIfAbsent(peerId, message);
+        this.observeSignalRoute('accepted-peer-result', message, accepted.left?.kind ?? accepted.right?.outcome);
         if (accepted.left) {
             this.logPeerConnectionLeft(peerId, accepted.left);
         }
+    }
+
+    private observeSignalRoute(
+        disposition: RtcSignalingDiagnostics.ServiceDisposition,
+        message: QRtcSignalingMessage | undefined,
+        result:
+            | WebRtcConnectionService.PeerConnectionLeft['kind']
+            | WebRtcConnectionService.PeerConnectionEnsureOutcome
+            | undefined
+    ): void {
+        recordRtcSignalingObservation(this.dependencies.signalingDiagnostics, {
+            kind: 'service-signal-route',
+            disposition,
+            localSessionId: this.input.sessionId,
+            peerSessionId: message?.fromId,
+            signalType: message?.signalType,
+            offerId: message?.signalType === 'IceCandidate' ? undefined : message?.offerId,
+            result
+        });
     }
 
     private shouldCreatePeerFromInboundSignal(
@@ -552,25 +588,34 @@ export class WebRtcConnectionService {
         message: QRtcSignalingMessage
     ): PeerCreationAdmission {
         if (message.signalType === QRtcSignalingType.Answer) {
+            this.observeSignalRoute('missing-peer-answer', message, undefined);
             return { allowed: false, reason: 'missing-peer-answer' };
         }
         if (this.peerEntryByPeerId.size >= this.maxPeerConnections()) {
+            this.observeSignalRoute('peer-cap', message, undefined);
             return { allowed: false, reason: 'max-peer-connections' };
         }
         if (!this.inboundPeerCreationPolicy) {
+            this.observeSignalRoute('allow-without-policy', message, undefined);
             return { allowed: true };
         }
 
         try {
-            return this.toPeerCreationAdmission(
-                this.inboundPeerCreationPolicy({
-                    peerId,
-                    signalType: message.signalType,
-                    message
-                })
+            const decision = this.inboundPeerCreationPolicy({
+                peerId,
+                signalType: message.signalType,
+                message
+            });
+            const admission = this.toPeerCreationAdmission(decision);
+            this.observeSignalRoute(
+                admission.retryInboundSignal ? 'policy-retry' : admission.allowed ? 'policy-allow' : 'policy-deny',
+                message,
+                undefined
             );
+            return admission;
         }
         catch (caught) {
+            this.observeSignalRoute('policy-threw', message, undefined);
             const error = toError(caught);
             console.error(
                 `Inbound RTC peer creation policy failed for ${peerId}`,

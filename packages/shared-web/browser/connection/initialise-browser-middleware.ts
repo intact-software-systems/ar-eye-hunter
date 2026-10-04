@@ -1,4 +1,48 @@
-import { newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    resolveBrowserALCheckpointStores,
+    type BrowserALCheckpointStores
+} from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
+import { initBrowserALRuntimeExpiryEviction } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
+import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
+import {
+    configureBrowserALRuntimeStores,
+    createBrowserALVolatileInboundRuntimeStores,
+    resolveBrowserSessionALInboundRuntimeStores
+} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import type { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
+import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
+import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
+import {
+    createBrowserSessionVolatileBound,
+    type BrowserSessionVolatileBound
+} from '@shared-web/browser/connection/create-browser-session-volatile-bound.ts';
+import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { createBrowserQueueBoxEngine } from '@shared-web/browser/queuebox/create-browser-queue-box-engine.ts';
+import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime-facade.ts';
+import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
+import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
+import { initialiseBrowserCacheRepositories } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
+import {
+    acceptAuthoritativeGroupSessionLeaseAdvance,
+    acceptAuthoritativeGroupStateSnapshot
+} from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
+import { initGroupStateResyncOnReopen } from '@shared-web/browser/state-read/group-state-resync-on-reopen.ts';
+import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
+import { readStateGroupSnapshot } from '@shared-web/browser/state-read/point-read.ts';
+import { refreshStateSnapshots, type StateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
+import { RtcGroupSnapshotRefresh } from '@shared-web/browser/state-read/rtc-group-snapshot-refresh.ts';
+import { listStateGroups } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
+import {
+    createBrowserWebSocketQueueBox,
+    type CreateBrowserWebSocketQueueBox
+} from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
+import {
+    newALRoute,
+    newALUntargetedMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALCheckpointPort } from '@shared/alm/checkpoint/al-checkpoint.ts';
 import type {
@@ -16,6 +60,9 @@ import type {
 } from '@shared/api/api-config.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { toStateScope } from '@shared/api/api-type-utils.ts';
+import { readSession } from '@shared/api/auth.ts';
+import { validateAuthoritativeGroupSnapshotList } from '@shared/api/authoritative-state-validation.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
@@ -32,57 +79,12 @@ import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-stream
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/ws-queue-box-client-service.ts';
 import { JsonWebSocketClient, type WebSocketConnectOptions } from '@shared/websocket/json-web-socket-client.ts';
-import type { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
 
-import { readSession } from '@shared/api/auth.ts';
-import { validateAuthoritativeGroupSnapshotList } from '@shared/api/authoritative-state-validation.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-
-import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
-import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
-import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
-import {
-    createBrowserSessionVolatileBound,
-    type BrowserSessionVolatileBound
-} from '@shared-web/browser/connection/create-browser-session-volatile-bound.ts';
-import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
-import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
-import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime-facade.ts';
-import { initGroupStateResyncOnReopen } from '@shared-web/browser/state-read/group-state-resync-on-reopen.ts';
-import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
-import { readStateGroupSnapshot } from '@shared-web/browser/state-read/point-read.ts';
-import { refreshStateSnapshots, type StateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
-import { listStateGroups } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
-
-import {
-    resolveBrowserALCheckpointStores,
-    type BrowserALCheckpointStores
-} from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
-import { initBrowserALRuntimeExpiryEviction } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
-import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
-import {
-    configureBrowserALRuntimeStores,
-    createBrowserALVolatileInboundRuntimeStores,
-    resolveBrowserSessionALInboundRuntimeStores
-} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
-import type { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
-import { createBrowserQueueBoxEngine } from '@shared-web/browser/queuebox/create-browser-queue-box-engine.ts';
-import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
-import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
-import { initialiseBrowserCacheRepositories } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
-import {
-    acceptAuthoritativeGroupSessionLeaseAdvance,
-    acceptAuthoritativeGroupStateSnapshot
-} from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
-import { RtcGroupSnapshotRefresh } from '@shared-web/browser/state-read/rtc-group-snapshot-refresh.ts';
-import {
-    createBrowserWebSocketQueueBox,
-    type CreateBrowserWebSocketQueueBox
-} from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import {
     browserStateCacheLifecycle,
     type StateCacheScopeOptions
 } from '../state-cache/browser-state-cache-lifecycle.ts';
+import type { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
 
 export interface MiddlewareInitOptions {
     readonly qosProvider: ALQosInputProvider | undefined;
@@ -550,7 +552,8 @@ function initialiseBrowserRtcConnection(
         dataChannelLanes: input.options.dataChannelLanes ??
             [DEFAULT_REALTIME_DATA_CHANNEL_LANE],
         maxPeerConnections: input.options.maxPeerConnections,
-        faultPort: input.options.diagnosticsPorts.transportFaultPort
+        faultPort: input.options.diagnosticsPorts.transportFaultPort,
+        signalingDiagnostics: input.options.diagnosticsPorts.signalingDiagnostics
     });
 }
 
