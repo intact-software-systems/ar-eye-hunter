@@ -96,12 +96,15 @@ and feature publication at `21fd11987cb9fac818c766b63a3ee72db79a0204`, tree
 `fae860e6ebf1840ee15f4ade1ccaa8464b759f14`; only plan prose differs from 93fc.
 Tasks 30 and 31 are complete at their accepted read-only scopes below.
 Task 32's factual reconciliation was independently reviewed and published at
-`e89a57b85e415450291cc376778d31418435b6eb`. Task 33 is incomplete local
-uncommitted work: ownership and approved-clock RED/GREEN, full recursive
-changed-file/support closure, scoped independent source review and local validation
-are accepted. Final plan review, ordinary feature publication and required
-published-head hosted correctness gates remain pending. These local results do
-not inherit 93fc's hosted gates or establish a historical diagnostic cause.
+`e89a57b85e415450291cc376778d31418435b6eb`. Task 33 is complete at its narrow
+ownership/approved-clock correction, recursive changed-file/support closure,
+independent review, local validation, publication and required hosted-correctness
+scope on `c3b3d34651129ba170a57a7453f1453365294056`, tree
+`b8d0d335f655f9fccb2e8655daae1f99106a53bc`. PR #633 remains draft, OPEN and
+MERGEABLE. Task 34's one unchanged diagnostic and retained finite review are
+complete at their bounded exercise/usefulness scope: producer FAILURE, useful
+later health, incomplete history and zero accepted cohorts. Neither scope
+establishes a historical diagnostic cause or accepted E3 performance cohorts.
 Tasks 0-7 and observation tooling are delivered. The full baseline remains incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
 is gated, and B07 remains held. A package check proves tooling, not capture.
@@ -581,7 +584,7 @@ timeout listener replaced a peer: browser notification was synchronous and the
 black-box consumer only emitted diagnostics. No new replacement regression or fix
 had run at that checkpoint, and no retained capture was associated with this trigger.
 
-Subsequent Task 33 local uncommitted work witnessed two genuine original-production
+Task 33 witnessed two genuine original-production
 RED failures, then two focused GREEN passes: timeout-listener replacement and
 awaited lane-failure replacement. The two current-resource identity guards dispose
 only the original resource and preserve a separately admitted Q, including Q's own
@@ -633,9 +636,35 @@ failed the service thread limit, and retained context is disclosed without a
 fresh-context or review waiver claim. Completed exhaustion shape, native signaling
 lifecycle ownership, canonical paired coordination snapshots with five explicit
 variants, cache types and imports preserve values, inputs, timing, counters and
-permissive diagnostic grammar. Final plan review, feature publication and new-head
-hosted correctness remain pending; no captured B06 cause, native generation,
-application/deletion issuer or restored performance acceptance follows.
+permissive diagnostic grammar. Final plan review and feature publication are
+accepted at c3b3. Root accepted current required hosted correctness: Branch Release
+37207693413 and every normal lane, including native-browser app/memory, passed;
+the wrapper is terminal SUCCESS. Root inspected optional nonblocking ALM job
+111452496121 only through its limited log: two PASS, one FAIL, nine selector SKIP.
+Its first failure is Chromium smoke baseline rtc-with-ws-fallback at
+full-stack-alm-conformance.spec.ts:122: the soft receiver outcome at line 272
+expected true and received false; no timeout marker was observed. Cause and raw
+artifact association remain unverified/unclassified, with no clock attribution.
+Formation 37207693224 and Medium 37207693226 passed on checkout
+`3f132a0409ef54b1cd02fd6d5e921c5a855f2a7e`; its merge parent includes c3b3 and
+its tree equals c3b3. Root verified retained SHA/tree files, not every diagnostic row.
+Supported 37207846626 passed all nine jobs/five recipes; root's bounded exact-c3b3
+source/operation/isolation/hash and finite-summary review accepted correctness,
+not B07, cleanup, historical cause or performance comparison.
+
+Task 34's unchanged diagnostic
+[37209071043](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37209071043),
+attempt 1 on c3b3, is terminal FAILURE. Source passed; all three runner jobs failed,
+all three diagnostic uploads succeeded, and governed capture/publication were
+skipped. Root retained 81 original files / 4,317,090 inner bytes with exact
+source/run/attempt, upload, path/size/byte-hash integrity. Independently reviewed
+finite projection establishes 27 slots: 12 PASS, three FAIL and 12 selector SKIP.
+Default and all-scenarios pass on every runner; retention-100 first failed at
+recorded cycles 4/5/1. Bound later health is available for each failure. Recorded
+history is incomplete: oversized rows 12/11/12 and R2 retained-prefix loss; shared
+loss/count metadata is counted once per checkpoint, not recomputed raw-event
+cardinality. No native/clock/role/lifetime/application/deletion-issuer cause,
+cleanup proof or accepted E3 primary/repeat follows.
 
 Newer merged ALM work [#627](https://github.com/intact-software-systems/ar-eye-hunter/pull/627),
 [#628](https://github.com/intact-software-systems/ar-eye-hunter/pull/628),
@@ -1490,52 +1519,55 @@ justified yet.”
 | 30      | Complete accepted source/finite later-health diagnosis: seven files / 101 existing tests, 11 synthetic utility tests, one reviewed execution EXIT0 / empty stderr / 72 safe rows. Four captured failures remain separate; later coverage/native lifetime/application/issuer unknown, histories incomplete. No cause, causal RED, fix or performance acceptance.                                                                                                     |
 | 31      | Complete accepted source-only handshake/lifecycle diagnosis at byte-equal 93fc/21fd; three files / 37 tests PASS. Independent timeout-listener replacement hole established; no new regression/fix had run at that checkpoint, and no historical capture association follows.                                                                                                                                                                                       |
 | 32      | Complete independently reviewed factual reconciliation, published at e89a57b85e415450291cc376778d31418435b6eb; protected acceptance regions unchanged.                                                                                                                                                                                                                                                                                                              |
-| 33      | Incomplete local uncommitted ownership/approved-clock correction: distinct ownership 2 FAIL→2 PASS and clock 3 FAIL→3 PASS; full recursive closure and scoped independent source review accepted, current local validation passed. Required epoch clock reaches15 existing+1custom sites. Final plan review, feature publication and published-head hosted correctness gates pending; no historical cause or E3 acceptance.                                         |
+| 33      | Complete narrow owned-code correction at published c3b3/b8d0: ownership 2 RED→2 GREEN and approved-clock 3 RED→3 GREEN, 15 existing+1 custom clock sites, recursive closure, independent review, local validation and required current hosted correctness accepted. Optional ALM limited-log first failure is inspected; cause/raw-artifact association remain unverified/unclassified. No historical cause or E3 acceptance.                                       |
+| 34      | Complete bounded unchanged diagnostic/retained finite review: 37209071043/a1/sourcec3b3 FAILURE; all three jobs failed/uploads succeeded, 81 originals / 4,317,090 bytes verified, 12 PASS / three FAIL / 12 selector SKIP, retention cycles 4/5/1. Bound later health available; incomplete history retains oversized rows 12/11/12 and R2 prefix loss. No native/clock/lifetime cause or accepted primary/repeat.                                                 |
 
-## 11. Next Two Useful Actions Within Task 33
+## 11. Next Two Useful Actions After Task 34
 
-Tasks 29–32 are complete at their distinct accepted scopes. Task 33 remains
-local, uncommitted and incomplete; the human's exact required-clock approval is
-resolved and persists. The independent ownership correction and current local
-passes do not prove the historical B06 cause or inherit old-source hosted gates.
-Only the next two useful actions are concrete; further work remains outcome-shaped.
+Tasks 29–34 are complete at their distinct accepted scopes. Task 33's owned-code
+correction is independently tested/reviewed, published at c3b3 and accepted through
+required current hosted correctness; the human's required-clock approval persists.
+Whole-file closure covers every changed human-authored file and recursively changed
+support file; independently untouched code remains outside closure. Author/root
+separation and retained context after failed fresh-reviewer dispatch remain disclosed,
+with no TDD, review or standards waiver. Neither correction nor diagnostic exercise
+proves the historical B06 cause or accepts a performance cohort.
 
-### Task 33: Accepted local correction and publication gates
+### Task 34: Completed diagnostic exercise and bounded retained evidence
 
-**Accepted local outcome:** Both genuine ownership regressions passed after the
-current-resource identity guards, preserving original disposal and replacement
-survival/watchdog/attempt accounting. Approved custom-clock semantic RED three
-failures / 67 skipped became GREEN three passes / 67 skipped. The service and
-private budget share one explicit epoch source, with entry-owned timeout epochs
-captured before listeners and unchanged relative scheduling. Required dynamic
-clocks reach 15 existing roots plus one custom composer; the compiler-discovered
-namespace consumer is corrected. Full changed-file/support closure and scoped
-independent actual root review are accepted; independent untouched code remains
-outside closure. Same-author context and failed fresh-reviewer dispatch remain
-transparent, with no review or standards waiver.
+**Current outcome:** Run 37209071043/attempt 1 on published c3b3 is terminal
+FAILURE. All three runner jobs failed and diagnostic uploads succeeded; source
+passed and governed capture/publication were skipped. The 81 retained originals /
+4,317,090 inner bytes have accepted integrity. Actual participation is 12 PASS /
+three FAIL / 12 selector SKIP across 27 slots; retention first failed at recorded
+cycles 4/5/1, with bound later health available and incomplete history on each.
+Oversized rows 12/11/12 and R2 retained-prefix loss remain explicit. Finite scalar
+review preserves missing/invalid facts as unavailable and shared loss once per
+checkpoint; it does not certify full history conformance, causal/native association
+or cleanup. No further producer or value read is released by this milestone.
 
-- [x] Complete ownership TDD, scoped non-clock closure and approved-clock TDD;
-      preserve distinct historical 67/28/20 stage checks and both filtered scopes.
-- [x] Complete recursive changed-file/support closure, all 16 clock sites and
-      actual local lifecycle/consumer/public/benchmark/type/build/style/structure
-      validation at the distinct scopes recorded in Section 1.
-- [ ] Complete factual plan review and ordinary feature publication.
-- [ ] Prove required hosted/native/controller semantic correctness on the exact
-      published head; historical 93fc passes remain historical.
+- [x] Complete Task 33 publication and required exact-source hosted correctness.
+- [x] Independently accept bounded B06 source preparation and dispatch one unchanged
+      diagnostic with mode=diagnostic.
+- [x] Retain all terminal originals, including failures, with actual upload metadata
+      and exact source/run/attempt/path/size/byte-hash integrity.
+- [x] Independently review the finite projection and actual participation, first
+      failures, later-health availability and recorded coverage/loss limits.
 
-**Next action 1:** Finish this factual checkpoint and final source review, then
-ordinary feature publication through the controller. Local uncommitted changes
-are not a published source or a final Task 33 completion. No optional fallback,
-legacy adapter, migration, new native DI or policy expansion is selected.
+**Next action 1:** Propose a source-grounded minimum diagnostic boundary in the
+existing reconnect/readiness owners against these accepted observations. Current
+native callback guards reject retired PCs; the stale-onClosed suspicion is falsified,
+with no causal defect or RED selected. Keep recorded failure and later health distinct;
+no native cause or clock/role/lifetime/issuer attribution is established.
 
-**Next action 2:** Obtain required hosted/native/controller semantic correctness
-proof on that exact published head before any separately released B06 producer.
-Current local diagnostic smokes are not accepted cohorts or a restored B06 result.
-No Task 34, collector, optimization or new accepted workload is concretized.
+**Next action 2:** Scope semantic TDD for that existing-owner diagnostic boundary
+only if independently accepted. No correctness correction is selected, and no new
+DI, policy/workload change, producer or runtime implementation is released here.
 
-**Exit:** Closed, independently tested/reviewed and published ownership/clock
-correction with required exact-head correctness proof. Current work has not yet
-satisfied publication and hosted gates. No Issue was created or reused.
+**Exit:** Terminal producer and retained-evidence interpretation are accepted only
+at their bounded diagnostic scope. No Issue was created or reused. Current optional
+ALM's first failure remains inspected only at limited job-log scope; cause and raw
+artifact association remain unverified/unclassified, without clock attribution.
 
 Full B01–B06 accepted primaries and all required repeats, relevant E1
 recovery/reconciliation after representative E3 succeeds, homogeneous noise
