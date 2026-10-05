@@ -213,8 +213,16 @@ meaningful active Runs shutdown proof and truthful fixture transition names;
 fix1 corrects both at `c62dd5b5cd6ecb5704509eab0dbfa9e8f677788c` with
 meaningful fixture RED/GREEN and recursive consumer closure. Scoped independent
 re-review approves specification and quality with no actionable residuals.
-Publication and fresh required hosted correctness acceptance remain
-outstanding before the native transport/generation observation audit.
+The correction and refreshed plan are published at
+`92a6261a1522b3f40e7171da8f41dd7e369ea0c3`. Fresh Branch Release and its required
+aggregate result pass, with every executed lane successful and RTC observation
+integrity skipped. Independently audited formation/medium correctness also passes
+on a synthetic merge checkout whose tree equals the published feature tree.
+Task 48's correctness gate is complete. Task 49's read-only native observation
+audit has independent specification/evidence-quality approval and proves missing
+lifetime, transport, candidate-association and timeout/deletion provenance.
+The next slice is bounded observation design and semantic TDD at the existing
+owners. No initial-stall cause, retry policy or new performance cohort is accepted.
 Tasks 0-7 and observation tooling are delivered. The full baseline remains incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
 is gated, and B07 remains held. A package check proves tooling, not capture.
@@ -1644,9 +1652,10 @@ justified yet.”
 | 45      | Authenticated original command/result and 6,398-row correlations narrow the A–C failure: adopted layout, matching Answers applied, retained-peer expiry invalidates later recovery pairing. Actual SPA hidden-history work reproduces 117–150 ms delay versus UI-off ~4 ms. Initial post-ICE native/channel failure remains unproven; observer presentation correction selected for design/TDD/review, no timer policy or E3 acceptance.                                               |
 | 46      | Source-backed retry necessity assessment: failed native allocation can suppress the next same-peer lane repair, but no recovery RED has run. Independent correctness candidate only; channel-present B06 failure is not explained, no retry/deadline policy change selected. Observer correction remains active; E3 zero accepted cohorts.                                                                                                                                             |
 | 47      | Observer correction at 65b257ab6; test/support closure fix at 9db431d2c. Semantic history suppression retains operator state and complete recordings; local correctness checks pass. Initial review required obsolete fallback/source-test retirement; scoped re-review approves the correction. No post-fix timing comparison or native cause established; E3 zero accepted cohorts.                                                                                                  |
-| 48      | Hosted ac3 inventory/asset failures repaired at ab64, then c62 fix1: meaningful polling/shutdown RED/GREEN, truthful fixture transitions, full consumer closure, 25 PASS/one live SKIP and exact coupling PASS. Independent spec/quality re-review APPROVE. Publication/hosted acceptance pending; original diagnosis and E3 zero accepted cohorts remain intact.                                                                                                                      |
+| 48      | Hosted ac3 inventory/asset failures repaired at ab64/c62 with semantic polling proof, truthful transitions and full consumer closure; independent spec/quality APPROVE. Published at 92a6261 with fresh required Branch Release SUCCESS and independently accepted native formation/medium correctness on the identical tree. RTC integrity SKIP; diagnosis intact, E3 zero.                                                                                                           |
+| 49      | Read-only native observation audit independently APPROVE/APPROVE at 92a6261: missing native lifetime/DTLS/SCTP/typed-error/candidate association and dropped timeout/deletion provenance. Bounded owner-captured observation design/TDD is next; original observer/expiry findings preserved, initial stall unknown, no retry policy or producer, E3 zero.                                                                                                                             |
 
-## 11. Next Two Useful Actions After Task 48
+## 11. Next Two Useful Actions After Task 49
 
 Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
@@ -1674,9 +1683,13 @@ Their locally verified correction is committed at ab64b7822. Initial independent
 review confirms those original repairs but requires two closure fixes. Fix1 at
 c62dd5b5c establishes meaningful polling/shutdown proof and truthful transition
 names, with recursive consumer closure. Scoped specification/quality re-review
-approves the corrected head with no actionable residual. Publish the reviewed
-source and require fresh
-correctness acceptance before auditing native transport/generation observations.
+approves the corrected head with no actionable residual. Publication at 92a6261
+has fresh required Branch Release SUCCESS and independently verified native
+formation/medium correctness on the identical tree. Task 49's read-only native
+observation audit is independently approved. It proves missing owner-captured
+lifetime/transport facts and lost timeout/deletion provenance; it cannot recover
+the historical first-stall trigger. Its bounded observation design and semantic
+TDD are next, with public outputs reviewed separately from signaling inputs.
 No new RTC producer or retry policy follows automatically.
 Section 9's stop and all baseline gates remain intact.
 Task 33's owned-code correction
@@ -2449,7 +2462,43 @@ responses and the three-endpoint growth/quiet attachments. The unchanged mode
 owner retains its initial accepted assessment. The reviewer repeated no suites;
 validation source qualifications, warnings and live skip remain disclosed.
 No further source correction is requested. Publication and fresh required hosted
-acceptance remain outstanding.
+acceptance were pending at that review checkpoint; the following exact-source
+evidence closes that prerequisite.
+
+**Fresh hosted correctness acceptance:** Reviewed correction c62dd5b5c and the
+plan update are published at `92a6261a1522b3f40e7171da8f41dd7e369ea0c3`, tree
+`4efffbf4a97ba80576e3ee6d83356255d0aab868`. Branch Release run
+[37306934111](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37306934111),
+attempt 1, is terminal SUCCESS; required aggregate job 111756813393 is SUCCESS.
+All 16 executed jobs pass, including static, main/tooling unit, Deno, app browser,
+both Recipe Console shards, standard/cluster API recipes, Postgres integration,
+ALM and validation-evidence publication. RTC observation integrity is SKIPPED.
+CodeQL passes. Retained logs verify release checkout 92a6261 and the exact
+coupling range from trusted base 54adf4dd191c7102092b1bae4f9b3f77d943a8e1:
+no current candidates, complete classifications and complete/current registry.
+Recipe Console shard 1 has 109 passed, 9 skipped and no failures; its dot reporter
+supplies no per-case hosted trace. Local named-case trace evidence keeps its scope.
+The downloaded validation record passes its canonical validator and matches
+the immutable local build-tree digest. Initial live-run log retrieval was
+unavailable; retrieval of the same jobs succeeds after terminal completion,
+without a producer restart or retry.
+
+Independent uploaded-artifact audits accept unchanged native
+[formation](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37306933782)
+and [medium](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37306933776)
+correctness, both attempt 1: 4+12 and 1+12 cases pass with no required skips or
+blocking failures. All 29 source-expanded recipes and complete result indexes
+reconcile with their bounded reports. Formation's 158 explicitly nonblocking
+observations stay accounted; its final blocking assertions pass. Both fairness
+fixture proofs match raw events and establish recovery/not-before behavior,
+without proving natural fairness contention. Managed formation establishes
+ACTIVE/activated, without separately asserting descriptive observedRate=1.
+Both runtime stamps identify synthetic merge
+`2d63c3f316326941e6775a9c4a46ba0e7e9e9a06`, with parents base 54adf4dd and feature
+92a6261, and tree exactly equal to published 4efffbf4. Archive digests/extracted
+bytes are verified; workflow head metadata is not substituted for runtime SHA.
+These correctness scopes neither quantify the observer improvement nor resolve
+the initial native stall, and they accept no E3 performance cohort.
 
 **Protected diagnosis:** Task 45's original report and findings remain unchanged:
 the measured observer cost at 2,136 events; the older responder connection's
@@ -2461,23 +2510,82 @@ algorithmically verified, without a comparable fresh timing result. Task 46's
 allocation-exception rollback remains a separate unimplemented candidate; these
 test failures justify no retry or establishment-deadline policy change.
 
-**Next action 1:** Publish the independently approved fix1 source and updated plan,
-then obtain fresh required
-hosted correctness acceptance. The original local failure and request/settled-child
-trace remain retained; ab64b7822 and c62dd5b5c coupling passes keep their own sources.
-No compatibility asset or registry waiver is selected. New production behavior
-would still require semantic RED before implementation. Fix1 and scoped re-review
-are complete; publication and fresh corrected-source hosted checks are pending.
+**Handoff action 1 (completed by Task 49):** Complete the bounded read-only native observation audit
+for first-stall DTLS/SCTP transport and native/candidate-generation association,
+with truthful unavailable values and exact source/pair identity. Trace capture,
+ordering, privacy, projection and existing semantic coverage before proposing a
+correction. Preserve the original diagnosis and failure history; ab64b7822,
+c62dd5b5c and published 92a6261 checks retain their distinct scopes.
 
-**Next action 2:** After that correctness acceptance, audit existing native
-observation owners for the missing first-stall DTLS/SCTP transport and native/
-candidate-generation association, with truthful unavailable values and exact
-source/pair identity. Only proved missing observation may select a bounded
-semantic TDD correction and independent review. No automatic E3 run follows.
+**Handoff action 2 (current design slice):** Review the proved observation gaps' compatibility, privacy and
+ordering obligations, then select its bounded design and semantic RED before
+production implementation and independent task review. No compatibility asset,
+registry waiver, retry policy or establishment-deadline renewal is selected.
+No automatic E3 run follows.
 E3 still has zero accepted cohorts; B01–B06 primary/repeat acceptance, E1 recovery/
 reconciliation after representative E3, noise/comparison, ranking and human
 acceptance remain outstanding. B07 stays held; E4 remains conditional. No Issue
 was created or reused.
+
+### Task 49: Native observation gaps independently audited
+
+**Outcome:** A read-only audit of published 92a6261 and its exact source blobs
+has independent specification APPROVE and evidence-quality APPROVE, with no
+actionable report findings. Existing owner, translation, recorder, projection
+and test paths were traced; no production change, semantic suite or producer
+ran for this audit. Approval covers the audit, not a new public contract or
+performance acceptance.
+
+**Proved gaps:** The native owners fence exact PC/channel objects internally,
+but published observations lack their lifetime identity. Current status omits
+DTLS/SCTP transitions and the first typed native transport error; channel error
+clears its native handle before lifecycle notification. Candidate application
+preserves nullable usernameFragment, but diagnostics cannot associate individual
+applications with a proved ICE generation. Offer/retry identity is not that
+generation, and ICE has no wire offerId. The service already captures original
+setup/timeout facts before removal; the facade drops those arguments and samples
+deletion after teardown. Setup-start epoch is not the watchdog's scheduling
+time or a monotonic deadline. Later asynchronous stats can join retired native
+state and use a first-qualifying-pair heuristic rather than transport linkage.
+
+**Evidence boundaries:** JSONL preserves produced facts; later sequential health
+reads cannot recreate the first failure. The finite artifact projection would
+drop new keys. Readiness facts' 8,192-byte limit remains distinct from recorder
+and retention limits. Raw SDP, ICE credentials/fragments, certificates and
+unrestricted native error text must remain unpublished. Standard transport APIs
+do not prove target Chromium availability; missing, unsupported, failed or
+retired readouts must stay explicitly unknown/unavailable. Existing fakes offer
+transport seams, but state mutation alone does not dispatch a transport event.
+New instrumentation must preserve handlers, deadlines and sink-failure isolation,
+bound synchronous work and avoid getStats in hot native callbacks.
+
+**Diagnosis and retry assessment retained:** Task 45's 117–150 ms observer delay
+at 2,136 events versus about 4 ms UI-off remains the measured performance finding.
+Original retained-responder expiry breaks later recovery pairing; applied matching
+Answers, adopted layout and B becoming ready narrow the A–C failure. Neither
+finding establishes the initial post-ICE native/channel stall. Task 46's failed
+allocation rollback is a separate source-backed candidate awaiting a recovery
+RED, with no captured allocation exception in the channel-present B06 stall.
+It supplies no reason to expand retries or renew the establishment deadline.
+Task 47's suppression has correctness evidence, without comparable current timing.
+
+**Next action 1:** Design the minimum safe owner-captured lifetime/DTLS/SCTP/
+typed-error, proved candidate-association and timeout/termination evidence, then
+implement test-first in the canonical owners with independent task review.
+Semantic RED must distinguish original and replacement objects, preserve causal
+facts through teardown, retain truthful unknowns/private-payload exclusion and
+prove observation failure leaves business outcomes unchanged. Inspect existing
+tests before adding coverage. Review public diagnostic outputs and consumers
+separately from required inputs/wire contracts; the existing clock approval
+authorizes no new compatibility decision. Select focused owner/projection tests,
+affected package typechecks and public API/bundle checks if exports change.
+
+**Next action 2:** After design, implementation and focused correctness acceptance,
+select one comparable observation/timing exercise explicitly, with immutable
+runtime/source identity, actual target API availability, first-stall capture and
+observer perturbation assessed together. No automatic E3 run follows this audit.
+E3 remains zero accepted cohorts; E1 reconciliation and the full B01–B06 gates
+remain outstanding, E4 conditional and B07 held. No Issue was created or reused.
 
 ## 12. Baseline Completion Gate
 
