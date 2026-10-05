@@ -2,7 +2,8 @@ import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { ReportPanel } from '../advanced/ReportPanel.tsx';
+
+import { ReportPanel } from '../advanced/report-panel.tsx';
 import type { CommandQueueRow } from '../runner-contracts.ts';
 import { BootstrapPanel } from './BootstrapPanel.tsx';
 import { CommandQueuePanel } from './CommandQueuePanel.tsx';
@@ -10,7 +11,23 @@ import { ConfigurationPanel } from './ConfigurationPanel.tsx';
 import { ControlPanel } from './ControlPanel.tsx';
 import { WorkbenchPanel } from './WorkbenchPanel.tsx';
 
+export interface LocalWorkbenchSectionProps {
+    readonly active: boolean;
+    readonly state: RallarBlackBoxTestState;
+    readonly bootstrap: RallarBlackBoxBootstrapConfig;
+    readonly control: RallarBlackBoxControlSnapshot;
+    readonly authSession?: AuthSession;
+    readonly busy: boolean;
+    readonly runState: string;
+    readonly loadedFixtureId?: string;
+    readonly lastError?: string;
+    readonly queueRows: readonly CommandQueueRow[];
+    readonly selectedCommandId?: string;
+    onSelectCommand(commandId: string | undefined): void;
+}
+
 export function LocalWorkbenchSection({
+    active,
     state,
     bootstrap,
     control,
@@ -22,19 +39,7 @@ export function LocalWorkbenchSection({
     queueRows,
     selectedCommandId,
     onSelectCommand
-}: {
-    state: RallarBlackBoxTestState;
-    bootstrap: RallarBlackBoxBootstrapConfig;
-    control: RallarBlackBoxControlSnapshot;
-    authSession?: AuthSession;
-    busy: boolean;
-    runState: string;
-    loadedFixtureId?: string;
-    lastError?: string;
-    queueRows: readonly CommandQueueRow[];
-    selectedCommandId?: string;
-    onSelectCommand(commandId: string | undefined): void;
-}) {
+}: LocalWorkbenchSectionProps) {
     return (
         <>
             <WorkbenchPanel
@@ -52,6 +57,7 @@ export function LocalWorkbenchSection({
                 onSelect={onSelectCommand}
             />
             <ReportPanel
+                active={active}
                 state={state}
                 authSession={authSession}
             />

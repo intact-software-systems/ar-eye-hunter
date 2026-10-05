@@ -1,9 +1,13 @@
 // @vitest-environment happy-dom
 
-import { createElement, useEffect, type ComponentProps, type ComponentType } from 'react';
-import { act } from 'react';
+import { act, createElement, useEffect, type ComponentProps, type ComponentType } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+
+import type { AppTabId } from '../../../apps/rallar-black-box/src/app-tabs.ts';
+import { deriveRallarBrowserStatus } from '../../../apps/rallar-black-box/src/legacy/shell/rallar-browser-status.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -50,7 +54,7 @@ beforeAll(async () => {
         lifecycleModule('SharedTestPanel')
     );
     vi.doMock(
-        '../../../apps/rallar-black-box/src/legacy/runner/workbench/LocalWorkbenchSection.tsx',
+        '../../../apps/rallar-black-box/src/legacy/runner/workbench/local-workbench-section.tsx',
         lifecycleModule('LocalWorkbenchSection')
     );
     vi.doMock(
@@ -225,12 +229,12 @@ async function flushLazyMount(): Promise<void> {
     });
 }
 
-function advancedProps() {
+function advancedProps(): Omit<ComponentProps<AdvancedPanel>, 'active'> {
     return {
-        state: { commandHistory: [] },
-        bootstrap: {},
-        control: {},
-        globalValues: {},
+        state: { status: 'idle', commandHistory: [], events: [], failures: [], resultCache: {} },
+        bootstrap: resolveRallarBlackBoxBootstrapConfig('?provider=simulated', {}, ''),
+        control: { state: 'idle', reconnectAttempt: 0, sentCount: 0, receivedCount: 0 },
+        globalValues: { apiBaseUrl: '', applicationId: '', workspaceId: '', clientId: '', sessionId: '', roomId: '' },
         globalValuesEdited: false,
         busy: false,
         runState: 'waiting',
@@ -238,26 +242,51 @@ function advancedProps() {
         onSelectCommand: vi.fn(),
         onGlobalValueChange: vi.fn(),
         onSurfaceChange: vi.fn()
-    } as unknown as Omit<ComponentProps<AdvancedPanel>, 'active'>;
+    };
 }
 
-function directProps(activeTab: string) {
+function directProps(activeTab: AppTabId): ComponentProps<DirectPanels> {
+    const advanced = advancedProps();
     return {
-        runtime: { state: {}, bootstrap: {}, busy: false },
+        runtime: {
+            state: advanced.state,
+            bootstrap: advanced.bootstrap,
+            control: advanced.control,
+            bootstrapping: false,
+            busy: false,
+            runState: 'waiting'
+        },
         auth: {
+            authBusy: false,
             setAuthSession: vi.fn(),
-            logout: vi.fn()
+            logout: vi.fn(async () => {})
         },
         navigation: {
+            activeMode: 'rallar',
             activeTab,
+            activeAdvancedSurface: undefined,
+            selectNavigation: vi.fn(),
             selectTab: vi.fn(),
             selectMode: vi.fn()
         },
         globalContext: {
-            globalValues: {},
-            browserStatus: {},
-            updateGlobalValue: vi.fn()
+            globalValues: advanced.globalValues,
+            globalValuesEdited: false,
+            browserStatus: deriveRallarBrowserStatus(advanced.state, advanced.globalValues),
+            updateGlobalValue: vi.fn(),
+            resetGlobalValues: vi.fn()
         },
-        runnerSelection: { setSelectedCommandId: vi.fn() }
-    } as unknown as ComponentProps<DirectPanels>;
+        runnerSelection: {
+            queueRows: [],
+            history: [],
+            activeCommand: undefined,
+            now: 1000,
+            selectedCommandId: undefined,
+            setSelectedCommandId: vi.fn(),
+            runnerDistributedSelection: undefined,
+            setRunnerDistributedSelection: vi.fn(),
+            selectedResult: undefined,
+            diagnosticCommandId: undefined
+        }
+    };
 }

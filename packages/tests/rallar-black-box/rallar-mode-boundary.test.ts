@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+
 import { appTabsForMode } from '../../../apps/rallar-black-box/src/app-tabs.ts';
 import { analyzeSourceFile, resolveRelativeTypeScriptDependency } from '../helpers/source-analysis';
 
@@ -35,7 +36,7 @@ const runnerRunsControllerSourcePath = new URL(
     import.meta.url
 );
 const runnerRunsPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/runner/runs/RunnerRunsPanel.tsx',
+    '../../../apps/rallar-black-box/src/legacy/runner/runs/runner-runs-panel.tsx',
     import.meta.url
 );
 const runnerFleetControlsSourcePath = new URL(

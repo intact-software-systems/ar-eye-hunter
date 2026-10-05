@@ -1,14 +1,11 @@
-import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { getRallarBlackBoxCommandHistory } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { lazy, Suspense, useEffect, useState } from 'react';
+
+import { getRallarBlackBoxCommandHistory } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
+
 import type { RunnerAdvancedSurfaceId } from '../../../app-tabs.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { ManualRallarSection } from '../manual/manual-rallar-section.tsx';
-import type { CommandQueueRow } from '../runner-contracts.ts';
-import { LocalWorkbenchSection } from '../workbench/LocalWorkbenchSection.tsx';
+import { LocalWorkbenchSection, type LocalWorkbenchSectionProps } from '../workbench/local-workbench-section.tsx';
 
 const DistributedRecipesPanel = lazy(() =>
     import('../distributed-recipes/DistributedRecipesPanel.tsx').then((module) => ({
@@ -26,159 +23,158 @@ const SharedTestPanel = lazy(() =>
     }))
 );
 
-export function RunnerAdvancedPanel({
-    active,
-    state,
-    bootstrap,
-    control,
-    authSession,
-    globalValues,
-    globalValuesEdited,
-    busy,
-    runState,
-    loadedFixtureId,
-    lastError,
-    selectedCommandId,
-    queueRows,
-    initialSurface = 'workbench',
-    onSelectCommand,
-    onGlobalValueChange,
-    onSurfaceChange
-}: {
-    active: boolean;
-    state: RallarBlackBoxTestState;
-    bootstrap: RallarBlackBoxBootstrapConfig;
-    control: RallarBlackBoxControlSnapshot;
-    authSession?: AuthSession;
-    globalValues: CommandCenterGlobalValues;
-    globalValuesEdited: boolean;
-    busy: boolean;
-    runState: string;
-    loadedFixtureId?: string;
-    lastError?: string;
-    selectedCommandId?: string;
-    queueRows: readonly CommandQueueRow[];
-    initialSurface?: RunnerAdvancedSurfaceId;
-    onSelectCommand(commandId: string | undefined): void;
-    onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(
-        key: K,
-        value: CommandCenterGlobalValues[K]
-    ): void;
+interface RunnerAdvancedPanelProps extends LocalWorkbenchSectionProps {
+    readonly globalValues: CommandCenterGlobalValues;
+    readonly globalValuesEdited: boolean;
+    readonly initialSurface?: RunnerAdvancedSurfaceId;
+    onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(key: K, value: CommandCenterGlobalValues[K]): void;
     onSurfaceChange(surface: RunnerAdvancedSurfaceId): void;
-}) {
-    const [surface, setSurface] = useState<RunnerAdvancedSurfaceId>(initialSurface);
+}
 
+interface RunnerAdvancedSurfaceProps {
+    readonly panel: RunnerAdvancedPanelProps;
+    readonly surface: RunnerAdvancedSurfaceId;
+}
+
+export function RunnerAdvancedPanel(props: RunnerAdvancedPanelProps) {
+    const { initialSurface = 'workbench' } = props;
+    const [surface, setSurface] = useState<RunnerAdvancedSurfaceId>(initialSurface);
     useEffect(() => {
         setSurface(initialSurface);
     }, [initialSurface]);
-
     const selectSurface = (nextSurface: RunnerAdvancedSurfaceId): void => {
         setSurface(nextSurface);
-        onSurfaceChange(nextSurface);
+        props.onSurfaceChange(nextSurface);
     };
-
     return (
         <section className="panel runner-advanced-panel">
             <div className="panel-heading">
                 <h2>Advanced</h2>
                 <span>raw controls</span>
             </div>
-            <div className="runner-advanced-switch">
-                {[
-                    ['workbench', 'Local Workbench'],
-                    ['distributed', 'Distributed Recipes'],
-                    ['run-manager', 'Run Manager'],
-                    ['manual', 'Manual Rallar'],
-                    ['shared-test', 'Shared Test']
-                ].map(([id, label]) => (
-                    <button
-                        type="button"
-                        key={id}
-                        className={surface === id ? 'selected' : ''}
-                        onClick={() => selectSurface(id as RunnerAdvancedSurfaceId)}
-                    >
-                        {label}
-                    </button>
-                ))}
-            </div>
+            <RunnerAdvancedSwitch surface={surface} onSelect={selectSurface} />
             <div className="runner-advanced-content">
-                <div
-                    id="panel-local-workbench"
-                    className="workspace-grid tab-workspace workbench-tab-grid"
-                    hidden={surface !== 'workbench'}
-                >
-                    <LocalWorkbenchSection
-                        state={state}
-                        bootstrap={bootstrap}
-                        control={control}
-                        authSession={authSession}
-                        busy={busy}
-                        runState={runState}
-                        loadedFixtureId={loadedFixtureId}
-                        lastError={lastError}
-                        queueRows={queueRows}
-                        selectedCommandId={selectedCommandId}
-                        onSelectCommand={onSelectCommand}
-                    />
-                </div>
-                {active && surface === 'distributed' && (
-                    <div
-                        id="panel-distributed-recipes"
-                        className="workspace-grid tab-workspace distributed-recipes-tab-grid"
-                    >
-                        <Suspense fallback={<span role="status">Loading Distributed Recipes…</span>}>
-                            <DistributedRecipesPanel
-                                state={state}
-                                bootstrap={bootstrap}
-                                control={control}
-                                globalValues={globalValues}
-                            />
-                        </Suspense>
-                    </div>
-                )}
-                {active && surface === 'run-manager' && (
-                    <div
-                        id="panel-run-manager"
-                        className="workspace-grid tab-workspace run-manager-tab-grid"
-                    >
-                        <Suspense fallback={<span role="status">Loading Run Manager…</span>}>
-                            <RunManagerPanel
-                                state={state}
-                                bootstrap={bootstrap}
-                                control={control}
-                            />
-                        </Suspense>
-                    </div>
-                )}
-                <div
-                    id="panel-manual-rallar"
-                    className="workspace-grid tab-workspace manual-tab-grid"
-                    hidden={surface !== 'manual'}
-                >
-                    <ManualRallarSection
-                        state={state}
-                        bootstrap={bootstrap}
-                        authSession={authSession}
-                        globalValues={globalValues}
-                        globalValuesEdited={globalValuesEdited}
-                        busy={busy}
-                        history={getRallarBlackBoxCommandHistory(state)}
-                        selectedCommandId={selectedCommandId}
-                        onSelectCommand={onSelectCommand}
-                        onGlobalValueChange={onGlobalValueChange}
-                    />
-                </div>
-                {active && surface === 'shared-test' && (
-                    <div
-                        id="panel-shared-test"
-                        className="workspace-grid tab-workspace shared-test-tab-grid"
-                    >
-                        <Suspense fallback={<span role="status">Loading Shared Test…</span>}>
-                            <SharedTestPanel />
-                        </Suspense>
-                    </div>
-                )}
+                <RunnerWorkbenchSurface panel={props} surface={surface} />
+                {props.active && <RunnerAdvancedRemoteSurface panel={props} surface={surface} />}
+                <RunnerManualSurface panel={props} surface={surface} />
             </div>
         </section>
     );
+}
+
+function RunnerAdvancedSwitch(
+    { surface, onSelect }: {
+        readonly surface: RunnerAdvancedSurfaceId;
+        onSelect(surface: RunnerAdvancedSurfaceId): void;
+    }
+) {
+    const surfaces = [
+        ['workbench', 'Local Workbench'],
+        ['distributed', 'Distributed Recipes'],
+        ['run-manager', 'Run Manager'],
+        ['manual', 'Manual Rallar'],
+        ['shared-test', 'Shared Test']
+    ] as const;
+    return (
+        <div className="runner-advanced-switch">
+            {surfaces.map(([id, label]) => (
+                <button
+                    type="button"
+                    key={id}
+                    className={surface === id ? 'selected' : ''}
+                    onClick={() => onSelect(id)}
+                >
+                    {label}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+function RunnerWorkbenchSurface({ panel, surface }: RunnerAdvancedSurfaceProps) {
+    return (
+        <div
+            id="panel-local-workbench"
+            className="workspace-grid tab-workspace workbench-tab-grid"
+            hidden={surface !== 'workbench'}
+        >
+            <LocalWorkbenchSection
+                active={panel.active && surface === 'workbench'}
+                state={panel.state}
+                bootstrap={panel.bootstrap}
+                control={panel.control}
+                authSession={panel.authSession}
+                busy={panel.busy}
+                runState={panel.runState}
+                loadedFixtureId={panel.loadedFixtureId}
+                lastError={panel.lastError}
+                queueRows={panel.queueRows}
+                selectedCommandId={panel.selectedCommandId}
+                onSelectCommand={panel.onSelectCommand}
+            />
+        </div>
+    );
+}
+
+function RunnerManualSurface({ panel, surface }: RunnerAdvancedSurfaceProps) {
+    return (
+        <div
+            id="panel-manual-rallar"
+            className="workspace-grid tab-workspace manual-tab-grid"
+            hidden={surface !== 'manual'}
+        >
+            <ManualRallarSection
+                active={panel.active && surface === 'manual'}
+                state={panel.state}
+                bootstrap={panel.bootstrap}
+                authSession={panel.authSession}
+                globalValues={panel.globalValues}
+                globalValuesEdited={panel.globalValuesEdited}
+                busy={panel.busy}
+                history={getRallarBlackBoxCommandHistory(panel.state)}
+                selectedCommandId={panel.selectedCommandId}
+                onSelectCommand={panel.onSelectCommand}
+                onGlobalValueChange={panel.onGlobalValueChange}
+            />
+        </div>
+    );
+}
+
+function RunnerAdvancedRemoteSurface({ panel, surface }: RunnerAdvancedSurfaceProps) {
+    switch (surface) {
+        case 'distributed':
+            return (
+                <div
+                    id="panel-distributed-recipes"
+                    className="workspace-grid tab-workspace distributed-recipes-tab-grid"
+                >
+                    <Suspense fallback={<span role="status">Loading Distributed Recipes…</span>}>
+                        <DistributedRecipesPanel
+                            state={panel.state}
+                            bootstrap={panel.bootstrap}
+                            control={panel.control}
+                            globalValues={panel.globalValues}
+                        />
+                    </Suspense>
+                </div>
+            );
+        case 'run-manager':
+            return (
+                <div id="panel-run-manager" className="workspace-grid tab-workspace run-manager-tab-grid">
+                    <Suspense fallback={<span role="status">Loading Run Manager…</span>}>
+                        <RunManagerPanel state={panel.state} bootstrap={panel.bootstrap} control={panel.control} />
+                    </Suspense>
+                </div>
+            );
+        case 'shared-test':
+            return (
+                <div id="panel-shared-test" className="workspace-grid tab-workspace shared-test-tab-grid">
+                    <Suspense fallback={<span role="status">Loading Shared Test…</span>}>
+                        <SharedTestPanel />
+                    </Suspense>
+                </div>
+            );
+        default:
+            return null;
+    }
 }

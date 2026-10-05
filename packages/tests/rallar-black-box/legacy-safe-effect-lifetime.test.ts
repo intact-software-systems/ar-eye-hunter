@@ -3,12 +3,15 @@
 import { act, createElement, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import { TopologyGraphPanel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/topology/TopologyGraphPanel.tsx';
 import { DistributedRecipesPanel } from '../../../apps/rallar-black-box/src/legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx';
 import { RunnerFleetPanel } from '../../../apps/rallar-black-box/src/legacy/runner/fleet/RunnerFleetPanel.tsx';
 import { RunnerRecipesPanel } from '../../../apps/rallar-black-box/src/legacy/runner/recipes/RunnerRecipesPanel.tsx';
 import { RunManagerPanel } from '../../../apps/rallar-black-box/src/legacy/runner/run-manager/RunManagerPanel.tsx';
-import { RunnerRunsPanel } from '../../../apps/rallar-black-box/src/legacy/runner/runs/RunnerRunsPanel.tsx';
+import { RunnerRunsPanel } from '../../../apps/rallar-black-box/src/legacy/runner/runs/runner-runs-panel.tsx';
 import { resolveRallarBlackBoxBootstrapConfig, type RallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
@@ -19,7 +22,7 @@ const sigmaLifecycle = vi.hoisted(() => ({
 
 vi.mock('sigma', () => ({
     default: class SigmaMock {
-        constructor(..._args: unknown[]) {
+        constructor() {
             sigmaLifecycle.constructed += 1;
         }
 
@@ -608,7 +611,7 @@ function emptyFleetReportsResponse() {
     } as const;
 }
 
-function jsonResponse(value: unknown): Response {
+function jsonResponse(value: ApiJsonValue): Response {
     return new Response(JSON.stringify(value), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }

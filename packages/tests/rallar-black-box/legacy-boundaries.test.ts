@@ -1,6 +1,7 @@
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+
 import { analyzeSourceFile, buildRelativeTypeScriptGraph, findDependencyCycles, type SourceAnalysis, type SourceImport } from '../helpers/source-analysis';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '../../..');
@@ -19,7 +20,7 @@ const LEGACY_ROUTES = [
     ],
     [
         runnerWorkspaceTabsSourcePath,
-        '../../runner/runs/RunnerRunsPanel.tsx',
+        '../../runner/runs/runner-runs-panel.tsx',
         'RunnerRunsPanel'
     ],
     [
