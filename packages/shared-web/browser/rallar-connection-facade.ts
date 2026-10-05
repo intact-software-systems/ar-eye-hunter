@@ -22,6 +22,7 @@ import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export type {
     RallarDiagnosticsPorts,
@@ -70,6 +71,7 @@ interface RallarRealtimeDefaults {
 }
 
 interface RallarRtcDefaults {
+    readonly captureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly waitTimeoutMs?: number;
     readonly connectOnWait?: boolean;
     readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
@@ -128,6 +130,7 @@ export interface RallarConnectionOperations {
     defaults(): RallarDefaults | undefined;
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
+    rtcCapture(): RtcSignalingDiagnostics.CaptureReceipt | undefined;
     status(): RallarConnectStatus;
     isConnected(): boolean;
     session(): AuthSession | undefined;

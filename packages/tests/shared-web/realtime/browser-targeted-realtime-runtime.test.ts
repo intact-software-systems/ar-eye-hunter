@@ -22,6 +22,8 @@ import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-run
 import { createRoomTransportFixture, type RoomTransportFixture } from './create-room-transport-fixture.ts';
 import { createNativeRealtimeLaneFixture } from './native-realtime-lane-fixture.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 const mocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
     const context = createDefaultApiMiddlewareTestDouble();
@@ -43,7 +45,11 @@ const mocks = await vi.hoisted(async () => {
 const connection = vi.mocked(mocks.context.middleware.webRtcConnectionService);
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), (): Partial<typeof MiddlewareModule> => ({
-    initialiseMiddleware: async (_session, _topic, options) => ({ middleware: (await mocks.initialiseApiMiddleware(options)).middleware, checkpoints: [] })
+    initialiseMiddleware: async (_session, _topic, options) => ({
+        middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
+        rtcCaptureReceipt,
+        checkpoints: []
+    })
 }));
 vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'), (): Partial<typeof StateCacheLifecycleModule> => ({
     browserStateCacheLifecycle: {

@@ -78,6 +78,7 @@ import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/ws-queue-box-client-service.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { JsonWebSocketClient, type WebSocketConnectOptions } from '@shared/websocket/json-web-socket-client.ts';
 
 import {
@@ -87,6 +88,7 @@ import {
 import type { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
 
 export interface MiddlewareInitOptions {
+    readonly rtcCaptureConfiguration: RtcSignalingDiagnostics.CaptureConfiguration;
     readonly qosProvider: ALQosInputProvider | undefined;
     readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
     readonly deliverySettlements: BrowserDeliverySettlements.Carriers;
@@ -108,6 +110,7 @@ export interface BrowserConnectOptions extends MiddlewareInitOptions {
 
 /** One connect's middleware, and the checkpoints of its two carriers, which the connect's page lifecycle flushes. */
 export interface BrowserConnectedMiddleware {
+    readonly rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt;
     readonly middleware: RallarBrowserMiddleware;
     readonly checkpoints: readonly ALCheckpointPort[];
 }
@@ -189,6 +192,7 @@ export type BrowserRtcOverlayCarrier = Pick<
 >;
 
 interface BrowserRtcTransport {
+    readonly rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt;
     readonly webRtcConnectionService: WebRtcConnectionService;
     readonly rtcRxStreamer: WebRtcRxStreamerService;
     readonly webRtcGroupManager: WebRtcGroupManager;
@@ -201,6 +205,7 @@ export interface BrowserMiddlewareCreation {
 }
 
 export interface InitialiseBrowserTransportInput {
+    readonly connectionId: RtcSignalingDiagnostics.Readout<string>;
     readonly creation: BrowserMiddlewareCreation;
     readonly session: AuthSession;
     readonly clientData: ClientInfo;
@@ -260,6 +265,7 @@ export async function initialiseMiddleware(
 
     const { checkpointStores } = transportInput;
     return {
+        rtcCaptureReceipt: rtcTransport.rtcCaptureReceipt,
         middleware: { ...webSocketTransport, ...rtcTransport, heartbeat: heartbeatHandle, storageAvailability },
         checkpoints: [checkpointStores.wsClient.checkpoint, checkpointStores.rtcOverlay.checkpoint]
     };
@@ -280,6 +286,7 @@ export function createBrowserTransportInput(
         nowMs: Date.now
     });
     return {
+        connectionId: readBrowserConnectionIdentity(),
         session,
         clientData,
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
@@ -393,7 +400,7 @@ async function initialiseBrowserRtcTransport(
         (signal) => readIceCandidates({ signal }),
         input.options
     );
-    const webRtcConnectionService = await initialiseBrowserRtcConnection(
+    const { webRtcConnectionService, rtcCaptureReceipt } = await initialiseBrowserRtcConnection(
         input,
         iceCandidates
     );
@@ -423,6 +430,7 @@ async function initialiseBrowserRtcTransport(
         rtcRxStreamer
     );
     return {
+        rtcCaptureReceipt,
         webRtcConnectionService,
         rtcRxStreamer,
         webRtcGroupManager,
@@ -541,8 +549,10 @@ function assertRtcGroupSnapshotRefreshIsCurrent(
 function initialiseBrowserRtcConnection(
     input: InitialiseBrowserRtcTransportInput,
     iceCandidates: IceConfig
-): Promise<WebRtcConnectionService> {
+): Promise<rtcEngine.BrowserRtcConnectionInitialization> {
     return rtcEngine.initialiseRtcConnectionService({
+        rtcCaptureConfiguration: input.options.rtcCaptureConfiguration,
+        connectionId: input.connectionId,
         webSocketQueueBox: input.webSocketTransport.webSocketQueueBox,
         qboxEngine: input.webSocketTransport.qboxEngine,
         clientData: input.clientData,
@@ -708,4 +718,18 @@ function toCommandOptions<T>(
         signal: options.signal,
         timeoutMs: options.timeoutMs
     };
+}
+
+function readBrowserConnectionIdentity(): RtcSignalingDiagnostics.Readout<string> {
+    try {
+        const identity = crypto.randomUUID();
+        return Object.freeze(
+            identity.length > 0
+                ? { status: 'observed', value: identity }
+                : { status: 'unavailable', reason: 'identity-invalid' }
+        );
+    }
+    catch {
+        return Object.freeze({ status: 'unavailable', reason: 'identity-source-failed' });
+    }
 }

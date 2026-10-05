@@ -41,6 +41,63 @@ export const RTC_NATIVE_SIGNAL_DISPOSITIONS = [
 export const RTC_SIGNAL_CALLER_RELEASES = ['application-returned', 'application-threw', 'lifetime-retired'] as const;
 
 export namespace RtcSignalingDiagnostics {
+    export type CaptureMode = 'off' | 'signaling' | 'native';
+    export type CaptureOrigin = 'run' | 'step' | 'recipe' | 'host' | 'product-default';
+    export type ReadoutUnavailableReason =
+        | 'disabled'
+        | 'no-native-object'
+        | 'absent'
+        | 'unsupported'
+        | 'unrecognized'
+        | 'read-failed'
+        | 'identity-source-absent'
+        | 'identity-source-failed'
+        | 'identity-invalid'
+        | 'initialization-failed'
+        | 'admission-limit'
+        | 'scope-disposed'
+        | 'payload-bytes'
+        | 'not-applicable';
+
+    export interface CaptureConfiguration {
+        readonly mode: CaptureMode;
+        readonly origin: CaptureOrigin;
+    }
+
+    export interface ObservedReadout<T> {
+        readonly status: 'observed';
+        readonly value: T;
+    }
+
+    export interface UnavailableReadout {
+        readonly status: 'unavailable';
+        readonly reason: ReadoutUnavailableReason;
+    }
+
+    export type Readout<T> = ObservedReadout<T> | UnavailableReadout;
+
+    export interface CaptureApplied {
+        readonly status: 'applied';
+        readonly mode: CaptureMode;
+    }
+
+    export interface CaptureUnavailable {
+        readonly status: 'unavailable';
+        readonly reason: 'sink-unavailable' | 'unsupported' | 'initialization-failed';
+    }
+
+    export type CaptureApplication = CaptureApplied | CaptureUnavailable;
+
+    export interface CaptureReceipt {
+        readonly configuration: CaptureConfiguration;
+        readonly application: CaptureApplication;
+        readonly connectionId: Readout<string>;
+        readonly nativeScopeId: Readout<string>;
+        readonly configurationVersion: 1;
+        readonly nativeAvailability: Readout<'enabled'>;
+        readonly nativeCoverage: 'attached' | 'partial' | 'unavailable' | 'not-applicable';
+    }
+
     export type ServiceDisposition = typeof RTC_SERVICE_SIGNAL_DISPOSITIONS[number];
     export type NativeDisposition = typeof RTC_NATIVE_SIGNAL_DISPOSITIONS[number];
     export type CallerRelease = typeof RTC_SIGNAL_CALLER_RELEASES[number];

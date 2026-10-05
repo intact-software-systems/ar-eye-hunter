@@ -2651,8 +2651,7 @@ moved or changed test.
         "requiredConstraint": "One failed physical dispatch invokes native send exactly once and records one QueueBox processing attempt.",
         "failureRationale": "An inner resend may duplicate a message after an uncertain native failure and would misrepresent multiple submissions as one QueueBox attempt."
       }
-    }
-,
+    },
     {
       "id": "agent-launch-unavailable-clipboard-mints-no-links",
       "domain": "Recipe Console browser-agent launch authority",
@@ -2668,7 +2667,7 @@ moved or changed test.
         "failureRationale": "Links minted for a clipboard that cannot receive them leave short-lived agent credentials live on the control server with no operator holding them."
       }
     },
-{
+    {
       "id": "agent-launch-one-control-token-per-simulated-agent",
       "domain": "Recipe Console browser-agent launch authority",
       "owner": "Rallar Black Box maintainers",
@@ -2763,7 +2762,7 @@ moved or changed test.
       "sharedCoverageGroup": "analyze-evidence-window-pending-and-failure-controls",
       "domain": "Recipe Console Analyze evidence window pagination",
       "owner": "Rallar Black Box maintainers",
-      "summary": "While an evidence-window request is in flight the pager controls stay mounted and disabled, and clicking one issues no second window request. Executable assertion: \u201ckeeps pending controls mounted, blocks repeat cursor requests, and reports failure\u201d.",
+      "summary": "While an evidence-window request is in flight the pager controls stay mounted and disabled, and clicking one issues no second window request. Executable assertion: “keeps pending controls mounted, blocks repeat cursor requests, and reports failure”.",
       "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-window-ui.test.ts#keeps pending controls mounted, blocks repeat cursor requests, and reports failure",
       "coverageRelation": "The test renders the pending window, reads that both pager buttons are still mounted with aria-disabled=true, clicks each of them, and reads the window-request count; the rendered rows are identical whether the click was refused or served, so the absent request is the only witness that it was refused.",
       "interactionRequirement": {
@@ -2779,7 +2778,7 @@ moved or changed test.
       "sharedCoverageGroup": "analyze-evidence-window-pending-and-failure-controls",
       "domain": "Recipe Console Analyze evidence window failure recovery",
       "owner": "Rallar Black Box maintainers",
-      "summary": "The evidence-window failure banner's retry control reissues the evidence search exactly once per click. Executable assertion: \u201ckeeps pending controls mounted, blocks repeat cursor requests, and reports failure\u201d.",
+      "summary": "The evidence-window failure banner's retry control reissues the evidence search exactly once per click. Executable assertion: “keeps pending controls mounted, blocks repeat cursor requests, and reports failure”.",
       "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-window-ui.test.ts#keeps pending controls mounted, blocks repeat cursor requests, and reports failure",
       "coverageRelation": "The test renders the failed window, reads the operator failure sentence, clicks the retry control once and reads the search count; the controller is a test double that re-renders nothing, so the call count is the only witness that one search left the view.",
       "interactionRequirement": {
@@ -3598,6 +3597,36 @@ moved or changed test.
         "requiredConstraint": "The request forwards to the browser once, bound to its storage manager.",
         "failureRationale": "A request that called persist more than once would prompt the user more than once."
       }
+    },
+    {
+      "id": "browser-rtc-capture-reentry-single-construction",
+      "domain": "Browser RTC capture reentry",
+      "owner": "Shared Web maintainers",
+      "summary": "An incompatible reentrant capture request constructs no second graph; the original accepted request constructs exactly one. Executable assertion: “holds the selected mode during synchronous setup reentry”.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-reuse.test.ts#holds the selected mode during synchronous setup reentry",
+      "coverageRelation": "The test invokes the real owned boundary and checks its visible result beside the required interaction count.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "initialiseMiddleware during BrowserTransportRuntime.init",
+        "observableEffect": "Middleware construction allocates the browser connection graph and native carrier resources.",
+        "requiredConstraint": "An incompatible reentrant capture request constructs no second graph; the original accepted request constructs exactly one.",
+        "failureRationale": "A duplicate initializer could allocate independent RTC resources even if one facade result is selected."
+      }
+    },
+    {
+      "id": "rallar-retry-classification-no-coercion",
+      "domain": "Rallar retry failure classification",
+      "owner": "Shared Web maintainers",
+      "summary": "Non-ApiHttpError failures return true without invoking user-defined coercion. Executable assertion: “classifies arbitrary retry failures without coercing them”.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-operation-options.test.ts#classifies arbitrary retry failures without coercing them",
+      "coverageRelation": "The test invokes the real owned boundary and checks its visible result beside the required interaction absence.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Symbol.toPrimitive on an arbitrary failure passed to shouldRetryRallarOperation",
+        "observableEffect": "User-defined conversion can throw or execute application effects during retry classification.",
+        "requiredConstraint": "Non-ApiHttpError failures return true without invoking user-defined coercion.",
+        "failureRationale": "Coercion could replace the retry decision with an unrelated exception or side effect."
+      }
     }
   ],
   "entries": [
@@ -3656,7 +3685,7 @@ moved or changed test.
       "rationale": "The unmade prepare call is the only witness that an unavailable clipboard stops the copy before the control server mints short-lived launch credentials.",
       "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#names an unavailable clipboard instead of minting links it cannot copy"
     },
-{
+    {
       "id": "test-structure-coupling-2156428ddf7703a1",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
       "kind": "symbol-assertion",
@@ -8231,6 +8260,28 @@ moved or changed test.
       "owner": "Rallar browser maintainers",
       "rationale": "One request calls persist once.",
       "semanticCoverage": "packages/tests/shared-web/al-runtime/browser-al-storage-availability.test.ts#asks through the browser storage manager where it has persist"
+    },
+    {
+      "id": "test-structure-coupling-6a517f180d23dbd7",
+      "path": "packages/tests/shared-web/connection/browser-rtc-capture-reuse.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-rtc-capture-reentry-single-construction",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "A duplicate initializer could allocate independent RTC resources even if one facade result is selected.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-reuse.test.ts#holds the selected mode during synchronous setup reentry"
+    },
+    {
+      "id": "test-structure-coupling-072167eabbe6b2a9",
+      "path": "packages/tests/shared-web/rallar-operation-options.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rallar-retry-classification-no-coercion",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "Coercion could replace the retry decision with an unrelated exception or side effect.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-operation-options.test.ts#classifies arbitrary retry failures without coercing them"
     }
   ]
 }

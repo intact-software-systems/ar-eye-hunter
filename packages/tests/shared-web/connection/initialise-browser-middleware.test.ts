@@ -2,7 +2,8 @@ import {
     describe,
     expect,
     it,
-    onTestFinished
+    onTestFinished,
+    vi
 } from 'vitest';
 
 import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
@@ -33,6 +34,7 @@ const SESSION: AuthSession = {
 };
 
 const OPTIONS: BrowserConnectOptions = {
+    rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
     qosProvider: undefined,
     readVolatileSessionLimits: () => ({ maxAdmissions: 3, maxBytes: 4_096 }),
     deliverySettlements: { ws: () => {}, rtc: () => {} },
@@ -50,6 +52,29 @@ const OPTIONS: BrowserConnectOptions = {
         })
     })
 };
+
+describe('browser connection construction identity', () => {
+    it('captures a fresh opaque identity independently of the signaling request source', () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const source = vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce('00000000-0000-0000-0000-000000000052');
+        onTestFinished(() => source.mockRestore());
+        const constructed = createBrowserTransportInput(SESSION, OPTIONS);
+        expect(constructed.connectionId).toEqual({ status: 'observed', value: '00000000-0000-0000-0000-000000000052' });
+        expect(constructed.creation.newConnectionRequestId()).not.toBe('00000000-0000-0000-0000-000000000052');
+    });
+
+    it('keeps identity-source failure as evidence while constructing the normal carrier inputs', () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const source = vi.spyOn(crypto, 'randomUUID').mockImplementationOnce(() => {
+            throw new Error('identity unavailable');
+        });
+        onTestFinished(() => source.mockRestore());
+        const constructed = createBrowserTransportInput(SESSION, OPTIONS);
+        expect(constructed.connectionId).toEqual({ status: 'unavailable', reason: 'identity-source-failed' });
+        expect(constructed.clientData).toEqual({ clientId: 'client-1', sessionId: 'session-1', isOnline: true });
+        expect(constructed.options).toBe(OPTIONS);
+    });
+});
 
 describe('the one volatile bound a browser session hands its carriers (D74)', () => {
     it('gives the inbound pair, the WS client and the RTC overlay the same budget and provider', () => {

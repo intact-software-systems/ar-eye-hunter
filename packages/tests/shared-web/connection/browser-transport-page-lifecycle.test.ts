@@ -12,6 +12,8 @@ import type { ALBrowserLocks } from '@shared/alm/storage/al-browser-locks.ts';
 import { installFakePageLifecyclePerTest } from '../al-runtime/fake-page-lifecycle.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
 
@@ -78,7 +80,7 @@ describe('the page lifecycle of a connected browser transport', () => {
 
         const pending = transport.init(toInitOptions());
         transport.shutdown();
-        transportUp.resolve({ middleware: middleware.middleware, checkpoints: [recordFlushes('flush', flushes)] });
+        transportUp.resolve({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [recordFlushes('flush', flushes)] });
         await expect(pending).rejects.toThrow('Rallar connection was cancelled because auth ended.');
         readPage().hide();
 
@@ -100,6 +102,7 @@ async function connectTransport(locks: ALBrowserLocks | undefined = undefined): 
     mocks.readSession.mockReturnValue(middleware.session);
     mocks.initialiseMiddleware.mockResolvedValue({
         middleware: middleware.middleware,
+        rtcCaptureReceipt,
         checkpoints: [recordFlushes('ws', flushes), recordFlushes('rtc', flushes)]
     });
     const transport = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
@@ -124,6 +127,7 @@ function recordFlushes(carrier: string, flushes: string[]): ALCheckpointPort {
 
 function toInitOptions(): BrowserTransportInitOptions {
     return {
+        rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
         qosProvider: undefined,
         readVolatileSessionLimits: undefined,
         deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },

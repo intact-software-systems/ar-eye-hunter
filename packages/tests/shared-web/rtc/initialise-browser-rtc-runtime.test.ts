@@ -67,7 +67,7 @@ describe('browser RTC runtime composition', () => {
         configureBrowserALRuntimeStores('self', { scope: defaultStateScope(), diagnosticsPorts });
     });
 
-    it('retains an incoming offer while signaling starts and admits it after the selected layout is ready', async () => {
+    it.each(['off', 'signaling', 'native'] as const)('keeps inbound admission and native application with %s capture', async (mode) => {
         const nativeRuntime = installNativeRtcRuntime();
         const signalingEvents: RtcSignalingDiagnostics.Event[] = [];
         const consumerEvents: ALInboundRuntimeDiagnosticsEvent[] = [];
@@ -88,7 +88,7 @@ describe('browser RTC runtime composition', () => {
             serverPeerId: 'server',
             inboundDiagnostics: (event) => consumerEvents.push(event)
         });
-        const initializing = initialiseRtcConnectionService({
+        const connectionInput = {
             webSocketQueueBox: queueBox,
             qboxEngine: new InboxOutboxEngine(),
             clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
@@ -96,14 +96,23 @@ describe('browser RTC runtime composition', () => {
             dataChannelName: 'test',
             rtcSignalingTopicId: 'rtc',
             faultPort: diagnosticsPorts.transportFaultPort,
-            signalingDiagnostics: configuredDiagnostics.signalingDiagnostics
-        });
+            signalingDiagnostics: configuredDiagnostics.signalingDiagnostics,
+            rtcCaptureConfiguration: { mode, origin: 'step' } as const,
+            connectionId: { status: 'observed', value: 'connection-inbound' } as const
+        };
+        const initializing = initialiseRtcConnectionService(connectionInput);
 
         try {
             await networkConnectStarted.promise;
             await receiveOffer(queueBox, 'startup-peer');
             networkConnect.resolve();
-            const service = await initializing;
+            const initialized = await initializing;
+            expect(initialized.rtcCaptureReceipt).toMatchObject({
+                configuration: { mode, origin: 'step' },
+                application: mode === 'native' ? { status: 'unavailable', reason: 'unsupported' } : { status: 'applied', mode },
+                connectionId: { status: 'observed', value: 'connection-inbound' }
+            });
+            const service = initialized.webRtcConnectionService;
 
             expect(service.knownPeerIds()).toEqual([]);
             expect(nativeRuntime.createdConnections).toHaveLength(0);
@@ -114,13 +123,12 @@ describe('browser RTC runtime composition', () => {
                     outcome: 'retry'
                 }))
             );
-            expect(signalingEvents).toContainEqual(expect.objectContaining({
-                kind: 'service-signal-route',
-                disposition: 'policy-retry',
-                localSessionId: 'self',
-                peerSessionId: 'startup-peer',
-                atEpochMs: expect.any(Number)
-            }));
+            if (mode === 'signaling') {
+                expect(signalingEvents).toContainEqual(expect.objectContaining({ kind: 'service-signal-route', disposition: 'policy-retry' }));
+            }
+            else {
+                expect(signalingEvents).toEqual([]);
+            }
             expect(service.ensurePeerConnectionStarted('direct-startup-peer').left).toMatchObject({
                 kind: 'dial-denied',
                 reason: 'browser-runtime-initializing'
@@ -151,7 +159,7 @@ describe('browser RTC runtime composition', () => {
         finally {
             networkConnect.resolve();
             try {
-                const service = await initializing;
+                const { webRtcConnectionService: service } = await initializing;
                 for (const peerId of service.knownPeerIds()) {
                     service.disconnectPeer(peerId);
                 }

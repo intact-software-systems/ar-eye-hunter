@@ -77,6 +77,8 @@ import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-dou
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
 installFakeBroadcastChannelPerTest();
@@ -581,22 +583,7 @@ it('delivers the canonical generated supersedence specimen through the page deco
 });
 
 function createGeneratedSendLedger(sender: NativeAuthorityEndpoint): BlackBoxRallarDeliveryLedger {
-    const bootstrap = createDefaultApiMiddlewareTestDouble({
-        session: { clientId: 'sender', sessionId: 'sender', username: 'sender', expiresAtEpochMs: Date.now() + 300_000 }
-    });
-    const context = {
-        ...bootstrap,
-        middleware: {
-            ...bootstrap.middleware,
-            rtcRxStreamer: sender.streamer,
-            webRtcConnectionService: sender.connection.service,
-            webRtcOverlayMulticastManager: sender.multicast
-        }
-    };
-    vi.spyOn(auth, 'readSession').mockReturnValue(context.session);
-    vi.spyOn(auth, 'isLoggedIn').mockReturnValue(true);
-    vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockResolvedValue({ middleware: context.middleware, checkpoints: [] });
-    const facade = createRallarFacade();
+    const facade = createGeneratedSendFacade(sender);
     const resources = createBlackBoxRallarMessagingResourceController({ generation: () => 1, isCurrent: (generation) => generation === 1 });
     onTestFinished(() => {
         resources.cleanupWsSubscriptions();
@@ -646,6 +633,25 @@ function createGeneratedSendLedger(sender: NativeAuthorityEndpoint): BlackBoxRal
             }
         })
     });
+}
+
+function createGeneratedSendFacade(sender: NativeAuthorityEndpoint): ReturnType<typeof createRallarFacade> {
+    const bootstrap = createDefaultApiMiddlewareTestDouble({
+        session: { clientId: 'sender', sessionId: 'sender', username: 'sender', expiresAtEpochMs: Date.now() + 300_000 }
+    });
+    const context = {
+        ...bootstrap,
+        middleware: {
+            ...bootstrap.middleware,
+            rtcRxStreamer: sender.streamer,
+            webRtcConnectionService: sender.connection.service,
+            webRtcOverlayMulticastManager: sender.multicast
+        }
+    };
+    vi.spyOn(auth, 'readSession').mockReturnValue(context.session);
+    vi.spyOn(auth, 'isLoggedIn').mockReturnValue(true);
+    vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockResolvedValue({ middleware: context.middleware, rtcCaptureReceipt, checkpoints: [] });
+    return createRallarFacade();
 }
 
 describe('authoritative room observation freshness', () => {
@@ -861,7 +867,7 @@ async function refreshNormalRoom(): Promise<void> {
     });
     vi.spyOn(auth, 'readSession').mockReturnValue(context.session);
     vi.spyOn(auth, 'isLoggedIn').mockReturnValue(true);
-    vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockResolvedValue({ middleware: context.middleware, checkpoints: [] });
+    vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockResolvedValue({ middleware: context.middleware, rtcCaptureReceipt, checkpoints: [] });
     const facade = createRallarFacade();
     await facade.rooms.session(room).refresh();
 }

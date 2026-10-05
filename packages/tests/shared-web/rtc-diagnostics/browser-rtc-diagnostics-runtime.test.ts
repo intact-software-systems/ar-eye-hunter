@@ -14,6 +14,8 @@ import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from '.
 // The factories below annotate their return type on purpose: without it the contextual type of a
 // `vi.mock` factory is a union, and TypeScript then accepts an export name the module does not
 // have. With the annotation a renamed or removed export fails the type check.
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
@@ -45,7 +47,7 @@ const mocks = await vi.hoisted(async () => {
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<MiddlewareModule> => ({
-        initialiseMiddleware: async () => ({ middleware: (await mocks.initialiseApiMiddleware()).middleware, checkpoints: [] })
+        initialiseMiddleware: async () => ({ middleware: (await mocks.initialiseApiMiddleware()).middleware, rtcCaptureReceipt, checkpoints: [] })
     })
 );
 

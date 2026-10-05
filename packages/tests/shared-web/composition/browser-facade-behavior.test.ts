@@ -12,6 +12,8 @@ import {
 
 import { FakeBroadcastChannel, installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
@@ -94,7 +96,7 @@ installFakeBroadcastChannelPerTest();
 beforeEach(() => {
     browserTransportRuntime.shutdown('test-reset');
     vi.clearAllMocks();
-    runtime.initialiseMiddleware.mockResolvedValue({ middleware: runtime.middleware.middleware, checkpoints: [] });
+    runtime.initialiseMiddleware.mockResolvedValue({ middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
     runtime.readSession.mockReturnValue(runtime.middleware.session);
     runtime.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
     runtime.hydrateStateCache.mockResolvedValue(undefined);
@@ -209,6 +211,7 @@ describe('browser facade restored-session setup', () => {
             runtime.middleware.session,
             expect.any(String),
             {
+                rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
                 qosProvider: undefined,
                 readVolatileSessionLimits: undefined,
                 deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
@@ -218,6 +221,7 @@ describe('browser facade restored-session setup', () => {
                     indexedDbOperationObserver: { observe: expect.any(Function) },
                     outboundDiagnostics: expect.any(Function),
                     inboundDiagnostics: expect.any(Function),
+                    signalingDiagnostics: undefined,
                     storage: expect.any(Function)
                 },
                 onAuthInvalid: expect.any(Function),

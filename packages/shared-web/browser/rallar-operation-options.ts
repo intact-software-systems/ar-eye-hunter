@@ -3,6 +3,8 @@ import type { CommandOptions } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
+import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export type RallarOperationRetryPredicate = (
     error: Error,
@@ -10,6 +12,7 @@ export type RallarOperationRetryPredicate = (
 ) => boolean;
 
 export interface RallarOperationOptions {
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly signal?: AbortSignal;
     readonly timeoutMs?: number;
     readonly maxAttempts?: number;
@@ -40,46 +43,23 @@ export function toRallarWorkflowPolicies<V>(
 export function toRallarOperationOptions(
     options: RallarOperationOptions
 ): RallarOperationOptions {
-    if (
-        !options.signal &&
-        options.timeoutMs === undefined &&
-        options.maxAttempts === undefined &&
-        options.shouldRetry === undefined &&
-        options.dataChannelLanes === undefined &&
-        options.maxPeerConnections === undefined &&
-        options.rttReportingDegreeLimit === undefined &&
-        options.bootstrapDegree === undefined
-    ) {
-        return {};
+    const parsed = parseRtcCaptureMode(options.rtcCaptureMode);
+    if (parsed.left) {
+        throw new Error(parsed.left[0].message);
     }
-
-    const normalized: { -readonly [Key in keyof RallarOperationOptions]: RallarOperationOptions[Key]; } = {};
-    if (options.signal) {
-        normalized.signal = options.signal;
-    }
-    if (options.timeoutMs !== undefined) {
-        normalized.timeoutMs = options.timeoutMs;
-    }
-    if (options.maxAttempts !== undefined) {
-        normalized.maxAttempts = options.maxAttempts;
-    }
-    if (options.shouldRetry !== undefined) {
-        normalized.shouldRetry = options.shouldRetry;
-    }
-    if (options.dataChannelLanes !== undefined) {
-        normalized.dataChannelLanes = options.dataChannelLanes;
-    }
-    if (options.maxPeerConnections !== undefined) {
-        normalized.maxPeerConnections = options.maxPeerConnections;
-    }
-    if (options.rttReportingDegreeLimit !== undefined) {
-        normalized.rttReportingDegreeLimit = options.rttReportingDegreeLimit;
-    }
-    if (options.bootstrapDegree !== undefined) {
-        normalized.bootstrapDegree = options.bootstrapDegree;
-    }
-
-    return normalized;
+    return {
+        ...(options.signal ? { signal: options.signal } : {}),
+        ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+        ...(options.maxAttempts !== undefined ? { maxAttempts: options.maxAttempts } : {}),
+        ...(options.shouldRetry !== undefined ? { shouldRetry: options.shouldRetry } : {}),
+        ...(options.dataChannelLanes !== undefined ? { dataChannelLanes: options.dataChannelLanes } : {}),
+        ...(options.maxPeerConnections !== undefined ? { maxPeerConnections: options.maxPeerConnections } : {}),
+        ...(options.rttReportingDegreeLimit !== undefined
+            ? { rttReportingDegreeLimit: options.rttReportingDegreeLimit }
+            : {}),
+        ...(options.bootstrapDegree !== undefined ? { bootstrapDegree: options.bootstrapDegree } : {}),
+        ...(options.rtcCaptureMode !== undefined ? { rtcCaptureMode: options.rtcCaptureMode } : {})
+    };
 }
 
 export function toRallarCommandOptions<T>(

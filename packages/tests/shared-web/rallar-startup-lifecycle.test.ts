@@ -19,6 +19,8 @@ import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/gr
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from './data/rallar-data-test-runtime.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('./rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 interface GroupSnapshotFixtureScope {
     readonly applicationId?: string;
     readonly workspaceId?: string;
@@ -33,7 +35,7 @@ const mocks = await vi.hoisted(async () => {
         apiMiddleware,
         hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(() => Promise.resolve()),
         initialiseMiddleware: vi.fn<typeof MiddlewareModule.initialiseMiddleware>(() =>
-            Promise.resolve({ middleware: apiMiddleware.middleware, checkpoints: [] })
+            Promise.resolve({ middleware: apiMiddleware.middleware, rtcCaptureReceipt, checkpoints: [] })
         ),
         onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.onChange>(() => vi.fn()),
         refreshStateSnapshots: vi.fn<typeof RefreshStateSnapshotsModule.refreshStateSnapshots>(() => Promise.resolve({ clients: [], groups: [] })),
@@ -101,7 +103,7 @@ describe('Rallar startup lifecycle behavior', () => {
         mocks.getAllClientStateSnapshots.mockReturnValue([]);
         mockGroupSnapshots([]);
         mocks.hydrateStateCache.mockResolvedValue(undefined);
-        mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.apiMiddleware.middleware, checkpoints: [] });
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.apiMiddleware.middleware, rtcCaptureReceipt, checkpoints: [] });
         const storage = new Map<string, string>();
         vi.stubGlobal('localStorage', {
             getItem: (key: string) => storage.get(key) ?? null,

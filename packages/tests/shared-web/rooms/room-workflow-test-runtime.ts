@@ -17,6 +17,8 @@ import {
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
 type RoomGroupStateMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
 type RoomMembershipGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-membership-group-state-workflows.ts');
@@ -59,7 +61,11 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
 });
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
-    initialiseMiddleware: async (): Promise<BrowserConnectedMiddleware> => ({ middleware: roomWorkflowMocks.ctx.middleware, checkpoints: [] })
+    initialiseMiddleware: async (): Promise<BrowserConnectedMiddleware> => ({
+        middleware: roomWorkflowMocks.ctx.middleware,
+        rtcCaptureReceipt,
+        checkpoints: []
+    })
 }));
 
 vi.mock(import('@shared-web/browser/rooms/room-group-state-workflows.ts'), () => ({

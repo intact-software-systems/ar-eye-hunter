@@ -20,6 +20,8 @@ import { readALBrowserLocks } from '@shared/alm/storage/al-browser-locks.ts';
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import { checkRtcCaptureCompatibility } from './rallar-rtc-capture-connection-required-error.ts';
 
 import { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
 
@@ -30,6 +32,8 @@ export interface BrowserTransportInitOptions extends Omit<MiddlewareInitOptions,
 
 export interface BrowserTransportRuntimePort {
     readonly deliverySettlements: BrowserDeliverySettlements;
+    readRtcCaptureConfiguration(): RtcSignalingDiagnostics.CaptureConfiguration | undefined;
+    readRtcCaptureReceipt(): RtcSignalingDiagnostics.CaptureReceipt | undefined;
     readMiddleware(): ApiMiddleware | undefined;
     requireMiddleware(): ApiMiddleware;
     isReady(): boolean;
@@ -41,6 +45,7 @@ export interface BrowserTransportRuntimePort {
 /** One connect's middleware as the facade holds it, and the checkpoints its page lifecycle flushes. */
 interface BrowserTransportConnect {
     readonly middleware: ApiMiddleware;
+    readonly rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt;
     readonly checkpoints: BrowserConnectedMiddleware['checkpoints'];
 }
 
@@ -48,6 +53,12 @@ export namespace BrowserTransportRuntime {
     export interface Input {
         /** Opens each connect's session channel to the session's other tabs. */
         readonly openSessionChannelPort: BrowserALSessionChannel.OpenPort;
+    }
+
+    export interface PendingConnection {
+        readonly session: AuthSession;
+        readonly generation: number;
+        readonly durableWork: BrowserALDurableWorkClaim;
     }
 }
 
@@ -59,9 +70,19 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     private activePageLifecycle: BrowserPageLifecycleFlush | undefined;
     private pendingMiddleware: Promise<ApiMiddleware> | undefined;
     private generation = 0;
+    private rtcCaptureConfiguration: RtcSignalingDiagnostics.CaptureConfiguration | undefined;
+    private rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt | undefined;
 
     constructor(input: BrowserTransportRuntime.Input) {
         this.input = input;
+    }
+
+    public readRtcCaptureConfiguration(): RtcSignalingDiagnostics.CaptureConfiguration | undefined {
+        return this.rtcCaptureConfiguration;
+    }
+
+    public readRtcCaptureReceipt(): RtcSignalingDiagnostics.CaptureReceipt | undefined {
+        return this.rtcCaptureReceipt;
     }
 
     public readMiddleware(): ApiMiddleware | undefined {
@@ -86,6 +107,14 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     }
 
     public init(options: BrowserTransportInitOptions): Promise<ApiMiddleware> {
+        const compatibility = checkRtcCaptureCompatibility({
+            requested: options.rtcCaptureConfiguration,
+            current: this.rtcCaptureConfiguration,
+            currentReceipt: this.rtcCaptureReceipt
+        });
+        if (compatibility.left) {
+            return Promise.reject(compatibility.left);
+        }
         if (this.activeMiddleware) {
             return Promise.resolve(this.activeMiddleware);
         }
@@ -94,42 +123,44 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
             return this.pendingMiddleware;
         }
 
-        const generation = this.generation;
         const session = readSession();
         if (!session) {
             return Promise.reject(new Error('Cannot init middleware: no auth session.'));
         }
+        const rtcCaptureConfiguration = Object.freeze({ ...options.rtcCaptureConfiguration });
+        this.rtcCaptureConfiguration = rtcCaptureConfiguration;
+        try {
+            return this.startMiddleware(session, { ...options, rtcCaptureConfiguration });
+        }
+        catch (error) {
+            if (this.rtcCaptureConfiguration === rtcCaptureConfiguration) {
+                this.rtcCaptureConfiguration = undefined;
+            }
+            throw error;
+        }
+    }
 
+    private startMiddleware(session: AuthSession, options: BrowserTransportInitOptions): Promise<ApiMiddleware> {
         const scope = options.scope ?? defaultStateScope();
         const sessionChannel = this.openSessionChannel(scope, session, options.deliverySettlements);
         const durableWork = this.claimDurableWork(scope, session, sessionChannel);
         const epoch = this.deliverySettlements.open(options.deliverySettlements, sessionChannel);
+        const connection: BrowserTransportRuntime.PendingConnection = {
+            session,
+            generation: this.generation,
+            durableWork
+        };
         const pendingMiddleware = this.createMiddleware(session, {
             ...options,
             deliverySettlements: epoch.settlements,
             durableWorkOwnership: durableWork
         })
-            .then(({ middleware, checkpoints }) => {
-                const currentSession = readSession();
-                if (
-                    generation !== this.generation ||
-                    !currentSession ||
-                    toAuthSessionKey(currentSession) !== toAuthSessionKey(session)
-                ) {
-                    this.shutdownMiddleware(middleware.middleware);
-                    throw new Error('Rallar connection was cancelled because auth ended.');
-                }
-
-                this.activeMiddleware = middleware;
-                this.activeDurableWork = durableWork;
-                this.activePageLifecycle = new BrowserPageLifecycleFlush({
-                    page: readBrowserPageLifecycle(),
-                    ownership: durableWork,
-                    checkpoints
-                });
-                return middleware;
-            })
+            .then((connected) => this.acceptMiddleware(connected, connection))
             .catch((error) => {
+                if (connection.generation === this.generation) {
+                    this.rtcCaptureConfiguration = undefined;
+                    this.rtcCaptureReceipt = undefined;
+                }
                 epoch.close();
                 durableWork.release();
                 throw error;
@@ -139,15 +170,39 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
                     this.pendingMiddleware = undefined;
                 }
             });
-
         this.pendingMiddleware = pendingMiddleware;
         return pendingMiddleware;
+    }
+
+    private acceptMiddleware(
+        connected: BrowserTransportConnect,
+        connection: BrowserTransportRuntime.PendingConnection
+    ): ApiMiddleware {
+        const currentSession = readSession();
+        if (
+            connection.generation !== this.generation || !currentSession ||
+            toAuthSessionKey(currentSession) !== toAuthSessionKey(connection.session)
+        ) {
+            this.shutdownMiddleware(connected.middleware.middleware);
+            throw new Error('Rallar connection was cancelled because auth ended.');
+        }
+        this.rtcCaptureReceipt = connected.rtcCaptureReceipt;
+        this.activeMiddleware = connected.middleware;
+        this.activeDurableWork = connection.durableWork;
+        this.activePageLifecycle = new BrowserPageLifecycleFlush({
+            page: readBrowserPageLifecycle(),
+            ownership: connection.durableWork,
+            checkpoints: connected.checkpoints
+        });
+        return connected.middleware;
     }
 
     public shutdown(reason = 'rallar-disconnect'): void {
         this.deliverySettlements.close();
         this.generation += 1;
         this.pendingMiddleware = undefined;
+        this.rtcCaptureConfiguration = undefined;
+        this.rtcCaptureReceipt = undefined;
         const middleware = this.activeMiddleware;
         const durableWork = this.activeDurableWork;
         this.activePageLifecycle?.release();
@@ -203,9 +258,13 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
             headers.set('x-client-id', session.clientId);
             return fetch(input, { ...init, headers });
         };
-        const { middleware, checkpoints } = await initialiseMiddleware(session, AppTopics.rtcSignaling, options);
+        const { middleware, checkpoints, rtcCaptureReceipt } = await initialiseMiddleware(
+            session,
+            AppTopics.rtcSignaling,
+            options
+        );
 
-        return { middleware: { session, authFetch, middleware }, checkpoints };
+        return { middleware: { session, authFetch, middleware }, checkpoints, rtcCaptureReceipt };
     }
 
     private shutdownMiddleware(

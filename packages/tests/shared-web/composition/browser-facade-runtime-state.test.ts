@@ -89,6 +89,18 @@ describe('Browser facade runtime state', () => {
         });
     });
 
+    it('copies capture defaults and keeps an explicit operation mode through projection', () => {
+        const context = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
+        const defaults = { applicationId: 'app', rtc: { captureMode: 'native' as const } };
+        context.setDefaults(defaults);
+        Object.assign(defaults.rtc, { captureMode: 'off' });
+        expect(context.defaults()?.rtc?.captureMode).toBe('native');
+        const copy = context.defaults();
+        Object.assign(copy?.rtc ?? {}, { captureMode: 'signaling' });
+        expect(context.defaults()?.rtc?.captureMode).toBe('native');
+        expect(context.resolveOperationOptions({ rtcCaptureMode: 'off' })).toEqual({ rtcCaptureMode: 'off' });
+    });
+
     it('keeps current room and connection state isolated per context', () => {
         const first = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
         const second = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));

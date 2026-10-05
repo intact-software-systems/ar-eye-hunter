@@ -56,6 +56,7 @@ import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-clie
 import type { TransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
+import { createBrowserRtcCapture } from './create-browser-rtc-capture.ts';
 
 export interface InitialiseRtcOverlayMulticastManagerInput {
     readonly qosProvider: ALQosInputProvider | undefined;
@@ -142,48 +143,42 @@ export interface InitialiseRtcConnectionServiceInput {
     readonly dataChannelName: string;
     readonly rtcSignalingTopicId: string;
     readonly faultPort: TransportFaultPort;
+    readonly connectionId: RtcSignalingDiagnostics.Readout<string>;
+    readonly rtcCaptureConfiguration: RtcSignalingDiagnostics.CaptureConfiguration;
     readonly signalingDiagnostics?: RtcSignalingDiagnostics['record'];
     readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
     readonly maxPeerConnections?: number;
 }
 
+export interface BrowserRtcConnectionInitialization {
+    readonly webRtcConnectionService: WebRtcConnectionService;
+    readonly rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt;
+}
+
 export async function initialiseRtcConnectionService(
     input: InitialiseRtcConnectionServiceInput
-): Promise<WebRtcConnectionService> {
+): Promise<BrowserRtcConnectionInitialization> {
     const signaler = new WsRtcSignalingTransportUsingWsQBox(
         input.webSocketQueueBox,
         input.rtcSignalingTopicId,
         () => input.qboxEngine.wake()
     );
-    const nowEpochMs = () => Date.now();
-    const signalingDiagnostics = input.signalingDiagnostics
-        ? { nowEpochMs, record: input.signalingDiagnostics }
-        : undefined;
+    const nowEpochMs = Date.now;
+    const capture = createBrowserRtcCapture({
+        configuration: input.rtcCaptureConfiguration,
+        connectionId: input.connectionId,
+        record: input.signalingDiagnostics,
+        nowEpochMs
+    });
     const dependencies = {
         faultPort: input.faultPort,
         createOfferId: () => crypto.randomUUID(),
         nowEpochMs,
-        signalingDiagnostics
+        signalingDiagnostics: capture.diagnostics
     };
     const connectionService = new WebRtcConnectionService(
         signaler,
-        {
-            sessionId: input.clientData.sessionId,
-            token: 'NOT_CREATED_YET',
-            iceCandidates: input.iceCandidates,
-            dataChannelName: input.dataChannelName,
-            dataChannelLanes: input.dataChannelLanes,
-            rtcSignalingTopicId: input.rtcSignalingTopicId,
-            peerEstablishmentTimeout: {
-                ...DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY,
-                enabled: true
-            },
-            peerConnectionAttemptBudget: {
-                ...DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
-                enabled: true
-            },
-            maxPeerConnections: input.maxPeerConnections
-        },
+        toBrowserRtcConnectionServiceInput(input),
         dependencies
     );
 
@@ -197,5 +192,27 @@ export async function initialiseRtcConnectionService(
     }));
     await connectionService.connectSignaler();
 
-    return connectionService;
+    return { webRtcConnectionService: connectionService, rtcCaptureReceipt: capture.receipt };
+}
+
+function toBrowserRtcConnectionServiceInput(
+    input: InitialiseRtcConnectionServiceInput
+): WebRtcConnectionService.InputDto {
+    return {
+        sessionId: input.clientData.sessionId,
+        token: 'NOT_CREATED_YET',
+        iceCandidates: input.iceCandidates,
+        dataChannelName: input.dataChannelName,
+        dataChannelLanes: input.dataChannelLanes,
+        rtcSignalingTopicId: input.rtcSignalingTopicId,
+        peerEstablishmentTimeout: {
+            ...DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY,
+            enabled: true
+        },
+        peerConnectionAttemptBudget: {
+            ...DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
+            enabled: true
+        },
+        maxPeerConnections: input.maxPeerConnections
+    };
 }

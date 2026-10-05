@@ -5,6 +5,27 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // The existing browser facade entry exports the single intentional public
+    // surface; concrete capabilities remain owned in their feature modules.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rallar.ts',
+        rule: 'file.responsibility-count',
+        symbol: undefined,
+        maximumMagnitude: 12
+    }),
+    // These SDK ingress boundaries validate untrusted selections or narrow
+    // arbitrary framework rejection reasons through instanceof before policy.
+    // Retry classification deliberately preserves its public no-coercion rule.
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-capture-configuration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'parseRtcCaptureMode'
+    }),
+    Object.freeze({
+        path: 'packages/shared-web/browser/rallar-operation-options.ts',
+        rule: 'boundary.unknown',
+        symbol: 'shouldRetryRallarOperation'
+    }),
     Object.freeze({
         path: 'packages/tests/shared-test/remote-browser-command-preparation.test.ts',
         rule: 'control.nested-callback-depth',

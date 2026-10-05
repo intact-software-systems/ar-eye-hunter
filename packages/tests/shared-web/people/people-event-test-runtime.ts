@@ -28,6 +28,8 @@ export interface PeopleEventFixtureInput {
     readonly occurredAtEpochMs?: number;
 }
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 const peopleEventMocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
     const context = createDefaultApiMiddlewareTestDouble();
@@ -58,7 +60,11 @@ const peopleEventMocks = await vi.hoisted(async () => {
 });
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
-    initialiseMiddleware: async (): Promise<BrowserConnectedMiddleware> => ({ middleware: peopleEventMocks.context.middleware, checkpoints: [] })
+    initialiseMiddleware: async (): Promise<BrowserConnectedMiddleware> => ({
+        middleware: peopleEventMocks.context.middleware,
+        rtcCaptureReceipt,
+        checkpoints: []
+    })
 }));
 
 vi.mock(import('@shared-web/browser/state-read/state-event-http-api.ts'), () => ({

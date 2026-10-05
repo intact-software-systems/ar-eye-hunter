@@ -13,6 +13,8 @@ import type { StateEventPage } from '@shared/api/state-event-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 
 export interface RoomEventEnvelopeOptions {
@@ -53,7 +55,7 @@ const roomEventMocks = await vi.hoisted(async () => {
 });
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
-    initialiseMiddleware: async (): Promise<BrowserConnectedMiddleware> => ({ middleware: roomEventMocks.ctx.middleware, checkpoints: [] })
+    initialiseMiddleware: async (): Promise<BrowserConnectedMiddleware> => ({ middleware: roomEventMocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] })
 }));
 
 vi.mock(import('@shared-web/browser/state-read/state-event-http-api.ts'), (): Partial<StateEventHttpApiModule> => ({

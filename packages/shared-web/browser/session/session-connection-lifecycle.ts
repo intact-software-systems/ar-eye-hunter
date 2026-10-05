@@ -6,6 +6,7 @@ import type {
 } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { checkRtcCaptureCompatibility } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
@@ -19,8 +20,10 @@ import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-vol
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export interface RallarSessionConnectionInput {
+    readonly rtcCaptureConfiguration: RtcSignalingDiagnostics.CaptureConfiguration;
     readonly session: AuthSession;
     readonly scope: StateScope | undefined;
     readonly operationOptions: RallarOperationOptions;
@@ -54,6 +57,7 @@ export namespace BrowserSessionConnectionLifecycle {
 
 export class BrowserSessionConnectionLifecycle implements RallarSessionConnectionLifecycle {
     private connectionGeneration = 0;
+    private rtcCaptureConfiguration: RtcSignalingDiagnostics.CaptureConfiguration | undefined;
     private connectionPromise: Promise<ApiMiddleware> | undefined;
     private disconnectPromise: Promise<void> | undefined;
     private lifecycleIsDisconnected = false;
@@ -75,6 +79,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         this.disconnectPromise = Promise.resolve().then(() => {
             this.connectionGeneration += 1;
             this.connectionPromise = undefined;
+            this.rtcCaptureConfiguration = undefined;
             this.cleanupConnection(middleware);
         }).finally(() => {
             this.disconnectPromise = undefined;
@@ -83,6 +88,15 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
     }
 
     public async connect(input: RallarSessionConnectionInput): Promise<ApiMiddleware> {
+        const compatibility = checkRtcCaptureCompatibility({
+            requested: input.rtcCaptureConfiguration,
+            current: this.input.transportRuntime.readRtcCaptureConfiguration() ??
+                (this.connectionPromise ? this.rtcCaptureConfiguration : undefined),
+            currentReceipt: this.input.transportRuntime.readRtcCaptureReceipt()
+        });
+        if (compatibility.left) {
+            return Promise.reject(compatibility.left);
+        }
         const cachedMiddleware = this.input.connectionRuntime.readMiddleware();
         if (cachedMiddleware) {
             return cachedMiddleware;
@@ -91,6 +105,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             return await waitForRallarOperation(this.connectionPromise, input.operationOptions);
         }
 
+        this.rtcCaptureConfiguration = Object.freeze({ ...input.rtcCaptureConfiguration });
         const middlewareOptions = {
             ...toMiddlewareOptions(input),
             qosProvider: this.input.qosProvider,
@@ -118,6 +133,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
                 if (connection.generation !== this.connectionGeneration) {
                     throw new Error('Rallar connection was cancelled because auth ended.');
                 }
+                this.rtcCaptureConfiguration = undefined;
                 this.input.connectionRuntime.setConnectState('idle');
                 await input.onAuthInvalid(connectionError);
                 if (input.hasAuthEndInProgress()) {
@@ -167,6 +183,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
     }
 
     private cleanupConnection(middleware: ApiMiddleware | undefined): void {
+        this.rtcCaptureConfiguration = undefined;
         let failure: Error | undefined;
         const attempt = (cleanup: () => void): void => {
             try {
@@ -202,6 +219,7 @@ function toMiddlewareOptions(
 ): Omit<MiddlewareInitOptions, 'deliverySettlements' | 'qosProvider' | 'readVolatileSessionLimits'> {
     return {
         ...toRallarOperationOptions(input.operationOptions),
+        rtcCaptureConfiguration: input.rtcCaptureConfiguration,
         diagnosticsPorts: input.diagnosticsPorts,
         ...(input.scope ? { scope: input.scope } : {}),
         onAuthInvalid: async (error) => {

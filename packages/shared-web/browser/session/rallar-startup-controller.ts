@@ -12,73 +12,32 @@ import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-cont
 import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 
 /** Dependencies for restored-session startup and the setup golden path. */
-export type CreateRallarStartupControllerOptions = Readonly<{
-    connection: RallarConnectionOperations;
-    auth: RallarAuthFacade;
-    rooms: BrowserRallarRooms;
-    people: RallarPeopleOperations;
+export interface CreateRallarStartupControllerOptions {
+    readonly connection: RallarConnectionOperations;
+    readonly auth: RallarAuthFacade;
+    readonly rooms: BrowserRallarRooms;
+    readonly people: RallarPeopleOperations;
     waitForAuthEnd(): Promise<void>;
     resolveOperationOptions<T extends RallarOperationOptions>(
         options: T
     ): T & RallarOperationOptions;
-}>;
+}
 
-export type RallarStartupController = Readonly<{
+export interface RallarStartupController {
     start(options?: RallarStartOptions): Promise<RallarStartResult>;
     setup(input: RallarSetupInput): Promise<RallarStartResult>;
-}>;
+}
 
 export function createRallarStartupController(
     options: CreateRallarStartupControllerOptions
 ): RallarStartupController {
-    const start = async (
-        startOptions: RallarStartOptions = {}
-    ): Promise<RallarStartResult> => {
-        await options.waitForAuthEnd();
-        const operationOptions = options.resolveOperationOptions(startOptions);
-        const session = startOptions.restoreSession === false
-            ? undefined
-            : options.auth.restore();
-        if (!session || startOptions.connect === false) {
-            return { session, connected: false };
-        }
-
-        const middleware = await options.connection.connect(operationOptions);
-        const refreshRooms = startOptions.refreshRooms ?? true;
-        const refreshPeople = startOptions.refreshPeople ?? false;
-        let roomState: RallarRoomState | undefined;
-        let peopleState: RallarPeopleState | undefined;
-        if (refreshRooms || refreshPeople) {
-            const refreshOptions = toRefreshOptions(
-                startOptions,
-                operationOptions
-            );
-            if (refreshRooms) {
-                roomState = await options.rooms.refresh(refreshOptions);
-                if (refreshPeople) {
-                    peopleState = options.people.state();
-                }
-            }
-            else {
-                peopleState = await options.people.refresh(refreshOptions);
-            }
-        }
-        return {
-            session,
-            connected: true,
-            middleware,
-            roomState,
-            peopleState
-        };
-    };
-
     return {
-        start,
+        start: (startOptions = {}) => startRallarSession(options, startOptions),
         setup: async (input: RallarSetupInput): Promise<RallarStartResult> => {
             const { apiBaseUrl, start: startDefaults, ...defaults } = input;
             options.connection.configure({ apiBaseUrl });
             options.connection.setDefaults(defaults);
-            return await start({
+            return await startRallarSession(options, {
                 restoreSession: true,
                 connect: true,
                 refreshRooms: true,
@@ -89,11 +48,54 @@ export function createRallarStartupController(
     };
 }
 
+async function startRallarSession(
+    options: CreateRallarStartupControllerOptions,
+    startOptions: RallarStartOptions
+): Promise<RallarStartResult> {
+    await options.waitForAuthEnd();
+    const operationOptions = options.resolveOperationOptions(startOptions);
+    const session = startOptions.restoreSession === false
+        ? undefined
+        : options.auth.restore();
+    if (!session || startOptions.connect === false) {
+        return { session, connected: false };
+    }
+
+    const middleware = await options.connection.connect(operationOptions);
+    const refreshRooms = startOptions.refreshRooms ?? true;
+    const refreshPeople = startOptions.refreshPeople ?? false;
+    let roomState: RallarRoomState | undefined;
+    let peopleState: RallarPeopleState | undefined;
+    if (refreshRooms || refreshPeople) {
+        const refreshOptions = toRefreshOptions(
+            startOptions,
+            operationOptions
+        );
+        if (refreshRooms) {
+            roomState = await options.rooms.refresh(refreshOptions);
+            if (refreshPeople) {
+                peopleState = options.people.state();
+            }
+        }
+        else {
+            peopleState = await options.people.refresh(refreshOptions);
+        }
+    }
+    return {
+        session,
+        connected: true,
+        middleware,
+        roomState,
+        peopleState
+    };
+}
+
 function toRefreshOptions(
     options: RallarStartOptions,
     operationOptions: RallarOperationOptions
 ): RallarScopedOperationOptions {
     return {
+        ...(operationOptions.rtcCaptureMode !== undefined ? { rtcCaptureMode: operationOptions.rtcCaptureMode } : {}),
         ...(options.scope ? { scope: options.scope } : {}),
         ...(operationOptions.signal ? { signal: operationOptions.signal } : {}),
         ...(operationOptions.timeoutMs !== undefined

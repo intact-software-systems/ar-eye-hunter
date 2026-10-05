@@ -14,6 +14,7 @@ import {
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { ApiMiddleware, RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
+import { toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
@@ -29,6 +30,7 @@ import {
 } from '@shared/api/auth.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
+import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 
 import { deleteEndedSessionALRuntimeEntries } from './delete-ended-session-al-runtime-entries.ts';
 import type { RallarSessionConnectionLifecycle } from './session-connection-lifecycle.ts';
@@ -86,7 +88,10 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         scopedOptions: RallarScopedOperationOptions = {}
     ): Promise<ApiMiddleware> {
         await this.waitForAuthEnd();
-        const operationOptions = this.input.connectionRuntime.resolveOperationOptions(scopedOptions);
+        const operationOptions = this.input.connectionRuntime.resolveOperationOptions({
+            ...scopedOptions,
+            ...toRallarOperationOptions(scopedOptions)
+        });
         const scope = this.input.connectionRuntime.resolveOperationScope(operationOptions.scope);
         const session = readSession();
         await this.reconcileActiveMiddleware(session);
@@ -96,11 +101,18 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         this.input.sessionDeliveries.beginSession(session);
         this.scheduleAuthExpiry(session);
 
+        const diagnosticsPorts = this.readDiagnosticsPorts();
+        const rtcCaptureConfiguration = resolveRtcCaptureConfiguration({
+            step: operationOptions.rtcCaptureMode,
+            host: this.input.connectionRuntime.readDefaults()?.rtc?.captureMode,
+            sinkAvailable: diagnosticsPorts.signalingDiagnostics !== undefined
+        });
         const middleware = await this.input.connectionLifecycle.connect({
+            rtcCaptureConfiguration,
             session,
             scope,
             operationOptions,
-            diagnosticsPorts: this.readDiagnosticsPorts(),
+            diagnosticsPorts,
             hasAuthEndInProgress: () => this.input.authRuntime.readAuthEndPromise() !== undefined,
             isSessionCurrent: () => {
                 const currentSession = readSession();

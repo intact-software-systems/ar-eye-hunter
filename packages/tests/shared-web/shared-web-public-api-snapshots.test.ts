@@ -17,6 +17,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         expected: {
             values: [
                 'DEFAULT_REALTIME_DATA_CHANNEL_LANE',
+                'RallarRtcCaptureConnectionRequiredError',
                 'createRallarCrdtFacade',
                 'createRallarDataFacade',
                 'createRallarFacade',
@@ -285,6 +286,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
             values: [
                 'AL_DELIVERY_ADMITTED_STATES',
                 'AL_DELIVERY_STATES',
+                'RallarRtcCaptureConnectionRequiredError',
                 'configureApiClient',
                 'matchesRallarMessageSelector',
                 'normalizeApiBaseUrl',

@@ -28,6 +28,8 @@ import { configureTestCacheRepositories } from '../../configure-test-cache-repos
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 interface GroupSnapshotFixtureScope {
     readonly applicationId?: string;
     readonly workspaceId?: string;
@@ -44,7 +46,7 @@ const mocks = await vi.hoisted(async () => {
 });
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), async (original): Promise<typeof MiddlewareModule> => ({
     ...await original(),
-    initialiseMiddleware: async () => ({ middleware: mocks.apiMiddleware.middleware, checkpoints: [] })
+    initialiseMiddleware: async () => ({ middleware: mocks.apiMiddleware.middleware, rtcCaptureReceipt, checkpoints: [] })
 }));
 vi.mock(import('@shared/api/auth.ts'), async (original): Promise<typeof AuthModule> => ({
     ...await original(),

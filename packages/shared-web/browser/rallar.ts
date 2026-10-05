@@ -1,6 +1,8 @@
 import { createRallarFacade } from '@shared-web/browser/composition/create-rallar-facade.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
 
+export { RallarRtcCaptureConnectionRequiredError } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
+
 export { createRallarFacade } from '@shared-web/browser/composition/create-rallar-facade.ts';
 
 export {
