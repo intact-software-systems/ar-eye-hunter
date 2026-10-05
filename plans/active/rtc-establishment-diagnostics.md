@@ -140,8 +140,13 @@ Compatible reuse keeps and returns the actual current receipt even when request 
 Expose readback through
 `RallarConnectionOperations.rtcCapture(): RtcSignalingDiagnostics.CaptureReceipt | undefined`.
 Undefined means no constructed receipt is available. The active/pending transport context owns
-actual construction evidence. The initializer returns required
-`BrowserConnectedMiddleware.rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt`,
+actual construction evidence. The canonical RTC initializer has one construction path:
+`initialiseRtcConnectionService(input: InitialiseRtcConnectionServiceInput): Promise<BrowserRtcConnectionInitialization>`.
+The named result has required readonly `webRtcConnectionService: WebRtcConnectionService` and
+`rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt`. Construct the capability and receipt
+once there and update the verified internal consumers; do not accept an optional completed
+capability, invoke a second factory or retain an old-return adapter. The middleware initializer
+returns required `BrowserConnectedMiddleware.rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt`,
 and the transport retains it beside its current context. Do not add a required aggregate member
 to every `ApiMiddleware` or its unrelated fixtures. Readback always returns actual construction evidence,
 never newly edited defaults; after scope replacement it must not return the retired scope as

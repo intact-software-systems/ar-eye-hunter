@@ -2771,6 +2771,12 @@ This is a usable SDK configuration boundary, not final amended acceptance.
   Output has required `diagnostics: RtcSignalingDiagnostics | undefined` and
   `receipt: RtcSignalingDiagnostics.CaptureReceipt`. Off installs no capability;
   Signaling requires the supplied sink; Native is unsupported in this slice.
+- `initialiseRtcConnectionService(input: InitialiseRtcConnectionServiceInput):
+  Promise<BrowserRtcConnectionInitialization>` returns one named result with required
+  readonly `webRtcConnectionService: WebRtcConnectionService` and
+  `rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt`. Construct the factory
+  result once in this canonical initializer and update its verified internal callers.
+  No optional completed-capability input, dual construction path or old-return adapter.
 - `BrowserConnectedMiddleware.rtcCaptureReceipt` is required actual initializer
   output. Transport context owns the receipt; do not add a required receipt member
   to unrelated `ApiMiddleware` aggregates. `RallarConnectionOperations.rtcCapture():
