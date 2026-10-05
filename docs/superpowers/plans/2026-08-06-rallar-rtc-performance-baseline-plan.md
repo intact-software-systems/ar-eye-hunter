@@ -1710,23 +1710,32 @@ Signaling selection, immutable construction receipts and typed incompatible reus
 The initial review exposed compatible synchronous reentry at both transport and
 session owners; fix de006d74b reserves the pending operation before synchronous
 setup. Scoped specification/quality re-review approves both owners. At that published
-checkpoint, Full native remains unavailable; the uncommitted Task53 corrections and
-validation are recorded below. End-to-end and timing acceptance remain outstanding.
-The next useful actions are:
+checkpoint, Full native remained unavailable. The reviewed Task53 original-owner native
+capture is now published in draft PR #633, after explicit human acceptance of the two
+documented historical TDD deviations. Local source support does not establish target-browser
+availability or accepted timing. The raw changed-style run reported 46 reviewed native
+findings because the automated policy lacked their exact dispositions. The narrow
+correction now passes the active gate with witnessed semantic RED/GREEN, preserving
+thresholds, parser, tolerance and native runtime. Independent review gates its publication.
+End-to-end, hosted correctness and timing acceptance remain outstanding. The next useful
+implementation actions are:
 
-1. **Task 53:** Add bounded original-owner native/service capture through the existing
-   artifact and fence current stats by exact objects. Complete native ownership,
-   serialization/privacy, teardown/reentrancy and affected public-surface checks.
-2. **Refresh the next adapter horizon after Task 53 review:** Use the actual completed
-   contracts to detail recipe invocation/configuration propagation and per-agent
-   application receipts, then the visible UI and local/hosted/Actions paths. Keep the
-   full required outcomes below and verify requested intent against actual construction.
+1. **Task 54 — executable recipe selection:** Carry immutable run/recipe selections
+   alongside the existing connect/step mode to the single SDK resolver. Cover actual
+   recipe decode/invocation/connect/readback, sequence-local Configure and implicit
+   connections, including adapter cache and CRDT reuse paths. The source-derived
+   preparation and acceptance below govern this slice.
+2. **Refresh distributed invocation/application requirements after Task 54 review:**
+   Trace targeted-agent support, attribution and materialization/restore against the
+   completed executable contracts. Keep requested selection distinct from actual agent
+   application and detail only the next independently testable slice.
 
 The full amendment still requires general/distributed recipe configuration and
 per-agent application receipts, visible Manual/Recipe Console controls, local/headless
 and GitHub Actions propagation, and B06 sealed-mode/cohort validation. These remain
-required outcomes; their concrete steps follow reviewed native capture. The second action above is
-planning work, not a dispatched adapter implementation or a new approval gate.
+required outcomes; their concrete steps follow reviewed native capture. Task54 preparation
+is complete; implementation follows independent review and publication of the native
+delivery correction, without a new generic approval gate.
 No final amended acceptance is claimed by the staged Full native unavailable result.
 A separately selected unchanged B06 availability/first-stall/perturbation exercise
 will establish target API support, adequate retained capture and acceptable overhead.
@@ -3118,10 +3127,80 @@ sequence.
 the maintainer instructed: "Keep it. Ensure TDD and follow skills guidelines and goal."
 This explicitly accepts retaining the current tested and independently reviewed fixes
 with the historical deviations documented. It grants no future TDD waiver. Task53's
-source acceptance gate is satisfied; publication is next. The existing length-only
+source acceptance gate is satisfied and its native source is published in draft PR #633.
+The existing length-only
 registry approval remains separate. End-to-end recipe/UI/agent/Actions configuration,
 fresh hosted correctness and original baseline acceptance remain required. No deployment,
 baseline or post-ICE cause claim follows.
+
+**Automated delivery reconciliation:** The raw `npm run check:repo-style:changed --
+origin/main` on the published native source exited 1 with the same 46 native findings.
+The existing reviewed-disposition policy already provides exact path/rule/checker-owner
+matching and numeric bounds. The test-first correction records 44 distinct keys:
+33 finite-boundary owners and 11 numeric ownership bounds, including the two separately
+approved lengths. Two existing cognitive bounds are updated in place. Its focused run
+fails with 21 expected assertions before policy edits, then passes all 34 tests. Covering
+checks pass 185 tests; maintained test types enforce 1,457 files with zero errors/debt.
+The final active changed-style gate passes against merge base
+`54adf4dd191c7102092b1bae4f9b3f77d943a8e1`. The frozen new-source full project suite passes
+1,486 files/14,542 tests, with four files/12 tests skipped and 16 disclosed Node
+experimental-localStorage warnings. Full scanner findings remain visible; unrelated paths, rules,
+named owners, prefixes and over-bound magnitudes remain unreviewed. An absent checker
+symbol is an exact module-level owner, not automatic per-method protection; every
+touched owner still requires manual review. This correction changes no native runtime,
+global threshold, base tolerance, parser or source discovery.
+
+### Task 54: Executable recipe capture selection and truthful SDK provenance
+
+**Code facts and design:** The actual SDK connect owner currently supplies only step,
+host and sink inputs to the canonical resolver. A recipe-selected scalar passed as
+the existing `rtcCaptureMode` would acquire step origin. The accepted implementation
+shape is a narrow product-owned sparse `rtcCaptureContext` carrying canonical run and
+recipe selections alongside that existing step option. The SDK retains the sole
+precedence decision and original construction/readback path. This is an intentional
+public input addition; product packages never import shared-test, and adapters never
+rewrite a receipt origin or supply a pre-resolved configuration.
+
+Shared-test owns authored `recipe.rtcCaptureMode`, the run command's override, and the
+step selection under the existing connection configuration. Typed contracts, schemas,
+wire parsing and direct executable validation must agree. Off remains explicit;
+Inherit remains omission at the operator boundary. Invalid supplied modes fail before
+connection effects. Capture-specific Configure state belongs to its execution sequence;
+immutable run authority survives Configure, and parallel/nested siblings cannot leak
+desired step state. Accepted executable commands and capture inputs are snapshotted at
+their typed owner, preserving opaque payload semantics. No body hash or complete remote
+body identity is claimed before that boundary is validated.
+
+The current adapter operation key can return a cached pending promise before SDK
+compatibility runs. Two CRDT connected shortcuts can also bypass connect. Capture inputs
+must reach canonical compatibility/readback through those paths. Existing adapter
+serialization differs from direct SDK pending rejection and must remain explicit. A
+compatible reuse returns its original actual receipt, even when the new request's origin
+differs. An incompatible request reports the typed failure and current evidence, without
+automatic reconnect or authentication invalidation. WS fallback and live CRDT use the same
+invocation selections; local-only CRDT reports no applicable connection override.
+
+**Observable acceptance:**
+
+- [ ] A real JSON recipe/run decode, invocation, browser decoder and SDK construction
+      returns the literal winning mode/origin and actual receipt, including explicit Off
+      and all precedence levels. A fake echoed configuration does not prove application.
+- [ ] Invalid run/recipe/Configure/step input fails at wire and direct-runtime boundaries.
+      Caller mutation after acceptance cannot change the captured executable selection.
+- [ ] Interleaved ordinary, nested, loop and parallel executions retain their own run
+      authority and Configure state. Replayed top-level results retain original attribution;
+      repeated child template IDs still represent real executions.
+- [ ] Actual SDK and black-box adapter active/pending reuse, explicit disconnect/connect,
+      WS fallback and both live-CRDT shortcuts preserve compatibility and actual receipts.
+      Missing sink/receipt and cancellation remain truthful unavailable dispositions.
+- [ ] Focused behavioral tests, affected shared-test/shared-web and maintained test types,
+      intentional public API/bundle checks and affected app builds pass, with full recursive
+      touched-file closure and independent specification/quality review.
+
+The next outcome after this slice is targeted-agent support, distributed invocation/application
+attribution and materialization/restore. UI, local/hosted bootstrap, Actions/helpers and sealed
+B06 mode/cohort validation remain required later outcomes. No new RTC producer, retry policy,
+accepted E3 cohort, performance result or historical post-ICE cause is selected by this work.
 
 ## 12. Baseline Completion Gate
 

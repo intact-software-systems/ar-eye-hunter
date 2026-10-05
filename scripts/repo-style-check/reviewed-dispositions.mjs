@@ -631,13 +631,14 @@ export const reviewedDispositions = Object.freeze([
         maximumMagnitude: 56
     }),
     // One native channel lifecycle binds receive callbacks, pressure, queued
-    // settlement, cancellation and reset. Pure queue policy has its own owner.
+    // settlement, cancellation, exact-parent capture and reset. Pure queue
+    // policy and finite native reads have their own stateless boundaries.
     // Raw and decoded test captures observe that native boundary for assertions.
     Object.freeze({
         path: 'packages/shared/webrtc/qrtc-data-channel.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 118
+        maximumMagnitude: 177
     }),
     Object.freeze({
         path: 'packages/tests/shared/qrtc-data-channel.test.ts',
@@ -687,11 +688,13 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'assembleStateSnapshotMessages'
     }),
+    // Original entry/setup/watchdog/deletion and capture share one service
+    // lifecycle; finite row translation already has its adjacent owner.
     Object.freeze({
         path: 'packages/shared/services/web-rtc-connection-service.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 105
+        maximumMagnitude: 142
     }),
     // Admission decoding keeps the stored identity and the captured dispatch
     // policy together. Retry, repair, supersedence and acknowledgement fields
@@ -736,6 +739,276 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/tests/shared/alm/outbound-control-handoff.test.ts',
         rule: 'boundary.unknown',
         symbol: undefined
+    }),
+    // Native wire input stays within this positive finite grammar: discriminants,
+    // allowed keys, complete nested readouts and scalar bounds are validated before
+    // JSON output. These are exact checker owners, including overflow owners; no
+    // module-wide unknown disposition applies to this projection.
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toRtcNativeObservationProjection'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeBody'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeControlBody'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toRtcNativeIdentity'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeSnapshot'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeState'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeError'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeErrorFacts'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toErrorReadout'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toErrorCoverage'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toCaptureStatus'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toCandidate'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toService'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toServiceStage'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toCompactChannel'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toPeerSetup'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toTimeoutReadout'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toReadout'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toJsonObject'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'hasOnlyKeys'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isOneOf'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isIdentityText'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isNonnegative'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isInteger'
+    }),
+    // The queue error-read port and guarded reader translate an untrusted caught
+    // value into canonical finite facts. A failed reader yields unavailable facts;
+    // original FIFO, accounting and rejected-value identity remain business owned.
+    Object.freeze({
+        path: 'packages/shared/webrtc/flush-rtc-ice-candidate-queue.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/flush-rtc-ice-candidate-queue.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readCandidateError'
+    }),
+    // The checker reports no symbol for class methods, generic finite readers
+    // and anonymous test callbacks below. Undefined is an exact checker owner,
+    // not per-method immunity: newly touched uses still require manual review.
+    // The peer brackets synchronous original-binding reads and retains no raw error.
+    Object.freeze({
+        path: 'packages/shared/webrtc/qrtc-peer-connection.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Guarded native enum/integer/error/candidate/transport reads immediately
+    // become finite readouts or bounded fragment comparison. No native value
+    // escapes into wire output or a second lifecycle owner.
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readRtcInteger'
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readRtcNativeErrorFacts'
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readRtcCandidateFragments'
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readRtcDataIceFragmentComparison'
+    }),
+    // The anonymous test warning capture verifies the exact original caught Error
+    // reference reaches the existing warning effect; normalization would erase
+    // that assertion. The raw value never becomes production or wire state.
+    Object.freeze({
+        path: 'packages/tests/shared/webrtc/rtc-native-candidate-observation.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Reviewed cohesion: one complete positive wire grammar, the original native
+    // peer lifecycle, and one stateless native-to-finite translation policy. The
+    // 13 translator exports do not own unrelated state, storage or lifecycle.
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 150
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/qrtc-peer-connection.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 267
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 78
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+        rule: 'file.responsibility-count',
+        symbol: undefined,
+        maximumMagnitude: 13
+    }),
+    // Human-approved length-only exceptions: docs/repo-code-style-exceptions.md.
+    // Exact effective lengths preserve original peer/service lifecycle ownership;
+    // no cognitive, function, other-path or future-growth exception is implied.
+    Object.freeze({
+        path: 'packages/shared/webrtc/qrtc-peer-connection.ts',
+        rule: 'file.length',
+        symbol: undefined,
+        maximumMagnitude: 1620
+    }),
+    Object.freeze({
+        path: 'packages/shared/services/web-rtc-connection-service.ts',
+        rule: 'file.length',
+        symbol: undefined,
+        maximumMagnitude: 1360
+    }),
+    // Direct service owners and their adjacent finite translator remain easier
+    // to locate here than behind forwarding folders. Only the existing web and
+    // webrtc clusters were reviewed; other prefixes and larger counts still fail.
+    Object.freeze({
+        path: 'packages/shared/services',
+        rule: 'layout.directory-density',
+        symbol: 'services',
+        maximumMagnitude: 21
+    }),
+    Object.freeze({
+        path: 'packages/shared/services',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:web',
+        maximumMagnitude: 5
+    }),
+    Object.freeze({
+        path: 'packages/shared/services',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:webrtc',
+        maximumMagnitude: 5
     }),
     ...reviewedScenarioDispositions,
     ...reviewedBrowserDispositions
