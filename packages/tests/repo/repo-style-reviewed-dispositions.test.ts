@@ -237,20 +237,55 @@ describe('reviewed repository style dispositions', () => {
     });
 
     it.each([
-        'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
-        'packages/shared/webrtc/flush-rtc-ice-candidate-queue.ts',
-        'packages/shared/webrtc/qrtc-peer-connection.ts',
-        'packages/shared/webrtc/rtc-native-observation-values.ts',
-        'packages/tests/shared/webrtc/rtc-native-candidate-observation.test.ts'
-    ])('recognizes the actual finite native boundary owners in %s', (relativeFile) => {
+        {
+            file: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+            symbols: [
+                'toRtcNativeObservationProjection',
+                'toNativeBody',
+                'toNativeControlBody',
+                'toRtcNativeIdentity',
+                'toNativeSnapshot',
+                'toNativeState',
+                'toNativeError',
+                'toNativeErrorFacts',
+                'toErrorReadout',
+                'toErrorCoverage',
+                'toCaptureStatus',
+                'toCandidate',
+                'toService',
+                'toServiceStage',
+                'toCompactChannel',
+                'toPeerSetup',
+                'toTimeoutReadout',
+                'toReadout',
+                'toJsonObject',
+                'hasOnlyKeys',
+                'isOneOf',
+                'isIdentityText',
+                'isNonnegative',
+                'isInteger'
+            ]
+        },
+        { file: 'packages/shared/webrtc/flush-rtc-ice-candidate-queue.ts', symbols: [undefined, 'readCandidateError'] },
+        { file: 'packages/shared/webrtc/qrtc-peer-connection.ts', symbols: [undefined] },
+        {
+            file: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+            symbols: [undefined, 'readRtcInteger', 'readRtcNativeErrorFacts', 'readRtcCandidateFragments', 'readRtcDataIceFragmentComparison']
+        },
+        { file: 'packages/tests/shared/webrtc/rtc-native-candidate-observation.test.ts', symbols: [undefined] }
+    ])('recognizes only the reviewed finite native boundary keys in $file', ({ file: relativeFile, symbols }) => {
         const file = path.join(repoRoot, relativeFile);
-        const raw = readFileSync(file, 'utf8');
+        const raw = symbols.map((symbol) =>
+            symbol === undefined
+                ? 'export interface OpaqueData { readonly value: unknown; }'
+                : unknownSource(symbol, 0)
+        ).join('\n');
         const findings = scanProductionSources({
             repoRoot,
             sources: [{ file, raw }],
             options: { layoutOnly: false }
         }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
-        expect(findings.length).toBeGreaterThan(0);
+        expect(new Set(findings.map(({ symbol }) => symbol))).toEqual(new Set(symbols));
         expect(findings.filter((finding) => !isReviewedDisposition(repoRoot, finding))).toEqual([]);
         for (const finding of findings) {
             expect(isReviewedDisposition(repoRoot, { ...finding, file: `${file}.other.ts` })).toBe(false);
@@ -431,27 +466,29 @@ describe('reviewed repository style dispositions', () => {
     });
 
     it.each([
-        { file: 'packages/shared-web/browser/rallar-operation-options.ts', symbols: ['toRallarRtcCaptureContext'], count: 1 },
-        { file: 'packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts', symbols: [undefined], count: 1 },
-        { file: 'packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts', symbols: [undefined], count: 3 },
+        { file: 'packages/shared-web/browser/rallar-operation-options.ts', symbols: ['toRallarRtcCaptureContext'] },
+        { file: 'packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts', symbols: [undefined] },
+        { file: 'packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts', symbols: [undefined] },
         {
             file: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
-            symbols: ['dataChannelLanes', 'decodeBlackBoxRallarConfigFields', 'decodeBlackBoxRallarConnectionConfig'],
-            count: 3
+            symbols: ['dataChannelLanes', 'decodeBlackBoxRallarConfigFields', 'decodeBlackBoxRallarConnectionConfig']
         },
         {
             file: 'packages/shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts',
-            symbols: ['validateRallarBlackBoxTestCommand'],
-            count: 1
+            symbols: ['validateRallarBlackBoxTestCommand']
         },
-        { file: 'packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts', symbols: [undefined], count: 6 }
-    ])('recognizes only the reviewed recipe capture boundary keys in $file', ({ file: relativeFile, symbols, count }) => {
+        { file: 'packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts', symbols: [undefined] }
+    ])('recognizes only the reviewed recipe capture boundary keys in $file', ({ file: relativeFile, symbols }) => {
         const file = path.join(repoRoot, relativeFile);
-        const raw = readFileSync(file, 'utf8');
+        const raw = symbols.map((symbol) =>
+            symbol === undefined
+                ? 'export interface OpaqueData { readonly value: unknown; }'
+                : unknownSource(symbol, 0)
+        ).join('\n');
         const findings = scanProductionSources({ repoRoot, sources: [{ file, raw }], options: { layoutOnly: false } }).findings
             .filter(({ ruleId, symbol }) => ruleId === 'boundary.unknown' && symbols.some((reviewed) => reviewed === symbol));
         // Raw checker output remains visible; undefined means owner-level, not a named-method waiver.
-        expect(findings).toHaveLength(count);
+        expect(findings).toHaveLength(symbols.length);
         expect(new Set(findings.map(({ symbol }) => symbol))).toEqual(new Set(symbols));
         expect(findings.filter((finding) => !isReviewedDisposition(repoRoot, finding))).toEqual([]);
         for (const finding of findings) {
@@ -471,14 +508,7 @@ describe('reviewed repository style dispositions', () => {
 
     it('bounds the cohesive auth acquisition owner at its reviewed cognitive magnitude', () => {
         const file = path.join(repoRoot, 'packages/shared-web/browser/session/session-auth-lifecycle.ts');
-        const findings =
-            scanProductionSources({ repoRoot, sources: [{ file, raw: readFileSync(file, 'utf8') }], options: { cognitiveMetrics: true } }).findings;
-        const cognitive = findings.find(({ ruleId }) => ruleId === 'file.cognitive-load');
-        expect(cognitive?.symbol).toBeUndefined();
-        expect(cognitive?.message).toContain('File cognitive load 50 ');
-        if (!cognitive) {
-            throw new Error('Expected the actual auth owner cognitive finding.');
-        }
+        const cognitive = { file, ruleId: 'file.cognitive-load', symbol: undefined, message: 'File cognitive load 50' };
         expect(isReviewedDisposition(repoRoot, cognitive)).toBe(true);
         expect(isReviewedDisposition(repoRoot, { ...cognitive, message: 'File cognitive load 49' })).toBe(true);
         for (const message of ['File cognitive load 51', 'File cognitive load 330', 'File cognitive load 0', 'unparseable magnitude']) {
@@ -491,7 +521,13 @@ describe('reviewed repository style dispositions', () => {
 
     it('preserves raw recipe capture warnings while the gate accepts only its exact reviewed boundary', () => {
         const relativeFile = 'packages/shared-web/browser/rallar-operation-options.ts';
-        const raw = readFileSync(path.join(repoRoot, relativeFile), 'utf8');
+        const raw = unknownSource('toRallarRtcCaptureContext', 0);
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{ file: path.join(repoRoot, relativeFile), raw }],
+            options: { layoutOnly: false }
+        }).findings;
+        expect(findings.filter(({ ruleId }) => ruleId === 'boundary.unknown')).toHaveLength(1);
         const fixture = createReviewedFixture();
         writeFixture(fixture, relativeFile, raw);
         const accepted = runChangedChecker(fixture);

@@ -27,8 +27,8 @@ GitHub Actions, ignored evidence under `tmp/perf/`, and immutable observation ZI
 The accepted measurement contract is retained in Sections 5, 6, and 8 of this
 plan. The approved diagnostics amendment is specified in
 [RTC establishment diagnostics](../../../plans/active/rtc-establishment-diagnostics.md).
-Its current implementation horizon is the distributed requirement refresh after Task 54
-and the following test-first slice in Section 11. Current product and architecture are [docs/product.md](../../product.md)
+Its current implementation horizon is the source-derived inline distributed TDD slice
+after Task54's reviewed delivery correction in Section 11. Current product and architecture are [docs/product.md](../../product.md)
 and [docs/architecture.md](../../architecture.md). The canonical executable
 navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
@@ -1668,7 +1668,8 @@ justified yet.”
 | 51      | Human approved end-to-end Off/Signaling/Full native configuration and implementation when the plan is ready. Source audits cover SDK/UI, general and distributed recipes, headless/CI and B06 identity. Complete specification and two-slice plan independently APPROVE after three finite readiness fixes; TDD execution is authorized, no code or producer yet. Task45/46 findings remain intact, initial stall unknown, E3 zero, B07 held.                                          |
 | 52      | Complete canonical SDK/core capture selection and actual immutable construction readback at 7d8bd4d0 plus single-flight fix de006d74b. Specification/quality review approves both initialization owners after witnessed reentry RED/GREEN; final shared-web 169 files/1,395 tests and 1,454-file zero-error test types pass. Native remains explicitly unsupported until Task53; UI/recipe/agent/Actions/B06 application and hosted/performance acceptance remain outstanding.         |
 | 53      | Original-owner bounded native evidence and queued-candidate correction are independently approved and published. Two historical TDD deviations were explicitly accepted, with no future waiver; length-only exceptions remain separate. The exact delivery-policy correction at884 passes local and independently audited normal hosted correctness. End-to-end configuration, native availability and B06/performance acceptance remain outstanding.                                  |
-| 54      | Executable recipe/run selection and actual SDK attribution are locally accepted after admission-body and finite-composite validation corrections. Semantic REDs precede both fixes; final frozen suite14607PASS/12SKIP, all47 hashes unchanged, scoped specification/quality approval with no new findings. Original warning Minor remains deferred. New-source hosted correctness and UI/distributed/Actions/B06 acceptance remain outstanding.                                       |
+| 54      | Executable recipe/run selection and actual SDK attribution pass local behavioral validation and scoped review after admission-body and finite-composite fixes. Published6d's normal Release fails six coupling classifications; skipped downstream checks remain unaccepted. Support-only fix2 passes99 focused tests/types/current gates and scoped specification/quality review, preserving production behavior. Fresh published-source hosted acceptance remains outstanding.       |
+| 55      | Read-only distributed source preparation is complete. It identifies missing run selection, explicit-target support bypass, lost actual receipts, unguarded reference bodies, restore/replay attribution gaps and missing runner selection. These are implementation requirements, not delivered behavior or new runtime-cause evidence. Task54's actual delivery failure takes precedence.                                                                                             |
 
 ## 11. Current Implementation Horizon After Task 54
 
@@ -1725,23 +1726,28 @@ accepted after checking actual checkout and artifact identities. End-to-end diag
 supported-manifest and baseline/timing acceptance remain outstanding. The next useful
 implementation actions are:
 
-1. **Task 55 — refresh targeted/distributed requirements:** Trace targeted-agent support,
-   invocation/application attribution and materialization/restore against the completed
-   executable contracts. Verify current owners, tests and examples; keep requested
-   selection distinct from actual agent application. This read-only preparation is active.
-2. **Execute the next source-derived distributed slice:** Detail the smallest coherent
-   support/attribution or materialization correction from Task 55, then use semantic TDD,
-   complete recursive touched-file closure and independent task review. Do not choose
-   another runtime, resolver or propagation path before the source trace.
+1. **Required inline distributed capture:** Use Task55's verified owners to add the
+   finite run override, support checks for every actual target and retained actual SDK
+   application receipts. Begin with observable no-effect and attribution failures,
+   preserve existing phase/lifecycle behavior, close all touched files recursively and
+   obtain independent specification/quality review. The approved SDK resolver remains
+   the sole precedence owner; requested mode and agent capability cannot prove application.
+2. **Guarded reference bodies and durable runner evidence:** After the inline contract is
+   verified, guard reference-only execution against its actual staged body/configuration,
+   retain original application attribution through restore/replay/export, and project
+   runner selection through the existing materializer. Establish body replacement, replay
+   and no-spawn semantic REDs before changing those owners. No second runtime, catalog
+   lookup, payload walker, receipt upgrade or migration reader is authorized.
 
 The full amendment still requires general/distributed recipe configuration and
 per-agent application receipts, visible Manual/Recipe Console controls, local/headless
 and GitHub Actions propagation, and B06 sealed-mode/cohort validation. These remain
-required outcomes; their concrete steps follow reviewed native capture. Task54's local
-source acceptance is complete after the two Important review corrections and scoped
-specification/quality approval. Its final frozen suite passes 14,607 tests with 12 skipped.
-Hosted correctness for the newer source remains outstanding; the accepted native checkpoint
-at 884 does not certify it. Task55 refreshes the next implementation requirements.
+required outcomes. Task54's behavior is locally validated after the two Important review
+corrections and scoped specification/quality approval. Its final frozen suite passes
+14,607 tests with 12 skipped. The support-only coupling correction now passes its actual
+changed-range gate and scoped review; fresh published-source hosted acceptance remains
+outstanding. The accepted native checkpoint at884 does not certify it. Task55's source trace
+is complete; the two distributed outcomes above follow its verified current owners.
 No final amended acceptance is claimed by the staged Full native unavailable result.
 A separately selected unchanged B06 availability/first-stall/perturbation exercise
 will establish target API support, adequate retained capture and acceptable overhead.
@@ -3253,8 +3259,9 @@ fail with an earlier connection effect before the validation correction. Coverin
 gate pass. Final frozen validation passes 1,492 files/14,607 tests, with four files/12 tests skipped
 and 17 disclosed Node warnings. All 47 before/after hashes agree. The original reviewer
 marks both Important findings addressed and approves specification and quality for the
-correction, with zero new findings. Together with the original review, this closes Task54
-local source acceptance; newer-source hosted correctness remains outstanding.
+correction, with zero new findings. Together with the original review, this approves Task54's
+behavior at that frozen source. The subsequent actual hosted delivery failure below reopens
+support/test closure without invalidating those source-specific behavioral results.
 
 An additional loop Map identity assertion exposes existing downstream placeholder templating,
 which deliberately traverses authored payloads. That assertion is excluded from proof of the
@@ -3265,6 +3272,36 @@ outside this correction. All original failures remain retained.
 
 The earlier passing local suite remains source-specific evidence. Disclosed validation warnings
 are a deferred Minor for final review; they do not authorize suppression or runtime tuning.
+
+**Published6d hosted checkpoint:** [Branch Release37386478315](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37386478315)
+fails on six unclassified test-coupling occurrences at actual checkout
+`6d7438f3c54397ba7e8cf14428260369f6a2405b`. The changed-style and navigation gates pass;
+reachability, workspace typecheck, deployable app builds, Deno app checks and validation
+publication are skipped after the coupling failure and are not accepted at this source.
+[Formation37386476237](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37386476237)
+and [Medium37386477282](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37386477282)
+succeed on merge `7579f0bf94eda7b88ad4b7a0a00d41c0c2e028ed`, independently verified to have
+the identical `c7e6de332cbc78898e7631b5a5847a4ca89bcea2` tree. Executed unit suites pass
+14,607 tests with 12 skipped; dedicated PostgreSQL coverage passes 85 tests. All101 recipe
+reports have zero blocking failures and386 declared nonblocking convergence attempts.
+Declared report truncation limits per-step reconstruction. RTC integrity remains skipped
+in broad mode. This earns no native availability, B06, performance or distributed acceptance.
+
+Fix2 changes test fixtures and exact interaction classifications, with no selected runtime
+change. Four counts protect compatible cache reuse, one replacement connection construction
+or the existing WS fallback retry. Incidental production source reads in the touched policy
+suite become controlled scanner fixtures with the same positive and negative policy behavior.
+The completed failed gate is the delivery acceptance RED. This preservation work is not
+relabeled as new semantic TDD; any new checker or runtime behavior would require its own
+witnessed behavioral RED before implementation. Final focused validation passes99 tests
+across four files; maintained types enforce1,463 files with zero debt/errors. The real
+`54adf4dd191c7102092b1bae4f9b3f77d943a8e1` to isolated fix candidate
+`2590eb02016096a0650be7f545e01826c75189b6` changed-range gate passes all11 current
+classifications and full registry validation. All276 prior contracts/423 entries are
+preserved exactly, with four narrow additions each. All three frozen hashes agree.
+The original reviewer approves specification and quality for the correction, resolving
+all six findings with zero new findings. No broad production suite or app build is repeated
+for these test/registry-only edits. These local results do not claim fresh hosted acceptance.
 
 **Observable acceptance:**
 
@@ -3283,10 +3320,45 @@ are a deferred Minor for final review; they do not authorize suppression or runt
       intentional public API/bundle checks and affected app builds pass, with full recursive
       touched-file closure and independent specification/quality review.
 
+All five checked requirements retain their verified local/source scope. Fix2 closes the
+support/test findings through actual changed-range validation and scoped review; the new
+published-source hosted checkpoint remains outstanding.
+
 The next outcome after this slice is targeted-agent support, distributed invocation/application
 attribution and materialization/restore. UI, local/hosted bootstrap, Actions/helpers and sealed
 B06 mode/cohort validation remain required later outcomes. No new RTC producer, retry policy,
 accepted E3 cohort, performance result or historical post-ICE cause is selected by this work.
+
+### Task 55: Completed distributed source preparation
+
+The current manifest/selection schemas and builder have no finite distributed run override.
+The start-command owner must project that override into ordinary recipe execution; it must
+not introduce a second precedence resolver or redundant selection knob. Omission means
+Inherit, while Off is explicit.
+
+Agent capability advertisement lacks capture support/version. The ordinary resolver checks
+only existing assertion capabilities, and explicit targeting bypasses those blockers.
+Every actual target must satisfy required capture support before relevant work, including
+manual starts without staging. Preserve unrelated Health/API/local-only behavior and the
+existing explicit-target baseline when no capture requirement applies.
+
+The adapter already returns the actual SDK receipt, but control evidence compaction discards
+nested ordinary successful results, and distributed result acceptance checks only `ok`.
+Retain finite typed attribution through the existing control and distributed owners:
+run, agent, phase, accepted body, invocation, command, connection and actual receipt.
+Missing, malformed, mismatched or unavailable required application cannot pass. Explicit Off
+retains its minimal receipt; compatible reuse retains its original construction origin.
+Cancellation and failures remain truthful. No generic payload walker, recorder duplication
+or budget increase is selected.
+
+Reference-only staging currently reports a loaded recipe ID and starts an ambient body.
+Task54's acceptance ID is not a content hash. A later coherent slice must guard the actual
+staged body/configuration before effects, preserve that attribution through snapshot restore,
+replay and artifact export, and distinguish replayed completion from fresh application.
+The existing materializer already owns effective body hashes and spawn isolation; runner
+selection must use that owner, preserve authored bodies and GroupRef scope, and avoid a new
+process lifecycle for no-spawn recipes. UI/bootstrap/Actions and B06 attachment remain later
+required outcomes. No distributed behavior is claimed from this read-only preparation.
 
 ## 12. Baseline Completion Gate
 

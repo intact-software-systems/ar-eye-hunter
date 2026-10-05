@@ -3627,6 +3627,66 @@ moved or changed test.
         "requiredConstraint": "Non-ApiHttpError failures return true without invoking user-defined coercion.",
         "failureRationale": "Coercion could replace the retry decision with an unrelated exception or side effect."
       }
+    },
+    {
+      "id": "recipe-adapter-compatible-connection-one-ice-request",
+      "domain": "Recipe adapter connection cache suppression",
+      "owner": "Shared Test maintainers",
+      "summary": "The held initial Off connection plus rejected Native request and later compatible Off reuse make exactly one ICE configuration request.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#queues different source intent while construction is held and rejects it with the actual original receipt",
+      "coverageRelation": "The actual page adapter holds its initial SDK construction at the ICE HTTP port, queues incompatible intent, then rejects it with the original receipt and reuses compatible intent without a second request.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "readIceCandidates HTTP port during browser RTC transport initialization",
+        "observableEffect": "Each call requests ICE configuration from the server for a browser connection construction.",
+        "requiredConstraint": "The held initial Off connection plus rejected Native request and later compatible Off reuse make exactly one ICE configuration request.",
+        "failureRationale": "A successful reused receipt alone could hide redundant server requests and connection construction. The incompatible request must not construct a replacement, and compatible adapter reuse must share the original."
+      }
+    },
+    {
+      "id": "recipe-ws-fallback-single-retry",
+      "domain": "Recipe WebSocket fallback retry",
+      "owner": "Shared Test maintainers",
+      "summary": "A first not-connected rejection followed by a successful connection and send produces exactly two send attempts: the initial attempt and one retry.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#carries run Off through the WS fallback and retries exactly once",
+      "coverageRelation": "The owned send port rejects the first attempt as not connected, the real SPA/SDK connection applies run Off, and the second send succeeds. The exact two-attempt assertion protects the existing retry-once contract.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarBlackBoxBrowserRallarRuntime.sendWs injected outbound send port",
+        "observableEffect": "Each sendWs invocation attempts the authored application message at the browser runtime boundary.",
+        "requiredConstraint": "A first not-connected rejection followed by a successful connection and send produces exactly two send attempts: the initial attempt and one retry.",
+        "failureRationale": "A successful result does not exclude additional sends after success. An extra retry can duplicate the application message; omission of the retry loses it."
+      }
+    },
+    {
+      "id": "sdk-pending-compatible-connection-one-ice-request",
+      "domain": "SDK pending connection reservation",
+      "owner": "Shared Web maintainers",
+      "summary": "Before explicit disconnect, an initial held Native host request, a compatible Native run request and a rejected Off run request make exactly one ICE request.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#preserves host selection and actual pending receipt across compatible direct SDK acquisition",
+      "coverageRelation": "The real SDK initializer is held at the HTTP port while compatible and incompatible connect requests arrive. Both accepted promises settle with the original host receipt; the literal one-request assertion precedes the separate explicit reconnect.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "readIceCandidates HTTP port during browser RTC transport initialization",
+        "observableEffect": "Each call performs an ICE configuration request before constructing the browser RTC graph.",
+        "requiredConstraint": "Before explicit disconnect, an initial held Native host request, a compatible Native run request and a rejected Off run request make exactly one ICE request.",
+        "failureRationale": "The final receipt can look correct even if pending callers performed duplicate network and graph initialization. Compatible callers share the reservation and an incompatible caller must add no construction."
+      }
+    },
+    {
+      "id": "auth-replacement-single-new-connection",
+      "domain": "Authentication replacement connection ownership",
+      "owner": "Shared Web maintainers",
+      "summary": "One initial explicit connection followed by a send after authentication replacement initializes exactly twice in total: once for each session.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#reconciles replaced authentication before acquiring a new connection",
+      "coverageRelation": "The public message send observes changed auth storage after an initial connection. The real auth/connection owners reconcile it, report the replacement session and product-default receipt, and cross the injected initializer exactly once for that replacement.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "initialiseMiddleware resource acquisition port of BrowserTransportRuntime",
+        "observableEffect": "Initialization allocates one browser middleware graph with its transport, queue and heartbeat resources.",
+        "requiredConstraint": "One initial explicit connection followed by a send after authentication replacement initializes exactly twice in total: once for each session.",
+        "failureRationale": "Reporting the replacement session and receipt alone cannot rule out repeated initialization and leaked resources. Reusing the original graph or creating multiple replacement graphs violates session resource ownership."
+      }
     }
   ],
   "entries": [
@@ -8282,6 +8342,50 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "Coercion could replace the retry decision with an unrelated exception or side effect.",
       "semanticCoverage": "packages/tests/shared-web/rallar-operation-options.test.ts#classifies arbitrary retry failures without coercing them"
+    },
+    {
+      "id": "test-structure-coupling-ac73e8d5e644dcb1",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-adapter-compatible-connection-one-ice-request",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "A successful reused receipt alone could hide redundant server requests and connection construction. The incompatible request must not construct a replacement, and compatible adapter reuse must share the original.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#queues different source intent while construction is held and rejects it with the actual original receipt"
+    },
+    {
+      "id": "test-structure-coupling-702174bcf36881c2",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-ws-fallback-single-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "A successful result does not exclude additional sends after success. An extra retry can duplicate the application message; omission of the retry loses it.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#carries run Off through the WS fallback and retries exactly once"
+    },
+    {
+      "id": "test-structure-coupling-190b3ac3fc843b48",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "sdk-pending-compatible-connection-one-ice-request",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The final receipt can look correct even if pending callers performed duplicate network and graph initialization. Compatible callers share the reservation and an incompatible caller must add no construction.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#preserves host selection and actual pending receipt across compatible direct SDK acquisition"
+    },
+    {
+      "id": "test-structure-coupling-6e7f6eb997af2789",
+      "path": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "auth-replacement-single-new-connection",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "Reporting the replacement session and receipt alone cannot rule out repeated initialization and leaked resources. Reusing the original graph or creating multiple replacement graphs violates session resource ownership.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#reconciles replaced authentication before acquiring a new connection"
     }
   ]
 }
