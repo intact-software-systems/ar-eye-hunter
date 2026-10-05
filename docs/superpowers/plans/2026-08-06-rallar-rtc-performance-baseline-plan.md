@@ -201,6 +201,20 @@ panels stop retained-history presentation; drafts, filters, disclosure, current
 redacted outputs and complete recorder contents remain intact. Semantic RED/GREEN,
 app tests/build and real browser workflows pass. Initial independent review
 required test-closure fixes; scoped re-review approves the completed correction. No comparable post-fix timing, native-cause conclusion or accepted E3 cohort follows.
+Task 48 records terminal hosted rejection on exact source
+`ac3f5d95f46ef381d577a23fdee79cfc8f03cfea`: Branch Release run 37282459228
+failed its static coupling gate and Recipe Console shard 1/2. The first rejects
+an incidental production filename inventory in the touched mode test; the second
+still expects the predecessor Runs asset name after its canonical module changed.
+The test-consumer correction is committed at
+`ab64b7822d4b79e5a534916d60b0b0877b3aa627` with passing local checks and exact
+committed-range coupling acceptance. Initial independent task review requires
+meaningful active Runs shutdown proof and truthful fixture transition names;
+fix1 corrects both at `c62dd5b5cd6ecb5704509eab0dbfa9e8f677788c` with
+meaningful fixture RED/GREEN and recursive consumer closure. Scoped independent
+re-review approves specification and quality with no actionable residuals.
+Publication and fresh required hosted correctness acceptance remain
+outstanding before the native transport/generation observation audit.
 Tasks 0-7 and observation tooling are delivered. The full baseline remains incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
 is gated, and B07 remains held. A package check proves tooling, not capture.
@@ -1630,8 +1644,9 @@ justified yet.”
 | 45      | Authenticated original command/result and 6,398-row correlations narrow the A–C failure: adopted layout, matching Answers applied, retained-peer expiry invalidates later recovery pairing. Actual SPA hidden-history work reproduces 117–150 ms delay versus UI-off ~4 ms. Initial post-ICE native/channel failure remains unproven; observer presentation correction selected for design/TDD/review, no timer policy or E3 acceptance.                                               |
 | 46      | Source-backed retry necessity assessment: failed native allocation can suppress the next same-peer lane repair, but no recovery RED has run. Independent correctness candidate only; channel-present B06 failure is not explained, no retry/deadline policy change selected. Observer correction remains active; E3 zero accepted cohorts.                                                                                                                                             |
 | 47      | Observer correction at 65b257ab6; test/support closure fix at 9db431d2c. Semantic history suppression retains operator state and complete recordings; local correctness checks pass. Initial review required obsolete fallback/source-test retirement; scoped re-review approves the correction. No post-fix timing comparison or native cause established; E3 zero accepted cohorts.                                                                                                  |
+| 48      | Hosted ac3 inventory/asset failures repaired at ab64, then c62 fix1: meaningful polling/shutdown RED/GREEN, truthful fixture transitions, full consumer closure, 25 PASS/one live SKIP and exact coupling PASS. Independent spec/quality re-review APPROVE. Publication/hosted acceptance pending; original diagnosis and E3 zero accepted cohorts remain intact.                                                                                                                      |
 
-## 11. Next Two Useful Actions After Task 47
+## 11. Next Two Useful Actions After Task 48
 
 Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
@@ -1654,7 +1669,15 @@ late recovery pairing is invalidated by retained-peer expiry, and hidden history
 presentation introduces measured delay. Neither fact proves the initial post-ICE native/channel
 failure. Task 47 implements the selected observer correction with semantic TDD
 and required local correctness checks; scoped independent review is approved.
-Required hosted checks for the published source remain pending.
+Task 48 identifies two terminal hosted test-consumer failures on published ac3f5d95.
+Their locally verified correction is committed at ab64b7822. Initial independent
+review confirms those original repairs but requires two closure fixes. Fix1 at
+c62dd5b5c establishes meaningful polling/shutdown proof and truthful transition
+names, with recursive consumer closure. Scoped specification/quality re-review
+approves the corrected head with no actionable residual. Publish the reviewed
+source and require fresh
+correctness acceptance before auditing native transport/generation observations.
+No new RTC producer or retry policy follows automatically.
 Section 9's stop and all baseline gates remain intact.
 Task 33's owned-code correction
 remains accepted at c3b3; the human's required-clock approval persists.
@@ -2273,6 +2296,188 @@ accounting and first failure. No automatic E3 run, retry implementation or deadl
 renewal is selected. Accepted B01–B06 primaries/repeats, E1 recovery/reconciliation,
 homogeneous noise handling, ranking and human acceptance remain outstanding;
 B07 stays held and E4 stays conditional to the exact candidate.
+
+### Task 48: Hosted correctness failures and test-consumer correction
+
+**Hosted outcome:** Branch Release run 37282459228/attempt 1 tested exact source
+`ac3f5d95f46ef381d577a23fdee79cfc8f03cfea` and is terminal FAILURE. Static job
+111674134576 and Recipe Console browser shard 1/2 job 111674134642 failed.
+The executed unit, tooling, Deno, app-browser, Recipe Console shard 2/2, API,
+PostgreSQL integration and ALM release lanes passed; observation integrity and
+validation-evidence publication were skipped. Separate formation-large and
+medium-scale/fairness checks passed, as did governance and CodeQL. Those passes
+do not override the required release failures or establish performance acceptance.
+PR #633 remains draft, OPEN and MERGEABLE.
+
+**Static cause:** The exact changed-range coupling check against trusted base
+54adf4dd191c7102092b1bae4f9b3f77d943a8e1 rejects unclassified candidate
+`test-structure-coupling-ea2af8a6ac2fd5e9` in
+`packages/tests/rallar-black-box/rallar-mode-boundary.test.ts`. The touched test
+enumerates production `*-actions.ts` files and requires each to be reachable from
+fixed tab-group files. Inlining a predecessor helper exposed this existing source
+inventory to the detector. The gate is working as intended; moving the inventory
+back behind a helper or registering an incidental filename requirement would not
+correct the test. The remaining private identifier/import-spelling assertion also
+needs full-file review against independently useful behavior. Changed-style
+comparison passed and was not the failing command.
+
+**Browser cause:** The sole shard failure is the case
+`opens every registered legacy surface from its alias and contextual route`,
+at `runner.runs: target chunk` (expected true, received false). Its table pins
+`RunnerRunsPanel`, while the canonical production lazy import now loads
+`runner-runs-panel.tsx`; the existing local production manifest corroborates its
+kebab-case asset. The case-sensitive matcher cannot match the predecessor name.
+The outer Runs wrapper was visible before this assertion, but it encloses Suspense
+and does not prove settled child content. Later unrelated-loading and polling-
+shutdown assertions were not reached for Runs. The shard finished one failed,
+nine skipped and 108 passed. Hosted trace paths were printed but no browser trace
+was uploaded; local manifest evidence is not a recovered hosted request trace.
+The static and browser failures have separate commands, files and causes.
+
+**Correction and local evidence:** The three test/support owners are corrected in
+commit `ab64b7822d4b79e5a534916d60b0b0877b3aa627`. The mode test retires both
+the production file inventory and private AST/identifier assumptions while keeping
+public mode and evidence-preservation checks. Advanced derives emitted assets
+from actual dynamic manifest entries and awaits each selected child's visible
+heading. Deferred loading and unrelated asset absence remain checked. The retained
+Runs post-unmount request assertion passes locally but initial review finds its
+fixture/counter vacuous, so that shutdown proof is not accepted. Private timer
+inventories give way to positive control
+request counts and unchanged counts over 5,500 ms after leaving the experience;
+these are request observations, not a separately counted active periodic cycle.
+Canonical decoding exposed three missing mandatory group-assertion counters in
+the shared Monitor fixture; explicit zeros match its empty assertion manifest.
+Its mutable routing state is owned by one fixture class with pure snapshot
+builders and bound detached counter readers. No production owner changes.
+
+The focused local browser RED reproduces the hosted Runs assertion; its retained
+trace records the canonical production asset returned HTTP 200 and the Runs child
+heading settled without a loading fallback. The malformed fixture then failed
+canonical decoding, and an initial class version failed detached callback access;
+both introduced closure failures remain recorded with their later corrections.
+Command-selection, compiler-selection and intermediate changed-style failures
+also remain disclosed. These do not become original RTC causes or semantic REDs
+for a production change.
+
+Local validation passes 17 focused unit tests, the visible direct-only simulated
+WebSocket case, and the eight-file shared-fixture consumer browser run: 69 passed,
+one opt-in live full-stack case skipped. That covering run preceded only the final
+erased response-type annotation/import and removal of its type assertion; actual
+fixture compilation passed afterward. App and maintained-test typechecks pass;
+maintained tests enforce 1,451 files with zero debt/errors. Scoped formatting,
+whitespace, changed-style and structure checks pass. Exact-file human review
+disposes of advisory cognitive/cohesion/framework callback signals; the three
+structure advisories belong to independent earlier branch owners. Environment/
+large-bundle warnings remain disclosed, without pristine-output claims.
+The exact trusted-base 54adf4dd191c7102092b1bae4f9b3f77d943a8e1 to committed
+ab64b7822 coupling gate exits zero with no current candidates and complete/current
+classification evidence. Local passes do not relabel the ac3f5d95 hosted failure,
+dispose of independent review findings or establish fresh hosted acceptance.
+
+**Initial independent review:** Specification and quality both require changes.
+The original inventory/asset fixes, typed boundaries and coherent fixture state
+ownership are sound. Runs receives an empty distributed-run list, so the selected-
+nonterminal-run polling guard never starts its effect. Its assertion counts the
+`/runs` collection, while that effect refreshes `/distributed-runs` and a selected
+`/runs/<id>`. A quiet unrelated counter cannot prove shutdown. Fix1 must establish
+a selected nonterminal run, observe a positive automatic request cycle on the
+real analysis endpoints, then verify quiet after leaving Runs over the existing
+cadence window. Separate Recipe Console recurrence already has public coverage;
+no duplicate default-experience assertion is needed for that concern.
+
+The fixture's four `set...` methods also advance revision; two additionally
+calculate reconnect count or normalize event count. Current setter vocabulary
+requires validation/assignment without hidden computation. Fix1 names those
+transitions truthfully, preserves response/event/revision behavior and updates
+the verified Monitor/responsive consumers with recursive full-file closure.
+No old-name alias, second fixture owner, registry exception or production timer
+change is selected. The initial REQUEST_CHANGES verdict remains part of the
+history; the following fix1 evidence addresses it without relabeling earlier runs.
+
+**Fix1 source and semantic evidence:** Commit
+`c62dd5b5cd6ecb5704509eab0dbfa9e8f677788c` changes the Advanced case, existing
+Monitor fixture and its Monitor/responsive consumers. Before seeding the fixture,
+the strengthened mounted automatic-cycle assertion fails meaningfully: the
+settled `/distributed-runs` count stays at one over 7,000 ms. Existing fixture
+data now selects a running nonterminal distributed run. The first seeded pass
+exposes a selected-detail HTTP 404 despite quiet/active collection evidence;
+requiring HTTP 200 earns a second fixture RED. The existing adapter then serves
+that selected record from its canonical current snapshot. Deleted records still
+return 404, consistent with the list. Intermediate selector/setup failures and
+the HTTP-404 pass remain recorded; neither is a production RTC RED.
+
+The final focused real-browser case passes at the exact final runtime source.
+For `/distributed-runs`, `/distributed-runs/monitor-distributed-live` and
+`/runs/monitor-control-live`, request-start counts move from settled 1/0/1 to
+automatic active 2/1/2, then stay 2/1/2 after unmount and 5,500 ms of quiet.
+All five analysis responses return HTTP 200. Collection cycles are 1,042 ms apart,
+against the existing 1,000 ms polling cadence; the quiet interval covers multiple
+cycles. No click or manual refresh intervenes in the automatic-cycle proof.
+All ten lazy-target asset, settled-child, alias, draft and unmount checks are
+reached. This establishes test-owner polling/shutdown behavior, not RTC recovery
+or performance acceptance.
+
+The fixture operations are now `transitionRunState`,
+`transitionSingleAgentFailure`, `transitionFailureAgentConnection` and
+`resizeAdditionalEventWindow`. Revision, reconnect, normalized event-count and
+response behavior remain verified, with no predecessor aliases. Recursive
+Monitor closure uses an owned typed browser gate and explicit DOM evidence
+decoding; responsive geometry has a named complete output contract. There are
+no production, REST-contract, polling-timer or native-lifetime changes.
+
+Fix1 validation passes the focused Runs case and 25 Monitor/responsive browser
+cases, with one opt-in live case skipped. The 25-case run exercises transition
+renames and Monitor closure before the final erased responsive bounds annotation,
+selected-detail adapter and Advanced endpoint assertions; the latter runtime
+changes have the later focused Runs pass and snapshot parity evidence. The final
+four-owner fixture compiler, app typecheck and 1,451-file maintained-test typecheck
+pass with zero debt/errors. Thirty-seven parity probe outcomes/revisions agree;
+selected detail equals its canonical list record and deleted detail returns 404.
+Formatting, whitespace, changed-style and structure checks pass with disclosed
+advisory dispositions and the same three unrelated structure advisories. The
+immutable trusted-base 54adf4dd191c7102092b1bae4f9b3f77d943a8e1 to c62dd5b5c
+coupling gate passes with no current candidates and complete/current registry
+evidence.
+
+**Scoped independent re-review:** Specification APPROVE and quality APPROVE on
+exact c62dd5b5c; both original Important findings are resolved. All four changed
+owners were read completely, including recursively touched Monitor/responsive
+consumers. Immutable snapshots match the committed source. Direct archive checks
+confirm the first semantic RED's assertion-only source delta and the final GREEN's
+exact committed Advanced bytes, canonical selected-record equality, five HTTP-200
+responses and the three-endpoint growth/quiet attachments. The unchanged mode
+owner retains its initial accepted assessment. The reviewer repeated no suites;
+validation source qualifications, warnings and live skip remain disclosed.
+No further source correction is requested. Publication and fresh required hosted
+acceptance remain outstanding.
+
+**Protected diagnosis:** Task 45's original report and findings remain unchanged:
+the measured observer cost at 2,136 events; the older responder connection's
+creation-time expiry breaking a replacement negotiation; and the unresolved
+initial ICE-connected/native-and-channel-connecting stall. Applied matching
+Answers and adopted current layout narrow that stall without identifying its
+DTLS/SCTP or native/candidate generation. The implemented history suppression is
+algorithmically verified, without a comparable fresh timing result. Task 46's
+allocation-exception rollback remains a separate unimplemented candidate; these
+test failures justify no retry or establishment-deadline policy change.
+
+**Next action 1:** Publish the independently approved fix1 source and updated plan,
+then obtain fresh required
+hosted correctness acceptance. The original local failure and request/settled-child
+trace remain retained; ab64b7822 and c62dd5b5c coupling passes keep their own sources.
+No compatibility asset or registry waiver is selected. New production behavior
+would still require semantic RED before implementation. Fix1 and scoped re-review
+are complete; publication and fresh corrected-source hosted checks are pending.
+
+**Next action 2:** After that correctness acceptance, audit existing native
+observation owners for the missing first-stall DTLS/SCTP transport and native/
+candidate-generation association, with truthful unavailable values and exact
+source/pair identity. Only proved missing observation may select a bounded
+semantic TDD correction and independent review. No automatic E3 run follows.
+E3 still has zero accepted cohorts; B01–B06 primary/repeat acceptance, E1 recovery/
+reconciliation after representative E3, noise/comparison, ranking and human
+acceptance remain outstanding. B07 stays held; E4 remains conditional. No Issue
+was created or reused.
 
 ## 12. Baseline Completion Gate
 
