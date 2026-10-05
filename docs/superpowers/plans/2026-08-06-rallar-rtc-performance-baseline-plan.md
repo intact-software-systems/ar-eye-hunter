@@ -189,6 +189,11 @@ renewal. Actual SPA measurement reproduces approximately 117–150 ms continuati
 delay with hidden presentation work versus approximately 4 ms with UI subscribers
 off. That observer cost is measured; its sole responsibility for the original
 connection failure remains unproven. E3 still has zero accepted cohorts.
+The retry proposal is now assessed from current source: synchronous native lane
+allocation failure can block the next ensure's repair on a live peer. It is a
+separate correctness candidate awaiting semantic RED, not an explanation of the
+captured channel-present initial stall. Broader retry or establishment-deadline
+renewal is unearned; the observer correction remains the active implementation.
 Tasks 0-7 and observation tooling are delivered. The full baseline remains incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
 is gated, and B07 remains held. A package check proves tooling, not capture.
@@ -1616,8 +1621,9 @@ justified yet.”
 | 43      | Captured facts published at 3bd; its required static gate failed seven findings. Independently approved Fix3 published at 48cb727: 97 focused PASS/types/style/consumers PASS and required Branch Release/formation-large/medium PASS. Optional ALM FAIL unclassified; RTC integrity SKIP. Final headless 311682 B/305 KiB/638 B headroom (+139 B vs 3bd). Prior full suite remains 3bd; no E3 acceptance.                                                                             |
 | 44      | One local diagnostic at unchanged 3bd: default PASS/retention FAIL cycle7 peer-C readiness/selector SKIP, 100-cycle target/zero retries. Captured timeout/reliable/desired2-ready1; later ordinal1→3 Connecting/native new/nonopen lane. History incomplete; child exit unavailable after wrapper failure. Nominal allowance/later state establish no deadline/generation/cause; 19 originals retained, zero accepted E3.                                                              |
 | 45      | Authenticated original command/result and 6,398-row correlations narrow the A–C failure: adopted layout, matching Answers applied, retained-peer expiry invalidates later recovery pairing. Actual SPA hidden-history work reproduces 117–150 ms delay versus UI-off ~4 ms. Initial post-ICE native/channel failure remains unproven; observer presentation correction selected for design/TDD/review, no timer policy or E3 acceptance.                                               |
+| 46      | Source-backed retry necessity assessment: failed native allocation can suppress the next same-peer lane repair, but no recovery RED has run. Independent correctness candidate only; channel-present B06 failure is not explained, no retry/deadline policy change selected. Observer correction remains active; E3 zero accepted cohorts.                                                                                                                                             |
 
-## 11. Next Two Useful Actions After Task 45
+## 11. Next Two Useful Actions After Task 46
 
 Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
@@ -2090,7 +2096,8 @@ policy, retry, timeout, workload or acceptance threshold is relaxed.
 closed reports and inactive evidence panels perform no whole-history presentation
 work, while recorder/artifact contents and visible UI disclosure remain intact.
 Apply recursive touched-file/legacy closure and independent task review before
-acceptance. The allocation-throw retry proposal remains independent and pending.
+acceptance. The allocation-throw retry proposal remains a separate source-backed correctness
+candidate; Task 46 records its scope, necessity and unexecuted regression.
 
 **Next action 2:** After implementation and independent review, complete required
 correctness checks before accepting the correction. Then select only a qualified
@@ -2103,6 +2110,73 @@ handling/comparison, ranking and human follow-up/no-optimization acceptance rema
 E3 has zero accepted cohorts; historical cause/native lifetime/application/issuer
 remain unknown. E4 stays conditional to the exact candidate, B07 held. Failed
 diagnostic preservation satisfies none of those baseline completion gates.
+
+### Task 46: Retry proposal necessity assessed from current code
+
+**Proposal:** Restore a truthful retryable lane state if synchronous initiator
+`createDataChannel()` throws before returning a native handle. The next existing
+`ensurePeerConnectionStarted()` call may then retry that lane on the same live,
+admitted peer. This is failure cleanup at the canonical channel owner, not a new
+automatic retry loop or a broader connection policy.
+
+**Proven from current source:**
+[QRtcDataChannel.connect](../../../packages/shared/webrtc/qrtc-data-channel.ts)
+sets `Connecting` and registers its peer callback before native allocation. A
+throw leaves no assigned channel and no rollback. Its readiness guard excludes
+`Connecting`. The live-peer reuse path in
+[WebRtcConnectionService](../../../packages/shared/services/web-rtc-connection-service.ts)
+therefore suppresses the next lane start. With another reconnectable lane, the
+service may enter its start loop, but the failed lane's own guard still skips it.
+A later incoming channel, explicit reset/removal or establishment timeout may
+change the state; none implements the promised next-ensure repair. The existing
+service test injects permanent allocation failure and checks only the first
+setup-in-flight result. No one-shot recovery regression has been executed yet.
+
+**Is it needed?** A narrow exception-recovery correction is justified by the
+owner's existing lane-repair contract. Earn it with one semantic RED before
+implementation: fail native allocation once through the existing fixture,
+ensure again, observe a real lane on the same native peer, then open it and
+observe public readiness. Verify that native setup count and consumed attempt
+budget do not increase. Keep normal receivers awaiting an incoming channel and
+initiators with an actual connecting channel unchanged; neither may allocate a
+duplicate. Retire only the failed lane's owned registration, preserve the
+original direct-call Error and sibling/consumer subscriptions, and complete
+rollback before reentrant callbacks. A later callback-configuration failure with
+an allocated handle is a separate variant and needs its own evidence.
+
+**Relevance to the latest failure:** This proposal is not required by the
+captured channel-present, stable-signaling, ICE-connected initial stall, and no
+allocation exception is established for that stall. It cannot be presented as
+its root-cause fix or as a way to accept E3. Original browser occurrence and
+frequency of the allocation path remain unmeasured. Keep it a separately scoped
+correctness candidate after the active observer correction; the current
+assessment authorizes notes, not retry implementation.
+
+**Separate policy question:** Retained responder expiry is a source-backed
+reason later recovery pairing fails: a replacement Offer can be answered on an
+older native peer whose original establishment deadline then expires. Renewing
+that deadline, increasing attempts, adding backoff or forcing replacement is a
+different proposal. Task 45's native controls show that retained reuse alone can
+open successfully; the initial native stage remains unresolved. No such policy
+change is currently justified or selected. A decision needs a pair/generation-
+bound failing negotiation and a semantic test showing why the existing bounded
+lifetime is incorrect, while preserving exhaustion and malformed/admission
+fences.
+
+**Existing retry ownership:** Outbound reconciliation reuses a live native peer
+and starts only reconnectable lanes; terminal peers are removed before fresh
+admission. A new native setup consumes the per-peer attempt budget. Native close
+or establishment expiry does not refund it; establishment clears it. When the
+enabled count or duration limit is exhausted, new setup is refused until its
+cooldown expires. The budget does not schedule a new attempt itself. Preserve
+those boundaries; allocation cleanup on a retained peer spends no additional
+native setup attempt. Existing AL consumer redelivery is a distinct signaling
+boundary, not this lane-allocation proposal.
+
+No retry code, timer, workload, recorder or acceptance change is made by this
+assessment. Semantic RED/GREEN, native browser occurrence and a policy-changing
+experiment remain unexecuted. E3 still has zero accepted cohorts; all B01–B06
+baseline completion gates and B07's hold remain intact.
 
 ## 12. Baseline Completion Gate
 
