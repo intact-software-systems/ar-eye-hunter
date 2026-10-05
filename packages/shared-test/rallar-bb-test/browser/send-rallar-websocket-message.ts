@@ -73,7 +73,7 @@ async function writeRallarWebSocketMessage(
         if (!(caught instanceof Error) || !caught.message.includes(RUNTIME_NOT_CONNECTED_MESSAGE)) {
             throw caught;
         }
-        const connectionConfig = toRallarWebSocketConnectionConfig(command, context.config());
+        const connectionConfig = toRallarWebSocketConnectionConfig(command, context.config(), context.rtcCapture);
         await withBrowserCommandAbort(runtime.connect(connectionConfig), abort.signal);
         return decodeBrowserCommandRecord(await withBrowserCommandAbort(runtime.sendWs(data), abort.signal));
     }

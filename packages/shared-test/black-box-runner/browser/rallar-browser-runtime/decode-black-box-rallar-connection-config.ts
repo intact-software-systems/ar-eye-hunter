@@ -1,7 +1,9 @@
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
+import { toRallarRtcCaptureContext } from '@shared-web/browser/rallar-operation-options.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 import type { RtcDataChannelFlowControlPolicy } from '@shared/webrtc/qrtc-data-channel.ts';
+import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { BlackBoxRallarConfig, BlackBoxRallarConnectionConfig } from './black-box-rallar-operation-contracts.ts';
 import { decodeBlackBoxCommandRoomRef, isBlackBoxCommandRecord } from './decode-black-box-rallar-command-input.ts';
 
@@ -147,8 +149,18 @@ function isPositiveInteger(value: unknown): value is number {
 /** Shared sparse wire configuration; local CRDT documents need no API endpoint. */
 export function decodeBlackBoxRallarConfigFields(value: unknown): Partial<BlackBoxRallarConfig> {
     const record = configRecord(value);
+    const captureMode = parseRtcCaptureMode(record.rtcCaptureMode).fold(
+        (issues) => {
+            throw new TypeError(issues[0].message);
+        },
+        (parsed) => parsed.mode
+    );
     const scope = record.scope === undefined ? undefined : configRecord(record.scope);
     return {
+        rtcCaptureMode: captureMode,
+        rtcCaptureContext: record.rtcCaptureContext === undefined
+            ? undefined
+            : toRallarRtcCaptureContext(record.rtcCaptureContext),
         apiBaseUrl: optionalString(record.apiBaseUrl),
         applicationId: optionalString(record.applicationId),
         workspaceId: optionalString(record.workspaceId),

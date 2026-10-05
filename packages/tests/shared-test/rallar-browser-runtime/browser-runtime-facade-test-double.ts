@@ -386,6 +386,7 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
 };
 
 export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
+    rtcCapture: () => undefined,
     readRtcMessageNacks: async () => [],
     configure: (config) => {
         facadeRecords.configurationWrites.push(config);

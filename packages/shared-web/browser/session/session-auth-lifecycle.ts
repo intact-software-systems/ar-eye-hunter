@@ -45,6 +45,7 @@ export interface RallarAuthSessionEndOptions {
 
 export interface RallarSessionAuthLifecycle {
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
+    acquireConnection(): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
     requireSession(): AuthSession;
     activateLoginSession(session: AuthSession): Promise<void>;
@@ -87,11 +88,21 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     public async connect(
         scopedOptions: RallarScopedOperationOptions = {}
     ): Promise<ApiMiddleware> {
+        return await this.connectWithIntent(scopedOptions, 'explicit');
+    }
+
+    /** Internal operations acquire the owned graph without requesting a new capture configuration. */
+    public async acquireConnection(): Promise<ApiMiddleware> {
+        return await this.connectWithIntent({}, 'acquire');
+    }
+
+    private async connectWithIntent(
+        scopedOptions: RallarScopedOperationOptions,
+        intent: 'explicit' | 'acquire'
+    ): Promise<ApiMiddleware> {
+        const capturedOptions = { ...scopedOptions, ...toRallarOperationOptions(scopedOptions) };
         await this.waitForAuthEnd();
-        const operationOptions = this.input.connectionRuntime.resolveOperationOptions({
-            ...scopedOptions,
-            ...toRallarOperationOptions(scopedOptions)
-        });
+        const operationOptions = this.input.connectionRuntime.resolveOperationOptions(capturedOptions);
         const scope = this.input.connectionRuntime.resolveOperationScope(operationOptions.scope);
         const session = readSession();
         await this.reconcileActiveMiddleware(session);
@@ -102,8 +113,13 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         this.scheduleAuthExpiry(session);
 
         const diagnosticsPorts = this.readDiagnosticsPorts();
-        const rtcCaptureConfiguration = resolveRtcCaptureConfiguration({
+        const ownedCapture = intent === 'acquire'
+            ? this.input.connectionLifecycle.readRtcCaptureConfiguration()
+            : undefined;
+        const rtcCaptureConfiguration = ownedCapture ?? resolveRtcCaptureConfiguration({
+            run: operationOptions.rtcCaptureContext?.run,
             step: operationOptions.rtcCaptureMode,
+            recipe: operationOptions.rtcCaptureContext?.recipe,
             host: this.input.connectionRuntime.readDefaults()?.rtc?.captureMode,
             sinkAvailable: diagnosticsPorts.signalingDiagnostics !== undefined
         });

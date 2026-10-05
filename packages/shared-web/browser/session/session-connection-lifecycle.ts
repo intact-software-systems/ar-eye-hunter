@@ -37,6 +37,7 @@ export interface RallarSessionConnectionInput {
 export interface RallarSessionConnectionLifecycle {
     connect(input: RallarSessionConnectionInput): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
+    readRtcCaptureConfiguration(): RtcSignalingDiagnostics.CaptureConfiguration | undefined;
 }
 
 interface PendingSessionConnection {
@@ -88,11 +89,15 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         return this.disconnectPromise;
     }
 
+    public readRtcCaptureConfiguration(): RtcSignalingDiagnostics.CaptureConfiguration | undefined {
+        return this.input.transportRuntime.readRtcCaptureConfiguration() ??
+            (this.connectionPromise ? this.rtcCaptureConfiguration : undefined);
+    }
+
     public async connect(input: RallarSessionConnectionInput): Promise<ApiMiddleware> {
         const compatibility = checkRtcCaptureCompatibility({
             requested: input.rtcCaptureConfiguration,
-            current: this.input.transportRuntime.readRtcCaptureConfiguration() ??
-                (this.connectionPromise ? this.rtcCaptureConfiguration : undefined),
+            current: this.readRtcCaptureConfiguration(),
             currentReceipt: this.input.transportRuntime.readRtcCaptureReceipt()
         });
         if (compatibility.left) {

@@ -1,4 +1,5 @@
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type {
@@ -74,7 +75,16 @@ export class BlackBoxRallarConnectOperation {
         this.#input = input;
     }
 
-    connect = (config: BlackBoxRallarConnectionConfig): Promise<BlackBoxRallarConnectDiagnostics> => {
+    connect = (requested: BlackBoxRallarConnectionConfig): Promise<BlackBoxRallarConnectDiagnostics> => {
+        const captured = toRallarOperationOptions(requested.rallar);
+        const config = {
+            ...requested,
+            rallar: {
+                ...requested.rallar,
+                rtcCaptureMode: captured.rtcCaptureMode,
+                rtcCaptureContext: captured.rtcCaptureContext
+            }
+        };
         const { lifecycle, connectionState } = this.#input;
         const activeAuthentication = lifecycle.authenticationConfig();
         if (
@@ -185,7 +195,12 @@ export class BlackBoxRallarConnectOperation {
             dataChannelLanes: config.rallar.dataChannelLanes,
             ...health.getStatusDiagnostics(config)
         });
-        await rallar.connect({ timeoutMs: config.rallar.timeoutMs, dataChannelLanes: config.rallar.dataChannelLanes });
+        await rallar.connect({
+            timeoutMs: config.rallar.timeoutMs,
+            dataChannelLanes: config.rallar.dataChannelLanes,
+            rtcCaptureMode: config.rallar.rtcCaptureMode,
+            rtcCaptureContext: config.rallar.rtcCaptureContext
+        });
         context.assertCurrent();
         diagnostics.emitConnectPhaseCompleted(config, attempt.phase, { ...health.getStatusDiagnostics(config) });
         if (!config.roomId) {
@@ -298,7 +313,9 @@ export class BlackBoxRallarConnectOperation {
         const { health } = this.#input;
         const transport = resolveBlackBoxRallarTransport(config);
         const typedMessages = isBlackBoxRallarTypedMessagesTransport(transport);
+        const receipt = this.#input.rallar.rtcCapture();
         return {
+            rtcCapture: receipt ? { status: 'observed', value: receipt } : { status: 'unavailable', reason: 'absent' },
             status: 'connected',
             document: health.readDocument(),
             connection: config.connection,

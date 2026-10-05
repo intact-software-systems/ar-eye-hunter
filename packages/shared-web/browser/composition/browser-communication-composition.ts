@@ -83,7 +83,7 @@ export function createBrowserMessagingComposition(
         deliveries: input.deliveries,
         sessionDeliveries: input.sessionDeliveries,
         nowMs: input.nowMs,
-        connect: async () => await input.session.connect(),
+        connect: async () => await input.session.acquireConnection(),
         readMiddleware: input.session.readMiddleware,
         requireSession: input.session.requireSession,
         resolveDefaultRoom: input.state.resolveDefaultRoom,
@@ -120,7 +120,7 @@ export function createBrowserMediaComposition(
     input: CreateBrowserMediaCompositionInput
 ): BrowserMediaComposition {
     const localMediaSources = new BrowserLocalMediaSourceRuntime({
-        connect: async () => await input.session.connect()
+        connect: async () => await input.session.acquireConnection()
     });
     const remoteMediaStreams = new BrowserRemoteMediaStreamRuntime({
         readMiddleware: input.session.readMiddleware
@@ -134,7 +134,7 @@ export function createBrowserMediaComposition(
         setVideoEnabled: async (enabled) => await localMediaSources.setVideoEnabled(enabled),
         stopLocal: async (kind) => await localMediaSources.stopLocal(kind),
         setPolicy: async (policy) => {
-            const context = await input.session.connect();
+            const context = await input.session.acquireConnection();
             context.middleware.rtcRxStreamer.setMediaPolicy(policy);
         },
         onRemoteStream: (listener) => remoteMediaStreams.onRemoteStream(listener)
@@ -188,7 +188,7 @@ function createBrowserRealtimeChannelComposition(
     input: CreateBrowserRealtimeChannelCompositionInput
 ): BrowserRealtimeChannelComposition {
     const ownerInput = {
-        connect: async () => await input.session.connect(),
+        connect: async () => await input.session.acquireConnection(),
         readMiddleware: input.session.readMiddleware,
         readSession,
         readDefaultRoom: input.state.resolveDefaultRoom,

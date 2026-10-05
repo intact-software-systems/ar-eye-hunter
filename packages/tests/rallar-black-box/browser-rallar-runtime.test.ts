@@ -312,7 +312,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     username: 'alice',
                     password: 'secret',
                     transport: 'realtime',
-                    expectedSessionId: facade.session.sessionId
+                    expectedSessionId: facade.session.sessionId,
+                    rtcCaptureContext: { run: undefined, recipe: undefined }
                 }
             });
             expect(facade.behavior.realtimeSend).toHaveBeenCalledWith(expect.objectContaining({

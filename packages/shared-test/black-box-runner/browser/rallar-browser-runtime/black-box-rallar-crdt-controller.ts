@@ -1,5 +1,5 @@
 import { crdtCatchUpHttpApi } from '@shared-web/browser/crdt/crdt-catch-up-http-api.ts';
-import type { RallarCrdtDocument, RallarCrdtOpenOptions, RallarFacade } from '@shared-web/browser/rallar.ts';
+import type { RallarCrdtDocument, RallarCrdtOpenOptions } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
     RallarCrdtDocumentHealth,
@@ -24,6 +24,7 @@ import type {
     BlackBoxRallarEvent
 } from './black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarScopeDiagnostics } from './black-box-rallar-operation-policy.ts';
+import type { BlackBoxBrowserRallarRuntimeDependency } from './browser-rallar-runtime-composition.ts';
 import {
     decodeBlackBoxRallarCrdtApplyInput,
     decodeBlackBoxRallarCrdtHandle,
@@ -68,7 +69,10 @@ function raceCrdtOperationWithClose<TResult>(
 export namespace BlackBoxRallarCrdtController {
     export interface Input extends BlackBoxRallarGenerationPort {
         operationSignal(): AbortSignal;
-        readonly facade: Pick<RallarFacade, 'crdt' | 'isConnected'>;
+        readonly facade: Pick<
+            BlackBoxBrowserRallarRuntimeDependency,
+            'crdt' | 'isConnected' | 'connect' | 'rtcCapture'
+        >;
         now(): number;
         delay(ms: number): Promise<void>;
         currentConnectionConfig(): BlackBoxRallarConnectionConfig | undefined;
@@ -553,6 +557,10 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
         }
         if (!input.apiBaseUrl) {
             if (this.#input.facade.isConnected()) {
+                await this.#input.facade.connect({
+                    rtcCaptureMode: input.rallar?.rtcCaptureMode,
+                    rtcCaptureContext: input.rallar?.rtcCaptureContext
+                });
                 return this.#input.currentConnectionConfig();
             }
             throw new Error('crdt.open requires apiBaseUrl or an existing Rallar connection for live transports.');
@@ -575,7 +583,13 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
             value = document.read();
         }
 
+        const receipt = health.transportStrategy === 'local-only' ? undefined : this.#input.facade.rtcCapture();
         return {
+            rtcCapture: health.transportStrategy === 'local-only'
+                ? { status: 'unavailable', reason: 'not-applicable' }
+                : receipt
+                ? { status: 'observed', value: receipt }
+                : { status: 'unavailable', reason: 'absent' },
             status,
             handle,
             ref: document.ref,

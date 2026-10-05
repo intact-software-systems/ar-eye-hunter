@@ -11,8 +11,14 @@ export type RallarOperationRetryPredicate = (
     attempt: number
 ) => boolean;
 
+export interface RallarRtcCaptureContext {
+    readonly run?: RtcSignalingDiagnostics.CaptureMode;
+    readonly recipe?: RtcSignalingDiagnostics.CaptureMode;
+}
+
 export interface RallarOperationOptions {
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
+    readonly rtcCaptureContext?: RallarRtcCaptureContext;
     readonly signal?: AbortSignal;
     readonly timeoutMs?: number;
     readonly maxAttempts?: number;
@@ -58,8 +64,27 @@ export function toRallarOperationOptions(
             ? { rttReportingDegreeLimit: options.rttReportingDegreeLimit }
             : {}),
         ...(options.bootstrapDegree !== undefined ? { bootstrapDegree: options.bootstrapDegree } : {}),
-        ...(options.rtcCaptureMode !== undefined ? { rtcCaptureMode: options.rtcCaptureMode } : {})
+        ...(options.rtcCaptureMode !== undefined ? { rtcCaptureMode: options.rtcCaptureMode } : {}),
+        ...(options.rtcCaptureContext !== undefined
+            ? { rtcCaptureContext: toRallarRtcCaptureContext(options.rtcCaptureContext) }
+            : {})
     };
+}
+
+export function toRallarRtcCaptureContext(value: unknown): RallarRtcCaptureContext {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        throw new TypeError('RTC capture context must be an object.');
+    }
+    if (Object.keys(value).some((key) => key !== 'run' && key !== 'recipe')) {
+        throw new TypeError('RTC capture context accepts only run and recipe selections.');
+    }
+    const run = parseRtcCaptureMode('run' in value ? value.run : undefined);
+    const recipe = parseRtcCaptureMode('recipe' in value ? value.recipe : undefined);
+    const issues = run.left ?? recipe.left;
+    if (issues) {
+        throw new TypeError(issues[0].message);
+    }
+    return Object.freeze({ run: run.right?.mode, recipe: recipe.right?.mode });
 }
 
 export function toRallarCommandOptions<T>(

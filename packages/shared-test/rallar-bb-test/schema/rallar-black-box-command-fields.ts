@@ -25,7 +25,7 @@ export const RALLAR_BLACK_BOX_COMMAND_BASE_FIELDS = [
 export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     configure: { required: ['config'], optional: [] },
     'recipe.load': { required: ['recipe'], optional: [] },
-    'recipe.run': { required: [], optional: ['recipe'] },
+    'recipe.run': { required: [], optional: ['recipe', 'rtcCaptureMode'] },
     'recipe.cancel': { required: [], optional: ['reason', 'targetCommandId'] },
     loop: {
         required: ['commands'],
@@ -208,7 +208,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
 export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
     recipe: {
         required: ['schemaVersion', 'recipeId', 'commands'],
-        optional: ['name', 'description', 'continueOnFailure', 'metadata']
+        optional: ['name', 'description', 'continueOnFailure', 'metadata', 'rtcCaptureMode']
     },
     parallelGroup: { required: ['commands'], optional: ['groupId', 'label', 'metadata'] },
     loopThresholds: {

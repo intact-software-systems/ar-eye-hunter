@@ -30,7 +30,8 @@ export type {
 
 export type {
     RallarOperationOptions,
-    RallarOperationRetryPredicate
+    RallarOperationRetryPredicate,
+    RallarRtcCaptureContext
 } from '@shared-web/browser/rallar-operation-options.ts';
 
 export type {

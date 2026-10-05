@@ -166,7 +166,7 @@ function createDefaultAuthFixture(emitState: () => void): AuthFixture {
         connectionRuntime: runtime,
         transportRuntime,
         authRuntime: runtime,
-        connectionLifecycle: { connect, disconnect },
+        connectionLifecycle: { connect, disconnect, readRtcCaptureConfiguration: () => transportRuntime.readRtcCaptureConfiguration() },
         emitState,
         closeDataScopes: () => Promise.resolve()
     });

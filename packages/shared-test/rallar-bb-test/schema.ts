@@ -38,6 +38,12 @@ const numberSchema: JsonSchema = { type: 'number' };
 const integerSchema: JsonSchema = { type: 'integer' };
 const booleanSchema: JsonSchema = { type: 'boolean' };
 const recordSchema: JsonSchema = { type: 'object', additionalProperties: true };
+const rtcCaptureModeSchema: JsonSchema = { type: 'string', enum: ['off', 'signaling', 'native'] };
+const rallarConnectionSchema: JsonSchema = {
+    type: 'object',
+    properties: { rtcCaptureMode: rtcCaptureModeSchema },
+    additionalProperties: true
+};
 const stringRecordSchema: JsonSchema = { type: 'object', additionalProperties: stringSchema };
 const recursiveCommandSchema: JsonSchema = { $ref: '#/$defs/command' };
 
@@ -102,7 +108,7 @@ const configSchema: JsonSchema = {
         sessionId: stringSchema,
         roomId: stringSchema,
         transport: { type: 'string', enum: ['realtime', 'messages.rtc', 'messages.ws', 'ws', 'http'] },
-        rallar: recordSchema,
+        rallar: rallarConnectionSchema,
         browser: recordSchema,
         control: recordSchema,
         defaults: recordSchema,
@@ -482,6 +488,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         recipe: inlineRecipeSchema
     }),
     'recipe.run': strictCommandSchema('recipe.run', {
+        rtcCaptureMode: rtcCaptureModeSchema,
         recipe: inlineRecipeSchema
     }),
     'recipe.cancel': strictCommandSchema('recipe.cancel', {
@@ -554,7 +561,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         roomRef: recordSchema,
         minSnapshotVersion: numberSchema,
         transport: rtcConnectTransportSchema,
-        rallar: recordSchema,
+        rallar: rallarConnectionSchema,
         readiness: rtcConnectReadinessSchema
     }),
     'rtc.send': strictCommandSchema('rtc.send', {
@@ -823,6 +830,7 @@ const commandSchema: JsonSchema = {
     oneOf: RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map((capability) => COMMAND_SCHEMAS[capability.kind])
 };
 const recipeSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.recipe, {
+    rtcCaptureMode: rtcCaptureModeSchema,
     schemaVersion: { const: RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION },
     recipeId: stringSchema,
     name: stringSchema,

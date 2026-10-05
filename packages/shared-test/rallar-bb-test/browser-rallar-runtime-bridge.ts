@@ -36,6 +36,18 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
         readStorageCounters: async (input) => await (await readBrowserRallarRuntime()).readStorageCounters(input),
         refreshRoom: async (options) => await (await readBrowserRallarRuntime()).refreshRoom(options),
         waitForRoom: async (options) => await (await readBrowserRallarRuntime()).waitForRoom(options),
+        crdt: {
+            open: async (input) => await (await readBrowserRallarRuntime()).crdt.open(input),
+            apply: async (input) => await (await readBrowserRallarRuntime()).crdt.apply(input),
+            read: async (input) => await (await readBrowserRallarRuntime()).crdt.read(input),
+            sync: async (input) => await (await readBrowserRallarRuntime()).crdt.sync(input),
+            health: async (input) => await (await readBrowserRallarRuntime()).crdt.health(input),
+            wait: async (input) => await (await readBrowserRallarRuntime()).crdt.wait(input),
+            undo: async (input) => await (await readBrowserRallarRuntime()).crdt.undo(input),
+            redo: async (input) => await (await readBrowserRallarRuntime()).crdt.redo(input),
+            close: async (input) => await (await readBrowserRallarRuntime()).crdt.close(input),
+            destroy: async (input) => await (await readBrowserRallarRuntime()).crdt.destroy(input)
+        },
         director: createSpaBrowserRallarDirectorRuntime(),
         formation: createSpaBrowserRallarFormationRuntime(),
         close: async () => await (await readBrowserRallarRuntime()).close(),

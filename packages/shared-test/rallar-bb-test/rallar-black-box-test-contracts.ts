@@ -1,5 +1,7 @@
 import type { ALAckAlgo, ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import type { RecipeCaptureSequence } from './recipe/recipe-capture-sequence.ts';
 
 import type {
     ALDeliveryCarrier,
@@ -151,6 +153,7 @@ export type RallarBlackBoxTestConfigureCommand =
     }>;
 
 export interface RallarBlackBoxTestRecipe {
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly schemaVersion: 1;
     readonly recipeId: string;
     readonly name?: string;
@@ -169,6 +172,7 @@ export type RallarBlackBoxTestRecipeLoadCommand =
 export type RallarBlackBoxTestRecipeRunCommand =
     & RallarBlackBoxTestCommandBase<'recipe.run'>
     & Readonly<{
+        rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
         recipe?: RallarBlackBoxTestRecipe;
     }>;
 
@@ -1100,6 +1104,8 @@ export interface RallarBlackBoxTestCommandOutcome {
 }
 
 export interface RallarBlackBoxTestCommandContext {
+    /** Absent for an executor invoked outside an owned runtime sequence. */
+    readonly rtcCapture?: RecipeCaptureSequence.Selection;
     state(): RallarBlackBoxTestState;
     config(): RallarBlackBoxTestConfig | undefined;
     abortSignal?(): AbortSignal | undefined;

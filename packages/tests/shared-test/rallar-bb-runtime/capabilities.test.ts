@@ -133,7 +133,8 @@ describe('rallar-bb runtime capabilities', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 typeId: 'chat.message',
-                transport: 'messages.rtc'
+                transport: 'messages.rtc',
+                rtcCaptureContext: { run: undefined, recipe: undefined }
             }
         });
         expect(calls[1].value).toEqual({

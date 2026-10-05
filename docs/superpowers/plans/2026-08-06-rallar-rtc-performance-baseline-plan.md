@@ -27,7 +27,8 @@ GitHub Actions, ignored evidence under `tmp/perf/`, and immutable observation ZI
 The accepted measurement contract is retained in Sections 5, 6, and 8 of this
 plan. The approved diagnostics amendment is specified in
 [RTC establishment diagnostics](../../../plans/active/rtc-establishment-diagnostics.md).
-Its next two implementation slices appear in Tasks 52 and 53 below. Current product and architecture are [docs/product.md](../../product.md)
+Its current implementation horizon is the distributed requirement refresh after Task 54
+and the following test-first slice in Section 11. Current product and architecture are [docs/product.md](../../product.md)
 and [docs/architecture.md](../../architecture.md). The canonical executable
 navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
@@ -1666,8 +1667,10 @@ justified yet.”
 | 50      | Corrected original-owner observation proposal independently APPROVE/APPROVE after scope/reservation, allocation-reentry, serialized-error and retired-channel corrections. Public additions and source limits remain proposed; human design approval pending, no implementation or runtime measurement. Initial stall unknown; Task45/46 findings intact, E3 zero, B07 held.                                                                                                           |
 | 51      | Human approved end-to-end Off/Signaling/Full native configuration and implementation when the plan is ready. Source audits cover SDK/UI, general and distributed recipes, headless/CI and B06 identity. Complete specification and two-slice plan independently APPROVE after three finite readiness fixes; TDD execution is authorized, no code or producer yet. Task45/46 findings remain intact, initial stall unknown, E3 zero, B07 held.                                          |
 | 52      | Complete canonical SDK/core capture selection and actual immutable construction readback at 7d8bd4d0 plus single-flight fix de006d74b. Specification/quality review approves both initialization owners after witnessed reentry RED/GREEN; final shared-web 169 files/1,395 tests and 1,454-file zero-error test types pass. Native remains explicitly unsupported until Task53; UI/recipe/agent/Actions/B06 application and hosted/performance acceptance remain outstanding.         |
+| 53      | Original-owner bounded native evidence and queued-candidate correction are independently approved and published. Two historical TDD deviations were explicitly accepted, with no future waiver; length-only exceptions remain separate. The exact delivery-policy correction at884 passes local and independently audited normal hosted correctness. End-to-end configuration, native availability and B06/performance acceptance remain outstanding.                                  |
+| 54      | Executable recipe/run selection and actual SDK attribution are locally accepted after admission-body and finite-composite validation corrections. Semantic REDs precede both fixes; final frozen suite14607PASS/12SKIP, all47 hashes unchanged, scoped specification/quality approval with no new findings. Original warning Minor remains deferred. New-source hosted correctness and UI/distributed/Actions/B06 acceptance remain outstanding.                                       |
 
-## 11. Current Implementation Horizon After Task 52
+## 11. Current Implementation Horizon After Task 54
 
 Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
@@ -1716,26 +1719,29 @@ documented historical TDD deviations. Local source support does not establish ta
 availability or accepted timing. The raw changed-style run reported 46 reviewed native
 findings because the automated policy lacked their exact dispositions. The narrow
 correction now passes the active gate with witnessed semantic RED/GREEN, preserving
-thresholds, parser, tolerance and native runtime. Independent review gates its publication.
-End-to-end, hosted correctness and timing acceptance remain outstanding. The next useful
+thresholds, parser, tolerance and native runtime. Independent review approved the correction,
+published at `884db0496cc6a4109a7fc90e225705da8551fce3`. Its normal hosted correctness is
+accepted after checking actual checkout and artifact identities. End-to-end diagnostics,
+supported-manifest and baseline/timing acceptance remain outstanding. The next useful
 implementation actions are:
 
-1. **Task 54 — executable recipe selection:** Carry immutable run/recipe selections
-   alongside the existing connect/step mode to the single SDK resolver. Cover actual
-   recipe decode/invocation/connect/readback, sequence-local Configure and implicit
-   connections, including adapter cache and CRDT reuse paths. The source-derived
-   preparation and acceptance below govern this slice.
-2. **Refresh distributed invocation/application requirements after Task 54 review:**
-   Trace targeted-agent support, attribution and materialization/restore against the
-   completed executable contracts. Keep requested selection distinct from actual agent
-   application and detail only the next independently testable slice.
+1. **Task 55 — refresh targeted/distributed requirements:** Trace targeted-agent support,
+   invocation/application attribution and materialization/restore against the completed
+   executable contracts. Verify current owners, tests and examples; keep requested
+   selection distinct from actual agent application. This read-only preparation is active.
+2. **Execute the next source-derived distributed slice:** Detail the smallest coherent
+   support/attribution or materialization correction from Task 55, then use semantic TDD,
+   complete recursive touched-file closure and independent task review. Do not choose
+   another runtime, resolver or propagation path before the source trace.
 
 The full amendment still requires general/distributed recipe configuration and
 per-agent application receipts, visible Manual/Recipe Console controls, local/headless
 and GitHub Actions propagation, and B06 sealed-mode/cohort validation. These remain
-required outcomes; their concrete steps follow reviewed native capture. Task54 preparation
-is complete; implementation follows independent review and publication of the native
-delivery correction, without a new generic approval gate.
+required outcomes; their concrete steps follow reviewed native capture. Task54's local
+source acceptance is complete after the two Important review corrections and scoped
+specification/quality approval. Its final frozen suite passes 14,607 tests with 12 skipped.
+Hosted correctness for the newer source remains outstanding; the accepted native checkpoint
+at 884 does not certify it. Task55 refreshes the next implementation requirements.
 No final amended acceptance is claimed by the staged Full native unavailable result.
 A separately selected unchanged B06 availability/first-stall/perturbation exercise
 will establish target API support, adequate retained capture and acceptable overhead.
@@ -2779,7 +2785,7 @@ This is a usable SDK configuration boundary, not final amended acceptance.
   Adapters map their empty/Inherit input to omission and deliberately fold a typed
   Left into their existing SDK/CLI/URL/workflow boundary rejection convention.
 - `resolveRtcCaptureConfiguration(input: ResolveRtcCaptureConfigurationInput):
-  RtcSignalingDiagnostics.CaptureConfiguration`; input has optional canonical
+RtcSignalingDiagnostics.CaptureConfiguration`; input has optional canonical
   `run`, `step`, `recipe`, `host` and required `sinkAvailable: boolean`. Resolve in
   that order; otherwise product-default is signaling with a sink and off without.
 - `createBrowserRtcCapture(input: CreateBrowserRtcCaptureInput): BrowserRtcCapture`;
@@ -2789,7 +2795,7 @@ This is a usable SDK configuration boundary, not final amended acceptance.
   `receipt: RtcSignalingDiagnostics.CaptureReceipt`. Off installs no capability;
   Signaling requires the supplied sink; Native is unsupported in this slice.
 - `initialiseRtcConnectionService(input: InitialiseRtcConnectionServiceInput):
-  Promise<BrowserRtcConnectionInitialization>` returns one named result with required
+Promise<BrowserRtcConnectionInitialization>` returns one named result with required
   readonly `webRtcConnectionService: WebRtcConnectionService` and
   `rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt`. Construct the factory
   result once in this canonical initializer and update its verified internal callers.
@@ -2797,7 +2803,7 @@ This is a usable SDK configuration boundary, not final amended acceptance.
 - `BrowserConnectedMiddleware.rtcCaptureReceipt` is required actual initializer
   output. Transport context owns the receipt; do not add a required receipt member
   to unrelated `ApiMiddleware` aggregates. `RallarConnectionOperations.rtcCapture():
-  RtcSignalingDiagnostics.CaptureReceipt | undefined` returns only current actual
+RtcSignalingDiagnostics.CaptureReceipt | undefined` returns only current actual
   construction evidence. Opaque connection identity is allocated once at connection
   composition; failed identity reads remain explicit and do not replace business errors.
 - SDK defaults use `rtc.captureMode`; per-connect operations use `rtcCaptureMode`.
@@ -2805,12 +2811,12 @@ This is a usable SDK configuration boundary, not final amended acceptance.
   Other diagnostic/fault ports remain independent.
 - `RallarRtcCaptureConnectionRequiredError` retains `code: 'new-connection-required'`,
   required requested/current `CaptureConfiguration` and `currentReceipt:
-  RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>`.
+RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>`.
   Reject different modes before active/pending reuse without auth invalidation or
   auto-disconnect. Before receipt construction pending currentReceipt is unavailable/absent.
   Same mode with a different origin is compatible and returns the original receipt.
 - `checkRtcCaptureCompatibility(input: CheckRtcCaptureCompatibilityInput):
-  Either<RallarRtcCaptureConnectionRequiredError, RtcSignalingDiagnostics.CaptureConfiguration>`
+Either<RallarRtcCaptureConnectionRequiredError, RtcSignalingDiagnostics.CaptureConfiguration>`
   lives beside the typed error and is reused by lifecycle/transport. Input has
   required readonly `requested`, `current: CaptureConfiguration | undefined`, and
   `currentReceipt: CaptureReceipt | undefined`. No current configuration or same
@@ -3150,9 +3156,22 @@ symbol is an exact module-level owner, not automatic per-method protection; ever
 touched owner still requires manual review. This correction changes no native runtime,
 global threshold, base tolerance, parser or source discovery.
 
+**Normal hosted checkpoint:** [Branch Release 37377565689](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37377565689),
+[formation 37377565279](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37377565279)
+and [medium 37377565300](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37377565300)
+pass for published `884db0496cc6a4109a7fc90e225705da8551fce3`. Release actually tests that
+commit; formation/medium test PR merge `dabde99ab85fd8a35eed75aad9b198901dec524f`, whose
+tree is the identical `7d8a6bb31ded12944e85e00e8045e3fda1bc0c9c`. Independent artifact
+audit accepts all 101 recipe reports with zero blocking failures and 196 explicitly
+nonblocking intermediate convergence failures. Declared report truncation limits per-step
+reconstruction; the RTC observation integrity job is skipped in broad mode. This accepts
+normal correctness of the native/style checkpoint, with no new supported-manifest,
+target-native availability, first-stall, observer-cost, B06 or cohort acceptance. It does
+not certify the uncommitted Task54 source.
+
 ### Task 54: Executable recipe capture selection and truthful SDK provenance
 
-**Code facts and design:** The actual SDK connect owner currently supplies only step,
+**Code facts and design:** Before this slice, the actual SDK connect owner supplied only step,
 host and sink inputs to the canonical resolver. A recipe-selected scalar passed as
 the existing `rtcCaptureMode` would acquire step origin. The accepted implementation
 shape is a narrow product-owned sparse `rtcCaptureContext` carrying canonical run and
@@ -3171,8 +3190,8 @@ desired step state. Accepted executable commands and capture inputs are snapshot
 their typed owner, preserving opaque payload semantics. No body hash or complete remote
 body identity is claimed before that boundary is validated.
 
-The current adapter operation key can return a cached pending promise before SDK
-compatibility runs. Two CRDT connected shortcuts can also bypass connect. Capture inputs
+The original adapter operation key could return a cached pending promise before SDK
+compatibility ran. Two CRDT connected shortcuts could also bypass connect. Capture inputs
 must reach canonical compatibility/readback through those paths. Existing adapter
 serialization differs from direct SDK pending rejection and must remain explicit. A
 compatible reuse returns its original actual receipt, even when the new request's origin
@@ -3180,20 +3199,87 @@ differs. An incompatible request reports the typed failure and current evidence,
 automatic reconnect or authentication invalidation. WS fallback and live CRDT use the same
 invocation selections; local-only CRDT reports no applicable connection override.
 
+Actual integration also exposes two missing paths: the SPA bridge omits the page runtime's
+existing CRDT methods, and automatic CRDT catch-up calls an SDK no-intent message acquisition
+wired to explicit connect. The latter re-resolves defaults and rejects the Native connection
+it just constructed. Direct method forwarding belongs at the existing SPA boundary. Internal
+connection acquisition belongs to the original auth/session owners and preserves their actual
+active or pending capture and one reserved constructor path. It retains auth-end, missing or
+replaced-session reconciliation, expiry, cancellation and original errors; an outer cached
+middleware shortcut would bypass those checks. Explicit connect still resolves requested intent
+and rejects incompatibility. The affected messaging/media/realtime composition callbacks enter
+full touched-file closure, with active and held-pending acquisition and auth preservation tests.
+
+The affected validation initially passes 525 tests and fails the browser facade's strict
+Brotli ceiling: 246.068359375 KiB against 246 KiB. The required recipe/context/acquisition
+behavior adds 157 compressed bytes over the published native checkpoint. The existing
+bundle test explicitly permits the minimum strict whole-KiB ceiling, so only that canonical
+ceiling changes to 247 KiB, with the original failure retained and the cost disclosed in
+the PR. Other ceilings and native capture source budgets stay fixed. This packaging
+adjustment establishes no performance improvement or accepted observation.
+
+The first frozen full suite passes 1,489 files/14,582 tests and fails three tests,
+with four files/12 tests skipped. Two exact consumer delegation assertions lack the
+intentional sparse capture context; their strict expectations are corrected. The headless
+bundle measures 315.3818359375 Brotli KiB against 315 KiB, adding 1,246 bytes over the
+published native checkpoint. Its existing minimum whole-KiB policy changes only the
+headless ceiling to 316 KiB; forbidden UI/runtime dependency checks stay enforced.
+The original frozen source and failures are retained. The first active changed-style gate
+also reports 16 findings. The support correction adds nine exact reviewed owner keys,
+including one cognitive cap of 50, after semantic RED and full completed-output reads;
+all 42 policy tests pass. Checker thresholds, parser and tolerances stay fixed, and
+absent symbols remain coarse owner identities requiring manual review when touched.
+
+**Corrected local evidence:** The frozen 47-file source passes 1,492 files/14,593 tests,
+with four files/12 tests skipped and 17 Node experimental-localStorage warnings. All
+47 before/after hashes agree. Separate shared-test/shared-web compilers, maintained
+test types (1,463 files, zero debt/errors), public API and bundle checks and all four
+affected app builds pass. The active changed-style gate passes against
+`54adf4dd191c7102092b1bae4f9b3f77d943a8e1`; full-scanner warnings remain visible.
+The commit-based legacy scan reports the same 22 concretely resolved naming/boundary
+candidates. This is local validation awaiting independent specification/quality review,
+with no source acceptance, distributed/B06 application or performance acceptance implied.
+
+The first independent review withholds specification and quality acceptance for two
+confirmed defects. A reference-only run selects its loaded body after publishing running
+state, so a synchronous subscriber can replace the body and attribution of an already
+admitted run. Direct loop/parallel admission also validates later capture fields only
+when each child is reached, allowing earlier connection effects before rejection. Fix
+round 1 captures the accepted loaded body before reentry and applies one finite recursive
+capture validator before composite effects. Four admission/reentrancy assertions fail before
+the body correction and then all eight acceptance tests pass. Eight direct composite assertions
+fail with an earlier connection effect before the validation correction. Covering tests pass
+80 tests across nine files; shared-test and maintained test compilers and the current changed-style
+gate pass. Final frozen validation passes 1,492 files/14,607 tests, with four files/12 tests skipped
+and 17 disclosed Node warnings. All 47 before/after hashes agree. The original reviewer
+marks both Important findings addressed and approves specification and quality for the
+correction, with zero new findings. Together with the original review, this closes Task54
+local source acceptance; newer-source hosted correctness remains outstanding.
+
+An additional loop Map identity assertion exposes existing downstream placeholder templating,
+which deliberately traverses authored payloads. That assertion is excluded from proof of the
+capture validation defect. The loop preservation assertion uses ordinary authored data containing
+capture lookalikes; strict Map identity remains tested at snapshot/parallel admission. Capture
+validation stays finite and does not walk payloads. The independent loop templating owner is
+outside this correction. All original failures remain retained.
+
+The earlier passing local suite remains source-specific evidence. Disclosed validation warnings
+are a deferred Minor for final review; they do not authorize suppression or runtime tuning.
+
 **Observable acceptance:**
 
-- [ ] A real JSON recipe/run decode, invocation, browser decoder and SDK construction
+- [x] A real JSON recipe/run decode, invocation, browser decoder and SDK construction
       returns the literal winning mode/origin and actual receipt, including explicit Off
       and all precedence levels. A fake echoed configuration does not prove application.
-- [ ] Invalid run/recipe/Configure/step input fails at wire and direct-runtime boundaries.
+- [x] Invalid run/recipe/Configure/step input fails at wire and direct-runtime boundaries.
       Caller mutation after acceptance cannot change the captured executable selection.
-- [ ] Interleaved ordinary, nested, loop and parallel executions retain their own run
+- [x] Interleaved ordinary, nested, loop and parallel executions retain their own run
       authority and Configure state. Replayed top-level results retain original attribution;
       repeated child template IDs still represent real executions.
-- [ ] Actual SDK and black-box adapter active/pending reuse, explicit disconnect/connect,
+- [x] Actual SDK and black-box adapter active/pending reuse, explicit disconnect/connect,
       WS fallback and both live-CRDT shortcuts preserve compatibility and actual receipts.
       Missing sink/receipt and cancellation remain truthful unavailable dispositions.
-- [ ] Focused behavioral tests, affected shared-test/shared-web and maintained test types,
+- [x] Focused behavioral tests, affected shared-test/shared-web and maintained test types,
       intentional public API/bundle checks and affected app builds pass, with full recursive
       touched-file closure and independent specification/quality review.
 

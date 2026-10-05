@@ -83,7 +83,11 @@ import {
 
 // The runner awaits these effects but deliberately does not expose browser middleware or room handles.
 export interface BlackBoxBrowserRallarRuntimeDependency
-    extends Pick<RallarConnectionOperations, 'configure' | 'setDefaults' | 'status' | 'isConnected' | 'session'> {
+    extends
+        Pick<
+            RallarConnectionOperations,
+            'configure' | 'setDefaults' | 'status' | 'isConnected' | 'session' | 'rtcCapture'
+        > {
     connect(
         options?: Parameters<RallarConnectionOperations['connect']>[0]
     ): Promise<void>;

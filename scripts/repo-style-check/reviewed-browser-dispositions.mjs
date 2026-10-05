@@ -1,5 +1,66 @@
 // Reviewed browser runtime and transport boundaries. Exact keys and caps remain local to each owner.
 export const reviewedBrowserDispositions = Object.freeze([
+    // Capture selections enter as raw values only here; the product parser and
+    // page/control decoders validate before any connection or domain decision.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rallar-operation-options.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toRallarRtcCaptureContext'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'dataChannelLanes'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxRallarConfigFields'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxRallarConnectionConfig'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateRallarBlackBoxTestCommand'
+    }),
+    // Auth reconciliation, expiry and the single connection reservation must
+    // remain in one owner for both explicit intent and internal acquisition.
+    // This measured cap recognizes that cohesion, not a broader size exception.
+    Object.freeze({
+        path: 'packages/shared-web/browser/session/session-auth-lifecycle.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 50
+    }),
+    // Framework rejections are captured solely for exact error/identity
+    // assertions. The checker supplies no function symbol for these callbacks:
+    // these are module-owner reviews, not per-method immunity.
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Recipe command/result contracts deliberately carry opaque application
+    // payloads across adapter boundaries. Capture fields are separately typed;
+    // infrastructure must not invent a schema for caller-owned payload values.
+    // The checker reports these declarations at the module owner only.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // Process rejection reasons have no required shape. These tests capture them
     // only to prove observer failures never escape into the process boundary.
     Object.freeze({
