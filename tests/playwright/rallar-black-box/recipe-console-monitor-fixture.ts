@@ -1,4 +1,5 @@
 import type { BrowserContext, Route } from '@playwright/test';
+
 import type {
     ControlEventEnvelope,
     ControlResultEnvelope
@@ -11,7 +12,11 @@ import type {
     ControlRunSnapshot,
     ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import type { RallarBlackBoxDistributedRunState } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedRunState
+} from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxDistributedRunRollup } from '../../../packages/shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export const MONITOR_CONTROL_RUN_ID = 'monitor-control-live';
@@ -56,186 +61,184 @@ type MonitorOperationalState = Extract<
     'running' | 'passed' | 'failed' | 'timed-out' | 'cancelled'
 >;
 
-export type RecipeConsoleMonitorFixture = Readonly<{
-    snapshot: ControlServerSnapshot;
-    artifact: ControlDistributedRunArtifactBundle;
-    failNextRunRead(): void;
-    recoverRunReads(): void;
-    failDistributedRunReads(): void;
-    recoverDistributedRunReads(): void;
-    deleteOnNextRunRead(): void;
-    setRunState(state: MonitorOperationalState): void;
-    setSingleAgentFailure(enabled?: boolean): void;
-    setFailureAgentConnected(connected: boolean): void;
-    setAdditionalEventCount(count: number): void;
-    runRequestCount(): number;
-    distributedRunRequestCount(): number;
-    artifactRequestCount(): number;
-    cancelRequestCount(): number;
-}>;
+interface MonitorControlRunInput {
+    readonly state: MonitorOperationalState;
+    readonly singleAgentFailure: boolean;
+    readonly failureAgentConnected: boolean;
+    readonly reconnectCount: number;
+    readonly revision: number;
+    readonly additionalEventCount: number;
+}
 
-export async function installRecipeConsoleMonitorFixture(
-    context: BrowserContext
-): Promise<RecipeConsoleMonitorFixture> {
-    const controlRun = createControlRun('failed', false, true, 0, 0);
-    const distributedRun = createDistributedRun('failed', false, 0);
-    const snapshot = { runs: [controlRun], distributedRuns: [distributedRun] };
-    const artifact = createArtifact(distributedRun, controlRun);
-    let runReads = 0;
-    let distributedRunReads = 0;
-    let artifactReads = 0;
-    let cancelWrites = 0;
-    let runReadsOffline = false;
-    let distributedRunReadsOffline = false;
-    let distributedRunDeleted = false;
-    let operationalState: MonitorOperationalState = 'failed';
-    let singleAgentFailure = false;
-    let failureAgentConnected = true;
-    let reconnectCount = 0;
-    let additionalEventCount = 0;
-    let revision = 0;
+interface MonitorAgentInput {
+    readonly agentId: string;
+    readonly role: string;
+    readonly state: MonitorOperationalState;
+    readonly connected: boolean;
+    readonly reconnectCount: number;
+    readonly additionalEventCount: number;
+}
 
-    await context.route(CONTROL_ROUTE, async (route) => {
+interface MonitorQueuedCommandInput {
+    readonly agentId: string;
+    readonly phase: 'stage' | 'start';
+    readonly offset: number;
+    readonly duration: number;
+    readonly completed: boolean;
+}
+
+interface MonitorResultEnvelopeInput {
+    readonly agentId: string;
+    readonly phase: 'stage' | 'start';
+    readonly ok: boolean;
+    readonly startOffset: number;
+    readonly duration: number;
+    readonly state: MonitorOperationalState;
+}
+
+export class RecipeConsoleMonitorFixture {
+    readonly snapshot: ControlServerSnapshot;
+    readonly artifact: ControlDistributedRunArtifactBundle;
+    #runReads = 0;
+    #distributedRunReads = 0;
+    #artifactReads = 0;
+    #cancelWrites = 0;
+    #runReadsOffline = false;
+    #distributedRunReadsOffline = false;
+    #distributedRunDeleted = false;
+    #operationalState: MonitorOperationalState = 'failed';
+    #singleAgentFailure = false;
+    #failureAgentConnected = true;
+    #reconnectCount = 0;
+    #additionalEventCount = 0;
+    #revision = 0;
+
+    constructor() {
+        const controlRun = this.createCurrentControlRun();
+        const distributedRun = createDistributedRun('failed', false, 0);
+        this.snapshot = { runs: [controlRun], distributedRuns: [distributedRun] };
+        this.artifact = createArtifact(distributedRun, controlRun);
+    }
+
+    failNextRunRead(): void {
+        this.#runReadsOffline = true;
+    }
+    recoverRunReads(): void {
+        this.#runReadsOffline = false;
+    }
+    failDistributedRunReads(): void {
+        this.#distributedRunReadsOffline = true;
+    }
+    recoverDistributedRunReads(): void {
+        this.#distributedRunReadsOffline = false;
+    }
+    deleteOnNextRunRead(): void {
+        this.#distributedRunDeleted = true;
+    }
+    setRunState(state: MonitorOperationalState): void {
+        this.#operationalState = state;
+        this.#revision += 1;
+    }
+    setSingleAgentFailure(enabled = true): void {
+        this.#singleAgentFailure = enabled;
+        this.#revision += 1;
+    }
+    setFailureAgentConnected(connected: boolean): void {
+        if (connected && !this.#failureAgentConnected) {
+            this.#reconnectCount += 1;
+        }
+        this.#failureAgentConnected = connected;
+        this.#revision += 1;
+    }
+    setAdditionalEventCount(count: number): void {
+        this.#additionalEventCount = Math.max(0, Math.floor(count));
+        this.#revision += 1;
+    }
+    readonly runRequestCount = (): number => this.#runReads;
+    readonly distributedRunRequestCount = (): number => this.#distributedRunReads;
+    readonly artifactRequestCount = (): number => this.#artifactReads;
+    readonly cancelRequestCount = (): number => this.#cancelWrites;
+
+    async writeResponse(route: Route): Promise<void> {
         const request = route.request();
         const url = new URL(request.url());
         if (request.method() === 'OPTIONS') {
             await route.fulfill({ status: 204, headers: corsHeaders() });
             return;
         }
-        if (request.method() === 'GET' && url.pathname === '/runs') {
-            runReads += 1;
-            if (runReadsOffline) {
-                await route.abort('connectionfailed');
-                return;
-            }
-            await fulfillJson(route, {
-                runs: [createControlRun(
-                    operationalState,
-                    singleAgentFailure,
-                    failureAgentConnected,
-                    reconnectCount,
-                    revision,
-                    additionalEventCount
-                )]
-            });
+        if (request.method() === 'GET') {
+            await this.writeReadResponse(route, url.pathname);
             return;
         }
-        if (
-            request.method() === 'GET' &&
-            url.pathname === `/runs/${MONITOR_CONTROL_RUN_ID}`
-        ) {
-            if (runReadsOffline) {
-                await route.abort('connectionfailed');
-                return;
-            }
+        if (request.method() === 'POST' && url.pathname === `/distributed-runs/${MONITOR_DISTRIBUTED_RUN_ID}/cancel`) {
+            this.#cancelWrites += 1;
+            this.#operationalState = 'cancelled';
+            this.#revision += 1;
             await fulfillJson(
                 route,
-                createControlRun(
-                    operationalState,
-                    singleAgentFailure,
-                    failureAgentConnected,
-                    reconnectCount,
-                    revision,
-                    additionalEventCount
-                )
+                createDistributedRun(this.#operationalState, this.#singleAgentFailure, this.#revision)
             );
             return;
         }
-        if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
-            distributedRunReads += 1;
-            if (distributedRunReadsOffline) {
+        await fulfillJson(route, { error: `Unhandled ${request.method()} ${url.pathname}` }, 404);
+    }
+
+    private async writeReadResponse(route: Route, pathname: string): Promise<void> {
+        if (pathname === '/runs' || pathname === `/runs/${MONITOR_CONTROL_RUN_ID}`) {
+            if (pathname === '/runs') {
+                this.#runReads += 1;
+            }
+            if (this.#runReadsOffline) {
                 await route.abort('connectionfailed');
                 return;
             }
-            const distributedRuns = distributedRunDeleted ? [] : [
-                createDistributedRun(operationalState, singleAgentFailure, revision)
-            ];
+            const controlRun = this.createCurrentControlRun();
+            await fulfillJson(route, pathname === '/runs' ? { runs: [controlRun] } : controlRun);
+            return;
+        }
+        if (pathname === '/distributed-runs') {
+            this.#distributedRunReads += 1;
+            if (this.#distributedRunReadsOffline) {
+                await route.abort('connectionfailed');
+                return;
+            }
+            const distributedRuns = this.#distributedRunDeleted
+                ? []
+                : [createDistributedRun(this.#operationalState, this.#singleAgentFailure, this.#revision)];
             await fulfillJson(route, { distributedRuns });
             return;
         }
-        if (
-            request.method() === 'GET' &&
-            url.pathname === `/distributed-runs/${MONITOR_DISTRIBUTED_RUN_ID}/artifacts`
-        ) {
-            artifactReads += 1;
-            await fulfillJson(route, artifact);
+        if (pathname === `/distributed-runs/${MONITOR_DISTRIBUTED_RUN_ID}/artifacts`) {
+            this.#artifactReads += 1;
+            await fulfillJson(route, this.artifact);
             return;
         }
-        if (
-            request.method() === 'POST' &&
-            url.pathname === `/distributed-runs/${MONITOR_DISTRIBUTED_RUN_ID}/cancel`
-        ) {
-            cancelWrites += 1;
-            operationalState = 'cancelled';
-            revision += 1;
-            await fulfillJson(
-                route,
-                createDistributedRun(
-                    operationalState,
-                    singleAgentFailure,
-                    revision
-                )
-            );
-            return;
-        }
-        await fulfillJson(route, {
-            error: `Unhandled ${request.method()} ${url.pathname}`
-        }, 404);
-    });
+        await fulfillJson(route, { error: `Unhandled GET ${pathname}` }, 404);
+    }
 
-    return {
-        snapshot,
-        artifact,
-        failNextRunRead: () => {
-            runReadsOffline = true;
-        },
-        recoverRunReads: () => {
-            runReadsOffline = false;
-        },
-        failDistributedRunReads: () => {
-            distributedRunReadsOffline = true;
-        },
-        recoverDistributedRunReads: () => {
-            distributedRunReadsOffline = false;
-        },
-        deleteOnNextRunRead: () => {
-            distributedRunDeleted = true;
-        },
-        setRunState: (state) => {
-            operationalState = state;
-            revision += 1;
-        },
-        setSingleAgentFailure: (enabled = true) => {
-            singleAgentFailure = enabled;
-            revision += 1;
-        },
-        setFailureAgentConnected: (connected) => {
-            if (connected && !failureAgentConnected) {
-                reconnectCount += 1;
-            }
-            failureAgentConnected = connected;
-            revision += 1;
-        },
-        setAdditionalEventCount: (count) => {
-            additionalEventCount = Math.max(0, Math.floor(count));
-            revision += 1;
-        },
-        runRequestCount: () => runReads,
-        distributedRunRequestCount: () => distributedRunReads,
-        artifactRequestCount: () => artifactReads,
-        cancelRequestCount: () => cancelWrites
-    };
+    private createCurrentControlRun(): ControlRunSnapshot {
+        return createControlRun({
+            state: this.#operationalState,
+            singleAgentFailure: this.#singleAgentFailure,
+            failureAgentConnected: this.#failureAgentConnected,
+            reconnectCount: this.#reconnectCount,
+            revision: this.#revision,
+            additionalEventCount: this.#additionalEventCount
+        });
+    }
 }
 
-function createControlRun(
-    state: MonitorOperationalState,
-    singleAgentFailure: boolean,
-    failureAgentConnected: boolean,
-    reconnectCount: number,
-    revision: number,
-    additionalEventCount = 0
-): ControlRunSnapshot {
-    const agentIds = monitorAgentIds(singleAgentFailure);
+export async function installRecipeConsoleMonitorFixture(
+    context: BrowserContext
+): Promise<RecipeConsoleMonitorFixture> {
+    const fixture = new RecipeConsoleMonitorFixture();
+    await context.route(CONTROL_ROUTE, (route) => fixture.writeResponse(route));
+    return fixture;
+}
+
+function createControlRun(input: MonitorControlRunInput): ControlRunSnapshot {
+    const { state, singleAgentFailure, failureAgentConnected, reconnectCount, revision, additionalEventCount } = input;
+    const agentIds = resolveMonitorAgentIds(singleAgentFailure);
     const specs = [
         ...agentIds.map((agentId, index) => (
             [agentId, 'stage', true, 100 + index * 20, 60 + index * 10] as const
@@ -252,27 +255,27 @@ function createControlRun(
     ];
     const completesStart = state === 'passed' || state === 'failed' || state === 'timed-out';
     const commands = specs.map(([agentId, phase, , offset, duration]) =>
-        queuedCommand(agentId, phase, offset, duration, phase === 'stage' || completesStart)
+        createMonitorQueuedCommand({ agentId, phase, offset, duration, completed: phase === 'stage' || completesStart })
     );
     const results = specs
         .filter(([, phase]) => phase === 'stage' || completesStart)
         .map(([agentId, phase, ok, offset, duration]) =>
-            resultEnvelope(agentId, phase, ok, offset + 20, duration, state)
+            createMonitorResultEnvelope({ agentId, phase, ok, startOffset: offset + 20, duration, state })
         );
-    const events = monitorEvents(state, reconnectCount, additionalEventCount);
+    const events = createMonitorEvents(state, reconnectCount, additionalEventCount);
     return {
         runId: MONITOR_CONTROL_RUN_ID,
         createdAtEpochMs: BASE_EPOCH_MS,
         updatedAtEpochMs: BASE_EPOCH_MS + 900 + revision,
         agents: agentIds.map((agentId) =>
-            agent(
+            createMonitorAgent({
                 agentId,
-                agentId === SENDER_ID ? 'sender' : 'receiver',
+                role: agentId === SENDER_ID ? 'sender' : 'receiver',
                 state,
-                agentId === MONITOR_FAILURE_AGENT_ID ? failureAgentConnected : true,
-                agentId === MONITOR_FAILURE_AGENT_ID ? reconnectCount : 0,
-                agentId === MONITOR_FAILURE_AGENT_ID ? additionalEventCount : 0
-            )
+                connected: agentId === MONITOR_FAILURE_AGENT_ID ? failureAgentConnected : true,
+                reconnectCount: agentId === MONITOR_FAILURE_AGENT_ID ? reconnectCount : 0,
+                additionalEventCount: agentId === MONITOR_FAILURE_AGENT_ID ? additionalEventCount : 0
+            })
         ),
         commands,
         results,
@@ -288,7 +291,7 @@ function createDistributedRun(
     singleAgentFailure: boolean,
     revision: number
 ): ControlDistributedRunSnapshot {
-    const agentIds = monitorAgentIds(singleAgentFailure);
+    const agentIds = resolveMonitorAgentIds(singleAgentFailure);
     const commandLinks = [
         ...agentIds.map((agentId, index) => (
             ['stage', agentId, 100 + index * 20] as const
@@ -298,7 +301,6 @@ function createDistributedRun(
         ))
     ];
     const terminal = state !== 'running';
-    const terminalFailure = state === 'failed' || state === 'timed-out';
     const participantCount = agentIds.length;
     return {
         distributedRunId: MONITOR_DISTRIBUTED_RUN_ID,
@@ -313,62 +315,16 @@ function createDistributedRun(
             ? { cancelledAtEpochMs: BASE_EPOCH_MS + 900 + revision }
             : {}),
         targetAgentIds: agentIds,
-        manifest: {
-            schemaVersion: 1,
-            distributedRunId: MONITOR_DISTRIBUTED_RUN_ID,
-            controlRunId: MONITOR_CONTROL_RUN_ID,
-            displayName: 'Monitor deterministic later failure',
-            group: GROUP,
-            recipes: [{
-                recipeId: MONITOR_FAILURE_RECIPE_ID,
-                recipe: RECIPE,
-                variables: {}
-            }],
-            targetPolicy: {
-                mode: 'selected-agents',
-                agentIds,
-                expectedParticipantCount: participantCount
-            },
-            roleAssignments: agentIds.map((agentId) => ({
-                agentId,
-                role: agentId === SENDER_ID ? 'sender' : 'receiver',
-                recipeIds: [MONITOR_FAILURE_RECIPE_ID],
-                variables: {}
-            })),
-            variables: {},
-            ackTimeoutMs: 30_000,
-            barrier: { enabled: false },
-            startMode: 'manual',
-            groupAssertions: [],
-            metadata: {}
-        },
+        manifest: createMonitorManifest(agentIds),
         commandLinks: commandLinks.map(([phase, agentId, offset]) => ({
             phase,
             agentId,
-            commandId: commandId(phase, agentId),
+            commandId: resolveMonitorCommandId(phase, agentId),
             recipeId: MONITOR_FAILURE_RECIPE_ID,
             role: agentId === SENDER_ID ? 'sender' : 'receiver',
             queuedAtEpochMs: BASE_EPOCH_MS + offset
         })),
-        rollup: {
-            state,
-            ok: state === 'passed',
-            summary: {
-                participants: participantCount,
-                readyParticipants: participantCount,
-                passedParticipants: state === 'passed'
-                    ? participantCount
-                    : terminalFailure
-                    ? Math.max(0, participantCount - 1)
-                    : 0,
-                failedParticipants: terminalFailure ? 1 : 0,
-                recipes: 1,
-                passedRecipes: state === 'passed' ? 1 : 0,
-                failedRecipes: terminalFailure ? 1 : 0,
-                blockingFailures: terminalFailure ? 1 : 0
-            },
-            failures: []
-        },
+        rollup: createMonitorRollup(state, participantCount),
         ...(state === 'timed-out'
             ? {
                 error: {
@@ -380,17 +336,73 @@ function createDistributedRun(
     };
 }
 
-function agent(
-    agentId: string,
-    role: string,
+function createMonitorManifest(agentIds: readonly string[]): RallarBlackBoxDistributedRunManifest {
+    const participantCount = agentIds.length;
+    return {
+        schemaVersion: 1,
+        distributedRunId: MONITOR_DISTRIBUTED_RUN_ID,
+        controlRunId: MONITOR_CONTROL_RUN_ID,
+        displayName: 'Monitor deterministic later failure',
+        group: GROUP,
+        recipes: [{
+            recipeId: MONITOR_FAILURE_RECIPE_ID,
+            recipe: RECIPE,
+            variables: {}
+        }],
+        targetPolicy: {
+            mode: 'selected-agents',
+            agentIds,
+            expectedParticipantCount: participantCount
+        },
+        roleAssignments: agentIds.map((agentId) => ({
+            agentId,
+            role: agentId === SENDER_ID ? 'sender' : 'receiver',
+            recipeIds: [MONITOR_FAILURE_RECIPE_ID],
+            variables: {}
+        })),
+        variables: {},
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        startMode: 'manual',
+        groupAssertions: [],
+        metadata: {}
+    };
+}
+
+function createMonitorRollup(
     state: MonitorOperationalState,
-    connected: boolean,
-    reconnectCount: number,
-    additionalEventCount: number
-): ControlAgentSnapshot {
+    participantCount: number
+): RallarBlackBoxDistributedRunRollup {
+    const terminalFailure = state === 'failed' || state === 'timed-out';
+    return {
+        state,
+        ok: state === 'passed',
+        summary: {
+            participants: participantCount,
+            readyParticipants: participantCount,
+            passedParticipants: state === 'passed'
+                ? participantCount
+                : terminalFailure
+                ? Math.max(0, participantCount - 1)
+                : 0,
+            failedParticipants: terminalFailure ? 1 : 0,
+            recipes: 1,
+            passedRecipes: state === 'passed' ? 1 : 0,
+            failedRecipes: terminalFailure ? 1 : 0,
+            groupAssertions: 0,
+            passedGroupAssertions: 0,
+            failedGroupAssertions: 0,
+            blockingFailures: terminalFailure ? 1 : 0
+        },
+        failures: []
+    };
+}
+
+function createMonitorAgent(input: MonitorAgentInput): ControlAgentSnapshot {
+    const { agentId, role, state, connected, reconnectCount, additionalEventCount } = input;
     const completedCommandIds = state === 'running' || state === 'cancelled'
-        ? [commandId('stage', agentId)]
-        : [commandId('stage', agentId), commandId('start', agentId)];
+        ? [resolveMonitorCommandId('stage', agentId)]
+        : [resolveMonitorCommandId('stage', agentId), resolveMonitorCommandId('start', agentId)];
     const failed = (state === 'failed' || state === 'timed-out') &&
         agentId === MONITOR_FAILURE_AGENT_ID;
     return {
@@ -430,20 +442,15 @@ function agent(
     };
 }
 
-function queuedCommand(
-    agentId: string,
-    phase: 'stage' | 'start',
-    offset: number,
-    duration: number,
-    completed: boolean
-): ControlQueuedCommandSnapshot {
+function createMonitorQueuedCommand(input: MonitorQueuedCommandInput): ControlQueuedCommandSnapshot {
+    const { agentId, phase, offset, duration, completed } = input;
     return {
         envelope: {
             kind: 'command',
             protocolVersion: 1,
             runId: MONITOR_CONTROL_RUN_ID,
             agentId,
-            commandId: commandId(phase, agentId),
+            commandId: resolveMonitorCommandId(phase, agentId),
             command: phase === 'stage'
                 ? { kind: 'recipe.load', recipe: RECIPE }
                 : { kind: 'recipe.run', recipe: RECIPE }
@@ -457,14 +464,8 @@ function queuedCommand(
     };
 }
 
-function resultEnvelope(
-    agentId: string,
-    phase: 'stage' | 'start',
-    ok: boolean,
-    startOffset: number,
-    duration: number,
-    state: MonitorOperationalState
-): ControlResultEnvelope {
+function createMonitorResultEnvelope(input: MonitorResultEnvelopeInput): ControlResultEnvelope {
+    const { agentId, phase, ok, startOffset, duration, state } = input;
     const failure = !ok
         ? state === 'timed-out'
             ? {
@@ -473,7 +474,7 @@ function resultEnvelope(
             }
             : { code: MONITOR_FAILURE_CODE, message: MONITOR_FAILURE_MESSAGE }
         : undefined;
-    const id = commandId(phase, agentId);
+    const id = resolveMonitorCommandId(phase, agentId);
     return {
         kind: 'result',
         protocolVersion: 1,
@@ -495,7 +496,7 @@ function resultEnvelope(
     };
 }
 
-function monitorEvents(
+function createMonitorEvents(
     state: MonitorOperationalState,
     reconnectCount: number,
     additionalEventCount: number
@@ -506,11 +507,35 @@ function monitorEvents(
         agentId: MONITOR_FAILURE_AGENT_ID,
         commandId: MONITOR_FAILURE_COMMAND_ID
     };
+    const additionalEvents: readonly ControlEventEnvelope[] = Array.from(
+        { length: additionalEventCount },
+        (_, index) => ({
+            ...shared,
+            kind: 'event',
+            eventId: `monitor-bounded-event-${index + 1}`,
+            atEpochMs: BASE_EPOCH_MS + 1_000 + index,
+            payload: {
+                distributedRunId: MONITOR_DISTRIBUTED_RUN_ID,
+                topic: 'monitor.bounded.evidence',
+                message: `Bounded Monitor event ${index + 1}.`
+            }
+        })
+    );
+    return [...createMonitorFailureEvents(state), ...createMonitorReconnectEvents(reconnectCount), ...additionalEvents];
+}
+
+function createMonitorFailureEvents(state: MonitorOperationalState): readonly ControlEventEnvelope[] {
+    const shared = {
+        protocolVersion: 1 as const,
+        runId: MONITOR_CONTROL_RUN_ID,
+        agentId: MONITOR_FAILURE_AGENT_ID,
+        commandId: MONITOR_FAILURE_COMMAND_ID
+    };
     const failed = state === 'failed' || state === 'timed-out';
     const failureMessage = state === 'timed-out'
         ? 'The receiver exceeded the distributed run execution deadline.'
         : MONITOR_FAILURE_MESSAGE;
-    const failureEvents: readonly ControlEventEnvelope[] = failed
+    return failed
         ? [{
             ...shared,
             kind: 'event',
@@ -540,7 +565,16 @@ function monitorEvents(
             }
         }]
         : [];
-    const reconnectEvents: readonly ControlEventEnvelope[] = reconnectCount > 0
+}
+
+function createMonitorReconnectEvents(reconnectCount: number): readonly ControlEventEnvelope[] {
+    const shared = {
+        protocolVersion: 1 as const,
+        runId: MONITOR_CONTROL_RUN_ID,
+        agentId: MONITOR_FAILURE_AGENT_ID,
+        commandId: MONITOR_FAILURE_COMMAND_ID
+    };
+    return reconnectCount > 0
         ? [{
             ...shared,
             kind: 'event',
@@ -554,21 +588,6 @@ function monitorEvents(
             }
         }]
         : [];
-    const additionalEvents: readonly ControlEventEnvelope[] = Array.from(
-        { length: additionalEventCount },
-        (_, index) => ({
-            ...shared,
-            kind: 'event',
-            eventId: `monitor-bounded-event-${index + 1}`,
-            atEpochMs: BASE_EPOCH_MS + 1_000 + index,
-            payload: {
-                distributedRunId: MONITOR_DISTRIBUTED_RUN_ID,
-                topic: 'monitor.bounded.evidence',
-                message: `Bounded Monitor event ${index + 1}.`
-            }
-        })
-    );
-    return [...failureEvents, ...reconnectEvents, ...additionalEvents];
 }
 
 function createArtifact(
@@ -601,20 +620,20 @@ function createArtifact(
     };
 }
 
-function monitorAgentIds(singleAgentFailure: boolean): readonly string[] {
+function resolveMonitorAgentIds(singleAgentFailure: boolean): readonly string[] {
     return singleAgentFailure
         ? [MONITOR_FAILURE_AGENT_ID]
         : [SENDER_ID, MONITOR_FAILURE_AGENT_ID];
 }
 
-function commandId(phase: 'stage' | 'start', agentId: string): string {
+function resolveMonitorCommandId(phase: 'stage' | 'start', agentId: string): string {
     if (phase === 'start' && agentId === MONITOR_FAILURE_AGENT_ID) {
         return MONITOR_FAILURE_COMMAND_ID;
     }
     return `monitor-${phase}-${agentId === SENDER_ID ? 'sender' : 'receiver'}`;
 }
 
-async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
+async function fulfillJson(route: Route, body: object, status = 200): Promise<void> {
     await route.fulfill({
         status,
         contentType: 'application/json',

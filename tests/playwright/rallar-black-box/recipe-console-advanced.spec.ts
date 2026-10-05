@@ -7,11 +7,19 @@ import {
     type Route,
     type TestInfo
 } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+
 import { ADVANCED_SURFACE_CATALOG } from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-surface-catalog.ts';
 import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import { decodeControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
+import { decodeControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
+import type { ControlFleetReportsResponse } from '../../../packages/shared-test/rallar-bb-test/fleet-report.ts';
+import { isJsonRecordValue } from '../../../packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import type { ApiJsonValue } from '../../../packages/shared/api/api-json-value.ts';
+
 import {
     installRecipeConsoleMonitorFixture,
     MONITOR_CONTROL_RUN_ID,
@@ -21,6 +29,26 @@ import {
     MONITOR_FAILURE_RECIPE_ID,
     MONITOR_ROUTE
 } from './recipe-console-monitor-fixture.ts';
+
+interface EmptyControlFixture {
+    runReads(): number;
+}
+
+interface TouchAdvancedViewport {
+    readonly width: number;
+    readonly height: number;
+    readonly name: string;
+}
+
+interface AdvancedCssSnapshot {
+    readonly link: Readonly<Record<string, string>>;
+    readonly navigation: Readonly<Record<string, string>>;
+}
+
+interface DocumentOverflow {
+    readonly x: number;
+    readonly y: number;
+}
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
 const PRODUCTION_BASE_URL = 'http://127.0.0.1:4176';
@@ -116,16 +144,20 @@ const OWNER_SELECTORS: Readonly<Record<string, string>> = {
 };
 
 const LAZY_TARGETS = [
-    ['runner.recipes', 'RunnerRecipesPanel'],
-    ['runner.runs', 'RunnerRunsPanel'],
-    ['runner.fleet', 'RunnerFleetPanel'],
-    ['runner.builder', 'flow-builder-panel'],
-    ['legacy.distributed-recipes', 'DistributedRecipesPanel'],
-    ['legacy.run-manager', 'RunManagerPanel'],
-    ['legacy.shared-test-catalog', 'SharedTestPanel'],
-    ['direct.groups-clients', 'RoomsClientsPanel'],
-    ['direct.topology', 'TopologyGraphPanel'],
-    ['direct.rtc-diagnostics', 'RtcDiagnosticsPanel']
+    ['runner.recipes', 'src/legacy/runner/recipes/RunnerRecipesPanel.tsx', 'Recipes'],
+    ['runner.runs', 'src/legacy/runner/runs/runner-runs-panel.tsx', 'Runs'],
+    ['runner.fleet', 'src/legacy/runner/fleet/RunnerFleetPanel.tsx', 'Fleet'],
+    ['runner.builder', 'src/legacy/runner/builder/flow-builder-panel.tsx', 'Flow Builder'],
+    [
+        'legacy.distributed-recipes',
+        'src/legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx',
+        'Distributed Recipes'
+    ],
+    ['legacy.run-manager', 'src/legacy/runner/run-manager/RunManagerPanel.tsx', 'Run Manager'],
+    ['legacy.shared-test-catalog', 'src/legacy/runner/shared-test/SharedTestPanel.tsx', 'Coverage Ownership'],
+    ['direct.groups-clients', 'src/legacy/diagnostics/rooms-clients/RoomsClientsPanel.tsx', 'Groups/Clients'],
+    ['direct.topology', 'src/legacy/diagnostics/topology/TopologyGraphPanel.tsx', 'Topology'],
+    ['direct.rtc-diagnostics', 'src/legacy/diagnostics/rtc/RtcDiagnosticsPanel.tsx', 'RTC Diagnostics']
 ] as const;
 const STATEFUL_EXCEPTION_SELECTORS = [
     '#panel-quick-test',
@@ -416,6 +448,11 @@ test('keeps direct Rallar diagnostics out of primary navigation and opens them f
 
 test('opens every registered legacy surface from its alias and contextual route', async ({ browser, context, page }) => {
     test.setTimeout(240_000);
+    const lazyAssets = LAZY_TARGETS.map(([surfaceId, entry, heading]) => ({
+        surfaceId,
+        asset: readBuiltEntryAsset(entry),
+        heading
+    }));
     await installEmptyControlFixture(context);
     await page.goto(
         '/?provider=simulated&v=1&experience=recipe-console&view=advanced'
@@ -448,7 +485,7 @@ test('opens every registered legacy surface from its alias and contextual route'
         expect(url.searchParams.get('workspace')).toBe(surface.route.workspace);
         expect(url.searchParams.get('tab')).toBe(surface.route.tab);
         expect(url.searchParams.get('advancedSurface')).toBe(
-            surface.route.advancedSurface ?? null
+            'advancedSurface' in surface.route ? surface.route.advancedSurface : null
         );
         await expect(
             page.locator('[data-legacy-diagnostic-context]')
@@ -475,7 +512,7 @@ test('opens every registered legacy surface from its alias and contextual route'
                 `${surface.id}:${alias}`
             ).toBe(alias);
         }
-        if (surface.route.advancedSurface) {
+        if ('advancedSurface' in surface.route && surface.route.advancedSurface) {
             for (const field of ['advancedSurface', 'advanced'] as const) {
                 const childUrl = new URL('/', page.url());
                 childUrl.searchParams.set('provider', 'simulated');
@@ -509,7 +546,7 @@ test('opens every registered legacy surface from its alias and contextual route'
         ).toHaveCount(1);
     }
 
-    for (const [surfaceId, chunkName] of LAZY_TARGETS) {
+    for (const { surfaceId, asset, heading } of lazyAssets) {
         const targetContext = await browser.newContext({
             baseURL: PRODUCTION_BASE_URL
         });
@@ -529,24 +566,27 @@ test('opens every registered legacy surface from its alias and contextual route'
                 '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth'
             );
             await expect(targetPage.locator('#panel-auth')).toBeVisible();
-            for (const [, lazyChunk] of LAZY_TARGETS) {
+            for (const lazy of lazyAssets) {
                 expect(
-                    hasNamedChunk(resources, lazyChunk),
-                    `${surfaceId}: ${lazyChunk} absent before target`
+                    hasBuiltAsset(resources, lazy.asset),
+                    `${surfaceId}: ${lazy.surfaceId} absent before target`
                 ).toBe(false);
             }
 
             await targetPage.goto(contextualHrefs.get(surfaceId) ?? 'about:blank');
             await expectSurfaceOwner(targetPage, surfaceId);
+            await expect(
+                targetPage.locator(ownerSelectorFor(surfaceId)).getByRole('heading', { name: heading, exact: true })
+            ).toBeVisible();
             expect(
-                hasNamedChunk(resources, chunkName),
-                `${surfaceId}: target chunk`
+                hasBuiltAsset(resources, asset),
+                `${surfaceId}: owning entry asset`
             ).toBe(true);
-            for (const [otherId, otherChunk] of LAZY_TARGETS) {
-                if (otherId !== surfaceId) {
+            for (const other of lazyAssets) {
+                if (other.surfaceId !== surfaceId) {
                     expect(
-                        hasNamedChunk(resources, otherChunk),
-                        `${surfaceId}: unrelated ${otherChunk}`
+                        hasBuiltAsset(resources, other.asset),
+                        `${surfaceId}: unrelated ${other.surfaceId}`
                     ).toBe(false);
                 }
             }
@@ -574,6 +614,9 @@ test('opens every registered legacy surface from its alias and contextual route'
 
 test('default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions', async ({ browser }) => {
     test.setTimeout(90_000);
+    const recipeConsoleAsset = readBuiltEntryAsset('src/recipe-console/app/recipe-console-app.tsx');
+    const legacyAsset = readBuiltEntryAsset('src/legacy/shell/legacy-experience.tsx');
+    const lazyAssets = LAZY_TARGETS.map(([surfaceId, entry]) => ({ surfaceId, asset: readBuiltEntryAsset(entry) }));
     const recipeFirst = await browser.newContext({
         baseURL: PRODUCTION_BASE_URL
     });
@@ -589,8 +632,7 @@ test('default Recipe Console does not load or poll inactive legacy routes except
             })
         );
     });
-    await installTimerProbe(recipeFirst);
-    await installEmptyControlFixture(recipeFirst);
+    const control = await installEmptyControlFixture(recipeFirst);
     const page = await recipeFirst.newPage();
     const resources: string[] = [];
     page.on('request', (request) => {
@@ -607,17 +649,12 @@ test('default Recipe Console does not load or poll inactive legacy routes except
             page.locator('.recipe-console[data-view="execute"]')
         ).toBeVisible();
         await expect(page.locator('.app-shell')).toHaveCount(0);
-        await expect
-            .poll(() => activeFiveSecondTimers(page))
-            .toEqual({
-                intervals: 0,
-                timeouts: 1
-            });
+        await expect.poll(() => control.runReads()).toBeGreaterThan(0);
         const coldResources = [...resources];
-        expect(hasNamedChunk(coldResources, 'recipe-console-app')).toBe(true);
-        expect(hasNamedChunk(coldResources, 'legacy-experience')).toBe(false);
-        for (const [, chunk] of LAZY_TARGETS) {
-            expect(hasNamedChunk(coldResources, chunk), chunk).toBe(false);
+        expect(hasBuiltAsset(coldResources, recipeConsoleAsset)).toBe(true);
+        expect(hasBuiltAsset(coldResources, legacyAsset)).toBe(false);
+        for (const lazy of lazyAssets) {
+            expect(hasBuiltAsset(coldResources, lazy.asset), lazy.surfaceId).toBe(false);
         }
         for (const selector of Object.values(OWNER_SELECTORS)) {
             await expect(page.locator(selector)).toHaveCount(0);
@@ -636,21 +673,18 @@ test('default Recipe Console does not load or poll inactive legacy routes except
         );
         await expect(page.locator('#panel-auth')).toBeVisible();
         await expect(page.locator('.recipe-console')).toHaveCount(0);
-        await expect
-            .poll(() => activeFiveSecondTimers(page))
-            .toEqual({
-                intervals: 0,
-                timeouts: 0
-            });
-        expect(hasNamedChunk(resources, 'legacy-experience')).toBe(true);
+        const readsAfterLegacy = control.runReads();
+        await page.waitForTimeout(5_500);
+        expect(control.runReads()).toBe(readsAfterLegacy);
+        expect(hasBuiltAsset(resources, legacyAsset)).toBe(true);
         for (const selector of STATEFUL_EXCEPTION_SELECTORS) {
             await expect(
                 page.locator(selector),
                 `${selector}: one stateful owner`
             ).toHaveCount(1);
         }
-        for (const [, chunk] of LAZY_TARGETS) {
-            expect(hasNamedChunk(resources, chunk), `${chunk}: still inactive`).toBe(
+        for (const lazy of lazyAssets) {
+            expect(hasBuiltAsset(resources, lazy.asset), `${lazy.surfaceId}: still inactive`).toBe(
                 false
             );
         }
@@ -661,20 +695,14 @@ test('default Recipe Console does not load or poll inactive legacy routes except
         );
         await expect(page.locator('[data-advanced-workspace]')).toBeVisible();
         await expect(page.locator('.app-shell')).toHaveCount(0);
-        await expect
-            .poll(() => activeFiveSecondTimers(page))
-            .toEqual({
-                intervals: 0,
-                timeouts: 1
-            });
+        await expect.poll(() => control.runReads()).toBeGreaterThan(readsAfterLegacy);
         expect(await captureAdvancedCss(page)).toEqual(coldAdvancedCss);
         expect(await documentOverflow(page)).toEqual({ x: 0, y: 0 });
 
         const legacyFirst = await browser.newContext({
             baseURL: PRODUCTION_BASE_URL
         });
-        await installTimerProbe(legacyFirst);
-        await installEmptyControlFixture(legacyFirst);
+        const reverseControl = await installEmptyControlFixture(legacyFirst);
         const reversePage = await legacyFirst.newPage();
         try {
             await reversePage.goto(
@@ -692,12 +720,7 @@ test('default Recipe Console does not load or poll inactive legacy routes except
             await expect(
                 reversePage.locator('[data-primary-navigation]')
             ).toHaveAttribute('aria-label', 'Recipe Console');
-            await expect
-                .poll(() => activeFiveSecondTimers(reversePage))
-                .toEqual({
-                    intervals: 0,
-                    timeouts: 1
-                });
+            await expect.poll(() => reverseControl.runReads()).toBeGreaterThan(0);
             expect(await captureAdvancedCss(reversePage)).toEqual(coldAdvancedCss);
             expect(await documentOverflow(reversePage)).toEqual({ x: 0, y: 0 });
         }
@@ -720,18 +743,38 @@ async function installCombinedFailureMonitorFixture(
         [MONITOR_FAILURE_COMMAND_ID, LONG_BIDI_COMMAND_ID],
         ['monitor-group', LONG_BIDI_GROUP_ID]
     ]);
-    const controlRun = replaceExactStrings(
-        structuredClone(fixture.snapshot.runs[0]),
-        replacements
-    ) as ControlRunSnapshot;
-    const distributedRun = replaceExactStrings(
-        structuredClone(fixture.snapshot.distributedRuns[0]),
-        replacements
-    ) as ControlDistributedRunSnapshot;
+    const controlSource = fixture.snapshot.runs[0];
+    const distributedSource = fixture.snapshot.distributedRuns?.[0];
+    if (!controlSource || !distributedSource) {
+        throw new Error('Combined Monitor fixture requires both run snapshots.');
+    }
+    const controlRun = toCombinedFailureControlRun(controlSource, replacements);
+    const distributedRun = decodeControlDistributedRunSnapshot(
+        JSON.parse(toReplacedFixtureJson(distributedSource, replacements))
+    ).fold(
+        (issue) => {
+            throw new Error(`Invalid combined distributed fixture: ${issue}`);
+        },
+        (snapshot) => snapshot
+    );
+
+    await context.route(CONTROL_ROUTE, (route) => writeCombinedFailureResponse(route, controlRun, distributedRun));
+}
+
+function toCombinedFailureControlRun(
+    source: ControlRunSnapshot,
+    replacements: ReadonlyMap<string, string>
+): ControlRunSnapshot {
+    const controlRun = decodeControlRunSnapshot(JSON.parse(toReplacedFixtureJson(source, replacements))).fold(
+        (issue) => {
+            throw new Error(`Invalid combined control fixture: ${issue}`);
+        },
+        (snapshot) => snapshot
+    );
     const failure = controlRun.results.find(
         (result) => result.commandId === LONG_BIDI_COMMAND_ID
     );
-    if (!failure) {
+    if (!failure?.result) {
         throw new Error('Combined Monitor fixture lost its failed result.');
     }
     const error = { code: 'BAD_AUTH', message: COMBINED_FAILURE_MESSAGE };
@@ -740,7 +783,7 @@ async function installCombinedFailureMonitorFixture(
     const diagnostic = controlRun.events.find(
         (event) => event.kind === 'diagnostic' && event.commandId === LONG_BIDI_COMMAND_ID
     );
-    if (!diagnostic || !isRecord(diagnostic.payload)) {
+    if (!diagnostic || !isJsonRecordValue(diagnostic.payload)) {
         throw new Error('Combined Monitor fixture lost its correlated diagnostic.');
     }
     Object.assign(diagnostic.payload, {
@@ -749,35 +792,41 @@ async function installCombinedFailureMonitorFixture(
         message: 'RTC no route for selected failure.'
     });
 
-    await context.route(CONTROL_ROUTE, async (route) => {
-        const request = route.request();
-        const url = new URL(request.url());
-        if (request.method() === 'OPTIONS') {
-            await route.fulfill({ status: 204, headers: corsHeaders() });
-            return;
-        }
-        if (request.method() === 'GET' && url.pathname === '/runs') {
-            await fulfillJson(route, { runs: [controlRun] });
-            return;
-        }
-        if (
-            request.method() === 'GET' &&
-            url.pathname === `/runs/${controlRun.runId}`
-        ) {
-            await fulfillJson(route, controlRun);
-            return;
-        }
-        if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
-            await fulfillJson(route, { distributedRuns: [distributedRun] });
-            return;
-        }
-        await fulfillJson(route, { error: 'Fixture endpoint unavailable.' }, 404);
-    });
+    return controlRun;
+}
+
+async function writeCombinedFailureResponse(
+    route: Route,
+    controlRun: ControlRunSnapshot,
+    distributedRun: ControlDistributedRunSnapshot
+): Promise<void> {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === 'OPTIONS') {
+        await route.fulfill({ status: 204, headers: corsHeaders() });
+        return;
+    }
+    if (request.method() === 'GET' && url.pathname === '/runs') {
+        await fulfillJson(route, { runs: [controlRun] });
+        return;
+    }
+    if (
+        request.method() === 'GET' &&
+        url.pathname === `/runs/${controlRun.runId}`
+    ) {
+        await fulfillJson(route, controlRun);
+        return;
+    }
+    if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
+        await fulfillJson(route, { distributedRuns: [distributedRun] });
+        return;
+    }
+    await fulfillJson(route, { error: 'Fixture endpoint unavailable.' }, 404);
 }
 
 async function installEmptyControlFixture(
     context: BrowserContext
-): Promise<Readonly<{ runReads(): number; }>> {
+): Promise<EmptyControlFixture> {
     let runReads = 0;
     await context.route(CONTROL_ROUTE, async (route) => {
         const request = route.request();
@@ -879,7 +928,7 @@ async function navigateInApp(page: Page, href: string): Promise<void> {
 async function proveTouchAdvancedLayout(
     browser: Browser,
     testInfo: TestInfo,
-    viewport: Readonly<{ width: number; height: number; name: string; }>
+    viewport: TouchAdvancedViewport
 ): Promise<void> {
     const context = await browser.newContext({
         baseURL: PRODUCTION_BASE_URL,
@@ -930,12 +979,7 @@ async function expectMinimumTarget(
     ).toBeGreaterThanOrEqual(44);
 }
 
-async function captureAdvancedCss(page: Page): Promise<
-    Readonly<{
-        link: Readonly<Record<string, string>>;
-        navigation: Readonly<Record<string, string>>;
-    }>
-> {
+async function captureAdvancedCss(page: Page): Promise<AdvancedCssSnapshot> {
     const styles = async (selector: string, properties: readonly string[]) =>
         page
             .locator(selector)
@@ -975,117 +1019,38 @@ async function attachScreenshot(
     await testInfo.attach(name, { path, contentType: 'image/png' });
 }
 
-async function installTimerProbe(context: BrowserContext): Promise<void> {
-    await context.addInitScript(() => {
-        const timeouts = new Map<number, number>();
-        const intervals = new Map<number, number>();
-        const nativeSetTimeout = window.setTimeout.bind(window);
-        const nativeClearTimeout = window.clearTimeout.bind(window);
-        const nativeSetInterval = window.setInterval.bind(window);
-        const nativeClearInterval = window.clearInterval.bind(window);
-        Object.defineProperty(window, 'setTimeout', {
-            configurable: true,
-            value: (handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
-                let id = 0;
-                const wrapped = (...callbackArgs: unknown[]) => {
-                    timeouts.delete(id);
-                    if (typeof handler === 'function') {
-                        handler(...callbackArgs);
-                    }
-                };
-                id = nativeSetTimeout(wrapped, timeout, ...args);
-                timeouts.set(id, timeout ?? 0);
-                return id;
-            }
-        });
-        Object.defineProperty(window, 'clearTimeout', {
-            configurable: true,
-            value: (id?: number) => {
-                if (id !== undefined) {
-                    timeouts.delete(id);
-                    nativeClearTimeout(id);
-                }
-            }
-        });
-        Object.defineProperty(window, 'setInterval', {
-            configurable: true,
-            value: (handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
-                const id = nativeSetInterval(handler, timeout, ...args);
-                intervals.set(id, timeout ?? 0);
-                return id;
-            }
-        });
-        Object.defineProperty(window, 'clearInterval', {
-            configurable: true,
-            value: (id?: number) => {
-                if (id !== undefined) {
-                    intervals.delete(id);
-                    nativeClearInterval(id);
-                }
-            }
-        });
-        Object.defineProperty(window, '__advancedTimerProbe', {
-            configurable: true,
-            value: {
-                activeFiveSecondTimers: () => ({
-                    intervals: [...intervals.values()].filter((value) => value === 5_000)
-                        .length,
-                    timeouts: [...timeouts.values()].filter((value) => value === 5_000)
-                        .length
-                })
-            }
-        });
-    });
-}
-
-function activeFiveSecondTimers(page: Page): Promise<
-    Readonly<{
-        intervals: number;
-        timeouts: number;
-    }>
-> {
-    return page.evaluate(() =>
-        (
-            window as Window & {
-                __advancedTimerProbe: {
-                    activeFiveSecondTimers(): { intervals: number; timeouts: number; };
-                };
-            }
-        ).__advancedTimerProbe.activeFiveSecondTimers()
+function readBuiltEntryAsset(entry: string): string {
+    return decodeBuiltEntryAsset(
+        JSON.parse(
+            readFileSync(new URL('../../../apps/rallar-black-box/dist/.vite/manifest.json', import.meta.url), 'utf8')
+        ),
+        entry
     );
 }
 
-function hasNamedChunk(resources: readonly string[], name: string): boolean {
-    return resources.some((resource) =>
-        new RegExp(`/assets/${escapeRegExp(name)}-[^/]+\\.(?:js|css)$`).test(
-            resource
-        )
-    );
+function decodeBuiltEntryAsset(manifest: unknown, entry: string): string {
+    if (!isJsonRecordValue(manifest)) {
+        throw new Error('The production build manifest must be an object.');
+    }
+    const builtEntry = manifest[entry];
+    if (!isJsonRecordValue(builtEntry) || builtEntry.isDynamicEntry !== true || typeof builtEntry.file !== 'string') {
+        throw new Error(`Missing built dynamic entry: ${entry}.`);
+    }
+    return builtEntry.file;
 }
 
-function replaceExactStrings(
-    value: unknown,
+function hasBuiltAsset(resources: readonly string[], asset: string): boolean {
+    return resources.some((resource) => new URL(resource).pathname === `/${asset}`);
+}
+
+function toReplacedFixtureJson(
+    snapshot: ControlRunSnapshot | ControlDistributedRunSnapshot,
     replacements: ReadonlyMap<string, string>
-): unknown {
-    if (typeof value === 'string') {
-        return replacements.get(value) ?? value;
-    }
-    if (Array.isArray(value)) {
-        return value.map((entry) => replaceExactStrings(entry, replacements));
-    }
-    if (isRecord(value)) {
-        return Object.fromEntries(
-            Object.entries(value).map(([key, entry]) => [
-                key,
-                replaceExactStrings(entry, replacements)
-            ])
-        );
-    }
-    return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
+): string {
+    return JSON.stringify(
+        snapshot,
+        (_key, value: ApiJsonValue | undefined) => typeof value === 'string' ? replacements.get(value) ?? value : value
+    );
 }
 
 function currentUrl(page: Page): URL {
@@ -1094,7 +1059,7 @@ function currentUrl(page: Page): URL {
 
 function documentOverflow(
     page: Page
-): Promise<Readonly<{ x: number; y: number; }>> {
+): Promise<DocumentOverflow> {
     return page.evaluate(() => ({
         x: document.documentElement.scrollWidth -
             document.documentElement.clientWidth,
@@ -1105,7 +1070,7 @@ function documentOverflow(
 
 async function fulfillJson(
     route: Route,
-    body: unknown,
+    body: object,
     status = 200
 ): Promise<void> {
     await route.fulfill({
@@ -1124,7 +1089,7 @@ function corsHeaders(): Record<string, string> {
     };
 }
 
-function emptyFleetReportsResponse() {
+function emptyFleetReportsResponse(): ControlFleetReportsResponse {
     return {
         reports: [],
         aggregate: {
@@ -1144,9 +1109,5 @@ function emptyFleetReportsResponse() {
             regions: [],
             failureSignatures: []
         }
-    } as const;
-}
-
-function escapeRegExp(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    };
 }
