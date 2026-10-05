@@ -1665,8 +1665,9 @@ justified yet.”
 | 49      | Read-only native observation audit independently APPROVE/APPROVE at 92a6261: missing native lifetime/DTLS/SCTP/typed-error/candidate association and dropped timeout/deletion provenance. Bounded owner-captured observation design/TDD is next; original observer/expiry findings preserved, initial stall unknown, no retry policy or producer, E3 zero.                                                                                                                             |
 | 50      | Corrected original-owner observation proposal independently APPROVE/APPROVE after scope/reservation, allocation-reentry, serialized-error and retired-channel corrections. Public additions and source limits remain proposed; human design approval pending, no implementation or runtime measurement. Initial stall unknown; Task45/46 findings intact, E3 zero, B07 held.                                                                                                           |
 | 51      | Human approved end-to-end Off/Signaling/Full native configuration and implementation when the plan is ready. Source audits cover SDK/UI, general and distributed recipes, headless/CI and B06 identity. Complete specification and two-slice plan independently APPROVE after three finite readiness fixes; TDD execution is authorized, no code or producer yet. Task45/46 findings remain intact, initial stall unknown, E3 zero, B07 held.                                          |
+| 52      | Complete canonical SDK/core capture selection and actual immutable construction readback at 7d8bd4d0 plus single-flight fix de006d74b. Specification/quality review approves both initialization owners after witnessed reentry RED/GREEN; final shared-web 169 files/1,395 tests and 1,454-file zero-error test types pass. Native remains explicitly unsupported until Task53; UI/recipe/agent/Actions/B06 application and hosted/performance acceptance remain outstanding.         |
 
-## 11. Next Two Useful Actions After Task 51
+## 11. Current Implementation Horizon After Task 52
 
 Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
@@ -1704,21 +1705,27 @@ approved at design-review scope. Task 51 adds explicit human approval for the am
 three-mode configuration and authorization to implement when the plan is ready.
 The reviewed native ownership/error/budget design is retained; automatic native
 enablement from a configured sink is superseded by explicit connection selection.
-The approved epoch clock remains a separate decision. Only the next two useful
-implementation slices are concrete:
+The approved epoch clock remains a separate decision. Task 52 delivers real Off and
+Signaling selection, immutable construction receipts and typed incompatible reuse.
+The initial review exposed compatible synchronous reentry at both transport and
+session owners; fix de006d74b reserves the pending operation before synchronous
+setup. Scoped specification/quality re-review approves both owners. Full native
+remains honestly unavailable until Task 53; no end-to-end or timing acceptance follows.
+The next useful actions are:
 
-1. **Task 52:** Select and report immutable connection capture in the SDK/core
-   composition. Off and Signaling have real effects; Full native remains honestly
-   unavailable until Task 53. Validate input, preserve explicit Off, distinguish
-   desired from applied configuration, and prevent incompatible active/pending reuse.
-2. **Task 53:** Add bounded original-owner native/service capture through the existing
+1. **Task 53:** Add bounded original-owner native/service capture through the existing
    artifact and fence current stats by exact objects. Complete native ownership,
    serialization/privacy, teardown/reentrancy and affected public-surface checks.
+2. **Refresh the next adapter horizon after Task 53 review:** Use the actual completed
+   contracts to detail recipe invocation/configuration propagation and per-agent
+   application receipts, then the visible UI and local/hosted/Actions paths. Keep the
+   full required outcomes below and verify requested intent against actual construction.
 
 The full amendment still requires general/distributed recipe configuration and
 per-agent application receipts, visible Manual/Recipe Console controls, local/headless
 and GitHub Actions propagation, and B06 sealed-mode/cohort validation. These remain
-required outcomes; their concrete steps follow the first two reviewed slices.
+required outcomes; their concrete steps follow reviewed native capture. The second action above is
+planning work, not a dispatched adapter implementation or a new approval gate.
 No final amended acceptance is claimed by the staged Full native unavailable result.
 A separately selected unchanged B06 availability/first-stall/perturbation exercise
 will establish target API support, adequate retained capture and acceptable overhead.
@@ -2810,7 +2817,7 @@ This is a usable SDK configuration boundary, not final amended acceptance.
 - Same-mode reuse retains original construction origin; desired origin is not applied proof.
 - Missing sink or native implementation preserves normal connection outcomes with unavailable evidence.
 
-- [ ] **Step 1 — Write the first semantic RED at the existing owner.** Extend
+- [x] **Step 1 — Write the first semantic RED at the existing owner.** Extend
       `packages/tests/shared-web/rtc/initialise-browser-rtc-runtime.test.ts` with
       explicit Off plus a real diagnostic sink at `initialiseRtcConnectionService`.
       Supply a complete `rtcCaptureConfiguration: { mode: 'off', origin: 'step' }`
@@ -2818,11 +2825,11 @@ This is a usable SDK configuration boundary, not final amended acceptance.
       the original policy-retry/native business result remains, but RTC signaling
       events are empty. Current composition ignores Off and emits the observation.
       Use literal expected results; do not import not-yet-created helpers or add stubs.
-- [ ] **Step 2 — Witness assertion RED.** Run
+- [x] **Step 2 — Witness assertion RED.** Run
       `npx vitest run packages/tests/shared-web/rtc/initialise-browser-rtc-runtime.test.ts`.
       Record the emitted-event mismatch, separately from any test setup error.
       The first witnessed failure must be the current wrong capture behavior.
-- [ ] **Step 3 — Add direct tests and implement the canonical contract/factory.**
+- [x] **Step 3 — Add direct tests and implement the canonical contract/factory.**
       Before creating the helper owners, write their tests with literal results for
       all five precedence levels, explicit Off, every valid mode, invalid supplied
       typed Left and omitted Right `{ mode: undefined }`. Capture the actual
@@ -2834,7 +2841,7 @@ This is a usable SDK configuration boundary, not final amended acceptance.
       install only the applied original Signaling sink/clock capability. Native is
       unsupported in this slice, with no scope/stub/implementation flag. Run the
       core configuration, browser capture and existing initializer test files to GREEN.
-- [ ] **Step 4 — Write and witness SDK/transport REDs.** Drive real defaults/operation
+- [x] **Step 4 — Write and witness SDK/transport REDs.** Drive real defaults/operation
       projections and controlled native initialization. Assert default Off versus
       sink-default Signaling, step Off over host Native, direct start/connect propagation,
       and actual serialized receipts. Hold one initialization, request another mode,
@@ -2842,23 +2849,65 @@ This is a usable SDK configuration boundary, not final amended acceptance.
       complete it, assert original receipt. Repeat for active reuse, compatible origin
       change, explicit disconnect/connect and cancellation without stale readback.
       Run the six named test files above and retain the failing assertions.
-- [ ] **Step 5 — Apply selected configuration at the current construction owners.**
+- [x] **Step 5 — Apply selected configuration at the current construction owners.**
       Extend explicit allowlists/default clones, carry required complete
       `rtcCaptureConfiguration` into RTC initialization, build the receipt alongside
       the service, hold immutable configuration in both lifecycle/transport boundaries, and
       expose readback/error through the public connection surface. Preserve successful
       `Promise<ApiMiddleware>` and all existing admission/timer/native outcomes.
-- [ ] **Step 6 — GREEN and closure.** Run the six covering files, then
+- [x] **Step 6 — GREEN and closure.** Run the six covering files, then
       `npm run test:shared-web`, `npx tsc -p packages/shared/tsconfig.json --noEmit`,
       `npm --workspace @ar-eye-hunter/shared-web run typecheck` and
       `npm run typecheck:tests`. Include shared-web API snapshot/bundle-boundary tests
       because the error/readback public surface changes. Run delivery status before
       broader checks; review/remediate each touched human-authored/support file in full,
       preserving untouched scope. Run applicable format/style/structure/coupling checks.
-- [ ] **Step 7 — Commit and independent task review.** Commit only this capability's
+- [x] **Step 7 — Commit and independent task review.** Commit only this capability's
       reviewed files on the feature branch. Report exact RED/GREEN, package validation,
       full-file closure and native-unavailable staging limitation. Resolve specification
       and quality findings before Task 53. Root owns publication.
+
+**Delivered SDK/core evidence:** Product commit `7d8bd4d035b316b9430c3dd3e28b91a08b4abd38`
+and single-flight fix `de006d74b1f82978b62d269685efa3a50c442069` deliver this staged
+capability. The canonical initializer returns one named service/receipt result;
+transport readback reports that construction, not newly edited defaults. Same-mode
+reuse preserves the original receipt/origin; different modes reject without automatic
+reconnect or authentication invalidation. Startup/refresh allowlists and verified
+internal consumers carry the selection; no old-return adapter or second factory remains.
+
+**TDD and review:** The first genuine initializer RED observed signaling rows despite
+explicit Off while native business behavior continued. Separate SDK/receipt and
+compatibility REDs preceded implementation. Independent initial review required a
+compatible synchronous reentry correction at both owners. Its REDs observed two
+transport constructions and different lifecycle middleware results. One focused
+ES2023 reservation capability now owns pending Promise construction; each shell
+reserves before synchronous effects, drives once and conditionally clears its own
+reservation. The fix preserves original synchronous throws and compatible waiters'
+original rejection values, including a newer reservation surviving an older setup
+failure. Final scoped re-review marks I1 addressed at both owners, with specification
+and quality Approved and no new Critical/Important breakage.
+
+**Task52 local validation:** Final focused connection/session checks pass two files/
+25 tests; final `npm run test:shared-web` passes 169 files/1,395 tests including public
+API, entrypoint and bundle checks. Shared/shared-web types pass; maintained test
+typecheck enforces 1,454 files with zero debt/errors. Changed style, formatting,
+structure and exact committed coupling checks pass. Every touched/support file entered
+recursive standards closure; independent untouched code remained outside. Legacy
+heuristics were individually reviewed as current policy/lifecycle boundaries, with
+no retained production legacy. The scope fix did not repeat unaffected game builds;
+their prior PASS retains existing large-chunk warnings. Existing measurement output
+also remains disclosed as noise, not pristine validation.
+
+**Bundle tradeoff and limits:** Only the `browser/rallar.ts` budget changes from 239
+to 240 KiB under the existing `floor(measurement)+1` policy. The reported 239.163 KiB
+is Brotli size of the minified browser bundle; 240 is the smallest integer cap under
+that policy. Other entry budgets and native/source/control/output limits are unchanged.
+Independent review accepts the intentional facade/export and boundary dispositions.
+This is local source support, with hosted correctness for these commits still pending;
+it does not prove deployed availability, comparable timing, native capture or any E3
+cohort. Native remains unavailable/unsupported in this slice. Required recipe/UI/
+agent/Actions/B06 propagation follows reviewed native capture. Task45/46 findings
+remain intact, initial native trigger UNKNOWN, E3 zero, B07 held; no Issues created/reused.
 
 ### Task 53: Original-owner native evidence, bounded artifact and current-stats fence
 
