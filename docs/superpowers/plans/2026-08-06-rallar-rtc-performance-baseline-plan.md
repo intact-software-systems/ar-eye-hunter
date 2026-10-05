@@ -72,7 +72,7 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
 **Created:** 2026-08-06
 
-**Updated:** 2026-10-04
+**Updated:** 2026-10-05
 
 ## 1. Current Outcome And Evidence
 
@@ -174,12 +174,15 @@ at 3bd05a196. That source's required Branch Release failed seven changed-style
 findings despite its separately passed executed runtime lanes and formation/medium
 checks. Fix3 repairs the typed normalization boundary without changing captured
 facts or readiness policy; retained independent review, local focused/types/style
-and affected consumer checks pass. Fix3 publication and exact-source hosted
-acceptance remain pending. Task 44's one unchanged-through-run local diagnostic
+and affected consumer checks pass. Published Fix3 at 48cb727 has terminal required
+Branch Release, formation-large and medium-scale passes. Optional ALM failed with
+cause unclassified; RTC observation integrity was skipped. Task 44's one
+unchanged-through-run local diagnostic
 failed retention at cycle7 reconnect/readiness of peer C. Its captured returned
 timeout/reliable-lane/desired2-ready1 facts narrow the observation; later session
-association and the nominal allowance annotation establish no native cause or
-elapsed wait. The numeric npm child exit is unavailable after a post-wait wrapper
+association, nominal allowance and later Connecting/native-new lane state
+establish no deadline state, native generation, elapsed wait or cause. The numeric
+npm child exit is unavailable after a post-wait wrapper
 failure. Neither diagnostic exercise nor gate repair accepts an E3 cohort.
 Tasks 0-7 and observation tooling are delivered. The full baseline remains incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
@@ -1605,8 +1608,8 @@ justified yet.”
 | 40      | Complete independently reviewed read-only readiness source trace at inspection3f58/runtime62: all 39 bound owners unchanged; refresh, budget, command/result, cancellation and room-predicate boundaries recovered. Short/exhausted-budget mechanisms remain untested candidates; no historical causal defect, runtime correction or accepted cohort.                                                                                                                                  |
 | 41      | Complete bounded local B06 reproduction at inspection3f58/runtime62: EXIT1/634.695s, one PASS/one FAIL/one selector SKIP, zero retries. Retention uniquely fails cycle17 reconnect/readiness with formation-not-ready message; two captured idle-room rejections have summary available and desired2/ready1. Native cause/first-error association unknown. Fresh memory services teardown verified; local environment differs from CI, zero accepted E3 cohorts.                       |
 | 42      | Complete read-only source trace and bounded existing-projection review at inspection64/runtime62: 32 source/test/example owners unchanged; later ordinals1/3 have both lanes nonopen while ready to2. Captured idle does not distinguish layout coverage from timeout/abort suppression; captured peer/lane/terminal and native cause remain unknown. Originals unchanged; no regression, correction, new producer or accepted cohort.                                                 |
-| 43      | Captured facts published at 3bd; required hosted static gate failed seven findings. Fix3 typed-boundary repair independently approved: 97 focused PASS, types/style and affected consumers PASS; publication/exact-source hosted acceptance pending. Final headless 311682 B at unchanged 305 KiB, 638 B headroom (+139 B vs 3bd candidate). Prior full suite belongs to 3bd; no causal/E3 acceptance.                                                                                 |
-| 44      | One local memory diagnostic at unchanged 3bd: default PASS, retention FAIL cycle7 peer-C reconnect/readiness, selector SKIP; 100-cycle target, zero retries. Captured timeout/reliable/desired2-ready1, later ordinal3 unready; incomplete history. Nineteen originals retained; numeric child exit unavailable after post-wait wrapper failure. Nominal allowance is not elapsed time/native cause; zero accepted E3.                                                                 |
+| 43      | Captured facts published at 3bd; its required static gate failed seven findings. Independently approved Fix3 published at 48cb727: 97 focused PASS/types/style/consumers PASS and required Branch Release/formation-large/medium PASS. Optional ALM FAIL unclassified; RTC integrity SKIP. Final headless 311682 B/305 KiB/638 B headroom (+139 B vs 3bd). Prior full suite remains 3bd; no E3 acceptance.                                                                             |
+| 44      | One local diagnostic at unchanged 3bd: default PASS/retention FAIL cycle7 peer-C readiness/selector SKIP, 100-cycle target/zero retries. Captured timeout/reliable/desired2-ready1; later ordinal1→3 Connecting/native new/nonopen lane. History incomplete; child exit unavailable after wrapper failure. Nominal allowance/later state establish no deadline/generation/cause; 19 originals retained, zero accepted E3.                                                              |
 
 ## 11. Next Two Useful Actions After Task 44
 
@@ -1623,7 +1626,8 @@ captured shortages. Task 42 identifies a later unready current-session connectio
 and the missing captured authority/terminal discriminator, without earning a
 native cause or correction. Task 43's capture is published; its hosted static
 failure earned a locally validated, independently approved typed-boundary Fix3,
-whose publication and exact-source hosted acceptance remain pending. Task 44
+published at 48cb727 with required hosted correctness accepted. Optional ALM
+failure and skipped RTC observation integrity remain separate. Task 44
 retains a local cycle7 failure with captured timeout/lane/peer facts and a nominal
 allowance annotation, not a native explanation or accepted cohort. Section 9's
 correctness/tier stop still prevents optimization.
@@ -1982,7 +1986,11 @@ independent specification review passed and quality was approved. No full unit
 rerun was selected without a coverage gap. Final headless Brotli is 311682 bytes,
 638 bytes below the unchanged 305 KiB allowance and 139 bytes above the 3bd
 candidate; this is no measured runtime62 delta or performance improvement.
-Publication and required exact-source hosted acceptance remain pending. Fixed
+Fix3 is published at 48cb727. Required exact-source Branch Release, formation-large
+and medium-scale are terminal PASS, including the required release lanes and
+validation-evidence publication. Optional ALM failed with cause unclassified;
+RTC observation integrity was skipped. These are correctness results, not E3
+performance acceptance. The earlier 3bd static failure remains historical. Fixed
 recorder/history/transport/workload caps, public RTC/readiness/native/clock policy
 remain unchanged; Task 41 receives no retrofitted captured facts.
 
@@ -2015,15 +2023,29 @@ unread. Local macOS/Node26 versus hosted Linux/Node24, extra reporter cost and
 unestablished host idleness limit fidelity. This is diagnostic exercise, not the
 full governed workflow or an accepted E3 primary/repeat.
 
-**Next action 1:** Publish the validated, independently approved Fix3 and obtain
-required correctness acceptance on its exact source. Preserve the 3bd hosted
-failure and all source-specific passes; no further producer is selected.
+One authenticated bounded jq selection of the existing later status records
+observer1→current ordinal3 with connection/channel wrappers Connecting, native
+connection/ICE new, native channel connecting, isOpen false and isReconnectable
+false. Exactly one later peer/lane entry supports this current-session association;
+it is not a captured deadline or generation view. Current-presence revision,
+first actor, deadline coverage and native cause remain unavailable; prior prefix
+loss and six oversized rows still apply. The unsupported address-space guard
+failed before jq or original access; the final CPU/wall-guarded query exited0.
+That guard provides no address-space guarantee. No raw recorder or snapshot
+contents were read and no further producer was selected.
 
-**Next action 2:** Discriminate the remaining readiness predicate/native state
-using source-qualified, already-retained bounded facts and the smallest qualified
-finite annotation. Keep missing associations and loss unknown; semantic TDD follows
-only an independently earned counterexample. No timeout/retry/policy/workload
-relaxation, native DI or optimization is selected.
+**Next action 1:** Discriminate current initial setup from admitted replacement
+using qualified existing description/signaling observations. Both routes can yield
+later Connecting/new; reset alone leaves Idle without a native connection until
+another connect. Preserve missing deadline/generation association and select no
+historical cause from the later view.
+
+**Next action 2:** Verify the independent lane-retry contract after a native
+createDataChannel throw leaves the lane wrapper Connecting without a native
+channel, before any correction. A genuine semantic counterexample must precede
+a fix. This source candidate does not explain Task 44's observed native channel
+presence and is not an accepted causal defect. No automatic producer, timeout/
+retry-policy/workload relaxation, native DI or optimization is selected.
 
 Full B01–B06 accepted primaries and all required repeats, relevant E1
 recovery/reconciliation after representative E3 succeeds, homogeneous noise
