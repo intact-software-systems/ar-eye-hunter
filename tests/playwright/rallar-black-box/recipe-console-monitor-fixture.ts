@@ -135,23 +135,23 @@ export class RecipeConsoleMonitorFixture {
     deleteOnNextRunRead(): void {
         this.#distributedRunDeleted = true;
     }
-    setRunState(state: MonitorOperationalState): void {
+    transitionRunState(state: MonitorOperationalState): void {
         this.#operationalState = state;
         this.#revision += 1;
     }
-    setSingleAgentFailure(enabled = true): void {
+    transitionSingleAgentFailure(enabled = true): void {
         this.#singleAgentFailure = enabled;
         this.#revision += 1;
     }
-    setFailureAgentConnected(connected: boolean): void {
+    transitionFailureAgentConnection(connected: boolean): void {
         if (connected && !this.#failureAgentConnected) {
             this.#reconnectCount += 1;
         }
         this.#failureAgentConnected = connected;
         this.#revision += 1;
     }
-    setAdditionalEventCount(count: number): void {
-        this.#additionalEventCount = Math.max(0, Math.floor(count));
+    resizeAdditionalEventWindow(count: number): void {
+        this.#additionalEventCount = computeAdditionalEventCount(count);
         this.#revision += 1;
     }
     readonly runRequestCount = (): number => this.#runReads;
@@ -208,6 +208,17 @@ export class RecipeConsoleMonitorFixture {
             await fulfillJson(route, { distributedRuns });
             return;
         }
+        if (pathname === `/distributed-runs/${MONITOR_DISTRIBUTED_RUN_ID}`) {
+            if (this.#distributedRunDeleted) {
+                await fulfillJson(route, { error: 'Fixture distributed run is unavailable.' }, 404);
+                return;
+            }
+            await fulfillJson(
+                route,
+                createDistributedRun(this.#operationalState, this.#singleAgentFailure, this.#revision)
+            );
+            return;
+        }
         if (pathname === `/distributed-runs/${MONITOR_DISTRIBUTED_RUN_ID}/artifacts`) {
             this.#artifactReads += 1;
             await fulfillJson(route, this.artifact);
@@ -226,6 +237,10 @@ export class RecipeConsoleMonitorFixture {
             additionalEventCount: this.#additionalEventCount
         });
     }
+}
+
+function computeAdditionalEventCount(count: number): number {
+    return Math.max(0, Math.floor(count));
 }
 
 export async function installRecipeConsoleMonitorFixture(

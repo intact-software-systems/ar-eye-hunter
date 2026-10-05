@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext, type Locator } from '@playwright/test';
+
 import { chooseAnalyzeFiles } from './recipe-console-analyze-helpers.ts';
 import {
     installRecipeConsoleMonitorFixture,
@@ -18,6 +19,13 @@ import {
 } from './recipe-console-tune-run-data.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
+
+interface ElementBounds {
+    readonly bottom: number;
+    readonly left: number;
+    readonly right: number;
+    readonly top: number;
+}
 const ADVANCED_ROUTE = '/?provider=simulated&v=1&experience=recipe-console&view=advanced' +
     '&controlRunId=advanced-control&distributedRunId=advanced-distributed' +
     '&agentId=advanced-agent&recipeId=advanced-recipe&commandId=advanced-command';
@@ -74,7 +82,7 @@ async function expectSelectedNavigationLabelContained(
         if (!(text instanceof HTMLElement) || !(nav instanceof HTMLElement)) {
             throw new Error('Missing selected navigation label geometry owner.');
         }
-        const rect = (element: Element) => {
+        const readBounds = (element: Element): ElementBounds => {
             const bounds = element.getBoundingClientRect();
             return {
                 bottom: bounds.bottom,
@@ -84,9 +92,9 @@ async function expectSelectedNavigationLabelContained(
             };
         };
         return {
-            button: rect(node),
-            label: rect(text),
-            navigation: rect(nav)
+            button: readBounds(node),
+            label: readBounds(text),
+            navigation: readBounds(nav)
         };
     });
     const epsilon = 0.01;
@@ -408,7 +416,7 @@ test('keeps short-landscape Monitor contained through a keyboard-only evidence p
         }))
     ).toEqual({ x: 0, y: 0 });
 
-    fixture.setRunState('running');
+    fixture.transitionRunState('running');
     const actions = page.getByRole('region', { name: 'Monitor actions' });
     const refresh = actions.getByRole('button', { name: 'Refresh', exact: true });
     await refresh.focus();

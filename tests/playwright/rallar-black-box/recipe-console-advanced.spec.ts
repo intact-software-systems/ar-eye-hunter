@@ -446,171 +446,249 @@ test('keeps direct Rallar diagnostics out of primary navigation and opens them f
     });
 });
 
-test('opens every registered legacy surface from its alias and contextual route', async ({ browser, context, page }) => {
-    test.setTimeout(240_000);
-    const lazyAssets = LAZY_TARGETS.map(([surfaceId, entry, heading]) => ({
-        surfaceId,
-        asset: readBuiltEntryAsset(entry),
-        heading
-    }));
-    await installEmptyControlFixture(context);
-    await page.goto(
-        '/?provider=simulated&v=1&experience=recipe-console&view=advanced'
-    );
-    const advanced = page.locator('[data-advanced-workspace]');
-    await expect(advanced).toBeVisible();
-    const contextualHrefs = new Map(
-        await advanced
-            .locator('[data-advanced-surface-link]')
-            .evaluateAll((links) =>
-                links.map(
-                    (link) =>
-                        [
-                            link.getAttribute('data-surface-id') ?? '',
-                            link.getAttribute('href') ?? ''
-                        ] as const
-                )
-            )
-    );
-    expect(contextualHrefs.size).toBe(ADVANCED_SURFACE_CATALOG.length);
-
-    for (const surface of ADVANCED_SURFACE_CATALOG) {
-        const href = contextualHrefs.get(surface.id);
-        expect(href, `${surface.id}: contextual href`).toBeTruthy();
-        await page.goto(href ?? 'about:blank');
-        await expectSurfaceOwner(page, surface.id);
-        const url = currentUrl(page);
-        expect(url.searchParams.get('legacySurface')).toBe(surface.id);
-        expect(url.searchParams.get('diagnosticContext')).toBe('1');
-        expect(url.searchParams.get('workspace')).toBe(surface.route.workspace);
-        expect(url.searchParams.get('tab')).toBe(surface.route.tab);
-        expect(url.searchParams.get('advancedSurface')).toBe(
-            'advancedSurface' in surface.route ? surface.route.advancedSurface : null
+test(
+    'opens every registered legacy surface from its alias and contextual route',
+    async ({ browser, context, page }, testInfo) => {
+        test.setTimeout(240_000);
+        const lazyAssets = LAZY_TARGETS.map(([surfaceId, entry, heading]) => ({
+            surfaceId,
+            asset: readBuiltEntryAsset(entry),
+            heading
+        }));
+        await installEmptyControlFixture(context);
+        await page.goto(
+            '/?provider=simulated&v=1&experience=recipe-console&view=advanced'
         );
-        await expect(
-            page.locator('[data-legacy-diagnostic-context]')
-        ).toHaveAttribute('data-context-status', 'ready');
-        await expect(
-            page.locator('[data-legacy-diagnostic-return]')
-        ).toHaveAttribute('href', /experience=recipe-console/);
-    }
+        const advanced = page.locator('[data-advanced-workspace]');
+        await expect(advanced).toBeVisible();
+        const contextualHrefs = new Map(
+            await advanced
+                .locator('[data-advanced-surface-link]')
+                .evaluateAll((links) =>
+                    links.map(
+                        (link) =>
+                            [
+                                link.getAttribute('data-surface-id') ?? '',
+                                link.getAttribute('href') ?? ''
+                            ] as const
+                    )
+                )
+        );
+        expect(contextualHrefs.size).toBe(ADVANCED_SURFACE_CATALOG.length);
 
-    await page.goto(
-        '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth'
-    );
-    for (const surface of ADVANCED_SURFACE_CATALOG) {
-        for (const alias of surface.aliases) {
-            const aliasUrl = new URL('/', page.url());
-            aliasUrl.searchParams.set('provider', 'simulated');
-            aliasUrl.searchParams.set('experience', 'legacy');
-            aliasUrl.searchParams.set('workspace', surface.route.workspace);
-            aliasUrl.searchParams.set('tab', alias);
-            await navigateInApp(page, aliasUrl.pathname + aliasUrl.search);
+        for (const surface of ADVANCED_SURFACE_CATALOG) {
+            const href = contextualHrefs.get(surface.id);
+            expect(href, `${surface.id}: contextual href`).toBeTruthy();
+            await page.goto(href ?? 'about:blank');
             await expectSurfaceOwner(page, surface.id);
-            expect(
-                currentUrl(page).searchParams.get('tab'),
-                `${surface.id}:${alias}`
-            ).toBe(alias);
-        }
-        if ('advancedSurface' in surface.route && surface.route.advancedSurface) {
-            for (const field of ['advancedSurface', 'advanced'] as const) {
-                const childUrl = new URL('/', page.url());
-                childUrl.searchParams.set('provider', 'simulated');
-                childUrl.searchParams.set('experience', 'legacy');
-                childUrl.searchParams.set('workspace', 'black-box-runner');
-                childUrl.searchParams.set('tab', 'advanced');
-                childUrl.searchParams.set(field, surface.route.advancedSurface);
-                await navigateInApp(page, childUrl.pathname + childUrl.search);
-                await expectSurfaceOwner(page, surface.id);
-            }
-        }
-    }
-
-    await navigateInApp(
-        page,
-        '/?provider=simulated&experience=legacy&workspace=rallar&tab=quick-test'
-    );
-    const quickPayload = page
-        .locator('#panel-quick-test')
-        .getByLabel('Payload JSON');
-    const statefulDraft = JSON.stringify({ statefulDraft: 'preserved' }, null, 2);
-    await quickPayload.fill(statefulDraft);
-    await page.getByRole('tab', { name: 'Auth', exact: true }).click();
-    await expect(page.locator('#panel-auth')).toBeVisible();
-    await page.getByRole('tab', { name: 'Quick Test', exact: true }).click();
-    await expect(quickPayload).toHaveValue(statefulDraft);
-    for (const selector of STATEFUL_EXCEPTION_SELECTORS) {
-        await expect(
-            page.locator(selector),
-            `${selector}: one stateful owner`
-        ).toHaveCount(1);
-    }
-
-    for (const { surfaceId, asset, heading } of lazyAssets) {
-        const targetContext = await browser.newContext({
-            baseURL: PRODUCTION_BASE_URL
-        });
-        const control = await installEmptyControlFixture(targetContext);
-        const targetPage = await targetContext.newPage();
-        const resources: string[] = [];
-        targetPage.on('request', (request) => {
-            if (
-                request.resourceType() === 'script' ||
-                request.resourceType() === 'stylesheet'
-            ) {
-                resources.push(request.url());
-            }
-        });
-        try {
-            await targetPage.goto(
-                '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth'
+            const url = currentUrl(page);
+            expect(url.searchParams.get('legacySurface')).toBe(surface.id);
+            expect(url.searchParams.get('diagnosticContext')).toBe('1');
+            expect(url.searchParams.get('workspace')).toBe(surface.route.workspace);
+            expect(url.searchParams.get('tab')).toBe(surface.route.tab);
+            expect(url.searchParams.get('advancedSurface')).toBe(
+                'advancedSurface' in surface.route ? surface.route.advancedSurface : null
             );
-            await expect(targetPage.locator('#panel-auth')).toBeVisible();
-            for (const lazy of lazyAssets) {
-                expect(
-                    hasBuiltAsset(resources, lazy.asset),
-                    `${surfaceId}: ${lazy.surfaceId} absent before target`
-                ).toBe(false);
-            }
-
-            await targetPage.goto(contextualHrefs.get(surfaceId) ?? 'about:blank');
-            await expectSurfaceOwner(targetPage, surfaceId);
             await expect(
-                targetPage.locator(ownerSelectorFor(surfaceId)).getByRole('heading', { name: heading, exact: true })
-            ).toBeVisible();
-            expect(
-                hasBuiltAsset(resources, asset),
-                `${surfaceId}: owning entry asset`
-            ).toBe(true);
-            for (const other of lazyAssets) {
-                if (other.surfaceId !== surfaceId) {
-                    expect(
-                        hasBuiltAsset(resources, other.asset),
-                        `${surfaceId}: unrelated ${other.surfaceId}`
-                    ).toBe(false);
+                page.locator('[data-legacy-diagnostic-context]')
+            ).toHaveAttribute('data-context-status', 'ready');
+            await expect(
+                page.locator('[data-legacy-diagnostic-return]')
+            ).toHaveAttribute('href', /experience=recipe-console/);
+        }
+
+        await page.goto(
+            '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth'
+        );
+        for (const surface of ADVANCED_SURFACE_CATALOG) {
+            for (const alias of surface.aliases) {
+                const aliasUrl = new URL('/', page.url());
+                aliasUrl.searchParams.set('provider', 'simulated');
+                aliasUrl.searchParams.set('experience', 'legacy');
+                aliasUrl.searchParams.set('workspace', surface.route.workspace);
+                aliasUrl.searchParams.set('tab', alias);
+                await navigateInApp(page, aliasUrl.pathname + aliasUrl.search);
+                await expectSurfaceOwner(page, surface.id);
+                expect(
+                    currentUrl(page).searchParams.get('tab'),
+                    `${surface.id}:${alias}`
+                ).toBe(alias);
+            }
+            if ('advancedSurface' in surface.route && surface.route.advancedSurface) {
+                for (const field of ['advancedSurface', 'advanced'] as const) {
+                    const childUrl = new URL('/', page.url());
+                    childUrl.searchParams.set('provider', 'simulated');
+                    childUrl.searchParams.set('experience', 'legacy');
+                    childUrl.searchParams.set('workspace', 'black-box-runner');
+                    childUrl.searchParams.set('tab', 'advanced');
+                    childUrl.searchParams.set(field, surface.route.advancedSurface);
+                    await navigateInApp(page, childUrl.pathname + childUrl.search);
+                    await expectSurfaceOwner(page, surface.id);
                 }
             }
+        }
 
-            await navigateInApp(
-                targetPage,
-                '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth'
-            );
-            await expect(targetPage.locator(ownerSelectorFor(surfaceId))).toHaveCount(
-                0
-            );
-            await expect(targetPage.locator('#panel-auth')).toBeVisible();
+        await navigateInApp(
+            page,
+            '/?provider=simulated&experience=legacy&workspace=rallar&tab=quick-test'
+        );
+        const quickPayload = page
+            .locator('#panel-quick-test')
+            .getByLabel('Payload JSON');
+        const statefulDraft = JSON.stringify({ statefulDraft: 'preserved' }, null, 2);
+        await quickPayload.fill(statefulDraft);
+        await page.getByRole('tab', { name: 'Auth', exact: true }).click();
+        await expect(page.locator('#panel-auth')).toBeVisible();
+        await page.getByRole('tab', { name: 'Quick Test', exact: true }).click();
+        await expect(quickPayload).toHaveValue(statefulDraft);
+        for (const selector of STATEFUL_EXCEPTION_SELECTORS) {
+            await expect(
+                page.locator(selector),
+                `${selector}: one stateful owner`
+            ).toHaveCount(1);
+        }
 
+        for (const { surfaceId, asset, heading } of lazyAssets) {
+            const targetContext = await browser.newContext({
+                baseURL: PRODUCTION_BASE_URL
+            });
+            await installEmptyControlFixture(targetContext);
             if (surfaceId === 'runner.runs') {
-                const readsAfterUnmount = control.runReads();
-                await targetPage.waitForTimeout(5_500);
-                expect(control.runReads()).toBe(readsAfterUnmount);
+                const fixture = await installRecipeConsoleMonitorFixture(targetContext);
+                fixture.transitionRunState('running');
+            }
+            const targetPage = await targetContext.newPage();
+            const resources: string[] = [];
+            const analysisReads = { distributedRuns: 0, distributedRun: 0, controlRun: 0 };
+            const selectedRunStatuses: number[] = [];
+            targetPage.on('request', (request) => {
+                if (
+                    request.resourceType() === 'script' ||
+                    request.resourceType() === 'stylesheet'
+                ) {
+                    resources.push(request.url());
+                }
+                const url = new URL(request.url());
+                if (request.method() !== 'GET' || !CONTROL_ROUTE.test(url.href)) {
+                    return;
+                }
+                if (url.pathname === '/distributed-runs') {
+                    analysisReads.distributedRuns += 1;
+                }
+                if (url.pathname === `/distributed-runs/${MONITOR_DISTRIBUTED_RUN_ID}`) {
+                    analysisReads.distributedRun += 1;
+                }
+                if (url.pathname === `/runs/${MONITOR_CONTROL_RUN_ID}`) {
+                    analysisReads.controlRun += 1;
+                }
+            });
+            targetPage.on('response', (response) => {
+                const url = new URL(response.url());
+                if (
+                    response.request().method() === 'GET' && CONTROL_ROUTE.test(url.href) &&
+                    url.pathname === `/distributed-runs/${MONITOR_DISTRIBUTED_RUN_ID}`
+                ) {
+                    selectedRunStatuses.push(response.status());
+                }
+            });
+            try {
+                await targetPage.goto(
+                    '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth'
+                );
+                await expect(targetPage.locator('#panel-auth')).toBeVisible();
+                for (const lazy of lazyAssets) {
+                    expect(
+                        hasBuiltAsset(resources, lazy.asset),
+                        `${surfaceId}: ${lazy.surfaceId} absent before target`
+                    ).toBe(false);
+                }
+
+                await targetPage.goto(contextualHrefs.get(surfaceId) ?? 'about:blank');
+                await expectSurfaceOwner(targetPage, surfaceId);
+                await expect(
+                    targetPage.locator(ownerSelectorFor(surfaceId)).getByRole('heading', { name: heading, exact: true })
+                ).toBeVisible();
+                expect(
+                    hasBuiltAsset(resources, asset),
+                    `${surfaceId}: owning entry asset`
+                ).toBe(true);
+                for (const other of lazyAssets) {
+                    if (other.surfaceId !== surfaceId) {
+                        expect(
+                            hasBuiltAsset(resources, other.asset),
+                            `${surfaceId}: unrelated ${other.surfaceId}`
+                        ).toBe(false);
+                    }
+                }
+
+                if (surfaceId === 'runner.runs') {
+                    await expect(targetPage.getByRole('combobox', { name: 'Distributed Run', exact: true }))
+                        .toHaveValue(MONITOR_DISTRIBUTED_RUN_ID);
+                    await expect(targetPage.locator('.runner-distributed-analysis > .section-heading > .pill'))
+                        .toHaveText('running');
+                    await expect.poll(() => analysisReads.distributedRuns).toBeGreaterThan(0);
+                    await expect.poll(() => analysisReads.controlRun).toBeGreaterThan(0);
+                    const settledReads = { ...analysisReads };
+                    await expect.poll(() => analysisReads.distributedRuns, {
+                        message: 'Runs automatically refreshes its selected distributed analysis',
+                        timeout: 7_000
+                    }).toBeGreaterThan(settledReads.distributedRuns);
+                    await expect.poll(() => analysisReads.distributedRun, {
+                        message: 'Runs automatically refreshes its selected distributed snapshot',
+                        timeout: 7_000
+                    }).toBeGreaterThan(settledReads.distributedRun);
+                    await expect.poll(() => analysisReads.controlRun, {
+                        message: 'Runs automatically refreshes its selected control snapshot',
+                        timeout: 7_000
+                    }).toBeGreaterThan(settledReads.controlRun);
+                    await expect.poll(() => selectedRunStatuses.includes(200), {
+                        message: 'The selected Runs analysis endpoint returns its canonical snapshot'
+                    }).toBe(true);
+                    await testInfo.attach('runs-mounted-analysis-requests', {
+                        body: JSON.stringify({
+                            settledReads,
+                            automaticReads: { ...analysisReads },
+                            automaticWaitLimitMs: 7_000,
+                            selectedRunStatuses,
+                            endpoints: [
+                                '/distributed-runs',
+                                `/distributed-runs/${MONITOR_DISTRIBUTED_RUN_ID}`,
+                                `/runs/${MONITOR_CONTROL_RUN_ID}`
+                            ]
+                        }),
+                        contentType: 'application/json'
+                    });
+                }
+
+                await navigateInApp(
+                    targetPage,
+                    '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth'
+                );
+                await expect(targetPage.locator(ownerSelectorFor(surfaceId))).toHaveCount(
+                    0
+                );
+                await expect(targetPage.locator('#panel-auth')).toBeVisible();
+
+                if (surfaceId === 'runner.runs') {
+                    const readsAfterUnmount = { ...analysisReads };
+                    await targetPage.waitForTimeout(5_500);
+                    expect(analysisReads).toEqual(readsAfterUnmount);
+                    await testInfo.attach('runs-unmounted-analysis-requests', {
+                        body: JSON.stringify({
+                            readsAfterUnmount,
+                            readsAfterWindow: { ...analysisReads },
+                            quietWindowMs: 5_500
+                        }),
+                        contentType: 'application/json'
+                    });
+                }
+            }
+            finally {
+                await targetContext.close();
             }
         }
-        finally {
-            await targetContext.close();
-        }
     }
-});
+);
 
 test('default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions', async ({ browser }) => {
     test.setTimeout(90_000);
