@@ -177,13 +177,18 @@ facts or readiness policy; retained independent review, local focused/types/styl
 and affected consumer checks pass. Published Fix3 at 48cb727 has terminal required
 Branch Release, formation-large and medium-scale passes. Optional ALM failed with
 cause unclassified; RTC observation integrity was skipped. Task 44's one
-unchanged-through-run local diagnostic
-failed retention at cycle7 reconnect/readiness of peer C. Its captured returned
-timeout/reliable-lane/desired2-ready1 facts narrow the observation; later session
-association, nominal allowance and later Connecting/native-new lane state
-establish no deadline state, native generation, elapsed wait or cause. The numeric
-npm child exit is unavailable after a post-wait wrapper
-failure. Neither diagnostic exercise nor gate repair accepts an E3 cohort.
+unchanged-through-run local diagnostic failed at cycle7 peer-C
+reconnect/readiness; the numeric npm child exit remains unavailable after the
+post-wait wrapper failure. Its limited reads supplied captured timeout/lane/peer
+facts, nominal allowance and later status. Task 45 supersedes those limited-read
+boundaries with authenticated original command/result and 6,398-row correlations.
+A and C time out despite adopted current-presence layout; three matching Answers
+complete native application. Retained-peer establishment expiry invalidates later
+recovery pairing, without proving the initial post-ICE native/channel failure or authorizing timer
+renewal. Actual SPA measurement reproduces approximately 117–150 ms continuation
+delay with hidden presentation work versus approximately 4 ms with UI subscribers
+off. That observer cost is measured; its sole responsibility for the original
+connection failure remains unproven. E3 still has zero accepted cohorts.
 Tasks 0-7 and observation tooling are delivered. The full baseline remains incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
 is gated, and B07 remains held. A package check proves tooling, not capture.
@@ -1610,8 +1615,9 @@ justified yet.”
 | 42      | Complete read-only source trace and bounded existing-projection review at inspection64/runtime62: 32 source/test/example owners unchanged; later ordinals1/3 have both lanes nonopen while ready to2. Captured idle does not distinguish layout coverage from timeout/abort suppression; captured peer/lane/terminal and native cause remain unknown. Originals unchanged; no regression, correction, new producer or accepted cohort.                                                 |
 | 43      | Captured facts published at 3bd; its required static gate failed seven findings. Independently approved Fix3 published at 48cb727: 97 focused PASS/types/style/consumers PASS and required Branch Release/formation-large/medium PASS. Optional ALM FAIL unclassified; RTC integrity SKIP. Final headless 311682 B/305 KiB/638 B headroom (+139 B vs 3bd). Prior full suite remains 3bd; no E3 acceptance.                                                                             |
 | 44      | One local diagnostic at unchanged 3bd: default PASS/retention FAIL cycle7 peer-C readiness/selector SKIP, 100-cycle target/zero retries. Captured timeout/reliable/desired2-ready1; later ordinal1→3 Connecting/native new/nonopen lane. History incomplete; child exit unavailable after wrapper failure. Nominal allowance/later state establish no deadline/generation/cause; 19 originals retained, zero accepted E3.                                                              |
+| 45      | Authenticated original command/result and 6,398-row correlations narrow the A–C failure: adopted layout, matching Answers applied, retained-peer expiry invalidates later recovery pairing. Actual SPA hidden-history work reproduces 117–150 ms delay versus UI-off ~4 ms. Initial post-ICE native/channel failure remains unproven; observer presentation correction selected for design/TDD/review, no timer policy or E3 acceptance.                                               |
 
-## 11. Next Two Useful Actions After Task 44
+## 11. Next Two Useful Actions After Task 45
 
 Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
@@ -1628,9 +1634,13 @@ native cause or correction. Task 43's capture is published; its hosted static
 failure earned a locally validated, independently approved typed-boundary Fix3,
 published at 48cb727 with required hosted correctness accepted. Optional ALM
 failure and skipped RTC observation integrity remain separate. Task 44
-retains a local cycle7 failure with captured timeout/lane/peer facts and a nominal
-allowance annotation, not a native explanation or accepted cohort. Section 9's
-correctness/tier stop still prevents optimization.
+retains a local cycle7 failure; its bounded facts and nominal allowance keep their
+then-scope. Task 45 adds original correlations and actual SPA observer measurement:
+late recovery pairing is invalidated by retained-peer expiry, and hidden history
+presentation introduces measured delay. Neither fact proves the initial post-ICE native/channel
+failure. The selected observer correction preserves artifact contents and requires
+semantic TDD, whole-file closure, independent review and correctness acceptance;
+Section 9's stop and all baseline gates remain intact.
 Task 33's owned-code correction
 remains accepted at c3b3; the human's required-clock approval persists.
 Whole-file closure covers every changed human-authored file and recursively changed
@@ -2012,18 +2022,22 @@ association does not establish native generation, first-error actor or exact
 captured/error association. waitTerminalCause remains unknown. Retained history
 has prefix loss and six oversized rows; absent rows are not absent actions.
 
-A single authenticated numeric-only query of the 803367-byte report returned
+During Task 44's limited-read phase, a single authenticated numeric-only query of
+the 803367-byte report returned
 ten repeated occurrences in 180 bytes, with one distinct decoded allowance:
 56326.30595900002 ms, floored by the runtime to 56326 ms. Only the matched error
 annotation has a nominal requested allowance of approximately 56.326 seconds.
-It does not establish actual elapsed wait, original command budget, first actor,
-exact captured-rejection association or native cause. The snapshot-reader design
-remains dormant, unimplemented and unselected; snapshot/JSONL contents remain
-unread. Local macOS/Node26 versus hosted Linux/Node24, extra reporter cost and
+That query alone did not establish actual elapsed wait, original command budget,
+first actor, exact captured-rejection association or native cause. The proposed
+snapshot reader was dormant, unimplemented and unselected; snapshot/JSONL contents
+were unread at that checkpoint. Task 45's separately authorized original
+correlations below supersede that limited-read boundary. Local macOS/Node26 versus
+hosted Linux/Node24, extra reporter cost and
 unestablished host idleness limit fidelity. This is diagnostic exercise, not the
 full governed workflow or an accepted E3 primary/repeat.
 
-One authenticated bounded jq selection of the existing later status records
+During that limited-read phase, one authenticated bounded jq selection of the
+existing later status records
 observer1→current ordinal3 with connection/channel wrappers Connecting, native
 connection/ICE new, native channel connecting, isOpen false and isReconnectable
 false. Exactly one later peer/lane entry supports this current-session association;
@@ -2031,21 +2045,57 @@ it is not a captured deadline or generation view. Current-presence revision,
 first actor, deadline coverage and native cause remain unavailable; prior prefix
 loss and six oversized rows still apply. The unsupported address-space guard
 failed before jq or original access; the final CPU/wall-guarded query exited0.
-That guard provides no address-space guarantee. No raw recorder or snapshot
-contents were read and no further producer was selected.
+That guard provided no address-space guarantee. No raw recorder or snapshot
+contents were read during that limited selection, and no further producer was
+selected. The separately authorized Task 45 original correlation changes the
+read scope, without repeating the producer or accepting a performance cohort.
 
-**Next action 1:** Discriminate current initial setup from admitted replacement
-using qualified existing description/signaling observations. Both routes can yield
-later Connecting/new; reset alone leaves Idle without a native connection until
-another connect. Preserve missing deadline/generation association and select no
-historical cause from the later view.
+### Task 45: Original correlation and measured SPA observer work
 
-**Next action 2:** Verify the independent lane-retry contract after a native
-createDataChannel throw leaves the lane wrapper Connecting without a native
-channel, before any correction. A genuine semantic counterexample must precede
-a fix. This source candidate does not explain Task 44's observed native channel
-presence and is not an accepted causal defect. No automatic producer, timeout/
-retry-policy/workload relaxation, native DI or optimization is selected.
+Authenticated original command/result, control-snapshot, later-health and
+6,398-row event correlations supersede Task 44's bounded-only inspection scope.
+A failed after 56,838 ms and C after 46,272 ms, while B passed after 10,984 ms. Both
+failed agents captured timeout/desired2-ready1 with B their ready peer; all adopted
+accepted layout covering current presence. Captured idle is timeout suppression,
+not proof of removed authority. One current-PC Answer was rejected for Offer
+mismatch; the next three matching Answers completed remote-description application.
+General missing Answer/application and stale-layout explanations do not fit those
+positive facts. Missing rows still do not certify absent actions or complete history.
+
+Pair-qualified timeouts/replacements and source ownership show that C answers a
+reused Offer before its retained peer expires, with no intervening peer creation.
+The service starts establishment timing at creation; reused Offers do not renew
+it. Closing that answering peer invalidates the recovery pairing. This explains
+later failed recovery, not the initial stall and not authority to extend a timer.
+The first A timeout had descriptions present, stable signaling, ICE connected and
+native connection/channel connecting. Original DTLS/SCTP transport state and native
+candidate/generation association remain unavailable; native controls do not make
+retained reuse alone a sufficient explanation.
+
+An owned Chromium experiment mounted the actual SPA without API/RTC/control work
+and seeded 2,136 retained original events. It uses the full-stack runner’s local
+Vite dev/StrictMode rendering; these costs do not establish production-build cost. Three UI-enabled next-turn delays were
+116.8/122.9/150.0 ms versus 4.3/4.3/4.5 ms with only UI subscribers suspended;
+immediate recordEvent remained 0–0.1 ms. Hidden ReportPanel redaction/serialization,
+inactive trace/event history processing and timestamp formatting dominate sampled
+presentation work. This is a measured scheduled React observer cost, not headless
+renderer or sink self-time, a subscription leak, governed B06 measurement or proof
+that UI delay alone caused the connection failure. Same-agent original continuation
+gaps also grow with retained history; they include scheduling and establish no
+cross-agent one-way latency or particular AL delivery. Original integrity and
+separate retained independent native/formation reviews remain disclosed. No RTC
+policy, retry, timeout, workload or acceptance threshold is relaxed.
+
+**Next action 1:** Design and implement semantic TDD for observer presentation:
+closed reports and inactive evidence panels perform no whole-history presentation
+work, while recorder/artifact contents and visible UI disclosure remain intact.
+Apply recursive touched-file/legacy closure and independent task review before
+acceptance. The allocation-throw retry proposal remains independent and pending.
+
+**Next action 2:** After implementation and independent review, complete required
+correctness checks before accepting the correction. Then select only a qualified
+exact-source RTC diagnostic that discriminates the unresolved native stage. No automatic producer or baseline
+capture is selected; native cause and full E3 acceptance remain unproven.
 
 Full B01–B06 accepted primaries and all required repeats, relevant E1
 recovery/reconciliation after representative E3 succeeds, homogeneous noise
