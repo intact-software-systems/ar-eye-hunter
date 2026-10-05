@@ -1,8 +1,19 @@
 // @vitest-environment happy-dom
 
-import { act, createElement, type ComponentProps, type ReactElement } from 'react';
+import {
+    act,
+    createElement,
+    type ComponentProps,
+    type ReactElement
+} from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type {
@@ -160,9 +171,16 @@ function reportValue(): object {
     return JSON.parse(container.querySelector<HTMLTextAreaElement>('.report-output')!.value);
 }
 
+interface ObservedState {
+    readonly state: RallarBlackBoxTestState;
+    visits(): number;
+    payloadVisits(): number;
+    reset(): void;
+}
+
 // History entries are an owned interaction port: any entry read while presentation is suppressed
 // violates the zero-hidden-history contract, independently of helper or callback topology.
-function observedState(value: string) {
+function observedState(value: string): ObservedState {
     let visits = 0;
     let payloadVisits = 0;
     const events: RallarBlackBoxTestEvent[] = [{

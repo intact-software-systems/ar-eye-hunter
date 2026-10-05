@@ -1,4 +1,9 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import {
+    lazy,
+    Suspense,
+    useEffect,
+    useState
+} from 'react';
 
 import { getRallarBlackBoxCommandHistory } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 

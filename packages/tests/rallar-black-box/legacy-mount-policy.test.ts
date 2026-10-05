@@ -1,8 +1,22 @@
 // @vitest-environment happy-dom
 
-import { act, createElement, useEffect, type ComponentProps, type ComponentType } from 'react';
+import {
+    act,
+    createElement,
+    useEffect,
+    type ComponentProps,
+    type ComponentType
+} from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeAll,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 

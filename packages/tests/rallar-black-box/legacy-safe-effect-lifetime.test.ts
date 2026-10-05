@@ -1,8 +1,19 @@
 // @vitest-environment happy-dom
 
-import { act, createElement, StrictMode } from 'react';
+import {
+    act,
+    createElement,
+    StrictMode
+} from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
@@ -58,7 +69,7 @@ describe('legacy safe-surface effect lifetime', () => {
     });
 
     it('stops Run Manager initial refresh chaining after unmount', async () => {
-        const firstResponse = deferred<Response>();
+        const firstResponse = Promise.withResolvers<Response>();
         const paths: string[] = [];
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
@@ -94,8 +105,8 @@ describe('legacy safe-surface effect lifetime', () => {
     });
 
     it('stops Distributed Recipes initial refresh chaining after unmount', async () => {
-        const runsResponse = deferred<Response>();
-        const distributedResponse = deferred<Response>();
+        const runsResponse = Promise.withResolvers<Response>();
+        const distributedResponse = Promise.withResolvers<Response>();
         const paths: string[] = [];
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
@@ -143,7 +154,7 @@ describe('legacy safe-surface effect lifetime', () => {
     });
 
     it('stops Recipes initial readiness refresh chaining after unmount', async () => {
-        const runsResponse = deferred<Response>();
+        const runsResponse = Promise.withResolvers<Response>();
         const paths: string[] = [];
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
@@ -187,7 +198,7 @@ describe('legacy safe-surface effect lifetime', () => {
     });
 
     it('stops Runs initial distributed refresh chaining after unmount', async () => {
-        const distributedRunsResponse = deferred<Response>();
+        const distributedRunsResponse = Promise.withResolvers<Response>();
         const paths: string[] = [];
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
@@ -362,7 +373,7 @@ describe('legacy safe-surface effect lifetime', () => {
     );
 
     it('does not let a Runs poll supersede an in-flight operator refresh', async () => {
-        const operatorResponse = deferred<Response>();
+        const operatorResponse = Promise.withResolvers<Response>();
         const paths: string[] = [];
         let operatorRefreshPending = false;
         let poll: (() => void) | undefined;
@@ -432,7 +443,7 @@ describe('legacy safe-surface effect lifetime', () => {
     });
 
     it('stops Fleet initial refresh chaining after unmount', async () => {
-        const reportsResponse = deferred<Response>();
+        const reportsResponse = Promise.withResolvers<Response>();
         const paths: string[] = [];
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
@@ -616,14 +627,6 @@ function jsonResponse(value: ApiJsonValue): Response {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
     });
-}
-
-function deferred<Value>() {
-    let resolve!: (value: Value) => void;
-    const promise = new Promise<Value>((next) => {
-        resolve = next;
-    });
-    return { promise, resolve } as const;
 }
 
 async function flushAsyncWork(): Promise<void> {

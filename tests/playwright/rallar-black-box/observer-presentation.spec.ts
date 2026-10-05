@@ -1,4 +1,8 @@
-import { expect, test, type Page } from '@playwright/test';
+import {
+    expect,
+    test,
+    type Page
+} from '@playwright/test';
 
 // The real SPA recorder remains the source of truth; presentation never replaces or caps it.
 async function recordDiagnostic(page: Page, value: string): Promise<void> {
