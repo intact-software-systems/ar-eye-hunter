@@ -221,8 +221,12 @@ on a synthetic merge checkout whose tree equals the published feature tree.
 Task 48's correctness gate is complete. Task 49's read-only native observation
 audit has independent specification/evidence-quality approval and proves missing
 lifetime, transport, candidate-association and timeout/deletion provenance.
-The next slice is bounded observation design and semantic TDD at the existing
-owners. No initial-stall cause, retry policy or new performance cohort is accepted.
+Task 50's corrected architectural proposal has independent design/specification
+and quality approval after four finite corrections. Human design approval is
+pending; the proposal is not an approved specification or implemented capability.
+The next slice completes original-owner capture through the existing bounded
+failure artifact with semantic TDD after the architectural prerequisites.
+No initial-stall cause, retry policy or new performance cohort is accepted.
 Tasks 0-7 and observation tooling are delivered. The full baseline remains incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
 is gated, and B07 remains held. A package check proves tooling, not capture.
@@ -1654,8 +1658,9 @@ justified yet.”
 | 47      | Observer correction at 65b257ab6; test/support closure fix at 9db431d2c. Semantic history suppression retains operator state and complete recordings; local correctness checks pass. Initial review required obsolete fallback/source-test retirement; scoped re-review approves the correction. No post-fix timing comparison or native cause established; E3 zero accepted cohorts.                                                                                                  |
 | 48      | Hosted ac3 inventory/asset failures repaired at ab64/c62 with semantic polling proof, truthful transitions and full consumer closure; independent spec/quality APPROVE. Published at 92a6261 with fresh required Branch Release SUCCESS and independently accepted native formation/medium correctness on the identical tree. RTC integrity SKIP; diagnosis intact, E3 zero.                                                                                                           |
 | 49      | Read-only native observation audit independently APPROVE/APPROVE at 92a6261: missing native lifetime/DTLS/SCTP/typed-error/candidate association and dropped timeout/deletion provenance. Bounded owner-captured observation design/TDD is next; original observer/expiry findings preserved, initial stall unknown, no retry policy or producer, E3 zero.                                                                                                                             |
+| 50      | Corrected original-owner observation proposal independently APPROVE/APPROVE after scope/reservation, allocation-reentry, serialized-error and retired-channel corrections. Public additions and source limits remain proposed; human design approval pending, no implementation or runtime measurement. Initial stall unknown; Task45/46 findings intact, E3 zero, B07 held.                                                                                                           |
 
-## 11. Next Two Useful Actions After Task 49
+## 11. Next Two Useful Actions After Task 50
 
 Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
@@ -1688,8 +1693,21 @@ has fresh required Branch Release SUCCESS and independently verified native
 formation/medium correctness on the identical tree. Task 49's read-only native
 observation audit is independently approved. It proves missing owner-captured
 lifetime/transport facts and lost timeout/deletion provenance; it cannot recover
-the historical first-stall trigger. Its bounded observation design and semantic
-TDD are next, with public outputs reviewed separately from signaling inputs.
+the historical first-stall trigger. Task 50's corrected proposal is independently
+approved at design-review scope, with human architectural approval pending.
+The optional completed capture scope, added public diagnostic variants and required
+output dispositions remain proposed; the approved epoch clock is a separate decision.
+Only the next two useful outcomes are concrete:
+
+1. Preserve original-owner native/service evidence through the existing bounded
+   failure artifact. Complete the human design, written-specification and written-plan
+   prerequisites, then implement with witnessed semantic RED/GREEN, whole-file/support
+   closure and independent review at the canonical owners and positive projection.
+2. Prevent current stats from joining retired service/peer/PC/runtime objects,
+   complete affected consumer/public-surface checks and review, then explicitly select
+   unchanged B06 availability/first-stall/perturbation measurement. Source support,
+   adequate retained capture and acceptable overhead require their own evidence.
+
 No new RTC producer or retry policy follows automatically.
 Section 9's stop and all baseline gates remain intact.
 Task 33's owned-code correction
@@ -2586,6 +2604,56 @@ runtime/source identity, actual target API availability, first-stall capture and
 observer perturbation assessed together. No automatic E3 run follows this audit.
 E3 remains zero accepted cohorts; E1 reconciliation and the full B01–B06 gates
 remain outstanding, E4 conditional and B07 held. No Issue was created or reused.
+
+### Task 50: Original-owner observation proposal reviewed; human approval pending
+
+**Outcome:** The corrected architectural proposal has independent design/specification
+APPROVE and quality APPROVE. The first review required four finite corrections;
+scoped re-review resolves all four with no introduced blocker. This is proposal
+review, not human compatibility approval, a final specification/implementation plan,
+semantic execution or performance acceptance. No code, service or producer changed.
+
+**Proposed ownership:** One optional concrete `RtcNativeObservationScope` is completed
+before the service/native graph. Its nonce source runs once at composition; local
+kind-qualified monotonic allocation then invokes no external allocator. Service,
+PC and channel owners share admission and keep their original capture/cleanup
+authority. Browser initialization handoffs and shutdown have named diagnostic-only
+disposal ownership; no native rollback, watchdog renewal or retry change is selected.
+Pure finite translation feeds the existing diagnostic stream and recorder.
+
+**Finite policy and honest output:** Proposed admission caps are 256 setups,
+256 native PCs and 1,024 native channels per scope: 1,536 lifetime tokens.
+Each admitted setup reserves timeout and termination; each admitted PC/channel
+reserves one final snapshot with its first/typed-error summaries. This gives
+1,792 terminal attempts, plus 4,096 ordinary, two status and one scope-limit
+attempt: at most 5,891 new attempts. The proposed source data cap is 8,192 UTF-8
+bytes; existing formation/artifact/read/row/retention limits stay unchanged.
+Oversized source data uses a same-slot unavailable replacement, without a no-error
+claim. These are proposed policy limits, not measured capacity or overhead.
+
+Retention100 keeps A/B service scopes alive while C reconnects. Nominal two-lane
+composition gives each surviving agent 102 PC/setup and 204 channel lifetimes;
+102 is not an upper bound on retries/replacements. Ordinary history can exhaust
+while admitted later lifetimes retain final entitlements. Unadmitted lifetimes,
+scope disposal, missing delivery and artifact eviction remain explicitly partial
+or unavailable; bounded publication attempts do not guarantee retained history.
+
+Mandatory JSON error states distinguish observed, none-observed within an actual
+window and unavailable. Missing/malformed fields cannot become no-error evidence.
+A generic channel error ends that channel's handler window; later detached events
+cannot fabricate typed evidence or mutate a replacement. A genuinely live parent
+transport or replacement channel retains its own exact source identity. Candidate
+operation/index and bounded data-ICE fragment equality do not prove target transport
+or ICE generation; both associations remain unknown, with raw fragments private.
+
+**Next gate:** Human design approval remains pending. Only after the architectural
+specification/plan prerequisites may semantic TDD and independent implementation
+review proceed. Target API availability, sufficient first-stall capture, maximum-shape
+serialization and observer perturbation are unexecuted validation questions.
+Task 45's measured observer delay and confirmed recovery expiry remain distinct
+from the unknown initial post-ICE trigger. Task 46 is separate and unimplemented;
+E3 has zero accepted cohorts, E1/full B01–B06 acceptance remains outstanding,
+E4 conditional and B07 held. No Issue was created or reused.
 
 ## 12. Baseline Completion Gate
 
