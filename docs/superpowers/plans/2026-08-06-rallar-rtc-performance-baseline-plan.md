@@ -193,7 +193,14 @@ The retry proposal is now assessed from current source: synchronous native lane
 allocation failure can block the next ensure's repair on a live peer. It is a
 separate correctness candidate awaiting semantic RED, not an explanation of the
 captured channel-present initial stall. Broader retry or establishment-deadline
-renewal is unearned; the observer correction remains the active implementation.
+renewal is unearned; Task 47 records the implemented observer correction.
+Task 47 implements the observer presentation correction at 65b257ab6, followed
+by test/support closure at `9db431d2cae002e1867aa9e5149ae603fc7675df`.
+Closed reports and inactive trace/event
+panels stop retained-history presentation; drafts, filters, disclosure, current
+redacted outputs and complete recorder contents remain intact. Semantic RED/GREEN,
+app tests/build and real browser workflows pass. Initial independent review
+required test-closure fixes; scoped re-review approves the completed correction. No comparable post-fix timing, native-cause conclusion or accepted E3 cohort follows.
 Tasks 0-7 and observation tooling are delivered. The full baseline remains incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
 is gated, and B07 remains held. A package check proves tooling, not capture.
@@ -1622,8 +1629,9 @@ justified yet.”
 | 44      | One local diagnostic at unchanged 3bd: default PASS/retention FAIL cycle7 peer-C readiness/selector SKIP, 100-cycle target/zero retries. Captured timeout/reliable/desired2-ready1; later ordinal1→3 Connecting/native new/nonopen lane. History incomplete; child exit unavailable after wrapper failure. Nominal allowance/later state establish no deadline/generation/cause; 19 originals retained, zero accepted E3.                                                              |
 | 45      | Authenticated original command/result and 6,398-row correlations narrow the A–C failure: adopted layout, matching Answers applied, retained-peer expiry invalidates later recovery pairing. Actual SPA hidden-history work reproduces 117–150 ms delay versus UI-off ~4 ms. Initial post-ICE native/channel failure remains unproven; observer presentation correction selected for design/TDD/review, no timer policy or E3 acceptance.                                               |
 | 46      | Source-backed retry necessity assessment: failed native allocation can suppress the next same-peer lane repair, but no recovery RED has run. Independent correctness candidate only; channel-present B06 failure is not explained, no retry/deadline policy change selected. Observer correction remains active; E3 zero accepted cohorts.                                                                                                                                             |
+| 47      | Observer correction at 65b257ab6; test/support closure fix at 9db431d2c. Semantic history suppression retains operator state and complete recordings; local correctness checks pass. Initial review required obsolete fallback/source-test retirement; scoped re-review approves the correction. No post-fix timing comparison or native cause established; E3 zero accepted cohorts.                                                                                                  |
 
-## 11. Next Two Useful Actions After Task 46
+## 11. Next Two Useful Actions After Task 47
 
 Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
@@ -1644,8 +1652,9 @@ retains a local cycle7 failure; its bounded facts and nominal allowance keep the
 then-scope. Task 45 adds original correlations and actual SPA observer measurement:
 late recovery pairing is invalidated by retained-peer expiry, and hidden history
 presentation introduces measured delay. Neither fact proves the initial post-ICE native/channel
-failure. The selected observer correction preserves artifact contents and requires
-semantic TDD, whole-file closure, independent review and correctness acceptance;
+failure. Task 47 implements the selected observer correction with semantic TDD
+and required local correctness checks; scoped independent review is approved.
+Required hosted checks for the published source remain pending.
 Section 9's stop and all baseline gates remain intact.
 Task 33's owned-code correction
 remains accepted at c3b3; the human's required-clock approval persists.
@@ -2177,6 +2186,93 @@ No retry code, timer, workload, recorder or acceptance change is made by this
 assessment. Semantic RED/GREEN, native browser occurrence and a policy-changing
 experiment remain unexecuted. E3 still has zero accepted cohorts; all B01–B06
 baseline completion gates and B07's hold remain intact.
+
+### Task 47: Observer presentation correction independently reviewed
+
+**Source and review:** Observer implementation at 65b257ab6 is followed by the
+separate test/support fix at `9db431d2cae002e1867aa9e5149ae603fc7675df`.
+Initial independent review required closure fixes; scoped re-review approves all
+Important and mechanical findings, with no actionable residuals.
+PR #633 remains the draft delivery entity. Required hosted checks for the new
+source have not yet been accepted. This completes implementation of Task 45's
+first next action and its independent review at the checked local scope,
+without completing the RTC baseline.
+
+**Behavior:** Report Snapshot checks disclosure and truthful workbench activity
+before snapshot construction, retained-history traversal, redaction or JSON
+serialization. Inactive Trace and Event Stream preserve their filter/window
+owners but stop event-history presentation. Advanced retains Workbench/Manual
+controls and drafts while constructing Manual's stateless inbox/history only
+when truly active. Show/reactivation exposes current complete redacted values;
+Hide/inactivation stops that work. Recorder/artifact histories remain complete.
+Other existing bounded/current hidden displays are outside the measured
+whole-event-history correction; no claim that all hidden UI work disappeared.
+
+**TDD and validation:** Five meaningful initial semantic assertion REDs preceded
+production edits. The stronger inactive-Advanced whole-entry assertion then
+caught remaining Manual traversal (expected zero, received two) before its owner
+was corrected. Semantic GREEN and real visible controls prove suppression,
+privacy, complete current recordings and retained drafts/filters/disclosure.
+The covering six-file run passed 30 tests; the affected app suite passed all
+1,917 tests in 189 files; five browser workflows passed. Later test-only fixture
+closure passed 19 focused tests and a compiler check of the actual test modules.
+Final removal of an unused internal export passed 13 lifecycle/bundle tests,
+app typecheck/build and the actual chunk verifier CLI against real output.
+The broad app/browser runs retain their exercised source; they were not repeated
+for the focused fixture/export changes or obsolete test retirement. Fix1 passed
+24 covering tests, then 15 lifecycle/mode tests and the final three mode checks;
+actual fixture modules compile with the precise ES2024 test API. The useful
+configuration-preservation requirement now invokes real public store actions and
+expects independent command/event inputs plus prior evidence copied before the
+action. These consumer checks cover the narrow changes.
+
+**Closure and limitations:** Every changed human-authored file and recursively
+changed support file was reviewed in full; independent untouched code remains
+outside. Initial review exposed obsolete monolithic-app test fallbacks and
+private source-string assertions missed by comparison tooling. Fix1 deletes them,
+keeps useful public mode/dependency rules, and relies on existing executable
+bundle/CLI leak coverage. No temporary annotation excuses an obsolete test.
+Named fixture output and import-shape findings are also corrected.
+Canonical owners replace affected predecessor filenames without aliases.
+Full typed fixtures replace sparse double casts; the manifest/JSON boundaries
+are explicit. An unused internal FailurePanel forwarding export was removed
+after verifying direct canonical consumers. Changed-style comparison passes;
+reviewed callback-depth observations remain in touched tests, with visible
+registration/interaction ownership; other reported repository/directory warnings
+belong to independent untouched owners.
+The initial style failure and browser workspace/selector/ingress-redaction fixture
+failures are retained with the later passing checks. An attempted extra browser
+preservation assertion failed because simulated first-opening intentionally starts
+Replay Sample and resets its history; it was removed and replaced with the actual
+configuration-action test. It is not a production failure or semantic RED.
+Fixture matcher/compiler and tool-root setup failures are also disclosed.
+Node localStorage/color and
+large-bundle warnings remain disclosed. No retained legacy exception, migration
+bridge, public/wire change, duplicate history, RTC retry/timer/policy change,
+new producer or Issue was introduced.
+
+**Evidence meaning:** There is no comparable fresh timing measurement: the original
+SPA result/profile is retained, but its executable protocol was not saved.
+Zero-hidden-history semantic proof establishes this correction, not a quantified
+whole-SPA speedup. Task 45's original report and findings remain unchanged:
+measured observer overhead; retained responder expiry invalidating later recovery;
+and unresolved initial ICE-connected/native-and-channel-connecting stall.
+Task 46's allocation-exception repair remains an independent, unimplemented
+candidate. E3 still has zero accepted cohorts; all baseline gates remain.
+
+**Next action 1:** After required correctness acceptance, audit the existing native observation owners against the missing first-stall
+DTLS/SCTP transport and native/candidate-generation association. Specify the
+smallest discriminating evidence boundary with truthful unavailable values and
+exact source/pair identity. Do not infer a cause from already applied Answers,
+current layout adoption or UI suppression.
+
+**Next action 2:** Only if that audit proves missing observation, implement its
+bounded semantic TDD correction and independently review it. Select any later
+exact-source diagnostic explicitly, preserving the accepted workload, attempt
+accounting and first failure. No automatic E3 run, retry implementation or deadline
+renewal is selected. Accepted B01–B06 primaries/repeats, E1 recovery/reconciliation,
+homogeneous noise handling, ranking and human acceptance remain outstanding;
+B07 stays held and E4 stays conditional to the exact candidate.
 
 ## 12. Baseline Completion Gate
 
