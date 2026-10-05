@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createBrowserRtcCapture } from '@shared-web/browser/rtc/create-browser-rtc-capture.ts';
+import type { RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from '../session/browser-auth-session-contract-fixture.ts';
 
@@ -253,6 +254,260 @@ describe('immutable RTC capture on browser connections', () => {
         expect(mocks.initialiseMiddleware).toHaveBeenCalledTimes(1);
         expect(transport.readRtcCaptureConfiguration()).toEqual({ mode: 'off', origin: 'step' });
         transport.shutdown();
+    });
+
+    it('shares one graph and the original receipt during compatible transport setup reentry', async () => {
+        const { BrowserTransportRuntime } = await import('@shared-web/browser/connection/browser-transport-runtime.ts');
+        const configurations: Array<{ readonly mode: string; readonly origin: string; }> = [];
+        mocks.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
+            configurations.push(options.rtcCaptureConfiguration);
+            return {
+                middleware: mocks.ctx.middleware,
+                checkpoints: [],
+                rtcCaptureReceipt: createBrowserRtcCapture({
+                    configuration: options.rtcCaptureConfiguration,
+                    connectionId: { status: 'observed', value: 'original' },
+                    record: undefined,
+                    nowEpochMs: () => 10
+                }).receipt
+            };
+        });
+        const options = {
+            rtcCaptureConfiguration: { mode: 'off' as const, origin: 'host' as const },
+            diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
+            qosProvider: undefined,
+            readVolatileSessionLimits: undefined,
+            deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
+        };
+        let reentered: Promise<ApiMiddleware> | undefined;
+        let entered = false;
+        const transport = new BrowserTransportRuntime({
+            openSessionChannelPort: () => {
+                if (!entered) {
+                    entered = true;
+                    reentered = transport.init({ ...options, rtcCaptureConfiguration: { mode: 'off', origin: 'step' } });
+                }
+                return undefined;
+            }
+        });
+        onTestFinished(() => transport.shutdown());
+        const first = transport.init(options);
+        expect(configurations).toEqual([{ mode: 'off', origin: 'host' }]);
+        expect(reentered).toBe(first);
+        expect(await reentered).toBe(await first);
+        expect(transport.readRtcCaptureConfiguration()).toEqual({ mode: 'off', origin: 'host' });
+        expect(transport.readRtcCaptureReceipt()).toMatchObject({
+            configuration: { mode: 'off', origin: 'host' },
+            application: { status: 'applied', mode: 'off' },
+            connectionId: { status: 'observed', value: 'original' }
+        });
+    });
+
+    it('settles one session lifecycle during compatible synchronous setup reentry', async () => {
+        const { BrowserTransportRuntime } = await import('@shared-web/browser/connection/browser-transport-runtime.ts');
+        const { BrowserFacadeRuntimeState } = await import('@shared-web/browser/composition/browser-facade-runtime-state.ts');
+        const { BrowserSessionConnectionLifecycle } = await import('@shared-web/browser/session/session-connection-lifecycle.ts');
+        const { createRallarLifecycleCoordinator } = await import('@shared-web/browser/session/rallar-lifecycle-coordinator.ts');
+        const { BrowserSessionDeliveries } = await import('@shared-web/browser/messages/browser-session-deliveries.ts');
+        const { browserDeliveryComposition } = await import('@shared-web/browser/composition/browser-delivery-composition.ts');
+        const configurations: Array<{ readonly mode: string; readonly origin: string; }> = [];
+        mocks.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
+            configurations.push(options.rtcCaptureConfiguration);
+            return {
+                middleware: mocks.ctx.middleware,
+                checkpoints: [],
+                rtcCaptureReceipt: createBrowserRtcCapture({
+                    configuration: options.rtcCaptureConfiguration,
+                    connectionId: { status: 'observed', value: 'session-original' },
+                    record: undefined,
+                    nowEpochMs: () => 10
+                }).receipt
+            };
+        });
+        let reentered: Promise<ApiMiddleware> | undefined;
+        let entered = false;
+        const transport = new BrowserTransportRuntime({
+            openSessionChannelPort: () => {
+                if (!entered) {
+                    entered = true;
+                    reentered = connection.connect({ ...input, rtcCaptureConfiguration: { mode: 'off', origin: 'step' } });
+                }
+                return undefined;
+            }
+        });
+        onTestFinished(() => transport.shutdown());
+        const lifecycle = createRallarLifecycleCoordinator();
+        const attachments: ApiMiddleware[] = [];
+        const phases: string[] = [];
+        lifecycle.register({ id: 'capture-proof', order: 0, attach: (middleware) => attachments.push(middleware), connected: () => phases.push('connected') });
+        const connection = new BrowserSessionConnectionLifecycle({
+            qosProvider: undefined,
+            readVolatileSessionLimits: undefined,
+            sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, transport),
+            connectionRuntime: new BrowserFacadeRuntimeState(transport),
+            transportRuntime: transport,
+            lifecycle,
+            clearCurrentRoom: () => {}
+        });
+        const input: RallarSessionConnectionInput = {
+            rtcCaptureConfiguration: { mode: 'off', origin: 'host' },
+            session: mocks.ctx.session,
+            scope: undefined,
+            operationOptions: {},
+            diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
+            hasAuthEndInProgress: () => false,
+            isSessionCurrent: () => true,
+            onAuthInvalid: async () => {}
+        };
+        const first = connection.connect(input);
+        expect(configurations).toEqual([{ mode: 'off', origin: 'host' }]);
+        const result = await first;
+        expect(await reentered).toBe(result);
+        expect(configurations).toEqual([{ mode: 'off', origin: 'host' }]);
+        expect(attachments).toEqual([result]);
+        expect(phases).toEqual(['connected']);
+        expect(transport.readRtcCaptureReceipt()).toMatchObject({
+            configuration: { mode: 'off', origin: 'host' },
+            application: { status: 'applied', mode: 'off' },
+            connectionId: { status: 'observed', value: 'session-original' }
+        });
+        await connection.disconnect();
+    });
+
+    it('rejects a compatible transport waiter with the original synchronous setup failure', async () => {
+        const { BrowserTransportRuntime } = await import('@shared-web/browser/connection/browser-transport-runtime.ts');
+        const failure = new Error('reentrant setup unavailable');
+        const options = {
+            rtcCaptureConfiguration: { mode: 'off' as const, origin: 'host' as const },
+            diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
+            qosProvider: undefined,
+            readVolatileSessionLimits: undefined,
+            deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
+        };
+        let reentered: Promise<ApiMiddleware> | undefined;
+        let entered = false;
+        const transport = new BrowserTransportRuntime({
+            openSessionChannelPort: () => {
+                if (!entered) {
+                    entered = true;
+                    reentered = transport.init({ ...options, rtcCaptureConfiguration: { mode: 'off', origin: 'step' } });
+                    throw failure;
+                }
+                return undefined;
+            }
+        });
+        onTestFinished(() => transport.shutdown());
+        try {
+            transport.init(options);
+            throw new Error('Expected synchronous setup failure');
+        }
+        catch (error) {
+            expect(error).toBe(failure);
+        }
+        await expect(reentered).rejects.toBe(failure);
+        expect(transport.isInitializing()).toBe(false);
+        expect(transport.readRtcCaptureConfiguration()).toBeUndefined();
+        expect(transport.readRtcCaptureReceipt()).toBeUndefined();
+        await transport.init({ ...options, rtcCaptureConfiguration: { mode: 'native', origin: 'step' } });
+        expect(transport.readRtcCaptureConfiguration()).toEqual({ mode: 'native', origin: 'step' });
+    });
+
+    it('preserves a replacement transport reservation when the older synchronous setup throws', async () => {
+        const { BrowserTransportRuntime } = await import('@shared-web/browser/connection/browser-transport-runtime.ts');
+        const failure = new Error('older setup failed');
+        const options = {
+            rtcCaptureConfiguration: { mode: 'off' as const, origin: 'host' as const },
+            diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
+            qosProvider: undefined,
+            readVolatileSessionLimits: undefined,
+            deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
+        };
+        let replacement: Promise<ApiMiddleware> | undefined;
+        let entered = false;
+        const transport = new BrowserTransportRuntime({
+            openSessionChannelPort: () => {
+                if (!entered) {
+                    entered = true;
+                    transport.shutdown();
+                    replacement = transport.init({ ...options, rtcCaptureConfiguration: { mode: 'native', origin: 'step' } });
+                    throw failure;
+                }
+                return undefined;
+            }
+        });
+        onTestFinished(() => transport.shutdown());
+        try {
+            transport.init(options);
+            throw new Error('Expected synchronous setup failure');
+        }
+        catch (error) {
+            expect(error).toBe(failure);
+        }
+        await replacement;
+        expect(transport.readRtcCaptureConfiguration()).toEqual({ mode: 'native', origin: 'step' });
+        expect(transport.isReady()).toBe(true);
+        expect(transport.isInitializing()).toBe(false);
+    });
+
+    it('clears the session reservation and rejects both compatible callers when synchronous setup fails', async () => {
+        const { BrowserTransportRuntime } = await import('@shared-web/browser/connection/browser-transport-runtime.ts');
+        const { BrowserFacadeRuntimeState } = await import('@shared-web/browser/composition/browser-facade-runtime-state.ts');
+        const { BrowserSessionConnectionLifecycle } = await import('@shared-web/browser/session/session-connection-lifecycle.ts');
+        const { createRallarLifecycleCoordinator } = await import('@shared-web/browser/session/rallar-lifecycle-coordinator.ts');
+        const { BrowserSessionDeliveries } = await import('@shared-web/browser/messages/browser-session-deliveries.ts');
+        const { browserDeliveryComposition } = await import('@shared-web/browser/composition/browser-delivery-composition.ts');
+        const failure = new Error('session setup failed');
+        let reentered: Promise<ApiMiddleware> | undefined;
+        let entered = false;
+        const transport = new BrowserTransportRuntime({
+            openSessionChannelPort: () => {
+                if (!entered) {
+                    entered = true;
+                    reentered = connection.connect({ ...input, rtcCaptureConfiguration: { mode: 'off', origin: 'step' } });
+                    throw failure;
+                }
+                return undefined;
+            }
+        });
+        onTestFinished(() => transport.shutdown());
+        const lifecycle = createRallarLifecycleCoordinator();
+        const phases: string[] = [];
+        lifecycle.register({ id: 'failure-proof', order: 0, attach: () => phases.push('attach'), connected: () => phases.push('connected') });
+        const connectionRuntime = new BrowserFacadeRuntimeState(transport);
+        const connection = new BrowserSessionConnectionLifecycle({
+            qosProvider: undefined,
+            readVolatileSessionLimits: undefined,
+            sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, transport),
+            connectionRuntime,
+            transportRuntime: transport,
+            lifecycle,
+            clearCurrentRoom: () => {}
+        });
+        const invalidations: Error[] = [];
+        const input: RallarSessionConnectionInput = {
+            rtcCaptureConfiguration: { mode: 'off', origin: 'host' },
+            session: mocks.ctx.session,
+            scope: undefined,
+            operationOptions: {},
+            diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
+            hasAuthEndInProgress: () => false,
+            isSessionCurrent: () => true,
+            onAuthInvalid: async (error) => {
+                invalidations.push(error);
+            }
+        };
+        const first = connection.connect(input);
+        await expect(first).rejects.toBe(failure);
+        await expect(reentered).rejects.toBe(failure);
+        expect(phases).toEqual([]);
+        expect(invalidations).toEqual([]);
+        expect(connectionRuntime.readConnectState()).toBe('idle');
+        expect(transport.isInitializing()).toBe(false);
+        expect(transport.readRtcCaptureConfiguration()).toBeUndefined();
+        await connection.connect({ ...input, rtcCaptureConfiguration: { mode: 'native', origin: 'step' } });
+        expect(phases).toEqual(['attach', 'connected']);
+        expect(transport.readRtcCaptureConfiguration()).toEqual({ mode: 'native', origin: 'step' });
+        await connection.disconnect();
     });
 
     it('rejects invalid JavaScript selections before constructing a connection', async () => {

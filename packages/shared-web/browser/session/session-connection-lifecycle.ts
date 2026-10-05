@@ -4,6 +4,7 @@ import type {
     BrowserTransportInitOptions,
     BrowserTransportRuntimePort
 } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import { createBrowserConnectionReservation } from '@shared-web/browser/connection/create-browser-connection-reservation.ts';
 import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { checkRtcCaptureCompatibility } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
@@ -114,9 +115,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         };
         const generation = this.connectionGeneration;
         this.lifecycleIsDisconnected = false;
-        this.input.connectionRuntime.setConnectState('connecting');
         const pendingConnection = this.startConnection(input, { middlewareOptions, generation });
-        this.connectionPromise = pendingConnection;
         return await waitForRallarOperation(pendingConnection, input.operationOptions);
     }
 
@@ -124,29 +123,46 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         input: RallarSessionConnectionInput,
         connection: PendingSessionConnection
     ): Promise<ApiMiddleware> {
-        const pendingConnection = this.input.transportRuntime.init(connection.middlewareOptions)
-            .then((middleware) => this.acceptConnectedMiddleware(input, middleware, connection.generation))
-            .catch(async (error) => {
-                const connectionError = error instanceof Error
-                    ? error
-                    : new Error('Rallar connection failed.');
-                if (connection.generation !== this.connectionGeneration) {
-                    throw new Error('Rallar connection was cancelled because auth ended.');
-                }
+        const reservation = createBrowserConnectionReservation();
+        this.connectionPromise = reservation.promise;
+        try {
+            this.input.connectionRuntime.setConnectState('connecting');
+            reservation.settle(
+                this.input.transportRuntime.init(connection.middlewareOptions)
+                    .then((middleware) => this.acceptConnectedMiddleware(input, middleware, connection.generation))
+                    .catch(async (error) => {
+                        const connectionError = error instanceof Error
+                            ? error
+                            : new Error('Rallar connection failed.');
+                        if (connection.generation !== this.connectionGeneration) {
+                            throw new Error('Rallar connection was cancelled because auth ended.');
+                        }
+                        this.rtcCaptureConfiguration = undefined;
+                        this.input.connectionRuntime.setConnectState('idle');
+                        await input.onAuthInvalid(connectionError);
+                        if (input.hasAuthEndInProgress()) {
+                            throw new Error('Rallar connection was cancelled because auth ended.');
+                        }
+                        throw connectionError;
+                    })
+                    .finally(() => {
+                        if (this.connectionPromise === reservation.promise) {
+                            this.connectionPromise = undefined;
+                        }
+                    })
+            );
+            return reservation.promise;
+        }
+        catch (error) {
+            if (this.connectionPromise === reservation.promise) {
+                this.connectionPromise = undefined;
                 this.rtcCaptureConfiguration = undefined;
                 this.input.connectionRuntime.setConnectState('idle');
-                await input.onAuthInvalid(connectionError);
-                if (input.hasAuthEndInProgress()) {
-                    throw new Error('Rallar connection was cancelled because auth ended.');
-                }
-                throw connectionError;
-            })
-            .finally(() => {
-                if (this.connectionPromise === pendingConnection) {
-                    this.connectionPromise = undefined;
-                }
-            });
-        return pendingConnection;
+            }
+            void reservation.promise.catch(() => undefined);
+            reservation.settle(Promise.reject(error));
+            throw error;
+        }
     }
 
     private acceptConnectedMiddleware(

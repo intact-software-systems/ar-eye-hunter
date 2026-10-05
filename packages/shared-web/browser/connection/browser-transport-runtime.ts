@@ -21,6 +21,7 @@ import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import { createBrowserConnectionReservation } from './create-browser-connection-reservation.ts';
 import { checkRtcCaptureCompatibility } from './rallar-rtc-capture-connection-required-error.ts';
 
 import { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
@@ -128,19 +129,32 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
             return Promise.reject(new Error('Cannot init middleware: no auth session.'));
         }
         const rtcCaptureConfiguration = Object.freeze({ ...options.rtcCaptureConfiguration });
+        const reservation = createBrowserConnectionReservation();
         this.rtcCaptureConfiguration = rtcCaptureConfiguration;
+        this.pendingMiddleware = reservation.promise;
         try {
-            return this.startMiddleware(session, { ...options, rtcCaptureConfiguration });
+            reservation.settle(
+                this.startMiddleware(session, { ...options, rtcCaptureConfiguration }, reservation.promise)
+            );
+            return reservation.promise;
         }
         catch (error) {
-            if (this.rtcCaptureConfiguration === rtcCaptureConfiguration) {
+            if (this.pendingMiddleware === reservation.promise) {
+                this.pendingMiddleware = undefined;
                 this.rtcCaptureConfiguration = undefined;
             }
+            // The caller still receives the original synchronous throw; a reentrant waiter receives the same rejection.
+            void reservation.promise.catch(() => undefined);
+            reservation.settle(Promise.reject(error));
             throw error;
         }
     }
 
-    private startMiddleware(session: AuthSession, options: BrowserTransportInitOptions): Promise<ApiMiddleware> {
+    private startMiddleware(
+        session: AuthSession,
+        options: BrowserTransportInitOptions,
+        pendingMiddleware: Promise<ApiMiddleware>
+    ): Promise<ApiMiddleware> {
         const scope = options.scope ?? defaultStateScope();
         const sessionChannel = this.openSessionChannel(scope, session, options.deliverySettlements);
         const durableWork = this.claimDurableWork(scope, session, sessionChannel);
@@ -150,7 +164,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
             generation: this.generation,
             durableWork
         };
-        const pendingMiddleware = this.createMiddleware(session, {
+        return this.createMiddleware(session, {
             ...options,
             deliverySettlements: epoch.settlements,
             durableWorkOwnership: durableWork
@@ -170,8 +184,6 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
                     this.pendingMiddleware = undefined;
                 }
             });
-        this.pendingMiddleware = pendingMiddleware;
-        return pendingMiddleware;
     }
 
     private acceptMiddleware(
