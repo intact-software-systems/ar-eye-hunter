@@ -291,6 +291,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
                 middleware.webRtcConnectionService.disconnectPeer(peerId);
             }
         });
+        runShutdownStep(() => middleware.webRtcConnectionService.disposeNativeObservations());
         runShutdownStep(() => middleware.rtcRxStreamer.stopLocalMedia('all'));
         runShutdownStep(() => middleware.webRtcOverlayMulticastManager?.dispose?.());
         runShutdownStep(() => middleware.qboxEngine.stop());

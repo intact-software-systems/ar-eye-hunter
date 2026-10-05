@@ -1709,8 +1709,9 @@ The approved epoch clock remains a separate decision. Task 52 delivers real Off 
 Signaling selection, immutable construction receipts and typed incompatible reuse.
 The initial review exposed compatible synchronous reentry at both transport and
 session owners; fix de006d74b reserves the pending operation before synchronous
-setup. Scoped specification/quality re-review approves both owners. Full native
-remains honestly unavailable until Task 53; no end-to-end or timing acceptance follows.
+setup. Scoped specification/quality re-review approves both owners. At that published
+checkpoint, Full native remains unavailable; the uncommitted Task53 corrections and
+validation are recorded below. End-to-end and timing acceptance remain outstanding.
 The next useful actions are:
 
 1. **Task 53:** Add bounded original-owner native/service capture through the existing
@@ -2903,11 +2904,23 @@ to 240 KiB under the existing `floor(measurement)+1` policy. The reported 239.16
 is Brotli size of the minified browser bundle; 240 is the smallest integer cap under
 that policy. Other entry budgets and native/source/control/output limits are unchanged.
 Independent review accepts the intentional facade/export and boundary dispositions.
-This is local source support, with hosted correctness for these commits still pending;
-it does not prove deployed availability, comparable timing, native capture or any E3
-cohort. Native remains unavailable/unsupported in this slice. Required recipe/UI/
-agent/Actions/B06 propagation follows reviewed native capture. Task45/46 findings
-remain intact, initial native trigger UNKNOWN, E3 zero, B07 held; no Issues created/reused.
+**Task52 hosted failure:** Branch Release run 37347979948/attempt 1 explicitly checked
+out published commit `69c76a7dd6f62c8901d7bb9b5dab0a1a0d320253`. Its unit gate failed
+only `rallar-black-box-headless/headless-bundle-boundary.test.ts`: the headless entry
+measured 305.158 Brotli KiB against its 305 KiB budget. The remaining unit results were
+1,372 files/12,957 tests passed and four files/12 tests skipped. Other browser, static,
+database and API gates passed; RTC observation integrity and validation-evidence
+publication skipped. These passes do not override the unit failure.
+
+The headless test's existing adjustable `floor(measurement)+1` policy would require
+306 KiB for this checkpoint, with explicit PR disclosure. Task53 must measure the
+completed native source and close this affected consumer's actual budget and boundary
+checks; its final measurement may differ. Hosted correctness remains unaccepted.
+Local source support does not prove deployed availability, comparable timing, native
+capture or any E3 cohort. Native remains unavailable/unsupported in Task52. Required
+recipe/UI/agent/Actions/B06 propagation follows reviewed native capture. Task45/46
+findings remain intact, initial native trigger UNKNOWN, E3 zero, B07 held; no Issues
+created/reused.
 
 ### Task 53: Original-owner native evidence, bounded artifact and current-stats fence
 
@@ -2962,9 +2975,39 @@ No new performance producer is dispatched by this task.
   spliced index. Parent PC supplies exact identity and operation ordinal; target
   transport and ICE-generation associations remain unknown. Fragment equality work
   accepts only nonempty strings up to 256 code units and exports no raw fragments.
+- Optional `readCandidateError(caught)` supplies canonical finite facts through an
+  exact-owner synchronous error-read marker. Restore its prior marker in `finally`;
+  reader failure yields unavailable/read-failed without rereading the native value.
+  The sanitized rejected DTO and original FIFO/count/continuation remain unchanged;
+  no diagnostic read runs without an observer and no marker spans a native await.
+- Browser entry/headless bundle budgets retain their existing adjustable
+  `floor(measurement)+1` policy with explicit PR disclosure. Measure the complete
+  native source and change only an actually exceeded cap to its minimum integer;
+  the Task52 browser cap is its checkpoint, not a permanent Native-feature ceiling.
+  Recheck the whole boundary suite: the size loop can stop at its first failed entry.
+  This policy does not waive file-length standards or raise native/source/control/
+  output limits, and the failed checkpoint remains part of the evidence.
 - Native/service captures are frozen before external effects, quota consumed before
   sink, publication after existing business callback sequences. A detached channel's
   error window ends; later events cannot fill its typed summary or mutate replacement.
+- Publication batching is owned by each captured operation/lifetime. Match its exact
+  native binding/object, never its exported identity readout. Restore synchronous
+  context before an existing await and pass exact batches through owned
+  continuations. Pending obsolete work cannot hold reset/retirement/replacement rows.
+  Service nesting retains exact peer/batch handles only until its synchronous effects
+  finish; late completion cannot drain a replacement. Arbitrary app work after its
+  own await uses its own owner boundary; no implicit async context or new await.
+- Getter-triggered synchronous retirement uses the exact binding's in-progress
+  marker. The nested complete snapshot reports unavailable/read-failed native-state
+  reads and preserves sealed finite errors with truthful coverage; incomplete error
+  reads are unavailable, never none-observed. Business teardown continues, the retired
+  outer capture is discarded, and cleanup cannot suppress a replacement binding.
+- Parent native reads from a channel snapshot use a narrow synchronous peer-owned
+  operation. Each owner restores its own exact marker; the channel never writes its
+  parent's marker. Service capture freezes original entry/setup/PC and at most four
+  compact-channel handles/count before getter effects, captures the original peer
+  first, then matches both original PC and native DC. Keep truthful missing/truncated
+  compacts; no replacement join, unbounded handle copy or live iteration after reads.
 - `RallarRtcPeerDiagnostics` gains required captureIdentity/statsObservation. The
   existing single getStats read fences original service/peer/PC/runtime after await;
   retired-during-read omits candidate pair and reports statsAvailable/usesRelay false.
@@ -2997,14 +3040,88 @@ No new performance producer is dispatched by this task.
       compilation. Exercise all fixed admission caps, 204 setup/PC + 816 channel stress
       allowance and 5,891 ceiling without resetting a persistent scope. Include native
       API absence/throwing getters, listener attachment/replacement, sink/app reentry,
-      initializer cancellation and original native constructor exception. Public snapshots,
-      browser bundle-boundary checks and affected game app builds follow focused checks.
+      initializer cancellation and original native constructor exception. Add actual-owner
+      getter-triggered reset/removal: preserve business teardown, serialize complete
+      unavailable/read-failed snapshot fields, suppress the retired outer mixture and
+      prove independent replacement capture. Public snapshots, browser bundle-boundary
+      checks and affected game app builds follow focused checks.
       Every changed/support file enters full recursive standards closure.
 - [ ] **Step 6 — Independent review and publish the coherent capability.** Complete
       specification/quality review before choosing the next horizon. Do not label source
       support as deployed availability, complete first-stall capture or acceptable overhead.
       Next required outcomes remain recipe/UI/agent/Actions/B06 configuration propagation;
       a later unchanged diagnostic/perturbation exercise needs its separate selection.
+
+**Task53 corrected source checkpoint (2026-10-05):** The initial independent review
+reproduced publication blocked by a retired operation, invalid retained-error coverage
+and lost admission/transport reasons. The original implementer's scoped corrections
+now have witnessed semantic RED/GREEN evidence, including unavailable-identity batch
+membership and independent late completion. The uncommitted native/service artifact
+support has passing focused semantics and complete public API/entry/bundle checks.
+The first whole-project run on frozen tree0455e37 failed one package-boundary test:
+14,513 tests passed and 12 skipped, but a changed diagnostic test imported the private
+benchmark JSON type. The existing boundary rule was preserved; the fixture now uses
+the canonical shared API JSON contract. Witnessed focused RED then GREEN covers both
+the unchanged package boundary and the diagnostic consumer (67 tests), and maintained
+test types pass. The final whole-project run on corrected freezec4f3de4 passed:
+1,486 files/14,514 tests, four files/12 tests skipped and 16 Node experimental
+localStorage warnings. All 36 frozen file hashes remained unchanged. Scoped
+independent re-review addressed the original I1–I4 findings, including the approved
+length-only registry entries. It found one new queued-invocation ordering regression:
+a synchronous native event can publish to a reentrant diagnostic sink before queued
+candidate success accounting. The direct path records success first. The retained
+production-owner probe confirms the distinction; the original implementer is fixing
+each queued native-call boundary with witnessed TDD. This is a new instrumentation
+defect, not evidence of the historical post-ICE trigger. The original failed logs and
+the passing whole-project checkpoint remain retained; acceptance awaits the scoped
+correction and re-review.
+
+The round1 peer/service owners measured 1,617/1,360 effective lines against the
+1,200-line backstop, with cognitive loads 267/142 and no named function above 60.
+The human's 2026-10-05 length-only approval is recorded in the
+[focused exception registry](../../repo-code-style-exceptions.md), with original
+ownership rationale and review/removal conditions. The raw changed-style result
+remains FAIL45; registration does not suppress its findings. Final measured browser
+245.8173828125 KiB fits cap246; headless314.28125 KiB requires minimum cap315.
+Earlier failed boundary/hosted checkpoints remain preserved. Two historical TDD
+sequence deviations remain disclosed and unresolved; later tests do not rewrite
+that history. Task53 remains uncommitted and unaccepted. These diagnostics corrections
+do not establish the historical post-ICE cause or any performance acceptance.
+
+**Task53 scoped round2 source checkpoint:** Four actual-owner ordering REDs preceded
+the minimal correction at each queued native call. The existing method-only queue
+capability now enters the peer's synchronous capture boundary, preserving the exact
+native receiver/promise and restoring context before await. No queue API field, loop,
+retry or observation owner was added. All 28 candidate tests pass, including sink/clock
+at the first, rejecting and later invocation, plus held-promise cases with observed
+and unavailable identities. Covering30files459tests and public API/entry/bundle33tests
+pass; shared and maintained1,457-file test types pass.
+
+Round2 product treeae02bf4 has only two changed files. The peer now measures1,620
+effective lines, cognitive267/maxnamed49; service remains1,360/cognitive142. The
+approved length-only registry has the current peer count and unchanged scope. Raw
+changed-style remains FAIL46; its additional unknown is the test's captured console
+warning value, retained only to assert the original Error identity. No new hard
+function/cognitive or legacy exception is granted. Fresh browser245.9150390625 and
+headless314.1650390625 Brotli KiB fit unchanged246/315caps. Earlier failures and
+source-specific measurements remain retained. The full project run on coherent
+freeze23ed94b passed1,486files/14,522tests, with four files/12tests skipped and16Node
+experimental localStorage warnings. All36 frozen source/doc hashes remained unchanged.
+The original independent reviewer marked N1 ADDRESSED, found no new breakage and
+approved the scoped correction's specification and quality. At that review, historical
+I5 remained unwaived: the initializer-failure cleanup edit preceded retrieval of its completed
+RED output, and the initial PC read guard preceded its dedicated reentry test.
+The current fixes are tested and reviewed; this does not rewrite their original
+sequence.
+
+**Human process acceptance (2026-10-05):** After those two deviations were explained,
+the maintainer instructed: "Keep it. Ensure TDD and follow skills guidelines and goal."
+This explicitly accepts retaining the current tested and independently reviewed fixes
+with the historical deviations documented. It grants no future TDD waiver. Task53's
+source acceptance gate is satisfied; publication is next. The existing length-only
+registry approval remains separate. End-to-end recipe/UI/agent/Actions configuration,
+fresh hosted correctness and original baseline acceptance remain required. No deployment,
+baseline or post-ICE cause claim follows.
 
 ## 12. Baseline Completion Gate
 

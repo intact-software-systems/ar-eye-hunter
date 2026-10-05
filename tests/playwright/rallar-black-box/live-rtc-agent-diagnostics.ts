@@ -1,5 +1,11 @@
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import { toFormationReadinessCapturedFacts } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/formation/formation-controller.ts';
+import {
+    RTC_NATIVE_OBSERVATION_KINDS,
+    toRtcNativeIdentity,
+    toRtcNativeObservationProjection
+} from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts';
+import { toRtcNativeObservationSummary } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-summary.ts';
 import type { RallarRtcLifecycleKind } from '../../../packages/shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomTransportState } from '../../../packages/shared-web/browser/rallar-rtc-facade.ts';
 import { AppTopics } from '../../../packages/shared/api/api-config.ts';
@@ -76,6 +82,7 @@ interface LiveRtcLifecycleHistoryInput {
 
 interface LiveRtcLifecycleScan {
     readonly events: LiveRtcJsonRecord[];
+    readonly nativeMalformedAgents: Set<string>;
     scannedRows: number;
     filteredRows: number;
     malformedRows: number;
@@ -321,12 +328,37 @@ export function toLiveRtcLifecycleHistory(
     // The compact identity index is bounded by the same <=20,000 selected rows, never by an extra read.
     const sourceIdentities = computeLiveRtcSignalingIdentities(input);
     const scanned = computeLiveRtcDiagnosticScan(input, sourceIdentities);
-    const scan = computeRetainedLiveRtcSignalingLinks(scanned, sourceIdentities);
+    let scan = computeRetainedLiveRtcSignalingLinks(scanned, sourceIdentities);
+    let history = toLiveRtcAgentHistories(input, scan);
+    while (
+        Buffer.byteLength(JSON.stringify(history)) > LIVE_RTC_LIFECYCLE_LIMITS.eventOutputBytes &&
+        scan.events.length > 0
+    ) {
+        const dropped = scan.events.shift()!;
+        scan.outputBytes -= Buffer.byteLength(JSON.stringify(dropped));
+        scan.outputDroppedRows++;
+        scan = computeRetainedLiveRtcSignalingLinks(scan, sourceIdentities);
+        history = toLiveRtcAgentHistories(input, scan);
+    }
+    return history;
+}
+
+function toLiveRtcAgentHistories(
+    input: LiveRtcLifecycleHistoryInput,
+    scan: LiveRtcLifecycleScan
+): Readonly<Record<string, RtcBaselineJson>> {
     const history = toLiveRtcLifecycleHistoryMetadata(input, scan);
     return Object.fromEntries(input.agentIds.map((agentId) => [
         agentId,
         normalizeJson({
             ...history,
+            nativeObservation: toRtcNativeObservationSummary({
+                events: scan.events.filter((event) => event.agentId === agentId),
+                malformedRows: scan.nativeMalformedAgents.has(agentId),
+                streamAvailable: input.jsonl !== null,
+                artifactTruncated: input.retainedPrefixDropped || input.transportTruncated || scan.rowLimitReached ||
+                    scan.oversizedRows > 0 || scan.outputDroppedRows > 0
+            }),
             events: scan.events.filter((event) => event.agentId === agentId)
         })
     ]));
@@ -513,6 +545,7 @@ function computeLiveRtcDiagnosticScan(
 ): LiveRtcLifecycleScan {
     const scan: LiveRtcLifecycleScan = {
         events: [],
+        nativeMalformedAgents: new Set(),
         scannedRows: 0,
         filteredRows: 0,
         malformedRows: 0,
@@ -543,6 +576,12 @@ function computeLiveRtcDiagnosticScan(
         const scoped = toLiveRtcScopedRecorderEvent(decoded, input, streamRow);
         const event = scoped ? toLiveRtcDiagnosticEvent(scoped, sourceIdentities) : null;
         if (!event) {
+            if (
+                scoped?.topic === 'rallar.browser.rtc.signaling_diagnostics' &&
+                RTC_NATIVE_OBSERVATION_KINDS.some((kind) => kind === scoped.event.kind)
+            ) {
+                scan.nativeMalformedAgents.add(scoped.agentId);
+            }
             scan.filteredRows += 1;
             continue;
         }
@@ -676,6 +715,15 @@ function toLiveRtcDiagnosticEvent(
         runtimeAtEpochMs: scoped.runtimeAtEpochMs
     };
     if (topic === 'rallar.browser.rtc.signaling_diagnostics') {
+        const native = toRtcNativeObservationProjection(event);
+        if (native.recognized) {
+            return native.event
+                ? requiredJsonRecord(
+                    normalizeJson({ ...identity, ...native.event, producerAtEpochMs: native.event.atEpochMs }),
+                    '$.nativeEvent'
+                )
+                : null;
+        }
         const signaling = toRtcSignalingObservation(event);
         return signaling ? { ...identity, ...signaling } : null;
     }
@@ -711,6 +759,15 @@ function toLiveRtcDiagnosticEvent(
     };
 }
 
+function toRtcSignalingNativeIdentity(event: LiveRtcJsonRecord): RtcBaselineJson {
+    return normalizeJson(
+        toRtcNativeIdentity(event.nativeIdentity) ?? {
+            peerConnectionId: { status: 'unavailable', reason: 'absent' },
+            channelId: { status: 'unavailable', reason: 'absent' }
+        }
+    );
+}
+
 function toRtcSignalingObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord | null {
     const signalType = toAllowedLifecycleState(event.signalType, ['Offer', 'Answer', 'IceCandidate']);
     const common = {
@@ -743,6 +800,7 @@ function toRtcSignalingObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord 
         return disposition === null ? null : {
             ...common,
             disposition,
+            nativeIdentity: toRtcSignalingNativeIdentity(event),
             capturedPeerConnection: toLifecycleBoolean(event.capturedPeerConnection),
             currentPeerConnection: toLifecycleBoolean(event.currentPeerConnection),
             offerMatches: toLifecycleBoolean(event.offerMatches),
@@ -754,6 +812,7 @@ function toRtcSignalingObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord 
         return disposition === null ? null : {
             ...common,
             disposition,
+            nativeIdentity: toRtcSignalingNativeIdentity(event),
             capturedPeerConnection: toLifecycleBoolean(event.capturedPeerConnection),
             currentPeerConnection: toLifecycleBoolean(event.currentPeerConnection)
         };

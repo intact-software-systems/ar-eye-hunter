@@ -39,6 +39,34 @@ vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
 }));
 
 describe('Browser transport cleanup', () => {
+    it('disposes native observations after a throwing peer-disconnect loop and continues shutdown', async () => {
+        const effects: string[] = [];
+        const middleware = createDefaultApiMiddlewareTestDouble({
+            middleware: {
+                webRtcConnectionService: {
+                    knownPeerIds: () => ['peer'],
+                    disconnectPeer: () => {
+                        effects.push('disconnect');
+                        throw new Error('disconnect failed');
+                    },
+                    disposeNativeObservations: () => {
+                        effects.push('observation-disposed');
+                    }
+                }
+            }
+        });
+        vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
+            effects.push('socket-closed');
+        });
+        mocks.readSession.mockReturnValue(middleware.session);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
+        const transport = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
+        onTestFinished(() => transport.shutdown());
+        await transport.init(toInitOptions());
+        transport.shutdown();
+        expect(effects).toEqual(['disconnect', 'observation-disposed', 'socket-closed']);
+    });
+
     it('continues transport and lifecycle cleanup when a detach participant fails', async () => {
         const middleware = createDefaultApiMiddlewareTestDouble();
         const effects: string[] = [];

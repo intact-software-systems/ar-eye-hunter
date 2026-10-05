@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
+
+import { RtcNativeObservationScope } from '@shared/webrtc/rtc-native-observation-scope.ts';
 
 import { createBrowserRtcCapture } from '@shared-web/browser/rtc/create-browser-rtc-capture.ts';
 import { recordRtcSignalingObservation, type RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
@@ -18,15 +20,15 @@ describe('browser RTC capture construction', () => {
             signalType: 'Offer',
             offerId: 'offer'
         });
-        expect(events).toHaveLength(mode === 'signaling' ? 1 : 0);
+        expect(events).toHaveLength(mode === 'off' ? 0 : 1);
         expect(JSON.parse(JSON.stringify(capture.receipt))).toEqual({
             configuration: { mode, origin: 'step' },
-            application: mode === 'native' ? { status: 'unavailable', reason: 'unsupported' } : { status: 'applied', mode },
+            application: { status: 'applied', mode },
             connectionId: { status: 'observed', value: 'connection-one' },
-            nativeScopeId: { status: 'unavailable', reason: mode === 'native' ? 'unsupported' : 'not-applicable' },
+            nativeScopeId: mode === 'native' ? { status: 'observed', value: expect.any(String) } : { status: 'unavailable', reason: 'not-applicable' },
             configurationVersion: 1,
-            nativeAvailability: { status: 'unavailable', reason: mode === 'native' ? 'unsupported' : 'disabled' },
-            nativeCoverage: mode === 'native' ? 'unavailable' : 'not-applicable'
+            nativeAvailability: mode === 'native' ? { status: 'observed', value: 'enabled' } : { status: 'unavailable', reason: 'disabled' },
+            nativeCoverage: mode === 'native' ? 'partial' : 'not-applicable'
         });
         Object.assign(configuration, { mode: 'native', origin: 'host' });
         Object.assign(identity, { value: 'replacement' });
@@ -44,5 +46,24 @@ describe('browser RTC capture construction', () => {
         expect(capture.diagnostics).toBeUndefined();
         expect(capture.receipt.application).toEqual({ status: 'unavailable', reason: 'sink-unavailable' });
         expect(capture.receipt.connectionId).toEqual({ status: 'unavailable', reason: 'identity-source-failed' });
+    });
+});
+
+it('distinguishes a failed native scope initialization in every serialized receipt field', () => {
+    onTestFinished(() => {
+        vi.restoreAllMocks();
+    });
+    vi.spyOn(RtcNativeObservationScope, 'create').mockReturnValue({ status: 'unavailable', reason: 'initialization-failed' });
+    const capture = createBrowserRtcCapture({
+        configuration: { mode: 'native', origin: 'step' },
+        connectionId: { status: 'observed', value: 'connection' },
+        record: () => {},
+        nowEpochMs: () => 1
+    });
+    expect(JSON.parse(JSON.stringify(capture.receipt))).toMatchObject({
+        application: { status: 'unavailable', reason: 'initialization-failed' },
+        nativeScopeId: { status: 'unavailable', reason: 'initialization-failed' },
+        nativeAvailability: { status: 'unavailable', reason: 'initialization-failed' },
+        nativeCoverage: 'unavailable'
     });
 });

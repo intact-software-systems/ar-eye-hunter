@@ -109,7 +109,7 @@ describe('browser RTC runtime composition', () => {
             const initialized = await initializing;
             expect(initialized.rtcCaptureReceipt).toMatchObject({
                 configuration: { mode, origin: 'step' },
-                application: mode === 'native' ? { status: 'unavailable', reason: 'unsupported' } : { status: 'applied', mode },
+                application: { status: 'applied', mode },
                 connectionId: { status: 'observed', value: 'connection-inbound' }
             });
             const service = initialized.webRtcConnectionService;
@@ -123,7 +123,7 @@ describe('browser RTC runtime composition', () => {
                     outcome: 'retry'
                 }))
             );
-            if (mode === 'signaling') {
+            if (mode !== 'off') {
                 expect(signalingEvents).toContainEqual(expect.objectContaining({ kind: 'service-signal-route', disposition: 'policy-retry' }));
             }
             else {
@@ -173,6 +173,30 @@ describe('browser RTC runtime composition', () => {
                 }
             }
         }
+    });
+
+    it('disposes only diagnostic scope when the original signaling connection rejects', async () => {
+        const events: RtcSignalingDiagnostics.Event[] = [];
+        const failure = new Error('private-connect-failure');
+        const socket = new JsonWebSocketClient('ws://rtc-fixture.invalid', createPassThroughTransportFaultPort());
+        vi.spyOn(socket, 'connect').mockRejectedValue(failure);
+        const queueBox = createDefaultWsQueueBoxClientService({ outbox: new InMemoryQueueBox(), socket, sessionId: 'self', serverPeerId: 'server' });
+        onTestFinished(() => queueBox.close());
+        await expect(initialiseRtcConnectionService({
+            webSocketQueueBox: queueBox,
+            qboxEngine: new InboxOutboxEngine(),
+            clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
+            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc',
+            faultPort: diagnosticsPorts.transportFaultPort,
+            signalingDiagnostics: (event) => events.push(event),
+            rtcCaptureConfiguration: { mode: 'native', origin: 'step' },
+            connectionId: { status: 'observed', value: 'connection-failure' }
+        })).rejects.toBe(failure);
+        expect(events).toContainEqual(
+            expect.objectContaining({ kind: 'native-observation-status', stage: 'disposed', capture: expect.objectContaining({ scope: 'disposed' }) })
+        );
     });
 
     it('supersedes retained RTC work with the configured conformance policy before native submission', async () => {

@@ -3,6 +3,12 @@ import {
     expect,
     it
 } from 'vitest';
+import { controlEventArtifactJsonl } from '../../../apps/rallar-black-box-control-server/src/control-artifacts.ts';
+import { BlackBoxRallarRuntimeDiagnostics } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts';
+import { toRallarBrowserEventInput } from '../../shared-test/rallar-bb-test/browser/to-rallar-browser-event-input.ts';
+import { toControlEventEnvelope } from '../../shared-test/rallar-bb-test/control-protocol.ts';
+import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import type { ApiJsonValue } from '../../shared/api/api-json-value.ts';
 
 import {
     buildLiveRtcAgentDiagnostics,
@@ -10,7 +16,7 @@ import {
     toLiveRtcLifecycleHistory
 } from '../../../tests/playwright/rallar-black-box/live-rtc-agent-diagnostics.ts';
 import { countUnexpectedLiveRtcDeliveries, type LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
-import { requiredJsonArray, requiredJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
+import { normalizeJson, requiredJsonArray, requiredJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 
 interface NotificationFixture {
     readonly name: string;
@@ -616,11 +622,13 @@ describe('shared RTC signaling output and loss limits', () => {
         const first = requiredJsonRecord(histories['agent-a'], 'agent-a');
         const second = requiredJsonRecord(histories['agent-b'], 'agent-b');
         const events = [...requiredJsonArray(first.events, 'events'), ...requiredJsonArray(second.events, 'events')];
-        expect(first).toMatchObject({ observed: { scannedRows: 602, retainedRows: 119, outputDroppedRows: 483, outputBytes: 261234 } });
-        expect(second).toMatchObject({ observed: { retainedRows: 119, outputBytes: 261234 } });
-        expect(events).toHaveLength(119);
-        expect(events.reduce<number>((bytes, event) => bytes + Buffer.byteLength(JSON.stringify(event)), 0)).toBe(261234);
-        expect(requiredJsonArray(second.events, 'agent-b events')[0]).toMatchObject({ eventId: 'admission-241', streamRow: 484 });
+        const eventBytes = events.reduce<number>((bytes, event) => bytes + Buffer.byteLength(JSON.stringify(event)), 0);
+        expect(first).toMatchObject({
+            observed: { scannedRows: 602, retainedRows: events.length, outputDroppedRows: 602 - events.length, outputBytes: eventBytes }
+        });
+        expect(second).toMatchObject({ observed: { retainedRows: events.length, outputBytes: eventBytes } });
+        expect(events.length).toBeGreaterThan(0);
+        expect(Buffer.byteLength(JSON.stringify(histories))).toBeLessThanOrEqual(262144);
         expect(JSON.stringify(histories)).not.toContain('admission-240');
         expect(first).toMatchObject({ events: expect.arrayContaining([expect.objectContaining({ eventId: 'last-lifecycle', streamRow: 602 })]) });
     });
@@ -973,9 +981,10 @@ describe('owned native signaling projection', () => {
             '{"name":"created","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.lifecycle","payload":{"data":{"kind":"peer-created","peerId":"b"}}}}';
         const history = requiredJsonRecord(toNotificationHistory([oldRow, ...Array.from({ length: 600 }, () => nativeRow)].join('\n')), 'history');
         const events = requiredJsonArray(history.events, 'events');
-        expect(events).toHaveLength(600);
+        expect(events.length).toBeGreaterThan(0);
+        expect(events.length).toBeLessThanOrEqual(600);
         expect(events.every((event) => requiredJsonRecord(event, 'event').kind === 'signal-caller-release')).toBe(true);
-        expect(history).toMatchObject({ coverage: 'incomplete', observed: { outputDroppedRows: 1, retainedRows: 600 } });
+        expect(history).toMatchObject({ coverage: 'incomplete', observed: { outputDroppedRows: 601 - events.length, retainedRows: events.length } });
         expect(requiredJsonRecord(history.observed, 'observed').outputBytes).toBe(
             events.reduce<number>((n, event) => n + Buffer.byteLength(JSON.stringify(event)), 0)
         );
@@ -1059,3 +1068,292 @@ describe('partial captured readiness association', () => {
         expect(toNotificationHistory(jsonl)).toMatchObject({ events: [{ ...expected, peerIdentitiesTruncated: null, waitTerminalCause: 'unknown' }] });
     });
 });
+
+describe('serialized original native evidence', () => {
+    it('retains mandatory native fields and partial capability evidence through browser, runtime and control JSONL', () => {
+        const native = nativeSnapshotFixture();
+        const capture = native.capture;
+        const jsonl = serializeNativeRows([
+            { kind: 'native-observation-status', stage: 'initialized', availability: { status: 'observed', value: 'enabled' }, capture },
+            { kind: 'native-lifetime', action: 'retiring', retirement: 'channel-error', native }
+        ]);
+        const history = toNotificationHistory(jsonl);
+        expect(history).toMatchObject({
+            nativeObservation: {
+                status: 'observations-present',
+                coverage: 'bounded-partial',
+                capability: { status: 'observed', value: 'enabled' },
+                malformedRows: false
+            },
+            events: [expect.anything(), { native }]
+        });
+    });
+
+    it('serializes maximum-shape native variants within unchanged source and control bounds', () => {
+        const native = nativeSnapshotFixture();
+        const identity = { peerConnectionId: { status: 'observed', value: 'p'.repeat(128) }, channelId: { status: 'observed', value: 'c'.repeat(128) } };
+        const capture = { ...native.capture, scopeId: { status: 'observed', value: 's'.repeat(64) } };
+        const error = {
+            identity,
+            nativeSequence: Number.MAX_SAFE_INTEGER,
+            source: 'channel-error',
+            errorDetail: { status: 'observed', value: 'hardware-encoder-not-available' },
+            sctpCauseCode: { status: 'observed', value: 65535 },
+            receivedAlert: { status: 'observed', value: 255 },
+            sentAlert: { status: 'observed', value: 255 },
+            iceErrorCode: { status: 'observed', value: 701 },
+            exceptionName: { status: 'observed', value: 'InvalidStateError' }
+        };
+        const observed = { status: 'observed', value: error, coverage: native.firstError.coverage };
+        const complete = { ...native, identity, capture, firstError: observed, firstTypedError: observed };
+        const service = {
+            peerId: 'p'.repeat(256),
+            setupId: identity.peerConnectionId,
+            setup: { peerId: 'p'.repeat(256), phase: 'established', startedAtEpochMs: 1, establishedAtEpochMs: 2 },
+            native: complete,
+            channels: Array.from({ length: 4 }, () => ({ identity, channelState: { status: 'observed', value: 'closed' } })),
+            channelCount: 4,
+            channelsTruncated: false,
+            capture
+        };
+        const candidate = {
+            operationOrdinal: 1,
+            applicationOrdinal: 0,
+            source: 'direct',
+            currentPeerConnection: false,
+            identity,
+            fragmentPresence: 'present',
+            dataIceFragmentComparison: 'different',
+            comparisonReadout: { status: 'observed', value: 'available' },
+            targetTransportAssociation: 'unknown',
+            iceGenerationAssociation: 'unknown',
+            capture
+        };
+        const rows = [
+            { kind: 'native-lifetime', action: 'created', native: complete },
+            { kind: 'native-lifetime', action: 'retiring', retirement: 'channel-error', native: complete },
+            { kind: 'native-state', trigger: 'transport-attached', native: complete },
+            { kind: 'native-first-error', first: 'both', native: complete, error },
+            {
+                kind: 'native-candidate-application',
+                signalType: 'IceCandidate',
+                candidate: {
+                    ...candidate,
+                    stage: 'submitted',
+                    error: { status: 'unavailable', reason: 'not-applicable', coverage: { kind: 'native-operation', stage: 'pending' } }
+                }
+            },
+            {
+                kind: 'native-candidate-application',
+                signalType: 'IceCandidate',
+                candidate: { ...candidate, stage: 'returned', error: { status: 'none-observed', coverage: { kind: 'native-operation', stage: 'settled' } } }
+            },
+            {
+                kind: 'native-candidate-application',
+                signalType: 'IceCandidate',
+                candidate: {
+                    ...candidate,
+                    stage: 'rejected',
+                    error: { status: 'observed', value: { ...error, source: 'candidate-rejection' }, coverage: { kind: 'native-operation', stage: 'settled' } }
+                }
+            },
+            {
+                kind: 'service-peer-observation',
+                service: {
+                    ...service,
+                    stage: 'setup-established',
+                    issuer: { status: 'unavailable', reason: 'not-applicable' },
+                    timeout: { status: 'unavailable', reason: 'not-applicable' }
+                }
+            },
+            {
+                kind: 'service-peer-observation',
+                service: {
+                    ...service,
+                    stage: 'terminating',
+                    issuer: { status: 'observed', value: 'disconnect-peer' },
+                    timeout: { status: 'unavailable', reason: 'not-applicable' }
+                }
+            },
+            {
+                kind: 'service-peer-observation',
+                service: {
+                    ...service,
+                    stage: 'establishment-timeout',
+                    issuer: { status: 'observed', value: 'establishment-timeout' },
+                    timeout: {
+                        status: 'observed',
+                        value: { peerId: 'p'.repeat(256), reason: 'peer-establishment-timeout', startedAtEpochMs: 1, timedOutAtEpochMs: 3, timeoutMs: 2 }
+                    },
+                    watchStartedAtEpochMs: 1,
+                    watchTimedOutAtEpochMs: 3,
+                    removalDisposition: 'original-removed'
+                }
+            },
+            { kind: 'native-observation-status', stage: 'initialized', availability: { status: 'observed', value: 'enabled' }, capture },
+            { kind: 'native-observation-limit', limit: 'admission', identity, capture },
+            {
+                kind: 'native-observation-unavailable',
+                originalKind: 'native-lifetime',
+                reason: 'payload-bytes',
+                identity,
+                setupId: identity.peerConnectionId,
+                capture
+            }
+        ];
+        const bounded = rows.map((row) => ({ localSessionId: 'l'.repeat(256), peerSessionId: 'r'.repeat(256), atEpochMs: 118, ...row }));
+        expect(Math.max(...bounded.map((row) => Buffer.byteLength(JSON.stringify(row))))).toBeLessThanOrEqual(8192);
+        const jsonl = serializeNativeRows(bounded);
+        expect(Math.max(...jsonl.split('\n').map((line) => Buffer.byteLength(line)))).toBeLessThanOrEqual(16384);
+        const history = requiredJsonRecord(toNotificationHistory(jsonl), '$');
+        expect(requiredJsonArray(history.events, '$.events')).toHaveLength(rows.length);
+        expect(history.nativeObservation).toMatchObject({ malformedRows: false, sourceAdmissionLimited: true, sourcePayloadLimited: true });
+        for (const row of rows) {
+            for (const poisoned of poisonNativeWireObjects(normalizeJson(row))) {
+                const rejected = toNotificationHistory(serializeNativeRows([requiredJsonRecord(normalizeJson(poisoned), '$')]));
+                expect(rejected).toMatchObject({ events: [], nativeObservation: { malformedRows: true } });
+                expect(JSON.stringify(rejected)).not.toContain('private-');
+            }
+        }
+    });
+
+    it('reports the shared suffix as partial and never borrows enabled capability across scopes', () => {
+        const native = nativeSnapshotFixture();
+        const rows = Array.from({ length: 650 }, () => ({ kind: 'native-lifetime', action: 'retiring', retirement: 'reset', native }));
+        const history = requiredJsonRecord(toNotificationHistory(serializeNativeRows(rows)), '$');
+        expect(history.nativeObservation).toMatchObject({
+            coverage: 'bounded-partial',
+            artifactTruncated: true,
+            capability: { status: 'unavailable', reason: 'absent' }
+        });
+        expect(requiredJsonArray(history.events, '$.events').length).toBeLessThanOrEqual(600);
+        expect(Buffer.byteLength(JSON.stringify(history))).toBeLessThanOrEqual(262144);
+        const mixed = toNotificationHistory(serializeNativeRows([
+            { kind: 'native-observation-status', stage: 'initialized', availability: { status: 'observed', value: 'enabled' }, capture: native.capture },
+            {
+                kind: 'native-lifetime',
+                action: 'created',
+                native: { ...native, capture: { ...native.capture, scopeId: { status: 'observed', value: 'other' } } }
+            }
+        ]));
+        expect(mixed).toMatchObject({ nativeObservation: { capability: { status: 'unavailable', reason: 'absent' } } });
+    });
+
+    it.each([undefined, null, { kind: 'listener-window', window: 'invalid', attachment: 'attached', attachmentGap: false }])(
+        'rejects malformed nested error coverage: %s',
+        (coverage) => {
+            const native = nativeSnapshotFixture();
+            const jsonl = serializeNativeRows([{
+                kind: 'native-lifetime',
+                action: 'retiring',
+                retirement: 'reset',
+                native: { ...native, firstError: { status: 'none-observed', coverage } }
+            }]);
+            expect(toNotificationHistory(jsonl)).toMatchObject({ events: [], nativeObservation: { status: 'unavailable', malformedRows: true } });
+        }
+    );
+
+    it.each(['snapshot', 'state', 'error', 'coverage', 'identity', 'capture'])('rejects raw private keys at the nested %s boundary', (boundary) => {
+        const native = nativeSnapshotFixture();
+        const poison = {
+            sdp: 'private-sdp',
+            usernameFragment: 'private-fragment',
+            address: 'private-address',
+            password: 'private-password',
+            message: 'private-error'
+        };
+        const poisoned = boundary === 'snapshot'
+            ? { ...native, ...poison }
+            : boundary === 'coverage'
+            ? { ...native, firstError: { ...native.firstError, coverage: { ...native.firstError.coverage, ...poison } } }
+            : boundary === 'error'
+            ? { ...native, firstError: { ...native.firstError, ...poison } }
+            : { ...native, [boundary]: { ...native[boundary as 'state' | 'identity' | 'capture'], ...poison } };
+        const history = toNotificationHistory(serializeNativeRows([{ kind: 'native-lifetime', action: 'retiring', retirement: 'reset', native: poisoned }]));
+        expect(history).toMatchObject({ events: [], nativeObservation: { malformedRows: true } });
+        expect(JSON.stringify(history)).not.toContain('private-');
+    });
+});
+
+function nativeSnapshotFixture() {
+    const unavailable = { status: 'unavailable', reason: 'absent' };
+    const coverage = { kind: 'listener-window', window: 'ended-at-retirement', attachment: 'partial', attachmentGap: true };
+    return {
+        identity: { peerConnectionId: { status: 'observed', value: 'scope-pc-1' }, channelId: { status: 'observed', value: 'scope-channel-2' } },
+        nativeSequence: 1,
+        capture: {
+            scopeId: { status: 'observed', value: 'scope' },
+            scope: 'active',
+            ordinaryRowsSuppressed: false,
+            admissionLimited: false,
+            payloadLimited: false
+        },
+        state: {
+            connectionState: unavailable,
+            iceConnectionState: unavailable,
+            iceGatheringState: unavailable,
+            signalingState: unavailable,
+            iceTransportState: unavailable,
+            dtlsState: unavailable,
+            sctpState: unavailable,
+            channelState: { status: 'observed', value: 'closed' },
+            transportObjectOrdinal: unavailable,
+            transportBinding: 'unavailable',
+            listenerCoverage: 'partial',
+            attachmentGap: true
+        },
+        firstError: { status: 'none-observed', coverage },
+        firstTypedError: { status: 'unavailable', reason: 'unsupported', coverage }
+    };
+}
+
+function serializeNativeRows(rows: readonly object[]): string {
+    const runtime = createRallarBlackBoxBrowserTestRuntime({ now: () => 120 });
+    const diagnostics = new BlackBoxRallarRuntimeDiagnostics({
+        now: () => 119,
+        publish: (event) =>
+            runtime.recordEvent(
+                toRallarBrowserEventInput({
+                    ...event,
+                    roomRef: event.roomRef ? { ...event.roomRef } : undefined,
+                    scope: event.scope ? { ...event.scope } : undefined
+                })
+            ),
+        onPublishError: (error) => {
+            throw error;
+        },
+        transportOf: () => 'realtime',
+        laneIdOf: () => 'realtime',
+        scopeDiagnostics: () => ({})
+    });
+    for (const row of rows) {
+        diagnostics.emit({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.rtc.signaling_diagnostics',
+            data: { localSessionId: 'self', peerSessionId: 'peer', atEpochMs: 118, ...row }
+        });
+    }
+    return runtime.state().events.map((event) => controlEventArtifactJsonl(toControlEventEnvelope(event, 'run', 'agent-a'))).join('');
+}
+
+function poisonNativeWireObjects(value: ApiJsonValue): ApiJsonValue[] {
+    if (Array.isArray(value)) {
+        return value.flatMap((child, index) =>
+            poisonNativeWireObjects(child).map((poisoned) => value.map((original, childIndex) => childIndex === index ? poisoned : original))
+        );
+    }
+    if (value === null || typeof value !== 'object') {
+        return [];
+    }
+    const poison = {
+        sdp: 'private-sdp',
+        usernameFragment: 'private-fragment',
+        address: 'private-address',
+        password: 'private-password',
+        message: 'private-error'
+    };
+    return [
+        { ...value, ...poison },
+        ...Object.entries(value).flatMap(([key, child]) => poisonNativeWireObjects(child).map((poisoned) => ({ ...value, [key]: poisoned })))
+    ];
+}

@@ -297,6 +297,21 @@ This proves only fragment equality to the observed data ICE transport at that in
 | Multiple/non-data transport  | No enumeration of transceivers or media credentials. Only the data SCTP chain is observed. Even equal fragments never establish media-section/transport binding. No SCTP chain means association unavailable.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Retired/replacement PC       | Pending operations retain original identity. Late settlement uses `currentPeerConnection: false`, never replacement parameters/state. If the captured old transport is unavailable/closed, record that. Existing queued-drain behavior continues unchanged against the PC already supplied to the drain; no new cancellation/retry is introduced.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
+Queue rejection sanitization can itself invoke a native error getter that reenters
+retirement. `FlushRtcIceCandidateQueueInput` therefore permits one optional
+`readCandidateError(caught: unknown): RtcSignalingDiagnostics.NativeErrorFacts` at
+this internal translation boundary. The peer supplies a synchronous closure around
+the exact captured original binding's error-read marker and the canonical finite
+translator, restoring that binding's prior marker in `finally`. The drain uses the
+same canonical translator when no owned reader is supplied. A diagnostic reader
+failure yields complete unavailable/read-failed facts without rereading the caught
+value through a fallback. The rejected observation remains sanitized; the drain's
+FIFO, warning, continuation and successful counters remain authoritative. Without
+an observation callback, no diagnostic error read runs. No marker spans a native
+await, no replacement is looked up, and no paired lifecycle hooks, raw error payload,
+retained error or global capture lock is added. Actual-owner getter-reentry and
+throwing-reader tests preserve subsequent native additions and serialized coverage.
+
 Browser support is an observed availability result, never an assumption from DOM typings. Runtime availability and first-stall capture remain unmeasured.
 
 ## Construction, invocation, retirement and publication
@@ -310,6 +325,41 @@ Bind exact `pc.sctp -> transport -> iceTransport` at creation, description settl
 Native callbacks freeze captured finite state, local sequence and first-error decisions before the sink. Changed state emits ordinary rows; duplicates do not. Capture first generic and first typed errors at most once each per exact object even after ordinary rows are exhausted, because final snapshots need them. Once both are retained, repeated errors add no diagnostic history. No callback polls, parses SDP, walks peer registries or calls getStats.
 
 On reset, freeze original pre-close state with error coverage ending at this retirement; mark the token retired; detach observers from exact PC/transports before deliberate close; perform existing status swap, abort, timer/handler cleanup and native close; publish the final snapshot after synchronous effects. A stale callback checks its exact retired binding and cannot mutate replacement summaries or reattach. Pending native promises may publish ordinary late outcomes with currentPeerConnection false while their scope remains active and ordinary quota remains. Disposal suppresses them with no replacement join. Keep only current owned state/first errors and immutable captures retained by existing operations; no native-object history map.
+
+A native getter can itself synchronously reenter reset/removal before a snapshot is
+complete. The original owner uses an in-progress marker tied to that exact native
+observation binding. Reentrant retirement still performs business teardown normally;
+its complete required snapshot reports native-state reads unavailable/read-failed
+instead of assembling values across teardown. Already sealed finite first-error
+summaries retain truthful ended-window coverage. An in-flight or incomplete error
+read is unavailable/read-failed, never none-observed. If its binding retired, the
+outer capture is discarded without reading or mutating a replacement. Marker cleanup
+belongs only to the attempted binding and cannot clear or disable a newer binding's
+capture. No business action is deferred, no rollback/retry/polling is added, and no
+global capture lock suppresses a replacement. Semantic tests exercise getter-triggered
+retirement and replacement through the actual owner, preserve business effects, and
+serialize every required field with the truthful unavailable outcomes. A complete
+DTO does not promise that every native value was observed before an arbitrary getter
+reentered teardown.
+
+Channel snapshots that read parent PC/transport getters use a narrow synchronous
+read operation owned by the original peer, with the canonical complete snapshot
+input. The channel owns its channel marker; the peer owns and restores the supplied
+original parent binding's marker in `finally`. Already active capture or retirement
+yields unavailable/read-failed state, and retirement during the read invalidates its
+outer state. No channel writes its parent's marker, no cleanup touches a replacement,
+and existing channel/error-window and business teardown semantics remain authoritative.
+
+Service snapshots freeze original entry/setup/native-PC identity and bounded native
+channel handles/count before native getter reads. Capture the original peer snapshot
+first; subsequent compact reads must match both the original PC and native channel,
+including a channel replacement on the same PC. Scan/count the owned collection
+before those reads, retaining only the existing four compact-channel handles. Missing
+or retired compacts retain truthful count/truncation and unavailable semantics. No
+live collection iteration after getter effects, replacement join, unbounded handle
+copy, history registry or new capture owner is added. Actual-owner reentry tests
+preserve original serialized identities and unavailable coverage while business
+reset/replacement/deletion complete.
 
 ### Channel family and ended error windows
 
@@ -334,6 +384,8 @@ Service setup/timeout epochs, watch scheduling/firing epochs, publication epoch,
 ### Sink/app reentry and failure containment
 
 Freeze/copy detached finite DTOs and first-error choices before any clock/sink. Consume the row's local quota/token before attempting publication. Reentrant clock/sink cannot spend the same reservation twice. All new emissions occur outside the business decision-to-action transaction, including completion of existing awaited business notification sequences when publication could otherwise perturb remaining callbacks; nested setup/release observations are flushed only when the topmost existing owner operation has completed its synchronous business effects and captured required original records. This finite per-operation batch is capped by admitted lifetimes/ordinary rows and discarded after publication; it does not retain ongoing history. Where existing signal observations already precede native actions, preserve existing captured-object guards and add no new allocation effect or await.
+
+Publication batches belong to their captured operation and native lifetime. Membership uses the exact captured native binding or object, never an exported diagnostic identity readout. Restore the exact preceding synchronous capture context before awaiting an existing native operation or application callback; pass the exact batch through the owner's required asynchronous continuations. An unresolved obsolete operation must not hold reset, retirement or independent replacement observations. Service nesting retains exact peer/batch handles only for its synchronous business transaction. Arbitrary application work after its own await uses its own existing owner boundary; no implicit asynchronous context is introduced. Late completion or disposal can drain or discard only that operation's batch, never a replacement's context. Preserve the channel's own error/close notification completion and add no diagnostic await, scheduler or retry.
 
 After any external app/sink continuation, use the captured token/object solely for its own observation; never restore it as current or write into a replacement. A sink can explicitly reset/reconnect through application calls; those effects remain normal application reentry, not extra permission to continue old setup against a new object. Instrumentation catches surround only capture/translation/publication, not business operations. Disabled capture does not allocate tokens, attach extra listeners or read extra properties. The record helper already isolates throwing clocks/sinks. Failed attempts consume their slot, are not retried, and do not count as native failure. Local first-error memory survives until retirement and may appear in a later row. No successful-delivery acknowledgement or guaranteed self-report through a throwing sink is claimed.
 

@@ -245,30 +245,36 @@ export async function initialiseMiddleware(
         rtcSignalingTopicId,
         webSocketTransport
     });
-    const bootstrapDegree = resolveBootstrapDegree({
-        bootstrapDegree: options.bootstrapDegree,
-        maxPeerConnections: options.maxPeerConnections
-    });
-    await initialiseBrowserStateTransport({
-        ...transportInput,
-        webSocketQueueBox: webSocketTransport.webSocketQueueBox,
-        webRtcGroupManager: rtcTransport.webRtcGroupManager,
-        bootstrapDegree
-    });
-    const heartbeatHandle = await heartbeat.initHeartbeat(transportInput.clientData, {
-        authSession: session,
-        scope: options.scope,
-        onAuthInvalid: options.onAuthInvalid
-            ? (caught) => options.onAuthInvalid?.(toError(caught))
-            : undefined
-    });
+    try {
+        const bootstrapDegree = resolveBootstrapDegree({
+            bootstrapDegree: options.bootstrapDegree,
+            maxPeerConnections: options.maxPeerConnections
+        });
+        await initialiseBrowserStateTransport({
+            ...transportInput,
+            webSocketQueueBox: webSocketTransport.webSocketQueueBox,
+            webRtcGroupManager: rtcTransport.webRtcGroupManager,
+            bootstrapDegree
+        });
+        const heartbeatHandle = await heartbeat.initHeartbeat(transportInput.clientData, {
+            authSession: session,
+            scope: options.scope,
+            onAuthInvalid: options.onAuthInvalid
+                ? (caught) => options.onAuthInvalid?.(toError(caught))
+                : undefined
+        });
 
-    const { checkpointStores } = transportInput;
-    return {
-        rtcCaptureReceipt: rtcTransport.rtcCaptureReceipt,
-        middleware: { ...webSocketTransport, ...rtcTransport, heartbeat: heartbeatHandle, storageAvailability },
-        checkpoints: [checkpointStores.wsClient.checkpoint, checkpointStores.rtcOverlay.checkpoint]
-    };
+        const { checkpointStores } = transportInput;
+        return {
+            rtcCaptureReceipt: rtcTransport.rtcCaptureReceipt,
+            middleware: { ...webSocketTransport, ...rtcTransport, heartbeat: heartbeatHandle, storageAvailability },
+            checkpoints: [checkpointStores.wsClient.checkpoint, checkpointStores.rtcOverlay.checkpoint]
+        };
+    }
+    catch (caught) {
+        rtcTransport.webRtcConnectionService.disposeNativeObservations();
+        throw caught;
+    }
 }
 
 export function createBrowserTransportInput(
@@ -404,38 +410,44 @@ async function initialiseBrowserRtcTransport(
         input,
         iceCandidates
     );
-    const webRtcOverlayMulticastManager = rtcEngine.initialiseRtcOverlayMulticastManager(
-        toRtcOverlayMulticastManagerInput(input, {
+    try {
+        const webRtcOverlayMulticastManager = rtcEngine.initialiseRtcOverlayMulticastManager(
+            toRtcOverlayMulticastManagerInput(input, {
+                webRtcConnectionService,
+                qboxEngine: input.webSocketTransport.qboxEngine
+            })
+        );
+        const rtcRxStreamer = rtcEngine.initialiseRtcRxStreamer(
+            {
+                webRtcOverlayMulticastManager,
+                qboxEngine: input.webSocketTransport.qboxEngine,
+                clientData: input.clientData,
+                inboundStores: input.inboundStores,
+                inboundVolatileStores: input.inboundVolatileStores,
+                durableWorkOwnership: input.options.durableWorkOwnership,
+                roomAuthorityRefresh: createBrowserRtcGroupSnapshotRefresh(input),
+                inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics
+            }
+        );
+        registerBrowserRttEgress(input, rtcRxStreamer);
+        registerBrowserRtcPeerStreaming(webRtcConnectionService, rtcRxStreamer);
+        const webRtcGroupManager = createBrowserRtcGroupManager(
+            input,
             webRtcConnectionService,
-            qboxEngine: input.webSocketTransport.qboxEngine
-        })
-    );
-    const rtcRxStreamer = rtcEngine.initialiseRtcRxStreamer(
-        {
-            webRtcOverlayMulticastManager,
-            qboxEngine: input.webSocketTransport.qboxEngine,
-            clientData: input.clientData,
-            inboundStores: input.inboundStores,
-            inboundVolatileStores: input.inboundVolatileStores,
-            durableWorkOwnership: input.options.durableWorkOwnership,
-            roomAuthorityRefresh: createBrowserRtcGroupSnapshotRefresh(input),
-            inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics
-        }
-    );
-    registerBrowserRttEgress(input, rtcRxStreamer);
-    registerBrowserRtcPeerStreaming(webRtcConnectionService, rtcRxStreamer);
-    const webRtcGroupManager = createBrowserRtcGroupManager(
-        input,
-        webRtcConnectionService,
-        rtcRxStreamer
-    );
-    return {
-        rtcCaptureReceipt,
-        webRtcConnectionService,
-        rtcRxStreamer,
-        webRtcGroupManager,
-        webRtcOverlayMulticastManager
-    };
+            rtcRxStreamer
+        );
+        return {
+            rtcCaptureReceipt,
+            webRtcConnectionService,
+            rtcRxStreamer,
+            webRtcGroupManager,
+            webRtcOverlayMulticastManager
+        };
+    }
+    catch (caught) {
+        webRtcConnectionService.disposeNativeObservations();
+        throw caught;
+    }
 }
 
 export function toRtcOverlayMulticastManagerInput(

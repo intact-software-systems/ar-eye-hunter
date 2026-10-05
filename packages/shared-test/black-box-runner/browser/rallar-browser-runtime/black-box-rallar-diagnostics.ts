@@ -9,6 +9,7 @@ import type {
 import type { BlackBoxRallarScopeDiagnostics } from './black-box-rallar-operation-policy.ts';
 import { toBlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
 import type { BlackBoxBrowserDiagnosticsDependency } from './browser-rallar-runtime-composition.ts';
+import { toRtcNativeObservationProjection } from './rtc-native-observation-projection.ts';
 
 interface ConsoleWarning {
     readonly topic: string;
@@ -131,12 +132,17 @@ export function createBlackBoxRallarDiagnosticsPorts(
                 topic: 'rallar.browser.alm.inbound_diagnostics',
                 data: { ...event }
             }),
-        signalingDiagnostics: (event) =>
+        signalingDiagnostics: (event) => {
+            const native = toRtcNativeObservationProjection(event);
+            if (native.recognized && !native.event) {
+                return;
+            }
             diagnostics.emit({
                 kind: 'diagnostic',
                 topic: 'rallar.browser.rtc.signaling_diagnostics',
-                data: { ...event }
-            }),
+                data: native.event ?? { ...event }
+            });
+        },
         storage: (event) =>
             event.kind === 'reset'
                 ? diagnostics.emit({

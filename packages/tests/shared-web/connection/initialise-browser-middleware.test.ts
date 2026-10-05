@@ -1,3 +1,13 @@
+import * as connectionHttp from '@shared-web/browser/connection/connection-http-api.ts';
+import { createBrowserRtcCapture } from '@shared-web/browser/rtc/create-browser-rtc-capture.ts';
+import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
+import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import * as stateSnapshots from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
+import * as websocketFactory from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
+import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
+import '../../setup-browser-indexeddb.ts';
 import {
     describe,
     expect,
@@ -12,6 +22,7 @@ import { BrowserALSessionChannel } from '@shared-web/browser/al-runtime/browser-
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import {
     createBrowserTransportInput,
+    initialiseMiddleware,
     toBrowserWebSocketQueueBoxInput,
     toRtcOverlayMulticastManagerInput,
     type BrowserConnectOptions
@@ -52,6 +63,53 @@ const OPTIONS: BrowserConnectOptions = {
         })
     })
 };
+
+describe('native observation handoff cleanup', () => {
+    it.each(['rtc-transport', 'middleware'] as const)('disposes the original diagnostic scope on %s handoff failure', async (boundary) => {
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
+        const events: RtcSignalingDiagnostics.Event[] = [];
+        const capture = createBrowserRtcCapture({
+            configuration: { mode: 'native', origin: 'step' },
+            connectionId: { status: 'observed', value: 'handoff' },
+            record: (event) => events.push(event),
+            nowEpochMs: () => 1
+        });
+        const service = new WebRtcConnectionService({ connect: async () => {}, send: async () => {} }, {
+            sessionId: SESSION.sessionId,
+            token: 'test',
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc',
+            iceCandidates: { iceServers: [], expiresAtEpochMs: 1000 }
+        }, { nowEpochMs: () => 1, createOfferId: () => 'offer', faultPort: createPassThroughTransportFaultPort(), signalingDiagnostics: capture.diagnostics });
+        onTestFinished(() => service.disposeNativeObservations());
+        const middleware = createDefaultApiMiddlewareTestDouble({
+            middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } }
+        });
+        const failure = new Error('handoff-failure');
+        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({ apiBaseUrl: 'http://test', wsBaseUrl: 'ws://test', endpoints: { createWs: '/ws' } });
+        vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: 1000 });
+        vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockResolvedValue(middleware.middleware.webSocketQueueBox);
+        vi.spyOn(rtcEngine, 'initialiseRtcConnectionService').mockResolvedValue({ webRtcConnectionService: service, rtcCaptureReceipt: capture.receipt });
+        vi.spyOn(WebRtcGroupManager.prototype, 'startReconcileWakes').mockImplementation(() => {});
+        const overlay = vi.spyOn(rtcEngine, 'initialiseRtcOverlayMulticastManager');
+        if (boundary === 'rtc-transport') {
+            overlay.mockImplementation(() => {
+                throw failure;
+            });
+        }
+        else {
+            overlay.mockReturnValue(middleware.middleware.webRtcOverlayMulticastManager);
+            vi.spyOn(rtcEngine, 'initialiseRtcRxStreamer').mockReturnValue(middleware.middleware.rtcRxStreamer);
+            vi.spyOn(browserStateCacheLifecycle, 'initialise').mockImplementation(() => {});
+            vi.spyOn(stateSnapshots, 'refreshStateSnapshots').mockRejectedValue(failure);
+        }
+        await expect(initialiseMiddleware(SESSION, 'rtc', OPTIONS)).rejects.toBe(failure);
+        expect(events).toContainEqual(expect.objectContaining({ kind: 'native-observation-status', stage: 'disposed' }));
+        expect(capture.diagnostics?.nativeObservation?.status === 'available' && capture.diagnostics.nativeObservation.scope.getActive()).toBe(false);
+    });
+});
 
 describe('browser connection construction identity', () => {
     it('captures a fresh opaque identity independently of the signaling request source', () => {

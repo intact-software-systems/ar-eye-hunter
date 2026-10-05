@@ -21,9 +21,22 @@ import {
     QRtcSignalingTransportCallbacks,
     QRtcSignalingType
 } from '../webrtc/qrtc-signaling-contracts.ts';
-import { recordRtcSignalingObservation, type RtcSignalingDiagnostics } from '../webrtc/rtc-signaling-diagnostics.ts';
+import type { RtcNativeObservationScope } from '../webrtc/rtc-native-observation-scope.ts';
+import { toRtcObserved } from '../webrtc/rtc-native-observation-values.ts';
+import {
+    disposeRtcNativeObservationScope,
+    recordRtcNativeObservation,
+    recordRtcSignalingObservation,
+    type RtcSignalingDiagnostics
+} from '../webrtc/rtc-signaling-diagnostics.ts';
 import { toPeerLaneOpenResultFromError, waitForRtcPeerLane } from '../webrtc/wait-for-rtc-peer-lane.ts';
 import { RtcPeerConnectionAttemptBudget } from './rtc-peer-connection-attempt-budget.ts';
+import {
+    toRtcServiceSetupObservation,
+    toRtcServiceTerminationObservation,
+    toRtcServiceTimeoutObservation,
+    type RtcServiceTimeoutRow
+} from './rtc-service-observation-values.ts';
 
 export const DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY: WebRtcConnectionService.PeerEstablishmentTimeoutPolicy =
     {
@@ -83,6 +96,9 @@ type ComputedPeerConnection = Readonly<
 type UsablePeerConnection = Extract<ComputedPeerConnection, { decision: 'use-peer'; }>;
 
 interface PeerEntry {
+    readonly nativeAdmission: RtcNativeObservationScope.Admission | undefined;
+    timeoutObserved: boolean;
+    terminationObserved: boolean;
     readonly peer: WebRtcConnectionService.Peer;
     /** Replaced exactly once, when the setup first reports established. */
     setup: WebRtcConnectionService.PeerSetup;
@@ -95,6 +111,10 @@ interface PeerCreationAdmission {
 }
 
 export namespace WebRtcConnectionService {
+    export interface NativeChannelHandle {
+        readonly channel: QRtcDataChannel;
+        readonly dc: RTCDataChannel;
+    }
     export interface Peer {
         peerId: PeerId;
         connection: QRtcPeerConnection;
@@ -322,6 +342,9 @@ export namespace WebRtcConnectionService {
 }
 
 export class WebRtcConnectionService {
+    private nativeObservationDepth = 0;
+    private pendingNativeObservations: RtcSignalingDiagnostics.NativeObservation[] = [];
+    private pendingNativePeers = new Map<QRtcPeerConnection, QRtcPeerConnection.NativeObservationBatch>();
     private static readonly PEER_ESTABLISHMENT_CALLBACK_ID = 'web-rtc-connection-service:peer-establishment';
 
     private readonly onRtcPeerLifecycleCallbacks: Map<string, WebRtcConnectionService.PeerLifecycleCallback> =
@@ -392,26 +415,49 @@ export class WebRtcConnectionService {
         peerId: string,
         options: WebRtcConnectionService.RemovePeerOptions = {}
     ): boolean {
-        console.log(`Cleaning up peer: ${peerId}`);
-        const entry = this.peerEntryByPeerId.get(peerId);
-        if (entry === undefined) {
-            console.log(`Peer ${peerId} not found. Ignoring`);
+        return this.removePeer(peerId, options, 'explicit-remove');
+    }
+
+    private removePeer(
+        peerId: string,
+        options: WebRtcConnectionService.RemovePeerOptions,
+        issuer: RtcSignalingDiagnostics.TerminationIssuer
+    ): boolean {
+        this.nativeObservationDepth++;
+        try {
+            console.log(`Cleaning up peer: ${peerId}`);
+            const entry = this.peerEntryByPeerId.get(peerId);
+            if (entry === undefined) {
+                console.log(`Peer ${peerId} not found. Ignoring`);
+                if (options.resetAttemptBudget !== false) {
+                    this.attemptBudget.clear(peerId, 'removal');
+                }
+                return false;
+            }
+
             if (options.resetAttemptBudget !== false) {
                 this.attemptBudget.clear(peerId, 'removal');
             }
+            if (!this.releasePeer(entry, issuer)) {
+                return false;
+            }
+
+            this.notifyPeerLifecycle('onDeleted', (callback) => callback.onDeleted(entry.peer));
+            return true;
+        }
+        finally {
+            this.endNativeObservationBatch();
+        }
+    }
+
+    private releasePeer(entry: PeerEntry, issuer: RtcSignalingDiagnostics.TerminationIssuer): boolean {
+        const peer = entry.peer;
+        const capture = this.captureServiceTermination(entry, issuer);
+        this.deferPeerObservations(peer.connection);
+        if (this.peerEntryByPeerId.get(peer.peerId) !== entry) {
             return false;
         }
 
-        if (options.resetAttemptBudget !== false) {
-            this.attemptBudget.clear(peerId, 'removal');
-        }
-        this.releasePeer(entry.peer);
-
-        this.notifyPeerLifecycle('onDeleted', (callback) => callback.onDeleted(entry.peer));
-        return true;
-    }
-
-    private releasePeer(peer: WebRtcConnectionService.Peer): void {
         this.clearPeerEstablishmentTimeout(peer.peerId);
         this.peerEntryByPeerId.delete(peer.peerId);
         peer.media.reset();
@@ -422,6 +468,10 @@ export class WebRtcConnectionService {
             channel.reset();
         }
         peer.connection.reset();
+        if (capture) {
+            this.pendingNativeObservations.push(capture);
+        }
+        return true;
     }
 
     async connectSignaler(): Promise<WebRtcConnectionService> {
@@ -433,6 +483,16 @@ export class WebRtcConnectionService {
             }
         );
 
+        const scope = this.getNativeScope();
+        if (scope?.consumeStatus('initialized')) {
+            recordRtcNativeObservation(this.dependencies.signalingDiagnostics, {
+                ...this.nativeSignalIdentity(undefined),
+                kind: 'native-observation-status',
+                stage: 'initialized',
+                availability: toRtcObserved('enabled'),
+                capture: scope.getCaptureStatus()
+            });
+        }
         return this;
     }
 
@@ -503,7 +563,7 @@ export class WebRtcConnectionService {
     }
 
     disconnectPeer(peerId: string, options: WebRtcConnectionService.RemovePeerOptions = {}): boolean {
-        return this.removePeerIfPresent(peerId, options);
+        return this.removePeer(peerId, options, 'disconnect-peer');
     }
 
     private toSignalingProtocol(): QRtcSignalingTransportCallbacks {
@@ -707,39 +767,46 @@ export class WebRtcConnectionService {
         peerId: string,
         isInitiator: boolean = !this.isPolite(peerId)
     ): WebRtcConnectionService.PeerConnectionResult {
-        if (peerId === this.input.sessionId) {
-            return Either.ofLeft({
-                kind: 'self',
-                peerId
-            });
-        }
-
-        let computed: ComputedPeerConnection;
+        this.nativeObservationDepth++;
         try {
-            computed = this.createRtcPeerIfAbsent(peerId);
+            if (peerId === this.input.sessionId) {
+                return Either.ofLeft({
+                    kind: 'self',
+                    peerId
+                });
+            }
+
+            let computed: ComputedPeerConnection;
+            try {
+                computed = this.createRtcPeerIfAbsent(peerId);
+            }
+            catch (caught) {
+                return Either.ofLeft({ kind: 'connect-failed', peerId, error: toError(caught), startedSetup: false });
+            }
+            if (computed.decision === 'deny') {
+                return Either.ofLeft({
+                    kind: 'dial-denied',
+                    peerId,
+                    reason: computed.reason
+                });
+            }
+            if (computed.decision === 'connect-exhausted') {
+                return Either.ofLeft({
+                    kind: 'connect-exhausted',
+                    peerId,
+                    event: computed.event,
+                    error: new Error(RTC_CONNECT_ATTEMPT_BUDGET_EXHAUSTED_REASON)
+                });
+            }
+            if (!computed.shouldConnect) {
+                return Either.ofRight({ peer: computed.peer, outcome: computed.outcome });
+            }
+            this.deferPeerObservations(computed.peer.connection);
+            return this.startEnsuredPeerChannels(computed, isInitiator);
         }
-        catch (caught) {
-            return Either.ofLeft({ kind: 'connect-failed', peerId, error: toError(caught), startedSetup: false });
+        finally {
+            this.endNativeObservationBatch();
         }
-        if (computed.decision === 'deny') {
-            return Either.ofLeft({
-                kind: 'dial-denied',
-                peerId,
-                reason: computed.reason
-            });
-        }
-        if (computed.decision === 'connect-exhausted') {
-            return Either.ofLeft({
-                kind: 'connect-exhausted',
-                peerId,
-                event: computed.event,
-                error: new Error(RTC_CONNECT_ATTEMPT_BUDGET_EXHAUSTED_REASON)
-            });
-        }
-        if (!computed.shouldConnect) {
-            return Either.ofRight({ peer: computed.peer, outcome: computed.outcome });
-        }
-        return this.startEnsuredPeerChannels(computed, isInitiator);
     }
 
     private startEnsuredPeerChannels(
@@ -781,7 +848,7 @@ export class WebRtcConnectionService {
             onClosed: async () => {
                 this.clearPeerEstablishmentTimeout(peer.peerId);
                 // Churn must not refund the consumed establishment attempts.
-                this.removePeerIfPresent(peer.peerId, { resetAttemptBudget: false });
+                this.removePeer(peer.peerId, { resetAttemptBudget: false }, 'native-closed');
             },
             onSignalingFailed: (failure) =>
                 this.notifyPeerLifecycle('onSignalingFailed', (listener) => listener.onSignalingFailed?.(peer, failure))
@@ -835,7 +902,7 @@ export class WebRtcConnectionService {
                 result.peer &&
                 this.peerEntryByPeerId.get(result.peer.peerId)?.peer === result.peer
             ) {
-                this.removePeerIfPresent(result.peer.peerId, { resetAttemptBudget: false });
+                this.removePeer(result.peer.peerId, { resetAttemptBudget: false }, 'lane-wait-cleanup');
             }
             return result;
         }
@@ -892,7 +959,7 @@ export class WebRtcConnectionService {
         while (entry && !this.isPeerConnectedOrInProgress(entry.peer)) {
             // A retained DTO does not authorize a replacement native connection.
             // Teardown precedes admission/capacity checks without refunding attempts.
-            this.removePeerIfPresent(peerId, { resetAttemptBudget: false });
+            this.removePeer(peerId, { resetAttemptBudget: false }, 'unusable-peer-replacement');
             // A deletion observer may have created another admitted peer.
             entry = this.peerEntryByPeerId.get(peerId);
         }
@@ -907,10 +974,16 @@ export class WebRtcConnectionService {
 
     private createPeer(peerId: PeerId): WebRtcConnectionService.Peer {
         const peer = this.createPeerHandle(peerId);
-        this.peerEntryByPeerId.set(peerId, {
+        const entry: PeerEntry = {
             peer,
-            setup: { phase: 'in-flight', peerId, startedAtEpochMs: this.dependencies.nowEpochMs() }
-        });
+            setup: Object.freeze({ phase: 'in-flight', peerId, startedAtEpochMs: this.dependencies.nowEpochMs() }),
+            nativeAdmission: this.getNativeScope()?.allocate('setup'),
+            timeoutObserved: false,
+            terminationObserved: false
+        };
+        this.peerEntryByPeerId.set(peerId, entry);
+        this.deferPeerObservations(peer.connection);
+        const started = this.captureServiceSetup(entry, 'setup-started');
         this.registerPeerEstablishmentCallbacks(peer);
         try {
             this.startPeerConnection(peer);
@@ -918,11 +991,14 @@ export class WebRtcConnectionService {
         catch (caught) {
             // A peer whose native start threw was never observable: no creation or
             // deletion notice, while the consumed attempt still counts against the budget.
-            this.releasePeer(peer);
+            this.releasePeer(entry, 'native-start-failure');
             throw caught;
         }
 
         this.notifyPeerLifecycle('onCreated', (callback) => callback.onCreated(peer));
+        if (started) {
+            this.pendingNativeObservations.push(started);
+        }
 
         return peer;
     }
@@ -1026,7 +1102,14 @@ export class WebRtcConnectionService {
             establishedAtEpochMs: this.dependencies.nowEpochMs()
         };
         entry.setup = established;
+        const capture = this.captureServiceSetup(entry, 'setup-established');
+        if (this.peerEntryByPeerId.get(peer.peerId) !== entry) {
+            return;
+        }
         this.notifyPeerLifecycle('onEstablished', (callback) => callback.onEstablished?.(peer, established));
+        if (capture) {
+            this.publishServiceObservation(capture);
+        }
     }
 
     private handlePeerEstablishmentTimeout(
@@ -1050,15 +1133,187 @@ export class WebRtcConnectionService {
             reason: 'peer-establishment-timeout'
         };
 
+        const capture = this.captureServiceTimeout(entry, event, timeoutEvent);
+        if (this.peerEntryByPeerId.get(peer.peerId) !== entry) {
+            if (capture) {
+                this.publishServiceObservation({
+                    ...capture,
+                    service: { ...capture.service, removalDisposition: 'original-no-longer-current' }
+                });
+            }
+            return;
+        }
         console.warn(
             `RTC peer establishment timed out for ${peer.peerId} after ${event.timeoutMs}ms`
         );
 
         this.notifyPeerLifecycle('onConnectTimeout', (callback) => callback.onConnectTimeout?.(peer, event));
 
-        if (this.peerEntryByPeerId.get(peer.peerId)?.peer === peer) {
-            this.removePeerIfPresent(peer.peerId, { resetAttemptBudget: false });
+        const current = this.peerEntryByPeerId.get(peer.peerId)?.peer === peer;
+        if (current) {
+            this.removePeer(peer.peerId, { resetAttemptBudget: false }, 'establishment-timeout');
         }
+        if (capture) {
+            this.publishServiceObservation({
+                ...capture,
+                service: {
+                    ...capture.service,
+                    removalDisposition: current ? 'original-removed' : 'original-no-longer-current'
+                }
+            });
+        }
+    }
+
+    private getNativeScope(): RtcNativeObservationScope | undefined {
+        const capability = this.dependencies.signalingDiagnostics?.nativeObservation;
+        return capability?.status === 'available' ? capability.scope : undefined;
+    }
+
+    private deferPeerObservations(peer: QRtcPeerConnection): void {
+        if (!this.getNativeScope() || this.pendingNativePeers.has(peer)) {
+            return;
+        }
+        this.pendingNativePeers.set(peer, peer.beginNativeObservationBatch());
+    }
+
+    private endNativeObservationBatch(): void {
+        this.nativeObservationDepth = Math.max(0, this.nativeObservationDepth - 1);
+        if (this.nativeObservationDepth !== 0) {
+            return;
+        }
+        const pending = this.pendingNativeObservations;
+        const peers = this.pendingNativePeers;
+        this.pendingNativeObservations = [];
+        this.pendingNativePeers = new Map();
+        for (const [peer, batch] of peers) {
+            peer.endNativeObservationBatch(batch);
+        }
+        for (const observation of pending) {
+            recordRtcNativeObservation(this.dependencies.signalingDiagnostics, observation);
+        }
+    }
+
+    private publishServiceObservation(observation: RtcSignalingDiagnostics.NativeObservation): void {
+        if (this.nativeObservationDepth > 0) {
+            this.pendingNativeObservations.push(Object.freeze(observation));
+        }
+        else {
+            recordRtcNativeObservation(this.dependencies.signalingDiagnostics, Object.freeze(observation));
+        }
+    }
+
+    private captureServiceSnapshot(entry: PeerEntry): RtcSignalingDiagnostics.ServicePeerSnapshot | undefined {
+        const scope = this.getNativeScope();
+        if (!scope || !entry.nativeAdmission?.admitted) {
+            return undefined;
+        }
+        const setup = Object.freeze({ ...entry.setup });
+        const pc = entry.peer.connection.status.pc;
+        const handles: WebRtcConnectionService.NativeChannelHandle[] = [];
+        let channelCount = 0;
+        for (const channel of entry.peer.channels.values()) {
+            const dc = channel.status.dc;
+            if (dc) {
+                channelCount++;
+                if (handles.length < 4) {
+                    handles.push({ channel, dc });
+                }
+            }
+        }
+        const native = entry.peer.connection.readNativeSnapshot();
+        const channels: RtcSignalingDiagnostics.CompactChannel[] = [];
+        for (const handle of handles) {
+            const captured = handle.channel.readNativeChannel(pc, handle.dc);
+            if (captured) {
+                channels.push(captured);
+            }
+        }
+        return Object.freeze({
+            peerId: entry.peer.peerId,
+            setupId: entry.nativeAdmission.id,
+            setup,
+            native,
+            channels: Object.freeze(channels),
+            channelCount,
+            channelsTruncated: channelCount > channels.length,
+            capture: scope.getCaptureStatus()
+        });
+    }
+
+    private captureServiceSetup(
+        entry: PeerEntry,
+        stage: 'setup-started' | 'setup-established'
+    ): RtcSignalingDiagnostics.NativeObservation | undefined {
+        if (!entry.nativeAdmission?.admitted || !this.getNativeScope()?.consumeOrdinary()) {
+            return undefined;
+        }
+        const snapshot = this.captureServiceSnapshot(entry);
+        return snapshot
+            ? toRtcServiceSetupObservation(this.nativeSignalIdentity(entry.peer.peerId), snapshot, stage)
+            : undefined;
+    }
+
+    private captureServiceTermination(
+        entry: PeerEntry,
+        issuer: RtcSignalingDiagnostics.TerminationIssuer
+    ): RtcSignalingDiagnostics.NativeObservation | undefined {
+        if (entry.terminationObserved || !entry.nativeAdmission?.admitted) {
+            return undefined;
+        }
+        const snapshot = this.captureServiceSnapshot(entry);
+        if (entry.terminationObserved || !this.getNativeScope()?.consumeTerminal(entry.nativeAdmission, 'final')) {
+            return undefined;
+        }
+        entry.terminationObserved = true;
+        return snapshot
+            ? toRtcServiceTerminationObservation(this.nativeSignalIdentity(entry.peer.peerId), snapshot, issuer)
+            : undefined;
+    }
+
+    private captureServiceTimeout(
+        entry: PeerEntry,
+        event: WebRtcConnectionService.PeerEstablishmentTimeoutEvent,
+        watch: AsyncCommandTimeoutEvent<PeerId>
+    ): RtcServiceTimeoutRow | undefined {
+        if (
+            entry.timeoutObserved || !entry.nativeAdmission?.admitted ||
+            !this.getNativeScope()?.consumeTerminal(entry.nativeAdmission, 'timeout')
+        ) {
+            return undefined;
+        }
+        entry.timeoutObserved = true;
+        const snapshot = this.captureServiceSnapshot(entry);
+        return snapshot
+            ? toRtcServiceTimeoutObservation({
+                identity: this.nativeSignalIdentity(entry.peer.peerId),
+                snapshot,
+                event,
+                watch
+            })
+            : undefined;
+    }
+
+    private nativeSignalIdentity(peerId: string | undefined): RtcSignalingDiagnostics.SignalIdentity {
+        return {
+            localSessionId: this.input.sessionId,
+            peerSessionId: peerId,
+            signalType: undefined,
+            offerId: undefined
+        };
+    }
+
+    disposeNativeObservations(): void {
+        const scope = this.getNativeScope();
+        if (!scope?.getActive()) {
+            return;
+        }
+        for (const entry of this.peerEntryByPeerId.values()) {
+            for (const channel of entry.peer.channels.values()) {
+                channel.disposeNativeObservations();
+            }
+            entry.peer.connection.disposeNativeObservations();
+        }
+        disposeRtcNativeObservationScope(this.dependencies.signalingDiagnostics, this.input.sessionId);
     }
 
     private peerEstablishmentTimeoutPolicy(): WebRtcConnectionService.PeerEstablishmentTimeoutPolicy {

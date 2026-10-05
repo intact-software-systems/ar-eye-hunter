@@ -9,10 +9,12 @@ import type {
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { readOverlayAdoptionDiagnostics } from '@shared/repository/overlays-repository.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import {
     DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
     type WebRtcConnectionService
 } from '@shared/services/web-rtc-connection-service.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { readSelectedCandidatePairDiagnostics } from './read-selected-candidate-pair-diagnostics.ts';
 
 export namespace BrowserRtcDiagnosticsRuntime {
@@ -23,6 +25,10 @@ export namespace BrowserRtcDiagnosticsRuntime {
     }
 
     export interface PeerInput {
+        readonly middleware: ApiMiddleware;
+        readonly service: WebRtcConnectionService;
+        readonly pc: RTCPeerConnection | undefined;
+        readonly captureIdentity: RtcSignalingDiagnostics.NativeIdentity;
         readonly status: RallarRtcPeerStatus;
         readonly peer: WebRtcConnectionService.Peer | undefined;
         readonly options: RallarRtcDiagnosticsOptions;
@@ -61,9 +67,18 @@ export class BrowserRtcDiagnosticsRuntime {
             [...new Set(peerIds)].map(async (peerId) => {
                 const peerStatus = status.peers.find((peer) => peer.peerId === peerId) ??
                     toMissingRtcPeerStatus(peerId);
+                const peer = service.readPeer(peerId);
                 return await this.readPeer({
+                    middleware: middlewareContext,
+                    service,
+                    pc: peer?.connection.status.pc,
+                    captureIdentity: peer?.connection.getNativeIdentity() ??
+                        Object.freeze({
+                            peerConnectionId: Object.freeze({ status: 'unavailable', reason: 'no-native-object' }),
+                            channelId: Object.freeze({ status: 'unavailable', reason: 'not-applicable' })
+                        }),
                     status: peerStatus,
-                    peer: service.readPeer(peerId),
+                    peer,
                     options
                 });
             })
@@ -91,35 +106,56 @@ export class BrowserRtcDiagnosticsRuntime {
             : input.status.lanes;
         const connectionDiagnostics = input.peer?.connection.readDiagnostics?.();
 
+        const diagnostics = {
+            peerId: input.status.peerId,
+            captureIdentity: input.captureIdentity,
+            connection: input.status.connection,
+            lanes,
+            ...(connectionDiagnostics === undefined ? {} : { connectionDiagnostics })
+        };
         try {
-            const selectedCandidatePair = await readSelectedCandidatePairDiagnostics(
-                input.peer?.connection.status.pc
-            );
-            const diagnostics = {
-                peerId: input.status.peerId,
-                connection: input.status.connection,
-                lanes,
+            const supported = input.pc !== undefined && typeof input.pc.getStats === 'function';
+            const selectedCandidatePair = await readSelectedCandidatePairDiagnostics(input.pc);
+            if (!this.isCurrentStatsCapture(input)) {
+                return {
+                    ...diagnostics,
+                    statsObservation: 'retired-during-read',
+                    usesRelay: false,
+                    statsAvailable: false
+                };
+            }
+            return {
+                ...diagnostics,
                 selectedCandidatePair,
                 usesRelay: selectedCandidatePair?.usesRelay ?? false,
-                statsAvailable: selectedCandidatePair !== undefined
+                statsAvailable: selectedCandidatePair !== undefined,
+                statsObservation: !input.pc
+                    ? 'no-native-peer'
+                    : !supported
+                    ? 'unsupported'
+                    : selectedCandidatePair
+                    ? 'current-at-completion'
+                    : 'no-selected-pair'
             };
-            return connectionDiagnostics === undefined
-                ? diagnostics
-                : { ...diagnostics, connectionDiagnostics };
         }
         catch (error) {
-            const diagnostics = {
-                peerId: input.status.peerId,
-                connection: input.status.connection,
-                lanes,
-                usesRelay: false,
-                statsAvailable: false,
-                statsError: error instanceof Error ? error.message : String(error)
-            };
-            return connectionDiagnostics === undefined
-                ? diagnostics
-                : { ...diagnostics, connectionDiagnostics };
+            return this.isCurrentStatsCapture(input)
+                ? {
+                    ...diagnostics,
+                    statsObservation: 'read-failed',
+                    usesRelay: false,
+                    statsAvailable: false,
+                    statsError: toError(error).message
+                }
+                : { ...diagnostics, statsObservation: 'retired-during-read', usesRelay: false, statsAvailable: false };
         }
+    }
+
+    private isCurrentStatsCapture(capture: BrowserRtcDiagnosticsRuntime.PeerInput): boolean {
+        const middleware = this.input.readMiddleware();
+        return middleware === capture.middleware && middleware.middleware.webRtcConnectionService === capture.service &&
+            capture.service.readPeer(capture.status.peerId) === capture.peer &&
+            capture.peer?.connection.status.pc === capture.pc;
     }
 }
 

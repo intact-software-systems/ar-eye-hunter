@@ -54,7 +54,10 @@ import {
 } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import type { TransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
-import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import {
+    disposeRtcNativeObservationScope,
+    type RtcSignalingDiagnostics
+} from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 import { createBrowserRtcCapture } from './create-browser-rtc-capture.ts';
 
@@ -176,23 +179,29 @@ export async function initialiseRtcConnectionService(
         nowEpochMs,
         signalingDiagnostics: capture.diagnostics
     };
-    const connectionService = new WebRtcConnectionService(
-        signaler,
-        toBrowserRtcConnectionServiceInput(input),
-        dependencies
-    );
+    try {
+        const connectionService = new WebRtcConnectionService(
+            signaler,
+            toBrowserRtcConnectionServiceInput(input),
+            dependencies
+        );
 
-    connectionService.setInboundPeerCreationPolicy(() => ({
-        decision: 'retry',
-        reason: 'browser-runtime-initializing'
-    }));
-    connectionService.setOutboundDialPolicy(() => ({
-        decision: 'deny',
-        reason: 'browser-runtime-initializing'
-    }));
-    await connectionService.connectSignaler();
+        connectionService.setInboundPeerCreationPolicy(() => ({
+            decision: 'retry',
+            reason: 'browser-runtime-initializing'
+        }));
+        connectionService.setOutboundDialPolicy(() => ({
+            decision: 'deny',
+            reason: 'browser-runtime-initializing'
+        }));
+        await connectionService.connectSignaler();
 
-    return { webRtcConnectionService: connectionService, rtcCaptureReceipt: capture.receipt };
+        return { webRtcConnectionService: connectionService, rtcCaptureReceipt: capture.receipt };
+    }
+    catch (caught) {
+        disposeRtcNativeObservationScope(capture.diagnostics, input.clientData.sessionId);
+        throw caught;
+    }
 }
 
 function toBrowserRtcConnectionServiceInput(
