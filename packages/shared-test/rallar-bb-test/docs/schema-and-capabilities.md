@@ -337,10 +337,21 @@ sends seq 2, then holds that one message by the id its send returned (`hold-mess
 `fault.inject` whose `match.msgId` names `{resultCache.<send-2>.value.msgId}`) and releases the hold of
 the type, so seq 3 passes while seq 2 stays held across every retransmission. The hop reads the gap and
 NACKs the range `2-2`: over `ws` the relay, over the RTC carriers the receiver. The sender waits for its
-`control-admission` of that `al.control.nack.v2` as `committed`, pinned on seq 3's msgId (`gap-nack`), then
-releases the message hold. The receiver receives the first send once, all three within the send budget,
-and never a fourth; its typed channel hands them over in sequence by construction, since seq 3 waits in the
-ordered-delivery buffer until seq 2 arrives. The cell has no `rtc-with-ws-fallback` variant: a hand-over moves
+`control-admission` of that `al.control.nack.v2` as `committed`, pinned on seq 3's msgId (`gap-nack`), then for
+the `commit-phases` of the retransmission the hint dispatched (`repair-dispatch-2`: seq 2's msgId, the cell's
+typeId, `"origin":"repair"`), and only then releases the message hold: under the hold the original is
+resubmitted as well, so a release right after the NACK would deliver seq 2 even if the hint were never served.
+The receiver receives the first send once, all three within the send budget, and never a fourth. Over `rtc` the
+receiver is the hop that buffers seq 3 behind the gap, and it proves the order with two waits on
+`rallar.browser.alm.inbound_diagnostics` for the one `claim-settled` event of the `release-buffered` claim that
+handed seq 3 to its channel: `release-buffered-track` matches the effect id's head `release:<ordering key>%3A`
+(the cell's track), `release-buffered-3` its tail `%3A0:3` followed by the `null` identities and
+`"payloadKind":"release-buffered"` (seq 3 of epoch 0); the sender's peer id sits between them inside the
+URI-encoded track key, so one `contains` cannot span both. Three arrivals and a released seq 3 together say seq
+3 waited in the ordered-delivery buffer until seq 2 arrived. Over `ws` the relay is that hop: it buffers seq 3
+and releases it after the repaired seq 2, out of the receiver page's sight, so the `ws` receiver sees the three
+arrive in order and carries no release wait (had it reordered them itself, it would have had a release of its
+own to show). The cell has no `rtc-with-ws-fallback` variant: a hand-over moves
 one message of an ordering track to WS, whose relay never saw the track's other messages and gates the one it
 receives as its own gap, so the hand-over of an ordered message is a carried limit, not a cell.
 

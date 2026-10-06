@@ -290,3 +290,43 @@ describe('the repair budget runs out', () => {
         ]);
     });
 });
+
+describe('a ranged hint whose sequences have left the sent cache', () => {
+    it('retransmits nothing and charges nothing, the message that revealed the gap included', async () => {
+        const repairs: string[] = [];
+        const stores = createDefaultOutboundTestStores();
+        const runtime = createDefaultOutboundTestRuntime({
+            stores,
+            planOutgoingMessage,
+            planRepairMessage,
+            sendPreparedMessage: async (prepared) => {
+                if (prepared.kind === 'repair') {
+                    repairs.push(prepared.msgId!);
+                }
+                return { status: 'sent', submissionAttempted: true };
+            }
+        });
+        const track = [40, 41, 42].map(toOrderedMessage);
+        for (const message of track) {
+            await enqueueOutboundOrThrow(runtime, message);
+        }
+        await waitForOutboundWorkDrained(stores);
+        const settlements: ALOutboundSettlementFact[] = [];
+        const retransmission = createRepairRetransmission(stores, settlements);
+        const revealing = track[2]!;
+        const gapBeforeTheCache: ALOutboundRepairHint = {
+            trigger: 'nack',
+            requestedByPeerId: 'peer-1',
+            orderingTrackKey: toALOrderingTrackKey(revealing)!,
+            missingRanges: [{ from: 1, to: 2 }],
+            failedPeerIds: []
+        };
+
+        await retransmission.retransmitFromRepairHint(revealing.id.msgId, gapBeforeTheCache, 'repair-hint-42');
+        await runOutboundWorkTask(runtime);
+
+        expect(repairs).toEqual([]);
+        expect(await readRepairAttempts(stores, track)).toEqual([0, 0, 0]);
+        expect(toSkippedRepairs(settlements)).toEqual([]);
+    });
+});

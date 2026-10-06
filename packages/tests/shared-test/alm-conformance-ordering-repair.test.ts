@@ -18,6 +18,7 @@ import type {
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
 const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
+const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
 const STORAGE_TOPIC = 'rallar.browser.alm.storage';
 const REPAIR_SCENARIO_IDS = ['ordering-gap-repair', 'repair-exhausted'] as const;
 
@@ -125,28 +126,33 @@ describe('ordering repair conformance scenarios', () => {
 });
 
 describe('ordering-gap-repair', () => {
-    it.each(ALM_CONFORMANCE_SINGLE_HOP_CARRIERS)('holds the %s sender\'s second frame, reads the range NACK, releases it and delivers all three', (carrier) => {
-        const { sender, receiver } = findScenario(toConformanceInput(carrier), 'ordering-gap-repair');
+    it.each(ALM_CONFORMANCE_SINGLE_HOP_CARRIERS)(
+        'holds the %s sender\'s second frame, reads the range NACK and the repair dispatch, releases it and delivers all three in order',
+        (carrier) => {
+            const { sender, receiver } = findScenario(toConformanceInput(carrier), 'ordering-gap-repair');
 
-        expect(toCommandNames(sender)).toEqual([
-            'ensure-group',
-            'ensure-member',
-            'connect',
-            'storage-counters-connected',
-            ...toHeldSecondSendNames(carrier),
-            ...toHoldNames(carrier, 'release-message-2'),
-            'stats'
-        ]);
-        expect(toCommandNames(receiver)).toEqual([
-            'ensure-group',
-            'ensure-member',
-            'connect',
-            'received-1',
-            'received-3',
-            'received-4',
-            'stats'
-        ]);
-    });
+            expect(toCommandNames(sender)).toEqual([
+                'ensure-group',
+                'ensure-member',
+                'connect',
+                'storage-counters-connected',
+                ...toHeldSecondSendNames(carrier),
+                'repair-dispatch-2',
+                ...toHoldNames(carrier, 'release-message-2'),
+                'stats'
+            ]);
+            expect(toCommandNames(receiver)).toEqual([
+                'ensure-group',
+                'ensure-member',
+                'connect',
+                'received-1',
+                'received-3',
+                ...(carrier === 'rtc' ? ['release-buffered-track', 'release-buffered-3'] : []),
+                'received-4',
+                'stats'
+            ]);
+        }
+    );
 
     it.each(ALM_CONFORMANCE_SINGLE_HOP_CARRIERS)('sends three %s at-least-once messages on one ordering key, in sequence', (carrier) => {
         const { sender } = findScenario(toConformanceInput(carrier), 'ordering-gap-repair');
@@ -168,6 +174,95 @@ describe('ordering-gap-repair', () => {
         });
     });
 
+    it('releases the held second send by the same message id once the range NACK is admitted and the repair dispatched', () => {
+        const { sender } = findScenario(toConformanceInput('ws'), 'ordering-gap-repair');
+
+        expect(findCommand(sender, 'release-message-2-ws')).toMatchObject({
+            kind: 'fault.inject',
+            faultId: 'hold-message-2-ws-alm.conformance.ws.ordering-gap-repair',
+            match: { msgId: '{resultCache.alm-ws-ordering-gap-repair-sender-send-2.value.msgId}' },
+            action: 'not-ready',
+            remaining: 0
+        });
+    });
+
+    it.each(ALM_CONFORMANCE_SINGLE_HOP_CARRIERS)('reads the %s range NACK the third send reveals, committed at the sender, before the release', (carrier) => {
+        const { sender } = findScenario(toConformanceInput(carrier), 'ordering-gap-repair');
+
+        expect(findCommand(sender, 'gap-nack')).toEqual({
+            kind: 'wait',
+            commandId: `alm-${carrier}-ordering-gap-repair-sender-gap-nack`,
+            match: {
+                kind: 'diagnostic',
+                topic: OUTBOUND_DIAGNOSTICS_TOPIC,
+                payloadPath: 'data',
+                contains: '"typeId":"al.control.nack.v2",' +
+                    `"targetMsgId":"{resultCache.alm-${carrier}-ordering-gap-repair-sender-send-3.value.msgId}","outcome":"committed"`
+            },
+            timeoutMs: 27_000
+        });
+    });
+
+    it.each(ALM_CONFORMANCE_SINGLE_HOP_CARRIERS)(
+        'reads the %s repair dispatch of the held second send, committed at the sender, before the release',
+        (carrier) => {
+            const { sender } = findScenario(toConformanceInput(carrier), 'ordering-gap-repair');
+
+            expect(findCommand(sender, 'repair-dispatch-2')).toEqual({
+                kind: 'wait',
+                commandId: `alm-${carrier}-ordering-gap-repair-sender-repair-dispatch-2`,
+                match: {
+                    kind: 'diagnostic',
+                    topic: OUTBOUND_DIAGNOSTICS_TOPIC,
+                    payloadPath: 'data',
+                    contains: `"msgId":"{resultCache.alm-${carrier}-ordering-gap-repair-sender-send-2.value.msgId}",` +
+                        `"typeId":"alm.conformance.${carrier}.ordering-gap-repair","origin":"repair"`
+                },
+                timeoutMs: 27_000
+            });
+        }
+    );
+
+    it.each(ALM_CONFORMANCE_SINGLE_HOP_CARRIERS)('proves the %s receiver delivered three and never a fourth', (carrier) => {
+        const { receiver } = findScenario(toConformanceInput(carrier), 'ordering-gap-repair');
+
+        expect(findCommand(receiver, 'received-1')).toMatchObject({ kind: 'messages.received', count: 1, absent: false });
+        expect(findCommand(receiver, 'received-3')).toMatchObject({ kind: 'messages.received', count: 3, absent: false });
+        expect(findCommand(receiver, 'received-4')).toMatchObject({ kind: 'messages.received', count: 4, absent: true });
+    });
+
+    it('proves the rtc receiver buffered the third send and released it behind the second; over ws the relay is that hop', () => {
+        const { receiver } = findScenario(toConformanceInput('rtc'), 'ordering-gap-repair');
+
+        // The sender's peer id sits inside the URI-encoded track key of the effect id, so the track and the sequence are two waits.
+        expect(findCommand(receiver, 'release-buffered-track')).toEqual({
+            kind: 'wait',
+            commandId: 'alm-rtc-ordering-gap-repair-receiver-release-buffered-track',
+            match: {
+                kind: 'diagnostic',
+                topic: INBOUND_DIAGNOSTICS_TOPIC,
+                payloadPath: 'data',
+                contains: '"effectId":"release:alm-rtc-ordering-gap-repair%3A'
+            },
+            timeoutMs: 27_000
+        });
+        expect(findCommand(receiver, 'release-buffered-3')).toEqual({
+            kind: 'wait',
+            commandId: 'alm-rtc-ordering-gap-repair-receiver-release-buffered-3',
+            match: {
+                kind: 'diagnostic',
+                topic: INBOUND_DIAGNOSTICS_TOPIC,
+                payloadPath: 'data',
+                contains: '%3A0:3","msgId":null,"typeId":null,"subjectMsgId":null,"payloadKind":"release-buffered"'
+            },
+            timeoutMs: 27_000
+        });
+        expect(toCommandNames(findScenario(toConformanceInput('ws'), 'ordering-gap-repair').receiver))
+            .not.toContain('release-buffered-track');
+    });
+});
+
+describe('repair-exhausted', () => {
     it('holds the second send by the message id its send returned, on each carrier the cell can hold', () => {
         const { sender } = findScenario(toConformanceInput('rtc-with-ws-fallback'), 'repair-exhausted');
         const msgId = '{resultCache.alm-rtc-with-ws-fallback-repair-exhausted-sender-send-2.value.msgId}';
@@ -197,45 +292,6 @@ describe('ordering-gap-repair', () => {
         });
     });
 
-    it('releases the held second send by the same message id once the range NACK is admitted', () => {
-        const { sender } = findScenario(toConformanceInput('ws'), 'ordering-gap-repair');
-
-        expect(findCommand(sender, 'release-message-2-ws')).toMatchObject({
-            kind: 'fault.inject',
-            faultId: 'hold-message-2-ws-alm.conformance.ws.ordering-gap-repair',
-            match: { msgId: '{resultCache.alm-ws-ordering-gap-repair-sender-send-2.value.msgId}' },
-            action: 'not-ready',
-            remaining: 0
-        });
-    });
-
-    it.each(ALM_CONFORMANCE_SINGLE_HOP_CARRIERS)('reads the %s range NACK the third send reveals, committed at the sender, before the release', (carrier) => {
-        const { sender } = findScenario(toConformanceInput(carrier), 'ordering-gap-repair');
-
-        expect(findCommand(sender, 'gap-nack')).toEqual({
-            kind: 'wait',
-            commandId: `alm-${carrier}-ordering-gap-repair-sender-gap-nack`,
-            match: {
-                kind: 'diagnostic',
-                topic: OUTBOUND_DIAGNOSTICS_TOPIC,
-                payloadPath: 'data',
-                contains: '"typeId":"al.control.nack.v2",' +
-                    `"targetMsgId":"{resultCache.alm-${carrier}-ordering-gap-repair-sender-send-3.value.msgId}","outcome":"committed"`
-            },
-            timeoutMs: 27_000
-        });
-    });
-
-    it.each(ALM_CONFORMANCE_SINGLE_HOP_CARRIERS)('proves the %s receiver delivered three and never a fourth', (carrier) => {
-        const { receiver } = findScenario(toConformanceInput(carrier), 'ordering-gap-repair');
-
-        expect(findCommand(receiver, 'received-1')).toMatchObject({ kind: 'messages.received', count: 1, absent: false });
-        expect(findCommand(receiver, 'received-3')).toMatchObject({ kind: 'messages.received', count: 3, absent: false });
-        expect(findCommand(receiver, 'received-4')).toMatchObject({ kind: 'messages.received', count: 4, absent: true });
-    });
-});
-
-describe('repair-exhausted', () => {
     it.each(ALM_CONFORMANCE_CARRIERS)('keeps the %s hold through a second gap report and reads the exhausted handle', (carrier) => {
         const { sender, receiver } = findScenario(toConformanceInput(carrier), 'repair-exhausted');
 

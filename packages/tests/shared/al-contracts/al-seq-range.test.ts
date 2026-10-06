@@ -4,30 +4,56 @@ import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-reso
 import type { ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import {
     computeALSeqRangePage,
-    countALSeqsInRanges,
     decodeALSeqRanges,
-    toALSeqRanges,
-    toALSeqRangesText,
-    toALSeqsInRanges
+    toALSeqRangesText
 } from '@shared/al-contracts/al-seq-range.ts';
+
+/** The sorted, merged inclusive ranges that cover exactly the given sequences. */
+function toSeqRanges(seqs: Iterable<number>): readonly ALSeqRange[] {
+    const ranges: ALSeqRange[] = [];
+    for (const seq of [...new Set(seqs)].sort((left, right) => left - right)) {
+        const last = ranges[ranges.length - 1];
+        if (last !== undefined && seq === last.to + 1) {
+            ranges[ranges.length - 1] = { from: last.from, to: seq };
+        }
+        else {
+            ranges.push({ from: seq, to: seq });
+        }
+    }
+    return ranges;
+}
+
+function toSeqsInRanges(ranges: readonly ALSeqRange[]): readonly number[] {
+    const seqs: number[] = [];
+    for (const range of ranges) {
+        for (let seq = range.from; seq <= range.to; seq += 1) {
+            seqs.push(seq);
+        }
+    }
+    return seqs;
+}
+
+function countSeqsInRanges(ranges: readonly ALSeqRange[]): number {
+    return ranges.reduce((count, range) => count + range.to - range.from + 1, 0);
+}
 
 describe('AL sequence ranges', () => {
     it('merges sorted, unsorted and repeated sequences into inclusive ranges', () => {
-        expect(toALSeqRanges([])).toEqual([]);
-        expect(toALSeqRanges([4])).toEqual([{ from: 4, to: 4 }]);
-        expect(toALSeqRanges([5, 2, 4, 2, 9])).toEqual([
+        expect(toSeqRanges([])).toEqual([]);
+        expect(toSeqRanges([4])).toEqual([{ from: 4, to: 4 }]);
+        expect(toSeqRanges([5, 2, 4, 2, 9])).toEqual([
             { from: 2, to: 2 },
             { from: 4, to: 5 },
             { from: 9, to: 9 }
         ]);
-        expect(toALSeqRanges(new Set([1, 2, 3]))).toEqual([{ from: 1, to: 3 }]);
+        expect(toSeqRanges(new Set([1, 2, 3]))).toEqual([{ from: 1, to: 3 }]);
     });
 
     it('counts and enumerates the sequences a range list covers', () => {
         const ranges: readonly ALSeqRange[] = [{ from: 2, to: 2 }, { from: 4, to: 6 }];
-        expect(countALSeqsInRanges([])).toBe(0);
-        expect(countALSeqsInRanges(ranges)).toBe(4);
-        expect(toALSeqsInRanges(ranges)).toEqual([2, 4, 5, 6]);
+        expect(countSeqsInRanges([])).toBe(0);
+        expect(countSeqsInRanges(ranges)).toBe(4);
+        expect(toSeqsInRanges(ranges)).toEqual([2, 4, 5, 6]);
     });
 
     it('pages the first sequences of a range list and keeps exactly the rest as ranges', () => {
@@ -37,15 +63,15 @@ describe('AL sequence ranges', () => {
             page: [2, 3, 4],
             remaining: [{ from: 7, to: 7 }, { from: 9, to: 12 }]
         });
-        expect(computeALSeqRangePage(ranges, 8)).toEqual({ page: toALSeqsInRanges(ranges), remaining: [] });
+        expect(computeALSeqRangePage(ranges, 8)).toEqual({ page: toSeqsInRanges(ranges), remaining: [] });
         expect(computeALSeqRangePage([], 8)).toEqual({ page: [], remaining: [] });
     });
 
     it('round-trips a sequence list through ranges and back', () => {
         const seqs = Array.from({ length: 256 }, (_, index) => index + 1).filter((seq) => seq % 3 !== 0);
-        const ranges = toALSeqRanges(seqs);
-        expect(toALSeqsInRanges(ranges)).toEqual(seqs);
-        expect(countALSeqsInRanges(ranges)).toBe(seqs.length);
+        const ranges = toSeqRanges(seqs);
+        expect(toSeqsInRanges(ranges)).toEqual(seqs);
+        expect(countSeqsInRanges(ranges)).toBe(seqs.length);
         expect(decodeALSeqRanges(ranges).right).toEqual(ranges);
     });
 

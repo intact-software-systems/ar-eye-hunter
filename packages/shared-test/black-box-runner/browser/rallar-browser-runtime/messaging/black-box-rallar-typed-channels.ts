@@ -116,12 +116,12 @@ export class BlackBoxRallarTypedChannels {
             durability: undefined,
             onStorageUnavailable: undefined,
             purpose: 'notification',
-            recovery: config.rallar.recoveryOwner === 'record' ? this.#toRecordingRecoveryOwner(config) : undefined
+            recovery: config.rallar.recoveryOwner === 'record' ? this.#createRecordingRecoveryOwner(config) : undefined
         });
     }
 
     /** The harness's owner does what a recording application would: it states the cursor it was handed. */
-    #toRecordingRecoveryOwner(config: BlackBoxRallarConnectionConfig): RallarChannelRecovery {
+    #createRecordingRecoveryOwner(config: BlackBoxRallarConnectionConfig): RallarChannelRecovery {
         return {
             onResyncRequired: (cursor) => {
                 this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.recovery_owner_invoked', {

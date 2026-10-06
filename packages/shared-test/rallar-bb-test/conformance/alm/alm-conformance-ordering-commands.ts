@@ -2,10 +2,10 @@ import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-id
 
 import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-contracts.ts';
 
+import { toCommittedControlAdmissionWait } from './alm-conformance-diagnostic-waits.ts';
 import { toHeldFaultCommands, toHeldMessageFaultCommands } from './alm-conformance-fault-commands.ts';
 import {
     toAdmissionCommands,
-    toCommittedControlAdmissionWait,
     toObserveCommand,
     toResultAssertion,
     toSendCommand

@@ -15,7 +15,6 @@ import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { createBrowserMessageSenderFixture } from './browser-message-sender-fixture.ts';
 
 const CHAT_ROUTE = { topicId: 'app.chat', typeId: 'chat.message.v1' };
-const NOW_MS = 1_700_000_000_000;
 
 interface ResyncMessageInput {
     readonly typeId: string;
@@ -72,8 +71,7 @@ function createRecoveryFixture(): RecoveryFixture {
     const owner: RallarChannelRecovery = { onResyncRequired: (cursor) => invocations.push(cursor) };
     const recovery = new BrowserResyncRecovery({
         owners,
-        storage: (event) => storage.push(event),
-        nowMs: () => NOW_MS
+        storage: (event) => storage.push(event)
     });
     return { owners, recovery, storage, owner, invocations };
 }
@@ -90,6 +88,10 @@ describe('the browser resync recovery', () => {
 
         expect(fixture.invocations).toEqual([first.cursor]);
         expect(fixture.storage).toEqual([{ kind: 'recovery-owner-invoked', ...first.cursor }]);
+        // The black-box harness matches this event by `contains` on its serialised form, so its key order is a contract.
+        expect(JSON.stringify(fixture.storage[0])).toBe(
+            '{"kind":"recovery-owner-invoked","orderingKey":"chat","senderId":"sender","epoch":0,"lastContiguousSeq":1,"expectedSeq":2,"observedSeq":300,"carrier":"rtc"}'
+        );
     });
 
     it('invokes the owner again for the sender\'s new epoch, which is a new track', () => {

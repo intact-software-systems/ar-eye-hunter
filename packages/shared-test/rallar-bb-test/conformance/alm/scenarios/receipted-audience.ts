@@ -12,7 +12,8 @@ import {
     toBudgetMs
 } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
-import { toCommittedControlAdmissionWait, toResultAssertion } from '../alm-conformance-message-commands.ts';
+import { toCommittedControlAdmissionWait } from '../alm-conformance-diagnostic-waits.ts';
+import { toResultAssertion } from '../alm-conformance-message-commands.ts';
 import {
     toAckHoldFaultCommand,
     toAudiencePayload,

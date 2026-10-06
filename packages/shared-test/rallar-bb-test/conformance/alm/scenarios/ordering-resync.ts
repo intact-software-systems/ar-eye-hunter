@@ -2,23 +2,22 @@ import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-id
 
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
-import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '../alm-conformance-budgets.ts';
+import { toVerdictTimeoutMs } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import {
-    toAdmissionCommands,
+    ALM_STORAGE_DIAGNOSTICS_TOPIC,
     toCommittedControlAdmissionWait,
-    toSendCommand
-} from '../alm-conformance-message-commands.ts';
+    toDiagnosticWait
+} from '../alm-conformance-diagnostic-waits.ts';
+import { toAdmissionCommands, toSendCommand } from '../alm-conformance-message-commands.ts';
 import { toAdmissionOutcomeWait, toSingleArrivalReceiverCommands } from '../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
-import { toCommandId } from '../alm-conformance-step-identities.ts';
 
 const RESYNC_GAP_SEQ = 300;
-const STORAGE_TOPIC = 'rallar.browser.alm.storage';
 
 export const orderingResync: AlmConformanceScenarioDefinition = {
     scenarioId: 'ordering-resync',
@@ -84,7 +83,7 @@ function toOrderingResyncReceiverCommands(
         toAdmissionOutcomeWait(receiver, {
             name: 'resync-outcome',
             contains: '"carrier":"rtc","outcome":"not-handled","reason":"resync-required"',
-            timeoutMs: toVerdictTimeoutMs(receiver)
+            timeoutMs: toVerdictTimeoutMs(receiver.input.deadlineMs)
         }),
         ...(receiver.input.recoveryOwner === 'record' ? toRecoveryOwnerWaits(receiver) : []),
         absentSecond
@@ -100,27 +99,18 @@ function toOrderingResyncReceiverCommands(
 function toRecoveryOwnerWaits(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const cursor = `"lastContiguousSeq":1,"expectedSeq":2,"observedSeq":${RESYNC_GAP_SEQ},"carrier":"rtc"}`;
     return [
-        toStorageEventWait(receiver, {
+        toDiagnosticWait({
+            step: receiver,
             name: 'recovery-owner-invoked',
+            topic: ALM_STORAGE_DIAGNOSTICS_TOPIC,
             contains:
                 `"kind":"recovery-owner-invoked","orderingKey":"alm-${receiver.input.carrier}-${receiver.scenarioId}",`
         }),
-        toStorageEventWait(receiver, { name: 'recovery-owner-cursor', contains: cursor })
+        toDiagnosticWait({
+            step: receiver,
+            name: 'recovery-owner-cursor',
+            topic: ALM_STORAGE_DIAGNOSTICS_TOPIC,
+            contains: cursor
+        })
     ];
-}
-
-function toStorageEventWait(
-    receiver: AlmConformanceStepInput,
-    event: Readonly<{ name: string; contains: string; }>
-): RallarBlackBoxTestCommand {
-    return {
-        kind: 'wait',
-        commandId: toCommandId(receiver, event.name),
-        match: { kind: 'diagnostic', topic: STORAGE_TOPIC, payloadPath: 'data', contains: event.contains },
-        timeoutMs: toVerdictTimeoutMs(receiver)
-    };
-}
-
-function toVerdictTimeoutMs(receiver: AlmConformanceStepInput): number {
-    return receiver.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS;
 }

@@ -361,6 +361,9 @@ independent of any connection. The event's `data` is the event itself:
 - `claim-settled` also carries `effectId`, `subjectMsgId`, `dueAtMs`,
   `batchStartedAtMs` and `startedAtMs`. `effectId` is the claimed row's own
   effect id, the join key to the `effect-drain.claimedEffectIds` of its batch.
+  A `release-buffered` row's is `release:<track key>:<seq>`, the track key
+  `<ordering key>:<sender peer id>:<epoch>` URI-encoded, so it is the only
+  field that names the track and the sequence the release handed over.
   `dueAtMs` is when the row became due, `batchStartedAtMs` when its batch's run
   loop started (after the batch's selection and reservation) and `startedAtMs`
   when this claim's own work began, so a delivery's wait splits into

@@ -667,8 +667,7 @@ class GeneratedAlmPorts {
                     typeId: 'al.control.nack.v2',
                     targetMsgId: message.msgId,
                     outcome: 'committed',
-                    reason: 'none',
-                    missingRanges: [{ from: held.command.seq, to: held.command.seq }]
+                    reason: 'none'
                 }
             }
         });
@@ -678,6 +677,29 @@ class GeneratedAlmPorts {
             return;
         }
         held.repairAttempts += 1;
+        this.recordRepairDispatch(held);
+    }
+
+    /** The hint served: the held message's repair commit, stated as the sender's own commit while the hold stands. */
+    private recordRepairDispatch(held: PortMessage): void {
+        this.sender.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.outbound_diagnostics',
+            payload: {
+                data: {
+                    kind: 'commit-phases',
+                    lane: 'durable',
+                    senderId: 'sender',
+                    msgId: held.msgId,
+                    typeId: held.command.typeId,
+                    origin: 'repair',
+                    readDurationMs: 0,
+                    readOperationCount: 0,
+                    commitDurationMs: 0,
+                    commitOutcome: 'committed'
+                }
+            }
+        });
     }
 
     /** The receiver's channel reads the released sequence, then every buffered successor the gap no longer holds back. */
@@ -694,8 +716,41 @@ class GeneratedAlmPorts {
                 return;
             }
             successor.buffered = false;
+            if (successor.command.carrier !== 'ws') {
+                this.recordBufferedRelease(orderingKey, successor);
+            }
             this.recordReceiverMessage(successor);
         }
+    }
+
+    /**
+     * The claim that released one buffered sequence of the track `<ordering key>:<sender>:0`; it names no message.
+     * Over WS the relay is the hop that buffers and releases, out of the receiver page's sight, so none is stated there.
+     */
+    private recordBufferedRelease(orderingKey: string, successor: PortMessage): void {
+        this.receiver.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            payload: {
+                data: {
+                    kind: 'claim-settled',
+                    lane: 'durable',
+                    workerId: 'receiver-inbound',
+                    effectId: `release:${encodeURIComponent(`${orderingKey}:sender:0`)}:${successor.command.seq}`,
+                    msgId: null,
+                    typeId: null,
+                    subjectMsgId: null,
+                    payloadKind: 'release-buffered',
+                    durationMs: 0,
+                    attempts: 1,
+                    outcome: 'completed',
+                    queueWaitMs: 0,
+                    dueAtMs: this.now,
+                    batchStartedAtMs: this.now,
+                    startedAtMs: this.now
+                }
+            }
+        });
     }
 
     /** Delivered with an attempt on each carrier; the receiver states its verdict on the WS copy. */

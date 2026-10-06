@@ -73,7 +73,8 @@ export class ALOutboundRepairRetransmission<TPrepared> {
     /**
      * Serves one page of the hint's missing sequences, ascending, and re-commits the rest as one follow-up
      * hint, so a wide gap costs a bounded page of indexed reads and dispatch commits per execution. A hint
-     * without ordering, or whose last page finds no cached message, repairs the message it names instead.
+     * without ordering, or without ranges, repairs the message it names instead. A page whose sequences
+     * have left the sent cache retransmits nothing: the message the hint names is not the gap.
      */
     async retransmitFromRepairHint(
         fallbackMsgId: string,
@@ -90,20 +91,15 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             request.missingRanges,
             AL_MESSAGE_RESOURCE_LIMITS.repairPageMessages
         );
-        let served = false;
         for (const seq of page) {
             const cached = await this.dependencies.admissionStore.readSentMessageByOrdering(trackKey, seq);
             if (cached) {
-                served = true;
                 await this.repairByMsgId(cached.msgId, request, attemptIdentity);
             }
         }
 
         if (remaining.length > 0) {
             await this.commitFollowUpRepairHint(fallbackMsgId, { ...request, missingRanges: remaining });
-        }
-        else if (!served) {
-            await this.repairByMsgId(fallbackMsgId, request, attemptIdentity);
         }
     }
 
@@ -210,8 +206,10 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         }
         this.exhaustedMsgIds.add(msgId);
         if (this.exhaustedMsgIds.size > AL_MESSAGE_RESOURCE_LIMITS.repairWindow) {
-            const [oldest] = this.exhaustedMsgIds;
-            this.exhaustedMsgIds.delete(oldest!);
+            for (const oldest of this.exhaustedMsgIds) {
+                this.exhaustedMsgIds.delete(oldest);
+                break;
+            }
         }
 
         this.dependencies.settlements({
@@ -233,9 +231,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             return undefined;
         }
         if (!this.dependencies.planRepairMessage) {
-            return isRoomScopedALMessage(msg) && !this.isOwnHopRepair(plan, request, read.pendingAck)
-                ? undefined
-                : plan;
+            return isRoomScopedALMessage(msg) && !this.isOwnHopRepair(plan, request) ? undefined : plan;
         }
         return await this.dependencies.planRepairMessage(msg, {
             ...request,
@@ -294,16 +290,13 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         });
     }
 
-    /** Whether the hint replays the sender's own hop: that hop asked for its own copy, or every peer still owed is one. */
-    private isOwnHopRepair(
-        plan: ALOutboundDispatchPlan<TPrepared>,
-        request: ALOutboundRepairHint,
-        pending: ALOutboundPendingAckSnapshot | undefined
-    ): boolean {
-        const hopPeerIds = this.dependencies.hopPeerIds;
-        const requestedByOwnHop = request.requestedByPeerId !== undefined &&
-            isALOutboundOwnHopPeer(plan, hopPeerIds, request.requestedByPeerId);
-        return requestedByOwnHop || isOwnHopRetry(plan, hopPeerIds, pending);
+    /**
+     * Whether the gap or repair hint replays the sender's own hop: that hop asked for its own copy. The
+     * peers a receipt still owes rule the ack-timeout path (`isOwnHopRetry`), not a gap.
+     */
+    private isOwnHopRepair(plan: ALOutboundDispatchPlan<TPrepared>, request: ALOutboundRepairHint): boolean {
+        return request.requestedByPeerId !== undefined &&
+            isALOutboundOwnHopPeer(plan, this.dependencies.hopPeerIds, request.requestedByPeerId);
     }
 
     /**

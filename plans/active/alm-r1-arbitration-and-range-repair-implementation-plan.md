@@ -88,16 +88,19 @@ observation shape; 6 consumes 1, 3, 4 and 5 through the browser only.
   `plan.ackTracking.nextHopPeerIds` is the sender's own hop. _Cost if wrong:_ a room gap repair without a
   planner would also replay the frame to the hop that already holds it, which the hop deduplicates.
 - **R-R1-2:** `ALSeqRange` lives in `al-contracts/al-runtime.ts` beside `ALOrderingObservation`; the
-  pure translations `toALSeqRanges(seqs)`, `toALSeqsInRanges(ranges)`, `toALSeqRangesText(ranges)` and the
-  decoder live in a new `al-contracts/al-seq-range.ts`. _Cost if wrong:_ one file moves.
+  pure translations `toALSeqRangesText(ranges)`, `computeALSeqRangePage(ranges, pageSize)` and the decoder
+  `decodeALSeqRanges` live in a new `al-contracts/al-seq-range.ts`; `toALSeqRanges`, `toALSeqsInRanges` and
+  `countALSeqsInRanges` had no production caller and live in that module's test as helpers (close review).
+  _Cost if wrong:_ one file moves.
 - **R-R1-3:** The codec caps a payload at `AL_MESSAGE_RESOURCE_LIMITS.repairRanges = 128` ranges and
   rejects a range with `from > to` or a non-integer bound as malformed. _Cost if wrong:_ a constant
   changes.
 - **R-R1-4:** Effect ids that joined `missingSeqs` join ranges as `${from}-${to}` with `,`; an id's
   length stays bounded by the range cap. _Cost if wrong:_ none, ids are opaque.
 - **R-R1-5:** `AL_REPAIR_PAGE_SIZE = 32` lives in `al-message-resource-limits.ts` as
-  `repairPageMessages`. The follow-up hint carries the remaining ranges and the same trigger and
-  requester; its effect id is the page's first remaining sequence, so a hint is never re-served twice.
+  `repairPageMessages`. The follow-up hint carries the remaining ranges and the same requester; its effect
+  id is the requester, the track and the remaining ranges, so a hint is never re-served twice (as executed;
+  the earlier text named the first remaining sequence).
   _Cost if wrong:_ a constant changes.
 - **R-R1-6:** Typed exhaustion is settled through the lane's existing settlement sink as
   `{ kind: 'skipped', reason: 'repair-exhausted', msgId }` once per message; a second exhausted hint
@@ -139,6 +142,13 @@ observation shape; 6 consumes 1, 3, 4 and 5 through the browser only.
 - Hosted manifests 18 and 22 carry none of the new cells; 18 changes only by the `v2` NACK id (R-R1-9).
 - An ordering track whose message is handed over to WS mid-track (D56) is gated by the WS relay's own ordering view;
   `ordering-gap-repair` therefore runs over `ws` and `rtc` only (R-R1-11).
+- The Relic reload-mid-command Playwright case has no green run on this branch (sandbox reboot time); its path is
+  pinned at the WS-client level.
+- The sender's exhaustion once-set holds 256 message ids; after 256 further distinct exhaustions in one runtime
+  a later hint for an early message states `skipped` again, which a terminal handle records as late evidence only.
+- The browser's once-per-track mark grows with the distinct tracks that resynchronised in the page's life.
+- A hint is identified by its gap for the message's lifetime: a fresh report naming exactly a served follow-up's
+  remaining ranges for the same target message is absorbed; any other arrival names a new target and a new hint.
 
 ---
 
@@ -166,16 +176,26 @@ observation shape; 6 consumes 1, 3, 4 and 5 through the browser only.
 and `ackedPeerIds`; the retry path and its re-tracking are the ones `ws-qos-policy.test.ts:177`
 exercises for a non-room message. No new field, row or planner.
 
-- [ ] **Step 1: Write the failing tests** (the two new cases red: `expected 2 frames, got 1`).
-- [ ] **Step 2: Run them red.**
-- [ ] **Step 3: The predicate and the two guards.**
-- [ ] **Step 4: Format; focused tests green; `packages/tests/shared/alm/outbound`, `packages/tests/shared/services`
+- [x] **Step 1: Write the failing tests** (the two new cases red: `expected 2 frames, got 1`).
+- [x] **Step 2: Run them red.**
+- [x] **Step 3: The predicate and the two guards.**
+- [x] **Step 4: Format; focused tests green; `packages/tests/shared/alm/outbound`, `packages/tests/shared/services`
       and `packages/tests/shared-web/messages` green; the four pins; typechecks; bundles.**
-- [ ] **Step 5: The Relic full-stack suite once** (`RELIC_HUNTERS_FULL_STACK=1 npx playwright test --config
+- [x] **Step 5: The Relic full-stack suite once** (`RELIC_HUNTERS_FULL_STACK=1 npx playwright test --config
       apps/relic-hunters-v1/playwright.full-stack.config.ts`, R-R1-10). Expected: `2 passed`, the
       reload-mid-command case included. Restore `apps/relic-hunter-server-v1/deno.lock` if the server
       start rewrote it.
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
+
+**Corrections recorded at execution.** The Relic reload-mid-command case is red in this sandbox: the page's
+reboot (~39 s) outlives the spec's 45 s convergence window, while the own-hop retry it needs is pinned at the
+WS-client level (`ws-queue-box-client-own-hop-retry.test.ts`, including the checkpoint restore-then-retry
+case); the green run is owed where Chromium build 1228 and the credential secret exist (Limits). The lane
+over `ws` later showed two more places that needed the own hop: control acceptance (repair authority and the
+expected-repair-peer rule) and the planner-less room retransmission, and that a browser's ordered room send
+tracks no receipt by default, so the composition names its hop (`hopPeerIds`; the WS client names its
+server) beside a plan's tracked next hops (R-R1-12). The own-hop grant covers gap NACKs and repair
+requests; a `not-yet-in-sync` NACK on a planner-less room send stays `not-handled`, as before.
 
 ```text
 Retry the sender's own hop after an acknowledgement timeout
@@ -216,11 +236,11 @@ D8 reuse: the captured plan's ackTracking.nextHopPeerIds and the pending row's p
 builder over three backends; the real-PG fixtures of `al-inbound-supersedence.test.ts`. No new
 fixture kind.
 
-- [ ] **Step 1: Write the module red** (a deliberately wrong expectation proves the schedule bites:
+- [x] **Step 1: Write the module red** (a deliberately wrong expectation proves the schedule bites:
       expect both to commit, see `conflict`; then set the real expectation). Record the red.
-- [ ] **Step 2: Green over the three backends; the gated PG file compiles and skips here.**
-- [ ] **Step 3: README correction; format; `check:test-reachability` after the commit.**
-- [ ] **Step 4: Commit.**
+- [x] **Step 2: Green over the three backends; the gated PG file compiles and skips here.**
+- [x] **Step 3: README correction; format; `check:test-reachability` after the commit.**
+- [x] **Step 4: Commit.**
 
 ```text
 Prove shared-key arbitration over memory, IndexedDB and pglite in one schedule
@@ -271,15 +291,15 @@ D8 reuse: the existing three-backend matrix, pglite storage and real-PostgreSQL 
 **D8 reuse inspection.** The codec's existing number-array decoder becomes the range decoder with the
 same cap discipline; the observation, plan, hint and payload types are widened in place; no new store.
 
-- [ ] **Step 1: Write the failing tests** (`al-seq-range.test.ts`, the ordering window case, the codec cap,
+- [x] **Step 1: Write the failing tests** (`al-seq-range.test.ts`, the ordering window case, the codec cap,
       the validation containment, the retransmitter reading ranges).
-- [ ] **Step 2: Red.**
-- [ ] **Step 3: Contracts and the ordering computation.**
-- [ ] **Step 4: The sweep, guided by `tsc`; the schema id; the type ids.**
-- [ ] **Step 5: Format; focused tests; `packages/tests/shared/alm`, `packages/tests/shared/al-contracts`,
+- [x] **Step 2: Red.**
+- [x] **Step 3: Contracts and the ordering computation.**
+- [x] **Step 4: The sweep, guided by `tsc`; the schema id; the type ids.**
+- [x] **Step 5: Format; focused tests; `packages/tests/shared/alm`, `packages/tests/shared/al-contracts`,
       `packages/tests/shared-test`, `packages/tests/shared-server` green; pins; typechecks; `deno check`;
       bundles; the Postgres integration lane where available.**
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ```text
 Carry missing sequences as inclusive ranges
@@ -319,9 +339,9 @@ D8 reuse: the codec's bounded number-array decoding becomes bounded range decodi
 **D8 reuse inspection.** The follow-up hint is the existing `repair-hint` effect; the settlement is the
 existing `skipped` fact; the limits module holds the page size.
 
-- [ ] Steps 1–2: failing tests, red. Step 3: the page and the follow-up. Step 4: the typed exhaustion.
+- [x] Steps 1–2: failing tests, red. Step 3: the page and the follow-up. Step 4: the typed exhaustion.
       Step 5: format; focused and `packages/tests/shared/alm` green; pins; typechecks; bundles.
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ```text
 Page retransmission and settle exhausted repair as skipped

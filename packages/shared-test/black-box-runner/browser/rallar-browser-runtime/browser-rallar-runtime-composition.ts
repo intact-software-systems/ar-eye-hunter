@@ -377,10 +377,7 @@ function createBlackBoxBrowserTransportComposition(
         runtime: foundation.runtime,
         stateRuntime: foundation.stateRuntime
     });
-    const recovery = createBrowserResyncRecoveryComposition({
-        connectionRuntime: foundation.connectionRuntime,
-        nowMs: browserDeliveryComposition.nowMs
-    });
+    const recovery = createBrowserResyncRecoveryComposition({ connectionRuntime: foundation.connectionRuntime });
     const session = createBrowserSessionCoreComposition({
         qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
         readVolatileSessionLimits,

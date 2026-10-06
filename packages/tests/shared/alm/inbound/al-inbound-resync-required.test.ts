@@ -6,7 +6,12 @@ import {
     toALInboundResyncCursor,
     type ALInboundResyncRequired
 } from '@shared/alm/inbound/al-inbound-resync-required.ts';
+import {
+    decodeALInboundWorkEntry,
+    type ALPersistedInboundEffect
+} from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 
 import {
     createInboundTestBackendStores,
@@ -22,6 +27,8 @@ const RESYNC_GAP_SEQ = 300;
 interface ResyncRuntime {
     readonly fixture: InboundTestRuntime;
     readonly resyncs: ALInboundResyncRequired[];
+    /** The work rows the store held the moment each resync reached the sink: what had committed before the owner heard. */
+    readonly workAtResync: (readonly ALPersistedInboundEffect[])[];
     readonly admissions: Awaited<ReturnType<InboundTestRuntime['runtime']['admitIncomingMessage']>>[];
     admit(msg: ALMessage): Promise<void>;
 }
@@ -38,24 +45,45 @@ function toResyncRequiredObservation(msg: ALMessage, lastContiguousSeq: number):
     };
 }
 
-/** The fixture runtime with a recovery sink, or without one when `withSink` is false, as the server composes it. */
+/**
+ * The fixture runtime with a recovery sink, or without one when `withSink` is false, as the server composes it. The
+ * sink reads the memory work queue synchronously as it fires, so the rows it sees are exactly those committed first.
+ */
 function createResyncRuntime(input: { readonly withSink: boolean; readonly dispatchable: () => boolean; }): ResyncRuntime {
     const resyncs: ALInboundResyncRequired[] = [];
+    const workAtResync: (readonly ALPersistedInboundEffect[])[] = [];
     const admissions: ResyncRuntime['admissions'] = [];
+    const namespace = `resync-required-${input.withSink ? 'owned' : 'unowned'}`;
+    const { backend, stores } = createInboundTestBackendStores({
+        namespace,
+        storage: 'memory',
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
+    const workQueue = backend.workQueue;
+    if (!(workQueue instanceof InMemoryQueueBox)) {
+        throw new Error('The resync fixture reads its work rows from the memory queue box');
+    }
+    const readWorkRows = (): readonly ALPersistedInboundEffect[] =>
+        workQueue.peekKeys().flatMap((key) => {
+            const entry = workQueue.peek(key);
+            return entry === undefined ? [] : [decodeALInboundWorkEntry(entry, namespace)];
+        });
     const fixture = createInboundTestRuntime({
         carrier: 'ws',
-        stores: createInboundTestBackendStores({
-            namespace: `resync-required-${input.withSink ? 'owned' : 'unowned'}`,
-            storage: 'memory',
-            observer: createPassThroughIndexedDbOperationObserver()
-        }).stores,
+        stores,
         effectWorkerId: 'al-inbound:resync-required',
         canDispatchMessage: input.dispatchable,
-        onResyncRequired: input.withSink ? (resync) => resyncs.push(resync) : undefined
+        onResyncRequired: input.withSink
+            ? (resync) => {
+                resyncs.push(resync);
+                workAtResync.push(readWorkRows());
+            }
+            : undefined
     });
     return {
         fixture,
         resyncs,
+        workAtResync,
         admissions,
         admit: async (msg) => {
             admissions.push(await fixture.runtime.admitIncomingMessage(msg, INBOUND_TEST_SOURCE));
@@ -156,6 +184,11 @@ describe('the inbound runtime and its recovery sink', () => {
                 carrier: 'ws'
             }
         }]);
+        // The NACK's `send-control` row was already held when the sink heard of the resync.
+        const [rowsAtResync] = owned.workAtResync;
+        const nackRows = (rowsAtResync ?? []).filter((row) => row.effectId.startsWith(`resync:${INBOUND_TEST_SENDER_PEER_ID}:message-2`));
+        expect(nackRows.map((row) => (row.payload.kind === 'send-control' ? row.payload.msg.payload.typeId : row.payload.kind)))
+            .toEqual(['al.control.nack.v2']);
         await expect.poll(async () => {
             await owned.fixture.queueEngine.executeOnce();
             return owned.fixture.controlSends.flat().map((control) => control.payload.typeId);

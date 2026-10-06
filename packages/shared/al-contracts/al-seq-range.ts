@@ -8,35 +8,6 @@ export interface ALSeqRangePage {
     readonly remaining: readonly ALSeqRange[];
 }
 
-/** The sorted, merged inclusive ranges that cover exactly the given sequences. */
-export function toALSeqRanges(seqs: Iterable<number>): readonly ALSeqRange[] {
-    const ranges: ALSeqRange[] = [];
-    for (const seq of [...new Set(seqs)].sort((left, right) => left - right)) {
-        const last = ranges[ranges.length - 1];
-        if (last !== undefined && seq === last.to + 1) {
-            ranges[ranges.length - 1] = { from: last.from, to: seq };
-        }
-        else {
-            ranges.push({ from: seq, to: seq });
-        }
-    }
-    return ranges;
-}
-
-export function toALSeqsInRanges(ranges: readonly ALSeqRange[]): readonly number[] {
-    const seqs: number[] = [];
-    for (const range of ranges) {
-        for (let seq = range.from; seq <= range.to; seq += 1) {
-            seqs.push(seq);
-        }
-    }
-    return seqs;
-}
-
-export function countALSeqsInRanges(ranges: readonly ALSeqRange[]): number {
-    return ranges.reduce((count, range) => count + range.to - range.from + 1, 0);
-}
-
 /** The first `pageSize` sequences of sorted, disjoint ranges, ascending, and the ranges of the rest. */
 export function computeALSeqRangePage(ranges: readonly ALSeqRange[], pageSize: number): ALSeqRangePage {
     const page: number[] = [];

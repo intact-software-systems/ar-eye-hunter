@@ -127,6 +127,22 @@ describe('WS client retry of its own hop after an acknowledgement timeout', () =
         expect(await readOutboundEffectKinds(fixture.outboundStores)).not.toContain('ack-timeout');
     });
 
+    it('leaves the server\'s not-yet-in-sync NACK on a room send unhandled: no retry is scheduled and no second frame follows', async () => {
+        vi.useFakeTimers();
+        const fixture = createOwnHopRetryFixture();
+        const roomSend = receiverRoomSend();
+        await enqueueAndSettle(fixture.service, roomSend);
+
+        const admitted = await fixture.service.acceptIncomingMessage(serverNotYetInSyncNack(roomSend));
+        await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS);
+        await settleCommittedOutboundBatch();
+
+        expect(admitted.right).toEqual({ kind: 'control', handled: false });
+        expect(fixture.controlAdmissions).toEqual([{ targetMsgId: roomSend.id.msgId, outcome: 'not-handled' }]);
+        expect(fixture.sentFrames).toHaveLength(1);
+        expect(await readOutboundEffectKinds(fixture.outboundStores)).not.toContain('nack-retry');
+    });
+
     it('retransmits the sequence its server hop reports missing from an ordered room send, on the server gap NACK alone', async () => {
         vi.useFakeTimers();
         const fixture = createOwnHopRetryFixture();
@@ -299,6 +315,20 @@ function serverGapNack(trigger: ALMessage, missingRanges: readonly ALSeqRange[])
             orderingKey: toALOrderingTrackKey(trigger),
             expectedSeq: missingRanges[0].from,
             missingRanges
+        }
+    );
+}
+
+/** The server's word, as the client's hop, that it holds `trigger` until the room's state is in sync. */
+function serverNotYetInSyncNack(trigger: ALMessage): ALMessage {
+    return newALNackControlMessage(
+        { v: 2, msgId: `server-not-yet-in-sync-${trigger.id.msgId}`, senderId: SERVER_PEER_ID, ts: Date.now() },
+        {
+            msgId: trigger.id.msgId,
+            fromPeerId: SERVER_PEER_ID,
+            toPeerId: 'self',
+            reason: 'not-yet-in-sync',
+            observedAtEpochMs: Date.now()
         }
     );
 }

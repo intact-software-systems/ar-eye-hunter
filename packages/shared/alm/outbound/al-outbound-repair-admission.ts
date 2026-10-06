@@ -71,7 +71,8 @@ export namespace ALOutboundRepairAdmission {
 /**
  * Turns persisted control/ACK/repair state into new durable admission commits; never sends directly.
  * Without a repair planner a room-scoped gap or repair control carries authority only when the sender's
- * own hop asked for it, the one repair that cannot widen a room audience.
+ * own hop asked for it, the one repair that cannot widen a room audience; that hop's not-yet-in-sync
+ * NACK on a room send stays not handled, as the hop owns that retry.
  */
 export class ALOutboundRepairAdmission<TPrepared> {
     private static readonly NOT_YET_IN_SYNC_RETRY_DELAY_MS = 50;
@@ -92,7 +93,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             return { kind: 'not-handled' };
         }
         const control = decoded.right!;
-        const admitted: ALOutboundControlAdmissionResult = await this.hasCurrentRepairAuthority(control)
+        const admitted: ALOutboundControlAdmissionResult = await this.readRepairAuthority(control)
             ? await this.dependencies.controlAdmission.admit(msg, source)
             : { kind: 'not-handled' };
         writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
@@ -116,7 +117,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         return replayed.outcome;
     }
 
-    private async hasCurrentRepairAuthority(control: ALPeerControlMessage): Promise<boolean> {
+    private async readRepairAuthority(control: ALPeerControlMessage): Promise<boolean> {
         if (
             control.type === 'ack' ||
             (control.type === 'nack' && control.payload.reason !== 'gap' &&
@@ -136,7 +137,8 @@ export class ALOutboundRepairAdmission<TPrepared> {
             return true;
         }
         if (this.dependencies.planRepairMessage === undefined) {
-            return read.plan !== undefined &&
+            const asksForGapRepair = control.type === 'repair' || control.payload.reason === 'gap';
+            return asksForGapRepair && read.plan !== undefined &&
                 isALOutboundOwnHopPeer(read.plan, this.dependencies.hopPeerIds, control.payload.fromPeerId);
         }
         const planned = await this.dependencies.planRepairMessage(msg, {
