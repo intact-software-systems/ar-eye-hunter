@@ -395,7 +395,8 @@ function selectScenarios(
         ...selection,
         carrier,
         typeId: CONFORMANCE_TYPE_ID,
-        deadlineMs: CONFORMANCE_DEADLINE_MS
+        deadlineMs: CONFORMANCE_DEADLINE_MS,
+        recoveryOwner: 'record'
     }).filter((scenario) =>
         scenario.laneFamily === family &&
         (scope === 'full' || scenario.tags.includes('smoke')) &&

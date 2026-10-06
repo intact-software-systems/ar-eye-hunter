@@ -12,13 +12,20 @@ export type ALOrderingObservationStatus =
     | 'duplicate'
     | 'stale';
 
+/** An inclusive run of ordering sequences, `from <= to`; the unit a receiver asks a sender to repair. */
+export interface ALSeqRange {
+    readonly from: number;
+    readonly to: number;
+}
+
 export interface ALOrderingObservation {
     readonly status: ALOrderingObservationStatus;
     readonly trackKey?: string;
     readonly seq?: number;
     readonly expectedSeq?: number;
     readonly lastContiguousSeq?: number;
-    readonly missingSeqs: readonly number[];
+    /** Sorted, disjoint; the sequences between `expectedSeq` and `seq` that neither arrived nor are buffered. */
+    readonly missingRanges: readonly ALSeqRange[];
     readonly releasableSeqs: readonly number[];
 }
 

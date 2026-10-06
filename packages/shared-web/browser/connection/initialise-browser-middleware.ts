@@ -49,6 +49,7 @@ import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type {
@@ -93,6 +94,8 @@ export interface MiddlewareInitOptions {
     readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
     readonly deliverySettlements: BrowserDeliverySettlements.Carriers;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
+    /** Where both carriers' inbound runtimes hand a message they can no longer order. */
+    readonly onResyncRequired: (resync: ALInboundResyncRequired) => void;
     readonly signal?: AbortSignal;
     readonly timeoutMs?: number;
     readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
@@ -362,7 +365,8 @@ export function toBrowserWebSocketQueueBoxInput(
         newConnectionRequestId: input.creation.newConnectionRequestId,
         outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
         outboundSettlements: input.options.deliverySettlements.ws,
-        inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics
+        inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics,
+        onResyncRequired: input.options.onResyncRequired
     };
 }
 
@@ -426,7 +430,8 @@ async function initialiseBrowserRtcTransport(
                 inboundVolatileStores: input.inboundVolatileStores,
                 durableWorkOwnership: input.options.durableWorkOwnership,
                 roomAuthorityRefresh: createBrowserRtcGroupSnapshotRefresh(input),
-                inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics
+                inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics,
+                onResyncRequired: input.options.onResyncRequired
             }
         );
         registerBrowserRttEgress(input, rtcRxStreamer);

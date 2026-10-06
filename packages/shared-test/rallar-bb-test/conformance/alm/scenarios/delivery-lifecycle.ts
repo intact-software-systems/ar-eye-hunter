@@ -3,11 +3,11 @@ import { AL_CONTROL_ACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-c
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
+import { toCommittedControlAdmissionWait } from '../alm-conformance-diagnostic-waits.ts';
 import { toHeldFaultCommands } from '../alm-conformance-fault-commands.ts';
 import {
     toAdmissionCommands,
     toCancelCommand,
-    toCommittedControlAdmissionWait,
     toObserveCommand,
     toReceiptsCommand,
     toResultAssertion,

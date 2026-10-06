@@ -170,6 +170,48 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'prefix:state',
         maximumMagnitude: 4
     }),
+    // The inbound ALM directory is one feature: admission, ordered and admitted
+    // delivery, the durable effect store, the work entries and the resynchronization
+    // cursor, each a direct owner the README maps. Its files share the al-inbound
+    // prefix because they are that feature's vocabulary, not a role split.
+    Object.freeze({
+        path: 'packages/shared/alm/inbound',
+        rule: 'layout.directory-density',
+        symbol: 'inbound',
+        maximumMagnitude: 22
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/inbound',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:al',
+        maximumMagnitude: 19
+    }),
+    // The ALM conformance catalog is one feature: the scenario definitions, the
+    // command builders by concern (message, receipt, receiver, session, fault,
+    // ordering, diagnostic waits), the four identity assessments and the
+    // observation regimes, each a direct owner the harness docs map. Its
+    // scenarios sit beside it.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/conformance/alm',
+        rule: 'layout.directory-density',
+        symbol: 'alm',
+        maximumMagnitude: 22
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/conformance/alm',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:assess',
+        maximumMagnitude: 4
+    }),
+    // The outbound ALM directory is one feature: dispatch, repair admission and
+    // retransmission, control admission, effect identities and the own-hop
+    // predicate both repair owners share, each a direct owner the README maps.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound',
+        rule: 'layout.directory-density',
+        symbol: 'outbound',
+        maximumMagnitude: 22
+    }),
     // These tests own deliberate malformed signaling/graph inputs and raw
     // decoded WebSocket captures. Values go straight to the production
     // boundary or an assertion; they do not supply unvalidated domain state.
@@ -487,6 +529,23 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'decodeRepairReason'
     }),
     Object.freeze({
+        path: 'packages/shared/al-contracts/al-control-value-codec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeReceiptPhase'
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-control-value-codec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeALDeliveryCarrier'
+    }),
+    // The inbound runtime admits a raw carrier value: a WS frame or an RTC datum
+    // whose only shape is what decodeALMessageValue proves before any planning.
+    Object.freeze({
+        path: 'packages/shared/alm/inbound/al-inbound-message-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
         path: 'packages/shared/al-contracts/al-control.ts',
         rule: 'boundary.unknown',
         symbol: 'parseControlPayload'
@@ -510,6 +569,11 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
         rule: 'boundary.unknown',
         symbol: 'validateALMessageResourceLimits'
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
+        rule: 'boundary.unknown',
+        symbol: 'computeALMessageEnvelopeBytes'
     }),
     Object.freeze({
         path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
@@ -727,6 +791,15 @@ export const reviewedDispositions = Object.freeze([
         rule: 'file.cognitive-load',
         symbol: undefined,
         maximumMagnitude: 59
+    }),
+    // The decision reads of one dispatch stay together: the one read that also asks
+    // whether a repair attempt's sends are already committed keeps the budget charge
+    // under the same sender fence as the plan it charges for.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/admission/al-outbound-admission-reads.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 50
     }),
     Object.freeze({
         path: 'packages/shared/services/web-rtc-rx-streamer-service.ts',

@@ -18,6 +18,7 @@ import {
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
+import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -51,6 +52,7 @@ export namespace BrowserSessionConnectionLifecycle {
         readonly qosProvider: ALQosInputProvider | undefined;
         readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
         readonly sessionDeliveries: BrowserSessionDeliveries;
+        readonly onResyncRequired: (resync: ALInboundResyncRequired) => void;
         readonly connectionRuntime: RallarConnectionRuntimePort;
         readonly transportRuntime: BrowserTransportRuntimePort;
         readonly lifecycle: RallarLifecycleCoordinator;
@@ -117,7 +119,8 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             ...toMiddlewareOptions(input),
             qosProvider: this.input.qosProvider,
             readVolatileSessionLimits: this.input.readVolatileSessionLimits,
-            deliverySettlements: this.input.sessionDeliveries.observers
+            deliverySettlements: this.input.sessionDeliveries.observers,
+            onResyncRequired: this.input.onResyncRequired
         };
         const generation = this.connectionGeneration;
         this.lifecycleIsDisconnected = false;
@@ -239,7 +242,10 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
 
 function toMiddlewareOptions(
     input: RallarSessionConnectionInput
-): Omit<MiddlewareInitOptions, 'deliverySettlements' | 'qosProvider' | 'readVolatileSessionLimits'> {
+): Omit<
+    MiddlewareInitOptions,
+    'deliverySettlements' | 'qosProvider' | 'readVolatileSessionLimits' | 'onResyncRequired'
+> {
     return {
         ...toRallarOperationOptions(input.operationOptions),
         rtcCaptureConfiguration: input.rtcCaptureConfiguration,

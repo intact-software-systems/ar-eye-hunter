@@ -43,6 +43,7 @@ export type {
     RallarAuthChangeListener,
     RallarAuthChangeReason,
     RallarAuthState,
+    RallarChannelRecovery,
     RallarConnectStatus,
     RallarCreateRoomInput,
     RallarDefaults,
@@ -134,6 +135,7 @@ export type {
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 export { AL_DELIVERY_ADMITTED_STATES, AL_DELIVERY_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+export type { ALInboundResyncCursor } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 export type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
 export type {
     ALStorageEvent,

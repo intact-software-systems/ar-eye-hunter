@@ -35,7 +35,7 @@ describe('AL QoS policy', () => {
         Object.freeze(msg.delivery);
         Object.freeze(msg.targets);
         Object.freeze(msg);
-        const orderingObservation = Object.freeze({ status: 'resync-required' as const, missingSeqs: Object.freeze([]), releasableSeqs: Object.freeze([]) });
+        const orderingObservation = Object.freeze({ status: 'resync-required' as const, missingRanges: Object.freeze([]), releasableSeqs: Object.freeze([]) });
         const context = Object.freeze({
             nowMs: msg.id.ts,
             selfPeerId: 'self',
@@ -51,7 +51,7 @@ describe('AL QoS policy', () => {
         expect(plan.forwarding.enabled).toBe(false);
         expect(plan.ack.enabled).toBe(false);
         expect(plan.repair.enabled).toBe(false);
-        expect(plan.nack).toEqual({ enabled: true, toPeerId: 'sender', reason: 'resync-required', missingSeqs: [] });
+        expect(plan.nack).toEqual({ enabled: true, toPeerId: 'sender', reason: 'resync-required', missingRanges: [] });
         expect(planALMessageHandling(msg, context)).toEqual(plan);
     });
 
@@ -88,7 +88,7 @@ describe('AL QoS policy', () => {
         const context: ALMessagePlanningContext = {
             nowMs: message.id.ts,
             selfPeerId: 'self',
-            orderingObservation: { status: 'resync-required', missingSeqs: [], releasableSeqs: [] }
+            orderingObservation: { status: 'resync-required', missingRanges: [], releasableSeqs: [] }
         };
         const originating = planALMessageHandling(message, context);
         expect(originating.dropReason).toBe('resync-required');
@@ -96,7 +96,7 @@ describe('AL QoS policy', () => {
         expect(originating.repair.enabled).toBe(false);
         const expired = planALMessageHandling(message, { ...context, fromPeerId: 'sender', nowMs: message.id.ts + 2 });
         expect(expired.nack.reason).toBe('expired');
-        expect(expired.nack.missingSeqs).toEqual([]);
+        expect(expired.nack.missingRanges).toEqual([]);
         expect(expired.ack.enabled).toBe(false);
     });
 
@@ -537,7 +537,7 @@ describe('AL QoS policy', () => {
                 connectedPeerIds: ['peer-1', 'peer-2'],
                 groupMemberPeerIds: ['self', 'peer-1', 'peer-2'],
                 overlayNeighborPeerIds: ['peer-2'],
-                orderingObservation: { status: 'gap', missingSeqs: [2], releasableSeqs: [] }
+                orderingObservation: { status: 'gap', missingRanges: [{ from: 2, to: 2 }], releasableSeqs: [] }
             }
         );
 
@@ -545,7 +545,7 @@ describe('AL QoS policy', () => {
         expect(plan.localDelivery.enabled).toBe(false);
         expect(plan.localDelivery.deferred).toBe(true);
         expect(plan.nack.enabled).toBe(true);
-        expect(plan.nack.missingSeqs).toEqual([2]);
+        expect(plan.nack.missingRanges).toEqual([{ from: 2, to: 2 }]);
         expect(plan.orderingRuntime.status).toBe('gap');
         expect(plan.forwarding.enabled).toBe(true);
     });

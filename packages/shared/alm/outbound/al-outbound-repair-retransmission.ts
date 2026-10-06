@@ -1,4 +1,8 @@
 import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
+import { computeALSeqRangePage } from '../../al-contracts/al-seq-range.ts';
+import { RetryableConflictError } from '../../resilience/TryWith.ts';
+import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundPlanner,
@@ -8,8 +12,11 @@ import type {
 import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
 import type {
     ALOutboundDispatchPlan,
-    ALOutboundRepairRequest
+    ALOutboundRepairRequest,
+    ALOutboundSettlementEmitter
 } from './al-outbound-message-runtime.ts';
+import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
+import { toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
     toALOutboundCompletedHopPeerIds
@@ -38,44 +45,62 @@ export namespace ALOutboundRepairRetransmission {
                 request: ALOutboundRepairRequest
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
+        /** The composition's fixed hops, the sender's own beside a plan's tracked next hops; undefined for none. */
+        readonly hopPeerIds: readonly string[] | undefined;
+        /** The lane's guarded emitter: where a spent repair budget states that its message is skipped. */
+        readonly settlements: ALOutboundSettlementEmitter;
     }
 }
 
-/** Turns a repair hint into a new dispatch admission; the retry schedule that emitted the hint is elsewhere. */
+/**
+ * Turns a repair hint into a new dispatch admission; the retry schedule that emitted the hint is elsewhere.
+ * Without a repair planner a room-scoped message is retried along the sender's own hop only, so a retry
+ * never widens a room audience.
+ */
 export class ALOutboundRepairRetransmission<TPrepared> {
     private readonly dependencies: ALOutboundRepairRetransmission.Dependencies<TPrepared>;
+    /**
+     * The messages whose exhaustion this runtime has stated, so a later hint for one states nothing more.
+     * Memory rather than a row: the budget row keeps meaning what it means, and a reload states an
+     * exhaustion once more at most. Capped at the repair window, oldest out first.
+     */
+    private readonly exhaustedMsgIds = new Set<string>();
 
     constructor(dependencies: ALOutboundRepairRetransmission.Dependencies<TPrepared>) {
         this.dependencies = dependencies;
     }
 
+    /**
+     * Serves one page of the hint's missing sequences, ascending, and re-commits the rest as one follow-up
+     * hint, so a wide gap costs a bounded page of indexed reads and dispatch commits per execution. A hint
+     * without ordering, or without ranges, repairs the message it names instead. A page whose sequences
+     * have left the sent cache retransmits nothing: the message the hint names is not the gap.
+     */
     async retransmitFromRepairHint(
         fallbackMsgId: string,
         request: ALOutboundRepairHint,
         attemptIdentity: string
     ): Promise<void> {
-        if (request.orderingTrackKey && request.missingSeqs.length > 0) {
-            let retransmitted = false;
+        const trackKey = request.orderingTrackKey;
+        if (trackKey === undefined || request.missingRanges.length === 0) {
+            await this.repairByMsgId(fallbackMsgId, request, attemptIdentity);
+            return;
+        }
 
-            for (const seq of request.missingSeqs) {
-                const cached = await this.dependencies.admissionStore.readSentMessageByOrdering(
-                    request.orderingTrackKey,
-                    seq
-                );
-                if (!cached) {
-                    continue;
-                }
-
-                retransmitted = true;
+        const { page, remaining } = computeALSeqRangePage(
+            request.missingRanges,
+            AL_MESSAGE_RESOURCE_LIMITS.repairPageMessages
+        );
+        for (const seq of page) {
+            const cached = await this.dependencies.admissionStore.readSentMessageByOrdering(trackKey, seq);
+            if (cached) {
                 await this.repairByMsgId(cached.msgId, request, attemptIdentity);
-            }
-
-            if (retransmitted) {
-                return;
             }
         }
 
-        await this.repairByMsgId(fallbackMsgId, request, attemptIdentity);
+        if (remaining.length > 0) {
+            await this.commitFollowUpRepairHint(fallbackMsgId, { ...request, missingRanges: remaining });
+        }
     }
 
     async retransmitByMsgId(
@@ -126,12 +151,6 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             return;
         }
 
-        const attempts = read.repairAttempt?.attempts ?? 0;
-        if (attempts >= repair.maxAttempts) {
-            console.warn(`Repair budget exceeded for message ${msgId}`);
-            return;
-        }
-
         const repairedPlan = await this.readRepairPlan(read, request);
         if (repairedPlan?.dropReason) {
             console.warn(`Skipping outbound repair dispatch: ${repairedPlan.dropReason}`);
@@ -144,9 +163,60 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         await this.commitRepairPlan({
             msg,
             plan: repairedPlan,
-            priorAttempts: attempts,
+            priorAttempts: read.repairAttempt?.attempts ?? 0,
             maxAttempts: repair.maxAttempts,
             attemptIdentity
+        });
+    }
+
+    /**
+     * The rest of a hint as one new hint, fenced on the sender's version like every hint commit. A conflict
+     * retries the whole execution: its page dispatches are deduplicated by their effect identities.
+     */
+    private async commitFollowUpRepairHint(msgId: string, request: ALOutboundRepairHint): Promise<void> {
+        const read = await this.dependencies.admissionStore.readRepairMessage(
+            msgId,
+            this.dependencies.planOutgoingMessage
+        );
+        const msg = read.sentSnapshot?.msg;
+        const expiresAtMs = read.storedMessage?.reference.expiresAtMs;
+        if (!msg || expiresAtMs === undefined) {
+            return;
+        }
+
+        const status = await this.dependencies.admissionStore.commitBundle({
+            senderId: msg.id.senderId,
+            expectedVersion: read.clientRecord?.version,
+            mutations: [],
+            durableEffects: [{
+                effectId: toALOutboundRepairHintEffectId(msgId, request),
+                expireAtTimestamp: expiresAtMs,
+                payload: { kind: 'repair-hint', msgId, request }
+            }]
+        });
+        if (status === 'conflict') {
+            throw new RetryableConflictError('Outbound repair follow-up hint commit conflict');
+        }
+    }
+
+    /** The terminal statement of a message whose repair budget dispatch found spent; a repeat states nothing. */
+    private settleRepairExhausted(msgId: string, detail: string): void {
+        if (this.exhaustedMsgIds.has(msgId)) {
+            return;
+        }
+        this.exhaustedMsgIds.add(msgId);
+        if (this.exhaustedMsgIds.size > AL_MESSAGE_RESOURCE_LIMITS.repairWindow) {
+            for (const oldest of this.exhaustedMsgIds) {
+                this.exhaustedMsgIds.delete(oldest);
+                break;
+            }
+        }
+
+        this.dependencies.settlements({
+            kind: 'admission',
+            msgId,
+            trackedReceiptAlgo: 'none',
+            verdict: { kind: 'skipped', reason: 'repair-exhausted', detail }
         });
     }
 
@@ -157,21 +227,22 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         const msg = read.sentSnapshot?.msg;
         const plan = read.plan;
         const repair = plan?.repairTracking;
-        if (!msg || !plan || !repair || (!this.dependencies.planRepairMessage && isRoomScopedALMessage(msg))) {
+        if (!msg || !plan || !repair) {
             return undefined;
         }
-        return this.dependencies.planRepairMessage
-            ? await this.dependencies.planRepairMessage(msg, {
-                ...request,
-                completedHopPeerIds: [],
-                repair,
-                recipientScope: plan.recipientScope,
-                principalTargetId: plan.principalTargetId,
-                sessionInvalidation: plan.sessionInvalidation,
-                admittedAudience: plan.admittedAudience,
-                referenceKey: read.storedMessage?.reference.key
-            })
-            : plan;
+        if (!this.dependencies.planRepairMessage) {
+            return isRoomScopedALMessage(msg) && !this.isOwnHopRepair(plan, request) ? undefined : plan;
+        }
+        return await this.dependencies.planRepairMessage(msg, {
+            ...request,
+            completedHopPeerIds: [],
+            repair,
+            recipientScope: plan.recipientScope,
+            principalTargetId: plan.principalTargetId,
+            sessionInvalidation: plan.sessionInvalidation,
+            admittedAudience: plan.admittedAudience,
+            referenceKey: read.storedMessage?.reference.key
+        });
     }
 
     private async retryMissingAcknowledgements(
@@ -185,7 +256,10 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         if (!pending || !msg || !plan || isALOutboundReceiptComplete(pending) || pending.maxAttempts <= 0) {
             return;
         }
-        if (!this.dependencies.planRepairMessage && isRoomScopedALMessage(msg)) {
+        if (
+            !this.dependencies.planRepairMessage && isRoomScopedALMessage(msg) &&
+            !isOwnHopRetry(plan, this.dependencies.hopPeerIds, pending)
+        ) {
             return;
         }
         const retryPlan = this.dependencies.planRepairMessage
@@ -196,7 +270,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 sessionInvalidation: plan.sessionInvalidation,
                 admittedAudience: plan.admittedAudience,
                 referenceKey: read.storedMessage?.reference.key,
-                failedPeerIds: pending.expectedPeerIds.filter((peerId) => !pending.ackedPeerIds.includes(peerId)),
+                failedPeerIds: toFailedPeerIds(pending),
                 completedHopPeerIds: toALOutboundCompletedHopPeerIds(read.acks),
                 repair: { enabled: true, algo: 'retransmit', maxAttempts: pending.maxAttempts }
             })
@@ -216,8 +290,21 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         });
     }
 
+    /**
+     * Whether the gap or repair hint replays the sender's own hop: that hop asked for its own copy. The
+     * peers a receipt still owes rule the ack-timeout path (`isOwnHopRetry`), not a gap.
+     */
+    private isOwnHopRepair(plan: ALOutboundDispatchPlan<TPrepared>, request: ALOutboundRepairHint): boolean {
+        return request.requestedByPeerId !== undefined &&
+            isALOutboundOwnHopPeer(plan, this.dependencies.hopPeerIds, request.requestedByPeerId);
+    }
+
+    /**
+     * Dispatch admission charges the budget under the sender's fence and answers `repair-exhausted` when
+     * it finds the budget spent; only that answer, never a read of this owner's own, states the exhaustion.
+     */
     private async commitRepairPlan(repair: ALOutboundCommitRepairInput<TPrepared>): Promise<void> {
-        await this.dependencies.dispatchAdmission.commit({
+        const { computed } = await this.dependencies.dispatchAdmission.commit({
             msg: repair.msg,
             planner: () => repair.plan,
             intent: 'repair',
@@ -228,5 +315,26 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 attemptIdentity: repair.attemptIdentity
             }
         });
+        if (computed.verdict.kind === 'skipped' && computed.verdict.reason === 'repair-exhausted') {
+            this.settleRepairExhausted(repair.msg.id.msgId, computed.verdict.detail);
+        }
     }
+}
+
+/** Whether the retry replays the sender's own hop: every peer the receipt still owes is one. */
+function isOwnHopRetry<TPrepared>(
+    plan: ALOutboundDispatchPlan<TPrepared>,
+    hopPeerIds: readonly string[] | undefined,
+    pending: ALOutboundPendingAckSnapshot | undefined
+): boolean {
+    if (pending === undefined) {
+        return false;
+    }
+    const failedPeerIds = toFailedPeerIds(pending);
+    return failedPeerIds.length > 0 &&
+        failedPeerIds.every((peerId) => isALOutboundOwnHopPeer(plan, hopPeerIds, peerId));
+}
+
+function toFailedPeerIds(pending: ALOutboundPendingAckSnapshot): readonly string[] {
+    return pending.expectedPeerIds.filter((peerId) => !pending.ackedPeerIds.includes(peerId));
 }

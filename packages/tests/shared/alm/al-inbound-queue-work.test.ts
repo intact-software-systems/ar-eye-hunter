@@ -567,7 +567,7 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
             return controls.map((control) => decodeALControlMessage(control).right);
         }).toContainEqual(expect.objectContaining({
             type: 'nack',
-            payload: expect.objectContaining({ msgId: 'message-2', reason: 'resync-required', missingSeqs: [] })
+            payload: expect.objectContaining({ msgId: 'message-2', reason: 'resync-required', missingRanges: [] })
         }));
         await expect.poll(async () => {
             await engine.executeOnce();

@@ -6,6 +6,7 @@ import type {
 } from '../../al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
+import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALInboundDurableEffect, ALInboundMessageReadDto } from './al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from './al-inbound-canonical-message.ts';
@@ -169,7 +170,7 @@ function toRepairEffects(
             input.plan.orderingRuntime.trackKey ?? '-',
             input.plan.orderingRuntime.seq ?? '-',
             input.plan.orderingRuntime.expectedSeq ?? '-',
-            input.plan.orderingRuntime.missingSeqs.join(',')
+            toALSeqRangesText(input.plan.orderingRuntime.missingRanges)
         ]),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
         carrier: input.carrier,

@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import type { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
@@ -153,6 +160,7 @@ describe('immutable RTC capture on browser connections', () => {
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            onResyncRequired: () => {},
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         const first = transport.init(options);
@@ -212,6 +220,7 @@ describe('immutable RTC capture on browser connections', () => {
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            onResyncRequired: () => {},
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         try {
@@ -237,6 +246,7 @@ describe('immutable RTC capture on browser connections', () => {
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            onResyncRequired: () => {},
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         let reentered: Promise<BrowserTransportRuntime.Connection> | undefined;
@@ -278,6 +288,7 @@ describe('immutable RTC capture on browser connections', () => {
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            onResyncRequired: () => {},
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         let reentered: Promise<BrowserTransportRuntime.Connection> | undefined;
@@ -337,6 +348,7 @@ describe('immutable RTC capture on browser connections', () => {
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            onResyncRequired: () => {},
             sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, transport, mocks.readSession),
             connectionRuntime: new BrowserFacadeRuntimeState(transport),
             transportRuntime: transport,
@@ -383,6 +395,7 @@ describe('immutable RTC capture on browser connections', () => {
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            onResyncRequired: () => {},
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         let reentered: Promise<BrowserTransportRuntime.Connection> | undefined;
@@ -421,6 +434,7 @@ describe('immutable RTC capture on browser connections', () => {
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            onResyncRequired: () => {},
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         let replacement: Promise<BrowserTransportRuntime.Connection> | undefined;
@@ -470,6 +484,7 @@ describe('immutable RTC capture on browser connections', () => {
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
+            onResyncRequired: () => {},
             sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, transport, mocks.readSession),
             connectionRuntime,
             transportRuntime: transport,

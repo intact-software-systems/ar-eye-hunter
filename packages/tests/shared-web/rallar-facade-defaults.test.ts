@@ -287,6 +287,7 @@ describe('Rallar facade default scope behavior', () => {
                 qosProvider: undefined,
                 readVolatileSessionLimits: undefined,
                 deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
+                onResyncRequired: expect.any(Function),
                 diagnosticsPorts: {
                     submissionReadinessFaultPort: { decideSubmissionReadiness: expect.any(Function) },
                     transportFaultPort: { decideSend: expect.any(Function) },
@@ -340,6 +341,7 @@ describe('Rallar facade default scope behavior', () => {
             expect.objectContaining({
                 qosProvider: undefined,
                 deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
+                onResyncRequired: expect.any(Function),
                 diagnosticsPorts: {
                     submissionReadinessFaultPort: transportFaultPort,
                     transportFaultPort,

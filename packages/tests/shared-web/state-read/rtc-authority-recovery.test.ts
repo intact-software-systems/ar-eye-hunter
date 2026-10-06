@@ -426,7 +426,7 @@ describe('latest-wins receiver delivery and independent ordering', () => {
                         reason: 'gap',
                         orderingKey: '["app","workspace","room"]:sender:0',
                         expectedSeq: 1,
-                        missingSeqs: [1]
+                        missingRanges: [{ from: 1, to: 1 }]
                     })
                 });
                 expect(controls).toContainEqual({
@@ -435,7 +435,7 @@ describe('latest-wins receiver delivery and independent ordering', () => {
                         msgId: replacement.id.msgId,
                         orderingKey: '["app","workspace","room"]:sender:0',
                         expectedSeq: 1,
-                        missingSeqs: [1]
+                        missingRanges: [{ from: 1, to: 1 }]
                     })
                 });
             }

@@ -228,10 +228,12 @@ describe('outbound message expiry', () => {
                 port: workPort,
                 clock,
                 settlements: () => {},
-                carrier: 'ws'
+                carrier: 'ws',
+                hopPeerIds: undefined
             }),
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
             planRepairMessage: undefined,
+            hopPeerIds: undefined,
             diagnostics: undefined,
             settlements: () => {}
         });

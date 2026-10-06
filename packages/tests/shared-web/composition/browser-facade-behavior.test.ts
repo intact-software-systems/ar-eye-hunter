@@ -215,6 +215,7 @@ describe('browser facade restored-session setup', () => {
                 qosProvider: undefined,
                 readVolatileSessionLimits: undefined,
                 deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
+                onResyncRequired: expect.any(Function),
                 diagnosticsPorts: {
                     submissionReadinessFaultPort: { decideSubmissionReadiness: expect.any(Function) },
                     transportFaultPort: { decideSend: expect.any(Function) },

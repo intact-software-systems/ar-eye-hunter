@@ -36,7 +36,7 @@
     },
     "messageTypeId": "black-box.stale-state.message",
     "topicId": "black-box.stale-state",
-    "nackTypeId": "al.control.nack.v1",
+    "nackTypeId": "al.control.nack.v2",
     "futureSnapshotVersion": 999999
   },
   "connections": {

@@ -1,7 +1,8 @@
 import type { ALStoreDurability } from '../alm/al-runtime-stores.ts';
 import type { ALMessage, ALTargets } from './al-contract.ts';
 
-import type { ALOrderingObservation, ALSupersedenceObservation } from './al-runtime.ts';
+import type { ALOrderingObservation, ALSeqRange, ALSupersedenceObservation } from './al-runtime.ts';
+import { toALSeqRangesText } from './al-seq-range.ts';
 
 import { normalizeALQosPolicy, toDefaultALSemanticKey } from './normalize-al-qos-policy.ts';
 import { resolveALOwnedChildPeerIds } from './resolve-al-owned-child-peer-ids.ts';
@@ -279,7 +280,7 @@ export interface ALMessageHandlingPlan {
         readonly enabled: boolean;
         readonly toPeerId?: string;
         readonly reason?: string;
-        readonly missingSeqs: readonly number[];
+        readonly missingRanges: readonly ALSeqRange[];
     };
     readonly repair: {
         readonly enabled: boolean;
@@ -466,7 +467,7 @@ function computeMessageHandlingDecision(
         result,
         dedupKey: toDedupKey(msg, result.effective),
         supersedenceRuntime: context.supersedenceObservation ?? { status: 'untracked' },
-        orderingRuntime: context.orderingObservation ?? { status: 'untracked', missingSeqs: [], releasableSeqs: [] },
+        orderingRuntime: context.orderingObservation ?? { status: 'untracked', missingRanges: [], releasableSeqs: [] },
         congestion: planCongestion(result.effective, overloaded)
     };
 }
@@ -531,7 +532,9 @@ function computeMessageDelivery(
             enabled: !dropped && !deferred && isRecipient,
             persist: !dropped && shouldPersistInbox(decision.result.effective),
             deferred,
-            reason: deferred ? `Waiting for missing seqs ${decision.orderingRuntime.missingSeqs.join(', ')}` : undefined
+            reason: deferred
+                ? `Waiting for missing seqs ${toALSeqRangesText(decision.orderingRuntime.missingRanges)}`
+                : undefined
         },
         forwarding: {
             enabled: nextHopPeerIds.length > 0,
@@ -580,12 +583,12 @@ function planNack(
     if (!context.fromPeerId) {
         return {
             enabled: false,
-            missingSeqs: []
+            missingRanges: []
         };
     }
 
     if (drop?.code === 'resync-required') {
-        return { enabled: true, toPeerId: context.fromPeerId, reason: 'resync-required', missingSeqs: [] };
+        return { enabled: true, toPeerId: context.fromPeerId, reason: 'resync-required', missingRanges: [] };
     }
 
     if (!drop && orderingRuntime.status === 'gap' && effective.repair.algo !== 'none') {
@@ -593,7 +596,7 @@ function planNack(
             enabled: true,
             toPeerId: context.fromPeerId,
             reason: 'gap',
-            missingSeqs: orderingRuntime.missingSeqs
+            missingRanges: orderingRuntime.missingRanges
         };
     }
 
@@ -602,7 +605,7 @@ function planNack(
             enabled: true,
             toPeerId: context.fromPeerId,
             reason: 'expired',
-            missingSeqs: []
+            missingRanges: []
         };
     }
 
@@ -611,13 +614,13 @@ function planNack(
             enabled: true,
             toPeerId: context.fromPeerId,
             reason: 'overloaded',
-            missingSeqs: []
+            missingRanges: []
         };
     }
 
     return {
         enabled: false,
-        missingSeqs: []
+        missingRanges: []
     };
 }
 

@@ -1,7 +1,10 @@
+import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserLocalMediaSourceRuntime } from '@shared-web/browser/media/browser-local-media-source-runtime.ts';
 import { BrowserRemoteMediaStreamRuntime } from '@shared-web/browser/media/browser-remote-media-stream-runtime.ts';
+import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
+import { BrowserResyncRecovery } from '@shared-web/browser/messages/browser-resync-recovery.ts';
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
@@ -19,11 +22,18 @@ import {
     type RallarWsController
 } from '@shared-web/browser/websocket/browser-rallar-ws-controller.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
-import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    newALUnicastMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES } from '@shared/api/rallar-validation.ts';
-import type { RallarBrowserFacadeRuntimeContext } from './browser-facade-runtime-state.ts';
+import type {
+    RallarBrowserFacadeRuntimeContext,
+    RallarConnectionRuntimePort
+} from './browser-facade-runtime-state.ts';
 
 import type { BrowserStateComposition } from './browser-runtime-composition.ts';
 
@@ -33,6 +43,12 @@ const DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS = 5_000;
 export interface BrowserMessagingComposition {
     readonly messagesController: BrowserRallarMessagesController;
     readonly messages: RallarMessagesOperations;
+}
+
+/** Built before the session: each connect's inbound runtimes hand `resyncRecovery` their resynchronizations. */
+export interface BrowserResyncRecoveryComposition {
+    readonly recoveryOwners: BrowserChannelRecoveryOwners;
+    readonly resyncRecovery: BrowserResyncRecovery;
 }
 
 export interface BrowserRealtimeCoreComposition {
@@ -50,11 +66,16 @@ export interface BrowserMediaComposition {
     readonly media: RallarMediaFacade;
 }
 
+export interface CreateBrowserResyncRecoveryCompositionInput {
+    readonly connectionRuntime: RallarConnectionRuntimePort;
+}
+
 export interface CreateBrowserMessagingCompositionInput {
     readonly deliveries: BrowserRallarDeliveryRegistry;
     readonly sessionDeliveries: BrowserSessionDeliveries;
     readonly nowMs: () => number;
     readonly wsInbox: BrowserWebSocketInbox;
+    readonly recoveryOwners: BrowserChannelRecoveryOwners;
     readonly state: BrowserStateComposition;
     readonly session: RallarSessionController;
 }
@@ -67,6 +88,19 @@ export interface CreateBrowserRealtimeCoreCompositionInput {
 
 export interface CreateBrowserMediaCompositionInput {
     readonly session: RallarSessionController;
+}
+
+export function createBrowserResyncRecoveryComposition(
+    input: CreateBrowserResyncRecoveryCompositionInput
+): BrowserResyncRecoveryComposition {
+    const recoveryOwners = new BrowserChannelRecoveryOwners();
+    const resyncRecovery = new BrowserResyncRecovery({
+        owners: recoveryOwners,
+        // Read per event: `rallar.setup()` may replace the diagnostics ports after the facade is created.
+        storage: (event) =>
+            toRallarDiagnosticsPorts(input.connectionRuntime.readDefaults()?.diagnosticsPorts).storage(event)
+    });
+    return { recoveryOwners, resyncRecovery };
 }
 
 export function createBrowserMessagingComposition(
@@ -83,7 +117,8 @@ export function createBrowserMessagingComposition(
         deliveries: input.deliveries,
         sessionDeliveries: input.sessionDeliveries,
         nowMs: input.nowMs,
-        connect: async (capture) => await input.session.acquireConnection(capture),
+        recoveryOwners: input.recoveryOwners,
+        connect: input.session.acquireConnection,
         readMiddleware: input.session.readMiddleware,
         requireSession: input.session.requireSession,
         resolveDefaultRoom: input.state.resolveDefaultRoom,

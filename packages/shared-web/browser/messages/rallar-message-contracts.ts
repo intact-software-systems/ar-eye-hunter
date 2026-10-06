@@ -5,6 +5,7 @@ import type { ALAckMode, ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDurabilityAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { ALDeliveryLifecycle, ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALInboundResyncCursor } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
@@ -112,6 +113,15 @@ export interface RallarMessageLane<TSendInput, TSelector = string> {
 
 export type RallarStorageUnavailablePolicy = 'refuse' | 'volatile';
 
+/** A typed channel's owner of resynchronization: what the application does when the receiver can no longer order a sender's messages. */
+export interface RallarChannelRecovery {
+    /**
+     * Invoked once per ordering track (ordering key, sender, epoch) per runtime, after the sender was
+     * NACKed. The sender's new epoch is a new track and invokes it again.
+     */
+    onResyncRequired(cursor: ALInboundResyncCursor): void;
+}
+
 export interface RallarTypedMessageChannelDefinition {
     readonly topicId?: string;
     readonly typeId: string;
@@ -127,6 +137,8 @@ export interface RallarTypedMessageChannelDefinition {
      * storage instead; a downgraded `local-inbox` send also loses the receiver's inbox persistence.
      */
     readonly onStorageUnavailable?: RallarStorageUnavailablePolicy;
+    /** Absent, a message the receiver can no longer order is dropped, and the inbound diagnostics state it. */
+    readonly recovery?: RallarChannelRecovery;
 }
 
 export type RallarTypedPayloadHandler<T> = (

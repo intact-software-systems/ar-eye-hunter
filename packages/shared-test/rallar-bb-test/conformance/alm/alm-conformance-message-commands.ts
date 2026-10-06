@@ -1,4 +1,3 @@
-import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
@@ -51,15 +50,6 @@ interface AlmConformanceObserveInput extends AlmConformanceMessageStepInput {
     readonly budgetMs?: number;
 }
 
-interface AlmConformanceControlAdmissionWaitInput {
-    readonly step: AlmConformanceMessageStepInput;
-    readonly name: string;
-    /** The control that answers the send of `step.index`. */
-    readonly controlTypeId: string;
-    /** A receipt's phase to match; absent, any committed admission of the control matches (a receipt's first). */
-    readonly receiptPhase?: ALReceiptPayload['phase'];
-}
-
 interface AlmConformanceResultAssertionInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
@@ -69,7 +59,6 @@ interface AlmConformanceResultAssertionInput {
     readonly expected: string | number | boolean;
 }
 
-const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
 const STORAGE_COUNTERS_TIMEOUT_MS = 3_000;
 const OBSERVE_TIMEOUT_BASE_MS = 2_000;
 
@@ -181,29 +170,6 @@ export function toReceiptsCommand(receipts: AlmConformanceMessageStepInput): Ral
         connection: receipts.input.senderConnection,
         handleId: toSendHandleId(receipts),
         timeoutMs: toBudgetMs(MESSAGE_CONTROL_TIMEOUT_MS, receipts.input.deadlineMs)
-    };
-}
-
-/**
- * The `control-admission` event in which the origin commits a control that answers one of its sends, matched in its
- * emitted key order (`typeId`, `targetMsgId`, `outcome`, then a receipt's `phase` after the `reason`). The verdict is
- * local to the origin, so the wait polls no other page.
- */
-export function toCommittedControlAdmissionWait(
-    { step, name, controlTypeId, receiptPhase }: AlmConformanceControlAdmissionWaitInput
-): RallarBlackBoxTestCommand {
-    const targetMsgId = `{resultCache.${toCommandId(step, `send-${step.index}`)}.value.msgId}`;
-    const phase = receiptPhase === undefined ? '' : `,"reason":"none","phase":"${receiptPhase}"`;
-    return {
-        kind: 'wait',
-        commandId: toCommandId(step, name),
-        match: {
-            kind: 'diagnostic',
-            topic: OUTBOUND_DIAGNOSTICS_TOPIC,
-            payloadPath: 'data',
-            contains: `"typeId":"${controlTypeId}","targetMsgId":"${targetMsgId}","outcome":"committed"${phase}`
-        },
-        timeoutMs: step.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
     };
 }
 

@@ -14,7 +14,8 @@ import {
     type PersistedALRecord
 } from '../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
-import type { ALSupersedencePersistenceValue } from '../al-contracts/al-runtime.ts';
+import type { ALSeqRange, ALSupersedencePersistenceValue } from '../al-contracts/al-runtime.ts';
+import { decodeALSeqRanges } from '../al-contracts/al-seq-range.ts';
 import type { ALDeliveryCarrier } from './delivery/al-delivery-lifecycle.ts';
 
 import type { ALOutboundVersionedClientRecord } from './outbound/admission/al-outbound-admission-store.ts';
@@ -35,6 +36,14 @@ export function decodeALAdmissionNumber(value: unknown): number {
         throw new TypeError('Stored admission counter or timestamp is invalid');
     }
     return value;
+}
+
+export function decodeALAdmissionSeqRanges(value: unknown): readonly ALSeqRange[] {
+    const validated = decodeALSeqRanges(value);
+    if (validated.left) {
+        throw new TypeError(`Stored admission sequence ranges are invalid: ${validated.left.message}`);
+    }
+    return validated.right!;
 }
 
 export function decodeALAdmissionClientRecord(

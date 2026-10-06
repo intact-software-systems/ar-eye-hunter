@@ -200,7 +200,7 @@ describe('WS server outbound planning', () => {
                 requestedByPeerId,
                 failedPeerIds: [],
                 completedHopPeerIds: [],
-                missingSeqs: [],
+                missingRanges: [],
                 repair: { enabled: true, algo: 'retransmit', maxAttempts: 3 },
                 admittedAudience: ['b']
             });
@@ -233,7 +233,7 @@ describe('WS server outbound planning', () => {
             requestedByPeerId: 'b',
             failedPeerIds: [],
             completedHopPeerIds: [],
-            missingSeqs: [],
+            missingRanges: [],
             repair: { enabled: true, algo: 'retransmit', maxAttempts: 3 },
             admittedAudience: ['b', 'c']
         });

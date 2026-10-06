@@ -10,6 +10,7 @@ import type {
     ALVolatileInboundRuntimeStores
 } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundResyncRequired } from '../alm/inbound/al-inbound-resync-required.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { toALRtcPeerSource } from '../alm/inbound/al-inbound-source-validation.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
@@ -70,6 +71,8 @@ export namespace WebRtcRxStreamerService {
         readonly heartbeat?: Pick<WebRtcHeartbeatService.InputDto, 'maxMissedPings' | 'pingFrequencyMsecs'>;
         readonly roomAuthorityRefresh?: RoomAuthorityRefresh;
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
+        /** Absent, no recovery owner is told of a track this receiver can no longer order. */
+        readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
         /** The browser's per-connect session claim; absent, this receiver's inbound runtime owns its durable work. */
         readonly durableWorkOwnership?: ALDurableWorkOwnership;
     }
@@ -85,6 +88,7 @@ export namespace WebRtcRxStreamerService {
         };
         readonly roomAuthorityRefresh: RoomAuthorityRefresh | undefined;
         readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
+        readonly onResyncRequired: ((resync: ALInboundResyncRequired) => void) | undefined;
     }
 }
 
@@ -146,6 +150,7 @@ export class WebRtcRxStreamerService {
                     await this.multicast.forwardRetriedCopy(copy);
                 },
                 isRoomPeerPresent: (msg, peerId) => this.multicast.isRoomPeerPresent(msg, peerId),
+                onResyncRequired: dependencies.onResyncRequired,
                 diagnostics: dependencies.inboundDiagnostics
             }
         );
@@ -548,6 +553,7 @@ export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerServ
             pingFrequencyMsecs: defaultPingFrequencyMsecs
         },
         roomAuthorityRefresh: input.roomAuthorityRefresh,
-        inboundDiagnostics: input.inboundDiagnostics
+        inboundDiagnostics: input.inboundDiagnostics,
+        onResyncRequired: input.onResyncRequired
     });
 }

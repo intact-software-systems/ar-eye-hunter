@@ -2,6 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs, type ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { Either } from '../../resilience/Either.ts';
 import type { ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundAdmissionMutation } from './admission/al-outbound-admission-mutations.ts';
@@ -21,7 +22,7 @@ import {
     toALOutboundDispatchCompletionReceipt,
     type ALOutboundDispatchCompletionRead
 } from './control/to-al-outbound-dispatch-completion-receipt.ts';
-import { toALOutboundAckTimeoutEffectId, toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
+import { toALOutboundAckTimeoutEffectId, toALOutboundSendEffectId } from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
     isALOutboundAckTrackingWritable,
@@ -60,6 +61,18 @@ export interface ComputeALOutboundDispatchInput<TPrepared> {
     readonly options: ALOutboundCommitDispatchOptions;
 }
 
+/** A repair budget a message has spent, as its exhaustion settlement states it. */
+interface ALOutboundRepairExhaustion {
+    readonly attempts: number;
+    readonly maxAttempts: number;
+}
+
+/** The state mutations and durable effects one commit writes together. */
+interface ALOutboundDispatchWrites<TPrepared> {
+    readonly mutations: readonly ALOutboundAdmissionMutation[];
+    readonly durableEffects: readonly ALOutboundDurableEffectWrite<TPrepared>[];
+}
+
 export function computeALOutboundDispatch<TPrepared>(
     input: ComputeALOutboundDispatchInput<TPrepared>
 ): ALOutboundComputedDto<TPrepared> {
@@ -68,9 +81,9 @@ export function computeALOutboundDispatch<TPrepared>(
         return { ...earlyResult, msg: input.read.msg };
     }
     const { read, options } = input;
-    const repairMutations = computeRepairAttemptMutations(read, options.repairBudget);
-    if (repairMutations === 'skip') {
-        const detail = `Skipped outbound dispatch for message ${read.msg.id.msgId}`;
+    const repairCharge = computeRepairAttemptCharge(read, options.repairBudget);
+    if (repairCharge.left) {
+        const detail = toALOutboundRepairExhaustedDetail(read.msg.id.msgId, repairCharge.left);
         return toALOutboundComputedResult({ kind: 'skipped', reason: 'repair-exhausted', detail }, detail);
     }
 
@@ -79,19 +92,8 @@ export function computeALOutboundDispatch<TPrepared>(
         ...input.outboxEntry,
         status: awaitPhysicalDispatch ? EntityStatus.NEW : EntityStatus.COMPLETED
     };
-    const mutations = [...computeMessageMutations(read, canonicalEntry), ...repairMutations];
-    const durableEffects = computePreparedEffects(input, canonicalEntry);
-    // Captured before the ack-timeout effect (if any) is appended below: only `send-prepared` counts.
-    const queuedAttempts = durableEffects.length;
-    if (read.plan.preparedMessages.length > 0) {
-        const ackTracking = computeAckTrackingWrites(
-            read,
-            toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg).expiresAtMs
-        );
-        mutations.push(...ackTracking.mutations);
-        durableEffects.push(...ackTracking.durableEffects);
-    }
-
+    const writes = computeDispatchWrites(input, canonicalEntry, repairCharge.right!);
+    const queuedAttempts = writes.durableEffects.filter((effect) => effect.payload.kind === 'send-prepared').length;
     const verdict = computeALOutboundRouteVerdict(
         read,
         awaitPhysicalDispatch || read.plan.lane !== 'volatile',
@@ -112,12 +114,36 @@ export function computeALOutboundDispatch<TPrepared>(
             senderId: read.msg.id.senderId,
             expectedVersion: read.clientRecord?.version,
             canonicalEntry,
-            mutations,
-            durableEffects: durableEffects.map((effect) => ({
+            mutations: writes.mutations,
+            durableEffects: writes.durableEffects.map((effect) => ({
                 ...effect,
                 retryAtMs: effect.retryAtMs ?? input.dispatchAtMs
             }))
         }
+    };
+}
+
+/** The identity the sends of one dispatch carry: `initial` for a first send, its hint's for a repair. */
+export function toALOutboundAttemptIdentity(options: ALOutboundCommitDispatchOptions): string {
+    return options.attemptIdentity ?? 'initial';
+}
+
+/** Everything an admitted dispatch writes: its message rows, its repair charge, its sends and its receipt. */
+function computeDispatchWrites<TPrepared>(
+    input: ComputeALOutboundDispatchInput<TPrepared>,
+    canonicalEntry: ResourceEntry,
+    repairCharge: readonly ALOutboundAdmissionMutation[]
+): ALOutboundDispatchWrites<TPrepared> {
+    const { read } = input;
+    const ackTracking = read.plan.preparedMessages.length > 0
+        ? computeAckTrackingWrites(
+            read,
+            toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg).expiresAtMs
+        )
+        : { mutations: [], durableEffects: [] };
+    return {
+        mutations: [...computeMessageMutations(read, canonicalEntry), ...repairCharge, ...ackTracking.mutations],
+        durableEffects: [...computePreparedEffects(input, canonicalEntry), ...ackTracking.durableEffects]
     };
 }
 
@@ -178,18 +204,17 @@ function computePreparedEffects<TPrepared>(
 ): ALOutboundDurableEffectWrite<TPrepared>[] {
     const { read, options, phase } = input;
     const reference = toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg);
-    const attemptIdentity = options.attemptIdentity ?? 'initial';
+    const attemptIdentity = toALOutboundAttemptIdentity(options);
     return read.plan.preparedMessages.map((prepared, index) => {
         const preparedFingerprint = toALOutboundPreparedFingerprint(prepared);
         return {
-            effectId: toALOutboundEffectId([
-                'send',
-                read.msg.id.msgId,
+            effectId: toALOutboundSendEffectId({
+                msgId: read.msg.id.msgId,
                 phase,
                 attemptIdentity,
                 index,
                 preparedFingerprint
-            ]),
+            }),
             expireAtTimestamp: reference.expiresAtMs,
             payload: {
                 kind: 'send-prepared',
@@ -275,18 +300,30 @@ function toALOutboundAdmissionVerdict<TPrepared>(
     }
 }
 
-function computeRepairAttemptMutations<TPrepared>(
+/**
+ * The one charge a budgeted repair makes, or the exhaustion it finds instead. The charge belongs to the
+ * attempt's sends: a hint re-executed after a conflict or an expired lease finds them committed and
+ * charges nothing more, so a budget is spent once per attempt identity.
+ */
+function computeRepairAttemptCharge<TPrepared>(
     read: ALOutboundMessageReadDto<TPrepared>,
     repairBudget: ALOutboundCommitDispatchOptions['repairBudget']
-): readonly ALOutboundAdmissionMutation[] | 'skip' {
-    if (!repairBudget) {
-        return [];
+): Either<ALOutboundRepairExhaustion, readonly ALOutboundAdmissionMutation[]> {
+    if (!repairBudget || read.repairAttemptCommitted) {
+        return Either.ofRight([]);
     }
     const attempts = read.repairAttempt?.attempts ?? repairBudget.priorAttempts;
-    return attempts >= repairBudget.maxAttempts ? 'skip' : [{
+    if (attempts >= repairBudget.maxAttempts) {
+        return Either.ofLeft({ attempts, maxAttempts: repairBudget.maxAttempts });
+    }
+    return Either.ofRight([{
         kind: 'set-repair-attempt',
         snapshot: { msgId: read.msg.id.msgId, attempts: attempts + 1 }
-    }];
+    }]);
+}
+
+function toALOutboundRepairExhaustedDetail(msgId: string, exhaustion: ALOutboundRepairExhaustion): string {
+    return `The repair of ${msgId} ran out of retransmits after ${exhaustion.attempts} of ${exhaustion.maxAttempts}.`;
 }
 
 function appendSupersedenceMutations<TPrepared>(
@@ -363,15 +400,10 @@ function toALOutboundSupersededMsgIds<TPrepared>(bundle: ALOutboundCommitBundle<
     return [...new Set(replaced)];
 }
 
-interface ALOutboundAckTrackingWrites<TPrepared> {
-    readonly mutations: readonly ALOutboundAdmissionMutation[];
-    readonly durableEffects: readonly ALOutboundDurableEffectWrite<TPrepared>[];
-}
-
 function computeAckTrackingWrites<TPrepared>(
     read: ALOutboundMessageReadDto<TPrepared>,
     messageExpiresAtMs: number
-): ALOutboundAckTrackingWrites<TPrepared> {
+): ALOutboundDispatchWrites<TPrepared> {
     const tracking = read.plan.ackTracking;
     if (tracking === undefined || !isALOutboundAckTrackingWritable(tracking)) {
         return { mutations: [], durableEffects: [] };

@@ -128,6 +128,20 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'parseCapturedPayload'
     }),
+    // A typed channel definition arrives from application code of any typing. The
+    // policy validator reads its recovery owner as an untrusted value and admits
+    // only an object whose onResyncRequired is callable; the typed contract starts
+    // past this validation.
+    Object.freeze({
+        path: 'packages/shared-web/browser/messages/validate-rallar-typed-channel-policy.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-web/browser/messages/validate-rallar-typed-channel-policy.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateRallarChannelRecovery'
+    }),
     // The conformance discriminator parses untrusted application JSON and narrows
     // its marker/specimen fields locally. Only a boolean leaves this boundary;
     // malformed or unrelated payloads retain the ordinary QoS policy.
@@ -465,6 +479,26 @@ export const reviewedBrowserDispositions = Object.freeze([
             'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
         rule: 'boundary.unknown',
         symbol: 'flowControl'
+    }),
+    // The connection config arrives as recipe JSON; its lane decoder and the two
+    // field decoders read each raw field once and hand on only decoded values.
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'dataChannelLanes'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxRallarConfigFields'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeBlackBoxRallarConnectionConfig'
     }),
     Object.freeze({
         path:

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
+import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
@@ -112,7 +113,8 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
             }),
             sender: fixture.sender,
             rtc: { onMessage: () => () => {} },
-            ws: { onMessage: () => () => {} }
+            ws: { onMessage: () => () => {} },
+            recoveryOwners: new BrowserChannelRecoveryOwners()
         });
         const intents = channels.room<{ intent: string; }>({
             topicId: 'room.director.intent',
