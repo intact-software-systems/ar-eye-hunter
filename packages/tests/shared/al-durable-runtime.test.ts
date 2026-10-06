@@ -195,7 +195,7 @@ describe('AL state retained across runtime recreation', () => {
 
         await restartedForRepair.acceptControlMessage(
             newALNackControlMessage(
-                { v: 2, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
+                { v: 3, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
                 {
                     msgId: seq2.id.msgId,
                     fromPeerId: 'peer-1',

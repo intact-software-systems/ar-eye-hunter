@@ -317,7 +317,7 @@ peer that owns no children never asks: the retry of a recipient the origin
 already counted is the origin's decision from its receipt (see the outbound
 README for the origin's `no-route` verdict when it owns no child).
 
-The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-10-range-repair'`. An
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-10-roster-fence'`. An
 existing browser database at a different schema identity is deleted and
 recreated once, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
@@ -333,6 +333,10 @@ whose NACK plan and ordering observation now carry `missingRanges` (inclusive `{
 ranges, at most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges`) where they carried `missingSeqs`
 lists; the retained `repair-hint` work and the outbound control history carry the same field.
 No row is migrated: an older row's `missingSeqs` fails strict decoding.
+The roster-fence bump (D147) followed because every room send's targets carry the sender's
+`rosterVersion` (a multicast's in place of `membershipEpoch`, a room broadcast's beside
+`minSnapshotVersion`) and the envelope version moved to `AL_MESSAGE_ENVELOPE_VERSION = 3`; a row an
+older build wrote carries `id.v: 2`, which the one envelope decoder refuses `unsupported`.
 
 **The deploy window.** No row kind this change touches lacks an expiry, so
 nothing the WS server's PostgreSQL store holds from before the deploy stays
@@ -380,6 +384,12 @@ bounds the buffered slots of a track, and the message deadlines bound the retain
 control history, so the window closes without a migration. A NACK or repair a page still running
 the old build sends is refused `unsupported` (`al.control.nack.v1`, `al.control.repair.v1`) until
 that page reloads, symmetrically with the acknowledgement cutover above.
+
+**The roster-fence window.** PostgreSQL rows carry no schema identity, so the roster-fence bump
+resets browsers only. On the server, a row an older build wrote holds a `v: 2` envelope and fails
+decoding `unsupported` at its next read; no row is migrated. A page still running the old build
+sends `v: 2` envelopes and controls, refused `unsupported` until it reloads; it refuses this build's
+`v: 3` symmetrically.
 
 Web and API deploy together.
 

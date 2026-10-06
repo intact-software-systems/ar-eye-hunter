@@ -30,7 +30,7 @@ function createFullBudget(): ALVolatileSessionBudget {
 }
 
 const ACK = newALAckControlMessage(
-    { v: 2, msgId: 'ack-planned', senderId: 'self', ts: NOW_MS },
+    { v: 3, msgId: 'ack-planned', senderId: 'self', ts: NOW_MS },
     {
         ackedMsgId: 'planned',
         fromPeerId: 'self',

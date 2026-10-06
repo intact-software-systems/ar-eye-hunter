@@ -35,7 +35,8 @@ export type ALNackReason =
     | 'no-route'
     | 'overloaded'
     | 'stale'
-    | 'not-yet-in-sync';
+    | 'not-yet-in-sync'
+    | 'membership-fenced';
 export type ALRepairReason = 'missing-seq' | 'retransmit' | 'resync';
 
 export interface ALAckPayload {

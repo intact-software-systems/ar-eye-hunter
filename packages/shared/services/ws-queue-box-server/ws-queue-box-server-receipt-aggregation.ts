@@ -1,4 +1,4 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     AL_RECEIPT_DEADLINE_GRACE_MS,
     decodeALControlMessage,
@@ -268,7 +268,7 @@ export class WsQueueBoxServerReceiptAggregation {
     /** A receipt row outlives its message's deadline by the receipt grace, as the origin's receipt row does. */
     private async writeReceipt(receipt: ALReceiptPayload, deadlineAtMs: number): Promise<void> {
         const id = {
-            v: 2 as const,
+            v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: this.#dependencies.newControlId(),
             senderId: this.#dependencies.serverPeerId,
             ts: receipt.observedAtEpochMs

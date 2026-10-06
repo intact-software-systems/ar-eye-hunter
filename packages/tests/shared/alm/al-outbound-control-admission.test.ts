@@ -59,7 +59,7 @@ const TERMINAL_NACK_REASONS = ['expired', 'unauthorized', 'stale'] as const;
 /** A NACK by which the receiving hop refuses the message for good. */
 function terminalNack(reason: (typeof TERMINAL_NACK_REASONS)[number]): ALMessage {
     return newALNackControlMessage(
-        { v: 2, msgId: `control-${reason}`, senderId: 'receiver', ts: 1 },
+        { v: 3, msgId: `control-${reason}`, senderId: 'receiver', ts: 1 },
         {
             fromPeerId: 'receiver',
             toPeerId: 'sender',
@@ -86,7 +86,7 @@ describe('outbound control admission identity', () => {
             const { admissionStore, workQueue, control, state } = createFixture();
             const msgId = 'runtime-message/'.repeat(20);
             const message: ALMessage = {
-                id: { v: 2, msgId, senderId: 'sender', ts: Date.now() },
+                id: { v: 3, msgId, senderId: 'sender', ts: Date.now() },
                 route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
                 payload: { typeId: 'command.v1', resource: '{}' },
                 targets: { mode: 'unicast', toPeerId: 'receiver' },
@@ -112,7 +112,7 @@ describe('outbound control admission identity', () => {
                     expireAtTimestamp: Date.now() + 30_000
                 }]
             });
-            const id: ALMessage['id'] = { v: 2, msgId: 'control', senderId: 'receiver', ts: Date.now() };
+            const id: ALMessage['id'] = { v: 3, msgId: 'control', senderId: 'receiver', ts: Date.now() };
             const common = { fromPeerId: 'receiver', toPeerId: 'sender', observedAtEpochMs: Date.now() };
             const ordering = { orderingKey: toALOrderingTrackKey(message), missingRanges: [{ from: 2, to: 2 }], expectedSeq: 2 };
             const accepted = type === 'ack'
@@ -215,7 +215,7 @@ describe('outbound control admission identity', () => {
         const { admissionStore, control, state } = createFixture();
         await seedDirectObligation(admissionStore);
         const ack = newALAckControlMessage(
-            { v: 2, msgId: 'control', senderId: 'receiver', ts: Date.now() },
+            { v: 3, msgId: 'control', senderId: 'receiver', ts: Date.now() },
             {
                 ackedMsgId: 'message',
                 originPeerId: 'sender',
@@ -252,7 +252,7 @@ describe('outbound control admission identity', () => {
         await seedDirectObligation(admissionStore);
         const baseline = [...state.data];
         const forged = newALAckControlMessage(
-            { v: 2, msgId: 'control', senderId: 'receiver', ts: 1 },
+            { v: 3, msgId: 'control', senderId: 'receiver', ts: 1 },
             {
                 fromPeerId: 'receiver',
                 toPeerId: 'sender',
@@ -278,7 +278,7 @@ describe('outbound control admission identity', () => {
         await seedDirectObligation(admissionStore);
         const baseline = [...state.data];
         const ack = newALAckControlMessage(
-            { v: 2, msgId: 'control', senderId: 'receiver', ts: 1 },
+            { v: 3, msgId: 'control', senderId: 'receiver', ts: 1 },
             {
                 fromPeerId: 'receiver',
                 toPeerId: 'other-sender',
@@ -322,7 +322,7 @@ describe('outbound control admission identity', () => {
 
         for (let serverSnapshotVersion = 0; serverSnapshotVersion <= 256; serverSnapshotVersion++) {
             const nack = newALNackControlMessage(
-                { v: 2, msgId: `control-${serverSnapshotVersion}`, senderId: 'receiver', ts: serverSnapshotVersion },
+                { v: 3, msgId: `control-${serverSnapshotVersion}`, senderId: 'receiver', ts: serverSnapshotVersion },
                 {
                     fromPeerId: 'receiver',
                     toPeerId: 'sender',
@@ -500,7 +500,7 @@ describe('outbound control admission identity', () => {
         const claimed = vi.spyOn(workQueue, 'reserveEntries');
 
         const foreign = newALRepairControlMessage(
-            { v: 2, msgId: 'control-foreign', senderId: 'receiver', ts: 1 },
+            { v: 3, msgId: 'control-foreign', senderId: 'receiver', ts: 1 },
             { fromPeerId: 'receiver', toPeerId: 'sender', msgId: 'unowned', reason: 'retransmit', observedAtEpochMs: 1 }
         );
         expect(await runtime.acceptControlMessage(foreign, 'peer')).toEqual({ kind: 'not-handled' });
@@ -894,7 +894,7 @@ async function seedReceiptlessRoomObligation(
     admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
 ): Promise<void> {
     const msg: ALMessage = {
-        id: { v: 2, msgId: 'message', senderId: 'sender', ts: 1 },
+        id: { v: 3, msgId: 'message', senderId: 'sender', ts: 1 },
         route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
         payload: { typeId: 'command.v1', resource: '{}' },
         targets: { mode: 'broadcast', scope: 'room', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
@@ -926,7 +926,7 @@ async function seedObligation(
     input: OutboundObligationInput
 ): Promise<void> {
     const msg: ALMessage = {
-        id: { v: 2, msgId: 'message', senderId: 'sender', ts: 1 },
+        id: { v: 3, msgId: 'message', senderId: 'sender', ts: 1 },
         route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
         payload: { typeId: 'command.v1', resource: '{}' },
         targets: input.targets,
@@ -964,7 +964,7 @@ async function seedObligation(
 
 function repairControl(observedAtEpochMs: number): ALMessage {
     return newALRepairControlMessage(
-        { v: 2, msgId: `control-${observedAtEpochMs}`, senderId: 'receiver', ts: observedAtEpochMs },
+        { v: 3, msgId: `control-${observedAtEpochMs}`, senderId: 'receiver', ts: observedAtEpochMs },
         {
             fromPeerId: 'receiver',
             toPeerId: 'sender',
@@ -977,7 +977,7 @@ function repairControl(observedAtEpochMs: number): ALMessage {
 
 function orderedGapNack(orderingKey: string, missingRanges: readonly ALSeqRange[]): ALMessage {
     return newALNackControlMessage(
-        { v: 2, msgId: `control-gap-${orderingKey}-${toALSeqRangesText(missingRanges)}`, senderId: 'receiver', ts: 1 },
+        { v: 3, msgId: `control-gap-${orderingKey}-${toALSeqRangesText(missingRanges)}`, senderId: 'receiver', ts: 1 },
         {
             fromPeerId: 'receiver',
             toPeerId: 'sender',
@@ -993,7 +993,7 @@ function orderedGapNack(orderingKey: string, missingRanges: readonly ALSeqRange[
 
 function orderedRepairControl(orderingKey: string, missingRanges: readonly ALSeqRange[]): ALMessage {
     return newALRepairControlMessage(
-        { v: 2, msgId: `control-${orderingKey}-${toALSeqRangesText(missingRanges)}`, senderId: 'receiver', ts: 1 },
+        { v: 3, msgId: `control-${orderingKey}-${toALSeqRangesText(missingRanges)}`, senderId: 'receiver', ts: 1 },
         {
             fromPeerId: 'receiver',
             toPeerId: 'sender',
@@ -1017,7 +1017,7 @@ interface ResyncNackInput {
 function resyncNack(fromPeerId: string, input: ResyncNackInput = {}): ALMessage {
     const hints = input.hints ?? 'retained-track';
     return newALNackControlMessage(
-        { v: 2, msgId: `control-resync-${fromPeerId}`, senderId: fromPeerId, ts: 1 },
+        { v: 3, msgId: `control-resync-${fromPeerId}`, senderId: fromPeerId, ts: 1 },
         {
             fromPeerId,
             toPeerId: input.toPeerId ?? 'sender',
@@ -1038,14 +1038,14 @@ function resyncNack(fromPeerId: string, input: ResyncNackInput = {}): ALMessage 
 /** A NACK by which a relay refuses the message for good, with no ordering hints. */
 function refusalNack(fromPeerId: string, reason: 'unauthorized' | 'expired'): ALMessage {
     return newALNackControlMessage(
-        { v: 2, msgId: `control-${reason}-${fromPeerId}`, senderId: fromPeerId, ts: 1 },
+        { v: 3, msgId: `control-${reason}-${fromPeerId}`, senderId: fromPeerId, ts: 1 },
         { fromPeerId, toPeerId: 'sender', msgId: 'message', reason, observedAtEpochMs: 1 }
     );
 }
 
 function notYetInSyncNack(): ALMessage {
     return newALNackControlMessage(
-        { v: 2, msgId: 'control-not-yet-in-sync', senderId: 'receiver', ts: 1 },
+        { v: 3, msgId: 'control-not-yet-in-sync', senderId: 'receiver', ts: 1 },
         {
             fromPeerId: 'receiver',
             toPeerId: 'sender',
@@ -1058,7 +1058,7 @@ function notYetInSyncNack(): ALMessage {
 }
 
 function controlMessage(type: 'ack' | 'nack' | 'repair', peerId: string = 'receiver'): ALMessage {
-    const id: ALMessage['id'] = { v: 2, msgId: 'control', senderId: peerId, ts: 1 };
+    const id: ALMessage['id'] = { v: 3, msgId: 'control', senderId: peerId, ts: 1 };
     const common = { fromPeerId: peerId, toPeerId: 'sender', observedAtEpochMs: 1 };
     switch (type) {
         case 'ack':

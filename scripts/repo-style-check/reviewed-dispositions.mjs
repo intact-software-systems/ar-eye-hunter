@@ -207,6 +207,65 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
+    // The Relic web spec's mock backend answers raw command bodies and reads the
+    // page's raw WS outbox; the addressed-receipt test decodes raw control frames
+    // through the strict payload decoders. Values reach an assertion or a
+    // production decoder only.
+    Object.freeze({
+        path: 'packages/tests/shared/services/ws-queue-box-server-addressed-receipts.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readControlPayloads'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/relic-hunters/web.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'tests/playwright/relic-hunters/web.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'installBrowserDoubles'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/relic-hunters/web.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'nextCommandSnapshot'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/relic-hunters/web.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'mockBackend'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/relic-hunters/web.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'json'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/relic-hunters/web.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'parseJsonBody'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/relic-hunters/web.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isCommandKind'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/relic-hunters/web.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'relicSnapshotWithPlayers'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/relic-hunters/web.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'continuedStoragePlanningSnapshot'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/relic-hunters/web.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'finishedRelicSnapshot'
+    }),
     // This caught-value boundary immediately normalizes arbitrary thrown values
     // to Error, exactly as required by the code standard. No unknown value
     // propagates to callers; the textual checker cannot distinguish that case.
@@ -474,6 +533,58 @@ export const reviewedDispositions = Object.freeze([
         path: 'apps/api-v1/scripts/perf/api-v1-state-write-group-receipt-evidence.ts',
         rule: 'boundary.unknown',
         symbol: undefined
+    }),
+    // The presence-summary work decoder and the activation-status clock decoder
+    // narrow their persisted JSON before any group or clock decision reads it.
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toGroupPresenceSummaryWork'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireRecord'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireExactKeys'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireNullableNonEmptyString'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireNonNegativeSafeInteger'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requirePlainTime'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requirePlainDateTime'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireInstant'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireOptionalInstant'
+    }),
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/activation-status-clock-outbox-entry.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeActivationStatusClockWork'
     }),
     // These reviewed AL/control/snapshot/queue decoders keep raw values inside
     // their validation boundary. Generic JSON sockets deliberately preserve

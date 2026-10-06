@@ -329,7 +329,7 @@ function createContext(
     return {
         enqueue,
         message: {
-            id: { v: 2, msgId: entry.key.resourceId, ts: 1_000, senderId: 'auth-test-service' },
+            id: { v: 3, msgId: entry.key.resourceId, ts: 1_000, senderId: 'auth-test-service' },
             route: { ...entry.key },
             payload: { typeId: enqueue.type, contentType: 'application/json', resource: entry.resource }
         },

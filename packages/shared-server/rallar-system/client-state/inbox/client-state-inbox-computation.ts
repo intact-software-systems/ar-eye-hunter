@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
@@ -446,7 +446,7 @@ function computeExpiredSessionSuccessorEntry(
     };
     const message: ALMessage = {
         id: {
-            v: 2,
+            v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: key.resourceId,
             ts: createdAtEpochMs,
             senderId: context.message.id.senderId

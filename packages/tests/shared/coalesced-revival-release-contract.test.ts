@@ -44,7 +44,7 @@ function toCoalescedEntry(input: CoalescedEntryInput): ResourceEntry {
         }
     };
     const message = {
-        id: { v: 2, msgId: `${KEY.resourceId}:g${input.generation}`, ts: 1_000, senderId: 'server-a' },
+        id: { v: 3, msgId: `${KEY.resourceId}:g${input.generation}`, ts: 1_000, senderId: 'server-a' },
         route: KEY,
         payload: {
             typeId: 'rtc-topology-recompute',

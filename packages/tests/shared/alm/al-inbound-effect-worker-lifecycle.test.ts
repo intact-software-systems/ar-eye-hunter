@@ -514,7 +514,7 @@ describe('inbound durable effect worker lifecycle', () => {
             expireAtTimestamp: Date.now() + 60_000,
             payload: {
                 kind: 'send-control',
-                msg: newALAckControlMessage({ v: 2, msgId: 'forwarded-ack', ts: 1, senderId: 'receiver' }, {
+                msg: newALAckControlMessage({ v: 3, msgId: 'forwarded-ack', ts: 1, senderId: 'receiver' }, {
                     ackedMsgId: 'tracked-message',
                     originPeerId: 'sender',
                     logicalRecipientPeerId: 'receiver',
@@ -535,7 +535,7 @@ describe('inbound durable effect worker lifecycle', () => {
             {}
         );
         await seedTrackedAcknowledgement(resources.admissionStore, tracked);
-        const ack = newALAckControlMessage({ v: 2, msgId: 'inbound-ack', ts: 1, senderId: 'sender' }, {
+        const ack = newALAckControlMessage({ v: 3, msgId: 'inbound-ack', ts: 1, senderId: 'sender' }, {
             ackedMsgId: tracked.id.msgId,
             originPeerId: tracked.id.senderId,
             logicalRecipientPeerId: 'sender',
@@ -584,7 +584,7 @@ describe('inbound durable effect worker lifecycle', () => {
             expireAtTimestamp: Date.now() + 60_000,
             payload: {
                 kind: 'send-control',
-                msg: newALAckControlMessage({ v: 2, msgId: 'unannounced-ack', ts: 1, senderId: 'receiver' }, {
+                msg: newALAckControlMessage({ v: 3, msgId: 'unannounced-ack', ts: 1, senderId: 'receiver' }, {
                     ackedMsgId: 'tracked-message',
                     originPeerId: 'sender',
                     logicalRecipientPeerId: 'receiver',
@@ -607,7 +607,7 @@ describe('inbound durable effect worker lifecycle', () => {
         // Two peers owe this obligation, so one peer's acknowledgement completes none of it; the relay still
         // passes the recipient it names upward at once, and that row is work the commit announces.
         await seedTrackedAcknowledgement(resources.admissionStore, tracked, ['sender', 'second-peer']);
-        const ack = newALAckControlMessage({ v: 2, msgId: 'partial-ack', ts: 1, senderId: 'sender' }, {
+        const ack = newALAckControlMessage({ v: 3, msgId: 'partial-ack', ts: 1, senderId: 'sender' }, {
             ackedMsgId: tracked.id.msgId,
             originPeerId: tracked.id.senderId,
             logicalRecipientPeerId: 'sender',
@@ -663,7 +663,7 @@ describe('inbound durable effect worker lifecycle', () => {
             expireAtTimestamp: nowMs + 600_000,
             payload: {
                 kind: 'send-control',
-                msg: newALAckControlMessage({ v: 2, msgId: 'expired-retention-ack', ts: 1, senderId: 'receiver' }, {
+                msg: newALAckControlMessage({ v: 3, msgId: 'expired-retention-ack', ts: 1, senderId: 'receiver' }, {
                     ackedMsgId: 'tracked-message',
                     originPeerId: 'sender',
                     logicalRecipientPeerId: 'receiver',
@@ -1137,7 +1137,7 @@ function toCanonicalMessageMutation(message: ALMessage, expireAtTimestamp: numbe
 /** A retained `admit-control` row for the acknowledgement that completes a tracked message's pending ack. */
 function toRetainedControlAdmission(namespace: string, tracked: ALMessage): ResourceEntry {
     const expiresAtMs = Date.now() + 60_000;
-    const ack = newALAckControlMessage({ v: 2, msgId: 'retained-control-ack', ts: 1, senderId: 'sender' }, {
+    const ack = newALAckControlMessage({ v: 3, msgId: 'retained-control-ack', ts: 1, senderId: 'sender' }, {
         ackedMsgId: tracked.id.msgId,
         originPeerId: tracked.id.senderId,
         logicalRecipientPeerId: 'sender',

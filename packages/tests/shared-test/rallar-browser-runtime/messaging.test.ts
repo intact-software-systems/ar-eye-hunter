@@ -464,7 +464,7 @@ function inboundMessage(): RallarMessage<ChatMessagePayload> {
 function outboundMessage(): ALMessage {
     return {
         id: {
-            v: 2,
+            v: 3,
             msgId: 'ws-message-1',
             ts: 999,
             senderId: 'bob-session'

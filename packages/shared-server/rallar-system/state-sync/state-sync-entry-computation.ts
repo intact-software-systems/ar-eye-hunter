@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import type {
@@ -208,7 +208,7 @@ function materializeStateSyncEnvelope(facts: StateSyncEnvelopeFacts): StateSnaps
     const { key, computed, senderId, messageId } = facts;
     return {
         id: {
-            v: 2,
+            v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: messageId,
             ts: computed.createdAtEpochMs,
             senderId

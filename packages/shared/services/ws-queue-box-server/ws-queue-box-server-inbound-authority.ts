@@ -1,4 +1,4 @@
-import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
 import { prepareALNackControlMessage, type ALNackPayload } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
@@ -313,7 +313,12 @@ export class WsQueueBoxServerInboundAuthority {
                 : { serverSnapshotVersion: authorization.serverSnapshotVersion })
         };
         const prepared = prepareALNackControlMessage(
-            { v: 2, msgId: this.#newControlId(), senderId: this.#serverPeerId, ts: observedAtEpochMs },
+            {
+                v: AL_MESSAGE_ENVELOPE_VERSION,
+                msgId: this.#newControlId(),
+                senderId: this.#serverPeerId,
+                ts: observedAtEpochMs
+            },
             payload
         );
         if (prepared.right) {

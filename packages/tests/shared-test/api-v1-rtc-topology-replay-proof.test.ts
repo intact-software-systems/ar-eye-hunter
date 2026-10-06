@@ -800,7 +800,7 @@ function topologyPages(input: TopologyPagesInput): readonly ALMessage[] {
         revision: JSON.stringify([input.revision.groupRevision, input.revision.presenceRevision, input.version]),
         resource: JSON.stringify(snapshot),
         envelope: {
-            id: { v: 2, msgId: input.messageId, ts: nowMs, senderId: 'api-node-17' },
+            id: { v: 3, msgId: input.messageId, ts: nowMs, senderId: 'api-node-17' },
             route: { topicId: 'overlay.topology', resourceId: 'topology', contextId: proofGroup.groupId },
             targets: { mode: 'unicast', toPeerId: 'session-1' },
             constraints: { expiresAtMs: nowMs + 60000 },

@@ -72,7 +72,8 @@ const ALM_NACK_REASONS: Readonly<Record<ALNackReason, true>> = {
     'no-route': true,
     overloaded: true,
     stale: true,
-    'not-yet-in-sync': true
+    'not-yet-in-sync': true,
+    'membership-fenced': true
 };
 
 /** Keyed by every failure kind, so a new kind fails to compile here instead of decoding as invalid. */
@@ -111,7 +112,8 @@ export function decodeAlmDeliveryFailure(value: unknown): Either<string, ALDeliv
 
 /**
  * A trusted server relay is never named, so an id on one is refused. A trusted server refuses with `resync-required`
- * after admission or `unauthorized` before it; a peer relay only with `resync-required`.
+ * after admission, `unauthorized` before it, or `membership-fenced`; a peer relay with `resync-required` or
+ * `membership-fenced`.
  */
 export function decodeAlmRelayRejection(
     value: unknown,
@@ -119,7 +121,8 @@ export function decodeAlmRelayRejection(
 ): Either<string, ALDeliveryRelayRejection> {
     const rejection = decodeAlmRuntimeRecord(value);
     if (
-        (rejection.reason === 'resync-required' || rejection.reason === 'unauthorized') &&
+        (rejection.reason === 'resync-required' || rejection.reason === 'unauthorized' ||
+            rejection.reason === 'membership-fenced') &&
         rejection.relay === 'trusted-server' && rejection.peerId === undefined
     ) {
         return Either.ofRight<string, ALDeliveryRelayRejection>({
@@ -128,13 +131,13 @@ export function decodeAlmRelayRejection(
         });
     }
     if (
-        rejection.reason === 'resync-required' && rejection.relay === 'peer' &&
-        typeof rejection.peerId === 'string'
+        (rejection.reason === 'resync-required' || rejection.reason === 'membership-fenced') &&
+        rejection.relay === 'peer' && typeof rejection.peerId === 'string'
     ) {
         return Either.ofRight<string, ALDeliveryRelayRejection>({
             relay: 'peer',
             peerId: rejection.peerId,
-            reason: 'resync-required'
+            reason: rejection.reason
         });
     }
     return Either.ofLeft(field);

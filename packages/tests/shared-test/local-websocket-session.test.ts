@@ -79,7 +79,7 @@ function topologyPages(input: LocalTopologyPublicationInput = {}): readonly ALMe
         revision: '[3,4,5]',
         resource: input.resource ?? JSON.stringify(snapshot),
         envelope: {
-            id: { v: 2, msgId: input.messageId ?? 'publication', ts: nowMs, senderId: 'api-node-17' },
+            id: { v: 3, msgId: input.messageId ?? 'publication', ts: nowMs, senderId: 'api-node-17' },
             route: { topicId: 'overlay.topology', contextId: groupRef.groupId, resourceId: 'topology' },
             targets: input.targets ?? { mode: 'unicast', toPeerId: 'session-1' },
             constraints: { expiresAtMs: nowMs + 60_000 },
@@ -283,7 +283,7 @@ it.each(['client-state.snapshot', 'group-state.snapshot', 'group-directory.snaps
             revision: isClient ? 'revision=3' : 'group=3;presence=3',
             resource: JSON.stringify(snapshot),
             envelope: {
-                id: { v: 2, msgId: topicId, senderId: 'api-node', ts: nowMs },
+                id: { v: 3, msgId: topicId, senderId: 'api-node', ts: nowMs },
                 route: { topicId, contextId: isClient ? 'alice' : groupRef.groupId, resourceId: 'snapshot' },
                 targets: { mode: 'unicast', toPeerId: 'session-1' },
                 constraints: { expiresAtMs: nowMs + 60_000 },
@@ -379,7 +379,7 @@ it('fails an active absence wait when later traffic evicts an offending complete
     const nowMs = Date.now();
     for (let index = 0; index < 400; index++) {
         socket.receive(JSON.stringify({
-            id: { v: 2, msgId: `event-${index}`, senderId: 'api-node', ts: nowMs },
+            id: { v: 3, msgId: `event-${index}`, senderId: 'api-node', ts: nowMs },
             route: { topicId: 'ordinary.event', contextId: 'group', resourceId: 'event' },
             payload: { typeId: 'ordinary.event', resource: '{}' }
         }));
@@ -406,7 +406,7 @@ it('detects an incomplete foreign principal page without exposing partial snapsh
         revision: 'revision=3',
         resource: JSON.stringify(snapshot),
         envelope: {
-            id: { v: 2, msgId: 'foreign-snapshot', senderId: 'api-node', ts: nowMs },
+            id: { v: 3, msgId: 'foreign-snapshot', senderId: 'api-node', ts: nowMs },
             route: { topicId: 'client-state.snapshot', contextId: 'foreign-principal', resourceId: 'snapshot' },
             targets: { mode: 'unicast', toPeerId: 'session-1' },
             constraints: { expiresAtMs: nowMs + 60_000 },

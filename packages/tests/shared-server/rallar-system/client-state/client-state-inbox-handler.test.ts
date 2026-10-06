@@ -832,7 +832,7 @@ function createContext<Result>(
         enqueue,
         message: {
             id: {
-                v: 2,
+                v: 3,
                 msgId: resourceId,
                 ts: NOW_EPOCH_MS,
                 senderId: enqueue.senderId ?? SERVICE_ID

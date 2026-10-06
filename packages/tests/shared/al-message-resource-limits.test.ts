@@ -20,7 +20,7 @@ import {
 describe('AL envelope resource limits', () => {
     it('reports malformed, oversized, and unsupported envelopes as typed rejections', () => {
         const message = messageFixture();
-        const unsupported = { ...message, id: { ...message.id, v: 3 } };
+        const unsupported = { ...message, id: { ...message.id, v: 2 } };
 
         expect(decodeALMessage('{').left?.code).toBe('malformed');
         expect(decodeALMessageValue({ route: message.route }).left?.code).toBe('malformed');
@@ -298,7 +298,7 @@ describe('AL envelope resource limits', () => {
 
 function messageFixture(): ALMessage {
     return {
-        id: { v: 2, msgId: 'message-1', ts: 1, senderId: 'sender-1' },
+        id: { v: 3, msgId: 'message-1', ts: 1, senderId: 'sender-1' },
         route: { topicId: 'app.message', contextId: 'context-1', resourceId: 'resource-1' },
         targets: { mode: 'unicast', toPeerId: 'receiver-1' },
         payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' }

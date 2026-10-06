@@ -570,7 +570,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "rtt-activationdecay-{runId}",
             "ts": 0,
             "senderId": "{rttReporter.sessionIdFrom}",

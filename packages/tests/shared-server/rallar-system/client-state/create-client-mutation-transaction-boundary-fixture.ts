@@ -159,7 +159,7 @@ function createReservedClientContext(): AppInboxMessageContext<ClientStateWritte
     return {
         enqueue,
         message: {
-            id: { v: 2, msgId: 'client-transaction-result', ts: now, senderId: 'alice' },
+            id: { v: 3, msgId: 'client-transaction-result', ts: now, senderId: 'alice' },
             route: { ...entry.key },
             payload: { typeId: enqueue.type, contentType: 'application/json', resource: entry.resource }
         },

@@ -42,7 +42,7 @@ describe('outbound control version candidate', () => {
         if (!sent) {
             throw new Error('Expected admitted compact sent fact');
         }
-        const control = newALNackControlMessage({ v: 2, msgId: 'nack', senderId: 'peer-1', ts: 1_000 }, {
+        const control = newALNackControlMessage({ v: 3, msgId: 'nack', senderId: 'peer-1', ts: 1_000 }, {
             msgId: message.id.msgId,
             fromPeerId: 'peer-1',
             toPeerId: 'self',
@@ -88,7 +88,7 @@ describe('outbound control version candidate', () => {
         if (!sent) {
             throw new Error('Expected admitted compact sent fact');
         }
-        const ack = newALAckControlMessage({ v: 2, msgId: 'ack', senderId: 'peer-1', ts: 1_000 }, {
+        const ack = newALAckControlMessage({ v: 3, msgId: 'ack', senderId: 'peer-1', ts: 1_000 }, {
             ackedMsgId: message.id.msgId,
             originPeerId: 'self',
             logicalRecipientPeerId: 'peer-1',
@@ -149,7 +149,7 @@ describe('outbound control version candidate', () => {
         });
         const message = createOutboundMessage('control-version-race');
         await store.commitBundle(await computeOutboundTestAdmission(store, message));
-        const control = newALNackControlMessage({ v: 2, msgId: 'nack-race', senderId: 'peer-1', ts: Date.now() }, {
+        const control = newALNackControlMessage({ v: 3, msgId: 'nack-race', senderId: 'peer-1', ts: Date.now() }, {
             msgId: message.id.msgId,
             fromPeerId: 'peer-1',
             toPeerId: 'self',

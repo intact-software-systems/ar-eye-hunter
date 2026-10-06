@@ -406,7 +406,7 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarne
 }
 
 function receiverAck(message: ALMessage, recipient: string): ALMessage {
-    return newALAckControlMessage({ v: 2, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() }, {
+    return newALAckControlMessage({ v: 3, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() }, {
         ackedMsgId: message.id.msgId,
         fromPeerId: recipient,
         toPeerId: message.id.senderId,

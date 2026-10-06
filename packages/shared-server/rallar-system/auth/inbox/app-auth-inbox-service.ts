@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type {
     AgentSessionTicketResponse,
     AuthSession,
@@ -675,7 +675,7 @@ function toAuthInboxEntry(enqueue: AppInboxEnqueueInput, facts: AuthInboxEntryFa
     });
     const createdBy = toAppQueueCreatedBy('auth-fact-reservation');
     const message: ALMessage = {
-        id: { v: 2, msgId: facts.messageId, ts: facts.observedAtMs, senderId: createdBy },
+        id: { v: AL_MESSAGE_ENVELOPE_VERSION, msgId: facts.messageId, ts: facts.observedAtMs, senderId: createdBy },
         route: newALRoute(key.topicId, key.contextId, key.resourceId),
         payload: { typeId: enqueue.type, contentType: 'application/json', resource: JSON.stringify(enqueue) },
         audit: { createdBy, createdTs: facts.observedAtMs }

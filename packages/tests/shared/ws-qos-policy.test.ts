@@ -301,7 +301,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         await enqueueOutboxAndDrain(service, seq2);
 
         const repair = shared.newALRepairControlMessage(
-            { v: 2, msgId: 'control-repair', ts: 0, senderId: 'peer-1' },
+            { v: 3, msgId: 'control-repair', ts: 0, senderId: 'peer-1' },
             {
                 msgId: seq2.id.msgId,
                 fromPeerId: 'peer-1',

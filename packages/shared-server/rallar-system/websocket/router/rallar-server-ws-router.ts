@@ -1,4 +1,4 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -478,7 +478,12 @@ export class RallarServerWsRouter {
         try {
             const observedAtEpochMs = this.nowEpochMs();
             const nack = newALNackControlMessage(
-                { v: 2, msgId: crypto.randomUUID(), senderId: this.service.name, ts: observedAtEpochMs },
+                {
+                    v: AL_MESSAGE_ENVELOPE_VERSION,
+                    msgId: crypto.randomUUID(),
+                    senderId: this.service.name,
+                    ts: observedAtEpochMs
+                },
                 {
                     fromPeerId: this.service.name,
                     toPeerId: message.id.senderId,

@@ -140,7 +140,7 @@ export async function acknowledgeAtOrigin(
 ): Promise<void> {
     await manager.acceptControlMessage(newALAckControlMessage(
         {
-            v: 2,
+            v: 3,
             msgId: `ack-${input.fromPeerId}-${input.logicalRecipientPeerId}-${input.status}`,
             senderId: input.fromPeerId,
             ts: Date.now()

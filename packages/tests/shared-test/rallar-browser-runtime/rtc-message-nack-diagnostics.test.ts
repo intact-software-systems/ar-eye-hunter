@@ -41,7 +41,7 @@ describe('RTC message diagnostic receipts', () => {
             await controlAdmission.admit(
                 newALNackControlMessage(
                     {
-                        v: 2,
+                        v: 3,
                         msgId: `${sessionId}:nack-attempted`,
                         ts: 1,
                         senderId: 'receiver'
@@ -82,7 +82,7 @@ async function admitAttemptedMessage(
 ): Promise<void> {
     const nowMs = Date.now();
     const message = {
-        id: { v: 2 as const, msgId: 'attempted', senderId: sessionId, ts: nowMs },
+        id: { v: 3 as const, msgId: 'attempted', senderId: sessionId, ts: nowMs },
         route: { topicId: 'diagnostic-test', resourceId: 'attempted', contextId: 'room' },
         targets: { mode: 'unicast' as const, toPeerId: 'receiver' },
         payload: { typeId: 'diagnostic-test', resource: '{}' },

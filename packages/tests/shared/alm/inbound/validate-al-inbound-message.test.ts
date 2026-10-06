@@ -25,7 +25,7 @@ describe('inbound control addressing', () => {
 
     it.each(['server', 'origin'])('refuses a WS session ACK to %s that speaks for another recipient', (toPeerId) => {
         const forged = newALAckControlMessage(
-            { v: 2, msgId: 'ack-forged', senderId: 'recipient', ts: 1 },
+            { v: 3, msgId: 'ack-forged', senderId: 'recipient', ts: 1 },
             {
                 ackedMsgId: 'message-1',
                 fromPeerId: 'recipient',
@@ -46,7 +46,7 @@ describe('inbound control addressing', () => {
 
     it('keeps next-hop addressing for every other control and carrier', () => {
         const nack = newALNackControlMessage(
-            { v: 2, msgId: 'nack-1', senderId: 'recipient', ts: 1 },
+            { v: 3, msgId: 'nack-1', senderId: 'recipient', ts: 1 },
             { msgId: 'message-1', fromPeerId: 'recipient', toPeerId: 'origin', reason: 'gap', observedAtEpochMs: 1 }
         );
         const overRtc = validateALInboundMessage(receiverAck('origin'), { kind: 'rtc-peer', peerId: 'recipient' }, SERVER);
@@ -78,7 +78,7 @@ describe('inbound control addressing', () => {
 describe('inbound frozen room audience', () => {
     const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
     const multicast: ALMessage = {
-        id: { v: 2, msgId: 'room-message', senderId: 'origin', ts: 1 },
+        id: { v: 3, msgId: 'room-message', senderId: 'origin', ts: 1 },
         route: { topicId: 'chat', resourceId: 'resource', contextId: 'room' },
         targets: { mode: 'multicast', groupRef: room },
         payload: { typeId: 'chat', resource: '{}' }
@@ -108,7 +108,7 @@ function fromClient(peerId: string): ALInboundMessageRuntime.Source {
 
 function receiverAck(originPeerId: string): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: 'ack-1', senderId: 'recipient', ts: 1 },
+        { v: 3, msgId: 'ack-1', senderId: 'recipient', ts: 1 },
         {
             ackedMsgId: 'message-1',
             fromPeerId: 'recipient',
@@ -124,7 +124,7 @@ function receiverAck(originPeerId: string): ALMessage {
 
 function receipt(): ALMessage {
     return newALReceiptControlMessage(
-        { v: 2, msgId: 'receipt-1', senderId: 'server', ts: 1 },
+        { v: 3, msgId: 'receipt-1', senderId: 'server', ts: 1 },
         {
             msgId: 'message-1',
             originPeerId: 'origin',

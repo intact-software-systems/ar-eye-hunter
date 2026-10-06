@@ -98,7 +98,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
     it('never relays a session NACK to the peer it names', async () => {
         const fixture = await createRelayFixture();
         const nack = newALNackControlMessage(
-            { v: 2, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
+            { v: 3, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
             { msgId: 'ordered-gapped', fromPeerId: 'b', toPeerId: 'a', reason: 'resync-required', observedAtEpochMs: Date.now() }
         );
 
@@ -288,7 +288,7 @@ async function relayFrames(socket: SimulatedWebSocket, origin: OriginClient): Pr
 /** The ordering-resync send: a retained room broadcast on one ordering key, with or without a receipt. */
 function orderedRoomMessage(msgId: string, seq: number, ack: 'none' | 'receiver'): ALMessage {
     return {
-        id: { v: 2, msgId, ts: Date.now(), senderId: 'a' },
+        id: { v: 3, msgId, ts: Date.now(), senderId: 'a' },
         route: { topicId: 'room.ordered', resourceId: msgId, contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs: Date.now() + 30_000 },
@@ -301,7 +301,7 @@ function orderedRoomMessage(msgId: string, seq: number, ack: 'none' | 'receiver'
 /** A receipted command to one session of the room, which names its room so the room's authority admits it. */
 function roomUnicast(msgId: string, toPeerId: string): ALMessage {
     return {
-        id: { v: 2, msgId, ts: Date.now(), senderId: 'a' },
+        id: { v: 3, msgId, ts: Date.now(), senderId: 'a' },
         route: { topicId: 'room.command', resourceId: msgId, contextId: ROOM.groupId },
         targets: { mode: 'unicast', toPeerId, groupRef: ROOM },
         constraints: { expiresAtMs: Date.now() + 30_000 },

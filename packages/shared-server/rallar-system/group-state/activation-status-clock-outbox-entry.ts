@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -114,7 +114,7 @@ function toActivationStatusClockMessage(
     { input, work, key, createdBy }: ToActivationStatusClockMessageInput
 ): ALMessage {
     return {
-        id: { v: 2, msgId: key.resourceId, ts: input.createdAtEpochMs, senderId: createdBy },
+        id: { v: AL_MESSAGE_ENVELOPE_VERSION, msgId: key.resourceId, ts: input.createdAtEpochMs, senderId: createdBy },
         route: key,
         constraints: { expiresAtMs: input.expireAtEpochMs },
         ordering: { orderingKey: key.contextId, epoch: work.formationEpoch, seq: 0 },

@@ -46,7 +46,7 @@ import {
 const WS_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'trusted-server' };
 
 const message: ALMessage = {
-    id: { v: 2, msgId: 'message', senderId: 'sender', ts: 1_800_000_000_000 },
+    id: { v: 3, msgId: 'message', senderId: 'sender', ts: 1_800_000_000_000 },
     route: { topicId: 'chat', resourceId: 'resource', contextId: 'room' },
     ordering: { orderingKey: 'chat', seq: 2 },
     payload: { typeId: 'chat', resource: '{"text":"hello"}' }
@@ -146,7 +146,7 @@ async function seedPendingAcknowledgement(
 
 function createAcknowledgement(fromPeerId: string, originPeerId: string = message.id.senderId): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId },
+        { v: 3, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId },
         {
             ackedMsgId: message.id.msgId,
             originPeerId,

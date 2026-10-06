@@ -27,7 +27,7 @@ function notice(
         delivery: 'inline' as const
     };
     const message: ALMessage = {
-        id: { v: 2, msgId: 'message', ts: 1, senderId: 'sender' },
+        id: { v: 3, msgId: 'message', ts: 1, senderId: 'sender' },
         route: { topicId: 'room.match', resourceId: 'room', contextId: 'room' },
         targets: audience.mode === 'broad'
             ? { mode: 'broadcast', scope: audience.targetMode }

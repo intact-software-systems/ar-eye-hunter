@@ -1,4 +1,4 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { computeStateSnapshotPages } from '@shared/api/state-snapshot-page.ts';
@@ -30,7 +30,7 @@ export function materializeRtcOverlayTopologyMessages(input: RtcOverlayTopologyP
         resource: JSON.stringify(snapshot),
         envelope: {
             id: {
-                v: 2,
+                v: AL_MESSAGE_ENVELOPE_VERSION,
                 msgId: toRtcTopologyPublicationMessageId(input.workId),
                 ts: createdAtEpochMs,
                 senderId: 'rallar-server'

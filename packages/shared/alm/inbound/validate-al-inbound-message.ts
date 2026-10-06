@@ -50,9 +50,6 @@ export function validateALInboundMessage(
             message: 'Direct RTC envelope is addressed to another recipient'
         });
     }
-    if (msg.targets?.mode === 'multicast' && msg.targets.membershipEpoch !== undefined) {
-        return Either.ofLeft({ code: 'unsupported', message: 'Authoritative membership fencing is not implemented' });
-    }
     if (
         source.kind === 'rtc-peer' && msg.targets?.mode === 'multicast' &&
         !resolveALFrozenMulticastAudience(msg.targets)

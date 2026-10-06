@@ -396,7 +396,6 @@ export class BrowserRallarMessageSender {
             input.typeId,
             parseCapturedPayload(payloadValidation),
             {
-                membershipEpoch: input.membershipEpoch,
                 minSnapshotVersion: this.input.resolveRoomMinSnapshotVersion(
                     target.room,
                     input.minSnapshotVersion

@@ -251,7 +251,7 @@ async function drainTabs(session: TwoTabSession, tabs: readonly TwoTabRuntime[])
 function createControlMessage(msgId: string, nowMs: number): ALMessage {
     return {
         ...newALAckControlMessage(
-            { v: 2, senderId: SENDER_PEER_ID, msgId, ts: nowMs },
+            { v: 3, senderId: SENDER_PEER_ID, msgId, ts: nowMs },
             {
                 ackedMsgId: 'inbound-admission',
                 fromPeerId: SENDER_PEER_ID,

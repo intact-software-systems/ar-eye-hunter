@@ -760,7 +760,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "idem-contract-crdt-delivery-first-{runId}",
             "ts": 0,
             "senderId": "{crdtAdminSessionId}",
@@ -799,7 +799,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "idem-contract-crdt-delivery-retry-{runId}",
             "ts": 0,
             "senderId": "{crdtAdminSessionId}",

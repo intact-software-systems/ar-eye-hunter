@@ -472,7 +472,7 @@ function readSettledCall<TFirst, TValue>(
 export function toReceiverAck(submission: ALMessage, sender: Pick<HoldSender, 'selfPeerId' | 'carrier'>): ALMessage {
     const hopPeerId = sender.carrier === 'ws' ? WS_SERVER_PEER_ID : 'receiver';
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${submission.id.msgId}`, senderId: hopPeerId, ts: Date.now() },
+        { v: 3, msgId: `ack-${submission.id.msgId}`, senderId: hopPeerId, ts: Date.now() },
         {
             ackedMsgId: submission.id.msgId,
             originPeerId: sender.selfPeerId,

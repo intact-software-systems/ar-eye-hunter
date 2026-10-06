@@ -205,7 +205,7 @@ class RtcControlHandoffFixture {
 
     async seedFullInboundControlPage(): Promise<readonly InboundClaimTrace[]> {
         const bootstrap = newALAckControlMessage(
-            { v: 2, senderId: 'bootstrap-peer', msgId: 'unknown-control', ts: BATCH_STARTED_AT_MS },
+            { v: 3, senderId: 'bootstrap-peer', msgId: 'unknown-control', ts: BATCH_STARTED_AT_MS },
             {
                 ackedMsgId: 'unknown',
                 originPeerId: 'self',

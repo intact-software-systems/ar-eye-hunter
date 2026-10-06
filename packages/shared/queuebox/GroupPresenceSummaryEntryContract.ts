@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import type { ALMessage } from '../al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../al-contracts/al-contract.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import { validateAuthoritativeGroupEvent } from '../api/authoritative-state-validation.ts';
 import type { GroupEvent, GroupRef, GroupStateCausalRevision } from '../api/group-types.ts';
@@ -76,7 +76,7 @@ export function computeGroupPresenceSummaryEntry(
     } as const;
     const message: ALMessage = {
         id: {
-            v: 2,
+            v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: resourceId,
             ts: work.createdAtEpochMs,
             senderId: createdBy

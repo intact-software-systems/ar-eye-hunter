@@ -902,7 +902,7 @@ describe('RallarServerWsRouter', () => {
         const fixture = createLargeOutboxRoom(sessionIds);
         const message: ALMessage = {
             ...createReceiverRoomBroadcast('large-room'),
-            id: { v: 2, msgId: 'large-room-1', ts: Date.now(), senderId: sessionIds[0]! },
+            id: { v: 3, msgId: 'large-room-1', ts: Date.now(), senderId: sessionIds[0]! },
             delivery,
             qos
         };

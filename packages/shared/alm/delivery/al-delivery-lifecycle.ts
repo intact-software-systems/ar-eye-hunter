@@ -275,11 +275,12 @@ export interface ALDeliveryReceiptEvidence {
 
 /**
  * The hop whose admitted NACK refused the message, and the reason it gave (D50); a trusted server may also refuse
- * a message the origin holds no receipt row for (`unauthorized`). A trusted server relay is not named.
+ * a message the origin holds no receipt row for (`unauthorized`), and a trusted server or a peer one whose sender is
+ * no longer a member of the roster it was stamped with (`membership-fenced`). A trusted server relay is not named.
  */
 export type ALDeliveryRelayRejection =
-    | Readonly<{ relay: 'trusted-server'; reason: 'resync-required' | 'unauthorized'; }>
-    | Readonly<{ relay: 'peer'; peerId: string; reason: 'resync-required'; }>;
+    | Readonly<{ relay: 'trusted-server'; reason: 'resync-required' | 'unauthorized' | 'membership-fenced'; }>
+    | Readonly<{ relay: 'peer'; peerId: string; reason: 'resync-required' | 'membership-fenced'; }>;
 
 /** The receipt the send's policy asked for, and the weaker one the admitting carrier tracks instead (R-S3a-4). */
 export interface ALDeliveryReceiptDowngrade {

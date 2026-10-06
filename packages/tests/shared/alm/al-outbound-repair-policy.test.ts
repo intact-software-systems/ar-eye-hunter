@@ -57,7 +57,7 @@ describe('AL outbound repair policy', () => {
 
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 2, msgId: 'gap-control', senderId: 'peer-1', ts: 1 },
+                { v: 3, msgId: 'gap-control', senderId: 'peer-1', ts: 1 },
                 { msgId: message.id.msgId, fromPeerId: 'peer-1', toPeerId: 'self', reason: 'gap', observedAtEpochMs: 1 }
             ),
             'peer'
@@ -194,7 +194,7 @@ async function settleRetransmission(runtime: ReturnType<typeof createRoomSendRun
 
 function roomGapNack(roomSend: ALMessage, fromPeerId: string): ALMessage {
     return newALNackControlMessage(
-        { v: 2, msgId: `room-gap-control-${fromPeerId}`, senderId: fromPeerId, ts: 1 },
+        { v: 3, msgId: `room-gap-control-${fromPeerId}`, senderId: fromPeerId, ts: 1 },
         { msgId: roomSend.id.msgId, fromPeerId, toPeerId: 'self', reason: 'gap', observedAtEpochMs: 1 }
     );
 }

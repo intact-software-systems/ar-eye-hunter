@@ -158,7 +158,7 @@ function createPublication(recipientCount: number): StateSnapshotPublication {
         revision: 'group=1;presence=2',
         resource: JSON.stringify({ members: Array.from({ length: 300 }, (_, index) => ({ index, name: 'Member'.repeat(100) })) }),
         envelope: Object.freeze({
-            id: Object.freeze({ v: 2 as const, msgId: 'snapshot-1', ts: 1000, senderId: 'rallar-server' }),
+            id: Object.freeze({ v: 3 as const, msgId: 'snapshot-1', ts: 1000, senderId: 'rallar-server' }),
             route: Object.freeze({ topicId: AppTopics.groupStateSnapshot, contextId: 'room', resourceId: 'snapshot' }),
             targets: Object.freeze({
                 mode: 'broadcast' as const,
