@@ -22,6 +22,7 @@ import type {
     ALVolatileInboundRuntimeStores
 } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundResyncRequired } from '../alm/inbound/al-inbound-resync-required.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundCancelOutcome } from '../alm/outbound/al-outbound-message-runtime.ts';
@@ -137,6 +138,8 @@ export namespace WsQueueBoxClientService {
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
         readonly outboundSettlements?: ALDeliverySettlementSink;
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
+        /** Absent, no recovery owner is told of a track this client can no longer order. */
+        readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
         readonly dequeueResilience?: ResourceInboxResilience;
         readonly newConnectionRequestId?: () => string;
         readonly reconnect?: ReconnectOptions;
@@ -157,6 +160,7 @@ export namespace WsQueueBoxClientService {
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly outboundSettlements: ALDeliverySettlementSink | undefined;
         readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
+        readonly onResyncRequired: ((resync: ALInboundResyncRequired) => void) | undefined;
         readonly newConnectionRequestId: (() => string) | undefined;
         readonly reconnect: ReconnectOptions;
     }
@@ -255,6 +259,7 @@ export class WsQueueBoxClientService {
                     const admitted = await acceptWsQueueBoxClientControlMessage(this.outboundRuntime, msg);
                     return admitted.kind === 'storage-unavailable' ? admitted : undefined;
                 },
+                onResyncRequired: this.dependencies.onResyncRequired,
                 diagnostics: this.dependencies.inboundDiagnostics
             }
         );
@@ -629,6 +634,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
         outboundDiagnostics: input.outboundDiagnostics,
         outboundSettlements: input.outboundSettlements,
         inboundDiagnostics: input.inboundDiagnostics,
+        onResyncRequired: input.onResyncRequired,
         newConnectionRequestId: input.newConnectionRequestId,
         reconnect: input.reconnect ?? DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
     });

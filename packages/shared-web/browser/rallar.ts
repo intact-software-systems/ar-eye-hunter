@@ -94,6 +94,7 @@ export type {
     RallarCallState,
     RallarCallStatus,
     RallarCameraSourceStartOptions,
+    RallarChannelRecovery,
     RallarChannelsFacade,
     RallarConnectStatus,
     RallarCreateRoomInput,
@@ -286,6 +287,7 @@ export type {
     ALDeliveryRelayRejection,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+export type { ALInboundResyncCursor } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 export type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
 export type {
     ALStorageEvent,

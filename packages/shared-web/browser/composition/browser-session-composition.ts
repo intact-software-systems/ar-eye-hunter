@@ -16,6 +16,7 @@ import {
     type RallarSessionIdentity
 } from '@shared-web/browser/session/session-identity.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
+import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
@@ -44,6 +45,8 @@ export interface CreateBrowserSessionCoreCompositionInput {
     readonly qosProvider: ALQosInputProvider | undefined;
     readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
     readonly sessionDeliveries: BrowserSessionDeliveries;
+    /** Each connect's inbound runtimes hand their resynchronizations here. */
+    readonly onResyncRequired: (resync: ALInboundResyncRequired) => void;
     readonly foundation: BrowserRuntimeFoundation;
     readonly state: BrowserStateComposition;
 }
@@ -72,6 +75,7 @@ export function createBrowserSessionCoreComposition(
         qosProvider: input.qosProvider,
         readVolatileSessionLimits: input.readVolatileSessionLimits,
         sessionDeliveries: input.sessionDeliveries,
+        onResyncRequired: input.onResyncRequired,
         connectionRuntime: input.foundation.connectionRuntime,
         transportRuntime: input.foundation.transportRuntime,
         authRuntime: input.foundation.authRuntime,

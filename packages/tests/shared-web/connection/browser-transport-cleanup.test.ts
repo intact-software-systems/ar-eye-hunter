@@ -67,6 +67,7 @@ describe('Browser transport cleanup', () => {
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
+            onResyncRequired: () => {},
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle,
@@ -118,6 +119,7 @@ describe('Browser transport cleanup', () => {
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
+            onResyncRequired: () => {},
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle,
@@ -167,6 +169,7 @@ describe('Browser transport cleanup', () => {
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
+            onResyncRequired: () => {},
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle,
@@ -218,6 +221,7 @@ describe('Browser transport cleanup', () => {
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
+            onResyncRequired: () => {},
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle: createRallarLifecycleCoordinator(),
@@ -274,7 +278,8 @@ describe('Browser transport cleanup', () => {
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
-            deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
+            deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
+            onResyncRequired: () => {}
         });
         transportRuntime.shutdown();
         resolveMiddleware?.({ middleware: middleware.middleware, checkpoints: [] });
@@ -350,6 +355,7 @@ describe('Browser transport cleanup', () => {
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
             ...createDeliveryObservation(transportRuntime),
+            onResyncRequired: () => {},
             connectionRuntime: runtime,
             transportRuntime,
             authRuntime: runtime,
@@ -406,6 +412,7 @@ describe('Browser transport cleanup', () => {
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
             ...createDeliveryObservation(transportRuntime),
+            onResyncRequired: () => {},
             connectionRuntime: runtime,
             transportRuntime,
             authRuntime: runtime,
@@ -459,6 +466,7 @@ describe('the session volatile limits seam', () => {
             qosProvider: undefined,
             readVolatileSessionLimits,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
+            onResyncRequired: () => {},
             connectionRuntime: new BrowserFacadeRuntimeState(transportRuntime),
             transportRuntime,
             lifecycle: createRallarLifecycleCoordinator(),
@@ -602,7 +610,8 @@ function toInitOptions(): BrowserTransportInitOptions {
         qosProvider: undefined,
         readVolatileSessionLimits: undefined,
         deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
-        diagnosticsPorts: toRallarDiagnosticsPorts(undefined)
+        diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
+        onResyncRequired: () => {}
     };
 }
 

@@ -351,11 +351,21 @@ D8 reuse: the existing repair-hint effect and the lifecycle's skipped fact; one 
 **D8 reuse inspection.** The inbound runtime's optional-dependency pattern (`canDispatchMessage`,
 `isRoomPeerPresent`); the typed channel registry; `LatestRepository`; the browser ALM diagnostics port.
 
-- [ ] Steps 1–2: failing tests, red. Step 3: the cursor and the runtime sink. Step 4: the browser owner
+- [x] Steps 1–2: failing tests, red. Step 3: the cursor and the runtime sink. Step 4: the browser owner
       and the public type. Step 5: format; focused, `packages/tests/shared-web/messages`,
       `packages/tests/shared/alm/inbound` green; the public API snapshot and bundle boundary tests;
       pins; typechecks; bundles (raise a crossed budget to the next whole KiB).
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
+
+**Corrections recorded at execution.** The public cursor type is `ALInboundResyncCursor` (the shared
+contract, exported as `RallarMessageDeliveryListener` exports `ALDeliveryLifecycle`); a `RallarResyncCursor`
+would have been a renaming alias, which the type-organization standard forbids. `BrowserResyncRecovery` has
+no `closeTrack`: the once-mark key carries the epoch, so a new epoch re-arms by itself. The owner is
+registered by `BrowserChannelRecoveryOwners` (route → owner), which `BrowserTypedMessageChannels` fills on
+`channel(...)`; the recovery is composed before the session (`createBrowserResyncRecoveryComposition`) in
+both the facade and the headless harness, reading the diagnostics port per event because `setup()` may
+replace it. `recovery-owner-invoked` is stated even when the owner throws. The headless bundle budget rose
+303 → 304 (measured 303.786 KiB); `browser/rallar.ts` measured 238.8 against 239.
 
 ```text
 Invoke a channel's recovery owner once when its track needs resynchronization

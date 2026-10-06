@@ -13,6 +13,7 @@ import { toALInboundMessageWithDeadline } from './al-inbound-message-deadline.ts
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import { toALInboundPendingAdmissionId, type ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import { computeALInboundPlanningObservations } from './al-inbound-planner-snapshot.ts';
+import { toALInboundResyncCursor } from './al-inbound-resync-required.ts';
 import { isAuthorizedStoredWsClientDelivery, toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
@@ -31,6 +32,7 @@ export namespace ALInboundMessageAdmission {
             | 'isRoomPeerPresent'
             | 'readPendingAdmissionAuthority'
             | 'readRelayedAckRejection'
+            | 'onResyncRequired'
         > {
         readonly workPort: ALWorkQueuePort;
     }
@@ -60,6 +62,13 @@ export namespace ALInboundMessageAdmission {
 /** A replay that never reached a commit wrote nothing, so it has no work to announce. */
 const REPLAY_COMPLETED_WITHOUT_WORK: ALInboundMessageAdmission.ReplayResult = {
     outcome: 'completed',
+    wroteWork: false
+};
+
+/** A message past its deadline, found before its write or by the write itself: nothing was written for it. */
+const ATTEMPT_EXPIRED: ALInboundMessageAdmission.Attempt = {
+    kind: 'completed',
+    acceptance: { kind: 'not-admitted', reason: 'expired' },
     wroteWork: false
 };
 
@@ -99,11 +108,7 @@ export class ALInboundMessageAdmission {
         const deadline = resolveALMessageExpireAtMs(admitted, plan.effective) ??
             nowMs + read.retention.durableEffectTtlMs;
         if (deadline <= clock.nowMs()) {
-            return Either.ofRight({
-                kind: 'completed',
-                acceptance: { kind: 'not-admitted', reason: 'expired' },
-                wroteWork: false
-            });
+            return Either.ofRight(ATTEMPT_EXPIRED);
         }
         const canForward = !plan.dropReason && this.dependencies.forwardMessage !== undefined &&
             (this.dependencies.canForwardMessage?.(admitted) ?? true);
@@ -116,11 +121,7 @@ export class ALInboundMessageAdmission {
         }
         const status = await admissionStore.commitBundle(validated.right!);
         if (status === 'expired') {
-            return Either.ofRight({
-                kind: 'completed',
-                acceptance: { kind: 'not-admitted', reason: 'expired' },
-                wroteWork: false
-            });
+            return Either.ofRight(ATTEMPT_EXPIRED);
         }
         if (status === 'conflict') {
             return Either.ofRight({
@@ -132,11 +133,28 @@ export class ALInboundMessageAdmission {
                 }
             });
         }
+        this.recordResyncRequired(msg, source, plan);
         return Either.ofRight({
             kind: 'completed',
             acceptance: toAdmissionAcceptance(plan),
             wroteWork: validated.right!.durableEffects.length > 0
         });
+    }
+
+    /** After the commit, so the owner is told of a resynchronization the store has already NACKed. */
+    private recordResyncRequired(
+        msg: ALMessage,
+        source: ALInboundMessageRuntime.Source,
+        plan: ALMessageHandlingPlan
+    ): void {
+        const cursor = toALInboundResyncCursor({
+            msg,
+            observation: plan.orderingRuntime,
+            carrier: toALDeliveryCarrier(source)
+        });
+        if (cursor !== undefined) {
+            this.dependencies.onResyncRequired?.({ msg, cursor });
+        }
     }
 
     async retainPending(pending: ALInboundPendingAdmission): Promise<ALInboundMessageRuntime.Acceptance> {

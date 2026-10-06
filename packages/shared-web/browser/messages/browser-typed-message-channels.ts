@@ -1,3 +1,4 @@
+import type { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import type { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import type { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import type {
@@ -18,6 +19,7 @@ export namespace BrowserTypedMessageChannels {
         readonly sender: BrowserRallarMessageSender;
         readonly rtc: Pick<RallarMessagesOperations['rtc'], 'onMessage'>;
         readonly ws: Pick<RallarMessagesOperations['ws'], 'onMessage'>;
+        readonly recoveryOwners: BrowserChannelRecoveryOwners;
     }
 }
 
@@ -40,6 +42,9 @@ export class BrowserTypedMessageChannels {
 
     private createChannel<T>(definition: RallarTypedMessageChannelDefinition): RallarTypedMessageChannel<T> {
         const route = { topicId: definition.topicId, typeId: definition.typeId };
+        if (definition.recovery !== undefined) {
+            this.input.recoveryOwners.setOwner(route, definition.recovery);
+        }
         const policy: BrowserTypedChannelPolicy = {
             purpose: definition.purpose,
             durability: definition.durability,

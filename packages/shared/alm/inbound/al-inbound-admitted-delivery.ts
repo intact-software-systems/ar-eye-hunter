@@ -27,6 +27,7 @@ export namespace ALInboundAdmittedDelivery {
             | 'forwardRetriedCopy'
             | 'clock'
             | 'effectPreparation'
+            | 'onResyncRequired'
         > {}
 }
 
@@ -73,6 +74,7 @@ export class ALInboundAdmittedDelivery {
             planIncomingMessage: dependencies.planIncomingMessage,
             clock: dependencies.clock,
             effectPreparation: dependencies.effectPreparation,
+            onResyncRequired: dependencies.onResyncRequired,
             signal: this.shutdown.signal
         });
     }

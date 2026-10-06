@@ -9,6 +9,7 @@ export interface RallarTypedChannelPolicyInput {
     readonly purpose?: string;
     readonly durability?: string;
     readonly onStorageUnavailable?: string;
+    readonly recovery?: unknown;
 }
 
 const RALLAR_STORAGE_UNAVAILABLE_POLICIES: readonly RallarStorageUnavailablePolicy[] = ['refuse', 'volatile'];
@@ -52,5 +53,24 @@ export function validateRallarTypedChannelPolicy(
             message: 'onStorageUnavailable must be refuse or volatile.'
         });
     }
+    issues.push(...validateRallarChannelRecovery(definition.recovery));
     return issues;
+}
+
+/** Absent is valid: the channel declares no owner. Stated, it must be callable. */
+function validateRallarChannelRecovery(recovery: unknown): readonly RallarValidationIssue[] {
+    if (recovery === undefined) {
+        return [];
+    }
+    const onResyncRequired = typeof recovery === 'object' && recovery !== null && 'onResyncRequired' in recovery
+        ? recovery.onResyncRequired
+        : undefined;
+    if (typeof onResyncRequired === 'function') {
+        return [];
+    }
+    return [{
+        path: '$.recovery.onResyncRequired',
+        code: 'invalid-recovery',
+        message: 'recovery.onResyncRequired must be a function.'
+    }];
 }

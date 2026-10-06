@@ -1,18 +1,20 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
-import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
+import { toALOrderingTrackKey, type ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import {
     computeALInboundBufferedRelease,
     type ALInboundBufferedRelease
 } from './admission/compute-al-inbound-admission.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
-import { shouldRetryALInboundDelivery } from './al-inbound-effect-intent.ts';
+import type { ALInboundBufferedReleaseReadDto } from './al-inbound-admission-store.ts';
+import { shouldRetryALInboundDelivery, type ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundPredecessorReadiness
 } from './al-inbound-planner-snapshot.ts';
+import { toALInboundResyncCursor } from './al-inbound-resync-required.ts';
 import { isAuthorizedStoredWsClientDelivery, toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import {
     prepareALInboundCommitBundle,
@@ -28,7 +30,7 @@ export namespace ALInboundOrderedDelivery {
         extends
             Pick<
                 ALInboundMessageRuntime.Dependencies,
-                'admissionStore' | 'planIncomingMessage' | 'clock' | 'effectPreparation'
+                'admissionStore' | 'planIncomingMessage' | 'clock' | 'effectPreparation' | 'onResyncRequired'
             > {
         readonly signal: AbortSignal;
     }
@@ -138,23 +140,18 @@ export class ALInboundOrderedDelivery {
         if ((read.observations.deliveryProgress?.value?.completedThrough ?? 0) !== completedThrough) {
             return 'retry';
         }
-        const facts = readALInboundEffectFacts(read.nowMs, this.dependencies.effectPreparation);
+        const ordering: ALOrderingObservation = {
+            status: 'resync-required',
+            trackKey,
+            seq,
+            missingRanges: [],
+            releasableSeqs: []
+        };
         const computed = prepareALInboundCommitBundle({
             read,
-            facts,
+            facts: readALInboundEffectFacts(read.nowMs, this.dependencies.effectPreparation),
             mutations: [],
-            effects: [{
-                effectId: `resync:${encodeURIComponent(msg.id.senderId)}:${encodeURIComponent(msg.id.msgId)}`,
-                expireAtTimestamp: read.nowMs + read.retention.durableEffectTtlMs,
-                carrier: toALDeliveryCarrier(read.source),
-                payload: {
-                    kind: 'send-nack',
-                    toPeerId: read.source.kind === 'trusted-server' ? msg.id.senderId : read.source.peerId,
-                    msgId: msg.id.msgId,
-                    reason: 'resync-required',
-                    ordering: { status: 'resync-required', trackKey, seq, missingRanges: [], releasableSeqs: [] }
-                }
-            }]
+            effects: [toResyncRequiredNackEffect(msg, read, ordering)]
         });
         const validated = validateALInboundCommitBundle(computed, read.namespace);
         if (validated.left) {
@@ -166,7 +163,24 @@ export class ALInboundOrderedDelivery {
         ) {
             return 'retry';
         }
+        this.recordResyncRequired(msg, read, {
+            ...ordering,
+            lastContiguousSeq: completedThrough,
+            expectedSeq: completedThrough + 1
+        });
         throw new NonRetryableException('Inbound ordered delivery requires resynchronization');
+    }
+
+    /** After the NACK commits, so the owner is told of a resynchronization the sender is already told of. */
+    private recordResyncRequired(
+        msg: ALMessage,
+        read: ALInboundBufferedReleaseReadDto,
+        observation: ALOrderingObservation
+    ): void {
+        const cursor = toALInboundResyncCursor({ msg, observation, carrier: toALDeliveryCarrier(read.source) });
+        if (cursor !== undefined) {
+            this.dependencies.onResyncRequired?.({ msg, cursor });
+        }
     }
 
     async complete(msg: ALMessage): Promise<'completed' | 'retry'> {
@@ -222,4 +236,24 @@ export class ALInboundOrderedDelivery {
         }
         throw new NonRetryableException('Inbound buffered message is missing without durable completion evidence');
     }
+}
+
+/** The NACK the rejection commits, so the sender learns the receiver can no longer order this track. */
+function toResyncRequiredNackEffect(
+    msg: ALMessage,
+    read: ALInboundBufferedReleaseReadDto,
+    ordering: ALOrderingObservation
+): ALInboundEffectIntent {
+    return {
+        effectId: `resync:${encodeURIComponent(msg.id.senderId)}:${encodeURIComponent(msg.id.msgId)}`,
+        expireAtTimestamp: read.nowMs + read.retention.durableEffectTtlMs,
+        carrier: toALDeliveryCarrier(read.source),
+        payload: {
+            kind: 'send-nack',
+            toPeerId: read.source.kind === 'trusted-server' ? msg.id.senderId : read.source.peerId,
+            msgId: msg.id.msgId,
+            reason: 'resync-required',
+            ordering
+        }
+    };
 }

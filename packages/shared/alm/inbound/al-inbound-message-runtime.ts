@@ -16,6 +16,7 @@ import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts'
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
 import type { ALInboundAdmissionStore, ALInboundPlanner } from './al-inbound-admission-store.ts';
+import type { ALInboundResyncRequired } from './al-inbound-resync-required.ts';
 import {
     toALInboundAdmissionDiagnostics,
     type ALInboundRuntimeDiagnosticsSink
@@ -155,6 +156,11 @@ export namespace ALInboundMessageRuntime {
         readonly isRoomPeerPresent?: (msg: ALMessage, peerId: string) => boolean;
         /** Absence means this runtime relays origin-addressed controls for no peer. */
         readonly readRelayedAckRejection?: ALInboundReceiver['readRelayedAckRejection'];
+        /**
+         * Receives each message this runtime admits `resync-required`, or rejects at its ordered release, after
+         * its NACK commits. Absence means no recovery owner exists anywhere: the server's case.
+         */
+        readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
     }
 }

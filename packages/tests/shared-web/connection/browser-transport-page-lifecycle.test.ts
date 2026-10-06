@@ -127,6 +127,7 @@ function toInitOptions(): BrowserTransportInitOptions {
         qosProvider: undefined,
         readVolatileSessionLimits: undefined,
         deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
-        diagnosticsPorts: toRallarDiagnosticsPorts(undefined)
+        diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
+        onResyncRequired: () => {}
     };
 }

@@ -2,6 +2,7 @@ import { resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/bro
 import {
     createBrowserMessagingComposition,
     createBrowserRealtimeCoreComposition,
+    createBrowserResyncRecoveryComposition,
     type BrowserMessagingComposition,
     type BrowserRealtimeCoreComposition
 } from '@shared-web/browser/composition/browser-communication-composition.ts';
@@ -376,12 +377,17 @@ function createBlackBoxBrowserTransportComposition(
         runtime: foundation.runtime,
         stateRuntime: foundation.stateRuntime
     });
+    const recovery = createBrowserResyncRecoveryComposition({
+        connectionRuntime: foundation.connectionRuntime,
+        nowMs: browserDeliveryComposition.nowMs
+    });
     const session = createBrowserSessionCoreComposition({
         qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
         readVolatileSessionLimits,
         foundation,
         state,
-        sessionDeliveries: browserDeliveryComposition.sessionDeliveries
+        sessionDeliveries: browserDeliveryComposition.sessionDeliveries,
+        onResyncRequired: (resync) => recovery.resyncRecovery.onResyncRequired(resync)
     });
     const stateEvents = createBrowserStateEventComposition({
         connectionRuntime: foundation.connectionRuntime,
@@ -390,6 +396,7 @@ function createBlackBoxBrowserTransportComposition(
     const messaging = createBrowserMessagingComposition({
         ...browserDeliveryComposition,
         wsInbox: stateEvents.wsInbox,
+        recoveryOwners: recovery.recoveryOwners,
         state,
         session: session.session
     });

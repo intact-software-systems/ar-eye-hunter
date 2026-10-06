@@ -10,6 +10,7 @@ import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type {
     ALCheckpointOutboundRuntimeStores,
@@ -58,6 +59,8 @@ export namespace CreateBrowserWebSocketQueueBox {
         readonly newConnectionRequestId: (() => string) | undefined;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
+        /** Absent, no recovery owner is told of a track this client can no longer order: a transport built without the messaging composition. */
+        readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
     }
 }
 
@@ -110,6 +113,7 @@ function createBrowserWebSocketQueueBoxService(
         outboundDiagnostics: input.outboundDiagnostics,
         outboundSettlements: input.outboundSettlements,
         inboundDiagnostics: input.inboundDiagnostics,
+        onResyncRequired: input.onResyncRequired,
         durableWorkOwnership: input.durableWorkOwnership,
         newConnectionRequestId: input.newConnectionRequestId,
         reconnect: {
