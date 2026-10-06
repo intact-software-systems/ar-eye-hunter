@@ -1,4 +1,5 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALSequenceMintTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { hasALDeliveryDurableWork } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -92,6 +93,12 @@ async function publishAuthorizedRallarServerWsMessage(
     if (scopeIssues.length > 0) {
         return toFailedPublishResult(input, scopeIssues.join('; '));
     }
+    if (isUnmintedServerSequence(input)) {
+        return toFailedPublishResult(
+            input,
+            'A server publication that names an ordering key without a sequence needs the outbox fanout, which mints it.'
+        );
+    }
     if (input.fanout === 'none') {
         return await publishRallarServerWsFanout(input);
     }
@@ -133,7 +140,7 @@ async function publishRallarServerWsFanout(
             if (hasALDeliveryDurableWork(result.verdict)) {
                 input.wakeOutbox?.();
             }
-            return toRallarServerWsOutboxPublishResult(input.message, input.fanout, result);
+            return toRallarServerWsOutboxPublishResult(input.fanout, result);
         }
         case 'live-only': {
             const groupRef = readALTargetGroupRef(input.message);
@@ -157,6 +164,12 @@ async function publishRallarServerWsFanout(
             return toRallarServerWsLivePublishResult(input.message, input.fanout, result);
         }
     }
+}
+
+/** Only the outbox admission mints the server's own sequence; any other fanout would send the keyed message unsequenced. */
+function isUnmintedServerSequence(input: PublishRallarServerWsMessageInput): boolean {
+    return input.fanout !== 'outbox' && input.message.id.senderId === input.service.name &&
+        toALSequenceMintTrackKey(input.message) !== undefined;
 }
 
 function toFailedPublishResult(input: PublishRallarServerWsMessageInput, reason: string): RallarServerWsPublishResult {
