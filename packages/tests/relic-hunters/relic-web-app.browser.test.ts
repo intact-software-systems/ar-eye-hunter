@@ -6,40 +6,43 @@ import {
     createRelicGame,
     createRelicGameFromBlueprint,
     RELIC_PROTOCOL_VERSION,
+    RELIC_TOPICS,
+    RELIC_TYPES,
     toPublicRelicSnapshot,
     type RelicGameState,
-    type RelicPublicSnapshot
+    type RelicPublicSnapshot,
+    type RelicRoundTransitionEvent
 } from '@relic-hunters/mod.ts';
-import type { RallarWsSendInput } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarMessage,
+    RallarTypedPayloadHandler,
+    RallarWsSendInput
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
+import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTimedOutRoundSnapshots } from './relic-timeout-snapshot-fixture.ts';
 
+interface MockWsMessage {
+    readonly payload: object;
+    readonly senderId: string;
+    readonly roomId?: string;
+    readonly receivedAtEpochMs: number;
+}
+
 const rallarMock = vi.hoisted(() => ({
     session: undefined as AuthSession | undefined,
-    roomState: undefined as unknown,
+    roomState: undefined as object | undefined,
     connectCalls: 0,
     refreshCalls: 0,
-    wsMessageHandler: undefined as
-        | ((message: {
-            payload: unknown;
-            senderId: string;
-            roomId?: string;
-            receivedAtEpochMs: number;
-        }) => void)
-        | undefined,
-    wsAiMessageHandler: undefined as
-        | ((message: {
-            payload: unknown;
-            senderId: string;
-            roomId?: string;
-            receivedAtEpochMs: number;
-        }) => void)
-        | undefined,
-    wsSend: vi.fn(async (input: RallarWsSendInput<Record<string, unknown>>) => ({
+    wsMessageHandler: undefined as ((message: MockWsMessage) => void) | undefined,
+    wsAiMessageHandler: undefined as ((message: MockWsMessage) => void) | undefined,
+    roundTransitionHandler: undefined as RallarTypedPayloadHandler<RelicRoundTransitionEvent> | undefined,
+    wsSend: vi.fn(async (input: RallarWsSendInput<object>) => ({
         transport: 'ws',
         status: 'queued',
         entries: []
@@ -124,12 +127,7 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
             ws: {
                 onMessage: (
                     selector: { topicId?: string; } | string,
-                    handler: (message: {
-                        payload: unknown;
-                        senderId: string;
-                        roomId?: string;
-                        receivedAtEpochMs: number;
-                    }) => void
+                    handler: (message: MockWsMessage) => void
                 ) => {
                     const topicId = typeof selector === 'string' ? selector : selector.topicId;
                     if (topicId === 'room.relic.ai.planning') {
@@ -151,7 +149,15 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
             rtc: {
                 onMessage: () => () => undefined,
                 send: vi.fn(async () => ({ status: 'no-route' }))
-            }
+            },
+            room: () => ({
+                onWs: (handler: RallarTypedPayloadHandler<RelicRoundTransitionEvent>) => {
+                    rallarMock.roundTransitionHandler = handler;
+                    return () => {
+                        rallarMock.roundTransitionHandler = undefined;
+                    };
+                }
+            })
         },
         data: {
             open: vi.fn(async () => ({
@@ -252,6 +258,7 @@ describe('Relic Hunters browser app', () => {
         rallarMock.refreshCalls = 0;
         rallarMock.wsMessageHandler = undefined;
         rallarMock.wsAiMessageHandler = undefined;
+        rallarMock.roundTransitionHandler = undefined;
         rallarMock.wsSend.mockClear();
         container = document.createElement('div');
         document.body.appendChild(container);
@@ -324,6 +331,33 @@ describe('Relic Hunters browser app', () => {
         expect(container.textContent).toContain('Bob');
         expect(container.textContent).toContain('Hunters');
         expect(container.textContent).toContain('2');
+    });
+
+    it('cues a phase banner from the room\'s ordered round transition, not from a snapshot that moves the phase', async () => {
+        writeSession(session());
+        rallarMock.roomState = roomState(2);
+        stubSnapshotFetch(snapshotWithPlayers(2));
+
+        await renderApp();
+        await waitFor(() => rallarMock.wsMessageHandler !== undefined && rallarMock.roundTransitionHandler !== undefined);
+        const planning = snapshotWithPlayers(2, 'planning');
+        await act(async () => {
+            rallarMock.wsMessageHandler?.({
+                payload: { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: planning.gameId, snapshot: planning },
+                senderId: 'default-qbox-server',
+                roomId: 'room-1',
+                receivedAtEpochMs: Date.now()
+            });
+        });
+        await waitFor(() => container.textContent?.includes('Submit Plan') === true);
+        expect(container.querySelector('.phase-banner')).toBeNull();
+
+        await act(async () => {
+            await rallarMock.roundTransitionHandler?.(ROUND_STARTED, toRoundTransitionMessage(ROUND_STARTED));
+        });
+
+        const banner = container.querySelector('.phase-banner.phase-banner-start');
+        expect(banner?.textContent).toContain('The Hunt Begins!');
     });
 
     it('lets scene doorway prompts prime the normal turn-based move action', async () => {
@@ -626,7 +660,7 @@ function session(): AuthSession {
     };
 }
 
-function roomState(onlineMemberCount: number): unknown {
+function roomState(onlineMemberCount: number): object {
     return {
         currentRoomId: 'room-1',
         rooms: [
@@ -669,6 +703,44 @@ function stubSnapshotFetchSequence(
         fetchMock
     );
     return fetchMock;
+}
+
+const ROUND_STARTED: RelicRoundTransitionEvent = {
+    protocolVersion: RELIC_PROTOCOL_VERSION,
+    gameId: 'room-1',
+    round: 1,
+    phase: 'planning',
+    transition: 'round-started',
+    text: 'Alice started the expedition.'
+};
+
+function toRoundTransitionMessage(event: RelicRoundTransitionEvent): RallarMessage<RelicRoundTransitionEvent> {
+    const raw = newALBroadcastMessage(
+        'default-qbox-server',
+        newALRoute(RELIC_TOPICS.event, 'room-1', `${event.gameId}:${event.round}`),
+        'room',
+        RELIC_TYPES.event,
+        event,
+        {
+            groupRef: {
+                applicationId: DEFAULT_STATE_APPLICATION_ID,
+                workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+                groupId: 'room-1'
+            }
+        }
+    );
+    return {
+        transport: 'ws',
+        typeId: RELIC_TYPES.event,
+        topicId: RELIC_TOPICS.event,
+        contextId: 'room-1',
+        resourceId: raw.route.resourceId,
+        roomId: 'room-1',
+        senderId: 'default-qbox-server',
+        payload: event,
+        raw,
+        receivedAtEpochMs: Date.now()
+    };
 }
 
 function snapshotWithPlayers(

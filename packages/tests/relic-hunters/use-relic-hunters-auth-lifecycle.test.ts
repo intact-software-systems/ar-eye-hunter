@@ -1,7 +1,24 @@
 // @vitest-environment happy-dom
-import { createRelicGame, toPublicRelicSnapshot, type RelicPublicSnapshot } from '@relic-hunters/mod.ts';
-import type { RallarAuthState } from '@shared-web/browser/rallar.ts';
+import {
+    createRelicGame,
+    RELIC_PROTOCOL_VERSION,
+    RELIC_TOPICS,
+    RELIC_TYPES,
+    toPublicRelicSnapshot,
+    toRelicRoundTrackKey,
+    type RelicPublicSnapshot,
+    type RelicRoundTransitionEvent,
+    type RelicServerEvent
+} from '@relic-hunters/mod.ts';
+import type {
+    RallarAuthState,
+    RallarMessage,
+    RallarRoomMessageChannelDefinition,
+    RallarTypedPayloadHandler
+} from '@shared-web/browser/rallar.ts';
+import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -42,7 +59,8 @@ const mockRallar = vi.hoisted(() => ({
         },
         rtc: {
             onMessage: vi.fn()
-        }
+        },
+        room: vi.fn()
     },
     channels: {
         room: vi.fn()
@@ -110,6 +128,7 @@ describe('useRelicHunters auth lifecycle', () => {
         });
         mockRallar.messages.ws.onMessage.mockReturnValue(vi.fn());
         mockRallar.messages.rtc.onMessage.mockReturnValue(vi.fn());
+        mockRallar.messages.room.mockReturnValue({ onWs: vi.fn(() => vi.fn()) });
         mockRallar.rtc.onStatus.mockReturnValue(vi.fn());
         mockRallar.channels.room.mockReturnValue({
             onMessage: vi.fn(() => vi.fn()),
@@ -167,7 +186,7 @@ describe('useRelicHunters auth lifecycle', () => {
 
     it('clears stale snapshot rejection diagnostics after a newer snapshot is accepted', async () => {
         let wsMessageHandler:
-            | ((message: { payload: unknown; }) => void)
+            | ((message: { payload: Pick<RelicServerEvent, 'snapshot'>; }) => void)
             | undefined;
         vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(20));
         mockRallar.messages.ws.onMessage.mockImplementation((definition, handler) => {
@@ -190,6 +209,47 @@ describe('useRelicHunters auth lifecycle', () => {
         });
         expect(current?.diagnostics.lastSnapshotSource).toBe('rallar-ws');
         expect(current?.diagnostics.lastIgnoredSnapshotReason).toBeUndefined();
+    });
+
+    it('cues the room\'s ordered round transitions and re-reads the game over REST when a track of any of its incarnations needs resynchronizing', async () => {
+        let definition: RallarRoomMessageChannelDefinition | undefined;
+        let onTransition: RallarTypedPayloadHandler<RelicRoundTransitionEvent> | undefined;
+        vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(20));
+        mockRallar.messages.room.mockImplementation((roomDefinition: RallarRoomMessageChannelDefinition) => {
+            definition = roomDefinition;
+            return {
+                onWs: vi.fn((handler: RallarTypedPayloadHandler<RelicRoundTransitionEvent>) => {
+                    onTransition = handler;
+                    return vi.fn();
+                })
+            };
+        });
+
+        await renderHook();
+        await waitForState(() => current?.diagnostics.snapshotReady === true && onTransition !== undefined);
+        await act(async () => {
+            await onTransition?.(ROUND_STARTED, toRoomMessage(ROUND_STARTED));
+        });
+
+        expect(current?.roundTransition).toEqual(ROUND_STARTED);
+        expect(current?.diagnostics.roundTransitionCues).toEqual(['1:round-started']);
+
+        vi.mocked(fetchRelicSnapshot).mockClear().mockResolvedValue(relicSnapshot(21));
+        await act(async () => {
+            definition?.recovery?.onResyncRequired({
+                orderingKey: toRelicRoundTrackKey({ gameId: 'relic-room-1', createdAtEpochMs: 7 }),
+                senderId: 'default-qbox-server',
+                epoch: 1,
+                lastContiguousSeq: 0,
+                expectedSeq: 1,
+                observedSeq: 300,
+                carrier: 'ws'
+            });
+        });
+        await waitForState(() => current?.diagnostics.lastSnapshotSource === 'resync-recovery');
+
+        expect(fetchRelicSnapshot).toHaveBeenCalledWith('relic-room-1');
+        expect(current?.snapshot?.updatedAtEpochMs).toBe(21);
     });
 
     async function renderHook(): Promise<void> {
@@ -234,6 +294,44 @@ describe('useRelicHunters auth lifecycle', () => {
         ).toBe(true);
     }
 });
+
+const ROUND_STARTED: RelicRoundTransitionEvent = {
+    protocolVersion: RELIC_PROTOCOL_VERSION,
+    gameId: 'relic-room-1',
+    round: 1,
+    phase: 'planning',
+    transition: 'round-started',
+    text: 'relic started the expedition.'
+};
+
+function toRoomMessage(event: RelicRoundTransitionEvent): RallarMessage<RelicRoundTransitionEvent> {
+    const raw = newALBroadcastMessage(
+        'default-qbox-server',
+        newALRoute(RELIC_TOPICS.event, event.gameId, `${event.gameId}:${event.round}`),
+        'room',
+        RELIC_TYPES.event,
+        event,
+        {
+            groupRef: {
+                applicationId: DEFAULT_STATE_APPLICATION_ID,
+                workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+                groupId: event.gameId
+            }
+        }
+    );
+    return {
+        transport: 'ws',
+        typeId: RELIC_TYPES.event,
+        topicId: RELIC_TOPICS.event,
+        contextId: event.gameId,
+        resourceId: raw.route.resourceId,
+        roomId: event.gameId,
+        senderId: 'default-qbox-server',
+        payload: event,
+        raw,
+        receivedAtEpochMs: 0
+    };
+}
 
 function relicSnapshot(updatedAtEpochMs: number): RelicPublicSnapshot {
     return toPublicRelicSnapshot(

@@ -3420,6 +3420,21 @@ moved or changed test.
       }
     },
     {
+      "id": "relic-unauthorized-auth-change-never-logs-out",
+      "domain": "Relic Hunters browser session",
+      "owner": "Relic Hunters maintainers",
+      "summary": "An auth change that reports the session unauthorized clears the browser runtime state without a manual logout of its own.",
+      "semanticCoverage": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts#clears relic runtime state when auth is unauthorized outside manual logout",
+      "coverageRelation": "The test connects the hook, emits an unauthorized auth state and checks the cleared session, room, snapshot and diagnostics, the cleared stored room id and the absent logout call.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "rallar.auth logout",
+        "observableEffect": "An unauthorized auth change makes no logout request.",
+        "requiredConstraint": "Only the player's own logout action calls the auth logout; the hook reacts to an unauthorized state by clearing its own state.",
+        "failureRationale": "The cleared hook state reads the same whether or not a logout was also requested, and a logout from inside the auth listener would re-enter the auth change it is reacting to; the absent call is the only witness."
+      }
+    },
+    {
       "id": "browser-storage-unavailable-refuse-admits-once",
       "domain": "Browser durable send storage cannot hold",
       "owner": "Rallar browser maintainers",
@@ -7967,6 +7982,17 @@ moved or changed test.
       "owner": "Relic Hunters maintainers",
       "rationale": "`expect(deps.sendRestCommand).not.toHaveBeenCalled();` pins that a WS-delivered command is not repeated over REST, which could apply it twice (C13).",
       "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#sends gameplay commands to the server over WS and reports the receipt (D57 as applied)"
+    },
+    {
+      "id": "test-structure-coupling-a8b22d69e6c0d234",
+      "path": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-unauthorized-auth-change-never-logs-out",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(mockRallar.auth.logout).not.toHaveBeenCalled();` pins that an unauthorized auth change clears the hook without requesting a logout of its own.",
+      "semanticCoverage": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts#clears relic runtime state when auth is unauthorized outside manual logout"
     },
     {
       "id": "test-structure-coupling-0f97b8e668773ecb",

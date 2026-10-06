@@ -302,6 +302,12 @@ export function toRelicRoundTrackKey(game: Pick<RelicPublicSnapshot, 'gameId' | 
     return `${game.gameId}:${game.createdAtEpochMs}`;
 }
 
+/** A round track of any incarnation of the game: its key is the game id, a colon and a creation time. */
+export function isRelicRoundTrackOfGame(orderingKey: string, gameId: string): boolean {
+    const prefix = `${gameId}:`;
+    return orderingKey.startsWith(prefix) && /^\d+$/.test(orderingKey.slice(prefix.length));
+}
+
 export function toPublicRelicSnapshot(state: RelicGameState): RelicPublicSnapshot {
     const maybeLegacy = state as RelicGameState & {
         roomInvestigations?: readonly RelicRoomInvestigation[];
@@ -432,6 +438,21 @@ export function isRelicSnapshot(value: unknown): value is RelicPublicSnapshot {
         Array.isArray(value.events) && value.events.every(isRelicEvent) &&
         Array.isArray(value.winnerIds) && value.winnerIds.every(isString) &&
         (value.setup === undefined || isRelicPublicSetupMetadata(value.setup));
+}
+
+export function isRelicRoundTransitionEvent(value: unknown): value is RelicRoundTransitionEvent {
+    return isRecord(value) &&
+        value.protocolVersion === RELIC_PROTOCOL_VERSION &&
+        typeof value.gameId === 'string' &&
+        isFiniteNumber(value.round) &&
+        isRelicGamePhase(value.phase) &&
+        isOneOf<RelicRoundTransition>(value.transition, [
+            'round-started',
+            'round-resolved',
+            'review-continued',
+            'finished'
+        ]) &&
+        typeof value.text === 'string';
 }
 
 function isRelicGamePhase(value: unknown): value is RelicGamePhase {
