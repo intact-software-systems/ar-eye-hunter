@@ -4,7 +4,7 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
-import { toCommittedControlAdmissionWait } from '../../alm-conformance-diagnostic-waits.ts';
+import { toControlAdmissionWait } from '../../alm-conformance-diagnostic-waits.ts';
 import { toObserveCommand, toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../../alm-conformance-roles.ts';
@@ -61,10 +61,11 @@ function toFencedRejectionSenderCommands(sender: AlmConformanceStepInput): reado
                 commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
             }
         }),
-        toCommittedControlAdmissionWait({
+        toControlAdmissionWait({
             step: { ...sender, index: 1 },
             name: 'fenced-nack',
-            controlTypeId: AL_CONTROL_NACK_TYPE_ID
+            controlTypeId: AL_CONTROL_NACK_TYPE_ID,
+            outcome: 'committed'
         }),
         toObserveCommand({ ...sender, index: 1, state: 'rejected' }),
         ...rejection.map(([field, expected]) =>

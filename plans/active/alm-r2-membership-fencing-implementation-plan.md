@@ -146,12 +146,14 @@ the task texts is `90425bdf8`.
   reach an RTC receiver from the lane. The RTC fenced NACK and the peer relay rejection are unit pins (Tasks 3, 5);
   the overlay's re-plan on a membership change is untested in the lane. _Cost if wrong:_ "both carriers" is lane-proven
   for `ws` and unit-proven for `rtc`.
-- **R-R2-18 (amends D148 and the proposal §2.c/§2.f):** `fenced-catch-up` sends with the harness floor
-  `aboveCurrentBy: 1`, cues after the refusal's NACK commits, and recipient-b leaves as the move; the catch-up rides
-  the sender's NACK retries (3 × 50 ms) and then its ACK-timeout retries (2 000 ms) inside the receipt budget — at
-  ingress the WS server answers `not-admitted` with an advisory NACK and retains nothing (its 50 ms retry covers
-  pending work and the dispatch re-check only); over `rtc` the receiver's cache advances by its live WS update or
-  its refresh before a retry lands. The cell proves behind → catch-up → delivery on the snapshot floor; the roster
+- **R-R2-18 (amends D148 and the proposal §2.c/§2.f; corrected by R-R2-35):** `fenced-catch-up` sends with the
+  harness floor `aboveCurrentBy: 1`, cues after the refusal's NACK reaches the sender, and recipient-b leaves as the
+  move. Over `rtc` the catch-up rides the sender's NACK retries (3 × 50 ms) and then its ACK-timeout retries
+  (2 000 ms) inside the receipt budget, and the receiver's cache advances by its live WS update or its refresh
+  before a retry lands; the cue waits for the committed NACK. Over `ws` the server retains the floored send at
+  ingress as a pending admission (`retainPending`), answers the advisory NACK and re-authorizes the send every
+  50 ms until the floor is met or the deadline passes; the sender retries nothing and leaves the NACK unhandled, so
+  the cue waits for the NACK's arrival. The cell proves behind → catch-up → delivery on the snapshot floor; the roster
   floor is a unit pin (Task 3). The proposal's "retained admission" sentence is corrected in the plan commit.
   _Cost if wrong:_ a receive-side WS fault on the client (product code and bundle bytes) would be needed to prove
   the roster floor live.
@@ -216,7 +218,9 @@ the task texts is `90425bdf8`.
 - The lane proves the fenced rejection over `ws` only; the RTC fenced NACK and the peer relay rejection are unit pins
   (R-R2-17).
 - `fenced-catch-up` proves behind → catch-up → delivery on the snapshot floor; the roster floor is a unit pin
-  (R-R2-18). The lane's roster moves by a self-service leave; `removed` and `banned` are unit pins (R-R2-16).
+  (R-R2-18). A room send the WS server retains behind a floor starts no receipt aggregate (its audience is unknown
+  until the replay authorizes it), so its `receiver` receipt never completes and its recipients' ACKs count nothing
+  (R-R2-35). The lane's roster moves by a self-service leave; `removed` and `banned` are unit pins (R-R2-16).
 - A recreated group id: a send from the previous incarnation is never refused with a reason; the WS server holds it
   `not-yet-in-sync` to its deadline and the RTC receiver NACKs it until the sender's retry budget exhausts (R-R2-15).
 - A room-naming unicast (a peer send, a WS `peerId` send) carries no roster stamp (R-R2-8).
@@ -1336,12 +1340,12 @@ paragraph (R2b next) and the revision history, and deletes this plan file.
 `RALLAR_BLACK_BOX_ALM_SCOPE=full RALLAR_BLACK_BOX_ALM_CARRIERS=ws,rtc npm run test:rallar:full-stack:memory:alm -- -g "three-agent family"`
 (the cells run after the four receipted-audience cells, about 25 s each, inside the 540 s budget).
 
-| Cell             | Carrier | The live run must show                                                                                                                                                                                                                                                                  |
-| ---------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| fenced-delivery  | ws, rtc | Send admitted. Both recipients get `received-1` within 27 s. `read-roster` returns 200 with roster R. `roster-stamp` matches `"typeId":"alm.conformance.ws.fenced-delivery","rosterVersion":R,` (`rtc` in place of `ws` over RTC) (Task 2's stamp on both carriers). No second arrival. |
-| fenced-catch-up  | ws      | `send-1` admitted. The server's advisory not-yet-in-sync NACK commits at the sender (`catch-up-nack`). The cue reaches both recipients. recipient-b's leave returns 200. A later retry of `send-1` is admitted at S+1. `received-floored` within 27 s. No third arrival.                |
-| fenced-catch-up  | rtc     | The receiver logs `rejected` / `not-yet-in-sync` for `send-1`. The NACK commits. Cue, then the leave. The receiver reaches S+1 (WS update or refresh). A retry within the ≈8 s receipt budget is admitted. `received-floored`. No third arrival.                                        |
-| fenced-rejection | ws      | The leave returns 200. `send-1` is admitted locally. A `membership-fenced` NACK commits. The handle is `rejected` with `failure.kind` `relay-rejected` and `relayRejection {trusted-server, membership-fenced}`. Neither recipient receives anything for 17 s.                          |
+| Cell             | Carrier | The live run must show                                                                                                                                                                                                                                                                           |
+| ---------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| fenced-delivery  | ws, rtc | Send admitted. Both recipients get `received-1` within 27 s. `read-roster` returns 200 with roster R. `roster-stamp` matches `"typeId":"alm.conformance.ws.fenced-delivery","rosterVersion":R,` (`rtc` in place of `ws` over RTC) (Task 2's stamp on both carriers). No second arrival.          |
+| fenced-catch-up  | ws      | `send-1` admitted. The server's advisory not-yet-in-sync NACK reaches the sender (`catch-up-nack`, any outcome). The cue reaches both recipients. recipient-b's leave returns 200. The server's replay of the retained `send-1` passes at S+1. `received-floored` within 27 s. No third arrival. |
+| fenced-catch-up  | rtc     | The receiver logs `rejected` / `not-yet-in-sync` for `send-1`. The NACK commits. Cue, then the leave. The receiver reaches S+1 (WS update or refresh). A retry within the ≈8 s receipt budget is admitted. `received-floored`. No third arrival.                                                 |
+| fenced-rejection | ws      | The leave returns 200. `send-1` is admitted locally. A `membership-fenced` NACK commits. The handle is `rejected` with `failure.kind` `relay-rejected` and `relayRejection {trusted-server, membership-fenced}`. Neither recipient receives anything for 17 s.                                   |
 
 Risks to check first on a red: the sender's cache is behind the server (a layout re-plan) so the floor is met at once
 and `catch-up-nack` times out; the WS server refuses a left member's room publish before its room authorizer runs (a

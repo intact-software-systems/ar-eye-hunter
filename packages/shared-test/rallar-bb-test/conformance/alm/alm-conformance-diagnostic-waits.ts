@@ -29,7 +29,9 @@ interface AlmConformanceControlAdmissionWaitInput {
     readonly name: string;
     /** The control that answers the send of `step.index`. */
     readonly controlTypeId: string;
-    /** A receipt's phase to match; absent, any committed admission of the control matches (a receipt's first). */
+    /** The admission outcome to match; `undefined` matches the control's arrival, whatever the origin made of it. */
+    readonly outcome: 'committed' | undefined;
+    /** A committed receipt's phase to match; absent, any admission of the control matches (a receipt's first). */
     readonly receiptPhase?: ALReceiptPayload['phase'];
 }
 
@@ -49,21 +51,20 @@ export function toDiagnosticWait(
 }
 
 /**
- * The `control-admission` event in which the origin commits a control that answers one of its sends, matched in its
+ * The `control-admission` event in which the origin admits a control that answers one of its sends, matched in its
  * emitted key order (`typeId`, `targetMsgId`, `outcome`, then a receipt's `phase` after the `reason`). The verdict is
  * local to the origin, so the wait polls no other page.
  */
-export function toCommittedControlAdmissionWait(
-    { step, name, controlTypeId, receiptPhase }: AlmConformanceControlAdmissionWaitInput
+export function toControlAdmissionWait(
+    { step, name, controlTypeId, outcome, receiptPhase }: AlmConformanceControlAdmissionWaitInput
 ): RallarBlackBoxTestWaitCommand {
+    const admitted = outcome === undefined ? '' : `,"outcome":"${outcome}"`;
     const phase = receiptPhase === undefined ? '' : `,"reason":"none","phase":"${receiptPhase}"`;
     return toDiagnosticWait({
         step,
         name,
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
-        contains: `"typeId":"${controlTypeId}","targetMsgId":"${
-            toSentMsgIdReference(step)
-        }","outcome":"committed"${phase}`
+        contains: `"typeId":"${controlTypeId}","targetMsgId":"${toSentMsgIdReference(step)}"${admitted}${phase}`
     });
 }
 

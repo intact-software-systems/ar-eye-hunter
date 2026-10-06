@@ -15,6 +15,7 @@ import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts'
 import { createDefaultIndexedDbALInboundRuntimeStores, createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
 import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
@@ -67,6 +68,55 @@ it.each(['memory', 'indexeddb'] as const)(
         expect(delivered).toHaveLength(1);
     }
 );
+
+it('retains a message its ingress authority is behind on to its deadline and admits it once that authority catches up', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_800_000_000_000);
+    const stores = createDefaultInMemoryALInboundRuntimeStores();
+    const delivered: ALMessage[] = [];
+    const controls: ALMessage[] = [];
+    const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
+    const dependencies = runtimeDependencies(stores, delivered, controls);
+    let behind = true;
+    const runtime = new ALInboundMessageRuntime({
+        ...dependencies,
+        readPendingAdmissionAuthority: async (_msg, source) => behind ? { kind: 'retry', retryAfterMs: 50 } : { kind: 'authorized', source },
+        diagnostics: (event) => diagnostics.push(event)
+    });
+    onTestFinished(() => runtime.dispose());
+    const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {}, {
+        ttlMs: 60_000
+    });
+
+    expect(await runtime.retainIncomingMessage(message, PENDING_SOURCE)).toEqual({ kind: 'pending-admission' });
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+        kind: 'admission-outcome',
+        msgId: message.id.msgId,
+        outcome: 'pending',
+        reason: 'pending-admission'
+    }));
+    const keys = await stores.workQueue.getAllKeys();
+    expect(keys).toHaveLength(1);
+    const work = decodeALInboundWorkEntry((await stores.workQueue.getItem(keys[0]))!, stores.admissionStore.namespace);
+    expect(work.payload).toMatchObject({ kind: 'admit-message', source: PENDING_SOURCE });
+    expect(work.expireAtTimestamp).toBe(message.constraints?.expiresAtMs);
+    for (let pass = 0; pass < 4; pass++) {
+        await dependencies.queueEngine.executeOnce();
+    }
+    expect(delivered).toEqual([]);
+
+    behind = false;
+    vi.setSystemTime(Date.now() + 50);
+    await expect.poll(async () => {
+        await dependencies.queueEngine.executeOnce();
+        return delivered.length;
+    }).toBe(1);
+    expect(delivered[0].id).toEqual(message.id);
+    for (let pass = 0; pass < 4; pass++) {
+        await dependencies.queueEngine.executeOnce();
+    }
+    expect(delivered).toHaveLength(1);
+});
 
 it.each(['authority', 'deadline'] as const)('checks current %s before admitting retained pending work', async (boundary) => {
     vi.useFakeTimers({ toFake: ['Date'] });

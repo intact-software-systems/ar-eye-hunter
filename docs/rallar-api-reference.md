@@ -912,9 +912,12 @@ A receiver judges a room send against the room snapshot it holds:
 
 - **Behind either stamp** it refuses the send `not-yet-in-sync` and the send
   catches up on the existing bounded path: an RTC receiver NACKs its hop,
-  refreshes the room once and re-admits the message once; the WS server refuses
-  and the sender retries on its NACK schedule and its acknowledgement retries,
-  until the message's deadline.
+  refreshes the room once and re-admits the message once, and the sender
+  retries; the WS server retains the send as a pending admission, answers an
+  advisory NACK the sender leaves unhandled, and re-authorizes it every 50 ms
+  until its room meets the floor or the message's deadline passes. The sender
+  retries nothing over WS. A send the server retains this way starts no receipt
+  aggregate, so a `receiver` receipt never completes for it.
 - **At or beyond the stamps, with the sender's member absent or not `active`,**
   it refuses the send `membership-fenced` and NACKs its hop. From the WS
   server, before the sender holds a receipt row, the handle settles `rejected`

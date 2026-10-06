@@ -2,7 +2,7 @@ import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-id
 
 import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-contracts.ts';
 
-import { toCommittedControlAdmissionWait } from './alm-conformance-diagnostic-waits.ts';
+import { toControlAdmissionWait } from './alm-conformance-diagnostic-waits.ts';
 import { toHeldFaultCommands, toHeldMessageFaultCommands } from './alm-conformance-fault-commands.ts';
 import {
     toAdmissionCommands,
@@ -55,10 +55,11 @@ export function toHeldSecondSendCommands(sender: AlmConformanceStepInput): reado
         ...toHeldMessageFaultCommands({ ...sender, index: 2 }, 'hold-message-2', 'until-cleared'),
         ...toHeldFaultCommands(sender, 'release', 0),
         ...toOrderedSendCommands(sender, 3),
-        toCommittedControlAdmissionWait({
+        toControlAdmissionWait({
             step: { ...sender, index: 3 },
             name: 'gap-nack',
-            controlTypeId: AL_CONTROL_NACK_TYPE_ID
+            controlTypeId: AL_CONTROL_NACK_TYPE_ID,
+            outcome: 'committed'
         })
     ];
 }

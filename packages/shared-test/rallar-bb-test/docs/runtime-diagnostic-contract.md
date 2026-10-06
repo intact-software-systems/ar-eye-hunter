@@ -226,7 +226,10 @@ every session the page opens. The event's `data` is the event itself:
   to that `admission-outcome`, and `targetMsgId` is the sent message it
   answers. `outcome` is `committed`, `pending-control` (a conflict retained as
   `admit-control` work, which the outbound drain replays), `rejected`, or
-  `not-handled` (the control's repair authority failed). `reason` is the
+  `not-handled` (the control's repair authority failed, or a NACK the origin
+  leaves to its hop: the WS server's advisory `not-yet-in-sync` NACK on a room
+  send, which the server retains and delivers itself once its room meets the
+  floor). `reason` is the
   rejection's reasons, or `none` for every other outcome — for an ACK whose
   receipt is gone it reads `AL acknowledgement sender has no pending outbound
   obligation`. A control's replay reports nothing here; its commit is visible

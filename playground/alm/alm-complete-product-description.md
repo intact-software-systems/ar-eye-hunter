@@ -256,7 +256,9 @@ and the room broadcast a fallback send becomes -- carries `targets.rosterVersion
 from the sender's cached room snapshot beside `minSnapshotVersion`, never a
 caller-invented value. A receiver behind either stamp refuses `not-yet-in-sync`
 and the existing bounded catch-up applies: the RTC receiver NACKs, refreshes
-once and re-admits once, and over WS the sender retries until the deadline. At or
+once and re-admits once while the sender retries, and the WS server retains the
+send as a pending admission, NACKs it advisorily and re-authorizes it every
+50 ms until the floor is met or the deadline passes. At or
 beyond the stamps, a sender whose member is absent or not `active` is refused
 `membership-fenced`, NACKed on both carriers; from the WS server the sender's
 handle reads `rejected` (`relay-rejected` with that reason) when it holds no

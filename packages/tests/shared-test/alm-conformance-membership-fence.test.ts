@@ -249,7 +249,12 @@ describe('fenced-catch-up', () => {
         expect(findCommand(sender, 'send-2')).not.toHaveProperty('minSnapshotVersion');
     });
 
-    it.each(ALM_CONFORMANCE_SINGLE_HOP_CARRIERS)('waits for the %s refusal\'s NACK, committed at the sender, before the cue', (carrier) => {
+    it.each(
+        [
+            ['rtc', ',"outcome":"committed"'],
+            ['ws', '']
+        ] as const
+    )('waits for the %s refusal\'s NACK at the sender before the cue: committed over rtc, its arrival over ws', (carrier, outcome) => {
         const { sender } = findScenario(toConformanceInput(carrier), 'fenced-catch-up');
 
         expect(findCommand(sender, 'catch-up-nack')).toEqual({
@@ -260,7 +265,7 @@ describe('fenced-catch-up', () => {
                 topic: OUTBOUND_DIAGNOSTICS_TOPIC,
                 payloadPath: 'data',
                 contains: '"typeId":"al.control.nack.v2",' +
-                    `"targetMsgId":"{resultCache.alm-${carrier}-fenced-catch-up-sender-send-1.value.msgId}","outcome":"committed"`
+                    `"targetMsgId":"{resultCache.alm-${carrier}-fenced-catch-up-sender-send-1.value.msgId}"${outcome}`
             },
             timeoutMs: 27_000
         });

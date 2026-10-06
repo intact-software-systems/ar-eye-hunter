@@ -167,6 +167,37 @@ Deno.test('current room denial emits its typed NACK without using a permissive r
     }
 });
 
+Deno.test('a room send behind the server snapshot is retained at ingress with its advisory NACK and delivered once the snapshot advances', async () => {
+    for (const floor of ['version', 'roster'] as const) {
+        const harness = createRoomDeliveryHarness();
+        try {
+            harness.router.install();
+            const senderFrames = addRecordingConnection(harness.server, 'alice');
+            const recipientFrames = addRecordingConnection(harness.server, 'bob');
+            const message = roomMessage(floor === 'version' ? { minSnapshotVersion: 3 } : { rosterVersion: 2 });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+
+            assert.deepEqual(accepted.right, { kind: 'pending-admission' }, floor);
+            assert.equal(senderFrames.length, 1, floor);
+            const nack = decodePersistedALMessage(senderFrames[0]!);
+            assert.equal(decodeALNackPayload(JSON.parse(nack.payload.resource)).reason, 'not-yet-in-sync', floor);
+            await new Promise((resolve) => setTimeout(resolve, 120));
+            assert.deepEqual(recipientFrames, [], floor);
+
+            const snapshot = createRoomSnapshot();
+            harness.state.current = { ...snapshot, group: { ...snapshot.group, snapshotVersion: 3, rosterVersion: 2 } };
+            await waitForRoomFrames(() => recipientFrames.length > 0);
+
+            assert.deepEqual(recipientFrames.map((frame) => decodePersistedALMessage(frame).id), [message.id], floor);
+            assert.equal(senderFrames.length, 1, floor);
+        }
+        finally {
+            harness.service.dispose();
+        }
+    }
+});
+
 Deno.test('room broadcast exclusions preserve an empty authoritative audience without cache fallback', async () => {
     const harness = createRoomDeliveryHarness();
     try {

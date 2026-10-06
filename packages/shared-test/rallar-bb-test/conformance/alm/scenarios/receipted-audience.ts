@@ -12,7 +12,7 @@ import {
     toBudgetMs
 } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
-import { toCommittedControlAdmissionWait } from '../alm-conformance-diagnostic-waits.ts';
+import { toControlAdmissionWait } from '../alm-conformance-diagnostic-waits.ts';
 import { toResultAssertion } from '../alm-conformance-message-commands.ts';
 import {
     toAckHoldFaultCommand,
@@ -162,10 +162,11 @@ function toRetryReceiptRoles(carrier: AlmConformanceCarrier): AlmConformanceRece
  */
 function toServerReceiptCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return sender.input.carrier !== 'ws' ? [] : [
-        toCommittedControlAdmissionWait({
+        toControlAdmissionWait({
             step: { ...sender, index: 1 },
             name: 'receipt-admitted-1',
-            controlTypeId: AL_CONTROL_RECEIPT_TYPE_ID
+            controlTypeId: AL_CONTROL_RECEIPT_TYPE_ID,
+            outcome: 'committed'
         })
     ];
 }

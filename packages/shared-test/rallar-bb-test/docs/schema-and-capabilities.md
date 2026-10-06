@@ -320,13 +320,17 @@ the group first owns it), so no cell removes.
   the cell's type whose `rosterVersion` equals that read's `body.group.rosterVersion`
   (`roster-stamp`, a `{resultCache...}` token in `contains`).
 - `fenced-catch-up`: the sender floors its first send `{ aboveCurrentBy: 1 }` and waits
-  for the committed `al.control.nack.v2` that refuses it `not-yet-in-sync`, from the WS
-  server over `ws` and from a recipient over `rtc`; only then does it send the cue, an
-  unfloored second send. `recipient-b` leaves the group once the cue reaches it, which
-  moves the snapshot to the floor, so the sender's next copy is admitted and the receiver
-  receives the floored send once (`received-floored`) and nothing beyond the two sends.
-  Over `rtc` the receiver first waits for its own `admission-outcome` refusing the
-  floored send `rejected` with a reason starting `not-yet-in-sync`.
+  for the `al.control.nack.v2` that refuses it `not-yet-in-sync`; only then does it send
+  the cue, an unfloored second send. Over `rtc` a recipient refuses the copy and the
+  sender commits its NACK. Over `ws` the server retains the send as a pending admission
+  and answers an advisory NACK, which the sender leaves not handled, so the wait matches
+  the NACK's arrival with no outcome. `recipient-b` leaves the group once the cue reaches
+  it, which moves the snapshot to the floor: over `rtc` the sender's next copy is
+  admitted, over `ws` the server's replay finds the floor met and delivers the retained
+  send. The receiver receives the floored send once (`received-floored`) and nothing
+  beyond the two sends. Over `rtc` the receiver first waits for its own
+  `admission-outcome` refusing the floored send `rejected` with a reason starting
+  `not-yet-in-sync`.
 - `fenced-rejection` (`ws` only): the sender leaves the group and then sends. The WS
   server, at or beyond the send's roster, finds the sender no longer an active member,
   refuses the send and NACKs it `membership-fenced`. The sender waits for the committed

@@ -441,7 +441,10 @@ verdicts. A held relayed copy is re-judged at dispatch with its ingress hop, so 
 the hold resolves `rejected` instead of waiting to its deadline, while the origin's own held copies
 keep today's verdicts. The WS server applies the same two floors and fences a sender with no
 live session or no active member at its admission and its dispatch-time re-authorization; the
-receiving WS client trusts it.
+receiving WS client trusts it. Behind either floor at its admission the WS server retains the
+message as a pending admission ([`retainPending`](./al-inbound-message-admission.ts)) instead of
+refusing it, answers the advisory NACK, and its replay re-authorizes the message every 50 ms until
+the floor is met or the deadline passes; the sender retries nothing.
 
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce

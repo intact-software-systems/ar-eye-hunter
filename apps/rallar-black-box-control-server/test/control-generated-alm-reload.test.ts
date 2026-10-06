@@ -692,7 +692,7 @@ class GeneratedAlmPorts {
         message.submitted = true;
         message.buffered = true;
         message.state = 'transport-accepted';
-        this.recordSenderNack(message);
+        this.recordSenderNack(message, 'committed');
         if (held.repairAttempts >= 1) {
             held.state = 'failed';
             held.failure = { kind: 'skipped', reason: 'repair-exhausted' };
@@ -811,15 +811,17 @@ class GeneratedAlmPorts {
     }
 
     /**
-     * The first hop's snapshot is below the send's floor: it refuses the copy and writes nothing, and its NACK is
-     * committed at the sender. Over RTC the receiver is that hop and states the refusal; over WS the server is, out of
-     * the receiver page's sight. The copy waits for a roster move to reach the floor.
+     * The first hop's snapshot is below the send's floor. Over RTC the receiver is that hop: it refuses the copy, writes
+     * nothing and states the refusal, and its NACK is committed at the sender. Over WS the server is, out of the receiver
+     * page's sight: it retains the copy, and its advisory NACK reaches a sender that leaves it not handled. Either way
+     * the copy waits for a roster move to reach the floor.
      */
     private refuseNotYetInSync(message: PortMessage): void {
-        this.recordSenderNack(message);
         if (message.command.carrier === 'ws') {
+            this.recordSenderNack(message, 'not-handled');
             return;
         }
+        this.recordSenderNack(message, 'committed');
         this.receiver.recordEvent({
             kind: 'diagnostic',
             topic: 'rallar.browser.alm.inbound_diagnostics',
@@ -845,13 +847,13 @@ class GeneratedAlmPorts {
     private refuseFenced(message: PortMessage): void {
         assertEquals(message.command.carrier, 'ws', 'only the server judges a sender that left the group');
         const rejection: PortRelayRejection = { relay: 'trusted-server', reason: 'membership-fenced' };
-        this.recordSenderNack(message);
+        this.recordSenderNack(message, 'committed');
         message.state = 'rejected';
         message.failure = { kind: 'relay-rejected', rejection };
         message.relayRejection = rejection;
     }
 
-    private recordSenderNack(message: PortMessage): void {
+    private recordSenderNack(message: PortMessage, outcome: 'committed' | 'not-handled'): void {
         this.sender.recordEvent({
             kind: 'diagnostic',
             topic: 'rallar.browser.alm.outbound_diagnostics',
@@ -861,7 +863,7 @@ class GeneratedAlmPorts {
                     msgId: `${message.msgId}-nack`,
                     typeId: 'al.control.nack.v2',
                     targetMsgId: message.msgId,
-                    outcome: 'committed',
+                    outcome,
                     reason: 'none'
                 }
             }
@@ -898,7 +900,7 @@ class GeneratedAlmPorts {
         }
     }
 
-    /** A send its floor held back, whose sender's retry the first hop now admits. */
+    /** A send its floor held back, which the WS server it waits at, or the RTC sender's retry, now delivers. */
     private isFloorLifted(message: PortMessage): boolean {
         return message.floor !== undefined && !message.submitted && message.state !== 'rejected' &&
             message.floor <= this.group.snapshotVersion;
@@ -910,7 +912,7 @@ class GeneratedAlmPorts {
      */
     private refuseGappedSend(message: PortMessage): void {
         if (message.command.carrier === 'ws') {
-            this.recordSenderNack(message);
+            this.recordSenderNack(message, 'committed');
             return;
         }
         this.receiver.recordEvent({

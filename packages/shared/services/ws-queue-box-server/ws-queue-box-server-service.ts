@@ -451,6 +451,9 @@ export class WsQueueBoxServerService {
         if (decision.kind === 'finished') {
             return decision.result;
         }
+        if (decision.kind === 'retain') {
+            return Either.ofRight(await this.inboundRuntime.retainIncomingMessage(decision.message, decision.source));
+        }
         const current = this.inboundAuthority.resolveAuthorizedSocketAdmission(decision.value, connectionId);
         if (current.kind === 'refused') {
             return await this.inboundAuthority.rejectIncomingMessage(current.message, current.refusal);
