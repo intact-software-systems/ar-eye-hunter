@@ -18,6 +18,7 @@ import {
 } from 'vitest';
 
 import type { BlackBoxRallarDeliveryObservation } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import type { LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
@@ -35,6 +36,97 @@ function toDeliveryObservationFixture(
     return normalizeJson(Object.fromEntries(fields));
 }
 
+function capturedNativeConnection(): LiveRtcControlClient.CapturedConnection {
+    return {
+        runId: 'native-run',
+        agentId: 'agent-a',
+        commandId: 'connect-native-a',
+        connection: 'manual-a',
+        transport: 'realtime',
+        sessionId: 'session-a',
+        requestedConfiguration: { mode: 'native', origin: 'step' },
+        receipt: {
+            configuration: { mode: 'native', origin: 'step' },
+            application: { status: 'applied', mode: 'native' },
+            connectionId: { status: 'observed', value: 'connection-a' },
+            nativeScopeId: { status: 'observed', value: 'scope-a' },
+            configurationVersion: 1,
+            nativeAvailability: { status: 'observed', value: 'enabled' },
+            nativeCoverage: 'attached'
+        }
+    };
+}
+
+function nativeRecorderRows(): LiveRtcJsonRecord[] {
+    return [
+        {
+            kind: 'step-result',
+            name: 'connect-native-a',
+            status: 'SUCCESS',
+            action: 'rtc.connect',
+            agentId: 'agent-a',
+            commandId: 'connect-native-a',
+            transport: 'realtime',
+            connection: 'manual-a',
+            actual: { sessionId: 'session-a', rtcCapture: { status: 'observed', value: normalizeJson(capturedNativeConnection().receipt) } }
+        },
+        {
+            kind: 'rtc-diagnostic',
+            agentId: 'agent-a',
+            value: {
+                topic: 'rallar.browser.rtc.signaling_diagnostics',
+                payload: {
+                    data: {
+                        kind: 'native-observation-status',
+                        localSessionId: 'session-a',
+                        atEpochMs: 120,
+                        stage: 'initialized',
+                        availability: { status: 'observed', value: 'enabled' },
+                        capture: {
+                            scopeId: { status: 'observed', value: 'scope-a' },
+                            scope: 'active',
+                            ordinaryRowsSuppressed: false,
+                            admissionLimited: false,
+                            payloadLimited: false
+                        }
+                    }
+                }
+            }
+        }
+    ];
+}
+
+function createNativeAcquisitionSnapshotFixture(capture: RtcSignalingDiagnostics.CaptureStatus): RtcSignalingDiagnostics.NativeSnapshot {
+    const unavailable: RtcSignalingDiagnostics.UnavailableReadout = { status: 'unavailable', reason: 'absent' };
+    const coverage: RtcSignalingDiagnostics.ListenerErrorCoverage = {
+        kind: 'listener-window',
+        window: 'ended-at-retirement',
+        attachment: 'partial',
+        attachmentGap: true
+    };
+    return {
+        identity: { peerConnectionId: { status: 'observed', value: 'scope-pc-1' }, channelId: { status: 'observed', value: 'scope-channel-2' } },
+        nativeSequence: 1,
+        capture,
+        state: {
+            connectionState: unavailable,
+            iceConnectionState: unavailable,
+            iceGatheringState: unavailable,
+            signalingState: unavailable,
+            iceTransportState: unavailable,
+            dtlsState: unavailable,
+            sctpState: unavailable,
+            channelState: { status: 'observed', value: 'closed' },
+            transportObjectOrdinal: unavailable,
+            transportBinding: 'unavailable',
+            listenerCoverage: 'partial',
+            attachmentGap: true
+        },
+        firstError: { status: 'none-observed', coverage },
+        firstTypedError: { status: 'unavailable', reason: 'unsupported', coverage }
+    };
+}
+
 describe('live RTC control client', () => {
     let server: Server;
     let api: APIRequestContext;
@@ -50,11 +142,386 @@ describe('live RTC control client', () => {
     let recorderJsonl: string;
     let recorderStatus: number;
     let recorderReads: number;
+    let recorderUrls: string[];
     const captureEffects: string[] = [];
     let healthCommandFailure: { agentId: string; body: string; } | undefined;
     let holdHealthCommand: ((agentId: string) => Promise<void>) | undefined;
     const refreshRoom = vi.fn<LiveRtcControlClient.FormationAgent['refreshRoom']>();
     const agent = { agentId: 'agent-a', prefix: 'A' as const, refreshRoom };
+
+    it('acquires a finite initialized Native scope bound to the actual admitted Connect from one recorder GET', async () => {
+        const connection = capturedNativeConnection();
+        recorderJsonl = nativeRecorderRows().map((row) => JSON.stringify(row)).join('\n') + '\n';
+        const acquired = await control.readRtcNativeAcquisition(connection);
+        expect(acquired.left).toBeUndefined();
+        expect(recorderUrls).toEqual(['/runs/native-run/events.jsonl']);
+        expect(acquired.right).toEqual({
+            connection,
+            initialized: {
+                kind: 'native-observation-status',
+                localSessionId: 'session-a',
+                atEpochMs: 120,
+                stage: 'initialized',
+                availability: { status: 'observed', value: 'enabled' },
+                capture: {
+                    scopeId: { status: 'observed', value: 'scope-a' },
+                    scope: 'active',
+                    ordinaryRowsSuppressed: false,
+                    admissionLimited: false,
+                    payloadLimited: false
+                }
+            },
+            source: {
+                endpoint: `${controlBaseUrl}/runs/native-run/events.jsonl`,
+                durableOrigin: 'unknown',
+                bytesRead: Buffer.byteLength(recorderJsonl),
+                retainedBytes: Buffer.byteLength(recorderJsonl),
+                retainedPrefixDropped: false,
+                transportTruncated: false,
+                malformedRows: 0,
+                oversizedRows: 0,
+                scanLimited: false
+            }
+        });
+        expect(recorderReads).toBe(1);
+        expect(captureEffects).toEqual(['history']);
+    });
+
+    it('binds the requested run endpoint and admits actual partial Native capture for messages.rtc', async () => {
+        const connection: LiveRtcControlClient.CapturedConnection = {
+            ...capturedNativeConnection(),
+            runId: 'native/run + one',
+            transport: 'messages.rtc',
+            receipt: { ...capturedNativeConnection().receipt, nativeCoverage: 'partial' }
+        };
+        const rows = nativeRecorderRows();
+        rows[0].transport = 'messages.rtc';
+        rows[0].actual = { sessionId: 'session-a', rtcCapture: { status: 'observed', value: normalizeJson(connection.receipt) } };
+        recorderJsonl = rows.map((row) => JSON.stringify(row)).join('\n') + '\n';
+        const acquired = await control.readRtcNativeAcquisition(connection);
+        expect(acquired.left).toBeUndefined();
+        expect(acquired.right?.connection).toMatchObject({ transport: 'messages.rtc', receipt: { nativeCoverage: 'partial' } });
+        expect(acquired.right?.source.endpoint).toBe(`${controlBaseUrl}/runs/native%2Frun%20%2B%20one/events.jsonl`);
+        expect(recorderUrls).toEqual(['/runs/native%2Frun%20%2B%20one/events.jsonl']);
+        expect(captureEffects).toEqual(['history']);
+    });
+
+    it('refuses an admitted unavailable Native receipt even when an initialized row was received', async () => {
+        const connection: LiveRtcControlClient.CapturedConnection = {
+            ...capturedNativeConnection(),
+            receipt: {
+                ...capturedNativeConnection().receipt,
+                nativeScopeId: { status: 'unavailable', reason: 'unsupported' },
+                nativeAvailability: { status: 'unavailable', reason: 'unsupported' },
+                nativeCoverage: 'unavailable'
+            }
+        };
+        const rows = nativeRecorderRows();
+        rows[0].actual = { sessionId: 'session-a', rtcCapture: { status: 'observed', value: normalizeJson(connection.receipt) } };
+        recorderJsonl = rows.map((row) => JSON.stringify(row)).join('\n') + '\n';
+        const acquired = await control.readRtcNativeAcquisition(connection);
+        expect(acquired.right).toBeUndefined();
+        expect(acquired.left).toMatchObject({ reason: 'native-capture-unavailable', source: { durableOrigin: 'unknown', malformedRows: 0 } });
+        expect(recorderReads).toBe(1);
+    });
+
+    it.each(['agentId', 'commandId', 'action', 'status', 'transport', 'connection', 'sessionId', 'receipt'])(
+        'refuses a Native proof without the exact successful Connect %s',
+        async (field) => {
+            const rows = nativeRecorderRows();
+            if (field === 'sessionId' || field === 'receipt') {
+                rows[0].actual = field === 'sessionId'
+                    ? { sessionId: 'previous-session', rtcCapture: { status: 'observed', value: normalizeJson(capturedNativeConnection().receipt) } }
+                    : {
+                        sessionId: 'session-a',
+                        rtcCapture: {
+                            status: 'observed',
+                            value: {
+                                ...normalizeJson(capturedNativeConnection().receipt) as LiveRtcJsonRecord,
+                                connectionId: { status: 'observed', value: 'previous-connection' }
+                            }
+                        }
+                    };
+            }
+            else {
+                rows[0][field] = field === 'action' ? 'Connect' : 'different';
+            }
+            recorderJsonl = rows.map((row) => JSON.stringify(row)).join('\n') + '\n';
+            const acquired = await control.readRtcNativeAcquisition(capturedNativeConnection());
+            expect(acquired.right).toBeUndefined();
+            expect(acquired.left).toMatchObject({ reason: 'connect-result-unavailable', connection: { sessionId: 'session-a' } });
+            expect(recorderReads).toBe(1);
+            expect(captureEffects).toEqual(['history']);
+        }
+    );
+
+    it.each(['agent', 'session', 'scope', 'availability', 'malformed'])('refuses an initialized Native row with mismatched or invalid %s', async (field) => {
+        const rows = nativeRecorderRows();
+        const row = rows[1];
+        const value = row.value as LiveRtcJsonRecord;
+        const payload = value.payload as LiveRtcJsonRecord;
+        const event = payload.data as LiveRtcJsonRecord;
+        if (field === 'agent') {
+            row.agentId = 'agent-b';
+        }
+        if (field === 'session') {
+            event.localSessionId = 'previous-session';
+        }
+        if (field === 'scope') {
+            event.capture = {
+                scopeId: { status: 'observed', value: 'previous-scope' },
+                scope: 'active',
+                ordinaryRowsSuppressed: false,
+                admissionLimited: false,
+                payloadLimited: false
+            };
+        }
+        if (field === 'availability') {
+            event.availability = { status: 'unavailable', reason: 'unsupported' };
+        }
+        if (field === 'malformed') {
+            event.credential = 'private-native-sentinel';
+        }
+        recorderJsonl = rows.map((entry) => JSON.stringify(entry)).join('\n') + '\n';
+        const acquired = await control.readRtcNativeAcquisition(capturedNativeConnection());
+        expect(acquired.right).toBeUndefined();
+        expect(acquired.left).toMatchObject({ reason: 'initialized-status-unavailable' });
+        expect(JSON.stringify(acquired.left)).not.toContain('private-native-sentinel');
+        if (field === 'malformed') {
+            expect(acquired.left?.source?.malformedRows).toBe(1);
+        }
+        expect(recorderReads).toBe(1);
+    });
+
+    it('refuses an observed disposal of the same Native scope regardless of recorder order', async () => {
+        const rows = nativeRecorderRows();
+        const disposed = structuredClone(rows[1]);
+        const value = disposed.value as LiveRtcJsonRecord;
+        const event = (value.payload as LiveRtcJsonRecord).data as LiveRtcJsonRecord;
+        event.stage = 'disposed';
+        event.capture = {
+            scopeId: { status: 'observed', value: 'scope-a' },
+            scope: 'disposed',
+            ordinaryRowsSuppressed: false,
+            admissionLimited: false,
+            payloadLimited: false
+        };
+        recorderJsonl = [disposed, ...rows].map((row) => JSON.stringify(row)).join('\n') + '\n';
+        const acquired = await control.readRtcNativeAcquisition(capturedNativeConnection());
+        expect(acquired.right).toBeUndefined();
+        expect(acquired.left).toMatchObject({ reason: 'native-scope-disposed', source: { durableOrigin: 'unknown', scanLimited: false } });
+    });
+
+    it('refuses a finite disposed capture of the same Native scope carried by a limit observation', async () => {
+        const rows = nativeRecorderRows();
+        rows.push({
+            kind: 'rtc-diagnostic',
+            agentId: 'agent-a',
+            value: {
+                topic: 'rallar.browser.rtc.signaling_diagnostics',
+                payload: {
+                    data: {
+                        kind: 'native-observation-limit',
+                        localSessionId: 'session-a',
+                        atEpochMs: 121,
+                        limit: 'ordinary-rows',
+                        identity: {
+                            peerConnectionId: { status: 'unavailable', reason: 'absent' },
+                            channelId: { status: 'unavailable', reason: 'absent' }
+                        },
+                        capture: {
+                            scopeId: { status: 'observed', value: 'scope-a' },
+                            scope: 'disposed',
+                            ordinaryRowsSuppressed: true,
+                            admissionLimited: false,
+                            payloadLimited: false
+                        }
+                    }
+                }
+            }
+        });
+        recorderJsonl = rows.map((row) => JSON.stringify(row)).join('\n') + '\n';
+        const acquired = await control.readRtcNativeAcquisition(capturedNativeConnection());
+        expect(acquired.right).toBeUndefined();
+        expect(acquired.left).toMatchObject({ reason: 'native-scope-disposed', source: { malformedRows: 0 } });
+        expect(recorderReads).toBe(1);
+    });
+
+    describe.each(['same-scope', 'other-scope', 'other-session', 'active'] as const)('nested Native capture %s', (ownership) => {
+        describe.each(['before', 'after'] as const)('disposal occurs %s initialized status', (order) => {
+            it.each(['lifetime', 'state', 'first-error', 'candidate', 'service', 'service-native'] as const)(
+                'checks every finite %s capture before acquiring a proof',
+                async (carrier) => {
+                    const capture: RtcSignalingDiagnostics.CaptureStatus = {
+                        scopeId: { status: 'observed', value: ownership === 'other-scope' ? 'other-scope' : 'scope-a' },
+                        scope: ownership === 'active' ? 'active' : 'disposed',
+                        ordinaryRowsSuppressed: false,
+                        admissionLimited: false,
+                        payloadLimited: false
+                    };
+                    const activeCapture: RtcSignalingDiagnostics.CaptureStatus = { ...capture, scope: 'active' };
+                    const native = createNativeAcquisitionSnapshotFixture(capture);
+                    const unavailable: RtcSignalingDiagnostics.UnavailableReadout = { status: 'unavailable', reason: 'absent' };
+                    const service: RtcSignalingDiagnostics.ServiceTerminationObservation = {
+                        peerId: 'peer-a',
+                        setupId: { status: 'observed', value: 'setup-a' },
+                        setup: { peerId: 'peer-a', phase: 'established', startedAtEpochMs: 1, establishedAtEpochMs: 2 },
+                        stage: 'terminating',
+                        issuer: { status: 'observed', value: 'disconnect-peer' },
+                        timeout: { status: 'unavailable', reason: 'not-applicable' },
+                        native: carrier === 'service' ? { ...native, capture: activeCapture } : native,
+                        capture: carrier === 'service' ? capture : activeCapture,
+                        channels: [],
+                        channelCount: 0,
+                        channelsTruncated: false
+                    };
+                    const bodies = {
+                        lifetime: { kind: 'native-lifetime', action: 'retiring', retirement: 'reset', native },
+                        state: { kind: 'native-state', trigger: 'connection', native },
+                        'first-error': {
+                            kind: 'native-first-error',
+                            first: 'both',
+                            native,
+                            error: {
+                                source: 'channel-error',
+                                nativeSequence: 1,
+                                identity: native.identity,
+                                errorDetail: unavailable,
+                                sctpCauseCode: unavailable,
+                                receivedAlert: unavailable,
+                                sentAlert: unavailable,
+                                iceErrorCode: unavailable,
+                                exceptionName: unavailable
+                            }
+                        },
+                        candidate: {
+                            kind: 'native-candidate-application',
+                            candidate: {
+                                operationOrdinal: 1,
+                                applicationOrdinal: 0,
+                                source: 'direct',
+                                stage: 'returned',
+                                currentPeerConnection: false,
+                                identity: native.identity,
+                                fragmentPresence: 'absent',
+                                dataIceFragmentComparison: 'unknown',
+                                comparisonReadout: { status: 'observed', value: 'available' },
+                                targetTransportAssociation: 'unknown',
+                                iceGenerationAssociation: 'unknown',
+                                error: { status: 'none-observed', coverage: { kind: 'native-operation', stage: 'settled' } },
+                                capture
+                            }
+                        },
+                        service: { kind: 'service-peer-observation', service },
+                        'service-native': { kind: 'service-peer-observation', service }
+                    };
+                    const rows = nativeRecorderRows();
+                    const nestedRow = {
+                        kind: 'rtc-diagnostic',
+                        agentId: 'agent-a',
+                        value: {
+                            topic: 'rallar.browser.rtc.signaling_diagnostics',
+                            payload: {
+                                data: normalizeJson({
+                                    localSessionId: ownership === 'other-session' ? 'other-session' : 'session-a',
+                                    atEpochMs: 121,
+                                    ...bodies[carrier]
+                                })
+                            }
+                        }
+                    };
+                    if (order === 'before') {
+                        rows.unshift(nestedRow);
+                    }
+                    else {
+                        rows.push(nestedRow);
+                    }
+                    recorderJsonl = rows.map((row) => JSON.stringify(row)).join('\n') + '\n';
+
+                    const acquired = await control.readRtcNativeAcquisition(capturedNativeConnection()).catch((error: Error) => error);
+
+                    expect(acquired).not.toBeInstanceOf(Error);
+                    if (acquired instanceof Error) {
+                        return;
+                    }
+                    if (ownership === 'same-scope') {
+                        expect(acquired.right).toBeUndefined();
+                        expect(acquired.left).toMatchObject({ reason: 'native-scope-disposed', source: { malformedRows: 0, oversizedRows: 0 } });
+                    }
+                    else {
+                        expect(acquired.left).toBeUndefined();
+                        expect(acquired.right?.source).toMatchObject({ malformedRows: 0, oversizedRows: 0 });
+                        expect(acquired.right?.initialized).toMatchObject({ stage: 'initialized', capture: { scopeId: { value: 'scope-a' } } });
+                    }
+                    expect(recorderReads).toBe(1);
+                    expect(captureEffects).toEqual(['history']);
+                }
+            );
+        });
+    });
+
+    it('preserves bounded parse facts while ignoring another scope disposal and reordered receipt keys', async () => {
+        const rows = nativeRecorderRows();
+        const connection = capturedNativeConnection();
+        const reversedReceipt = Object.fromEntries(Object.entries(connection.receipt).reverse());
+        rows[0].actual = { sessionId: 'session-a', rtcCapture: { status: 'observed', value: normalizeJson(reversedReceipt) } };
+        const disposed = structuredClone(rows[1]);
+        const event = ((disposed.value as LiveRtcJsonRecord).payload as LiveRtcJsonRecord).data as LiveRtcJsonRecord;
+        event.stage = 'disposed';
+        event.capture = {
+            scopeId: { status: 'observed', value: 'previous-scope' },
+            scope: 'disposed',
+            ordinaryRowsSuppressed: false,
+            admissionLimited: false,
+            payloadLimited: false
+        };
+        recorderJsonl = ['{broken', JSON.stringify({ padding: 'x'.repeat(16_384) }), ...[disposed, ...rows].map((row) => JSON.stringify(row))].join('\n') +
+            '\n';
+        const acquired = await control.readRtcNativeAcquisition(connection);
+        expect(acquired.left).toBeUndefined();
+        expect(acquired.right?.source).toMatchObject({ malformedRows: 1, oversizedRows: 1, scanLimited: false, durableOrigin: 'unknown' });
+        expect(acquired.right?.initialized).toMatchObject({ stage: 'initialized', capture: { scopeId: { value: 'scope-a' } } });
+    });
+
+    it.each(['retained-prefix', 'scan-limit', 'transport-limit'])('retains honest %s recorder bounds with an acquired scope', async (bound) => {
+        const serialized = nativeRecorderRows().map((row) => JSON.stringify(row)).join('\n') + '\n';
+        const padding = JSON.stringify({ padding: 'x'.repeat(4096) }) + '\n';
+        recorderJsonl = bound === 'scan-limit'
+            ? '{}\n'.repeat(20_001) + serialized
+            : bound === 'retained-prefix'
+            ? padding.repeat(2200) + serialized
+            : padding.repeat(15000) + serialized + padding.repeat(2000);
+        const acquired = await control.readRtcNativeAcquisition(capturedNativeConnection());
+        expect(acquired.left).toBeUndefined();
+        expect(acquired.right?.source).toMatchObject({
+            durableOrigin: 'unknown',
+            malformedRows: 0,
+            oversizedRows: 0,
+            retainedPrefixDropped: bound !== 'scan-limit',
+            transportTruncated: bound === 'transport-limit',
+            scanLimited: bound === 'scan-limit'
+        });
+        expect(acquired.right?.source.retainedBytes).toBeLessThanOrEqual(8_388_608);
+        expect(acquired.right?.source.bytesRead).toBeLessThanOrEqual(67_108_864);
+        expect(recorderReads).toBe(1);
+    });
+
+    it('returns a finite recorder failure after one HTTP request without acquiring a proof', async () => {
+        recorderStatus = 503;
+        recorderJsonl = 'private-recorder-sentinel';
+        const acquired = await control.readRtcNativeAcquisition(capturedNativeConnection());
+        expect(acquired.right).toBeUndefined();
+        expect(acquired.left).toMatchObject({
+            reason: 'acquisition-failed',
+            connection: { commandId: 'connect-native-a' },
+            source: null,
+            cause: expect.any(Error)
+        });
+        expect(acquired.left?.cause.message).toBe('RTC Native recorder unavailable.');
+        expect(JSON.stringify(acquired.left)).not.toContain('private-recorder-sentinel');
+        expect(recorderReads).toBe(1);
+        expect(captureEffects).toEqual(['history']);
+    });
 
     it('retains one sanitized recorder sequence partitioned by actual failure agents before output', async () => {
         recorderJsonl = [
@@ -906,11 +1373,13 @@ describe('live RTC control client', () => {
         recorderJsonl = '';
         recorderStatus = 200;
         recorderReads = 0;
+        recorderUrls = [];
         captureEffects.length = 0;
         healthCommandFailure = undefined;
         holdHealthCommand = undefined;
         server = createServer(async (incoming, response) => {
             if (incoming.url?.endsWith('/events.jsonl')) {
+                recorderUrls.push(incoming.url);
                 recorderReads += 1;
                 captureEffects.push('history');
                 response.writeHead(recorderStatus, { 'content-type': 'application/x-ndjson' }).end(recorderJsonl);

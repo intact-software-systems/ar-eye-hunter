@@ -38,7 +38,7 @@ interface BlackBoxRoomStateRefreshContext {
 }
 
 interface BlackBoxRoomStateRefreshSession {
-    connect(
+    acquireConnection(
         options: RallarScopedOperationOptions
     ): Promise<BlackBoxRoomStateRefreshContext>;
 }
@@ -145,7 +145,7 @@ async function readAndHydrateRoomState(input: RefreshBlackBoxBrowserRoomStateInp
     if (!groupSnapshot) {
         return;
     }
-    const context = await input.session.connect(options);
+    const context = await input.session.acquireConnection(options);
     await hydrateGroupTopologyOverlays({
         groupSnapshots: [groupSnapshot],
         sessionId: context.session.sessionId,

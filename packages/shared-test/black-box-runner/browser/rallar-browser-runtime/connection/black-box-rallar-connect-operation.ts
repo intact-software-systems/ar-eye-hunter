@@ -229,7 +229,12 @@ export class BlackBoxRallarConnectOperation {
         };
         attempt.phase = 'room-join';
         diagnostics.emitConnectPhaseStarted(config, attempt.phase, roomContext);
-        await rallar.rooms.join(config.roomId, { timeoutMs: config.rallar.timeoutMs, scope: roomContext.scope });
+        await rallar.rooms.join(config.roomId, {
+            timeoutMs: config.rallar.timeoutMs,
+            scope: roomContext.scope,
+            rtcCaptureMode: config.rallar.rtcCaptureMode,
+            rtcCaptureContext: config.rallar.rtcCaptureContext
+        });
         this.#assertAttemptEligible(attempt);
         diagnostics.emitConnectPhaseCompleted(config, attempt.phase, {
             ...roomContext,

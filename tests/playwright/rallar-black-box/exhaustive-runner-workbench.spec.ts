@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+
+import { validateSchemaAuthoringText } from '../../../apps/rallar-black-box/src/schema-authoring.ts';
+
 import {
     cleanupRallarPage,
     expectFullStackApiReady,
@@ -73,6 +78,160 @@ test.describe('exhaustive runner workbench tabs', () => {
             await panel.getByRole('button', { name: 'Copy Matrix Recipe' }).click();
             await panel.getByRole('button', { name: 'Copy Negative Recipe' }).click();
             await panel.getByRole('button', { name: 'Close connections' }).click();
+            await expectNoSecrets(panel, [config.userA.password]);
+        }
+        finally {
+            await cleanupRallarPage(page);
+        }
+    });
+
+    test('preserves Manual Rallar capture choices through direct Connect, export, reload, and reset', async ({
+        page,
+        request
+    }, testInfo) => {
+        await expectFullStackApiReady(request, config);
+        const groupId = uniqueGroupId(testInfo);
+
+        try {
+            await loginUser(page, config, config.userA, {
+                groupId,
+                sessionId: `${groupId}-capture-session`,
+                tab: 'manual-rallar',
+                workspace: 'black-box-runner'
+            });
+            await openTab(page, 'rooms-clients', 'rallar');
+            const roomsPanel = page.locator('#panel-rooms-clients');
+            await roomsPanel.getByLabel('Group', { exact: true }).fill(groupId);
+            const createPath = `/api/state/apps/${encodeURIComponent(config.applicationId)}/workspaces/${
+                encodeURIComponent(config.workspaceId)
+            }/groups/requests/`;
+            const createResponsePromise = page.waitForResponse((response) => {
+                const url = new URL(response.url());
+                return response.request().method() === 'POST' &&
+                    url.origin === config.apiBaseUrl &&
+                    url.pathname.startsWith(createPath);
+            });
+            await roomsPanel.getByRole('button', { name: 'Create group', exact: true }).click();
+            const createResponse = await createResponsePromise;
+            expect([200, 201]).toContain(createResponse.status());
+            await openTab(page, 'manual-rallar', 'black-box-runner');
+            const panel = page.locator('#panel-manual-rallar');
+            await expect(panel).toBeVisible();
+            await expect(panel.getByLabel('Transport')).toBeVisible();
+            await expect(panel.getByRole('button', { name: 'Connect', exact: true })).toBeEnabled();
+            const initialDraftText = await page.evaluate(() =>
+                window.localStorage.getItem('rallar-black-box.ui.manual-draft.v1')
+            );
+            const initialDraft = decodeRecord(JSON.parse(initialDraftText ?? 'null'));
+            expect(decodeRecord(initialDraft.values).rtcCaptureMode).toBeUndefined();
+
+            const capture = panel.getByRole('combobox', { name: /RTC capture/i });
+            await expect(capture).toBeVisible();
+            await expect(capture.locator('option')).toHaveText(['Inherit', 'Off', 'Signaling', 'Full native']);
+            await expect(capture).toHaveValue('');
+            const current = panel.getByLabel('Current RTC capture');
+            await expect(current).toBeVisible();
+
+            await capture.selectOption('off');
+            await panel.getByRole('button', { name: 'Connect', exact: true }).click();
+            await expect(panel.locator('.manual-action-list')).toContainText(/connect/i);
+            const connectResults = panel.locator('.history-row').filter({ hasText: 'rtc.connect' });
+            await expect(connectResults).toHaveCount(1);
+            await connectResults.first().click();
+            await openTab(page, 'event-stream');
+            const resultJson = page.locator('#panel-event-stream .focus-panel .json-block');
+            await expect.poll(async () => decodeRecord(JSON.parse(await resultJson.textContent() ?? 'null')))
+                .toMatchObject({
+                    kind: 'rtc.connect',
+                    ok: true,
+                    value: {
+                        rtcCapture: {
+                            status: 'observed',
+                            value: {
+                                configuration: { mode: 'off' },
+                                application: { status: 'applied', mode: 'off' },
+                                connectionId: { status: 'observed', value: expect.stringMatching(/\S/) },
+                                nativeScopeId: { status: 'unavailable', reason: 'not-applicable' },
+                                nativeAvailability: { status: 'unavailable', reason: 'disabled' },
+                                nativeCoverage: 'not-applicable'
+                            }
+                        }
+                    }
+                });
+            await openTab(page, 'manual-rallar');
+            await expect(current).toContainText(/\boff\b/i);
+            await expect(current).toContainText(/\bapplied\b/i);
+            await panel.getByRole('button', { name: 'Show Recipe' }).click();
+            const firstExport = validateSchemaAuthoringText(
+                'recipe',
+                await panel.locator('.manual-recipe-output').inputValue()
+            );
+            expect(firstExport.ok).toBe(true);
+            expect(firstExport.parsed).toMatchObject({
+                commands: [{ kind: 'rtc.connect', rallar: { rtcCaptureMode: 'off' } }]
+            });
+
+            await expect(capture).toBeEnabled();
+            const currentBeforeEdit = await current.textContent();
+            await capture.selectOption('native');
+            await expect(current).toHaveText(currentBeforeEdit ?? '');
+            await panel.getByRole('button', { name: 'Close connections' }).click();
+            await expect(panel.getByRole('button', { name: 'Connect', exact: true })).toBeEnabled();
+            await panel.getByRole('button', { name: 'Connect', exact: true }).click();
+            await expect(connectResults).toHaveCount(2);
+            await connectResults.first().click();
+            await openTab(page, 'event-stream');
+            await expect.poll(async () => decodeRecord(JSON.parse(await resultJson.textContent() ?? 'null')))
+                .toMatchObject({
+                    kind: 'rtc.connect',
+                    ok: true,
+                    value: {
+                        rtcCapture: {
+                            status: 'observed',
+                            value: {
+                                configuration: { mode: 'native' },
+                                application: { status: 'applied', mode: 'native' },
+                                connectionId: { status: 'observed', value: expect.stringMatching(/\S/) },
+                                nativeScopeId: { status: 'observed', value: expect.stringMatching(/\S/) },
+                                nativeAvailability: { status: 'observed', value: 'enabled' },
+                                nativeCoverage: expect.stringMatching(/^(attached|partial)$/)
+                            }
+                        }
+                    }
+                });
+            await openTab(page, 'manual-rallar');
+            await expect(current).toContainText(/\bnative\b/i);
+            await expect(current).toContainText(/\bapplied\b/i);
+            await expect(capture).toBeEnabled();
+            await capture.selectOption('signaling');
+            const retainedExport = validateSchemaAuthoringText(
+                'recipe',
+                await panel.locator('.manual-recipe-output').inputValue()
+            );
+            expect(retainedExport.ok).toBe(true);
+            expect(retainedExport.parsed).toMatchObject({
+                commands: expect.arrayContaining([
+                    expect.objectContaining({
+                        kind: 'rtc.connect',
+                        rallar: expect.objectContaining({ rtcCaptureMode: 'off' })
+                    }),
+                    expect.objectContaining({
+                        kind: 'rtc.connect',
+                        rallar: expect.objectContaining({ rtcCaptureMode: 'native' })
+                    })
+                ])
+            });
+
+            await page.reload();
+            await expect(capture).toHaveValue('signaling');
+            await panel.getByRole('button', { name: 'Reset runtime', exact: true }).click();
+            await expect.poll(async () => {
+                const text = await page.evaluate(() =>
+                    window.localStorage.getItem('rallar-black-box.ui.manual-draft.v1')
+                );
+                const stored = decodeRecord(JSON.parse(text ?? 'null'));
+                return decodeRecord(stored.values).rtcCaptureMode;
+            }).toBeUndefined();
             await expectNoSecrets(panel, [config.userA.password]);
         }
         finally {

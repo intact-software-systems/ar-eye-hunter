@@ -1,20 +1,121 @@
 // @vitest-environment happy-dom
-import { act, createElement, StrictMode } from 'react';
+import {
+    act,
+    createElement,
+    StrictMode
+} from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestState
+} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
+import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import type { RtcSignalingDiagnostics } from '../../shared/webrtc/rtc-signaling-diagnostics.ts';
+
+import { ManualWorkbenchActions } from '../../../apps/rallar-black-box/src/legacy/runner/manual/manual-workbench-actions.ts';
 import {
     useManualRallarWorkbench,
     type ManualRallarWorkbenchModel
 } from '../../../apps/rallar-black-box/src/legacy/runner/manual/use-manual-rallar-workbench.ts';
 import { commandCenterGlobalValuesFromState } from '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
-import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
-import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import {
+    decodeManualPayloadText,
+    DEFAULT_MANUAL_WORKBENCH_VALUES,
+    toManualRecipeText,
+    type ManualActionHistoryEntry,
+    type ManualWorkbenchValues
+} from '../../../apps/rallar-black-box/src/manual-workbench.ts';
+import { validateSchemaAuthoringText } from '../../../apps/rallar-black-box/src/schema-authoring.ts';
 
 Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
 const state: RallarBlackBoxTestState = { status: 'idle', commandHistory: [], events: [], failures: [], resultCache: {} };
 const bootstrap = resolveRallarBlackBoxBootstrapConfig('?provider=simulated', {}, '');
+
+describe('manual workbench submitted command recording', () => {
+    it('exports the submitted Off and native selections after a later desired Signaling edit', async () => {
+        let history: readonly ManualActionHistoryEntry[] = [];
+        const submitted: RallarBlackBoxTestCommand[] = [];
+        const offValues = {
+            ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+            rtcCaptureMode: 'off'
+        } satisfies ManualWorkbenchValues & { readonly rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode; };
+        const nativeValues = {
+            ...offValues,
+            rtcCaptureMode: 'native'
+        } satisfies ManualWorkbenchValues & { readonly rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode; };
+        const signalingValues = {
+            ...offValues,
+            rtcCaptureMode: 'signaling'
+        } satisfies ManualWorkbenchValues & { readonly rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode; };
+        const input: ManualWorkbenchActions.Input = {
+            state,
+            bootstrap,
+            authSession: undefined,
+            globalValues: commandCenterGlobalValuesFromState(state, bootstrap),
+            globalValuesEdited: false,
+            onSelectCommand: () => undefined,
+            onGlobalValueChange: () => undefined,
+            values: offValues,
+            sequence: 1,
+            payloadResult: decodeManualPayloadText('{}'),
+            recipeText: '',
+            negativeRecipeText: '',
+            lifetime: { active: true },
+            setSequence: () => undefined,
+            setHistory: (update) => {
+                history = typeof update === 'function' ? update(history) : update;
+            },
+            setLocalError: () => undefined,
+            runManualCommands: async (commands) => {
+                submitted.push(...commands);
+            },
+            nowMs: () => 123,
+            createRequestId: () => 'manual-capture-request'
+        };
+
+        await new ManualWorkbenchActions(input).runManualAction('connect');
+        await new ManualWorkbenchActions({ ...input, values: nativeValues, sequence: 3 }).runManualAction('connect');
+        const copied: string[] = [];
+        const clipboard = vi.spyOn(navigator.clipboard, 'writeText').mockImplementation(async (text) => {
+            copied.push(text);
+        });
+        try {
+            await new ManualWorkbenchActions({
+                ...input,
+                values: signalingValues,
+                recipeText: toManualRecipeText(history)
+            }).copyRecipeSnippet();
+
+            expect(copied).toHaveLength(1);
+            const exported = validateSchemaAuthoringText('recipe', copied[0]);
+            expect(exported.ok).toBe(true);
+            expect(exported.parsed).toMatchObject({
+                commands: [
+                    { commandId: 'manual-rtc-connect-1', rallar: { rtcCaptureMode: 'off' } },
+                    { commandId: 'manual-rtc-connect-3', rallar: { rtcCaptureMode: 'native' } }
+                ]
+            });
+            expect(submitted).toMatchObject([
+                { kind: 'rtc.connect', rallar: { rtcCaptureMode: 'off' } },
+                { kind: 'rtc.connect', rallar: { rtcCaptureMode: 'native' } }
+            ]);
+        }
+        finally {
+            clipboard.mockRestore();
+        }
+    });
+});
 
 describe('manual workbench public copy actions', () => {
     let root: Root;

@@ -1,9 +1,11 @@
 import { toError } from '@shared/resilience/to-error.ts';
+import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import {
     readFullStackControlBaseUrl,
     toFullStackControlWebSocketUrl
 } from '../../../apps/rallar-black-box/playwright-full-stack-control-server.ts';
-
 import {
     closeLiveRtcBrowserAgentContexts,
     openLiveRtcBrowserAgent,
@@ -13,12 +15,6 @@ import {
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import type { AgentPrefix } from './live-rtc-delivery-operations.ts';
 
-/**
- * The environment every live three-browser spec reads and the trio it opens. Extracted so the
- * lifecycle acceptance spec and the matrix spec resolve the same variables from one place rather
- * than each carrying its own copy of the fallback chains.
- */
-
 export const SPA_BASE_URL = envValue('VITE_RALLAR_SPA_BASE_URL') ?? 'http://localhost:5176';
 export const CONTROL_BASE_URL = readFullStackControlBaseUrl();
 export const CONTROL_WS_URL = toFullStackControlWebSocketUrl(CONTROL_BASE_URL);
@@ -27,13 +23,21 @@ export const apiBaseUrl = envValue('VITE_RALLAR_API_BASE_URL');
 export const roomSeed = firstEnvValue('VITE_RALLAR_ROOM_ID', 'VITE_RALLAR_GROUP_ID');
 export const applicationId = envValue('VITE_RALLAR_APPLICATION_ID') ?? 'ar-eye-hunter';
 export const workspaceId = envValue('VITE_RALLAR_WORKSPACE_ID') ?? 'default';
+export const rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode | undefined = parseRtcCaptureMode(
+    process.env.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE
+).fold(
+    (issues) => {
+        throw new Error(issues.map((issue) => issue.message).join(' '));
+    },
+    (parsed) => parsed.mode
+);
 
 export const fullStackEnabled = booleanEnv('RALLAR_BLACK_BOX_FULL_STACK');
 export const liveMatrixEnabled = booleanEnv('RALLAR_BLACK_BOX_LIVE_RTC_MATRIX');
 
-const agentAAuth = resolveLiveRtcBrowserAgentAuth('A');
-const agentBAuth = resolveLiveRtcBrowserAgentAuth('B');
-const agentCAuth = resolveLiveRtcBrowserAgentAuth('C');
+const agentAAuth = readLiveRtcBrowserAgentAuth('A');
+const agentBAuth = readLiveRtcBrowserAgentAuth('B');
+const agentCAuth = readLiveRtcBrowserAgentAuth('C');
 
 export const hasThreeAgentConfig = Boolean(
     fullStackEnabled && liveMatrixEnabled && apiBaseUrl && agentAAuth && agentBAuth && agentCAuth
@@ -99,7 +103,7 @@ export function numberEnv(key: string): number | undefined {
     return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export function resolveLiveRtcBrowserAgentAuth(prefix: AgentPrefix): LiveRtcBrowserAgentAuth | undefined {
+export function readLiveRtcBrowserAgentAuth(prefix: AgentPrefix): LiveRtcBrowserAgentAuth | undefined {
     const genericUsername = prefix === 'A' ? ['VITE_RALLAR_USERNAME'] : [];
     const genericPassword = prefix === 'A' ? ['VITE_RALLAR_PASSWORD'] : [];
     const username = firstEnvValue(

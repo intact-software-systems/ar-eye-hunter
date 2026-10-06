@@ -79,7 +79,7 @@ export function createBrowserRoomsComposition(
         roomLayoutSlots: input.state.roomLayoutSlots,
         messages: input.messaging.messages,
         realtime: input.realtime.realtime,
-        connect: async (options) => await input.session.connect(options),
+        connect: input.session.acquireConnection,
         requireSession: input.session.requireSession,
         resolveOperationOptions: input.session.resolveOperationOptions,
         resolveOperationScope: input.session.resolveOperationScope,
@@ -100,7 +100,7 @@ export function createBrowserPeopleStatsComposition(
         resolveOperationOptions: input.session.resolveOperationOptions,
         resolveOperationScope: input.session.resolveOperationScope,
         runAuthAwareOperation: input.session.runAuthAwareOperation,
-        connect: async (options) => await input.session.connect(options),
+        connect: input.session.acquireConnection,
         acceptSnapshots: async (snapshotInput) => await input.state.stateStore.acceptSnapshots(snapshotInput)
     });
     const stats = new BrowserRallarStatsRuntime({
@@ -119,7 +119,7 @@ export function createBrowserCallsComposition(
     input: CreateBrowserCallsCompositionInput
 ): BrowserCallsComposition {
     const callLifecycle = new BrowserCallLifecycleRuntime({
-        connect: async () => await input.session.connect(),
+        connect: input.session.acquireConnection,
         readMiddleware: input.session.readMiddleware,
         resolveTargetPeerIds: (target) => input.realtime.realtimeTargeted.resolvePeerIds(target),
         createTargetedChannel: <T>(definition: RallarTargetedChannelDefinition) =>
@@ -132,7 +132,7 @@ export function createBrowserCallsComposition(
         nowMs: Date.now,
         createCallId: () => crypto.randomUUID(),
         connect: async () => {
-            await input.session.connect();
+            await input.session.acquireConnection();
         },
         readSession,
         requireSession: input.session.requireSession,
@@ -165,7 +165,7 @@ export function createBrowserDirectorComposition(
         rooms: input.rooms.rooms,
         status: directorStatus,
         requireSession: input.session.requireSession,
-        connect: async (options) => await input.session.connect(options),
+        connect: input.session.acquireConnection,
         resolveOperationOptions: input.session.resolveOperationOptions,
         resolveDefaultRoom: input.state.resolveDefaultRoom,
         runAuthAwareOperation: input.session.runAuthAwareOperation,

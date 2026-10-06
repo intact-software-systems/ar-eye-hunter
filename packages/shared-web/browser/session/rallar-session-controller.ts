@@ -46,9 +46,7 @@ export interface RallarSessionController {
     readonly auth: RallarAuthFacade;
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     connectWithRtcCapture(options?: RallarScopedOperationOptions): Promise<BrowserTransportRuntime.Connection>;
-    acquireConnection(
-        capture?: Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'>
-    ): Promise<ApiMiddleware>;
+    acquireConnection(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
     readMiddleware(): ApiMiddleware | undefined;
     requireMiddleware(): ApiMiddleware;
@@ -102,7 +100,7 @@ export function createRallarSessionController(
         auth,
         connect: (connectionOptions) => authLifecycle.connect(connectionOptions),
         connectWithRtcCapture: (connectionOptions) => authLifecycle.connectWithRtcCapture(connectionOptions),
-        acquireConnection: (capture) => authLifecycle.acquireConnection(capture),
+        acquireConnection: (connectionOptions) => authLifecycle.acquireConnection(connectionOptions),
         disconnect: () => authLifecycle.disconnect(),
         readMiddleware: () => options.connectionRuntime.readMiddleware(),
         requireMiddleware: () => options.connectionRuntime.requireMiddleware(),

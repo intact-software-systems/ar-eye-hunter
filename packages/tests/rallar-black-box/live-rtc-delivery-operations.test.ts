@@ -1,6 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
+import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import type { RtcBaselineJson } from '../../shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 
 import type { LiveRtcControlPort } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
@@ -8,6 +16,7 @@ import {
     createLiveRtcDeliveryOperations,
     LiveRtcNackProbeFailure
 } from '../../../tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts';
+import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import { createLiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
 
 const config = {
@@ -19,7 +28,396 @@ const config = {
     formation: createLiveRtcFormationOperations()
 };
 
+const initialNativeConnectCaptures = [
+    {
+        runId: 'retained-capture-run',
+        agentId: 'A' as const,
+        commandId: 'connect-a-messages-rtc-initial',
+        connection: 'A-messages-rtc',
+        transport: 'messages.rtc' as const,
+        sessionId: 'session-A-1',
+        requestedConfiguration: { mode: 'native' as const, origin: 'step' as const },
+        receipt: {
+            configuration: { mode: 'native' as const, origin: 'step' as const },
+            application: { status: 'applied' as const, mode: 'native' as const },
+            connectionId: { status: 'observed' as const, value: 'returned-A-session-A-1' },
+            nativeScopeId: { status: 'unavailable' as const, reason: 'unsupported' as const },
+            configurationVersion: 1 as const,
+            nativeAvailability: { status: 'unavailable' as const, reason: 'unsupported' as const },
+            nativeCoverage: 'unavailable' as const
+        }
+    },
+    {
+        runId: 'retained-capture-run',
+        agentId: 'B' as const,
+        commandId: 'connect-b-messages-rtc-initial',
+        connection: 'B-messages-rtc',
+        transport: 'messages.rtc' as const,
+        sessionId: 'session-B-1',
+        requestedConfiguration: { mode: 'native' as const, origin: 'step' as const },
+        receipt: {
+            configuration: { mode: 'native' as const, origin: 'step' as const },
+            application: { status: 'applied' as const, mode: 'native' as const },
+            connectionId: { status: 'observed' as const, value: 'returned-B-session-B-1' },
+            nativeScopeId: { status: 'unavailable' as const, reason: 'unsupported' as const },
+            configurationVersion: 1 as const,
+            nativeAvailability: { status: 'unavailable' as const, reason: 'unsupported' as const },
+            nativeCoverage: 'unavailable' as const
+        }
+    },
+    {
+        runId: 'retained-capture-run',
+        agentId: 'C' as const,
+        commandId: 'connect-c-messages-rtc-initial',
+        connection: 'C-messages-rtc',
+        transport: 'messages.rtc' as const,
+        sessionId: 'session-C-1',
+        requestedConfiguration: { mode: 'native' as const, origin: 'step' as const },
+        receipt: {
+            configuration: { mode: 'native' as const, origin: 'step' as const },
+            application: { status: 'applied' as const, mode: 'native' as const },
+            connectionId: { status: 'observed' as const, value: 'returned-C-session-C-1' },
+            nativeScopeId: { status: 'unavailable' as const, reason: 'unsupported' as const },
+            configurationVersion: 1 as const,
+            nativeAvailability: { status: 'unavailable' as const, reason: 'unsupported' as const },
+            nativeCoverage: 'unavailable' as const
+        }
+    }
+];
+const initialNativePreflightCapture: LiveRtcControlClient.CapturedConnection = {
+    ...initialNativeConnectCaptures[0],
+    receipt: {
+        ...initialNativeConnectCaptures[0].receipt,
+        nativeScopeId: { status: 'observed' as const, value: 'scope-A-session-A-1' },
+        nativeAvailability: { status: 'observed' as const, value: 'enabled' as const },
+        nativeCoverage: 'partial' as const
+    }
+};
+const initialNativeAcquisitionFailure = {
+    reason: 'initialized-status-unavailable' as const,
+    source: null,
+    connection: initialNativePreflightCapture,
+    cause: new Error('No initialized row for the initial A scope was received.')
+};
+const initialNativeProof: LiveRtcControlClient.NativeAcquisitionProof = {
+    connection: initialNativePreflightCapture,
+    initialized: {
+        kind: 'native-observation-status',
+        stage: 'initialized',
+        localSessionId: 'session-A-1',
+        atEpochMs: 123,
+        availability: { status: 'observed', value: 'enabled' },
+        capture: {
+            scopeId: { status: 'observed', value: 'scope-A-session-A-1' },
+            scope: 'active',
+            ordinaryRowsSuppressed: false,
+            admissionLimited: false,
+            payloadLimited: false
+        }
+    },
+    source: {
+        endpoint: '/runs/retained-capture-run/events.jsonl',
+        durableOrigin: 'unknown',
+        bytesRead: 987,
+        retainedBytes: 987,
+        retainedPrefixDropped: false,
+        transportTruncated: false,
+        malformedRows: 0,
+        oversizedRows: 0,
+        scanLimited: false
+    }
+};
+
 describe('live RTC delivery owner', () => {
+    it.each([
+        {
+            mode: 'off' as const,
+            expectedNativeScope: { status: 'unavailable', reason: 'not-applicable' },
+            expectedNativeAvailability: { status: 'unavailable', reason: 'disabled' },
+            expectedNativeCoverage: 'not-applicable'
+        },
+        {
+            mode: 'signaling' as const,
+            expectedNativeScope: { status: 'unavailable', reason: 'not-applicable' },
+            expectedNativeAvailability: { status: 'unavailable', reason: 'disabled' },
+            expectedNativeCoverage: 'not-applicable'
+        },
+        {
+            mode: 'native' as const,
+            expectedNativeScope: { status: 'unavailable', reason: 'unsupported' },
+            expectedNativeAvailability: { status: 'unavailable', reason: 'unsupported' },
+            expectedNativeCoverage: 'unavailable'
+        }
+    ])(
+        'retains all initial and replacement $mode Connect facts without acquiring native history',
+        async ({ mode, expectedNativeScope, expectedNativeAvailability, expectedNativeCoverage }) => {
+            const recording = createCapturingLiveRtcControl(mode, 'unavailable');
+            const operations = createLiveRtcDeliveryOperations({ ...config, rtcCaptureMode: mode });
+            const formation = await operations.runGroupFormation({
+                control: recording,
+                runId: 'retained-capture-run',
+                agents: recording.agents,
+                transport: 'messages.rtc',
+                groupId: 'retained-room',
+                suffix: 'initial',
+                readinessScope: 'all'
+            });
+            const replacement = await operations.reconnectAndWaitForPeerReadiness({
+                control: recording,
+                runId: 'retained-capture-run',
+                reconnectingAgent: recording.agents[2],
+                survivingAgents: [recording.agents[0], recording.agents[1]],
+                survivingSessionIds: [formation.sessions.A, formation.sessions.B],
+                transport: 'messages.rtc',
+                groupId: 'retained-room',
+                suffix: 'replacement'
+            });
+            const wantedInitial = initialNativeConnectCaptures.map((capture) => ({
+                ...capture,
+                requestedConfiguration: { mode, origin: 'step' },
+                receipt: {
+                    ...capture.receipt,
+                    configuration: { mode, origin: 'step' },
+                    application: { status: 'applied', mode },
+                    nativeScopeId: expectedNativeScope,
+                    nativeAvailability: expectedNativeAvailability,
+                    nativeCoverage: expectedNativeCoverage
+                }
+            }));
+
+            expect.soft(formation).toMatchObject({ rtcConnectCaptures: wantedInitial, nativeAcquisitions: [] });
+            expect(replacement).toMatchObject({
+                rtcCapture: {
+                    runId: 'retained-capture-run',
+                    agentId: 'C',
+                    commandId: 'connect-c-messages-rtc-replacement',
+                    connection: 'C-messages-rtc',
+                    transport: 'messages.rtc',
+                    sessionId: 'session-C-2',
+                    requestedConfiguration: { mode, origin: 'step' },
+                    receipt: {
+                        configuration: { mode, origin: 'step' },
+                        application: { status: 'applied', mode },
+                        connectionId: { status: 'observed', value: 'returned-C-session-C-2' },
+                        nativeScopeId: expectedNativeScope,
+                        configurationVersion: 1,
+                        nativeAvailability: expectedNativeAvailability,
+                        nativeCoverage: expectedNativeCoverage
+                    }
+                }
+            });
+        }
+    );
+
+    it('holds the first presence read while native acquisition of that Connect is unresolved', async () => {
+        const recording = createCapturingLiveRtcControl('native', 'enabled');
+        const acquisitions: Array<typeof initialNativePreflightCapture> = [];
+        const pending = Promise.withResolvers<Either<typeof initialNativeAcquisitionFailure, typeof initialNativeProof>>();
+        const formationInput = {
+            control: recording,
+            runId: 'retained-capture-run',
+            agents: recording.agents,
+            transport: 'messages.rtc' as const,
+            groupId: 'retained-room',
+            suffix: 'initial',
+            readinessScope: 'all' as const,
+            nativeAcquisition: {
+                readRtcNativeAcquisition: async (connection: typeof initialNativePreflightCapture) => {
+                    acquisitions.push(connection);
+                    return await pending.promise;
+                }
+            }
+        };
+        const outcomePromise = createLiveRtcDeliveryOperations({ ...config, rtcCaptureMode: 'native' }).runGroupFormation(formationInput)
+            .then(() => undefined, toError);
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect.soft(acquisitions).toEqual([initialNativePreflightCapture]);
+        expect.soft(recording.milestones).not.toContain('presence:1');
+        expect.soft(recording.readinessObservations).toEqual([]);
+        pending.resolve(Either.ofLeft(initialNativeAcquisitionFailure));
+        const outcome = await outcomePromise;
+
+        expect.soft(outcome?.cause).toBe(initialNativeAcquisitionFailure.cause);
+        expect.soft(outcome).toMatchObject({
+            cause: initialNativeAcquisitionFailure.cause,
+            rtcConnectCaptures: [initialNativePreflightCapture],
+            nativeAcquisitions: [],
+            nativeAcquisitionFailure: initialNativeAcquisitionFailure
+        });
+        expect(recording.commands.filter(({ command }) => command.kind === 'rtc.connect')).toHaveLength(1);
+    });
+
+    it('keeps only the completed A and B Connect facts after initial pair readiness fails', async () => {
+        const recording = createCapturingLiveRtcControl('native', 'unavailable');
+        const readinessFailure = new Error('The initial pair did not become ready.');
+        vi.spyOn(recording, 'waitForPeerReadiness').mockRejectedValue(readinessFailure);
+        const outcome = await createLiveRtcDeliveryOperations({ ...config, rtcCaptureMode: 'native' }).runGroupFormation({
+            control: recording,
+            runId: 'retained-capture-run',
+            agents: recording.agents,
+            transport: 'messages.rtc',
+            groupId: 'retained-room',
+            suffix: 'initial',
+            readinessScope: 'all'
+        }).then(() => undefined, toError);
+
+        expect.soft(outcome?.cause).toBe(readinessFailure);
+        expect(outcome).toMatchObject({
+            cause: readinessFailure,
+            rtcConnectCaptures: [initialNativeConnectCaptures[0], initialNativeConnectCaptures[1]],
+            nativeAcquisitions: [],
+            nativeAcquisitionFailure: null
+        });
+        expect(recording.commands.filter(({ command }) => command.kind === 'rtc.connect')).toHaveLength(2);
+    });
+
+    it('keeps completed A and B facts when C refuses capture admission without synthesizing a C record', async () => {
+        const recording = createCapturingLiveRtcControl('native', 'unavailable');
+        const executeOk = recording.executeOk;
+        vi.spyOn(recording, 'executeOk').mockImplementation(async (input) => {
+            const result = await executeOk(input);
+            if (input.command.kind !== 'rtc.connect' || input.agentId !== 'C') {
+                return result;
+            }
+            const { rtcCapture: _rejectedReceipt, ...value } = recording.resultValue(result);
+            return { ...result, result: { value } };
+        });
+        const outcome = await createLiveRtcDeliveryOperations({ ...config, rtcCaptureMode: 'native' }).runGroupFormation({
+            control: recording,
+            runId: 'retained-capture-run',
+            agents: recording.agents,
+            transport: 'messages.rtc',
+            groupId: 'retained-room',
+            suffix: 'initial',
+            readinessScope: 'all'
+        }).then(() => undefined, toError);
+
+        expect(outcome).toMatchObject({
+            cause: expect.objectContaining({ code: 'RALLAR_RTC_CAPTURE_UNVERIFIED', reason: 'receipt-unavailable' }),
+            rtcConnectCaptures: [initialNativeConnectCaptures[0], initialNativeConnectCaptures[1]],
+            nativeAcquisitions: [],
+            nativeAcquisitionFailure: null
+        });
+        expect(recording.commands.filter(({ command }) => command.kind === 'rtc.connect')).toHaveLength(3);
+    });
+
+    it.each(['realtime', 'messages.rtc'] as const)('retains formation capture facts in the complete %s delivery result', async (transport) => {
+        const recording = createCapturingLiveRtcControl('native', 'unavailable');
+        const result = await createLiveRtcDeliveryOperations({ ...config, rtcCaptureMode: 'native' }).runAllDeliveryPermutations({
+            control: recording,
+            runId: 'retained-capture-run',
+            agents: recording.agents,
+            transport,
+            groupId: 'retained-room',
+            suffix: 'initial'
+        });
+        const wanted = transport === 'messages.rtc'
+            ? initialNativeConnectCaptures
+            : initialNativeConnectCaptures.map((capture) => ({
+                ...capture,
+                commandId: ({ A: 'connect-a-realtime-initial', B: 'connect-b-realtime-initial', C: 'connect-c-realtime-initial' })[capture.agentId],
+                connection: ({ A: 'A-realtime', B: 'B-realtime', C: 'C-realtime' })[capture.agentId],
+                transport: 'realtime'
+            }));
+
+        expect(result).toMatchObject({ rtcConnectCaptures: wanted, nativeAcquisitions: [] });
+    });
+
+    it('preserves completed formation capture facts when a later delivery rejects with its original cause', async () => {
+        const recording = createCapturingLiveRtcControl('native', 'unavailable');
+        const sendFailure = new Error('The RTC delivery had no route.');
+        const executeOk = recording.executeOk;
+        vi.spyOn(recording, 'executeOk').mockImplementation(async (input) => {
+            if (input.command.kind === 'rtc.send') {
+                throw sendFailure;
+            }
+            return await executeOk(input);
+        });
+        const outcome = await createLiveRtcDeliveryOperations({ ...config, rtcCaptureMode: 'native' }).runAllDeliveryPermutations({
+            control: recording,
+            runId: 'retained-capture-run',
+            agents: recording.agents,
+            transport: 'messages.rtc',
+            groupId: 'retained-room',
+            suffix: 'initial'
+        }).then(() => undefined, toError);
+
+        expect.soft(outcome?.cause).toBe(sendFailure);
+        expect(outcome).toMatchObject({
+            cause: sendFailure,
+            rtcConnectCaptures: initialNativeConnectCaptures,
+            nativeAcquisitions: [],
+            nativeAcquisitionFailure: null
+        });
+    });
+
+    it.each([
+        { mode: 'off' as const, expectedModes: ['off', 'off', 'off', 'off'] },
+        { mode: 'signaling' as const, expectedModes: ['signaling', 'signaling', 'signaling', 'signaling'] },
+        { mode: 'native' as const, expectedModes: ['native', 'native', 'native', 'native'] }
+    ])('carries explicit $mode through initial and replacement Connect commands', async ({ mode, expectedModes }) => {
+        const recording = new RecordingLiveRtcControl({
+            lifecycleState: 'forming',
+            acceptedSessions: [],
+            rtcCapture: normalizeJson(createAppliedCaptureReadout(mode))
+        });
+        const selectedConfig = { ...config, rtcCaptureMode: mode };
+        const operations = createLiveRtcDeliveryOperations(selectedConfig);
+        const formation = await operations.runGroupFormation({
+            control: recording,
+            runId: 'selected-capture-run',
+            agents: recording.agents,
+            transport: 'messages.rtc',
+            groupId: 'selected-capture-room',
+            suffix: 'initial',
+            readinessScope: 'all'
+        });
+        const replacement = await operations.reconnectAndWaitForPeerReadiness({
+            control: recording,
+            runId: 'selected-capture-run',
+            reconnectingAgent: recording.agents[2],
+            survivingAgents: [recording.agents[0], recording.agents[1]],
+            survivingSessionIds: [formation.sessions.A, formation.sessions.B],
+            transport: 'messages.rtc',
+            groupId: 'selected-capture-room',
+            suffix: 'replacement'
+        });
+
+        expect(replacement.sessionId).toBe('session-C-2');
+        expect(recording.commands.flatMap(({ command }) => command.kind === 'rtc.connect' ? [command.rallar?.rtcCaptureMode] : []))
+            .toEqual(expectedModes);
+    });
+
+    it.each([
+        { description: 'absent', rtcCapture: undefined, reason: 'receipt-unavailable' },
+        { description: 'unavailable', rtcCapture: { status: 'unavailable', reason: 'unsupported' }, reason: 'receipt-unavailable' },
+        { description: 'mismatched', rtcCapture: normalizeJson(createAppliedCaptureReadout('signaling')), reason: 'mode-mismatch' },
+        {
+            description: 'unapplied',
+            rtcCapture: normalizeJson({
+                status: 'observed',
+                value: { ...createAppliedCaptureReadout('native').value, application: { status: 'unavailable', reason: 'sink-unavailable' } }
+            }),
+            reason: 'application-unavailable'
+        }
+    ])('rejects an $description capture receipt before initial formation readiness', async ({ rtcCapture, reason }) => {
+        const recording = new RecordingLiveRtcControl({ lifecycleState: 'forming', acceptedSessions: [], rtcCapture });
+        const selectedConfig = { ...config, rtcCaptureMode: 'native' as const };
+        const outcome = await createLiveRtcDeliveryOperations(selectedConfig).runGroupFormation({
+            control: recording,
+            runId: 'required-capture-run',
+            agents: recording.agents,
+            transport: 'messages.rtc',
+            groupId: 'required-capture-room',
+            suffix: 'initial',
+            readinessScope: 'all'
+        }).then(() => undefined, toError);
+
+        expect.soft(outcome).toMatchObject({ code: 'RALLAR_RTC_CAPTURE_UNVERIFIED', reason });
+        expect(recording.readinessObservations).toEqual([]);
+    });
+
     it('keeps each cluster agent on its own API URL for connect, configure, and raw WebSocket', async () => {
         vi.stubEnv('RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER', '1');
         vi.stubEnv('VITE_RALLAR_API_BASE_URL_B', 'http://localhost:18081');
@@ -155,6 +553,9 @@ describe('live RTC delivery owner', () => {
             C: 'session-C-1'
         });
         expect(reconnect.sessionId).toBe('session-C-2');
+        expect(
+            recording.commands.flatMap(({ command }) => command.kind === 'rtc.connect' ? [command.rallar?.rtcCaptureMode] : [])
+        ).toEqual([undefined, undefined, undefined, undefined]);
         await operations.sendMatrixPayload({
             control: recording,
             runId: 'run',
@@ -752,6 +1153,50 @@ describe('live RTC delivery owner', () => {
     });
 });
 
+function createCapturingLiveRtcControl(
+    mode: RtcSignalingDiagnostics.CaptureMode,
+    nativeAvailability: 'enabled' | 'unavailable'
+): RecordingLiveRtcControl {
+    const recording = new RecordingLiveRtcControl();
+    const executeOk = recording.executeOk;
+    recording.executeOk = async (input): Promise<LiveRtcControlClient.Result> => {
+        const result = await executeOk(input);
+        if (input.command.kind !== 'rtc.connect') {
+            return result;
+        }
+        const sessionId = recording.requireSessionId(result);
+        return {
+            ...result,
+            result: {
+                value: {
+                    ...recording.resultValue(result),
+                    rtcCapture: {
+                        status: 'observed',
+                        value: {
+                            configuration: { mode, origin: 'step' },
+                            application: { status: 'applied', mode },
+                            connectionId: { status: 'observed', value: `returned-${input.agentId}-${sessionId}` },
+                            nativeScopeId: mode !== 'native'
+                                ? { status: 'unavailable', reason: 'not-applicable' }
+                                : nativeAvailability === 'enabled'
+                                ? { status: 'observed', value: `scope-${input.agentId}-${sessionId}` }
+                                : { status: 'unavailable', reason: 'unsupported' },
+                            configurationVersion: 1,
+                            nativeAvailability: mode !== 'native'
+                                ? { status: 'unavailable', reason: 'disabled' }
+                                : nativeAvailability === 'enabled'
+                                ? { status: 'observed', value: 'enabled' }
+                                : { status: 'unavailable', reason: 'unsupported' },
+                            nativeCoverage: mode !== 'native' ? 'not-applicable' : nativeAvailability === 'enabled' ? 'partial' : 'unavailable'
+                        }
+                    }
+                }
+            }
+        };
+    };
+    return recording;
+}
+
 async function waitForPendingReadiness(
     recording: RecordingLiveRtcControl,
     prefixes: readonly LiveRtcControlClient.FormationAgent['prefix'][]
@@ -763,10 +1208,32 @@ async function waitForPendingReadiness(
     });
 }
 
+function createAppliedCaptureReadout(
+    mode: RtcSignalingDiagnostics.CaptureMode
+): RtcSignalingDiagnostics.ObservedReadout<RtcSignalingDiagnostics.CaptureReceipt> {
+    return {
+        status: 'observed',
+        value: {
+            configuration: { mode, origin: 'step' },
+            application: { status: 'applied', mode },
+            configurationVersion: 1,
+            connectionId: { status: 'observed', value: 'fixture-connection' },
+            nativeScopeId: mode === 'native'
+                ? { status: 'observed', value: 'fixture-native-scope' }
+                : { status: 'unavailable', reason: 'not-applicable' },
+            nativeAvailability: mode === 'native'
+                ? { status: 'observed', value: 'enabled' }
+                : { status: 'unavailable', reason: 'disabled' },
+            nativeCoverage: mode === 'native' ? 'attached' : 'not-applicable'
+        }
+    };
+}
+
 namespace RecordingLiveRtcControl {
     export interface InitialState {
         readonly lifecycleState: 'forming' | 'active';
         readonly acceptedSessions: readonly string[];
+        readonly rtcCapture?: RtcBaselineJson;
     }
 }
 
@@ -776,6 +1243,7 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
     readonly connected = new Set<string>();
     private lifecycleState: 'forming' | 'active' | 'connecting' | 'reconfiguring';
     private acceptedSessions: readonly string[];
+    private readonly rtcCapture: RtcBaselineJson | undefined;
     private formationEpoch = 0;
     private groupRevision = 0;
     private deferReadiness = false;
@@ -802,6 +1270,7 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
     ) {
         this.lifecycleState = initial.lifecycleState;
         this.acceptedSessions = initial.acceptedSessions;
+        this.rtcCapture = initial.rtcCapture;
     }
 
     deferReadinessObservations(): void {
@@ -855,6 +1324,7 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
             result: {
                 value: {
                     body,
+                    ...(command.kind === 'rtc.connect' && this.rtcCapture !== undefined ? { rtcCapture: this.rtcCapture } : {}),
                     ...(sessionId
                         ? {
                             sessionId,

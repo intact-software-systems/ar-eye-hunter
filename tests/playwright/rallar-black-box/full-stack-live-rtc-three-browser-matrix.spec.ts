@@ -1,5 +1,6 @@
 import { expect, test, type TestInfo } from '@playwright/test';
 import { toError } from '@shared/resilience/to-error.ts';
+import { LiveRtcFormationFailure } from './create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcLifecycleFailureInterval } from './live-rtc-agent-diagnostics.ts';
 import {
     agentAuth,
@@ -14,6 +15,7 @@ import {
     rawEnvironmentValue,
     readLiveRtcClusterApiOrigins,
     roomSeed,
+    rtcCaptureMode,
     workspaceId,
     type LiveRtcAgentTrio
 } from './live-rtc-agent-environment.ts';
@@ -22,7 +24,9 @@ import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import {
     createLiveRtcDeliveryOperations,
     LiveRtcNackProbeFailure,
-    type AgentPrefix
+    type AgentPrefix,
+    type LiveRtcDeliveryOperations,
+    type TransportUnderTest
 } from './live-rtc-delivery-operations.ts';
 import { createLiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 import {
@@ -30,10 +34,12 @@ import {
     captureLiveRtcPostGcHeap,
     liveRtcRetentionStateReturned,
     loadLiveRtcPerformanceAttempt,
+    toLiveRtcNativeAcquisitionFailureDiagnostic,
     writeLiveRtcPerformanceEvidence,
     writeLiveRtcRetentionCohortIfComplete,
     type LiveRtcDiagnosticsCheckpoint,
     type LiveRtcNackFailureDiagnostic,
+    type LiveRtcNativeAcquisitionFailureDiagnostic,
     type LiveRtcPerformanceAttemptContext,
     type LiveRtcPerformanceRawEvidence,
     type LiveRtcPerformanceTiming,
@@ -56,6 +62,7 @@ const liveRtcDeliveryOperations = createLiveRtcDeliveryOperations({
     workspaceId,
     messagesRtcTypeId,
     messagesRtcTopicId,
+    rtcCaptureMode,
     formation: createLiveRtcFormationOperations()
 });
 
@@ -65,6 +72,53 @@ interface VerifyGroupStateReadbackInput {
     readonly owner: LiveRtcControlClient.Agent;
     readonly groupId: string;
     readonly suffix: string;
+}
+
+interface LiveRtcNativeTrioEvidenceInput {
+    readonly result: Awaited<ReturnType<LiveRtcDeliveryOperations['runDeliveryMatrix']>>;
+    readonly agents: LiveRtcAgentTrio;
+    readonly runId: string;
+    readonly transport: TransportUnderTest;
+}
+
+function expectLiveRtcNativeTrioEvidence(input: LiveRtcNativeTrioEvidenceInput): void {
+    const { result } = input;
+    expect(result.rtcConnectCaptures).toHaveLength(3);
+    expect(result.nativeAcquisitions).toHaveLength(3);
+    expect(result.rtcConnectCaptures.map((capture) => capture.agentId).toSorted())
+        .toEqual(input.agents.map((agent) => agent.agentId).toSorted());
+    const sessionsByAgentId = Object.fromEntries(
+        input.agents.map((agent) => [agent.agentId, result.sessions[agent.prefix]])
+    );
+    for (const capture of result.rtcConnectCaptures) {
+        expect(capture).toMatchObject({
+            runId: input.runId,
+            transport: input.transport,
+            sessionId: sessionsByAgentId[capture.agentId],
+            requestedConfiguration: { mode: 'native', origin: 'step' },
+            receipt: {
+                configuration: { mode: 'native', origin: 'step' },
+                application: { status: 'applied', mode: 'native' },
+                configurationVersion: 1,
+                connectionId: { status: 'observed', value: expect.stringMatching(/\S/u) },
+                nativeScopeId: { status: 'observed', value: expect.stringMatching(/\S/u) },
+                nativeAvailability: { status: 'observed', value: 'enabled' },
+                nativeCoverage: expect.stringMatching(/^(attached|partial)$/u)
+            }
+        });
+        const proofs = result.nativeAcquisitions.filter((proof) =>
+            proof.connection.agentId === capture.agentId && proof.connection.sessionId === capture.sessionId
+        );
+        expect(proofs).toHaveLength(1);
+        expect(proofs[0].connection).toEqual(capture);
+        expect(proofs[0].initialized).toMatchObject({
+            kind: 'native-observation-status',
+            stage: 'initialized',
+            localSessionId: capture.sessionId,
+            availability: { status: 'observed', value: 'enabled' },
+            capture: { scope: 'active', scopeId: capture.receipt.nativeScopeId }
+        });
+    }
 }
 
 async function verifyGroupStateReadback(
@@ -120,6 +174,11 @@ async function verifyGroupStateReadback(
 }
 
 interface WriteAttemptEvidenceInput {
+    readonly testInfo: TestInfo;
+    readonly runId: string;
+    readonly rtcConnectCaptures: readonly LiveRtcControlClient.CapturedConnection[];
+    readonly nativeAcquisitions: readonly LiveRtcControlClient.NativeAcquisitionProof[];
+    readonly nativeAcquisitionFailures: readonly LiveRtcNativeAcquisitionFailureDiagnostic[];
     readonly context: LiveRtcPerformanceAttemptContext | null;
     readonly producerExitStatus: number;
     readonly timings: readonly LiveRtcPerformanceTiming[];
@@ -145,8 +204,6 @@ interface RetiredLiveRtcAttemptAgents {
 
 interface FinalizeLiveRtcAttemptInput extends WriteAttemptEvidenceInput {
     readonly control: LiveRtcControlClient;
-    readonly testInfo: TestInfo;
-    readonly runId: string;
     readonly agents: readonly LiveRtcControlClient.Agent[];
     readonly suffix: string;
     readonly failureCycle: number | null;
@@ -284,6 +341,15 @@ async function writeAttemptEvidence(
     input: WriteAttemptEvidenceInput,
     attemptFailure: LiveRtcPerformanceRawEvidence['attemptFailure']
 ): Promise<void> {
+    await input.testInfo.attach('live-rtc-capture-evidence.json', {
+        body: JSON.stringify({
+            runId: input.runId,
+            rtcConnectCaptures: input.rtcConnectCaptures,
+            nativeAcquisitions: input.nativeAcquisitions,
+            nativeAcquisitionFailures: input.nativeAcquisitionFailures
+        }),
+        contentType: 'application/json'
+    });
     if (!input.context) {
         return;
     }
@@ -349,7 +415,11 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const commandIds: string[] = [];
         const timings: LiveRtcPerformanceTiming[] = [];
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
+        const nativeAcquisition = rtcCaptureMode === 'native' && evidenceContext === null ? control : undefined;
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
+        const rtcConnectCaptures: LiveRtcControlClient.CapturedConnection[] = [];
+        const nativeAcquisitions: LiveRtcControlClient.NativeAcquisitionProof[] = [];
+        const nativeAcquisitionFailures: LiveRtcNativeAcquisitionFailureDiagnostic[] = [];
         const scenarios: LiveRtcControlClient.DeliveryScenario[] = [];
         let producerExitStatus = 0;
         const attemptStartedAtEpochMs = Date.now();
@@ -375,6 +445,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
 
             const realtime = await liveRtcDeliveryOperations.runDeliveryMatrix({
                 control,
+                nativeAcquisition,
                 runId,
                 agents: realtimeAgents,
                 transport: 'realtime',
@@ -382,8 +453,18 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 suffix
             });
             commandIds.push(...realtime.commandIds);
+            rtcConnectCaptures.push(...realtime.rtcConnectCaptures);
+            nativeAcquisitions.push(...realtime.nativeAcquisitions);
             timings.push(...realtime.timings);
             scenarios.push(...realtime.scenarios);
+            if (rtcCaptureMode === 'native' && evidenceContext === null) {
+                expectLiveRtcNativeTrioEvidence({
+                    result: realtime,
+                    agents: realtimeAgents,
+                    runId,
+                    transport: 'realtime'
+                });
+            }
             const clusterOrigins = readLiveRtcClusterApiOrigins();
             if (clusterOrigins) {
                 const cluster = await exchangeClusterDirectMessages({
@@ -422,6 +503,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             openHandles.push(...messageAgents);
             const messages = await liveRtcDeliveryOperations.runDeliveryMatrix({
                 control,
+                nativeAcquisition,
                 runId,
                 agents: messageAgents,
                 transport: 'messages.rtc',
@@ -429,8 +511,18 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 suffix
             });
             commandIds.push(...messages.commandIds);
+            rtcConnectCaptures.push(...messages.rtcConnectCaptures);
+            nativeAcquisitions.push(...messages.nativeAcquisitions);
             timings.push(...messages.timings);
             scenarios.push(...messages.scenarios);
+            if (rtcCaptureMode === 'native' && evidenceContext === null) {
+                expectLiveRtcNativeTrioEvidence({
+                    result: messages,
+                    agents: messageAgents,
+                    runId,
+                    transport: 'messages.rtc'
+                });
+            }
             commandIds.push(
                 await liveRtcDeliveryOperations.runNackProbe({
                     testInfo,
@@ -527,6 +619,15 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 precision: 'attempt-phase-unspecified'
             };
             producerExitStatus = 1;
+            if (error instanceof LiveRtcFormationFailure) {
+                rtcConnectCaptures.push(...error.rtcConnectCaptures);
+                nativeAcquisitions.push(...error.nativeAcquisitions);
+                if (error.nativeAcquisitionFailure) {
+                    nativeAcquisitionFailures.push(
+                        toLiveRtcNativeAcquisitionFailureDiagnostic(error.nativeAcquisitionFailure)
+                    );
+                }
+            }
             if (error instanceof LiveRtcNackProbeFailure) {
                 failureDiagnostics.push(error.diagnostic);
             }
@@ -546,6 +647,9 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 timings,
                 diagnostics,
                 failureDiagnostics,
+                rtcConnectCaptures,
+                nativeAcquisitions,
+                nativeAcquisitionFailures,
                 retention: null,
                 assertions: {
                     matrixPassed,
@@ -592,7 +696,11 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const scenarios: LiveRtcControlClient.DeliveryScenario[] = [];
         const timings: LiveRtcPerformanceTiming[] = [];
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
+        const nativeAcquisition = rtcCaptureMode === 'native' && evidenceContext === null ? control : undefined;
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
+        const rtcConnectCaptures: LiveRtcControlClient.CapturedConnection[] = [];
+        const nativeAcquisitions: LiveRtcControlClient.NativeAcquisitionProof[] = [];
+        const nativeAcquisitionFailures: LiveRtcNativeAcquisitionFailureDiagnostic[] = [];
         let producerExitStatus = 0;
         const attemptStartedAtEpochMs = Date.now();
         let failureInterval: LiveRtcLifecycleFailureInterval | undefined;
@@ -626,6 +734,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             );
             const realtime = await liveRtcDeliveryOperations.runAllDeliveryPermutations({
                 control,
+                nativeAcquisition,
                 runId,
                 agents: realtimeAgents,
                 transport: 'realtime',
@@ -633,6 +742,8 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 suffix
             });
             commandIds.push(...realtime.commandIds);
+            rtcConnectCaptures.push(...realtime.rtcConnectCaptures);
+            nativeAcquisitions.push(...realtime.nativeAcquisitions);
             scenarios.push(...realtime.scenarios);
             timings.push(...realtime.timings);
             const realtimeDiagnostics = await control.captureDiagnostics({
@@ -683,6 +794,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             openHandles.push(...messageAgents);
             const messages = await liveRtcDeliveryOperations.runAllDeliveryPermutations({
                 control,
+                nativeAcquisition,
                 runId,
                 agents: messageAgents,
                 transport: 'messages.rtc',
@@ -690,6 +802,8 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 suffix
             });
             commandIds.push(...messages.commandIds);
+            rtcConnectCaptures.push(...messages.rtcConnectCaptures);
+            nativeAcquisitions.push(...messages.nativeAcquisitions);
             scenarios.push(...messages.scenarios);
             timings.push(...messages.timings);
             commandIds.push(
@@ -736,6 +850,12 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 suffix: `${suffix}-reconnect-c`
             });
             commandIds.push(reconnectC.commandId);
+            if (reconnectC.rtcCapture) {
+                rtcConnectCaptures.push(reconnectC.rtcCapture);
+            }
+            if (reconnectC.nativeAcquisition) {
+                nativeAcquisitions.push(reconnectC.nativeAcquisition);
+            }
             timings.push({
                 kind: 'reconnect-ready',
                 transport: 'messages.rtc',
@@ -841,6 +961,15 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 precision: 'attempt-phase-unspecified'
             };
             producerExitStatus = 1;
+            if (error instanceof LiveRtcFormationFailure) {
+                rtcConnectCaptures.push(...error.rtcConnectCaptures);
+                nativeAcquisitions.push(...error.nativeAcquisitions);
+                if (error.nativeAcquisitionFailure) {
+                    nativeAcquisitionFailures.push(
+                        toLiveRtcNativeAcquisitionFailureDiagnostic(error.nativeAcquisitionFailure)
+                    );
+                }
+            }
             if (error instanceof LiveRtcNackProbeFailure) {
                 failureDiagnostics.push(error.diagnostic);
             }
@@ -860,6 +989,9 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 timings,
                 diagnostics,
                 failureDiagnostics,
+                rtcConnectCaptures,
+                nativeAcquisitions,
+                nativeAcquisitionFailures,
                 retention: null,
                 assertions: {
                     matrixPassed,
@@ -903,7 +1035,11 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const commandIds: string[] = [];
         const timings: LiveRtcPerformanceTiming[] = [];
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
+        const nativeAcquisition = rtcCaptureMode === 'native' && evidenceContext === null ? control : undefined;
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
+        const rtcConnectCaptures: LiveRtcControlClient.CapturedConnection[] = [];
+        const nativeAcquisitions: LiveRtcControlClient.NativeAcquisitionProof[] = [];
+        const nativeAcquisitionFailures: LiveRtcNativeAcquisitionFailureDiagnostic[] = [];
         const checkpoints: LiveRtcRetentionCheckpoint[] = [];
         let currentRetentionCycle = 0;
         let currentCycleStartedAtEpochMs = Date.now();
@@ -981,6 +1117,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 async () => {
                     const formation = await liveRtcDeliveryOperations.runGroupFormation({
                         control,
+                        nativeAcquisition,
                         runId,
                         agents,
                         transport: 'messages.rtc',
@@ -989,6 +1126,8 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         readinessScope: 'all'
                     });
                     commandIds.push(...formation.commandIds);
+                    rtcConnectCaptures.push(...formation.rtcConnectCaptures);
+                    nativeAcquisitions.push(...formation.nativeAcquisitions);
                     return formation;
                 }
             );
@@ -1047,6 +1186,12 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                             suffix: `${suffix}-${cycle}`
                         });
                         commandIds.push(reconnected.commandId);
+                        if (reconnected.rtcCapture) {
+                            rtcConnectCaptures.push(reconnected.rtcCapture);
+                        }
+                        if (reconnected.nativeAcquisition) {
+                            nativeAcquisitions.push(reconnected.nativeAcquisition);
+                        }
                         timings.push({
                             kind: 'reconnect-ready',
                             transport: 'messages.rtc',
@@ -1095,6 +1240,15 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 precision: currentRetentionCycle === 0 ? 'initial-attempt' : 'current-cycle-before-close'
             };
             producerExitStatus = 1;
+            if (error instanceof LiveRtcFormationFailure) {
+                rtcConnectCaptures.push(...error.rtcConnectCaptures);
+                nativeAcquisitions.push(...error.nativeAcquisitions);
+                if (error.nativeAcquisitionFailure) {
+                    nativeAcquisitionFailures.push(
+                        toLiveRtcNativeAcquisitionFailureDiagnostic(error.nativeAcquisitionFailure)
+                    );
+                }
+            }
             if (error instanceof LiveRtcNackProbeFailure) {
                 failureDiagnostics.push(error.diagnostic);
             }
@@ -1117,6 +1271,9 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         timings,
                         diagnostics,
                         failureDiagnostics,
+                        rtcConnectCaptures,
+                        nativeAcquisitions,
+                        nativeAcquisitionFailures,
                         retention: {
                             cycles: 100,
                             checkpoints,
@@ -1185,6 +1342,9 @@ function toLiveRtcRawEvidence(
         timings: input.timings,
         diagnostics: input.diagnostics,
         failureDiagnostics: input.failureDiagnostics,
+        rtcConnectCaptures: input.rtcConnectCaptures,
+        nativeAcquisitions: input.nativeAcquisitions,
+        nativeAcquisitionFailures: input.nativeAcquisitionFailures,
         attemptFailure: input.attemptFailure,
         retention: input.retention,
         assertions: input.assertions

@@ -1,5 +1,6 @@
 import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { decodeJsonValue, decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+
 import type { ManualWorkbenchValues } from '../manual-workbench.ts';
 
 export interface ManualRtcScope {
@@ -69,9 +70,9 @@ function parseOptionalRecord(text: string): RallarBlackBoxTestRecord | undefined
     }
 
     try {
-        const parsed: RallarMessagePayload = JSON.parse(trimmed);
+        const parsed = decodeJsonValue(JSON.parse(trimmed));
         return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-            ? parsed as RallarBlackBoxTestRecord
+            ? decodeRecord(parsed)
             : undefined;
     }
     catch {
@@ -87,5 +88,9 @@ function toMinSnapshotVersion(value: ManualWorkbenchValues): number | undefined 
 
 function toDefaultRoomRef(values: ManualWorkbenchValues): RallarBlackBoxTestRecord | undefined {
     const groupId = toOptionalText(values.groupId);
-    return groupId ? { groupId } : undefined;
+    const applicationId = toOptionalText(values.applicationId);
+    const workspaceId = toOptionalText(values.workspaceId);
+    return applicationId && groupId
+        ? { applicationId, ...(workspaceId ? { workspaceId } : {}), groupId }
+        : undefined;
 }

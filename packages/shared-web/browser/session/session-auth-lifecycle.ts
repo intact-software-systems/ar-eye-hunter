@@ -53,9 +53,7 @@ export interface RallarAuthSessionEndOptions {
 export interface RallarSessionAuthLifecycle {
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     connectWithRtcCapture(options?: RallarScopedOperationOptions): Promise<BrowserTransportRuntime.Connection>;
-    acquireConnection(
-        capture?: Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'>
-    ): Promise<ApiMiddleware>;
+    acquireConnection(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
     requireSession(): AuthSession;
     activateLoginSession(session: AuthSession): Promise<void>;
@@ -109,11 +107,11 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
 
     /** Omitted capture intent preserves the owned graph's active or pending selection. */
     public async acquireConnection(
-        capture: Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'> = {}
+        scopedOptions: RallarScopedOperationOptions = {}
     ): Promise<ApiMiddleware> {
-        const intent = toBrowserRtcCaptureIntent(capture);
+        const intent = toBrowserRtcCaptureIntent(scopedOptions);
         return (await this.connectWithIntent(
-            intent.options,
+            { ...scopedOptions, ...intent.options },
             intent.connectionIntent
         )).middleware;
     }

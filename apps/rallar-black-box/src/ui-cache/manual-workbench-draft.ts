@@ -1,6 +1,12 @@
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
+
 import type { RallarBlackBoxProviderMode } from '../client-defaults.ts';
-import type { ManualDeliveryMode, ManualWorkbenchTransport, ManualWorkbenchValues } from '../manual-workbench.ts';
+import type {
+    ManualDeliveryMode,
+    ManualWorkbenchTransport,
+    ManualWorkbenchValues
+} from '../manual-workbench.ts';
 import {
     decodeStoredBoolean,
     decodeStoredMember,
@@ -16,17 +22,54 @@ import {
 } from './rallar-black-box-ui-storage.ts';
 import { toRedactedJsonEditorText } from './to-redacted-json-editor-text.ts';
 
-export type ManualWorkbenchDraft = Readonly<{
-    values: ManualWorkbenchValues;
-    payloadPresetId: string;
-    payloadText: string;
-}>;
+export interface ManualWorkbenchDraft {
+    readonly values: ManualWorkbenchValues;
+    readonly payloadPresetId: string;
+    readonly payloadText: string;
+}
 
 /** The manual workbench values the session owns; the browser cache neither writes nor restores them. */
 export interface ManualWorkbenchSessionValues {
     readonly providerMode: RallarBlackBoxProviderMode;
     readonly rallarPassword: string | undefined;
 }
+
+type ManualScopeValues = Pick<
+    ManualWorkbenchValues,
+    | 'environment'
+    | 'apiBaseUrl'
+    | 'applicationId'
+    | 'workspaceId'
+    | 'actor'
+    | 'sessionId'
+    | 'groupId'
+    | 'scopeText'
+    | 'roomRefText'
+    | 'minSnapshotVersion'
+>;
+
+type ManualDeliveryValues = Pick<
+    ManualWorkbenchValues,
+    | 'connection'
+    | 'targetClient'
+    | 'multicastClients'
+    | 'transport'
+    | 'deliveryMode'
+    | 'wsUrl'
+    | 'topic'
+    | 'typeId'
+    | 'topicId'
+    | 'timeoutMs'
+>;
+
+type ManualRallarValues = Pick<
+    ManualWorkbenchValues,
+    | 'rallarUsername'
+    | 'rallarRegister'
+    | 'rallarRestoreSession'
+    | 'rallarLogoutOnClose'
+    | 'rallarLeaveRoomOnClose'
+>;
 
 const MANUAL_WORKBENCH_TRANSPORTS: readonly ManualWorkbenchTransport[] = ['realtime', 'messages.rtc', 'ws'];
 
@@ -97,6 +140,7 @@ function toStoredManualWorkbenchValues(values: ManualWorkbenchValues): ApiJsonOb
         targetClient: values.targetClient,
         multicastClients: values.multicastClients,
         transport: values.transport,
+        ...(values.rtcCaptureMode === undefined ? {} : { rtcCaptureMode: values.rtcCaptureMode }),
         deliveryMode: values.deliveryMode,
         wsUrl: values.wsUrl,
         topic: values.topic,
@@ -118,7 +162,8 @@ function decodeManualWorkbenchValues(
     const scope = decodeManualScopeValues(record);
     const delivery = decodeManualDeliveryValues(record);
     const rallar = decodeManualRallarValues(record);
-    if (scope === undefined || delivery === undefined || rallar === undefined) {
+    const capture = parseRtcCaptureMode(record.rtcCaptureMode).right;
+    if (scope === undefined || delivery === undefined || rallar === undefined || capture === undefined) {
         return undefined;
     }
 
@@ -126,24 +171,11 @@ function decodeManualWorkbenchValues(
         ...scope,
         ...delivery,
         ...rallar,
+        ...(capture.mode === undefined ? {} : { rtcCaptureMode: capture.mode }),
         providerMode: sessionValues.providerMode,
         rallarPassword: sessionValues.rallarPassword
     };
 }
-
-type ManualScopeValues = Pick<
-    ManualWorkbenchValues,
-    | 'environment'
-    | 'apiBaseUrl'
-    | 'applicationId'
-    | 'workspaceId'
-    | 'actor'
-    | 'sessionId'
-    | 'groupId'
-    | 'scopeText'
-    | 'roomRefText'
-    | 'minSnapshotVersion'
->;
 
 function decodeManualScopeValues(record: ApiJsonObject): ManualScopeValues | undefined {
     const environment = decodeStoredText(record.environment);
@@ -179,20 +211,6 @@ function decodeManualScopeValues(record: ApiJsonObject): ManualScopeValues | und
     };
 }
 
-type ManualDeliveryValues = Pick<
-    ManualWorkbenchValues,
-    | 'connection'
-    | 'targetClient'
-    | 'multicastClients'
-    | 'transport'
-    | 'deliveryMode'
-    | 'wsUrl'
-    | 'topic'
-    | 'typeId'
-    | 'topicId'
-    | 'timeoutMs'
->;
-
 function decodeManualDeliveryValues(record: ApiJsonObject): ManualDeliveryValues | undefined {
     const connection = decodeStoredText(record.connection);
     const targetClient = decodeStoredText(record.targetClient);
@@ -225,15 +243,6 @@ function decodeManualDeliveryValues(record: ApiJsonObject): ManualDeliveryValues
         timeoutMs
     };
 }
-
-type ManualRallarValues = Pick<
-    ManualWorkbenchValues,
-    | 'rallarUsername'
-    | 'rallarRegister'
-    | 'rallarRestoreSession'
-    | 'rallarLogoutOnClose'
-    | 'rallarLeaveRoomOnClose'
->;
 
 function decodeManualRallarValues(record: ApiJsonObject): ManualRallarValues | undefined {
     const rallarRegister = decodeStoredBoolean(record.rallarRegister);

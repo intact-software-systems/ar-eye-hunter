@@ -6,6 +6,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../client-defaults.ts';
 import type { ManualWorkbenchAction, ManualWorkbenchValues } from '../manual-workbench.ts';
 import {
@@ -95,7 +96,8 @@ export function toManualConnectCommand(
         transport: values.transport,
         timeoutMs: toTimeoutMs(values),
         rallar: {
-            sessionId: toOptionalText(values.sessionId)
+            sessionId: toOptionalText(values.sessionId),
+            ...(values.rtcCaptureMode === undefined ? {} : { rtcCaptureMode: values.rtcCaptureMode })
         },
         metadata: {
             manual: {
@@ -285,6 +287,7 @@ function toRallarConfig(
         ...(values.rallarRestoreSession ? { restoreSession: true } : {}),
         ...(values.rallarLogoutOnClose ? { logoutOnClose: true } : {}),
         leaveRoomOnClose: values.rallarLeaveRoomOnClose,
+        ...(values.rtcCaptureMode === undefined ? {} : { rtcCaptureMode: values.rtcCaptureMode }),
         ...toScopedRtcFields(values)
     };
 

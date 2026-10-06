@@ -13,14 +13,15 @@ import { resolve } from 'node:path';
 import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import type { BlackBoxRallarRuntime } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import type { RtcNativeProjection } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts';
 import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import {
     buildLiveRtcAgentDiagnostics,
-    LIVE_RTC_LIFECYCLE_LIMITS,
     toLiveRtcLifecycleHistory,
     type LiveRtcAgentDiagnostics,
     type LiveRtcLifecycleFailureInterval
@@ -37,6 +38,7 @@ import {
     stringValue,
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
+import { toLiveRtcNativeAcquisition } from './live-rtc-native-acquisition.ts';
 import type {
     LiveRtcAttemptFailureDiagnostic,
     LiveRtcDiagnosticFailure,
@@ -54,6 +56,7 @@ import type {
     LiveRtcNackSendResultSummary,
     LiveRtcSendResultSummary
 } from './live-rtc-performance-evidence.ts';
+import { LIVE_RTC_LIFECYCLE_LIMITS } from './live-rtc-recorder-rows.ts';
 import { summarizeLiveRtcNackWireObservation } from './live-rtc-wire-observation.ts';
 
 interface FirstMessageFailureCase {
@@ -82,6 +85,52 @@ const HEALTH_CAPTURE_FAILURE: LiveRtcDiagnosticFailure = {
 };
 
 export namespace LiveRtcControlClient {
+    export interface CapturedConnection {
+        readonly runId: string;
+        readonly agentId: string;
+        readonly commandId: string;
+        readonly connection: string;
+        readonly transport: 'realtime' | 'messages.rtc';
+        readonly sessionId: string;
+        readonly requestedConfiguration: RtcSignalingDiagnostics.CaptureConfiguration;
+        readonly receipt: RtcSignalingDiagnostics.CaptureReceipt;
+    }
+
+    export interface NativeAcquisitionProof {
+        readonly connection: CapturedConnection;
+        readonly initialized: NonNullable<RtcNativeProjection['event']>;
+        readonly source: {
+            readonly endpoint: string;
+            readonly durableOrigin: 'unknown';
+            readonly bytesRead: number;
+            readonly retainedBytes: number;
+            readonly retainedPrefixDropped: boolean;
+            readonly transportTruncated: boolean;
+            readonly malformedRows: number;
+            readonly oversizedRows: number;
+            readonly scanLimited: boolean;
+        };
+    }
+
+    export interface NativeAcquisitionFailure {
+        readonly reason:
+            | 'initialized-status-unavailable'
+            | 'native-capture-unavailable'
+            | 'acquisition-failed'
+            | 'connect-result-unavailable'
+            | 'native-scope-disposed';
+        readonly source: NativeAcquisitionProof['source'] | null;
+        readonly connection: CapturedConnection;
+        readonly cause: Error;
+    }
+
+    /** A specific acquisition capability supplied only to diagnostic preflight operations. */
+    export interface NativeAcquisition {
+        readRtcNativeAcquisition(
+            connection: CapturedConnection
+        ): Promise<Either<NativeAcquisitionFailure, NativeAcquisitionProof>>;
+    }
+
     export interface FormationAgent {
         readonly prefix: 'A' | 'B' | 'C';
         readonly agentId: string;
@@ -488,13 +537,7 @@ export class LiveRtcControlClient {
         }
     }
 
-    waitForPeerReadiness(
-        input: LiveRtcControlClient.WaitForRtcReadinessInput
-    ): Promise<number> {
-        return this.#waitForRtcReadiness(input);
-    }
-
-    async #waitForRtcReadiness(
+    async waitForPeerReadiness(
         input: LiveRtcControlClient.WaitForRtcReadinessInput
     ): Promise<number> {
         const deadlineMs = this.#monotonicNow() + 60_000;
@@ -721,6 +764,25 @@ export class LiveRtcControlClient {
         await this.#writeDiagnosticsArtifact(
             `live-rtc-three-browser-run-summary-${safeFileName(input.runId)}.json`,
             body
+        );
+    }
+
+    async readRtcNativeAcquisition(
+        connection: LiveRtcControlClient.CapturedConnection
+    ): Promise<Either<LiveRtcControlClient.NativeAcquisitionFailure, LiveRtcControlClient.NativeAcquisitionProof>> {
+        const endpoint = `${this.#baseUrl}/runs/${encodeURIComponent(connection.runId)}/events.jsonl`;
+        const read = await readLiveRtcRecorderJsonl(endpoint);
+        return read.fold<
+            Either<LiveRtcControlClient.NativeAcquisitionFailure, LiveRtcControlClient.NativeAcquisitionProof>
+        >(
+            (failure) =>
+                Either.ofLeft({
+                    reason: 'acquisition-failed',
+                    connection,
+                    source: null,
+                    cause: failure.cause ?? new Error('RTC Native recorder unavailable.')
+                }),
+            (recorder) => toLiveRtcNativeAcquisition({ ...recorder, endpoint, connection })
         );
     }
 

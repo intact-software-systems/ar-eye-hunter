@@ -31,6 +31,7 @@ import * as snapshots from '@shared-web/browser/state-read/refresh-state-snapsho
 import * as auth from '@shared/api/auth.ts';
 import { isRallarCrdtDocumentRef, type RallarCrdtMetricEvent } from '@shared/crdt/mod.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import '../../setup-browser-indexeddb.ts';
@@ -106,6 +107,53 @@ function createRuntime(
 }
 
 describe('decoded recipe application through the SPA and SDK initializer', () => {
+    it.each(
+        [
+            { scenario: 'explicit Off', mode: 'off', run: undefined, recipe: undefined },
+            { scenario: 'run Off with step Signaling and recipe Native', mode: 'signaling', run: 'off', recipe: 'native' },
+            { scenario: 'ordinary omitted capture intent', mode: undefined, run: undefined, recipe: undefined }
+        ] as const
+    )('carries captured $scenario into the owned room join port', async (selection) => {
+        const { facade, page } = createRuntime();
+        const connectPort = vi.spyOn(facade, 'connect');
+        const joinPort = vi.spyOn(facade.rooms, 'join').mockResolvedValue();
+        const captureContext: { run: RtcSignalingDiagnostics.CaptureMode; recipe: RtcSignalingDiagnostics.CaptureMode; } | undefined =
+            selection.run && selection.recipe ? { run: selection.run, recipe: selection.recipe } : undefined;
+        const rallar = {
+            apiBaseUrl: 'https://test.invalid',
+            applicationId: 'app',
+            workspaceId: 'workspace',
+            timeoutMs: 1_234,
+            rtcCaptureMode: selection.mode,
+            rtcCaptureContext: captureContext
+        };
+        try {
+            const connecting = page.connect({ connection: 'default', roomId: 'room', rallar });
+            rallar.rtcCaptureMode = 'off';
+            if (captureContext) {
+                captureContext.run = 'native';
+                captureContext.recipe = 'off';
+            }
+            await connecting;
+            const expectedContext = selection.run && selection.recipe ? { run: selection.run, recipe: selection.recipe } : undefined;
+            expect(connectPort).toHaveBeenCalledWith({
+                timeoutMs: 1_234,
+                dataChannelLanes: undefined,
+                rtcCaptureMode: selection.mode,
+                rtcCaptureContext: expectedContext
+            });
+            expect(joinPort).toHaveBeenCalledWith('room', {
+                timeoutMs: 1_234,
+                scope: { applicationId: 'app', workspaceId: 'workspace' },
+                rtcCaptureMode: selection.mode,
+                rtcCaptureContext: expectedContext
+            });
+        }
+        finally {
+            await page.close();
+        }
+    });
+
     it('required connect cannot verify after phase-completed callback closes its page', async () => {
         const { events, facade, page, runtime, targetWindow } = createRuntime();
         let closing: ReturnType<BlackBoxRallarRuntime['close']> | undefined;
@@ -936,14 +984,6 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
                 }
             });
             expect(result.ok, JSON.stringify(result)).toBe(false);
-            console.info(
-                'recipe WS override readback',
-                JSON.stringify({
-                    original: connected.rtcCapture,
-                    command: runtime.state().commandHistory.find((entry) => entry.kind === 'ws.send'),
-                    refusals: events.filter((event) => event.topic === 'rallar.browser.ws.send_failed')
-                })
-            );
             expect(result).toMatchObject({
                 value: {
                     results: expect.arrayContaining([expect.objectContaining({
@@ -1246,21 +1286,6 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
                 initialValue: { title: 'hydrated' },
                 ...(mode ? { rallar: capture } : {})
             }).then((value) => ({ value }), (caught: unknown) => ({ error: toError(caught) }));
-            console.info(
-                'hydrate session subscription readback',
-                JSON.stringify({
-                    mode,
-                    invalidate,
-                    original: completion.rtcCapture,
-                    callbackConnected,
-                    ownershipBeforeMetric: ownershipBeforeMetric ?? 'current',
-                    ownershipAfterMetric: ownershipAfterMetric ?? 'current',
-                    metrics,
-                    subscriptions,
-                    outcome,
-                    failures: events.filter((event) => event.topic === 'rallar.browser.crdt.open_failed')
-                })
-            );
             expect(metrics).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'crdt.merge.replay.ms' })]));
             expect(callbackConnected).toBe(true);
             expect(ownershipBeforeMetric).toBeUndefined();
@@ -1301,15 +1326,6 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
             }
             await page.close();
             expect(facade.isConnected()).toBe(false);
-            console.info(
-                'hydrate subscription cleanup readback',
-                JSON.stringify({
-                    mode,
-                    invalidate,
-                    releasedSelectors: subscriptions.map(({ selector }) => selector),
-                    connected: facade.isConnected()
-                })
-            );
         }
     });
 
@@ -1345,17 +1361,6 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
                 initialValue: { title: 'initial' },
                 rallar: { rtcCaptureContext: { run: 'native' } }
             }).then((value) => ({ value }), (caught: unknown) => ({ error: toError(caught) }));
-            console.info(
-                'initial live unavailable application readback',
-                JSON.stringify({
-                    completion: completion.rtcCapture,
-                    outcome,
-                    effects: handles.map((handle) => ({
-                        rtcCapture: handle.rtcCapture(),
-                        lifecycle: handle.lifecycle()
-                    }))
-                })
-            );
             expect.soft(outcome).toMatchObject({
                 error: {
                     code: 'RALLAR_RTC_CAPTURE_UNVERIFIED',
@@ -1526,7 +1531,6 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
                 persist: false,
                 tabSync: false
             });
-            console.info('ordinary HTTP catch-up readback', JSON.stringify(opened));
             expect(opened).toMatchObject({
                 status: 'opened',
                 value: { title: 'HTTP durable title' },

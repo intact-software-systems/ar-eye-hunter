@@ -269,9 +269,7 @@ const defaultTimings: LiveRtcPerformanceRawEvidence['timings'] = [
     }
 ];
 
-function defaultRawEvidence(
-    overrides: Partial<LiveRtcPerformanceRawEvidence> = {}
-): LiveRtcPerformanceRawEvidence {
+function defaultRawEvidence(overrides: Partial<LiveRtcPerformanceRawEvidence> = {}): LiveRtcPerformanceRawEvidence {
     return {
         identity: {
             workloadId: 'RTC-B06',
@@ -316,6 +314,9 @@ function defaultRawEvidence(
             }
         ],
         failureDiagnostics: [],
+        rtcConnectCaptures: [],
+        nativeAcquisitions: [],
+        nativeAcquisitionFailures: [],
         attemptFailure: null,
         retention: null,
         assertions: {
