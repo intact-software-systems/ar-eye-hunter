@@ -639,22 +639,51 @@ describe('relay rejection (D50)', () => {
     it.each(
         [
             { relay: 'peer', peerId: 'relay-1', reason: 'resync-required' },
-            { relay: 'trusted-server', reason: 'resync-required' }
+            { relay: 'trusted-server', reason: 'resync-required' },
+            { relay: 'peer', peerId: 'relay-1', reason: 'membership-fenced' },
+            { relay: 'trusted-server', reason: 'membership-fenced' }
         ] as const
-    )('settles a queued send as rejected by a $relay relay, with that relay as its evidence', (relayRejection) => {
+    )('settles a queued send as rejected by a $relay relay ($reason), with that relay as its evidence', (relayRejection) => {
+        const detail = `The relay refused the message: ${relayRejection.reason}.`;
         const next = computeALDeliveryLifecycle(toQueuedLifecycle('receiver'), {
             kind: 'relay-rejected',
             msgId: MSG_ID,
             carrier: 'rtc',
             atMs: AT_MS,
             relayRejection,
-            detail: 'The relay refused the message: resync-required.'
+            detail
         });
 
         expect(next.state).toBe('rejected');
         expect(isALDeliveryTerminal(next)).toBe(true);
         expect(next.evidence.relayRejection).toEqual(relayRejection);
-        expect(next.evidence.reason).toBe('The relay refused the message: resync-required.');
+        expect(next.evidence.failure).toEqual({ kind: 'relay-rejected', rejection: relayRejection });
+        expect(next.evidence.reason).toBe(detail);
+    });
+
+    it('fails a receipted send whose hop refused it membership-fenced, naming the hop and the reason', () => {
+        const next = computeALDeliveryLifecycle(toQueuedLifecycle('receiver'), {
+            kind: 'receipt-exhausted',
+            msgId: MSG_ID,
+            carrier: 'rtc',
+            atMs: AT_MS,
+            mode: 'hop',
+            confirmedPeerIds: [],
+            unconfirmedPeerIds: ['relay-1'],
+            cause: 'hop-refused',
+            hopPeerId: 'relay-1',
+            nackReason: 'membership-fenced',
+            detail: 'Hop relay-1 refused the message: membership-fenced.'
+        });
+
+        expect(next.state).toBe('failed');
+        expect(next.evidence.failure).toEqual({
+            kind: 'receipt-exhausted',
+            cause: 'hop-refused',
+            hopPeerId: 'relay-1',
+            nackReason: 'membership-fenced'
+        });
+        expect(next.evidence.relayRejection).toBeUndefined();
     });
 });
 

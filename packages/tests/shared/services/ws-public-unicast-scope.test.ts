@@ -60,7 +60,7 @@ describe('public WS unicast scope', () => {
 
     it.each(['targets', 'resolved'] as const)('preserves decoded AL control delivery through %s without generic scope', (entry) => {
         const { native, live } = createLiveDelivery();
-        const message = newALAckControlMessage({ v: 2, msgId: 'ack', senderId: 'server', ts: Date.now() }, {
+        const message = newALAckControlMessage({ v: 3, msgId: 'ack', senderId: 'server', ts: Date.now() }, {
             fromPeerId: 'server',
             toPeerId: 'peer',
             ackedMsgId: 'message',
@@ -83,7 +83,7 @@ describe('public WS unicast scope', () => {
         expect(native.sent).toEqual([]);
     });
     it('preserves fully decoded internal control effects without a public scope', () => {
-        const message = newALAckControlMessage({ v: 2, msgId: 'ack', senderId: 'server', ts: Date.now() }, {
+        const message = newALAckControlMessage({ v: 3, msgId: 'ack', senderId: 'server', ts: Date.now() }, {
             fromPeerId: 'server',
             toPeerId: 'peer',
             ackedMsgId: 'message',

@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 /** Both carriers put `JSON.stringify(ALMessage)` on the wire, so the frames here are built, not hand-written. */
 const ackFrame = JSON.stringify(newALAckControlMessage(
-    { v: 2, msgId: 'ctl-1', senderId: 'b', ts: 1 },
+    { v: 3, msgId: 'ctl-1', senderId: 'b', ts: 1 },
     {
         ackedMsgId: 'msg-1',
         originPeerId: 'a',
@@ -25,7 +25,7 @@ const ackFrame = JSON.stringify(newALAckControlMessage(
     }
 ));
 const nackFrame = JSON.stringify(newALNackControlMessage(
-    { v: 2, msgId: 'ctl-2', senderId: 'b', ts: 1 },
+    { v: 3, msgId: 'ctl-2', senderId: 'b', ts: 1 },
     {
         msgId: 'msg-2',
         fromPeerId: 'b',
@@ -35,7 +35,7 @@ const nackFrame = JSON.stringify(newALNackControlMessage(
     }
 ));
 const repairFrame = JSON.stringify(newALRepairControlMessage(
-    { v: 2, msgId: 'ctl-3', senderId: 'b', ts: 1 },
+    { v: 3, msgId: 'ctl-3', senderId: 'b', ts: 1 },
     {
         msgId: 'msg-3',
         fromPeerId: 'b',

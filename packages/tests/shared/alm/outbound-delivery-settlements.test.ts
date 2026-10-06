@@ -320,7 +320,7 @@ it.each(BACKEND_KINDS)(
 
         const admitted = await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 2, msgId: 'control-resync', ts: 1, senderId: 'peer-1' },
+                { v: 3, msgId: 'control-resync', ts: 1, senderId: 'peer-1' },
                 {
                     msgId: message.id.msgId,
                     fromPeerId: 'peer-1',

@@ -62,11 +62,18 @@ function toAcceptedResponse(url: string): Playwright.APIResponse {
 }
 
 describe('three-agent ALM run', () => {
-    it('selects exactly the receipted-audience scenarios for the three-agent family on every carrier', () => {
+    it('selects exactly the receipted-audience and membership fence scenarios for the three-agent family on every carrier', () => {
         const rtcScenarioKeys = ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership'];
         const expectedKeys = {
-            ws: ['aggregated-receipt', 'missing-recipient-retry', 'frozen-audience-membership'],
-            rtc: rtcScenarioKeys,
+            ws: [
+                'aggregated-receipt',
+                'missing-recipient-retry',
+                'frozen-audience-membership',
+                'fenced-delivery',
+                'fenced-catch-up',
+                'fenced-rejection'
+            ],
+            rtc: [...rtcScenarioKeys, 'fenced-delivery', 'fenced-catch-up'],
             'rtc-with-ws-fallback': rtcScenarioKeys
         };
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
@@ -76,10 +83,17 @@ describe('three-agent ALM run', () => {
         }
     });
 
-    it('starts both recipients and releases the sender only after both connect barriers', async () => {
+    // The receiver's prologue creates the run's group, so it owns it; an only owner's leave is refused.
+    it('starts recipient-b only after the receiver\'s connect barrier, and the sender only after both', async () => {
         const baseline = toScenarios('ws').find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
         const recipientB = { ...baseline.receiver, recipeId: `${baseline.receiver.recipeId}-b` };
+        const runIds = {
+            receiver: `${baseline.receiver.recipeId}-run`,
+            recipientB: `${recipientB.recipeId}-run`,
+            sender: `${baseline.sender.recipeId}-run`
+        };
         const posted: string[] = [];
+        const receiverConnected = Promise.withResolvers<void>();
         const request = await Playwright.request.newContext();
         vi.spyOn(request, 'post').mockImplementation(async (url, options) => {
             const data = options?.data;
@@ -96,23 +110,32 @@ describe('three-agent ALM run', () => {
             sender: toParticipant('sender-agent'),
             receiver: toParticipant('receiver-agent'),
             recipientB: toParticipant('recipient-b-agent'),
-            readSnapshot: async () => ({ results: posted.map((commandId) => ({ commandId, ok: true })) }),
+            readSnapshot: async () => {
+                await receiverConnected.promise;
+                return { results: posted.map((commandId) => ({ commandId, ok: true })) };
+            },
             close: async () => {
                 throw new Error('Enqueue must not close the agents.');
             }
         };
         try {
-            const outcome = await runRecipeTrioOnThreeAgents(run, {
+            const running = runRecipeTrioOnThreeAgents(run, {
                 sender: baseline.sender,
                 receiver: baseline.receiver,
                 recipientB
             });
-            expect(new Set(posted.slice(0, 2))).toEqual(new Set([`${baseline.receiver.recipeId}-run`, `${recipientB.recipeId}-run`]));
-            expect(posted.slice(2)).toEqual([`${baseline.sender.recipeId}-run`]);
+            await vi.waitFor(() => expect(posted).toContain(runIds.receiver));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            expect(posted).toEqual([runIds.receiver]);
+
+            receiverConnected.resolve();
+            const outcome = await running;
+
+            expect(posted).toEqual([runIds.receiver, runIds.recipientB, runIds.sender]);
             expect(outcome).toEqual({
-                sender: { commandId: `${baseline.sender.recipeId}-run`, ok: true, summary: 'ok' },
-                receiver: { commandId: `${baseline.receiver.recipeId}-run`, ok: true, summary: 'ok' },
-                recipientB: { commandId: `${recipientB.recipeId}-run`, ok: true, summary: 'ok' }
+                sender: { commandId: runIds.sender, ok: true, summary: 'ok' },
+                receiver: { commandId: runIds.receiver, ok: true, summary: 'ok' },
+                recipientB: { commandId: runIds.recipientB, ok: true, summary: 'ok' }
             });
         }
         finally {

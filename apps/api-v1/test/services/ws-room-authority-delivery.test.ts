@@ -7,7 +7,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALBroadcastMessage, newALMulticastMessage, toALGroupTargetKey } from '@shared/al-contracts/al-contract.ts';
 import { newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
-import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
+import { decodeALNackPayload, decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
@@ -111,8 +111,20 @@ Deno.test('room delivery excludes revoked or expired recipients even when cache 
     }
 });
 
-Deno.test('current room denial emits the existing NACK without using a permissive recipient cache', async () => {
-    for (const denial of ['missing', 'scope', 'group', 'member', 'session', 'version', 'policy', 'halted'] as const) {
+Deno.test('current room denial emits its typed NACK without using a permissive recipient cache', async () => {
+    for (
+        const { denial, reason } of [
+            { denial: 'missing', reason: 'unauthorized' },
+            { denial: 'scope', reason: 'unauthorized' },
+            { denial: 'group', reason: 'unauthorized' },
+            { denial: 'member', reason: 'membership-fenced' },
+            { denial: 'session', reason: 'membership-fenced' },
+            { denial: 'version', reason: 'not-yet-in-sync' },
+            { denial: 'roster', reason: 'not-yet-in-sync' },
+            { denial: 'policy', reason: 'unauthorized' },
+            { denial: 'halted', reason: 'unauthorized' }
+        ] as const
+    ) {
         const harness = createRoomDeliveryHarness();
         try {
             const snapshot = createRoomSnapshot();
@@ -135,16 +147,50 @@ Deno.test('current room denial emits the existing NACK without using a permissiv
             harness.state.policy = { status: 'present', policy: resolveGroupLifecyclePolicyPreset('match') };
             const senderFrames = addRecordingConnection(harness.server, 'alice');
             const recipientFrames = addRecordingConnection(harness.server, 'bob');
-            const message = roomMessage(denial === 'version' ? 3 : undefined);
+            const message = roomMessage({
+                minSnapshotVersion: denial === 'version' ? 3 : undefined,
+                rosterVersion: denial === 'roster' ? 2 : undefined
+            });
 
             await harness.router.route(message);
 
             assert.equal(senderFrames.length, 1);
             const nack = decodePersistedALMessage(senderFrames[0]!);
             assert.notEqual(nack.route.topicId, 'room.chat');
-            assert.match(nack.payload.resource, /unauthorized|not-yet-in-sync/);
+            assert.equal(decodeALNackPayload(JSON.parse(nack.payload.resource)).reason, reason, denial);
             assert.deepEqual(recipientFrames, []);
             assert.deepEqual(await harness.outbox.getAllKeys(), []);
+        }
+        finally {
+            harness.service.dispose();
+        }
+    }
+});
+
+Deno.test('a room send behind the server snapshot is retained at ingress with its advisory NACK and delivered once the snapshot advances', async () => {
+    for (const floor of ['version', 'roster'] as const) {
+        const harness = createRoomDeliveryHarness();
+        try {
+            harness.router.install();
+            const senderFrames = addRecordingConnection(harness.server, 'alice');
+            const recipientFrames = addRecordingConnection(harness.server, 'bob');
+            const message = roomMessage(floor === 'version' ? { minSnapshotVersion: 3 } : { rosterVersion: 2 });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+
+            assert.deepEqual(accepted.right, { kind: 'pending-admission' }, floor);
+            assert.equal(senderFrames.length, 1, floor);
+            const nack = decodePersistedALMessage(senderFrames[0]!);
+            assert.equal(decodeALNackPayload(JSON.parse(nack.payload.resource)).reason, 'not-yet-in-sync', floor);
+            await new Promise((resolve) => setTimeout(resolve, 120));
+            assert.deepEqual(recipientFrames, [], floor);
+
+            const snapshot = createRoomSnapshot();
+            harness.state.current = { ...snapshot, group: { ...snapshot.group, snapshotVersion: 3, rosterVersion: 2 } };
+            await waitForRoomFrames(() => recipientFrames.length > 0);
+
+            assert.deepEqual(recipientFrames.map((frame) => decodePersistedALMessage(frame).id), [message.id], floor);
+            assert.equal(senderFrames.length, 1, floor);
         }
         finally {
             harness.service.dispose();
@@ -406,7 +452,7 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarne
 }
 
 function receiverAck(message: ALMessage, recipient: string): ALMessage {
-    return newALAckControlMessage({ v: 2, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() }, {
+    return newALAckControlMessage({ v: 3, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() }, {
         ackedMsgId: message.id.msgId,
         fromPeerId: recipient,
         toPeerId: message.id.senderId,
@@ -444,9 +490,9 @@ async function waitForRoomFrames(isSettled: () => boolean): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 1));
 }
 
-function roomMessage(minSnapshotVersion?: number): ALMessage {
+function roomMessage(floors: Readonly<{ minSnapshotVersion?: number; rosterVersion?: number; }> = {}): ALMessage {
     return newALMulticastMessage('alice', newALEventRoute('room.chat', ROOM.groupId, 'room-delivery'), ROOM, 'chat.message.v1', { text: 'hello' }, {
-        minSnapshotVersion,
+        ...floors,
         reliability: 'best-effort',
         ack: 'none'
     });

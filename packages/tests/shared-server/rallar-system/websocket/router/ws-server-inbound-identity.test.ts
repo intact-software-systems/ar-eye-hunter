@@ -87,7 +87,7 @@ describe('WS server inbound identity', () => {
         try {
             await socket.dispatchValue({
                 id: {
-                    v: 2,
+                    v: 3,
                     msgId: 'malformed-message',
                     ts: 1,
                     senderId: 'session-1'

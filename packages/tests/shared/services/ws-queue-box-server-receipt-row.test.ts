@@ -243,7 +243,7 @@ async function relayFrames(socket: SimulatedWebSocket, origin: OriginClient): Pr
 
 function roomMessage(nowMs: number): ALMessage {
     return {
-        id: { v: 2, msgId: 'room-message-1', ts: nowMs, senderId: 'a' },
+        id: { v: 3, msgId: 'room-message-1', ts: nowMs, senderId: 'a' },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs: nowMs + ROOM_MESSAGE_LIFETIME_MS },
@@ -254,7 +254,7 @@ function roomMessage(nowMs: number): ALMessage {
 
 function receiverAck(recipient: 'b' | 'c', nowMs: number): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${recipient}`, senderId: recipient, ts: nowMs },
+        { v: 3, msgId: `ack-${recipient}`, senderId: recipient, ts: nowMs },
         {
             ackedMsgId: 'room-message-1',
             fromPeerId: recipient,
@@ -271,7 +271,7 @@ function receiverAck(recipient: 'b' | 'c', nowMs: number): ALMessage {
 function receiptMessage(input: Readonly<{ observedAtEpochMs: number; expiresAtMs: number; }>): ALMessage {
     return {
         ...newALReceiptControlMessage(
-            { v: 2, msgId: 'receipt-complete', senderId: 'server', ts: input.observedAtEpochMs },
+            { v: 3, msgId: 'receipt-complete', senderId: 'server', ts: input.observedAtEpochMs },
             {
                 msgId: 'room-message-1',
                 originPeerId: 'a',

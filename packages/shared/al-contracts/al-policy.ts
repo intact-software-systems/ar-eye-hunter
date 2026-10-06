@@ -237,7 +237,8 @@ export type ALMessageDropReasonCode =
     | 'resync-required'
     | 'overloaded'
     | 'not-yet-in-sync'
-    | 'unauthorized';
+    | 'unauthorized'
+    | 'membership-fenced';
 
 export const AL_MESSAGE_DROP_REASON_CODES: readonly ALMessageDropReasonCode[] = Object.freeze([
     'unmet-requirements',
@@ -248,7 +249,8 @@ export const AL_MESSAGE_DROP_REASON_CODES: readonly ALMessageDropReasonCode[] = 
     'resync-required',
     'overloaded',
     'not-yet-in-sync',
-    'unauthorized'
+    'unauthorized',
+    'membership-fenced'
 ]);
 
 export interface ALMessageHandlingPlan {

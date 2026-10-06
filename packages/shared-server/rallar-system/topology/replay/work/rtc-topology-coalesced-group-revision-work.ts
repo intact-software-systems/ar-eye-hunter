@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
@@ -438,7 +438,7 @@ function toCoalescedGroupRevisionMessage(
     const causalRevision = readGroupCausalRevision(data.groupSnapshot);
     return {
         id: {
-            v: 2,
+            v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: `${resourceId}:g${data[COALESCED_APP_OUTBOX_WORK_FIELD].generation}`,
             ts: messageTsEpochMs,
             senderId: createdBy

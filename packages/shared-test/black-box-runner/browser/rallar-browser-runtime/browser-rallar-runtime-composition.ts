@@ -50,6 +50,7 @@ import type {
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
+import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
@@ -128,8 +129,8 @@ export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOp
 export interface BlackBoxBrowserDeliveriesDependency extends Pick<BrowserRallarDeliveryRegistry, 'getHandle'> {
     replayCapturedMessage(replay: BlackBoxCapturedMessageReplay): Promise<ALDeliveryAdmissionVerdict>;
     submitRawControl(control: BlackBoxRallarControlSubmitInput): Promise<SubmitBlackBoxRawControl.Submission>;
-    /** The floor the product stamps on a room send that states none: the sender's cached room version. */
-    resolveRoomMinSnapshotVersion(roomRef: GroupRef): number | undefined;
+    /** The fence the product stamps on a room send that states no floor: the sender's cached room and roster versions. */
+    resolveRoomSendFence(roomRef: GroupRef): RoomSendFence;
 }
 
 /** What the page reads to name a peer by its lane role: the WS server's id, its own session and the room's roster. */
@@ -250,7 +251,7 @@ function toBlackBoxBrowserMessagingPorts(
                     context: session.session.readMiddleware(),
                     nowMs: Date.now()
                 }),
-            resolveRoomMinSnapshotVersion: (roomRef) => state.roomStateStore.resolveRoomMinSnapshotVersion(roomRef)
+            resolveRoomSendFence: (roomRef) => state.roomStateStore.resolveRoomSendFence(roomRef)
         },
         peers: {
             serverPeerId: () => session.connection.serverPeerId(),

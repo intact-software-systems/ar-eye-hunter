@@ -11,7 +11,7 @@ import {
 } from 'vitest';
 
 const message: ALMessage = Object.freeze({
-    id: Object.freeze({ v: 2, msgId: 'deadline-message', senderId: 'sender', ts: 1_000 }),
+    id: Object.freeze({ v: 3, msgId: 'deadline-message', senderId: 'sender', ts: 1_000 }),
     route: Object.freeze({ topicId: 'chat', contextId: 'room', resourceId: 'message' }),
     payload: Object.freeze({ typeId: 'chat.v1', resource: '{}' }),
     delivery: Object.freeze({ reliability: 'at-least-once', ack: 'receiver' })

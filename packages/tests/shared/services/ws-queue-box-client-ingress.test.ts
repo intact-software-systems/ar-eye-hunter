@@ -397,7 +397,7 @@ async function readControlWorkStatuses(fixture: ClientIngressFixture): Promise<r
 
 function createIncomingMessage(): ALMessage {
     return {
-        id: { v: 2, msgId: 'message-1', ts: 1, senderId: 'logical-origin' },
+        id: { v: 3, msgId: 'message-1', ts: 1, senderId: 'logical-origin' },
         route: { topicId: 'topic', resourceId: 'resource', contextId: 'context' },
         targets: { mode: 'unicast', toPeerId: 'self' },
         payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' }

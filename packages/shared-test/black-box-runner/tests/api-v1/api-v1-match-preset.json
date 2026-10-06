@@ -545,7 +545,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "match-lobby-blocked-{runId}",
             "ts": 0,
             "senderId": "{bobSessionId}",
@@ -1214,7 +1214,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "match-arena-rtt-{runId}",
             "ts": 0,
             "senderId": "{arenaRttReporter.sessionIdFrom}",
@@ -1273,7 +1273,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "match-arena-live-{runId}",
             "ts": 0,
             "senderId": "{danSessionId}",

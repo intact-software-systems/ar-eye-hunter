@@ -3286,14 +3286,14 @@ moved or changed test.
       "id": "browser-invalid-fallback-no-admission",
       "domain": "Typed message audience validation",
       "owner": "Rallar browser maintainers",
-      "summary": "An unsupported all-scope fallback with membership fencing rejects before either carrier can publish.",
+      "summary": "An unsupported all-scope fallback rejects before either carrier can publish.",
       "semanticCoverage": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts#reports every unsupported fallback constraint before connecting or queueing",
-      "coverageRelation": "The public room channel rejects both independently specified validation issues and remains disconnected; both carrier admission ports are observed.",
+      "coverageRelation": "The public room channel rejects the scope issue alone and remains disconnected; both carrier admission ports are observed.",
       "interactionRequirement": {
         "interactionKind": "absence",
         "ownedPort": "WebSocketQueueBox and WebRtcRxStreamerService enqueueOutboxIfAbsent carrier admission ports",
         "observableEffect": "Carrier admission can retain or publish a message to its resolved audience.",
-        "requiredConstraint": "Unsupported fallback scope or membership fencing must produce no WS or RTC admission.",
+        "requiredConstraint": "An unsupported fallback scope must produce no WS or RTC admission.",
         "failureRationale": "An error response can follow an illicit send; validation errors and disconnected facade state alone do not prove absence of publication."
       }
     },

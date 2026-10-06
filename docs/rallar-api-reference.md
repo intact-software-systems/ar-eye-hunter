@@ -838,10 +838,11 @@ product as degraded or failed delivery.
 ### Ordering, Repair And Resynchronization
 
 A send states its position with `orderingKey` and `seq` together, or neither
-(`RallarRtcSendInput`, `RallarWsSendInput`); an RTC send's `membershipEpoch` is
-the position's epoch. The receiver keeps one ordering track per ordering key,
-sender and epoch, delivers its messages in sequence from the last contiguous
-one and buffers what arrives early; a new epoch is a new track. Three limits
+(`RallarRtcSendInput`, `RallarWsSendInput`). The receiver keeps one ordering
+track per ordering key, sender and epoch, delivers its messages in sequence from
+the last contiguous one and buffers what arrives early; a new epoch is a new
+track. No browser send sets the epoch: a browser sender's track ends by its TTL
+or by the receiver's resynchronization. Three limits
 bound the buffer (`AL_MESSAGE_RESOURCE_LIMITS`): a sequence more than
 `repairWindow` (256) past the expected one, or a track already holding
 `bufferedMessages` (256) or `bufferedBytes` (1 MiB), is refused
@@ -897,6 +898,53 @@ logged and changes nothing. Every invocation is also stated as
 diagnostics state the refusal. The WS server declares no owner and keeps
 NACKing `resync-required` to the sender. The once-mark lives in memory, so a
 reload invokes the owner once more for the same track.
+
+### Membership Fencing
+
+Every room send -- an RTC multicast, a WS room broadcast, and the room
+broadcast a fallback send becomes -- carries two stamps read from the sender's
+cached room snapshot: `targets.minSnapshotVersion`, the snapshot version (or a
+higher floor the send states), and `targets.rosterVersion`, the group's roster
+version. No caller sets the roster. Both are absent when the sender holds no
+snapshot of the room, unless the send states a floor, which then travels alone;
+a receiver applies only the floors a send carries.
+
+A receiver judges a room send against the room snapshot it holds:
+
+- **Behind either stamp** it refuses the send `not-yet-in-sync` and the send
+  catches up on the existing bounded path: an RTC receiver NACKs its hop,
+  refreshes the room once and re-admits the message once, and the sender
+  retries; the WS server retains the send as a pending admission, answers an
+  advisory NACK the sender leaves unhandled, and re-authorizes it every 50 ms
+  until its room meets the floor or the message's deadline passes. The sender
+  retries nothing over WS. A send the server retains this way starts no receipt
+  aggregate, so a `receiver` receipt never completes for it.
+- **At or beyond the stamps, with the sender's member absent or not `active`,**
+  it refuses the send `membership-fenced` and NACKs its hop. From the WS
+  server, before the sender holds a receipt row, the handle settles `rejected`
+  with `failure: { kind: 'relay-rejected', rejection }` and
+  `evidence.relayRejection` reading `{ relay: 'trusted-server', reason:
+  'membership-fenced' }`; an RTC peer's refusal reads `{ relay: 'peer', peerId,
+  reason: 'membership-fenced' }` the same way only when that peer is the
+  unicast addressee or a composition hop. An RTC room send names no hop, so its
+  sender hears a peer's fence only through a tracked receipt: the receipt ends
+  and the handle reads `failed` with `failure: { kind: 'receipt-exhausted',
+  cause: 'hop-refused', hopPeerId, nackReason: 'membership-fenced' }`, as any
+  receipted send does when a hop refuses it; a room send with `ack: 'none'`
+  never hears it.
+- On RTC a sender whose session is absent while its member is present waits as
+  `not-yet-in-sync` at its own roster (presence is not the roster) and is fenced
+  in a roster beyond its stamp; the WS server, whose presence is its own
+  authority, fences a sender with no live session at once.
+- The fence applies where a copy arrives from a hop: an origin keeps its own
+  verdicts, so a removed sender's own sends wait at its origin until their
+  deadline. A fenced NACK carries no ordering hints, asks for no repair and
+  triggers no refresh.
+
+The WS server judges WS room sends at admission and again at dispatch; the
+receiving WS client trusts it, and a room publication the server originates
+carries no fence. The envelope version is `AL_MESSAGE_ENVELOPE_VERSION` (3); an
+envelope of any other version is refused `unsupported`.
 
 ### RTC Status And Readiness
 

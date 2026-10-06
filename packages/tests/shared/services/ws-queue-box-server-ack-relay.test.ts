@@ -373,7 +373,7 @@ function toRelayPort(
 
 async function admitRoomMessage(owner: ServerInstance, expiresAtMs: number): Promise<void> {
     const message: ALMessage = {
-        id: { v: 2, msgId: 'room-message-1', ts: Date.now(), senderId: 'a' },
+        id: { v: 3, msgId: 'room-message-1', ts: Date.now(), senderId: 'a' },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs },
@@ -391,7 +391,7 @@ function receiverAck(
     address: Partial<Pick<ALAckPayload, 'fromPeerId' | 'logicalRecipientPeerId' | 'toPeerId' | 'originPeerId'>> = {}
 ): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() },
+        { v: 3, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() },
         {
             ackedMsgId: 'room-message-1',
             fromPeerId: address.fromPeerId ?? recipient,
@@ -407,7 +407,7 @@ function receiverAck(
 
 function repeatedAck(recipient: string, index: number): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `repeated-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now() },
+        { v: 3, msgId: `repeated-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now() },
         {
             ackedMsgId: 'room-message-1',
             fromPeerId: recipient,
@@ -423,7 +423,7 @@ function repeatedAck(recipient: string, index: number): ALMessage {
 
 function forgedAck(recipient: string, index: number): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `forged-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now() },
+        { v: 3, msgId: `forged-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now() },
         {
             ackedMsgId: `forged-message-${index}`,
             fromPeerId: recipient,

@@ -39,6 +39,13 @@ const RECEIPTED_AUDIENCE_KEYS_BY_CARRIER = {
     'rtc-with-ws-fallback': ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership']
 } as const;
 
+/** The membership fence runs where one hop judges the roster; its rejection only where the server does. */
+const MEMBERSHIP_FENCE_KEYS_BY_CARRIER = {
+    ws: ['fenced-delivery', 'fenced-catch-up', 'fenced-rejection'],
+    rtc: ['fenced-delivery', 'fenced-catch-up'],
+    'rtc-with-ws-fallback': []
+} as const;
+
 const CARRIER_CONNECT_TRANSPORTS = {
     ws: 'messages.ws',
     rtc: 'messages.rtc',
@@ -147,7 +154,6 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'ordering-resync',
         'ordering-gap-repair',
         'repair-exhausted',
-        'not-yet-in-sync-delivered-after-refresh',
         'not-yet-in-sync-expires',
         'ws-unicast-receipt',
         'capacity'
@@ -167,7 +173,6 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'repair-exhausted',
         'cross-carrier-duplicate-rtc-then-ws',
         'cross-carrier-duplicate-ws-then-rtc',
-        'not-yet-in-sync-delivered-after-refresh',
         'not-yet-in-sync-expires',
         'fallback-within-deadline',
         'receipt-exhausted-fallback',
@@ -210,7 +215,7 @@ describe('alm-conformance recipe family', () => {
             expect(toAllRoleRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).map((recipe) => recipe.recipeId), carrier)
                 .toEqual([
                     ...SCENARIO_KEYS_BY_CARRIER[carrier].flatMap((key) => [`alm-${carrier}-${key}-sender`, `alm-${carrier}-${key}-receiver`]),
-                    ...RECEIPTED_AUDIENCE_KEYS_BY_CARRIER[carrier].flatMap((key) =>
+                    ...[...RECEIPTED_AUDIENCE_KEYS_BY_CARRIER[carrier], ...MEMBERSHIP_FENCE_KEYS_BY_CARRIER[carrier]].flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     ),
                     ...['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-durable-takeover-${role}`),
@@ -221,10 +226,11 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('declares recipient-b on the receipted-audience scenarios and successor on durable-takeover and flush-on-hide only; every other scenario keeps one sender and one receiver', () => {
+    it('declares recipient-b on the receipted-audience and membership fence scenarios and successor on durable-takeover and flush-on-hide only; every other scenario keeps one sender and one receiver', () => {
+        const threeAgentIds = ['receipted-audience', 'fenced-delivery', 'fenced-catch-up', 'fenced-rejection'];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
-                const threeRoles = scenario.scenarioId === 'receipted-audience';
+                const threeRoles = threeAgentIds.includes(scenario.scenarioId);
                 const twoPages = scenario.scenarioId === 'durable-takeover' || scenario.scenarioId === 'flush-on-hide';
                 expect(scenario.roles, scenario.scenarioKey).toEqual(
                     threeRoles
@@ -441,7 +447,6 @@ describe('alm-conformance recipe family', () => {
             'cross-carrier-duplicate',
             'cross-carrier-duplicate',
             'not-yet-in-sync',
-            'not-yet-in-sync',
             'receipt-exhausted-fallback',
             'no-fallback-after-deadline',
             'ws-unicast-receipt',
@@ -462,6 +467,7 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],
@@ -612,7 +618,7 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('runs both not-yet-in-sync variants over the RTC carriers only, in the full scope', () => {
+    it('runs the not-yet-in-sync expiry over the RTC carriers only, in the full scope', () => {
         const recipeIds = (carrier: CreateAlmConformanceRecipesInput['carrier']) =>
             toRecipes(
                 createAlmConformanceRecipes(toConformanceInput(carrier))
@@ -622,8 +628,6 @@ describe('alm-conformance recipe family', () => {
 
         for (const carrier of ['rtc', 'rtc-with-ws-fallback'] as const) {
             expect(recipeIds(carrier)).toEqual([
-                `alm-${carrier}-not-yet-in-sync-delivered-after-refresh-sender`,
-                `alm-${carrier}-not-yet-in-sync-delivered-after-refresh-receiver`,
                 `alm-${carrier}-not-yet-in-sync-expires-sender`,
                 `alm-${carrier}-not-yet-in-sync-expires-receiver`
             ]);
@@ -631,57 +635,37 @@ describe('alm-conformance recipe family', () => {
         expect(recipeIds('ws')).toEqual([]);
     });
 
-    it('sends above the snapshot with no in-scenario request, and never polls the handle for acknowledged', () => {
-        const [delivered, expires] = createAlmConformanceRecipes(toConformanceInput('rtc'))
-            .filter((scenario) => scenario.scenarioId === 'not-yet-in-sync');
-        const commandsOf = (scenario: AlmConformanceScenario | undefined) => scenario?.sender.commands ?? [];
-        const sendOf = (scenario: AlmConformanceScenario | undefined) => commandsOf(scenario).find((command) => command.kind === 'messages.send');
-        const observedOf = (scenario: AlmConformanceScenario | undefined) =>
-            commandsOf(scenario).flatMap((command) => command.kind === 'messages.observe' ? [command.state] : []);
+    it('sends above every snapshot the group reaches with no in-scenario request, and observes the expiry', () => {
+        const expires = createAlmConformanceRecipes(toConformanceInput('rtc'))
+            .find((scenario) => scenario.scenarioId === 'not-yet-in-sync');
+        const commands = expires?.sender.commands ?? [];
 
-        expect(sendOf(delivered)).toMatchObject({
-            carrier: 'rtc',
-            minSnapshotVersion: { aboveCurrentBy: 1 },
-            ack: 'receiver',
-            reliability: 'at-least-once',
-            ttlMs: 30_000
-        });
-        // Ruling (e): no plain-member write advances the snapshot version, so the variant carries no advance step.
-        for (const scenario of [delivered, expires]) {
-            const requests = commandsOf(scenario).filter((command) => command.kind === 'http.request').map((command) => command.commandId);
-            expect(requests).toEqual([
-                `alm-rtc-${scenario?.scenarioKey}-sender-ensure-group`,
-                `alm-rtc-${scenario?.scenarioKey}-sender-ensure-member`
-            ]);
-        }
-        expect(observedOf(delivered)).toEqual([AL_DELIVERY_ADMITTED_STATES, ['transport-accepted']]);
-
-        expect(sendOf(expires)).toMatchObject({ carrier: 'rtc', minSnapshotVersion: { absolute: 999_999 }, ack: 'receiver', ttlMs: 7_500 });
-        expect(observedOf(expires)).toEqual([AL_DELIVERY_ADMITTED_STATES, ['expired']]);
+        expect(commands.find((command) => command.kind === 'messages.send'))
+            .toMatchObject({ carrier: 'rtc', minSnapshotVersion: { absolute: 999_999 }, ack: 'receiver', ttlMs: 7_500 });
+        expect(commands.filter((command) => command.kind === 'http.request').map((command) => command.commandId)).toEqual([
+            'alm-rtc-not-yet-in-sync-expires-sender-ensure-group',
+            'alm-rtc-not-yet-in-sync-expires-sender-ensure-member'
+        ]);
+        expect(commands.flatMap((command) => command.kind === 'messages.observe' ? [command.state] : []))
+            .toEqual([AL_DELIVERY_ADMITTED_STATES, ['expired']]);
     });
 
-    it('waits for the receiver\'s not-yet-in-sync refusal over RTC, then for one delivery or for absence past expiry', () => {
-        const [delivered, expires] = createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
-            .filter((scenario) => scenario.scenarioId === 'not-yet-in-sync');
-        const refusal = (variant: string) => ({
-            kind: 'wait',
-            match: {
-                kind: 'diagnostic',
-                topic: 'rallar.browser.alm.inbound_diagnostics',
-                payloadPath: 'data',
-                contains: `"typeId":"alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-${variant}",` +
-                    '"carrier":"rtc","outcome":"rejected","reason":"not-yet-in-sync'
-            },
-            timeoutMs: 27_000
-        });
-        const tailOf = (scenario: AlmConformanceScenario | undefined) => (scenario?.receiver.commands ?? []).slice(-3, -1);
+    it('waits for the receiver\'s not-yet-in-sync refusal over RTC, then for absence past expiry', () => {
+        const expires = createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
+            .find((scenario) => scenario.scenarioId === 'not-yet-in-sync');
 
-        expect(tailOf(delivered)).toMatchObject([
-            refusal('delivered-after-refresh'),
-            { kind: 'messages.received', count: 1, absent: false, windowMs: 27_000 }
-        ]);
-        expect(tailOf(expires)).toMatchObject([
-            refusal('expires'),
+        expect((expires?.receiver.commands ?? []).slice(-3, -1)).toMatchObject([
+            {
+                kind: 'wait',
+                match: {
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.inbound_diagnostics',
+                    payloadPath: 'data',
+                    contains: '"typeId":"alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",' +
+                        '"carrier":"rtc","outcome":"rejected","reason":"not-yet-in-sync'
+                },
+                timeoutMs: 27_000
+            },
             { kind: 'messages.received', count: 1, absent: true, windowMs: 10_000 }
         ]);
     });

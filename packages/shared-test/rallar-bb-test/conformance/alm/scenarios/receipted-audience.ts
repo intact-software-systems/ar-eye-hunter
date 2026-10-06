@@ -12,7 +12,7 @@ import {
     toBudgetMs
 } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
-import { toCommittedControlAdmissionWait } from '../alm-conformance-diagnostic-waits.ts';
+import { toControlAdmissionWait } from '../alm-conformance-diagnostic-waits.ts';
 import { toResultAssertion } from '../alm-conformance-message-commands.ts';
 import {
     toAckHoldFaultCommand,
@@ -28,7 +28,7 @@ import {
     toReceivedCommand,
     toSingleArrivalReceiverCommands
 } from '../alm-conformance-receiver-commands.ts';
-import type { AlmConformanceRole } from '../alm-conformance-roles.ts';
+import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -36,8 +36,6 @@ import {
 } from '../alm-conformance-scenario-definition.ts';
 import { toConnectCommand } from '../alm-conformance-session-commands.ts';
 import { toCommandId } from '../alm-conformance-step-identities.ts';
-
-export const RECEIPTED_AUDIENCE_ROLES: readonly AlmConformanceRole[] = ['sender', 'receiver', 'recipient-b'];
 
 const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
 const RETIRED_ACK_TYPE_ID = 'al.control.ack.v1';
@@ -51,7 +49,7 @@ const aggregatedReceipt: AlmConformanceScenarioDefinition = {
     scenarioKey: 'aggregated-receipt',
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
-    roles: RECEIPTED_AUDIENCE_ROLES,
+    roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toReceiptRoles: () => BOTH_CONFIRMED,
     toSenderCommands: (sender) => [
@@ -73,7 +71,7 @@ const missingRecipientRetry: AlmConformanceScenarioDefinition = {
     scenarioKey: 'missing-recipient-retry',
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
-    roles: RECEIPTED_AUDIENCE_ROLES,
+    roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toReceiptRoles: toRetryReceiptRoles,
     toSenderCommands: (sender) => [
@@ -100,7 +98,7 @@ const frozenAudienceMembership: AlmConformanceScenarioDefinition = {
     scenarioKey: 'frozen-audience-membership',
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
-    roles: RECEIPTED_AUDIENCE_ROLES,
+    roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toReceiptRoles: () => RECIPIENT_B_UNCONFIRMED,
     toSenderCommands: (sender) => [
@@ -121,7 +119,7 @@ const unknownAckVersion: AlmConformanceScenarioDefinition = {
     scenarioKey: 'unknown-ack-version',
     tags: FULL_TAGS,
     carriers: RTC_CARRIERS,
-    roles: RECEIPTED_AUDIENCE_ROLES,
+    roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toReceiptRoles: () => BOTH_CONFIRMED,
     toSenderCommands: (sender) => [
@@ -164,10 +162,11 @@ function toRetryReceiptRoles(carrier: AlmConformanceCarrier): AlmConformanceRece
  */
 function toServerReceiptCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return sender.input.carrier !== 'ws' ? [] : [
-        toCommittedControlAdmissionWait({
+        toControlAdmissionWait({
             step: { ...sender, index: 1 },
             name: 'receipt-admitted-1',
-            controlTypeId: AL_CONTROL_RECEIPT_TYPE_ID
+            controlTypeId: AL_CONTROL_RECEIPT_TYPE_ID,
+            outcome: 'committed'
         })
     ];
 }

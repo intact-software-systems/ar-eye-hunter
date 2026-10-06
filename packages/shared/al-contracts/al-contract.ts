@@ -6,8 +6,11 @@ import type { ALQosPolicyRequest } from './al-policy.ts';
 // 1) Message identity
 // -------------------------------------------------------
 
+/** The one envelope version this build stamps and accepts; a decoder refuses any other as `unsupported`. */
+export const AL_MESSAGE_ENVELOPE_VERSION = 3 as const;
+
 export type ALMessageId = Readonly<{
-    v: 2;
+    v: typeof AL_MESSAGE_ENVELOPE_VERSION;
     msgId: string; // UUID for dedup/idempotency
     ts: number; // sender timestamp (epoch ms)
     senderId: string; // stable sender identity (clientId / principalId / nodeId)
@@ -39,8 +42,9 @@ export type ALTargets =
     | Readonly<{
         mode: 'multicast';
         groupRef: GroupRef;
-        membershipEpoch?: number;
         minSnapshotVersion?: number;
+        /** The sender's cached room roster; absent when it held no room snapshot, and a receiver applies no roster floor. */
+        rosterVersion?: number;
         /**
          * The logical audience the origin froze at admission, with the room snapshot version it was read
          * at; both or neither. Absent means not yet frozen: the carrier that admits the message freezes it.
@@ -55,6 +59,8 @@ export type ALTargets =
         principalRef?: ClientPrincipalRef; // scope 'principal': own + co-group live sessions only
         exceptPeerIds?: readonly string[];
         minSnapshotVersion?: number;
+        /** The sender's cached room roster; absent when it held no room snapshot, and a receiver applies no roster floor. */
+        rosterVersion?: number;
         /** Immutable logical audience captured by authoritative server work. */
         recipientPeerIds?: readonly string[];
     }>;
@@ -84,7 +90,7 @@ export type ALConstraints = Readonly<{
 
 export type ALOrdering = Readonly<{
     orderingKey?: string; // e.g. groupId or senderId or roomId
-    epoch?: number; // membership/view/order epoch
+    epoch?: number; // ordering track epoch
     seq?: number; // monotonic within orderingKey + sender or server ordering
 }>;
 
@@ -212,7 +218,7 @@ function buildALMessage<T>(
 
     return {
         id: {
-            v: 2,
+            v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId,
             ts: now,
             senderId: senderId
@@ -276,8 +282,8 @@ export function newALMulticastMessage<T>(
     typeId: string,
     resource: T,
     options?: Readonly<{
-        membershipEpoch?: number;
         minSnapshotVersion?: number;
+        rosterVersion?: number;
         ttlHops?: number;
         ttlMs?: number;
         seq?: number;
@@ -303,8 +309,8 @@ export function newALMulticastMessage<T>(
         targets: {
             mode: 'multicast',
             groupRef: targetGroupRef,
-            membershipEpoch: options?.membershipEpoch,
-            minSnapshotVersion: options?.minSnapshotVersion
+            minSnapshotVersion: options?.minSnapshotVersion,
+            rosterVersion: options?.rosterVersion
         },
         forwarding: options?.nextHopPeerIds !== undefined ||
                 options?.overlayId !== undefined ||
@@ -321,14 +327,9 @@ export function newALMulticastMessage<T>(
                 expiresAtMs
             }
             : undefined,
-        ordering: options?.seq !== undefined ||
-                options?.orderingKey !== undefined ||
-                options?.membershipEpoch !== undefined
+        ordering: options?.seq !== undefined || options?.orderingKey !== undefined
             ? {
-                orderingKey: options?.orderingKey ?? toALGroupTargetKey(
-                    targetGroupRef
-                ),
-                epoch: options?.membershipEpoch,
+                orderingKey: options?.orderingKey ?? toALGroupTargetKey(targetGroupRef),
                 seq: options?.seq
             }
             : undefined,
@@ -340,7 +341,7 @@ export function newALMulticastMessage<T>(
     };
 }
 
-export function toALGroupRef(ref: GroupRef): GroupRef {
+function toALGroupRef(ref: GroupRef): GroupRef {
     return {
         applicationId: ref.applicationId,
         workspaceId: ref.workspaceId,
@@ -358,15 +359,6 @@ export function toALGroupTargetKey(group: string | GroupRef): string {
         group.workspaceId ?? '',
         group.groupId
     ]);
-}
-
-export function readALMulticastTargetGroupRef(message: ALMessage): GroupRef | undefined {
-    const targets = message.targets;
-    if (targets?.mode !== 'multicast') {
-        return undefined;
-    }
-
-    return toALGroupRef(targets.groupRef);
 }
 
 /**
@@ -413,6 +405,7 @@ export function newALBroadcastMessage<T>(
         groupRef?: GroupRef;
         exceptPeerIds?: readonly string[];
         minSnapshotVersion?: number;
+        rosterVersion?: number;
         ttlHops?: number;
         ttlMs?: number;
         reliability?: 'best-effort' | 'at-least-once';
@@ -438,7 +431,8 @@ export function newALBroadcastMessage<T>(
             scope,
             groupRef,
             exceptPeerIds: options?.exceptPeerIds,
-            minSnapshotVersion: options?.minSnapshotVersion
+            minSnapshotVersion: options?.minSnapshotVersion,
+            rosterVersion: options?.rosterVersion
         },
         constraints: options?.ttlHops !== undefined || expiresAtMs !== undefined
             ? {

@@ -973,6 +973,8 @@ function toALOutboundDropReasonCodeFromHandlingPlan(
             return code;
         case 'overloaded':
             return 'capacity';
+        case 'membership-fenced':
+            return 'unauthorized';
         case 'unmet-requirements':
         case 'ordering-rejected':
         case 'resync-required':

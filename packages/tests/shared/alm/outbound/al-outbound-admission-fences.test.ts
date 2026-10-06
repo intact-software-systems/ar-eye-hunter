@@ -344,7 +344,7 @@ async function seedControlObligation(store: ALOutboundAdmissionStore<OutboundTes
 }
 
 function toDeliveredAck(message: ALMessage): ALMessage {
-    return newALAckControlMessage({ v: 2, msgId: `${message.id.msgId}-ack`, senderId: 'peer-1', ts: Date.now() }, {
+    return newALAckControlMessage({ v: 3, msgId: `${message.id.msgId}-ack`, senderId: 'peer-1', ts: Date.now() }, {
         fromPeerId: 'peer-1',
         toPeerId: message.id.senderId,
         ackedMsgId: message.id.msgId,
@@ -405,7 +405,7 @@ function createFenceControlAdmission(fixture: FenceFixture): ALOutboundControlAd
 function toRepairControl(message: ALMessage, reason: ALRepairReason): ALMessage {
     const observedAtEpochMs = Date.now();
     return newALRepairControlMessage(
-        { v: 2, msgId: `${message.id.msgId}-${reason}`, senderId: 'peer-1', ts: observedAtEpochMs },
+        { v: 3, msgId: `${message.id.msgId}-${reason}`, senderId: 'peer-1', ts: observedAtEpochMs },
         {
             fromPeerId: 'peer-1',
             toPeerId: message.id.senderId,

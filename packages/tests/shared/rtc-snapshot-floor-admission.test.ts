@@ -13,6 +13,7 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { room, RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
 
@@ -223,7 +224,7 @@ describe('RTC scoped snapshot-floor admission', () => {
         expect(relay.sent.find((entry) => entry.id.msgId === message.id.msgId)?.forwarding?.nextHopPeerIds).toEqual(['receiver']);
     });
 
-    it.each(['removed-member', 'expired-session', 'foreign-overlay'] as const)(
+    it.each(['expired-session', 'foreign-overlay'] as const)(
         'rejects proven %s authority before delivery or control response',
         async (failure) => {
             const sender = new RtcEndpointFixture('sender', 'receiver');
@@ -241,11 +242,6 @@ describe('RTC scoped snapshot-floor admission', () => {
                     failure === 'expired-session' && session.sessionId === 'sender'
                         ? { ...session, expiresAtEpochMs: Date.now() }
                         : session
-                ),
-                members: current.members.map((member) =>
-                    failure === 'removed-member' && member.principalId === 'sender' && member.status === 'active'
-                        ? { ...member, status: 'removed', removed: member.updated }
-                        : member
                 )
             });
             if (failure === 'foreign-overlay') {
@@ -257,6 +253,51 @@ describe('RTC scoped snapshot-floor admission', () => {
             expect(receiver.sent).toEqual([]);
         }
     );
+
+    it('holds a copy behind the roster it was stamped with, then delivers it once the receiver reaches that roster', async () => {
+        const { sender, receiver } = connectSenderAndReceiver();
+        receiver.observe(1);
+        const message = roomMessage(1, 2);
+
+        await sender.sendAndWaitForDelivery(message);
+        expect(receiver.delivered).toEqual([]);
+        expect(await sender.nacks(message)).toEqual([expect.objectContaining({ fromPeerId: 'receiver', reason: 'not-yet-in-sync' })]);
+
+        observeRoster(receiver, 2, (snapshot) => snapshot);
+        await sender.sendAndWaitForDelivery(message);
+        expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
+    });
+
+    it.each([
+        {
+            label: 'at the stamped roster with the sender member removed',
+            held: 2,
+            toSnapshot: (snapshot: GroupSnapshot) => withSenderRemoved(snapshot)
+        },
+        {
+            label: 'beyond the stamped roster with no sender session',
+            held: 3,
+            toSnapshot: (snapshot: GroupSnapshot) => ({
+                ...withSenderRemoved(snapshot),
+                activeSessions: snapshot.activeSessions.filter((session) => session.sessionId !== 'sender')
+            })
+        }
+    ])('NACKs a fenced sender $label and delivers nothing', async ({ held, toSnapshot }) => {
+        const { sender, receiver } = connectSenderAndReceiver();
+        observeRoster(receiver, held, toSnapshot);
+        const message = roomMessage(2, 2);
+
+        await sender.sendAndWaitForDelivery(message);
+
+        expect(receiver.delivered).toEqual([]);
+        expect(receiver.sent).toHaveLength(1);
+        expect(await sender.nacks(message)).toEqual([expect.objectContaining({
+            msgId: message.id.msgId,
+            fromPeerId: 'receiver',
+            toPeerId: 'sender',
+            reason: 'membership-fenced'
+        })]);
+    });
 
     it('does not use forged visit diagnostics to authorize a relay', async () => {
         const relay = new RtcEndpointFixture('relay', 'receiver');
@@ -275,10 +316,37 @@ describe('RTC scoped snapshot-floor admission', () => {
     });
 });
 
+function connectSenderAndReceiver(): { readonly sender: RtcEndpointFixture; readonly receiver: RtcEndpointFixture; } {
+    const sender = new RtcEndpointFixture('sender', 'receiver');
+    const receiver = new RtcEndpointFixture('receiver', 'sender');
+    endpoints.push(sender, receiver);
+    sender.connect(receiver);
+    receiver.connect(sender);
+    return { sender, receiver };
+}
+
+/** Within one group incarnation every roster change is also a snapshot change. */
+function observeRoster(endpoint: RtcEndpointFixture, rosterVersion: number, toSnapshot: (snapshot: GroupSnapshot) => GroupSnapshot): void {
+    endpoint.observe(rosterVersion);
+    const key = toScopedOverlayId(room);
+    const current = endpoint.groups.read(key)!;
+    endpoint.groups.set(key, toSnapshot({ ...current, group: { ...current.group, rosterVersion } }));
+}
+
+function withSenderRemoved(snapshot: GroupSnapshot): GroupSnapshot {
+    return {
+        ...snapshot,
+        members: snapshot.members.map((member) =>
+            member.principalId === 'sender' && member.status === 'active' ? { ...member, status: 'removed', removed: member.updated } : member
+        )
+    };
+}
+
 /** An origin's room multicast as its RTC copies carry it: with the audience it froze at admission. */
-function roomMessage(minSnapshotVersion: number | undefined): ALMessage {
+function roomMessage(minSnapshotVersion: number | undefined, rosterVersion?: number): ALMessage {
     const message = newALMulticastMessage('sender', { topicId: 'data', contextId: 'room', resourceId: 'record' }, room, 'data', { value: 1 }, {
         minSnapshotVersion,
+        rosterVersion,
         qos: { durability: { algo: 'volatile' } }
     });
     return toALFrozenMulticastMessage(message, { recipientPeerIds: ['relay', 'receiver'], snapshotVersion: 1 });

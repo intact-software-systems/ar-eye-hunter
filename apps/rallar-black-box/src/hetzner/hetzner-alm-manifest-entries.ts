@@ -56,15 +56,18 @@ interface HetznerWithheldAlmScenario {
 }
 
 const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
-    // Reads red by a recorded gap: no plain-member write advances the snapshot version, so a floor one past it is
-    // never reached.
-    { scenarioKey: 'not-yet-in-sync-delivered-after-refresh', carriers: ALM_CONFORMANCE_CARRIERS },
     // The checkpoint tier's lane evidence is local and the hosted full read's; manifest 18 keeps its recorded cells.
     { scenarioKey: 'checkpoint-recovery', carriers: ALM_CONFORMANCE_CARRIERS },
     { scenarioKey: 'checkpoint-lag', carriers: ALM_CONFORMANCE_CARRIERS },
     // The range repair cells' lane evidence is local and the hosted full read's too; manifest 18 stays as recorded.
     { scenarioKey: 'ordering-gap-repair', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },
-    { scenarioKey: 'repair-exhausted', carriers: ALM_CONFORMANCE_CARRIERS }
+    { scenarioKey: 'repair-exhausted', carriers: ALM_CONFORMANCE_CARRIERS },
+    // The membership fence cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
+    { scenarioKey: 'fenced-delivery', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },
+    // A combined recipe keeps only its first prologue, so the recipient that leaves here would miss every later cell.
+    { scenarioKey: 'fenced-catch-up', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },
+    // The same for the sender, which leaves before it sends.
+    { scenarioKey: 'fenced-rejection', carriers: ['ws'] }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {

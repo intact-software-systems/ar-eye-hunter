@@ -5,7 +5,7 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import {
     ALM_STORAGE_DIAGNOSTICS_TOPIC,
-    toCommittedControlAdmissionWait,
+    toControlAdmissionWait,
     toDiagnosticWait,
     toVerdictTimeoutMs
 } from '../alm-conformance-diagnostic-waits.ts';
@@ -60,10 +60,11 @@ function toOrderingResyncSenderCommands(
  * `committed`: a refused NACK would mean the trusted-relay rule no longer holds.
  */
 function toRelayResyncNackWait(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
-    return toCommittedControlAdmissionWait({
+    return toControlAdmissionWait({
         step: { ...sender, index: 2 },
         name: 'relay-resync-nack',
-        controlTypeId: AL_CONTROL_NACK_TYPE_ID
+        controlTypeId: AL_CONTROL_NACK_TYPE_ID,
+        outcome: 'committed'
     });
 }
 

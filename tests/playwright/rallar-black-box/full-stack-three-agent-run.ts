@@ -62,15 +62,17 @@ export async function createThreeAgentRun(input: CreateThreeAgentRunInput): Prom
     }
 }
 
-/** Both recipients connect before the sender starts, as the receiver does in the two-agent run. */
+/**
+ * Both recipients connect before the sender starts, as the receiver does in the two-agent run. recipient-b starts
+ * only once the receiver has connected: the receiver's prologue then creates the run's group and owns it, so the
+ * roles that leave the group (recipient-b, the sender) are never its only owner, whose leave is refused.
+ */
 export async function runRecipeTrioOnThreeAgents(
     run: ThreeAgentRun,
     recipes: RecipeTrio
 ): Promise<RecipeTrioOutcome> {
-    const [receiverRun, recipientBRun] = await Promise.all([
-        startRecipientRecipeRun(run, run.receiver, recipes.receiver),
-        startRecipientRecipeRun(run, run.recipientB, recipes.recipientB)
-    ]);
+    const receiverRun = await startRecipientRecipeRun(run, run.receiver, recipes.receiver);
+    const recipientBRun = await startRecipientRecipeRun(run, run.recipientB, recipes.recipientB);
     const [sender, receiver, recipientB] = await Promise.all([
         runRecipeOnAgent(run, run.sender, recipes.sender),
         receiverRun.outcome,

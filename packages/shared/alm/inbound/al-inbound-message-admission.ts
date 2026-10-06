@@ -157,6 +157,23 @@ export class ALInboundMessageAdmission {
         }
     }
 
+    /** A message its ingress authority cannot judge yet, kept to the deadline its admission would carry. */
+    async retainIncomingMessage(
+        msg: ALMessage,
+        source: ALInboundMessageRuntime.Source,
+        planner: ALInboundPlanner
+    ): Promise<ALInboundMessageRuntime.Acceptance> {
+        const nowMs = this.dependencies.clock.nowMs();
+        const plan = planner(msg, source, { nowMs });
+        const deadline = resolveALMessageExpireAtMs(msg, plan.effective) ??
+            nowMs + this.dependencies.admissionStore.retention.durableEffectTtlMs;
+        return await this.retainPending({
+            kind: 'admit-message',
+            msg: toALInboundMessageWithDeadline(msg, deadline),
+            source
+        });
+    }
+
     async retainPending(pending: ALInboundPendingAdmission): Promise<ALInboundMessageRuntime.Acceptance> {
         const { admissionStore, clock } = this.dependencies;
         const deadline = pending.msg.constraints.expiresAtMs;

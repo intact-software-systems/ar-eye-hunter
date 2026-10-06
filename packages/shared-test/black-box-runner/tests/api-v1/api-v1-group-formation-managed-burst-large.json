@@ -587,7 +587,7 @@
             },
             "send": {
               "id": {
-                "v": 2,
+                "v": 3,
                 "msgId": "rtt-managed-burst-large-{i}x{j}-{runId}",
                 "ts": 0,
                 "senderId": "{rtt{i}x{j}Reporter.sessionIdFrom}",

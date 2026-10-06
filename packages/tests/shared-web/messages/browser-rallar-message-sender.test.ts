@@ -1,78 +1,50 @@
-import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { ALQosPolicyRequest } from '@shared-web/browser/rallar-messages.ts';
-import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type * as AuthModule from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
-import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
-import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
-import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
+import {
+    createRallarTestFacade,
+    getRallarFacadeMocks,
+    resetRallarFacadeTestRuntime,
+    setRallarFacadeRoomSnapshots
+} from './rallar-facade-test-runtime.ts';
 
 interface GroupSnapshotFixtureScope {
     readonly applicationId?: string;
     readonly workspaceId?: string;
 }
 
-const mocks = await vi.hoisted(async () => {
-    const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
-    return {
-        ctx: createDefaultApiMiddlewareTestDouble(),
-        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findFirstGroupStateSnapshotRefSessionIdIsIn>(),
-        findGroupStateSnapshotByRef: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef>(),
-        getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>()
-    };
-});
-vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), async (original): Promise<typeof MiddlewareModule> => ({
-    ...await original(),
-    initialiseMiddleware: async () => ({ middleware: mocks.ctx.middleware, checkpoints: [] })
-}));
-vi.mock(import('@shared/api/auth.ts'), async (original): Promise<typeof AuthModule> => ({
-    ...await original(),
-    readSession: () => mocks.ctx.session,
-    isLoggedIn: () => true
-}));
-vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), async (original): Promise<typeof GroupStateSnapshotsRepositoryModule> => ({
-    ...await original(),
-    findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
-    findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
-    getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
-}));
-let qboxEngine = vi.mocked(mocks.ctx.middleware.qboxEngine);
-let rtcRxStreamer = vi.mocked(mocks.ctx.middleware.rtcRxStreamer);
-let webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
+const mocks = getRallarFacadeMocks();
+let qboxEngine = vi.mocked(mocks.apiMiddleware.middleware.qboxEngine);
+let rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
+let webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
 
 installFakeBroadcastChannelPerTest();
 
 describe('Rallar message send', () => {
-    beforeEach(async () => {
+    beforeEach(() => {
         vi.clearAllMocks();
-        configureTestCacheRepositories();
-        const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
-        mocks.ctx = createDefaultApiMiddlewareTestDouble();
-        qboxEngine = vi.mocked(mocks.ctx.middleware.qboxEngine);
-        rtcRxStreamer = vi.mocked(mocks.ctx.middleware.rtcRxStreamer);
-        webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
-        mockGroupSnapshots([]);
+        resetRallarFacadeTestRuntime();
+        qboxEngine = vi.mocked(mocks.apiMiddleware.middleware.qboxEngine);
+        rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
+        webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
     });
 
     it('reports every unsupported fallback constraint before connecting or queueing', async () => {
-        const facade = createFacade();
+        const facade = createRallarTestFacade();
         const channel = facade.messages.room({
             typeId: 'app.ready',
             roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
             purpose: 'notification'
         });
-        await expect(channel.send(true, { scope: 'all', membershipEpoch: 1 })).rejects.toMatchObject({
+        await expect(channel.send(true, { scope: 'all' })).rejects.toMatchObject({
             name: 'RallarValidationError',
-            issues: expect.arrayContaining([
-                expect.objectContaining({ path: '$.scope', code: 'unsupported' }),
-                expect.objectContaining({ path: '$.membershipEpoch', code: 'unsupported' })
-            ])
+            issues: [expect.objectContaining({ path: '$.scope', code: 'unsupported' })]
         });
         expect(facade.isConnected()).toBe(false);
         expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
@@ -81,7 +53,7 @@ describe('Rallar message send', () => {
 
     it('rejects invalid WS user topics before queueing', async () => {
         await expect(
-            createFacade().messages.ws.send({
+            createRallarTestFacade().messages.ws.send({
                 scope: 'all',
                 topicId: 'manual.chat',
                 typeId: 'chat.message.v1',
@@ -92,7 +64,7 @@ describe('Rallar message send', () => {
 
     it('rejects room-scoped WS sends without a room target before queueing', async () => {
         await expect(
-            createFacade().messages.ws.send({
+            createRallarTestFacade().messages.ws.send({
                 scope: 'room',
                 topicId: 'room.chat',
                 typeId: 'chat.message.v1',
@@ -103,7 +75,7 @@ describe('Rallar message send', () => {
 
     it('rejects invalid RTC room ids before connecting or queueing', async () => {
         await expect(
-            createFacade().messages.rtc.send({
+            createRallarTestFacade().messages.rtc.send({
                 roomId: 'bad room',
                 typeId: 'chat.message.v1',
                 payload: { text: 'invalid room' }
@@ -112,7 +84,7 @@ describe('Rallar message send', () => {
     });
 
     it('rejects corrupt and oversized message payloads before queueing', async () => {
-        const facade = createFacade();
+        const facade = createRallarTestFacade();
         facade.setDefaults({
             applicationId: 'app-1',
             messages: {
@@ -153,7 +125,7 @@ describe('Rallar message send', () => {
         const room = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
         mockGroupSnapshot(room);
 
-        const result = await createFacade().messages.rtc.send({
+        const result = await createRallarTestFacade().messages.rtc.send({
             roomId: 'room-1',
             typeId: 'chat.message.v1',
             resourceId: 'msg-quiet',
@@ -190,7 +162,7 @@ describe('Rallar message send', () => {
     });
 
     it('delegates RTC routing when the room cache is temporarily absent', async () => {
-        const result = await createFacade().messages.rtc.send({
+        const result = await createRallarTestFacade().messages.rtc.send({
             roomRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
@@ -223,7 +195,7 @@ describe('Rallar message send', () => {
         });
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
 
-        const sent = await createFacade().messages.rtc.send({
+        const sent = await createRallarTestFacade().messages.rtc.send({
             roomId: 'room-1',
             typeId: 'chat.message.v1',
             resourceId: 'msg-queued-rtc',
@@ -236,13 +208,14 @@ describe('Rallar message send', () => {
         expect(engineEvents).toEqual(['wake']);
     });
 
-    it('adds cached room snapshotVersion as minSnapshotVersion on RTC room sends', async () => {
+    it('stamps the cached room snapshot and roster versions on RTC room sends', async () => {
         mockGroupSnapshot(withSnapshotVersion(
             createGroupSnapshot('room-1', ['session-1', 'peer-1']),
-            7
+            7,
+            4
         ));
 
-        const result = await createFacade().messages.rtc.send({
+        const result = await createRallarTestFacade().messages.rtc.send({
             roomId: 'room-1',
             typeId: 'chat.message.v1',
             resourceId: 'msg-versioned-rtc',
@@ -258,14 +231,15 @@ describe('Rallar message send', () => {
                 workspaceId: 'workspace-1',
                 groupId: 'room-1'
             },
-            minSnapshotVersion: 7
+            minSnapshotVersion: 7,
+            rosterVersion: 4
         });
         expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0].targets).not.toHaveProperty('groupId');
     });
 
-    it('stamps a typed send\'s stated floor on the room target, and the sender\'s own version without one', async () => {
-        mockGroupSnapshot(withSnapshotVersion(createGroupSnapshot('room-1', ['session-1', 'peer-1']), 7));
-        const channel = createFacade().messages.room({
+    it('stamps the larger of a typed send\'s stated floor and the cached version, and the cached roster either way', async () => {
+        mockGroupSnapshot(withSnapshotVersion(createGroupSnapshot('room-1', ['session-1', 'peer-1']), 7, 4));
+        const channel = createRallarTestFacade().messages.room({
             typeId: 'chat.message.v1',
             roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
             purpose: 'notification'
@@ -273,16 +247,31 @@ describe('Rallar message send', () => {
 
         await channel.send({ text: 'stated floor' }, { strategy: 'rtc', minSnapshotVersion: 42 });
         await channel.send({ text: 'sender floor' }, { strategy: 'rtc' });
+        await channel.send({ text: 'stale stated floor' }, { strategy: 'rtc', minSnapshotVersion: 3 });
 
         expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message.targets)).toMatchObject([
-            { mode: 'multicast', minSnapshotVersion: 42 },
-            { mode: 'multicast', minSnapshotVersion: 7 }
+            { mode: 'multicast', minSnapshotVersion: 42, rosterVersion: 4 },
+            { mode: 'multicast', minSnapshotVersion: 7, rosterVersion: 4 },
+            { mode: 'multicast', minSnapshotVersion: 7, rosterVersion: 4 }
         ]);
+    });
+
+    it('stamps neither version on RTC or WS room sends when no room snapshot is cached', async () => {
+        const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+        const facade = createRallarTestFacade();
+
+        await facade.messages.rtc.send({ roomRef, typeId: 'chat.message.v1', payload: { text: 'uncached rtc' } });
+        await facade.messages.ws.send({ roomRef, topicId: 'room.chat', typeId: 'chat.message.v1', payload: { text: 'uncached ws' } });
+
+        for (const { targets } of [rtcRxStreamer, webSocketQueueBox].map((port) => port.enqueueOutboxIfAbsent.mock.calls[0][0])) {
+            expect(targets).toMatchObject({ groupRef: roomRef });
+            expect(targets).toMatchObject({ minSnapshotVersion: undefined, rosterVersion: undefined });
+        }
     });
 
     it('carries a typed send\'s stated QoS request on the envelope over both carriers, and only the purpose\'s durability without one', async () => {
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
-        const channel = createFacade().messages.room({
+        const channel = createRallarTestFacade().messages.room({
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
             roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
@@ -302,7 +291,7 @@ describe('Rallar message send', () => {
 
     it('rejects a QoS request the envelope cannot carry', async () => {
         await expect(
-            createFacade().messages.ws.send({
+            createRallarTestFacade().messages.ws.send({
                 scope: 'all',
                 topicId: 'app.chat',
                 typeId: 'chat.message.v1',
@@ -336,9 +325,9 @@ describe('Rallar message send', () => {
             ),
             11
         );
-        mockGroupSnapshots([workspaceA, workspaceB]);
+        setRallarFacadeRoomSnapshots([workspaceA, workspaceB]);
 
-        const result = await createFacade().messages.rtc.send({
+        const result = await createRallarTestFacade().messages.rtc.send({
             roomId: 'shared-room',
             roomRef: workspaceB.group,
             typeId: 'chat.message.v1',
@@ -375,7 +364,7 @@ describe('Rallar message send', () => {
             engineEvents.push('wake');
         });
 
-        const result = await createFacade().messages.ws.send({
+        const result = await createRallarTestFacade().messages.ws.send({
             scope: 'all',
             topicId: 'app.chat',
             typeId: 'chat.message.v1',
@@ -404,7 +393,7 @@ describe('Rallar message send', () => {
     });
 
     it('carries a WS send\'s client-assigned ordering on its broadcast envelope, and none without it', async () => {
-        const facade = createFacade();
+        const facade = createRallarTestFacade();
         const send = { scope: 'all', topicId: 'app.chat', typeId: 'chat.message.v1' } as const;
 
         await facade.messages.ws.send({ ...send, payload: { text: 'ordered' }, orderingKey: 'k', seq: 7 });
@@ -416,7 +405,7 @@ describe('Rallar message send', () => {
     });
 
     it('rejects a WS send that states only one half of its ordering with a typed issue for the missing half', async () => {
-        const facade = createFacade();
+        const facade = createRallarTestFacade();
         const send = { scope: 'all', topicId: 'app.chat', typeId: 'chat.message.v1', payload: { text: 'half' } } as const;
 
         await expect(facade.messages.ws.send({ ...send, seq: 7 })).rejects.toMatchObject({
@@ -444,7 +433,7 @@ describe('Rallar message send', () => {
             engineEvents.push('wake');
         });
 
-        const sent = await createFacade().messages.ws.send({
+        const sent = await createRallarTestFacade().messages.ws.send({
             scope: 'all',
             topicId: 'app.chat',
             typeId: 'chat.message.v1',
@@ -458,13 +447,14 @@ describe('Rallar message send', () => {
         expect(engineEvents).toEqual(['wake']);
     });
 
-    it('adds cached room snapshotVersion as minSnapshotVersion on WS room sends', async () => {
+    it('stamps the cached room snapshot and roster versions on WS room sends', async () => {
         mockGroupSnapshot(withSnapshotVersion(
             createGroupSnapshot('room-1', ['session-1', 'peer-1']),
-            11
+            11,
+            5
         ));
 
-        const result = await createFacade().messages.ws.send({
+        const result = await createRallarTestFacade().messages.ws.send({
             roomId: 'room-1',
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
@@ -482,7 +472,8 @@ describe('Rallar message send', () => {
                 workspaceId: 'workspace-1',
                 groupId: 'room-1'
             },
-            minSnapshotVersion: 11
+            minSnapshotVersion: 11,
+            rosterVersion: 5
         });
     });
 
@@ -507,9 +498,9 @@ describe('Rallar message send', () => {
             ),
             13
         );
-        mockGroupSnapshots([workspaceA, workspaceB]);
+        setRallarFacadeRoomSnapshots([workspaceA, workspaceB]);
 
-        const result = await createFacade().messages.ws.send({
+        const result = await createRallarTestFacade().messages.ws.send({
             roomId: 'shared-room',
             roomRef: workspaceB.group,
             topicId: 'room.chat',
@@ -534,7 +525,7 @@ describe('Rallar message send', () => {
 
     it('keeps a lane send on today\'s defaults: at-least-once, no receipt, no durability request', async () => {
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
-        const facade = createFacade();
+        const facade = createRallarTestFacade();
 
         await facade.messages.rtc.send({
             roomId: 'room-1',
@@ -549,32 +540,20 @@ describe('Rallar message send', () => {
 });
 
 function mockGroupSnapshot(snapshot: GroupSnapshot): void {
-    mockGroupSnapshots([snapshot]);
-}
-
-function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
-    mocks.getAllGroupStateSnapshots.mockImplementation(() => [...snapshots]);
-    mocks.findGroupStateSnapshotByRef.mockImplementation((ref) =>
-        snapshots.find((snapshot) =>
-            snapshot.group.groupId === ref.groupId &&
-            snapshot.group.applicationId === ref.applicationId &&
-            snapshot.group.workspaceId === ref.workspaceId
-        )
-    );
-    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation((sessionId) =>
-        snapshots.find((snapshot) => snapshot.activeSessions.some((session) => session.sessionId === sessionId))?.group
-    );
+    setRallarFacadeRoomSnapshots([snapshot]);
 }
 
 function withSnapshotVersion(
     snapshot: GroupSnapshot,
-    snapshotVersion: number
+    snapshotVersion: number,
+    rosterVersion = snapshot.group.rosterVersion
 ): GroupSnapshot {
     return {
         ...snapshot,
         group: {
             ...snapshot.group,
-            snapshotVersion
+            snapshotVersion,
+            rosterVersion
         }
     };
 }
@@ -592,10 +571,4 @@ function createGroupSnapshot(
         groupId,
         sessionIds
     });
-}
-
-function createFacade() {
-    const facade = createRallarFacade();
-    onTestFinished(() => facade.disconnect());
-    return facade;
 }

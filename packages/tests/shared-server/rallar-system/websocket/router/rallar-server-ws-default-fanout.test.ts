@@ -164,7 +164,7 @@ function createReceiverRoomSend(
     );
     return {
         ...base,
-        id: { v: 2, msgId, senderId: 'origin', ts: nowMs },
+        id: { v: 3, msgId, senderId: 'origin', ts: nowMs },
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
         ...(expiresAtMs === undefined ? {} : { constraints: { ...base.constraints, expiresAtMs } })
     };
@@ -172,7 +172,7 @@ function createReceiverRoomSend(
 
 function createReceiverAck(ackedMsgId: string, recipientId: string, nowMs: number): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `${recipientId}-ack-${ackedMsgId}`, senderId: recipientId, ts: nowMs },
+        { v: 3, msgId: `${recipientId}-ack-${ackedMsgId}`, senderId: recipientId, ts: nowMs },
         {
             ackedMsgId,
             fromPeerId: recipientId,

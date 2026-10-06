@@ -333,7 +333,7 @@ describe('ALInboundMessageRuntime', () => {
         const { runtime, controlAcceptances } = createInboundHarness(stores);
 
         const control = newALAckControlMessage(
-            { v: 2, msgId: 'control-missing-ack', ts: 1, senderId: 'peer-2' },
+            { v: 3, msgId: 'control-missing-ack', ts: 1, senderId: 'peer-2' },
             {
                 ackedMsgId: 'missing-msg',
                 originPeerId: 'peer-1',
@@ -419,7 +419,7 @@ describe('ALInboundMessageRuntime', () => {
 
         await runtime.admitIncomingMessage(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-release-ack', ts: 1, senderId: 'peer-2' },
+                { v: 3, msgId: 'control-release-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: seq2.id.msgId,
                     originPeerId: 'peer-1',
@@ -495,7 +495,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
 
         await runtime.admitIncomingMessage(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-subtree-ack', ts: 1, senderId: 'peer-2' },
+                { v: 3, msgId: 'control-subtree-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
@@ -545,7 +545,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         await forwardingStarted.promise;
         const accepted = await runtime.admitIncomingMessage(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-drain-ack', ts: 1, senderId: 'peer-2' },
+                { v: 3, msgId: 'control-drain-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
@@ -619,7 +619,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         nowMs += 100;
         await runtime.admitIncomingMessage(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-expired-ack', ts: 1, senderId: 'peer-2' },
+                { v: 3, msgId: 'control-expired-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
@@ -884,7 +884,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
 
         await runtime1.admitIncomingMessage(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-restart-ack', ts: 1, senderId: 'peer-2' },
+                { v: 3, msgId: 'control-restart-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',

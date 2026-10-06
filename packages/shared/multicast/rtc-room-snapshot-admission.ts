@@ -4,16 +4,19 @@ import {
     type ALMessage
 } from '../al-contracts/al-contract.ts';
 import { resolveALAdmittedRoomAudience } from '../al-contracts/al-frozen-multicast-audience.ts';
-import type { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
+import type { ALMessageDropReasonCode, ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
 import type { OverlayInfo } from '../api/api-config.ts';
 import { isSameGroupRef } from '../api/api-type-utils.ts';
-import type {
-    GroupMember,
-    GroupPresenceSession,
-    GroupRef,
-    GroupSnapshot
-} from '../api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import { isRoomLayoutOverlay } from '../repository/is-accepted-room-layout-overlay.ts';
+import {
+    resolveRtcRoomPeerDenial,
+    resolveRtcRoomRosterPosition,
+    resolveRtcRoomSenderDenial,
+    type RtcRoomAuthorityDenial,
+    type RtcRoomRosterPosition,
+    type RtcRoomSessionObservation
+} from './resolve-rtc-room-peer-denial.ts';
 
 export interface RtcRoomSnapshotAdmissionInput {
     readonly message: ALMessage;
@@ -38,17 +41,13 @@ export type RtcRoomSnapshotAdmission =
     }
     | RtcRoomAuthorityDenial;
 
-type RtcRoomAuthorityDenial =
-    | { readonly kind: 'pending'; readonly reason: string; }
-    | {
-        readonly kind: 'unauthorized';
-        readonly reason: string;
-        /** Current edge absence denies sending without declaring retained origin work permanently unroutable. */
-        readonly cause: 'authority-rejected' | 'edge-unavailable';
-    };
-
 export interface RtcRoomSnapshotHandlingInput extends RtcRoomSnapshotAdmissionInput {
     readonly plan: ALMessageHandlingPlan;
+}
+
+interface RtcRoomRefusal {
+    readonly code: Extract<ALMessageDropReasonCode, 'not-yet-in-sync' | 'membership-fenced' | 'unauthorized'>;
+    readonly dropReason: string;
 }
 
 export function computeRtcRoomSnapshotAdmission(input: RtcRoomSnapshotAdmissionInput): RtcRoomSnapshotAdmission {
@@ -67,49 +66,19 @@ export function computeRtcRoomSnapshotAdmission(input: RtcRoomSnapshotAdmissionI
     if (!snapshot) {
         return { kind: 'pending', reason: 'Awaiting a room authority observation' };
     }
-    const roomDenial = resolveRoomObservationDenial(roomRef, snapshot, input.nowMs);
-    if (roomDenial) {
-        return roomDenial;
-    }
     const authority = {
         roomRef,
         nowMs: input.nowMs,
         sessions: new Map(snapshot.activeSessions.map((session) => [session.sessionId, session])),
         members: new Map(snapshot.members.map((member) => [member.principalId, member]))
     };
-    const requiredPeerIds = [input.message.id.senderId, input.selfPeerId, input.fromPeerId, input.recipientPeerId];
-    const denials = [
-        ...Array.from(
-            new Set(requiredPeerIds),
-            (peerId) => peerId === undefined ? undefined : resolveRoomSessionDenial(authority, peerId)
-        ),
-        resolveRtcRoomEdgeDenial(input, roomRef)
-    ];
-    const denial = denials.find((candidate) => candidate?.kind === 'unauthorized') ??
-        denials.find((candidate) => candidate !== undefined);
-    if (denial) {
-        return denial;
-    }
-    const targets = input.message.targets;
-    const floor = targets && targets.mode !== 'unicast' ? targets.minSnapshotVersion : undefined;
-    // The target floor applies at receiver/relay ingress; origin authority is checked above.
-    if (input.fromPeerId !== undefined && floor !== undefined && snapshot.group.snapshotVersion < floor) {
-        return { kind: 'pending', reason: 'Awaiting the required room snapshot version' };
-    }
-    const authorizedPeerIds = snapshot.activeSessions.filter((session) =>
-        resolveRoomSessionDenial(authority, session.sessionId) === undefined
-    ).map((session) => session.sessionId);
-    const memberPeerIdSet = new Set(authorizedPeerIds);
-    const forwardingPeerIds = isRoomLayoutOverlay(input.overlay, roomRef)
-        ? input.overlay.nextHopSessionIds.filter((peerId) => memberPeerIdSet.has(peerId))
-        : [];
-    return {
-        kind: 'authorized',
-        memberPeerIds: authorizedPeerIds,
-        forwardingPeerIds,
-        snapshotVersion: snapshot.group.snapshotVersion,
-        deliversLocally: resolveALAdmittedRoomAudience(input.message, authorizedPeerIds).includes(input.selfPeerId)
-    };
+    const senderRoster = input.fromPeerId === undefined
+        ? undefined
+        : resolveRtcRoomRosterPosition(input.message, snapshot);
+    return resolveRoomObservationDenial(roomRef, snapshot, input.nowMs) ??
+        resolveRoomAuthorityDenial(input, authority, senderRoster) ??
+        resolveRoomFloorDenial(input, snapshot, senderRoster) ??
+        toAuthorizedRoomAdmission(input, authority, snapshot);
 }
 
 export function planRtcRoomSnapshotAdmission(input: RtcRoomSnapshotHandlingInput): ALMessageHandlingPlan {
@@ -127,23 +96,101 @@ export function toRtcRoomSnapshotHandlingPlan(
     if (admission.kind === 'not-room' || plan.dropReasonCode === 'expired') {
         return plan;
     }
-    const pending = admission.kind === 'pending';
+    const refusal = toRtcRoomRefusal(admission);
     return {
         ...plan,
-        // The detail names which denial fired; the code stays at its head because `dropReason` is
-        // what the inbound acceptance carries, and the receiver's room-authority refresh reads it.
-        dropReason: pending ? `not-yet-in-sync: ${admission.reason}` : 'unauthorized',
-        dropReasonCode: pending ? 'not-yet-in-sync' : 'unauthorized',
+        dropReason: refusal.dropReason,
+        dropReasonCode: refusal.code,
         localDelivery: { enabled: false, persist: false, deferred: false },
         forwarding: { enabled: false, persist: false, nextHopPeerIds: [] },
         ack: { enabled: false, algo: 'none', deferred: false },
         nack: {
-            enabled: pending && fromPeerId !== undefined,
+            enabled: refusal.code !== 'unauthorized' && fromPeerId !== undefined,
             toPeerId: fromPeerId,
-            reason: pending ? 'not-yet-in-sync' : 'unauthorized',
+            reason: refusal.code,
             missingRanges: []
         },
         repair: { enabled: false, algo: 'none' }
+    };
+}
+
+/**
+ * The detail names which denial fired; the code stays at its head because `dropReason` is
+ * what the inbound acceptance carries, and the receiver's room-authority refresh reads it.
+ */
+function toRtcRoomRefusal(denial: RtcRoomAuthorityDenial): RtcRoomRefusal {
+    if (denial.kind === 'pending') {
+        return { code: 'not-yet-in-sync', dropReason: `not-yet-in-sync: ${denial.reason}` };
+    }
+    return denial.cause === 'membership-fenced'
+        ? { code: 'membership-fenced', dropReason: `membership-fenced: ${denial.reason}` }
+        : { code: 'unauthorized', dropReason: 'unauthorized' };
+}
+
+/**
+ * An unauthorized denial outranks a pending one, so a fenced sender is refused even while another peer is awaited. A
+ * copy at ingress has a sender roster position, and its sender is judged on that roster; the origin's sender is a peer.
+ */
+function resolveRoomAuthorityDenial(
+    input: RtcRoomSnapshotAdmissionInput,
+    authority: RtcRoomSessionObservation,
+    senderRoster: RtcRoomRosterPosition | undefined
+): RtcRoomAuthorityDenial | undefined {
+    const senderId = input.message.id.senderId;
+    const otherPeerIds = new Set(
+        [input.selfPeerId, input.fromPeerId, input.recipientPeerId].filter((peerId): peerId is string =>
+            peerId !== undefined && peerId !== senderId
+        )
+    );
+    const denials = [
+        senderRoster === undefined
+            ? resolveRtcRoomPeerDenial(authority, senderId)
+            : resolveRtcRoomSenderDenial(authority, senderId, senderRoster),
+        ...Array.from(otherPeerIds, (peerId) => resolveRtcRoomPeerDenial(authority, peerId)),
+        resolveRtcRoomEdgeDenial(input, authority.roomRef)
+    ];
+    return denials.find((candidate) => candidate?.kind === 'unauthorized') ??
+        denials.find((candidate) => candidate !== undefined);
+}
+
+/** The target floors apply at receiver/relay ingress; the origin's own authority is checked above. */
+function resolveRoomFloorDenial(
+    input: RtcRoomSnapshotAdmissionInput,
+    snapshot: GroupSnapshot,
+    senderRoster: RtcRoomRosterPosition | undefined
+): RtcRoomAuthorityDenial | undefined {
+    if (input.fromPeerId === undefined) {
+        return undefined;
+    }
+    const targets = input.message.targets;
+    const floor = targets && targets.mode !== 'unicast' ? targets.minSnapshotVersion : undefined;
+    if (floor !== undefined && snapshot.group.snapshotVersion < floor) {
+        return { kind: 'pending', reason: 'Awaiting the required room snapshot version' };
+    }
+    if (senderRoster === 'behind') {
+        return { kind: 'pending', reason: 'Awaiting the required room roster version' };
+    }
+    return undefined;
+}
+
+function toAuthorizedRoomAdmission(
+    input: RtcRoomSnapshotAdmissionInput,
+    authority: RtcRoomSessionObservation,
+    snapshot: GroupSnapshot
+): RtcRoomSnapshotAdmission {
+    const authorizedPeerIds = snapshot.activeSessions.filter((session) =>
+        resolveRtcRoomPeerDenial(authority, session.sessionId) === undefined
+    ).map((session) => session.sessionId);
+    const memberPeerIdSet = new Set(authorizedPeerIds);
+    const forwardingPeerIds = isRoomLayoutOverlay(input.overlay, authority.roomRef)
+        ? input.overlay.nextHopSessionIds.filter((peerId) => memberPeerIdSet.has(peerId))
+        : [];
+    return {
+        kind: 'authorized',
+        memberPeerIds: authorizedPeerIds,
+        forwardingPeerIds,
+        snapshotVersion: snapshot.group.snapshotVersion,
+        deliversLocally: resolveALAdmittedRoomAudience(input.message, authorizedPeerIds).includes(input.selfPeerId)
     };
 }
 
@@ -168,45 +215,6 @@ function resolveRoomObservationDenial(
         (snapshot.group.expiresAtEpochMs !== null && snapshot.group.expiresAtEpochMs <= nowMs)
     ) {
         return { kind: 'unauthorized', cause: 'authority-rejected', reason: 'Room authority is inactive or expired' };
-    }
-    return undefined;
-}
-
-interface RtcRoomSessionObservation {
-    readonly roomRef: GroupRef;
-    readonly sessions: ReadonlyMap<string, GroupPresenceSession>;
-    readonly members: ReadonlyMap<string, GroupMember>;
-    readonly nowMs: number;
-}
-
-function resolveRoomSessionDenial(
-    input: RtcRoomSessionObservation,
-    peerId: string
-): RtcRoomAuthorityDenial | undefined {
-    const session = input.sessions.get(peerId);
-    if (!session) {
-        return { kind: 'pending', reason: 'Awaiting room session authority' };
-    }
-    if (
-        !isSameGroupRef(session, input.roomRef) || session.status !== 'active' ||
-        session.expiresAtEpochMs <= input.nowMs
-    ) {
-        return {
-            kind: 'unauthorized',
-            cause: 'authority-rejected',
-            reason: 'Room session authority is inactive, expired, or in another scope'
-        };
-    }
-    const member = input.members.get(session.principalId);
-    if (!member) {
-        return { kind: 'pending', reason: 'Awaiting room member authority' };
-    }
-    if (member.status !== 'active' || !isSameGroupRef(member, input.roomRef)) {
-        return {
-            kind: 'unauthorized',
-            cause: 'authority-rejected',
-            reason: 'Room member authority is inactive or in another scope'
-        };
     }
     return undefined;
 }

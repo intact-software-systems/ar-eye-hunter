@@ -122,7 +122,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             for (const fromPeerId of respondents) {
                 await runtime1.acceptControlMessage(
                     newALAckControlMessage(
-                        { v: 2, msgId: crypto.randomUUID(), ts: Date.now(), senderId: fromPeerId },
+                        { v: 3, msgId: crypto.randomUUID(), ts: Date.now(), senderId: fromPeerId },
                         {
                             ackedMsgId: msg.id.msgId,
                             originPeerId: 'self',

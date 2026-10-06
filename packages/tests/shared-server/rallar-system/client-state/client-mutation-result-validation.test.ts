@@ -403,7 +403,7 @@ function createExecutionMetadata(): AppInboxExecutionMetadata {
     return {
         enqueue: { type: AppInboxType.CLIENT_EXPIRED_SESSIONS, data: { atEpochMs: 8_000, afterKey: null } },
         message: {
-            id: { v: 2, msgId: entry.key.resourceId, ts: 1_000, senderId: 'client-service' },
+            id: { v: 3, msgId: entry.key.resourceId, ts: 1_000, senderId: 'client-service' },
             route: entry.key,
             payload: { typeId: AppInboxType.CLIENT_EXPIRED_SESSIONS, contentType: 'application/json', resource: '{}' }
         },

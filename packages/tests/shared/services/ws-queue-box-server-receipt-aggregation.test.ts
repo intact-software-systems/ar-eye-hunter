@@ -98,13 +98,13 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local' });
         const fromServer: ALMessage = {
             ...roomMessage(fixture.clock.nowMs),
-            id: { v: 2, msgId: 'server-room-1', ts: fixture.clock.nowMs, senderId: 'server' },
+            id: { v: 3, msgId: 'server-room-1', ts: fixture.clock.nowMs, senderId: 'server' },
             delivery: undefined,
             qos: { ack: { algo: 'receiver' }, durability: { algo: 'volatile' } }
         };
         await fixture.service.enqueueOutboxIfAbsent(fromServer);
         const forged = newALAckControlMessage(
-            { v: 2, msgId: 'ack-c-for-b', senderId: 'c', ts: fixture.clock.nowMs },
+            { v: 3, msgId: 'ack-c-for-b', senderId: 'c', ts: fixture.clock.nowMs },
             {
                 ackedMsgId: 'server-room-1',
                 fromPeerId: 'c',
@@ -231,7 +231,7 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local' });
         const toServer: ALMessage = {
             ...roomMessage(fixture.clock.nowMs),
-            id: { v: 2, msgId: 'to-server-1', ts: fixture.clock.nowMs, senderId: 'a' },
+            id: { v: 3, msgId: 'to-server-1', ts: fixture.clock.nowMs, senderId: 'a' },
             route: { topicId: 'server.command', resourceId: 'resource', contextId: 'server' },
             targets: { mode: 'unicast', toPeerId: 'server' }
         };
@@ -545,7 +545,7 @@ async function admitRoomMessage(fixture: ReceiptFixture): Promise<void> {
 
 function roomMessage(nowMs: number): ALMessage {
     return {
-        id: { v: 2, msgId: 'room-message-1', ts: nowMs, senderId: 'a' },
+        id: { v: 3, msgId: 'room-message-1', ts: nowMs, senderId: 'a' },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs: nowMs + ROOM_MESSAGE_LIFETIME_MS },
@@ -556,7 +556,7 @@ function roomMessage(nowMs: number): ALMessage {
 
 function receiverAck(fixture: ReceiptFixture, recipient: 'b' | 'c'): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${recipient}`, senderId: recipient, ts: fixture.clock.nowMs },
+        { v: 3, msgId: `ack-${recipient}`, senderId: recipient, ts: fixture.clock.nowMs },
         {
             ackedMsgId: 'room-message-1',
             fromPeerId: recipient,

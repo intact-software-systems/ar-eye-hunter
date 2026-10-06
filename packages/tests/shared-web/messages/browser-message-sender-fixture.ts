@@ -48,7 +48,7 @@ export function createBrowserMessageSenderFixture(
         resolveCurrentRoomRef: () => roomRef,
         toRoomId: (room) => typeof room === 'string' ? room : room?.groupId,
         resolveRoomRef: () => roomRef,
-        resolveRoomMinSnapshotVersion: (_room, explicit) => explicit
+        resolveRoomSendFence: (_room, explicit) => ({ minSnapshotVersion: explicit, rosterVersion: undefined })
     });
     return {
         sender,

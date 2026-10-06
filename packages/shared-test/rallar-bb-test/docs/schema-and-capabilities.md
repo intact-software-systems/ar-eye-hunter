@@ -302,6 +302,51 @@ connect, and there the hold lands seconds before the send. A lost race on Hetzne
 reddens the scenario (an ACK that should have been held confirms `recipient-b`); it
 never makes one green.
 
+The `membership-fence` conformance scenarios (`scenarios/membership-fence/`) run on the
+same three agents, over `ws` and `rtc`, in the full scope. Every room send carries the
+roster of its sender's cached room snapshot as `targets.rosterVersion`, beside
+`minSnapshotVersion`; a received message event's `data` states it as `rosterVersion`
+right after `typeId` (absent for a unicast, or for a room send whose sender cached no
+snapshot). The roster moves by the self-service membership route the ensure step
+already uses: `leave-roster` writes `{ status: 'left' }` for the page's own principal,
+which advances the group's roster and snapshot versions, and the next scenario's
+`ensure-member` joins it again. The three-agent run starts `recipient-b` only once the
+receiver has connected, so the receiver's prologue creates the run's group and owns it:
+the roles that leave (`recipient-b`, the sender) are never its only owner, whose own
+leave the server refuses `last-owner`. A removed member could not rejoin itself, and
+only the owner removes one, so no cell removes.
+
+- `fenced-delivery`: the sender's room send reaches both recipients. Nothing moves the
+  roster inside the cell, so each recipient reads the group snapshot over HTTP after
+  the arrival (`read-roster`, `GET .../groups/<groupId>`) and waits for the arrival of
+  the cell's type whose `rosterVersion` equals that read's `body.group.rosterVersion`
+  (`roster-stamp`, a `{resultCache...}` token in `contains`).
+- `fenced-catch-up`: the sender floors its first send `{ aboveCurrentBy: 1 }` and waits
+  for the `al.control.nack.v2` that refuses it `not-yet-in-sync`; only then does it send
+  the cue, an unfloored second send. Over `rtc` a recipient refuses the copy and the
+  sender commits its NACK. Over `ws` the server retains the send as a pending admission
+  and answers an advisory NACK, which the sender leaves not handled, so the wait matches
+  the NACK's arrival with no outcome. `recipient-b` leaves the group once the cue reaches
+  it, which moves the snapshot to the floor: over `rtc` the sender's next copy is
+  admitted, over `ws` the server's replay finds the floor met and delivers the retained
+  send. The receiver receives the floored send once (`received-floored`) and nothing
+  beyond the two sends. Over `rtc` the receiver first waits for its own
+  `admission-outcome` refusing the floored send `rejected` with a reason starting
+  `not-yet-in-sync`.
+- `fenced-rejection` (`ws` only): the sender leaves the group and then sends. The WS
+  server, at or beyond the send's roster, finds the sender no longer an active member,
+  refuses the send and NACKs it `membership-fenced`. The sender waits for the committed
+  NACK, observes the handle `rejected` and asserts `failure.kind: 'relay-rejected'`,
+  `relayRejection.relay: 'trusted-server'` and `relayRejection.reason:
+  'membership-fenced'`; neither recipient receives the send. Over `rtc` a sender's own
+  room authority refuses its send once its cache holds the leave, before any frame
+  leaves the page, and the harness holds no page's inbound group-state stream, so the
+  receiver's fenced NACK over RTC stays a unit pin.
+
+The hosted manifest 22 withholds the three cells, so it stays as recorded: its combined
+recipe keeps one prologue for every scenario, so a member that left would miss every
+later cell.
+
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
 `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that
 refuses the second copy as `not-handled`/`duplicate`. Both orders prove that
@@ -365,21 +410,14 @@ seq 3 and seq 4 wait for a seq 2 that never arrives. The hold stays until the pa
 the second frame reach the receiver inside its absence window. Both cells are withheld from the hosted
 manifests, as the checkpoint cells are; they run in the local lane and in the observation's full read.
 
-The `not-yet-in-sync` conformance scenario runs over `rtc` and
-`rtc-with-ws-fallback`, in two variants. Its receiver first waits for its own
-RTC `admission-outcome` refusing the send as `rejected` with a reason starting
+The `not-yet-in-sync` conformance scenario (`not-yet-in-sync-expires`) runs over
+`rtc` and `rtc-with-ws-fallback`. Its receiver first waits for its own RTC
+`admission-outcome` refusing the send as `rejected` with a reason starting
 `not-yet-in-sync`; that refusal writes no rows, sends the sender a NACK and
-refreshes the receiver's room once. `delivered-after-refresh` states
-`{ aboveCurrentBy: 1 }` and its receiver waits to receive the message once, so
-it proves NACK → retry → delivery once the group version advances; the sender
-proves only its own `transport-accepted`. Today no plain-member write advances
-that version (the active-member PUT is a no-op for an active member, and a
-presence write moves only the presence revision), so the variant carries no
-advance step and is a named red at the receiver's `received-1`. The Hetzner
-two-agent manifest withholds it for that reason. `expires` states
-`{ absolute: 999999 }` with the 7.5 s expiry lifetime; the receiver proves
-absence for the rest of that lifetime and past it, and the sender observes
-`expired`.
+refreshes the receiver's room once. The send states `{ absolute: 999999 }` with
+the 7.5 s expiry lifetime; the receiver proves absence for the rest of that
+lifetime and past it, and the sender observes `expired`. Delivery once the
+version advances is `fenced-catch-up`'s.
 
 The fallback family runs over `rtc-with-ws-fallback` only (D56, D63–D66), two agents each.
 `fallback-within-deadline` (smoke) arms an RTC `drop` fault on the sender's own frames of the send until

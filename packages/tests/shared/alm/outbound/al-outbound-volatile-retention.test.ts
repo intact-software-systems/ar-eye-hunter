@@ -209,7 +209,7 @@ function readRowExpiries(
 /** The trusted server refusing a message it holds no receipt row for: the owner and sent rows decide it. */
 function toServerRefusal(message: ALMessage): ALMessage {
     return newALNackControlMessage(
-        { v: 2, msgId: `refusal-${message.id.msgId}`, senderId: SERVER_PEER_ID, ts: Date.now() },
+        { v: 3, msgId: `refusal-${message.id.msgId}`, senderId: SERVER_PEER_ID, ts: Date.now() },
         {
             fromPeerId: SERVER_PEER_ID,
             toPeerId: message.id.senderId,

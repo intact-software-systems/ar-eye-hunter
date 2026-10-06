@@ -175,7 +175,7 @@ function createDefaultAuthFixture(emitState: () => void): AuthFixture {
 
 function openObservedMessage(fixture: AuthFixture, msgId: string): RallarMessageHandle {
     return fixture.deliveries.open({
-        id: { v: 2, msgId, ts: Date.now(), senderId: fixture.middleware.session.sessionId },
+        id: { v: 3, msgId, ts: Date.now(), senderId: fixture.middleware.session.sessionId },
         route: { topicId: 'app.event', contextId: 'all', resourceId: msgId },
         payload: { typeId: 'app.event', resource: 'true' },
         delivery: { reliability: 'at-least-once', ack: 'receiver' }

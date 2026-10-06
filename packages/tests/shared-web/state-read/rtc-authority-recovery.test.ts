@@ -311,6 +311,136 @@ describe('RTC room authority recovery', () => {
     });
 });
 
+describe('the roster fence at an RTC receiver', () => {
+    it('fences a sender the server-assembled roster removed after its stamp, NACKs it and reads no authority', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        const nativeRuntime = installNativeRtcRuntime();
+        const senderGroups = new LatestRepository<string, GroupSnapshot>();
+        const receiverGroups = new LatestRepository<string, GroupSnapshot>();
+        const stamped = createAcceptedRoomSnapshot();
+        senderGroups.set(toScopedOverlayId(room), stamped);
+        receiverGroups.set(toScopedOverlayId(room), assembleSenderRemoval(stamped));
+        const refreshedFloors: number[] = [];
+        const sender = new NativeAuthorityEndpoint({
+            sessionId: 'sender',
+            peerId: 'receiver',
+            nativeRuntime,
+            groups: senderGroups,
+            refresh: undefined,
+            faultPort: createPassThroughTransportFaultPort(),
+            qosProvider: undefined,
+            outboundSettlements: undefined
+        });
+        const receiver = new NativeAuthorityEndpoint({
+            sessionId: 'receiver',
+            peerId: 'sender',
+            nativeRuntime,
+            groups: receiverGroups,
+            refresh: new RtcGroupSnapshotRefresh({
+                refreshGroupSnapshot: async (_roomRef, minSnapshotVersion) => {
+                    refreshedFloors.push(minSnapshotVersion);
+                }
+            }),
+            faultPort: createPassThroughTransportFaultPort(),
+            qosProvider: undefined,
+            outboundSettlements: undefined
+        });
+        onTestFinished(() => {
+            receiver.close();
+            sender.close();
+            senderGroups.dispose();
+            receiverGroups.dispose();
+            nativeRuntime.dispose();
+            vi.restoreAllMocks();
+            vi.useRealTimers();
+        });
+        await sender.native.open();
+        await receiver.native.open();
+        const message = newALMulticastMessage(
+            'sender',
+            { topicId: 'room.messages', contextId: 'room', resourceId: 'fenced' },
+            room,
+            'fenced.message',
+            { value: 1 },
+            {
+                ttlMs: 30_000,
+                reliability: 'at-least-once',
+                ack: 'all-logical-recipients',
+                minSnapshotVersion: stamped.group.snapshotVersion,
+                rosterVersion: stamped.group.rosterVersion,
+                qos: { durability: { algo: 'volatile' }, ack: { algo: 'hop', opts: { timeoutMs: 5_000 } } }
+            }
+        );
+
+        expect(await sender.multicast.enqueueIfAbsent(message)).toMatchObject({ verdict: { kind: 'admitted' } });
+        await vi.advanceTimersByTimeAsync(0);
+        await sender.transferTo(receiver);
+        await waitForOwnedQueueWork(receiver.inboundStores.workQueue);
+
+        expect(receiver.delivered).toEqual([]);
+        expect(receiver.admissions).toContainEqual(expect.objectContaining({
+            kind: 'admission-outcome',
+            msgId: message.id.msgId,
+            outcome: 'rejected',
+            reason: 'membership-fenced: Room sender has no live session in a roster beyond its stamp'
+        }));
+        expect(receiver.messages().map(parseALControlMessage)).toEqual([{
+            type: 'nack',
+            payload: expect.objectContaining({ msgId: message.id.msgId, toPeerId: 'sender', reason: 'membership-fenced' })
+        }]);
+        expect(refreshedFloors).toEqual([]);
+
+        await receiver.transferTo(sender);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(sender.settlements.filter((settlement) => settlement.kind === 'receipt-exhausted')).toEqual([
+            expect.objectContaining({
+                msgId: message.id.msgId,
+                cause: 'hop-refused',
+                hopPeerId: 'receiver',
+                nackReason: 'membership-fenced'
+            })
+        ]);
+    });
+});
+
+/**
+ * The removal as the server assembles it: ownership passes to the receiver, the roster moves past the stamp and the
+ * removed member's session drops out of the snapshot.
+ */
+function assembleSenderRemoval(stamped: GroupSnapshot): GroupSnapshot {
+    const members = stamped.members.map((member) =>
+        member.principalId === 'sender' && member.status === 'active'
+            ? { ...member, role: 'member' as const, status: 'removed' as const, removed: member.updated }
+            : { ...member, role: 'owner' as const }
+    );
+    const groupRevision = stamped.group.snapshotVersion + 1;
+    return assembleGroupStateSnapshot({
+        group: {
+            ...stamped.group,
+            snapshotVersion: groupRevision,
+            rosterVersion: stamped.group.rosterVersion + 1,
+            activeMemberCount: stamped.group.activeMemberCount - 1,
+            ownerPrincipalId: 'receiver'
+        },
+        members,
+        summary: {
+            ...room,
+            causalRevision: { ...stamped.causalRevision, groupRevision },
+            activePrincipalIds: ['sender', 'receiver'],
+            activeSessionIds: ['sender', 'receiver'],
+            activeSessions: stamped.activeSessions,
+            activePrincipalCount: 2,
+            activeSessionCount: 2,
+            computedAtEpochMs: 1
+        },
+        authoritativeSessions: stamped.activeSessions,
+        groupRevision,
+        observedAtEpochMs: 1_000,
+        sessionLeaseFields: 'authoritative'
+    }, (key, failure) => new Error(`${key}: ${failure}`));
+}
+
 describe('latest-wins receiver delivery and independent ordering', () => {
     it.each(['ordered-latest', 'unsequenced-latest', 'ordinary-ordered'] as const)(
         'preserves independent latest-wins and ordered delivery contracts: %s',
@@ -616,7 +746,7 @@ function createGeneratedSendLedger(sender: NativeAuthorityEndpoint): BlackBoxRal
             getHandle: (msgId) => browserDeliveryComposition.deliveries.getHandle(msgId),
             replayCapturedMessage: () => Promise.reject(new Error('This fixture never replays a message.')),
             submitRawControl: () => Promise.reject(new Error('This fixture never submits a raw control.')),
-            resolveRoomMinSnapshotVersion: () => {
+            resolveRoomSendFence: () => {
                 throw new Error('This fixture never states a snapshot floor.');
             }
         },

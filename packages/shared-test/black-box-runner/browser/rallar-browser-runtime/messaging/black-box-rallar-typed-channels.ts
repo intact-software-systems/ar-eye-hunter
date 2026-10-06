@@ -8,6 +8,7 @@ import {
     type RallarMessageSelector
 } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { RallarMessage, RallarTypedMessageChannel } from '@shared-web/browser/rallar.ts';
+import type { ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -179,12 +180,18 @@ export class BlackBoxRallarTypedChannels {
             data: {
                 msgId: message.raw.id.msgId,
                 typeId: message.typeId,
+                rosterVersion: toRosterStamp(message.raw.targets),
                 topicId: message.topicId,
                 transport: message.transport,
                 payload: message.payload
             }
         });
     }
+}
+
+/** The roster a room send carried; undefined for a unicast or for a room send whose sender cached no snapshot. */
+function toRosterStamp(targets: ALTargets | undefined): number | undefined {
+    return targets === undefined || targets.mode === 'unicast' ? undefined : targets.rosterVersion;
 }
 
 function resolveRtcSelectorTypeIds(

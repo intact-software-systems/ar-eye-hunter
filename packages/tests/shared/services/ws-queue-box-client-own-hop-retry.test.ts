@@ -305,7 +305,7 @@ function orderedRoomSend(seq: number, qos: ALQosPolicyRequest | undefined): ALMe
 /** The server's word, as the client's hop, that the track behind `trigger` misses `missingRanges`. */
 function serverGapNack(trigger: ALMessage, missingRanges: readonly ALSeqRange[]): ALMessage {
     return newALNackControlMessage(
-        { v: 2, msgId: `server-gap-${trigger.id.msgId}`, senderId: SERVER_PEER_ID, ts: Date.now() },
+        { v: 3, msgId: `server-gap-${trigger.id.msgId}`, senderId: SERVER_PEER_ID, ts: Date.now() },
         {
             msgId: trigger.id.msgId,
             fromPeerId: SERVER_PEER_ID,
@@ -322,7 +322,7 @@ function serverGapNack(trigger: ALMessage, missingRanges: readonly ALSeqRange[])
 /** The server's word, as the client's hop, that it holds `trigger` until the room's state is in sync. */
 function serverNotYetInSyncNack(trigger: ALMessage): ALMessage {
     return newALNackControlMessage(
-        { v: 2, msgId: `server-not-yet-in-sync-${trigger.id.msgId}`, senderId: SERVER_PEER_ID, ts: Date.now() },
+        { v: 3, msgId: `server-not-yet-in-sync-${trigger.id.msgId}`, senderId: SERVER_PEER_ID, ts: Date.now() },
         {
             msgId: trigger.id.msgId,
             fromPeerId: SERVER_PEER_ID,

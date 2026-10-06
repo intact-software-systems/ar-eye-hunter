@@ -317,7 +317,7 @@ peer that owns no children never asks: the retry of a recipient the origin
 already counted is the origin's decision from its receipt (see the outbound
 README for the origin's `no-route` verdict when it owns no child).
 
-The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-10-range-repair'`. An
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-10-roster-fence'`. An
 existing browser database at a different schema identity is deleted and
 recreated once, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
@@ -333,6 +333,10 @@ whose NACK plan and ordering observation now carry `missingRanges` (inclusive `{
 ranges, at most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges`) where they carried `missingSeqs`
 lists; the retained `repair-hint` work and the outbound control history carry the same field.
 No row is migrated: an older row's `missingSeqs` fails strict decoding.
+The roster-fence bump (D147) followed because every room send's targets carry the sender's
+`rosterVersion` (a multicast's in place of `membershipEpoch`, a room broadcast's beside
+`minSnapshotVersion`) and the envelope version moved to `AL_MESSAGE_ENVELOPE_VERSION = 3`; a row an
+older build wrote carries `id.v: 2`, which the one envelope decoder refuses `unsupported`.
 
 **The deploy window.** No row kind this change touches lacks an expiry, so
 nothing the WS server's PostgreSQL store holds from before the deploy stays
@@ -381,6 +385,12 @@ control history, so the window closes without a migration. A NACK or repair a pa
 the old build sends is refused `unsupported` (`al.control.nack.v1`, `al.control.repair.v1`) until
 that page reloads, symmetrically with the acknowledgement cutover above.
 
+**The roster-fence window.** PostgreSQL rows carry no schema identity, so the roster-fence bump
+resets browsers only. On the server, a row an older build wrote holds a `v: 2` envelope and fails
+decoding `unsupported` at its next read; no row is migrated. A page still running the old build
+sends `v: 2` envelopes and controls, refused `unsupported` until it reloads; it refuses this build's
+`v: 3` symmetrically.
+
 Web and API deploy together.
 
 ## Admission and invocation paths
@@ -415,6 +425,30 @@ cursor ([`ALInboundResyncCursor`](./al-inbound-resync-required.ts)) is where the
 `carrier`. The runtime resets no track after a resynchronization; the sender's new epoch is a new
 track. Without the sink -- the WS server's case -- the message is dropped as before and the
 diagnostics state the refusal.
+
+**Room authority and the membership fence.** An RTC receiver judges a room send against the room
+snapshot it holds before planning it
+([`rtc-room-snapshot-admission.ts`](../../multicast/rtc-room-snapshot-admission.ts); the sender and peer
+verdicts in [`resolve-rtc-room-peer-denial.ts`](../../multicast/resolve-rtc-room-peer-denial.ts)). Behind the
+send's `minSnapshotVersion` or its `rosterVersion` the verdict is `pending`: the message is dropped
+`not-yet-in-sync`, its hop is NACKed with that reason, and the receiver refreshes the room once and
+re-admits the message once. At or beyond both, a sender whose member is absent or not `active` is
+`membership-fenced`: the message is dropped with that code and its hop is NACKed with that reason,
+with no ordering hints, no repair request and no refresh. A sender whose session is absent while its
+member is present stays `pending` at its own roster, since presence is not the roster, and is fenced
+in a roster beyond its stamp; every other room denial stays `unauthorized` and sends no NACK. An
+unstamped room copy (no `rosterVersion`) is judged as at its sender's roster, so a sender that is
+not an active member is fenced there too. The
+fence applies at ingress only (a copy with a `fromPeerId`); the origin and targeted repair keep their
+verdicts. A held relayed copy is re-judged at dispatch with its ingress hop, so a sender fenced since
+the hold resolves `rejected` instead of waiting to its deadline, while the origin's own held copies
+keep today's verdicts. The WS server applies the same two floors and fences a sender with no
+live session or no active member at its admission and its dispatch-time re-authorization
+([`ws-topic-room-authorizer.ts`](../../../shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts)); the
+receiving WS client trusts it. Behind either floor at its admission the WS server retains the
+message as a pending admission ([`retainPending`](./al-inbound-message-admission.ts)) instead of
+refusing it, answers the advisory NACK, and its replay re-authorizes the message every 50 ms until
+the floor is met or the deadline passes; the sender retries nothing.
 
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce
