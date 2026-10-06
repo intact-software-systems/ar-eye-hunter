@@ -1,15 +1,15 @@
-import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { NON_EXPIRING_SEND_TIMEOUT_MS } from '../alm-conformance-budgets.ts';
-import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
-import { toObserveCommand, toResultAssertion } from '../alm-conformance-message-commands.ts';
-import { toHeldSecondSendCommands, toOrderedSendCommands } from '../alm-conformance-ordering-commands.ts';
-import { toSingleArrivalReceiverCommands } from '../alm-conformance-receiver-commands.ts';
+import { NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
+import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
+import { toObserveCommand, toResultAssertion } from '../../alm-conformance-message-commands.ts';
+import { toHeldSecondSendCommands, toOrderedSendCommands } from '../../alm-conformance-ordering-commands.ts';
+import { toSingleArrivalReceiverCommands } from '../../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
-} from '../alm-conformance-scenario-definition.ts';
+} from '../../alm-conformance-scenario-definition.ts';
 
 /**
  * A repair budget that runs out ends on the handle: the sender's second frame stays held through every

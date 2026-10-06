@@ -427,7 +427,8 @@ message hold by the id its send returned (`toHeldMessageFaultCommands`; the brow
 the lane-only connect field `rtc.connect.rallar.recoveryOwner: 'record'`, switched by
 `CreateAlmConformanceRecipesInput.recoveryOwner` so the hosted catalog stays as recorded (`ordering-resync` is in
 manifest 18). `repair-exhausted` reports the gap a second time with a fourth send. `ordering-gap-repair` runs over
-the single-hop carriers (R-R1-11). The local lane over `ws` exposed the repair-authority gap and the local run
+the single-hop carriers (R-R1-11). The two cells live in `scenarios/range-repair/`, as I2b's live in
+`scenarios/local-checkpoint/`. The local lane over `ws` exposed the repair-authority gap and the local run
 exposed the double control per gap arrival, both fixed under R-R1-12 in the commits that follow this task's.
 
 ```text

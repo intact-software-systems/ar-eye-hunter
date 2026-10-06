@@ -1,14 +1,14 @@
-import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { ALM_CONFORMANCE_SINGLE_HOP_CARRIERS } from '../alm-conformance-carriers.ts';
-import { toHeldMessageFaultCommands } from '../alm-conformance-fault-commands.ts';
-import { toHeldSecondSendCommands } from '../alm-conformance-ordering-commands.ts';
-import { toReceivedCommand } from '../alm-conformance-receiver-commands.ts';
+import { ALM_CONFORMANCE_SINGLE_HOP_CARRIERS } from '../../alm-conformance-carriers.ts';
+import { toHeldMessageFaultCommands } from '../../alm-conformance-fault-commands.ts';
+import { toHeldSecondSendCommands } from '../../alm-conformance-ordering-commands.ts';
+import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
-} from '../alm-conformance-scenario-definition.ts';
+} from '../../alm-conformance-scenario-definition.ts';
 
 /**
  * An in-window gap is repaired by range: the sender's second frame is held, the third reveals the gap, the hop

@@ -163,6 +163,22 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'prefix:al',
         maximumMagnitude: 19
     }),
+    // The ALM conformance catalog is one feature: the scenario definitions, the
+    // command builders by concern (message, receipt, receiver, session, fault,
+    // ordering), the four identity assessments and the observation regimes,
+    // each a direct owner the harness docs map. Its scenarios sit beside it.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/conformance/alm',
+        rule: 'layout.directory-density',
+        symbol: 'alm',
+        maximumMagnitude: 21
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/conformance/alm',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:assess',
+        maximumMagnitude: 4
+    }),
     // These tests own deliberate malformed signaling/graph inputs and raw
     // decoded WebSocket captures. Values go straight to the production
     // boundary or an assertion; they do not supply unvalidated domain state.
