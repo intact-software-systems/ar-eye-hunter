@@ -3642,9 +3642,9 @@ prose before one coherent freeze. No new producer, retry, timeout or performance
 **Status:** Corrected Connect is independently reviewed and locally accepted. Witnessed
 semantic RED precedes each production correction. The former internal-result consumer
 expectation and its full-file standards findings are corrected; the justified full-unit
-repeat and affected consumer validation pass. Current-head hosted acceptance remains required
-after coherent source publication. Task56 normal hosted correctness is accepted for published
-`a74be0ee561494085f2c18dce38264e404ee792b`; it does not certify the corrected Connect source.
+repeat and affected consumer validation pass. Published corrected Connect now passes its normal
+hosted delivery gates with actual source-tree reconciliation. Concurrent live-CRDT working
+changes are outside that hosted evidence; native/performance baseline acceptance remains open.
 Connect and live CRDT remain distinct completion/effect
 owners with separate slices. The earlier inline distributed draft remains deferred.
 Root owns the plan, port binding, Git and publication.
@@ -3844,6 +3844,17 @@ all15 accepted code/test hashes unchanged after validation. The support-only cor
 does not justify repeating the already-passed app suite/builds. New-head hosted correctness,
 live CRDT, native/performance and baseline/cohort acceptance remain separate required evidence.
 
+**Hosted Connect acceptance:** Actual checkout and artifact source markers reconcile the
+published Connect head with identical Formation/Medium merge trees. Branch, Formation and
+Medium gates all succeed on their original attempts. Hosted units match14,676 PASS/12 SKIP;
+app46 PASS/64 SKIP, all four observer cases and memory7 PASS execute. Public/bundle/static/
+build/PG checks pass. All101 recipe matrix rows and primary summaries reconcile with zero
+blocking and206 explicitly nonblocking failed steps retained. Five event histories, four
+result lists and three result stores are truncated; omitted row detail is unavailable.
+Dependent capture transforms fail after missing WebSocket expectation matches, with no
+stronger product/infrastructure cause established. These normal checks do not validate
+uncommitted CRDT work, native performance or the incomplete B01–B06/E3 acceptance.
+
 Connect must preserve actual immutable capture evidence from its own acquired graph
 through the existing page result boundary. At published a74, the transport creates a typed
 middleware/receipt pair, but acceptance projects only middleware and the page bridge erases
@@ -3902,8 +3913,177 @@ Issue, deployment, distributed aggregation or baseline acceptance is authorized 
 
 ### Task 58: Fenced live CRDT operation readback
 
-**Status:** Next useful slice, not released for implementation. After Connect acceptance,
-earn meaningful RED at actual initial live subscription and acquired send boundaries.
+**Status:** The first application-admission checkpoint at the black-box runner's
+existing-connection branch is locally accepted after genuine RED, focused GREEN and
+independent review. Its newer code is outside the previous Connect head's hosted evidence.
+Task58 is incomplete: the initial-live currentness checkpoint has independently witnessed
+genuine RED and a bounded four-file correction.
+Its focused validation is GREEN and full touched-file closure is documented; fresh independent
+review returns SPEC PASS and QUALITY APPROVED for the frozen six-file working-tree diff,
+with one minor passing-test logging finding. Broad working-tree validation is GREEN,
+including the actual changed-style gate after scoped independent approval of its exact
+raw-Error test-boundary classification. The next delivery actions are source publication
+through the existing draft PR and new-head hosted evidence. Acquired-send and result-readback
+boundaries still need their own genuine RED.
+
+**First RED checkpoint:** The actual connected SDK returns its original Native/run receipt
+with unavailable/sink-unavailable application and current middleware ownership. Required
+page CRDT open discards that completion, constructs the actual document, admits initial
+catch-up/sync messages through ordinary dispatch and publishes opened success. The complete
+41-case owner returns1 FAIL/40 PASS: three actual refusal/admission/publication assertions
+fail, while five applied/ordinary/local/HTTP controls and all35 previous cases pass. Original
+message handles retain the same receipt and admission timestamps. Queued/not-ready lifecycle
+evidence proves admission, not physical transmission or remote delivery. Native coverage
+remains truthful; this is not a native/performance result.
+
+Root fully reads the report, complete failure/control output, relevant controller/resource
+owners and canonical validator, then independently verifies all267 unchanged runtime files,
+exact recovery of the previous35 cases and unchanged HEAD/index before releasing production.
+Maintained types pass1,464 files with zero errors; adjacent transport/command/lifecycle tests
+pass49. Earlier invalid control/defaults/ref/type attempts remain retained and excluded from
+semantic RED. Existing fixture construction is reused in place; no support extraction occurs.
+The complete touched test is reviewed, including its six-symbol import correction; it remains
+coherent at1,469 physical lines and cognitive score89. Full-file and recursive support closure
+remain binding, with independent untouched source outside.
+
+**Bound first correction:** Only the cached/no-nested-API branch of the black-box CRDT
+controller retains its actual advanced Connect completion and checks explicit required
+application through the existing canonical intent/receipt validator and finite error before
+opening the live document. Original receipt, ordinary omitted intent, local persistence and
+HTTP controls remain unchanged. No CRDT engine, merge/persistence algorithm, SDK policy,
+fresh bootstrap, deadline, retry or global diagnostics-projection change is selected by this
+RED. Distinct later corrections require their own failing behavior before production edits.
+
+**Accepted minimum GREEN and standards closure:** The unchanged first regression and
+five controls pass6 selected cases, the complete owner passes41, and the first proportional
+caller set passes111 across seven files. Independent review accepts the application gate
+but finds a four-positional publication helper and a weak existing recipe-run WS test;
+subsequent full-file inspection finds the same signature violation in projection. Named
+class-owned inputs close both signature violations while preserving all10 projection and
+12 publication call values/order and helper behavior. The recipe test now proves the
+failed WS command and canonical Off/run incompatibility against its original applied
+Native/step receipt, rather than accepting any failure. No serializer or other runtime
+correction is needed. The intermediate nested partial-matcher failure is retained and
+excluded from product RED.
+
+After that correction, the strengthened WS case passes1, the owner passes41 and four
+controller callers pass59. Shared-test/shared-web types, maintained1,464-test types with
+zero errors, formatting and whitespace pass. Scoped independent re-review reports all
+three findings addressed, SPEC PASS and QUALITY APPROVED. Controller788 physical lines
+and cognitive129 retain one command/resource capability; its47/54/47-line functions have
+explicit separation judgments. Test1,513 raw lines minus504 authoritative behavior-free
+literal lines is1,009 effective lines, below its1,500 backstop; cognitive89 remains cohesive.
+No size exception, support extraction or compatibility retention is required.
+
+Root verifies the accepted gate, six new cases, fixture and all other old cases remain
+exact; all266 unreleased runtime owners and41 frozen evidence files remain unchanged.
+Original RED, invalid attempts, first GREEN and the earlier incomplete closure judgments
+are preserved. These local results approve only this runner application-admission
+checkpoint; they do not establish full Task58, native availability, wire delivery,
+distributed behavior or baseline performance. No Issues are created or reused.
+
+**Second RED checkpoint: original-session eligibility during hydration.** A real public
+SDK replay-metric callback invalidates authentication after the runner's application check.
+The original Off/run receipt is actually applied and its connected session is current
+before the callback; its original ownership then reports `session-not-current`. Actual
+update, sync-request and catch-up-response receive subscriptions nevertheless register
+before an ordinary no-auth send error. The complete owner returns1 FAIL/44 PASS: canonical
+original-receipt refusal and initial subscription eligibility fail, while no opened success
+is published. Three controls with the same instrumentation preserve applied Off, applied
+Native with truthful partial coverage, and omitted intent; all41 earlier cases pass.
+
+Root fully reads the complete report, failure/control output and test delta, independently
+verifies all267 runtime owners unchanged, and reconstructs the entire previously accepted
+test byte-exact by removing only the new cases/types. All89 immutable prior artifacts stay
+exact; the explicit observer clarification is separately accounted. Maintained1,464-test
+types with zero errors, shared-test types and formatting pass. The existing owner remains
+cohesive at1,121 effective lines and cognitive119 after a required separation review.
+Invalid selection/type attempts remain retained and excluded from semantic evidence.
+
+This trigger adds the supported public SDK metrics sink to the delegated real open call;
+the page decoder does not expose raw recipe metrics. Explicit unsubscribe cleanup in finally,
+outside the metric callback, proves test hygiene, not product cleanup after failed hydration. The RED earns only
+original-session refusal before initial live subscriptions. Exact necessary owners and
+ports follow current source inspection before minimum GREEN; per-send/readback, engine
+merge, persistence, retry/deadline, raw recipe metrics and distributed/performance changes
+are not selected by this failure.
+
+**Why this touches SDK CRDT:** Live recipe documents use the Rallar connection whose diagnostic
+capture they require. The runner's check before document open is too early: a real SDK
+callback during loading can end that session before the document registers subscriptions.
+The SDK document owns that registration point, so the bounded correction passes an internal
+original-session admission capability through the existing runner composition and facade
+into hydration, immediately before initial tab/live resources register. Its four existing
+owners are the black-box CRDT controller, browser runtime composition, browser CRDT facade
+and browser CRDT document. Public CRDT options and barrels remain unchanged.
+
+The facade's larger diff replaces its existing stateful cache factory and five-parameter
+plumbing with explicit same-file lifecycle ownership, as required by touched-file standards
+closure. Full review also identifies caught-value normalization in the already touched
+document; its own public-SDK semantic RED proves two primitive-error leaks, with four
+passing controls. Canonical normalization now preserves actual Error identity, messages,
+failed-update metadata and authored readback. The admission check protects required
+diagnostic verification; the additional facade and Error changes close touched-file standards.
+They do not change the CRDT engine, merge or
+persistence algorithms, and they do not diagnose or fix the initial post-ICE RTC stall.
+This initial-live checkpoint is locally accepted with broad validation and ready for draft publication.
+
+**Current scoped GREEN:** The original-session capability is passed only for initial hydration,
+so the document does not retain the original completion for its lifetime. The frozen Error
+owner passes6, the hydration family passes4, the complete recipe owner passes45, and existing
+SDK/runner callers pass75. Public API/entrypoint/browser boundaries pass32; both package types
+and maintained1,465-test types pass with zero errors. These selections overlap. Pure expected
+reference/scope validation now returns canonical Either; public open preserves its deliberate
+Error refusal and original field/effect order. The existing malformed-open group passes8,
+including missing principal/custom/room identities before SDK open.
+
+Formatting/whitespace pass; warning-only style output is paired with full manual closure and
+function/file separation judgments. The current controller's54-line open and54-line poll,
+facade58/59-line lifecycle/translation functions and document54-line constructor have explicit
+separation reviews; no function exceeds60. Root independently freezes the complete report,
+six-file diff, all268 held runtime/test files,27 earlier final artifacts and20 current scope
+artifacts, preserving both original RED reports and all prior evidence. An invalid read-only
+inventory candidate and the root's incorrect byte-identical style assumption are retained as
+tooling findings: corrected inventory passes, and the style delta contains only five shifted
+source locations. They are not semantic RED. No public contract, retry/deadline, cap, engine
+or persistence algorithm changes follow from these checks. New-head hosted, native and
+performance acceptance remains unproven; previous Connect-head evidence cannot certify this
+newer checkpoint. No Issues are created or reused.
+
+Independent review traces original middleware ownership, transient admission, extracted generic
+open, cache/close ordering, typed validation and Error identity through the actual code. It reports
+no critical or important finding. Its one minor finding is five unconditional diagnostic dumps
+in the touched recipe test. They remain visible in the preserved output and are deferred to that
+owner's next refactor or final review; this is no waiver for a standards violation. The review
+explicitly leaves fresh/configured admission, acquired-send/result attribution, later global
+projection, cached resubscription, failed-hydration disposal and baseline acceptance unproven.
+
+**Broad checkpoint validation:** Bare `npm test` passes14,692 tests with12 skipped across
+1,498 scheduled files (1,494 passed/four skipped). All four affected consumer builds pass:
+AR Eye Hunter, Relic Hunters, Black Box and Black Box Headless. The actual Black Box browser
+suite passes46 with64 configured skips, including both observer cases and four native
+answer/deadline controls. Its live full-stack/configuration-dependent cases remain skipped;
+these results do not certify live distributed CRDT or B06. Shared-web bundle checking passes
+at246.8 Brotli KiB against the unchanged247 browser ceiling. The existing full-unit headless
+boundary test checks forbidden imports and the unchanged317 Brotli KiB ceiling; auxiliary
+readback of its retained bundle measures316.524 KiB without a rebuild. Reachability and
+structure pass. Full-repository style exits0 with3,461 nonblocking findings; that warning-only
+inventory does not replace the accepted touched-file reviews. Existing Node localStorage,
+Vite chunk and browser color-setting warnings remain disclosed.
+
+The first actual changed-style invocation fails only the Error test's raw rejection/logger
+observations. Normalizing those assertions would conceal the primitive leak. The existing
+immutable browser disposition inventory now records exactly that file, `boundary.unknown`
+and its absent checker symbol. All108 prior entries and their byte order remain exact; no
+matcher, threshold, wildcard, numeric cap or runtime/test changes accompany the addition.
+Existing classifier/negative controls pass86, the frozen Error owner passes6, and the actual
+changed-style CLI passes against the same base. Scoped independent re-review reports D1
+addressed, SPEC PASS and QUALITY APPROVED. Another future occurrence under the same module
+key would also match, so touched-owner human re-review remains required; this classifies a
+legitimate observation boundary and is not a real standards exception or legacy retention.
+The support correction is cumulative fix round2/5; M1 remains explicitly deferred. Original
+failure and all frozen runtime/tests/evidence remain retained. No Issues are created or reused.
+
 Snapshot canonical optional intent before hydrate/metric callbacks, verify original context
 before required live effects, and retain each actual message handle's immutable evidence
 through named transport/document/page result boundaries. A global latest receipt cannot

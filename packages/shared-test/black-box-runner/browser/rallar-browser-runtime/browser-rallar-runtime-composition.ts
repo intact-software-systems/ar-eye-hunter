@@ -30,6 +30,7 @@ import {
     type BrowserCrdtComposition,
     type BrowserSessionCoreComposition
 } from '@shared-web/browser/composition/browser-session-composition.ts';
+import type { BrowserRallarCrdtFacade } from '@shared-web/browser/crdt/create-rallar-crdt-facade.ts';
 import type {
     RallarDirectorFacade,
     RallarDirectorRelayConfig,
@@ -42,7 +43,6 @@ import type {
     RallarConnectionOperations
 } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/rallar-core.ts';
-import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import type {
     RallarRealtimeFacade,
     RallarWsFacade
@@ -67,6 +67,7 @@ import {
     type ScriptedTransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import type {
     BlackBoxRallarControlSubmitInput,
     BlackBoxRallarDirectorOutputRecord,
@@ -174,7 +175,7 @@ export interface BlackBoxBrowserRtcDependency extends
         | 'onStatus'
     > {}
 
-export interface BlackBoxBrowserCrdtDependency extends Pick<RallarCrdtFacade, 'open'> {}
+export interface BlackBoxBrowserCrdtDependency extends Pick<BrowserRallarCrdtFacade, 'open'> {}
 
 export interface BlackBoxBrowserDirectorDependency extends Pick<RallarDirectorFacade, 'appoint' | 'resign' | 'status'> {
     createRelay(
@@ -242,8 +243,13 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
     });
 }
 
+interface BlackBoxBrowserMessagingPortsInput {
+    readonly session: BrowserSessionCoreComposition;
+    readonly state: BrowserStateComposition;
+}
+
 function toBlackBoxBrowserMessagingPorts(
-    input: Readonly<{ session: BrowserSessionCoreComposition; state: BrowserStateComposition; }>
+    input: BlackBoxBrowserMessagingPortsInput
 ): Pick<BlackBoxBrowserRuntimeComponents, 'deliveries' | 'peers'> {
     const { session, state } = input;
     return {
@@ -335,6 +341,7 @@ interface BlackBoxBrowserRuntimeComponents {
     readonly deliveries: BlackBoxBrowserDeliveriesDependency;
     readonly peers: BlackBoxBrowserPeersDependency;
 }
+
 function toBlackBoxBrowserRuntimeDependency(
     components: BlackBoxBrowserRuntimeComponents
 ): BlackBoxBrowserRallarRuntimeDependency {

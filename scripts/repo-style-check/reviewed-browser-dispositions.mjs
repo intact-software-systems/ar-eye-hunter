@@ -52,6 +52,15 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
+    // SDK rejection and logger values stay raw until Error/message/identity
+    // assertions; normalizing the oracle would conceal a primitive Error leak.
+    // Production catches normalize before domain use. Re-review this owner
+    // whenever it changes; this classification does not certify future values.
+    Object.freeze({
+        path: 'packages/tests/shared-web/crdt/rallar-crdt-error-boundary.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // Recipe command/result contracts deliberately carry opaque application
     // payloads across adapter boundaries. Capture fields are separately typed;
     // infrastructure must not invent a schema for caller-owned payload values.

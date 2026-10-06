@@ -18,10 +18,10 @@ import type {
     RallarCrdtUndoRedoGroupInput
 } from '@shared-web/browser/crdt/rallar-crdt-contracts.ts';
 import type { RallarDataFacade, RallarUnsubscribe } from '@shared-web/browser/rallar-data.ts';
+import type * as RallarCrdt from '@shared/crdt/mod.ts';
 import {
     createRallarCrdtDocument,
     type RallarCrdtDependencyBlockedUpdate,
-    type RallarCrdtDocument as RallarCrdtEngineDocument,
     type RallarCrdtDocumentHealth,
     type RallarCrdtDocumentRef,
     type RallarCrdtDocumentTypePolicy,
@@ -37,36 +37,42 @@ import {
     type RallarCrdtUpdateEnvelope,
     type RallarCrdtValidationOptions
 } from '@shared/crdt/mod.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 export namespace BrowserRallarCrdtDocument {
-    export type Options<TValue, TPayload extends RallarCrdtOperationBatch> = Readonly<{
-        ref: RallarCrdtDocumentRef;
-        documentKey: string;
-        replicaId: string;
-        actorId?: string;
-        sessionId?: string;
-        schemaVersion: number;
-        initialValue?: TValue;
-        persist: boolean;
-        tabSync: boolean;
-        transport: RallarCrdtTransportStrategy;
-        policies: readonly RallarCrdtDocumentTypePolicy[];
-        metrics?: RallarCrdtMetricsSink;
-        encryption?: RallarCrdtEncryptionKeyring;
-        validation?: RallarCrdtValidationOptions;
-        durableCatchUp?: RallarCrdtHttpCatchUpClient<TPayload>;
-        data: RallarDataFacade;
-        dbName: string;
-        readTransport?: () => RallarCrdtMessageTransport | undefined;
-        now: () => number;
-    }>;
+    /** Observes original ownership once before initial live resources are registered. */
+    export interface InitialLiveAdmission {
+        readFailure(): Error | undefined;
+    }
+
+    export interface Options<TValue, TPayload extends RallarCrdtOperationBatch> {
+        readonly ref: RallarCrdtDocumentRef;
+        readonly documentKey: string;
+        readonly replicaId: string;
+        readonly actorId?: string;
+        readonly sessionId?: string;
+        readonly schemaVersion: number;
+        readonly initialValue?: TValue;
+        readonly persist: boolean;
+        readonly tabSync: boolean;
+        readonly transport: RallarCrdtTransportStrategy;
+        readonly policies: readonly RallarCrdtDocumentTypePolicy[];
+        readonly metrics?: RallarCrdtMetricsSink;
+        readonly encryption?: RallarCrdtEncryptionKeyring;
+        readonly validation?: RallarCrdtValidationOptions;
+        readonly durableCatchUp?: RallarCrdtHttpCatchUpClient<TPayload>;
+        readonly data: RallarDataFacade;
+        readonly dbName: string;
+        readonly readTransport?: () => RallarCrdtMessageTransport | undefined;
+        readonly now: () => number;
+    }
 }
 
 export class BrowserRallarCrdtDocument<TValue, TPayload extends RallarCrdtOperationBatch>
     implements RallarCrdtDocument<TValue, TPayload> {
     public readonly ref: RallarCrdtDocumentRef;
 
-    private readonly engine: RallarCrdtEngineDocument<TValue, TPayload>;
+    private readonly engine: RallarCrdt.RallarCrdtDocument<TValue, TPayload>;
     private readonly listeners = new Set<RallarCrdtSnapshotListener<TValue>>();
     private readonly pending = new Map<string, RallarCrdtUpdateEnvelope<TPayload>>();
     private readonly failed = new Map<string, RallarCrdtFailedPendingUpdate<TPayload>>();
@@ -137,7 +143,9 @@ export class BrowserRallarCrdtDocument<TValue, TPayload extends RallarCrdtOperat
         });
     }
 
-    public async hydrate(): Promise<void> {
+    public async hydrate(
+        initialLiveAdmission?: BrowserRallarCrdtDocument.InitialLiveAdmission
+    ): Promise<void> {
         await this.persistence.hydrate();
         const persistenceHealth = this.persistence.health();
         this.liveSync.recordMetric(
@@ -149,6 +157,10 @@ export class BrowserRallarCrdtDocument<TValue, TPayload extends RallarCrdtOperat
             'crdt.dependency.blocked.count',
             this.dependencyBlocked.size
         );
+        const admissionFailure = initialLiveAdmission?.readFailure();
+        if (admissionFailure) {
+            throw admissionFailure;
+        }
         if (this.tabSyncEnabled) {
             this.tabSync = createRallarCrdtTabSync<TPayload>({
                 documentKey: this.documentKey,
@@ -206,18 +218,19 @@ export class BrowserRallarCrdtDocument<TValue, TPayload extends RallarCrdtOperat
             return update;
         }
         catch (error) {
+            const failure = toError(error);
             const failed: RallarCrdtFailedPendingUpdate<TPayload> = {
                 update,
                 failedAtEpochMs: this.now(),
                 retryable: true,
-                reason: error instanceof Error ? error.message : String(error)
+                reason: failure.message
             };
             await this.persistence.rememberFailedUpdate(failed);
             this.liveSync.recordMetric(
                 'crdt.pending.failed.count',
                 this.failed.size
             );
-            throw error;
+            throw failure;
         }
     }
 
@@ -413,6 +426,7 @@ function notifyListener<TValue>(
     snapshot: RallarCrdtSnapshotEnvelope<TValue>
 ): void {
     void Promise.resolve(listener(snapshot)).catch((error) => {
-        console.error('Error notifying CRDT snapshot listener', error);
+        const failure = toError(error);
+        console.error('Error notifying CRDT snapshot listener', failure);
     });
 }
