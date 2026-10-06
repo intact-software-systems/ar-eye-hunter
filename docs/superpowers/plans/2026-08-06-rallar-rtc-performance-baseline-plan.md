@@ -86,7 +86,45 @@ source-conflict repair is published as
 the original independently held work. The reviewed Native/Manual/Join source checkpoint is
 `bd1a03f774521d3cfd911347878eef12831f84ab`, with SPEC PASS and QUALITY APPROVED across
 all33 full touched files; combined-source runtime acceptance remains separate. The current
-published head is its plan-only child `7adaef7d21547fbfe8fddd901ce341254ec97af5`.
+published runtime checkpoint is `bef74e282e224f32334fd033e2ba103184762d51`, which includes the
+independently approved capture-selection/admission and presence-lease recipe corrections.
+Root's combined affected check records43 files /533 PASS, with Deno CLI and current-file
+format checks passing. The actual zero-retry Native browser preflight on that clean
+published source passes one matrix case in50.532 seconds. Independent recorder correlation
+finds six applied Native Connect receipts, each with one matching agent/session/scope
+initialization before its Connect result; Native availability is enabled and coverage partial.
+The source stays unchanged and the harness ports are clear afterward. This proves local
+correctness and acquisition at Connect completion, not E3 performance or final scope activity.
+Fresh hosted status at this head passes the main unit suite but fails one tooling workflow
+assertion: its old exact dispatch-input shape excludes the approved `rtc_capture_mode` choice.
+That suite records1 FAIL /1497 PASS. The hosted run is now terminal: both API standard
+shards, both Recipe Console shards, cluster, Postgres integration, formation-large and
+medium-scale succeed. The exact corrected presence-lease recipe reports23 successful
+operations, zero failures and exit0 on the Postgres shard; all30 selected recipes pass.
+Static checks additionally report six missing individual test-boundary classifications
+in the existing browser soak test. The initial controller summary showed only three; complete hosted and exact local
+logs agree on all six. The same bounded subagent correction covers those concrete
+candidates, without weakening the checker or blanket-waiving interactions.
+The support correction is terminal locally:16 workflow tests and the unchanged12 browser
+resource/admission controls pass, maintained typing enforces1476 test files with zero errors,
+and current registry/style/structure/format/diff checks pass. It changes only the workflow
+contract test and canonical six-entry registry, with production/checker bytes unchanged.
+Root verifies the frozen files, prior282 contracts/429 entries and source/evidence/index
+preservation. Independent review returns SPEC PASS and approves all six individual
+interaction classifications. Its two Low clarity findings are corrected by the same
+implementer: remove an unused fixture local and check the missing job before its steps.
+Scoped re-review returns SPEC PASS and QUALITY PASS. Final16 direct/shell tests pass,
+maintained1476-file typing reports zero errors, and complete changed-file style reports
+zero findings. The workflow test's final SHA256 is
+`9afd86329b517231609e58543232e1accd6239e03fded7a80ed3124b6cdd78b3`; the approved registry
+remains `0a9e94c2140c67fcd6653407264412fbb86d209d45358a0257037cabdb975942`.
+Root independently verifies the exact two clarity edits and preservation of6075 untouched
+target paths,6048 original source/test paths,167 historical evidence files,26 previous
+correction artifacts, both HEADs and both raw indices. This support checkpoint is approved
+for publication; a fresh candidate's hosted acceptance and whole-PR integration review
+remain required. The failed bef74 attempt stays retained. No hosted rerun or E3 producer
+was started, and no new production, workflow, browser, retry or timeout change is included.
+The previous plan-only head was `7adaef7d21547fbfe8fddd901ce341254ec97af5`.
 [Release Gate37498708746](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37498708746),
 attempt1 at that exact head, fails the unit suite and API standard2/2 shard. The unit
 failure is the unchanged benchmark architecture guard rejecting two package-test imports
@@ -4830,8 +4868,10 @@ hot-path sink, invented capability claim or changed retry/deadline/workload to b
       repair and independent acceptance of the integrated33-owner Native/Manual/Join slice are complete.
       Initial GREEN is terminal; independent review identifies the missing-declaration
       admission gap described above. Its witnessed minimum correction is terminal and receives
-      fresh re-review; required hosted correctness and combined-source browser verification
-      remain outstanding. The current combined affected suite passes533 cases across43 files.
+      fresh re-review. The clean published source's zero-retry Native browser preflight passes
+      one matrix case in50.532 seconds; all six applied receipts correlate to their initialized
+      scopes before Connect completion. Required hosted correctness and governed producer/cohort
+      acceptance remain outstanding. The current combined affected suite passes533 cases across43 files.
       Observation now receives the admitted immutable selection before constructing runtime
       owners. CLI overrides selected environment input and the canonical default; actual
       allowlisted environment facts remain separate. Producer argv and resolved configuration
@@ -4845,10 +4885,18 @@ hot-path sink, invented capability claim or changed retry/deadline/workload to b
       they do not relabel historical archives or claim full transitive source coverage.
 - [ ] Select the reviewed immutable source and run the requested diagnostic/E3 workload with
       original attempt accounting and measurement isolation.
-      First close the current required hosted failures: configuration closure includes the
-      unchanged architecture guard; the separate API recipe needs the bounded summary-convergence
-      synchronization correction and independent semantic review. Neither failure authorizes a
-      production RTC recovery, retention, retry or timeout change.
+      First close current hosted correctness: the architecture-boundary and bounded API
+      summary-convergence corrections are independently reviewed and published, and the actual
+      presence-lease recipe and all30 recipes pass on the terminal Postgres shard. The tooling
+      failure is the old exact workflow dispatch shape rejecting the approved capture selector;
+      static checks additionally require six individual resource/admission classifications.
+      Their bounded two-file correction receives SPEC PASS and QUALITY PASS after final
+      clarity closure, with production and checker unchanged. Publish that correction and
+      accept its fresh hosted gates, then complete whole-PR integration review. Select the
+      reviewed exact main snapshot required by the governed producer after those gates support
+      integration and the repository's explicit main-commit approval is obtained.
+      Neither historical nor current failure authorizes a production RTC recovery, retention,
+      retry or timeout change.
       The controller runs the3+11 primary; a passing primary triggers the3+22 repeat only
       when its existing repeat requirement selects RTC-B06. Do not add an unconditional
       repeat, retries or replacement samples.

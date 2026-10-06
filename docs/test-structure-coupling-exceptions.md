@@ -3730,6 +3730,96 @@ moved or changed test.
         "requiredConstraint": "After the ID callback replaces authentication, the original send must admit no message to the WebSocket outbound queue.",
         "failureRationale": "A typed session refusal can occur after an erroneous admission. Zero admission proves the stale owner never acquired outbound work under either session."
       }
+    },
+    {
+      "id": "rtc-b05-diagnostic-browser-release",
+      "domain": "RTC-B05 browser producer admission and resource ownership",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "The diagnostic CLI test runs the real measurement lifecycle with its injected browser, verifies the resulting two-cycle diagnostic artifact, and witnesses one resource release.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#preserves the diagnostic CLI while measuring only through an injected browser",
+      "coverageRelation": "This executable CLI assertion proves the named effect constraint through the production admission or browser resource lifecycle.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Injected browser.close capability acquired by measureBrowserLifecycle",
+        "observableEffect": "Release of the browser resource acquired for diagnostic measurement",
+        "requiredConstraint": "Each acquired diagnostic browser is closed exactly once before the CLI returns.",
+        "failureRationale": "A correct diagnostic file can still leave its browser running; the release effect must occur once at the acquired resource port."
+      }
+    },
+    {
+      "id": "rtc-b05-raw-command-admission-before-launch",
+      "domain": "RTC-B05 browser producer admission and resource ownership",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "The raw CLI receives invalid controller inputs and a changed real initialized manifest; rejection and absence of escaped output are asserted together with suppression of browser creation.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#rejects bounds, overrides, path escapes, and changed accepted matrices before launch",
+      "coverageRelation": "This executable CLI assertion proves the named effect constraint through the production admission or browser resource lifecycle.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "runRtcDataChannelBrowserSoakCli launchBrowser dependency",
+        "observableEffect": "Creation of a browser process for an accepted raw measurement",
+        "requiredConstraint": "Invalid bounds, overrides, escaping output paths and changed initialized manifests must launch zero browsers.",
+        "failureRationale": "A refusal or absent escaped file alone would permit an invalid command to start a browser before rejecting it."
+      }
+    },
+    {
+      "id": "rtc-b05-controller-identity-before-launch",
+      "domain": "RTC-B05 browser producer admission and resource ownership",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "The test changes the persisted initialized environment observation and calls the real raw CLI; its environment refusal must precede the injected browser launch effect.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#rejects changed initialized B05 controller identity before browser launch",
+      "coverageRelation": "This executable CLI assertion proves the named effect constraint through the production admission or browser resource lifecycle.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "runRtcDataChannelBrowserSoakCli launchBrowser dependency",
+        "observableEffect": "Creation of a measurement browser after initialized environment admission",
+        "requiredConstraint": "A changed initialized controller environment identity must launch zero browsers.",
+        "failureRationale": "An environment error returned after browser startup would still measure under incompatible initialized provenance."
+      }
+    },
+    {
+      "id": "rtc-b05-failed-producer-suppresses-staged-read",
+      "domain": "RTC-B05 browser producer admission and resource ownership",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "The controller test first proves staged lifecycle refusal, then records producer status9 against the same owner and verifies producer failure with four failure-accounting artifacts and no staged read.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#projects lifecycle failures and the bridge preserves the exact causal remainder",
+      "coverageRelation": "This executable CLI or controller assertion proves its named effect constraint through the production evidence or browser resource boundary.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RtcBaselineEvidenceAcceptance readStagedJson dependency for recordBrowser",
+        "observableEffect": "Admission read of a B05 staged artifact after the producer has failed",
+        "requiredConstraint": "A nonzero B05 producer status must read zero staged artifacts and write canonical failure accounting.",
+        "failureRationale": "Reading a valid-looking staged file after a failed B05 producer could admit stale evidence or replace the canonical producer failure cause."
+      }
+    },
+    {
+      "id": "rtc-b05-incomplete-heap-browser-release",
+      "domain": "RTC-B05 browser producer admission and resource ownership",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "The test executes the raw CLI with one missing forced-GC value, verifies its failed raw sample and controller refusal, and observes one browser release.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#fails raw evidence when Chromium exposes only one forced-GC heap value",
+      "coverageRelation": "This executable CLI or controller assertion proves its named effect constraint through the production evidence or browser resource boundary.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Injected browser.close capability acquired by measureBrowserLifecycle",
+        "observableEffect": "Release of the browser acquired for an incomplete heap measurement",
+        "requiredConstraint": "An acquired browser is closed exactly once even when the raw sample and subsequent admission refuse incomplete heap evidence.",
+        "failureRationale": "The failed sample and rejected admission do not prove the browser resource was released after heap acquisition."
+      }
+    },
+    {
+      "id": "rtc-b05-thrown-evaluation-browser-release",
+      "domain": "RTC-B05 browser producer admission and resource ownership",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "The real raw CLI receives a throwing page evaluation; the original failure, absent output and single browser release prove cleanup on the exception exit.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#closes the browser and leaves no raw file when native execution throws",
+      "coverageRelation": "This executable CLI or controller assertion proves its named effect constraint through the production evidence or browser resource boundary.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Injected browser.close capability acquired by measureBrowserLifecycle",
+        "observableEffect": "Release of the browser after a page evaluation exception",
+        "requiredConstraint": "An acquired browser is closed exactly once when evaluation throws, with the original exception propagated and no raw output written.",
+        "failureRationale": "Exception propagation and absent raw output can coexist with a leaked browser if the acquired resource is not released."
+      }
     }
   ],
   "entries": [
@@ -8451,6 +8541,72 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "A typed session refusal can occur after an erroneous admission. Zero admission proves the stale owner never acquired outbound work under either session.",
       "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#does not admit a required send when its message ID callback replaces authentication"
+    },
+    {
+      "id": "test-structure-coupling-e6a5f7bebeed552f",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-diagnostic-browser-release",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "The close count is the browser resource release contract; it does not constrain page helper calls or evaluation decomposition.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#preserves the diagnostic CLI while measuring only through an injected browser"
+    },
+    {
+      "id": "test-structure-coupling-aaf8949f7e07280c",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-raw-command-admission-before-launch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "The launch absence proves input and initialized-manifest admission precede expensive browser effects for all rejected commands in this test.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#rejects bounds, overrides, path escapes, and changed accepted matrices before launch"
+    },
+    {
+      "id": "test-structure-coupling-756f4565df9e0257",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-controller-identity-before-launch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "The launch absence protects controller provenance admission rather than the private functions used to reconcile that provenance.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#rejects changed initialized B05 controller identity before browser launch"
+    },
+    {
+      "id": "test-structure-coupling-23072b4b9df3349b",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-failed-producer-suppresses-staged-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "This read suppression is the B05 failed-producer admission policy at its owned evidence port, not a count of private validation helpers.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#projects lifecycle failures and the bridge preserves the exact causal remainder"
+    },
+    {
+      "id": "test-structure-coupling-1e8a53c00d21a319",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-incomplete-heap-browser-release",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "The close count protects resource cleanup on this incomplete-measurement exit; the sample refusal alone cannot witness browser release.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#fails raw evidence when Chromium exposes only one forced-GC heap value"
+    },
+    {
+      "id": "test-structure-coupling-2f76fac78c1151ca",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-thrown-evaluation-browser-release",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "The release count is the owned browser cleanup effect and does not pin evaluation helper decomposition or internal call ordering.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#closes the browser and leaves no raw file when native execution throws"
     }
   ]
 }
