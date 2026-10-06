@@ -1,3 +1,5 @@
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+
 import { RELIC_PROTOCOL_VERSION } from './protocol.ts';
 
 export type RelicRoomKind =
@@ -209,6 +211,7 @@ export type RelicPublicSnapshot = Readonly<{
     phase: RelicGamePhase;
     round: number;
     maxRounds: number;
+    createdAtEpochMs: number;
     updatedAtEpochMs: number;
     adminPlayerId?: string;
     roundTimeLimitMs: number;
@@ -277,6 +280,28 @@ export type RelicServerEvent = Readonly<{
     snapshot: RelicPublicSnapshot;
 }>;
 
+export type RelicRoundTransition = 'round-started' | 'round-resolved' | 'review-continued' | 'finished';
+
+/** The transition of a round, published beside the snapshot of the command that made it. */
+export interface RelicRoundTransitionEvent {
+    readonly protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+    readonly gameId: string;
+    readonly round: number;
+    /** The phase the transition entered. */
+    readonly phase: RelicGamePhase;
+    readonly transition: RelicRoundTransition;
+    /** The message of the event the rules append for the transition. */
+    readonly text: string;
+}
+
+/**
+ * The ordering key of the round transitions names the incarnation of the game: a reset keeps the game
+ * id and starts a new incarnation, whose rounds are new tracks.
+ */
+export function toRelicRoundTrackKey(game: Pick<RelicPublicSnapshot, 'gameId' | 'createdAtEpochMs'>): string {
+    return `${game.gameId}:${game.createdAtEpochMs}`;
+}
+
 export function toPublicRelicSnapshot(state: RelicGameState): RelicPublicSnapshot {
     const maybeLegacy = state as RelicGameState & {
         roomInvestigations?: readonly RelicRoomInvestigation[];
@@ -288,6 +313,7 @@ export function toPublicRelicSnapshot(state: RelicGameState): RelicPublicSnapsho
         phase: state.phase,
         round: state.round,
         maxRounds: state.maxRounds,
+        createdAtEpochMs: state.createdAtEpochMs,
         updatedAtEpochMs: state.updatedAtEpochMs,
         adminPlayerId: state.adminPlayerId,
         roundTimeLimitMs: state.roundTimeLimitMs,
@@ -392,6 +418,7 @@ export function isRelicSnapshot(value: unknown): value is RelicPublicSnapshot {
         isRelicGamePhase(value.phase) &&
         isFiniteNumber(value.round) &&
         isFiniteNumber(value.maxRounds) &&
+        isFiniteNumber(value.createdAtEpochMs) &&
         isFiniteNumber(value.updatedAtEpochMs) &&
         isOptionalString(value.adminPlayerId) &&
         isFiniteNumber(value.roundTimeLimitMs) &&
@@ -408,8 +435,7 @@ export function isRelicSnapshot(value: unknown): value is RelicPublicSnapshot {
 }
 
 function isRelicGamePhase(value: unknown): value is RelicGamePhase {
-    return value === 'lobby' || value === 'planning' || value === 'review' ||
-        value === 'finished';
+    return isOneOf<RelicGamePhase>(value, ['lobby', 'planning', 'review', 'finished']);
 }
 
 function isRelicRoom(value: unknown): value is RelicRoom {
@@ -425,9 +451,16 @@ function isRelicRoom(value: unknown): value is RelicRoom {
 }
 
 function isRelicRoomKind(value: unknown): value is RelicRoomKind {
-    return value === 'entrance' || value === 'hallway' || value === 'storage' ||
-        value === 'shrine' || value === 'trap' || value === 'treasure' ||
-        value === 'monster' || value === 'exit';
+    return isOneOf<RelicRoomKind>(value, [
+        'entrance',
+        'hallway',
+        'storage',
+        'shrine',
+        'trap',
+        'treasure',
+        'monster',
+        'exit'
+    ]);
 }
 
 function isRelicDefinition(value: unknown): value is RelicDefinition {
@@ -459,13 +492,16 @@ function isRelicRoomInvestigation(
         isOptionalString(value.relicId);
 }
 
-function isRelicRoomInvestigationEffect(
-    value: unknown
-): value is RelicRoomInvestigationEffect {
-    return value === 'ordinary-search' || value === 'map-fragment' ||
-        value === 'rune-reading' || value === 'safe-path' ||
-        value === 'treasure-trail' || value === 'monster-trace' ||
-        value === 'exit-route';
+function isRelicRoomInvestigationEffect(value: unknown): value is RelicRoomInvestigationEffect {
+    return isOneOf<RelicRoomInvestigationEffect>(value, [
+        'ordinary-search',
+        'map-fragment',
+        'rune-reading',
+        'safe-path',
+        'treasure-trail',
+        'monster-trace',
+        'exit-route'
+    ]);
 }
 
 function isRelicPlayer(value: unknown): value is RelicPlayer {
@@ -495,15 +531,26 @@ function isRelicEvent(value: unknown): value is RelicEvent {
 }
 
 function isRelicEventType(value: unknown): value is RelicEventType {
-    return value === 'game_waiting' || value === 'player_joined' ||
-        value === 'round_started' || value === 'action_submitted' ||
-        value === 'action_revealed' || value === 'player_moved' ||
-        value === 'player_searched' || value === 'relic_found' ||
-        value === 'relic_picked_up' || value === 'steal_succeeded' ||
-        value === 'steal_failed' || value === 'escape_failed' ||
-        value === 'player_escaped' || value === 'noise_pulse' ||
-        value === 'player_damaged' || value === 'room_unstable' ||
-        value === 'room_collapsed' || value === 'game_finished';
+    return isOneOf<RelicEventType>(value, [
+        'game_waiting',
+        'player_joined',
+        'round_started',
+        'action_submitted',
+        'action_revealed',
+        'player_moved',
+        'player_searched',
+        'relic_found',
+        'relic_picked_up',
+        'steal_succeeded',
+        'steal_failed',
+        'escape_failed',
+        'player_escaped',
+        'noise_pulse',
+        'player_damaged',
+        'room_unstable',
+        'room_collapsed',
+        'game_finished'
+    ]);
 }
 
 function isRelicAnimationCue(value: unknown): value is RelicAnimationCue {
@@ -519,14 +566,19 @@ function isRelicAnimationCue(value: unknown): value is RelicAnimationCue {
             value.intensity === 'medium' || value.intensity === 'high');
 }
 
-function isRelicAnimationCueType(
-    value: unknown
-): value is RelicAnimationCueType {
-    return value === 'camera_move' || value === 'search_altar' ||
-        value === 'relic_reveal' || value === 'relic_pickup' ||
-        value === 'steal_attempt' || value === 'escape_run' ||
-        value === 'noise_pulse' || value === 'damage_shake' ||
-        value === 'room_collapse' || value === 'heart_relic_victory';
+function isRelicAnimationCueType(value: unknown): value is RelicAnimationCueType {
+    return isOneOf<RelicAnimationCueType>(value, [
+        'camera_move',
+        'search_altar',
+        'relic_reveal',
+        'relic_pickup',
+        'steal_attempt',
+        'escape_run',
+        'noise_pulse',
+        'damage_shake',
+        'room_collapse',
+        'heart_relic_victory'
+    ]);
 }
 
 function isRelicPublicSetupMetadata(
@@ -562,17 +614,17 @@ function isOptionalBoolean(value: unknown): value is boolean | undefined {
 }
 
 function isRelicActionKind(value: unknown): value is RelicActionKind {
-    return value === 'move' ||
-        value === 'search' ||
-        value === 'steal' ||
-        value === 'escape';
+    return isOneOf<RelicActionKind>(value, ['move', 'search', 'steal', 'escape']);
 }
 
 export function isRelicCharacterId(value: unknown): value is RelicCharacterId {
-    return typeof value === 'string' &&
-        RELIC_CHARACTER_IDS.includes(value as RelicCharacterId);
+    return isOneOf(value, RELIC_CHARACTER_IDS);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isOneOf<T extends string>(value: unknown, options: readonly T[]): value is T {
+    return typeof value === 'string' && options.some((option) => option === value);
+}
+
+function isRecord(value: unknown): value is ApiJsonObject {
     return typeof value === 'object' && value !== null;
 }

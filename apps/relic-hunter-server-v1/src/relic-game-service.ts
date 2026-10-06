@@ -28,6 +28,7 @@ import {
 import { decodeRelicGameStateAppData } from './decode-relic-game-state-app-data.ts';
 import { encodeRelicGameStateAppData } from './encode-relic-game-state-app-data.ts';
 import type { RelicInitialStateFactory } from './relic-expedition-ai.ts';
+import { toRelicRoundTransitionEvent, toRelicRoundTransitionMessage } from './to-relic-round-transition-message.ts';
 import { toRelicSnapshotMessage } from './to-relic-snapshot-message.ts';
 
 export interface RelicHunterGameServiceOptions {
@@ -121,6 +122,20 @@ class RelicGameService implements RelicHunterGameService {
         });
     }
 
+    /** The snapshot first, then the round transition the command made, if it made one. */
+    private async publishCommandResult(previous: RelicGameState, next: RelicGameState): Promise<void> {
+        await this.publishSnapshot(next);
+        const transition = toRelicRoundTransitionEvent(previous, next);
+        if (transition === undefined) {
+            return;
+        }
+        const { rallar } = this.dependencies;
+        await rallar.ws.publish({
+            message: toRelicRoundTransitionMessage(next, transition, rallar.ws.serverPeerId),
+            fanout: 'outbox'
+        });
+    }
+
     private applyAndPublishCommand(
         command: RelicCommand,
         senderId: string
@@ -133,7 +148,7 @@ class RelicGameService implements RelicHunterGameService {
             await games.set(command.gameId, result.state);
             const snapshot = toPublicRelicSnapshot(result.state);
             try {
-                await this.publishSnapshot(result.state);
+                await this.publishCommandResult(previous, result.state);
                 return { snapshot, publishFailure: undefined };
             }
             catch (error) {
@@ -155,8 +170,7 @@ class RelicGameService implements RelicHunterGameService {
 
     installTopics(): void {
         const { rallar } = this.dependencies;
-        // The browser sends commands over REST and consumes snapshots over WebSocket.
-        // Other clients may send the same validated room command over WebSocket.
+        // The browser sends commands over WebSocket and falls back to REST only before it knows the server's peer id.
         rallar.ws.defineTopic({
             topicId: RELIC_TOPICS.command,
             typeId: RELIC_TYPES.command,

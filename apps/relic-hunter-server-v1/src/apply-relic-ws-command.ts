@@ -65,7 +65,7 @@ export function toRelicWsCommandWarning(
         case 'applied':
             return undefined;
         case 'applied-not-published':
-            return { message: `${subject} was applied, but its snapshot was not published.`, error: outcome.error };
+            return { message: `${subject} was applied, but its publication failed.`, error: outcome.error };
         case 'no-session':
             return { message: `${subject} was not applied: ${outcome.detail}`, error: undefined };
         case 'session-unreadable':
