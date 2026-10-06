@@ -837,20 +837,21 @@ product as degraded or failed delivery.
 
 ### Ordering, Repair And Resynchronization
 
-A send states its position with `orderingKey` and `seq` together, or neither
-(`RallarRtcSendInput`, `RallarWsSendInput`). The receiver keeps one ordering
-track per ordering key, sender and epoch, delivers its messages in sequence from
-the last contiguous one and buffers what arrives early; a new epoch is a new
-track. No browser send sets the epoch: a browser sender's track ends by its TTL
-or by the receiver's resynchronization. Three limits
-bound the buffer (`AL_MESSAGE_RESOURCE_LIMITS`): a sequence more than
+A browser send states its position with `orderingKey` and `seq` together, or
+neither (`RallarRtcSendInput`, `RallarWsSendInput`): a browser's sequence is
+client-assigned; a server publication's is minted by the server (below). The
+receiver keeps one ordering track per ordering key, sender and epoch, delivers
+its messages in sequence from the last contiguous one and buffers what arrives
+early; a new epoch is a new track. No browser send sets the epoch: a browser
+sender's track ends by its TTL or by the receiver's resynchronization. Three
+limits bound the buffer (`AL_MESSAGE_RESOURCE_LIMITS`): a sequence more than
 `repairWindow` (256) past the expected one, or a track already holding
 `bufferedMessages` (256) or `bufferedBytes` (1 MiB), is refused
 `resync-required`. It is not buffered, and the sender is NACKed.
 
-An in-window gap is repaired by the sender. The hop that keeps the sender's
-ordering track -- the receiver over RTC, the WS server over WS -- NACKs the
-missing sequences as inclusive ranges (`ALSeqRange { from, to }`, at most
+An in-window gap is repaired by the sender. The hop that keeps a browser
+sender's ordering track -- the receiver over RTC, the WS server over WS -- NACKs
+the missing sequences as inclusive ranges (`ALSeqRange { from, to }`, at most
 `repairRanges` = 128 per payload), and the sender retransmits them along the
 hop that asked, `repairPageMessages` (32) sequences per round until the ranges
 are served. A message is retransmitted at most `maxRepairs` times (1 by
@@ -898,6 +899,70 @@ logged and changes nothing. Every invocation is also stated as
 diagnostics state the refusal. The WS server declares no owner and keeps
 NACKing `resync-required` to the sender. The once-mark lives in memory, so a
 reload invokes the owner once more for the same track.
+
+A server publication names its track and leaves the
+sequence to the server: the server application builds the message with an
+`ordering` option that states `orderingKey` and `epoch` and no `seq`, and
+publishes it with `ws.publish` at `fanout: 'outbox'`. The WS server's outbound
+admission assigns the sequence, and the publish result's message carries it. A
+keyed publication without `seq` at `fanout: 'live-only'` or `'none'` is refused: only the
+outbox admission mints. The track is the ordering key, the server peer id as sender, and the
+epoch (`0` when absent); its first message gets `seq` 1 and each later one the
+next number, assigned in the same commit that admits the message, so the
+sequence stays contiguous whichever server instance publishes and continues
+after a server restart. Publishing the same `msgId` again keeps the sequence it
+was first given, and a server publication that states its own `seq` keeps it.
+
+The server repairs its own publications from its sent copies. A WS client
+admits every server frame as the trusted server's, orders a server track like
+any other with the server peer id as its sender, and NACKs a gap in an
+at-least-once publication to the server. The server serves a requester that is
+inside the audience the message was admitted to and that the receipt of the
+message revealing the gap still expects, so a sequenced server publication asks
+`ack: 'receiver'`; one with `ack: 'none'` gets no ranged repair, and a session
+that joined after a message was published is never sent it. The server
+retransmits the missing sequences to that requester alone,
+`repairPageMessages` (32) per round, until the message's deadline. The repair
+budget is per message and shared by every requester: the first receiver to NACK
+a sequence spends `maxRepairs` (1 by default), and another receiver missing the
+same sequence gets it from the receipt's retries instead. A report of a gap once
+the budget is spent settles the publication `skipped` with reason
+`repair-exhausted`, once. A `resync-required` NACK from a receiver settles the
+publication `relay-rejected` (`{ relay: 'peer', peerId, reason:
+'resync-required' }`) and removes its whole pending receipt, so no recipient is
+retried after it. The receiver invokes the recovery owner of the typed channel whose topic and type
+the publication names; the cursor's `senderId` is the server peer id. The
+epoch is the server application's to choose: a new epoch is a new track at
+every receiver and re-arms the owner.
+
+Relic Hunters publishes its round transitions this way. Each
+`relic.event.v1` on `room.relic.event` is a receipted room notification whose
+ordering key names the game's incarnation (its id and creation time, since a
+reset keeps the id) and whose epoch is the round, so every round is a new track:
+
+```ts
+const message = newALBroadcastMessage(
+    rallarServer.ws.serverPeerId,
+    newALRoute(RELIC_TOPICS.event, roomId, `${gameId}:${round}`),
+    'room',
+    RELIC_TYPES.event,
+    event,
+    {
+        groupRef,
+        reliability: 'at-least-once',
+        ack: 'receiver',
+        ttlMs: RELIC_EVENT_TTL_MS,
+        ordering: { orderingKey: `${gameId}:${createdAtEpochMs}`, epoch: round }
+    }
+);
+await rallarServer.ws.publish({ message, fanout: 'outbox' });
+```
+
+The browser reads the stream through `messages.room<T>(...)` on that topic and
+type with purpose `notification` and a `recovery` owner that re-reads the game
+over REST (`GET /api/relic/games/:gameId`). A browser that joins during a round
+reads that round's state from the snapshot and its first ordered transition at
+the next round.
 
 ### Membership Fencing
 
@@ -1847,7 +1912,7 @@ The server application exposes:
 - `ws.removeTopic(selector)`
 - `ws.on(selector, handler)`
 - `ws.proxy(rule)`
-- `ws.publish({ message, scope?, fanout? })`; `scope` is only for a unicast that names no group, and a message that names a group takes its scope from `targets.groupRef`
+- `ws.publish({ message, scope?, fanout? })`; `scope` is only for a unicast that names no group, and a message that names a group takes its scope from `targets.groupRef`; a message whose `ordering` states `orderingKey` (and `epoch`) without `seq` is sequenced by the server at `outbox` admission and refused at `live-only` and `none` (see "Ordering, Repair And Resynchronization"); an `outbox` publish result's message is the admitted one and carries the minted `seq`, while a `live-only` or `none` publish returns the caller's message
 - `ws.status()`
 - `appData.define/open/lookup/close(...)`
 - the repository manager as `repositories`

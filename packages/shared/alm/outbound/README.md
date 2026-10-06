@@ -26,7 +26,18 @@ tracks no receipt, still has the server's gap NACK served along that hop; the RT
 and the WS server declare no fixed hop. Control acceptance applies the same exemption: without a
 repair planner, a room-scoped gap NACK or repair control is admitted only when its requester is
 the sender's own hop, so the server's gap NACK to its own WS client commits the repair hint that
-retransmits the missing ranges along that hop.
+retransmits the missing ranges along that hop. The WS server repairs its own publications through
+its repair planner instead: a WS client's gap NACK on a track whose sequences the server minted
+pages the missing sequences from the server's ordering index and resends each to that requester
+alone, and only when the requester is in the audience the resent message was admitted to and
+still expected by the receipt of the message whose NACK revealed the gap, so a session that
+joined later is never served and a keyed server publication asks `ack: 'receiver'` (an
+`ack: 'none'` one gets no ranged repair) (D43, D153). The budget is per message: the first
+requester spends `maxRepairs` and another requester of the same sequence falls back to the
+receipt's retries. Only the `outbox` fan-out mints; a keyed `live-only` publish without a
+sequence is refused. Relic Hunters' round transitions are that
+track's consumer: one track per round, the game's incarnation (`${gameId}:${createdAtEpochMs}`,
+since a reset keeps the game id) as ordering key and the round as epoch (D151).
 [`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one predicate both owners
 share. A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges
 (`missingRanges`, at most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256 window

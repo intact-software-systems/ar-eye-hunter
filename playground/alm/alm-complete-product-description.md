@@ -535,6 +535,31 @@ declared recovery owner is invoked with a bounded cursor (D142, under "Repair
 and resynchronization"). The lane's `ordering-gap-repair` and `repair-exhausted`
 cells prove the repair and its end.
 
+**CURRENT — R2b, server-sequenced tracks:** A browser's sequence is
+client-assigned; a server publication's is minted by the server (D24 narrowed,
+D150). A server publication that names an ordering key and no sequence is
+sequenced by the WS server's outbound admission from one ordering-head row per
+track (ordering key, server peer id, epoch), advanced in the same commit that
+admits the message under the server's sender-version fence, so the sequence is
+contiguous whichever server instance publishes, continues after a restart, and
+is not reassigned when the same `msgId` is admitted again. The server repairs
+its own tracks from its sent copies: a receiving WS client NACKs a gap to the
+server, which retransmits the missing sequences to that requester alone, 32 per
+page, until the message's deadline and only to a requester inside the audience
+the message was admitted to that the triggering message's receipt still
+expects, so a keyed server publication asks `ack: 'receiver'` and is published
+to the `outbox` (a keyed `live-only` publish without a sequence is refused, and
+an `ack: 'none'` one gets no ranged repair). The repair budget is per message
+and shared: the first receiver to NACK a sequence spends it, the others fall
+back to receipt retries; exhausted repair settles `skipped`/`repair-exhausted`
+once (D141, D153). One receiver's `resync-required` NACK settles the
+publication `relay-rejected` and removes its whole pending receipt (D155).
+The receiver's recovery owner is the typed channel's, as for a browser sender.
+The WS server fixture, the shared-key schedule over memory, IndexedDB and pglite
+with the gated PostgreSQL two-connection case, and the api-v1 end-to-end test
+prove it; no conformance cell exercises a server-originated send, since no
+harness step makes the server publish one (D155).
+
 ## Deduplication and supersedence
 
 Deduplication explicitly declares its identity domain:
@@ -909,6 +934,26 @@ this document is in scope (decision D5); the roadmap's release map owns the
 order, and the two games are changed wherever that proves a capability in a
 real UI (decision D4). #566 ships two such cutovers as one web and API deploy:
 RTC signaling's required `offerId` (D97) and the admission schema bump (D101).
+
+Relic Hunters is the server-authoritative consumer. Its commands travel over WS
+as a unicast to the server peer id on `room.relic.command`, receipted at the
+server's admission (D79), on a `local-checkpoint` channel that refuses when
+storage is unavailable (D134): the server's `msgId` dedup absorbs a command
+resumed after a reload, and a command admitted inside the last checkpoint
+interval is lost with the page and reads `unobservable`. Every applied command
+publishes the whole game snapshot as a latest-wins room notification from the
+server, with `receiver` receipts over the audience frozen at publish and a 15 s
+TTL (D77); the client keeps the newest by its own comparator. **CURRENT — R2b,
+round transitions:** the server publishes each round transition -- the round
+starting, resolving into review, and the review continuing into the next round
+or the finish -- as a `relic.event.v1` notification on `room.relic.event` with
+the game's incarnation (`${gameId}:${createdAtEpochMs}`, since a reset keeps the
+game id) as ordering key, the round as epoch and no sequence, so the server
+mints one track per round (D150, D151). The client reads it through a typed
+room channel whose recovery owner re-reads the game over REST, and the UI's live
+round cues follow that stream in order while the snapshot stays the game's
+state (D152). A browser that joins during a round sees that round's state from
+the snapshot and its cues from the next round (D155).
 
 ## Current validation baseline
 

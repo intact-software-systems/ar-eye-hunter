@@ -424,7 +424,14 @@ cursor ([`ALInboundResyncCursor`](./al-inbound-resync-required.ts)) is where the
 `orderingKey`, `senderId`, `epoch`, `lastContiguousSeq`, `expectedSeq`, `observedSeq` and
 `carrier`. The runtime resets no track after a resynchronization; the sender's new epoch is a new
 track. Without the sink -- the WS server's case -- the message is dropped as before and the
-diagnostics state the refusal.
+diagnostics state the refusal. A WS client admits every server frame as `trusted-server`, so a
+server publication that carries a sequence is ordered on the track
+`<orderingKey>:<serverPeerId>:<epoch>` (the server peer id is `default-qbox-server` in api-v1 and
+the Relic server), and the NACK and repair request for its gap go to the server, since a
+`trusted-server` source's `fromPeerId` is the message's `senderId`; the server repairs its own
+publication (D153). The recovery owner of a server track is the typed channel the publication's
+topic and type name, found as for any sender (D142); Relic Hunters' round-transition channel is
+one (D152).
 
 **Room authority and the membership fence.** An RTC receiver judges a room send against the room
 snapshot it holds before planning it
