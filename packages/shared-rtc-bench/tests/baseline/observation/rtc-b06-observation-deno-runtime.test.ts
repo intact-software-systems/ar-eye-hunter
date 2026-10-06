@@ -1,6 +1,17 @@
+import { execFileSync } from 'node:child_process';
+
+import { createDenoRtcBaselineAdapters } from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
+import type { RtcBaselineDenoPort } from '../../../baseline/runtime/rtc-baseline-deno-port.ts';
+import { createRtcBaselineDenoRuntime } from '../../../baseline/runtime/rtc-baseline-deno-runtime.ts';
+
 import { describe, expect, it } from 'vitest';
 
-import { createRtcB06LiveProducerCommand, runRtcB06LiveProducer } from '../../../baseline/observation/rtc-b06-observation-deno-runtime.ts';
+import {
+    createRtcB06LiveProducerCommand,
+    createRtcB06ObservationDenoRuntime,
+    runRtcB06LiveProducer,
+    type RtcB06ObservationDenoRuntimeInput
+} from '../../../baseline/observation/rtc-b06-observation-deno-runtime.ts';
 
 const baselineId = '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3';
 
@@ -31,10 +42,63 @@ const commonArguments = [
     'RALLAR_BLACK_BOX_RTC_CASE_ID=default',
     'RALLAR_BLACK_BOX_RTC_INPUT_KEY=e3-memory-default',
     'RALLAR_BLACK_BOX_RTC_INTENDED_PHASE=retained',
-    'RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL=2'
+    'RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL=2',
+    'RALLAR_BLACK_BOX_RTC_CAPTURE_MODE=signaling'
 ];
 
 describe('RTC-B06 observation Deno runtime', () => {
+    it.each(
+        [
+            [undefined, 'signaling'],
+            ['off', 'off'],
+            ['signaling', 'signaling'],
+            ['native', 'native']
+        ] as const
+    )('seals producer capture %s against inherited Native capture', (rtcCaptureMode, expectedMode) => {
+        const input = { baselineId, attempt: attempt('default'), rtcCaptureMode };
+        const command = createRtcB06LiveProducerCommand(input);
+        const observedMode = execFileSync(command.executable, [
+            ...command.arguments.slice(0, -3),
+            process.execPath,
+            '--eval',
+            'process.stdout.write(process.env.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE ?? \'<unset>\')'
+        ], {
+            encoding: 'utf8',
+            env: { ...process.env, RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'native' }
+        });
+
+        expect(observedMode).toBe(expectedMode);
+    });
+
+    it('keeps one admitted producer mode across cases, phases, ordinals and a repeat after caller mutation', async () => {
+        const observed: string[] = [];
+        const port = producerRuntime();
+        const adapters = createDenoRtcBaselineAdapters(port);
+        const input: RtcB06ObservationDenoRuntimeInput = {
+            rtcCaptureMode: 'off',
+            runtime: {
+                ...port,
+                command: async (_executable: string, arguments_: readonly string[]) => {
+                    observed.push(arguments_.find((argument) => argument.startsWith('RALLAR_BLACK_BOX_RTC_CAPTURE_MODE=')) ?? '<unset>');
+                    return { code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() };
+                }
+            },
+            producerOutput: { writeStdout: async () => {}, writeStderr: async () => {} },
+            adapters,
+            envelope: createRtcBaselineDenoRuntime(adapters)
+        };
+        const runtime = createRtcB06ObservationDenoRuntime(input);
+        await runtime.runLiveRtcProducer({ baselineId, attempt: attempt('default') });
+        Object.assign(input, { rtcCaptureMode: 'native' });
+        for (const caseId of ['default', 'all-scenarios', 'retention-100'] as const) {
+            await runtime.runLiveRtcProducer({
+                baselineId: `${baselineId}-repeat-01`,
+                attempt: { ...attempt(caseId), intendedPhase: 'warmup', outerOrdinal: 1 }
+            });
+        }
+        expect(observed).toEqual(Array(4).fill('RALLAR_BLACK_BOX_RTC_CAPTURE_MODE=off'));
+    });
+
     it('publishes captured producer output when the live matrix fails', async () => {
         const stdout: string[] = [];
         const stderr: string[] = [];
@@ -131,3 +195,29 @@ describe('RTC-B06 observation Deno runtime', () => {
         );
     });
 });
+
+function producerRuntime(): RtcBaselineDenoPort {
+    return {
+        envGet: () => undefined,
+        build: { os: 'darwin', arch: 'arm64' },
+        version: { deno: '2' },
+        pid: 1,
+        hostname: () => 'test',
+        randomUuid: () => 'test',
+        kill: () => {},
+        lstat: async () => ({ isFile: true, isDirectory: false, isSymlink: false, dev: 1, ino: 1, size: 1 }),
+        open: async () => {
+            throw new Error('No files may be opened by producer command construction');
+        },
+        mkdir: async () => {},
+        readFile: async () => new Uint8Array(),
+        writeFile: async () => {},
+        remove: async () => {},
+        readDir: async function* () {},
+        command: async () => ({ code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() }),
+        now: () => new Date('2026-08-16T10:00:00Z'),
+        performanceNow: () => 0,
+        systemMemoryInfo: () => ({ total: 1 }),
+        availableParallelism: () => 1
+    };
+}

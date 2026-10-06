@@ -4,13 +4,13 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createRtcBaselineEvidenceAcceptance } from '../../../baseline/acceptance/rtc-baseline-evidence-acceptance.ts';
-import { deriveRtcBaselineCaptureManifest } from '../../../baseline/catalog/rtc-baseline-workload-manifest.ts';
-import type { RtcBaselineSampleDto, RtcBaselineSampleFailureOutcomeArtifact } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
-import * as Close from '../../../workloads/data-channel/rtc-data-channel-close-retention-bench.ts';
-import * as Drain from '../../../workloads/data-channel/rtc-data-channel-drain-bench.ts';
-import * as ErrorReference from '../../../workloads/data-channel/rtc-data-channel-error-reference-bench.ts';
-import * as Replace from '../../../workloads/data-channel/rtc-data-channel-replace-key-bench.ts';
+import { createRtcBaselineEvidenceAcceptance } from '../../baseline/acceptance/rtc-baseline-evidence-acceptance.ts';
+import { deriveRtcBaselineCaptureManifest } from '../../baseline/catalog/rtc-baseline-workload-manifest.ts';
+import type { RtcBaselineSampleDto, RtcBaselineSampleFailureOutcomeArtifact } from '../../baseline/contracts/rtc-baseline-contracts.ts';
+import * as Close from '../../workloads/data-channel/rtc-data-channel-close-retention-bench.ts';
+import * as Drain from '../../workloads/data-channel/rtc-data-channel-drain-bench.ts';
+import * as ErrorReference from '../../workloads/data-channel/rtc-data-channel-error-reference-bench.ts';
+import * as Replace from '../../workloads/data-channel/rtc-data-channel-replace-key-bench.ts';
 
 const baselineId = '20260807-0123456789ab-e1-local';
 const denoPrefix = words(
@@ -29,7 +29,15 @@ function words(value: string): string[] {
     return value.trim().split(/\s+/);
 }
 
-function dataChannelWorker(caseId: string, key: string, flags: string[], runs = 5) {
+interface DataChannelWorkerConfiguration {
+    caseId: string;
+    key: string;
+    flags: string[];
+    runs?: number;
+}
+
+function dataChannelWorker(input: DataChannelWorkerConfiguration) {
+    const { caseId, key, flags, runs = 5 } = input;
     const prefix = `rtc-b02-${caseId}-${key}-retained-001`;
     const ids = Array.from(
         { length: runs },
@@ -61,15 +69,18 @@ interface FailureProbe {
     readonly execute: (noteExecution: () => void) => Promise<RtcBaselineSampleDto[]>;
 }
 
-function failureProbe<Result, Worker>(
-    input: DataChannelWorkerInput,
-    invalid: Result,
-    parsedWorker: Worker,
-    runAccepted: (input: {
+interface FailureProbeInput<Result, Worker> {
+    readonly input: DataChannelWorkerInput;
+    readonly invalid: Result;
+    readonly parsedWorker: Worker;
+    readonly runAccepted: (input: {
         readonly worker: Worker;
         readonly run: () => Promise<Result>;
-    }) => Promise<RtcBaselineSampleDto[]>
-): FailureProbe {
+    }) => Promise<RtcBaselineSampleDto[]>;
+}
+
+function failureProbe<Result, Worker>(configuration: FailureProbeInput<Result, Worker>): FailureProbe {
+    const { input, invalid, parsedWorker, runAccepted } = configuration;
     return {
         input,
         execute: (noteExecution) =>
@@ -122,6 +133,7 @@ async function persistDataChannelFailure(caseId: string, outcomes: RtcBaselineSa
     const writes: RtcBaselineSampleFailureOutcomeArtifact[] = [];
     const acceptance = createRtcBaselineEvidenceAcceptance({
         initializeStore: async () => ({ ok: true as const, value: undefined }),
+        readInitializedConfiguration: async () => ({ ok: true as const, value: [] }),
         readManifest: async () => ({
             ok: true as const,
             value: { ...manifest, outerAttempts: [attempt] }
@@ -148,36 +160,32 @@ async function persistDataChannelFailure(caseId: string, outcomes: RtcBaselineSa
 }
 
 const drainInput = (depth: 32 | 1000 | 5000) =>
-    dataChannelWorker(
-        'data-channel-drain',
-        `depth-${depth}`,
-        words(`--rtc-high-watermark-bytes=1 --rtc-inner-runs=5
+    dataChannelWorker({
+        caseId: 'data-channel-drain',
+        key: `depth-${depth}`,
+        flags: words(`--rtc-high-watermark-bytes=1 --rtc-inner-runs=5
 --rtc-low-watermark-bytes=0 --rtc-overflow=replace-by-key --rtc-payload-bytes=256
 --rtc-queue-depth=${depth}`)
-    );
+    });
 
 const b02 = {
-    replace: dataChannelWorker(
-        'data-channel-replace-key',
-        'depth-32',
-        words('--rtc-inner-runs=5 --rtc-queue-depth=32 --rtc-replacements=25000')
-    ),
+    replace: dataChannelWorker({
+        caseId: 'data-channel-replace-key',
+        key: 'depth-32',
+        flags: words('--rtc-inner-runs=5 --rtc-queue-depth=32 --rtc-replacements=25000')
+    }),
     drain: drainInput(32),
-    close: dataChannelWorker(
-        'data-channel-close-retention',
-        'queue-32',
-        words('--rtc-inner-runs=5 --rtc-queue-depth=32')
-    ),
-    error: dataChannelWorker('data-channel-error-reference', 'fixed', words('--rtc-inner-runs=5'))
+    close: dataChannelWorker({ caseId: 'data-channel-close-retention', key: 'queue-32', flags: words('--rtc-inner-runs=5 --rtc-queue-depth=32') }),
+    error: dataChannelWorker({ caseId: 'data-channel-error-reference', key: 'fixed', flags: words('--rtc-inner-runs=5') })
 };
 
 it('RTC-B02 accepts only the exact matrix and preserves diagnostic arguments', () => {
     for (const depth of [32, 1000, 5000] as const) {
-        const replace = dataChannelWorker(
-            'data-channel-replace-key',
-            `depth-${depth}`,
-            words(`--rtc-inner-runs=5 --rtc-queue-depth=${depth} --rtc-replacements=25000`)
-        );
+        const replace = dataChannelWorker({
+            caseId: 'data-channel-replace-key',
+            key: `depth-${depth}`,
+            flags: words(`--rtc-inner-runs=5 --rtc-queue-depth=${depth} --rtc-replacements=25000`)
+        });
         expect(parseReplace(replace.arguments).ok).toBe(true);
         expect(parseDrain(drainInput(depth).arguments).ok).toBe(true);
     }
@@ -257,30 +265,30 @@ it('RTC-B02 bounds lifecycle evidence and stops every runner after its first fai
         error.attachedHandlerCountAfterError
     ]).toEqual([undefined, false, 0]);
     const failures = await expectStopsAfterFirstFailure([
-        failureProbe(
-            b02.replace,
-            { ...replacement, queuedItemCount: 31 },
-            accepted(parseReplace(b02.replace.arguments)),
-            sampleReplace
-        ),
-        failureProbe(
-            b02.drain,
-            { ...drain, queuedAfterDrain: 1, sentDuringDrain: 31, sentBytesDuringDrain: 7936 },
-            accepted(parseDrain(b02.drain.arguments)),
-            sampleDrain
-        ),
-        failureProbe(
-            b02.close,
-            { ...close, queuedAfterReconnect: 1 },
-            accepted(parseClose(b02.close.arguments)),
-            sampleClose
-        ),
-        failureProbe(
-            b02.error,
-            { ...error, attachedHandlerCountAfterError: 1 },
-            accepted(parseError(b02.error.arguments)),
-            sampleError
-        )
+        failureProbe({
+            input: b02.replace,
+            invalid: { ...replacement, queuedItemCount: 31 },
+            parsedWorker: accepted(parseReplace(b02.replace.arguments)),
+            runAccepted: sampleReplace
+        }),
+        failureProbe({
+            input: b02.drain,
+            invalid: { ...drain, queuedAfterDrain: 1, sentDuringDrain: 31, sentBytesDuringDrain: 7936 },
+            parsedWorker: accepted(parseDrain(b02.drain.arguments)),
+            runAccepted: sampleDrain
+        }),
+        failureProbe({
+            input: b02.close,
+            invalid: { ...close, queuedAfterReconnect: 1 },
+            parsedWorker: accepted(parseClose(b02.close.arguments)),
+            runAccepted: sampleClose
+        }),
+        failureProbe({
+            input: b02.error,
+            invalid: { ...error, attachedHandlerCountAfterError: 1 },
+            parsedWorker: accepted(parseError(b02.error.arguments)),
+            runAccepted: sampleError
+        })
     ]);
     const persisted = await persistDataChannelFailure('data-channel-drain', failures[1]);
     const failure = persisted.writes[0];

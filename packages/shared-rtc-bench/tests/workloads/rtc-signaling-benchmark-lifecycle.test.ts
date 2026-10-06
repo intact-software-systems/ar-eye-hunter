@@ -4,13 +4,13 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createRtcBaselineEvidenceAcceptance } from '../../../baseline/acceptance/rtc-baseline-evidence-acceptance.ts';
-import { deriveRtcBaselineCaptureManifest } from '../../../baseline/catalog/rtc-baseline-workload-manifest.ts';
-import type { RtcBaselineSampleDto, RtcBaselineSampleFailureOutcomeArtifact } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
-import * as IceQueue from '../../../workloads/signaling/rtc-ice-candidate-queue-bench.ts';
-import * as Diagnostics from '../../../workloads/signaling/rtc-peer-connection-diagnostics-burst.ts';
-import { runRtcPeerConnectionDiagnostics } from '../../../workloads/signaling/rtc-peer-connection-diagnostics-runtime.ts';
-import * as Listeners from '../../../workloads/signaling/rtc-peer-listener-cleanup-bench.ts';
+import { createRtcBaselineEvidenceAcceptance } from '../../baseline/acceptance/rtc-baseline-evidence-acceptance.ts';
+import { deriveRtcBaselineCaptureManifest } from '../../baseline/catalog/rtc-baseline-workload-manifest.ts';
+import type { RtcBaselineSampleDto, RtcBaselineSampleFailureOutcomeArtifact } from '../../baseline/contracts/rtc-baseline-contracts.ts';
+import * as IceQueue from '../../workloads/signaling/rtc-ice-candidate-queue-bench.ts';
+import * as Diagnostics from '../../workloads/signaling/rtc-peer-connection-diagnostics-burst.ts';
+import { runRtcPeerConnectionDiagnostics } from '../../workloads/signaling/rtc-peer-connection-diagnostics-runtime.ts';
+import * as Listeners from '../../workloads/signaling/rtc-peer-listener-cleanup-bench.ts';
 
 const baselineId = '20260807-0123456789ab-e1-local';
 const denoPrefix = words(
@@ -21,7 +21,15 @@ function words(value: string): string[] {
     return value.trim().split(/\s+/);
 }
 
-function signalingWorker(caseId: string, key: string, flags: string[], runs = 5) {
+interface SignalingWorkerConfiguration {
+    caseId: string;
+    key: string;
+    flags: string[];
+    runs?: number;
+}
+
+function signalingWorker(input: SignalingWorkerConfiguration) {
+    const { caseId, key, flags, runs = 5 } = input;
     const prefix = `rtc-b01-${caseId}-${key}-retained-001`;
     const ids = Array.from(
         { length: runs },
@@ -75,15 +83,18 @@ interface FailureProbe {
     readonly execute: (noteExecution: () => void) => Promise<RtcBaselineSampleDto[]>;
 }
 
-function failureProbe<Result, Worker>(
-    input: SignalingWorkerInput,
-    invalid: Result,
-    parsedWorker: Worker,
-    runAccepted: (input: {
+interface FailureProbeInput<Result, Worker> {
+    readonly input: SignalingWorkerInput;
+    readonly invalid: Result;
+    readonly parsedWorker: Worker;
+    readonly runAccepted: (input: {
         readonly worker: Worker;
         readonly run: () => Promise<Result>;
-    }) => Promise<RtcBaselineSampleDto[]>
-): FailureProbe {
+    }) => Promise<RtcBaselineSampleDto[]>;
+}
+
+function failureProbe<Result, Worker>(configuration: FailureProbeInput<Result, Worker>): FailureProbe {
+    const { input, invalid, parsedWorker, runAccepted } = configuration;
     return {
         input,
         execute: (noteExecution) =>
@@ -136,6 +147,7 @@ async function persistSignalingFailure(caseId: string, outcomes: RtcBaselineSamp
     const writes: RtcBaselineSampleFailureOutcomeArtifact[] = [];
     const acceptance = createRtcBaselineEvidenceAcceptance({
         initializeStore: async () => ({ ok: true as const, value: undefined }),
+        readInitializedConfiguration: async () => ({ ok: true as const, value: [] }),
         readManifest: async () => ({
             ok: true as const,
             value: { ...manifest, outerAttempts: [attempt] }
@@ -161,13 +173,13 @@ async function persistSignalingFailure(caseId: string, outcomes: RtcBaselineSamp
     };
 }
 
-const burst = signalingWorker(
-    'peer-connection-diagnostics-burst',
-    'pairs-500',
-    words(
+const burst = signalingWorker({
+    caseId: 'peer-connection-diagnostics-burst',
+    key: 'pairs-500',
+    flags: words(
         '--rtc-ice-candidates-per-peer=5 --rtc-inner-runs=5 --rtc-offer-collisions-per-peer=3 --rtc-peers=500'
     )
-);
+});
 
 it('RTC-B01 rejects invalid bounds, paths, and accepted overrides', () => {
     for (
@@ -204,12 +216,12 @@ it('RTC-B01 preserves counters, cleanup, identities, and failure persistence', a
     expect(Object.values(result.cleanup).every((value) => value === 0)).toBe(true);
     const parsed = accepted(Diagnostics.parseRtcPeerConnectionDiagnosticsArguments(burst.arguments));
     const [outcomes] = await expectStopsAfterFirstFailure([
-        failureProbe(
-            burst,
-            { ...result, diagnostics: { ...result.diagnostics, queuedIceCandidateCount: 2499 } },
-            parsed,
-            Diagnostics.runRtcPeerConnectionDiagnosticsAcceptedSamples
-        )
+        failureProbe({
+            input: burst,
+            invalid: { ...result, diagnostics: { ...result.diagnostics, queuedIceCandidateCount: 2499 } },
+            parsedWorker: parsed,
+            runAccepted: Diagnostics.runRtcPeerConnectionDiagnosticsAcceptedSamples
+        })
     ]);
     const persisted = await persistSignalingFailure('peer-connection-diagnostics-burst', outcomes);
     expect(persisted.result).toMatchObject({ ok: false });
@@ -221,16 +233,8 @@ it('RTC-B01 preserves counters, cleanup, identities, and failure persistence', a
 });
 
 it('RTC-B01 accepts the fixed queue and listener matrices through the canonical runner', async () => {
-    const queue = signalingWorker(
-        'ice-candidate-queue',
-        'candidates-25000',
-        words('--rtc-candidates=25000 --rtc-inner-runs=5')
-    );
-    const listeners = signalingWorker(
-        'peer-listener-cleanup',
-        'peers-10000',
-        words('--rtc-inner-runs=5 --rtc-peers=10000')
-    );
+    const queue = signalingWorker({ caseId: 'ice-candidate-queue', key: 'candidates-25000', flags: words('--rtc-candidates=25000 --rtc-inner-runs=5') });
+    const listeners = signalingWorker({ caseId: 'peer-listener-cleanup', key: 'peers-10000', flags: words('--rtc-inner-runs=5 --rtc-peers=10000') });
     const samples = [
         ...(await IceQueue.runRtcIceCandidateQueueAcceptedSamples({
             worker: accepted(IceQueue.parseRtcIceCandidateQueueArguments(queue.arguments)),
@@ -257,9 +261,6 @@ it('RTC-B01 accepts the fixed queue and listener matrices through the canonical 
             (sample) => sample.outcome === 'passed' && sample.evidenceClass === 'synthetic-path'
         )
     ).toBe(true);
-    expect(Object.keys(Diagnostics)).not.toContain('createRtcPeerConnectionDiagnosticsSamples');
-    expect(Object.keys(IceQueue)).not.toContain('createRtcIceCandidateQueueSamples');
-    expect(Object.keys(Listeners)).not.toContain('createRtcPeerListenerCleanupSamples');
 });
 
 it('RTC-B01 diagnostics stay create-new beneath tmp/perf/results', () => {

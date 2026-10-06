@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -24,6 +26,86 @@ const liveRtcObserveArguments = [
 ];
 
 describe('RTC performance observation CLI', () => {
+    it('refuses selected invalid ambient capture at the actual Deno entry before live process effects', () => {
+        const result = spawnSync('deno', [
+            'run',
+            '--cached-only',
+            '--no-check',
+            '--config=packages/shared-rtc-bench/deno.json',
+            '--allow-read',
+            '--allow-env',
+            '--deny-run',
+            'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts',
+            ...liveRtcObserveArguments
+        ], { encoding: 'utf8', env: { ...process.env, DENO_NO_UPDATE_CHECK: '1', RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'Native' } });
+        expect(result.status).toBe(64);
+        expect(JSON.parse(result.stderr.trim())).toEqual([
+            expect.objectContaining({ code: 'invalid-rtc-capture-mode' })
+        ]);
+    });
+
+    it('parses invalid live selector before reading even denied ambient environment at the actual Deno entry', () => {
+        const result = spawnSync('deno', [
+            'run',
+            '--cached-only',
+            '--no-check',
+            '--config=packages/shared-rtc-bench/deno.json',
+            '--allow-read',
+            '--deny-env',
+            '--deny-run',
+            'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts',
+            ...liveRtcObserveArguments,
+            '--rtc-capture-mode=Native'
+        ], { encoding: 'utf8', env: { ...process.env, DENO_NO_UPDATE_CHECK: '1' } });
+        expect(result.status).toBe(64);
+        expect(JSON.parse(result.stderr.trim())).toEqual([expect.objectContaining({ code: 'invalid-rtc-capture-mode' })]);
+    });
+
+    it('keeps browser observation independent of the live capture flag', () => {
+        expect(parseRtcPerformanceObservationCommand([...observeArguments, '--rtc-capture-mode=native']))
+            .toMatchObject({ ok: false, issues: [expect.objectContaining({ code: 'unsupported-option' })] });
+    });
+
+    it.each(['off', 'signaling', 'native'])('admits the finite live RTC capture selector %s', (mode) => {
+        expect(parseRtcPerformanceObservationCommand([
+            ...liveRtcObserveArguments,
+            `--rtc-capture-mode=${mode}`
+        ])).toMatchObject({ ok: true, value: { kind: 'observe-live-rtc', rtcCaptureMode: mode } });
+    });
+
+    it.each(['', 'Native', 'all', 'native,signaling'])('refuses invalid live RTC capture selector %s', (mode) => {
+        expect(parseRtcPerformanceObservationCommand([
+            ...liveRtcObserveArguments,
+            `--rtc-capture-mode=${mode}`
+        ])).toMatchObject({
+            ok: false,
+            issues: expect.arrayContaining([expect.objectContaining({ code: 'invalid-rtc-capture-mode' })])
+        });
+    });
+
+    it('delivers an admitted Native selector to the live observation operation', async () => {
+        const run = vi.fn(async () => ({
+            ok: true as const,
+            value: {
+                observation: { observationId: 'native-observation' },
+                output: { archivePath: 'native.zip', indexEntryPath: 'native.jsonl' }
+            }
+        }));
+        const errors: string[] = [];
+        const code = await runRtcPerformanceObservationCli({
+            args: [...liveRtcObserveArguments, '--rtc-capture-mode=native'],
+            browserRunner: { run: vi.fn() },
+            liveRtcRunner: { run },
+            readFile: vi.fn(),
+            verifyArchive: vi.fn(),
+            writeStdout: vi.fn(),
+            writeStderr: (value) => errors.push(value)
+        });
+
+        expect({ code, errors }).toEqual({ code: 0, errors: [] });
+        expect(run).toHaveBeenCalledWith(expect.objectContaining({ rtcCaptureMode: 'native' }));
+    });
+
     it('parses the exact observe and verify command contracts', () => {
         expect(parseRtcPerformanceObservationCommand(observeArguments)).toEqual({
             ok: true,

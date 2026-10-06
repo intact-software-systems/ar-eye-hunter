@@ -85,7 +85,28 @@ source-conflict repair is published as
 `431a77b93ccae63d7ca7ad8869838086e1201967`. The separate feature checkout preserves
 the original independently held work. The reviewed Native/Manual/Join source checkpoint is
 `bd1a03f774521d3cfd911347878eef12831f84ab`, with SPEC PASS and QUALITY APPROVED across
-all33 full touched files; combined-source runtime acceptance remains separate. At the
+all33 full touched files; combined-source runtime acceptance remains separate. The current
+published head is its plan-only child `7adaef7d21547fbfe8fddd901ce341254ec97af5`.
+[Release Gate37498708746](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37498708746),
+attempt1 at that exact head, fails the unit suite and API standard2/2 shard. The unit
+failure is the unchanged benchmark architecture guard rejecting two package-test imports
+of `RtcBaselineJson`; preserve that boundary and use the existing product JSON contract.
+The API shard passes29 recipes and fails the presence-lease lifecycle recipe: expiry is
+recorded and only Alice remains, but presenceRevision stays2 against the final strict
+increase assertion. Immutable-source diagnosis traces separate expiry-event publication
+and summary convergence: the recipe does one GET immediately after seeing the event,
+accepts already-correct liveness counts, then prematurely requires the later summary revision.
+The log contains no subsequent observation proving convergence or a worker failure.
+The recipe correction earns real-runner late-convergence RED, followed by13 semantic
+controls and62 combined focused cases passing. A second witnessed RED catches acceptance
+of a Bob-only active session or a disconnected Alice; direct identity/status predicates
+close it. Event visibility, fresh state and the strict assertion now share the original
+60-attempt/95-second bound. Permanent nonconvergence remains a recorded failure and blocks
+the fresh lease. Maintained typing enforces1476 files with zero errors. Independent SPEC
+and QUALITY review approves both complete files; fresh hosted acceptance remains required.
+Do not relax strict increase or expand
+timeout/retry policy. These gates are not accepted,
+and E3 remains unexecuted. At the
 original source, Manual selection passes39 unit cases, and the
 Connect-to-Join forwarding repair passes154 affected cases and independent
 specification and quality reviews. The actual browser now proves applied Off and Full native,
@@ -156,8 +177,9 @@ Shared-test typing and maintained1466-file typing pass. The corrected isolated b
 passes1/1, exit0/50.020seconds, with zero retries, six applied Native/step Connect receipts
 and six matching initialized active scopes. Services stop and all source hashes are
 unchanged. Fresh whole-slice SPEC review approves all17 current owners and closes the nested
-capture finding. The integrated33-owner QUALITY review now approves the combined source;
-CLI/workflow/configuration sealing remains pending.
+capture finding. The integrated33-owner QUALITY review approves the combined source. The
+separate CLI/workflow/configuration implementation and review correction are now approved;
+combined-source browser/cohort and hosted acceptance remain pending.
 The earlier
 121-case/native-compilation evidence retains its historical source attribution.
 The subsequent GitHub delivery check reported PR633 CONFLICTING and REPAIR_CONFLICT.
@@ -4532,6 +4554,64 @@ fresh whole-touched-file SPEC/QUALITY review, committed at bd1a03f77 with its ex
 tree preserved. CLI/workflow/configuration sealing remains required. This is incomplete
 E3 prerequisite work; no E3 cohort is accepted.
 
+**Current configuration implementation:** The sole implementation subagent re-witnesses
+the20 assertion failures/22 passing cases on published7ada before GREEN. Additional
+semantic cases cover actual CLI/environment precedence, retained admission provenance,
+immutable run inputs and completed Connect receipt admission. The actual Deno deny-run
+probe deliberately fences process effects and exposes Git invocation before invalid
+capture selection is admitted; this ordering failure must close without treating it as
+infrastructure noise. Full recursive standards closure and fresh independent SPEC/QUALITY
+review remain required before this slice is accepted.
+
+The terminal configuration checkpoint passes469 tests across37 suites, native benchmark
+and shared-web typing, maintained1475-file typing, Deno entry checks and scoped blocking
+gates. Root verifies31 current/deleted paths,28 complete current files,18 actual producer
+owner hashes, four frozen original tests and unchanged original index bytes. Independent
+review then finds a real admission gap: a new B06 attempt can bypass receipt validation
+when its initialized configuration has no matching capture-mode descriptor. The standard
+Deno path rejects that omission, but the reusable acceptance service does not. Its
+historical-cohort comment is not an archive requirement: archive verification never calls
+this function. Acceptance and publication are held until independent semantic RED proves
+this missing-declaration case, minimum refusal preserves its raw sample/accounting, affected
+controls pass and the finding receives re-review. No legacy-retention exception is authorized.
+Full-file quality review also finds a four-positional failure probe in each flattened
+workload suite and signaling assertions that pin removed private helper names. Correct
+the probes with named inputs and remove those obsolete topology assertions while retaining
+the actual failure/effect controls. These are required touched-file closure findings.
+Correction round1 witnesses2 semantic failures/14 passing controls through actual
+service admission for empty and other-case-only configuration. The minimum refusal and
+valid positive fixtures then pass36 focused cases across four files; unchanged architecture
+and formation controls pass36 cases across three files. Maintained1476-file typing passes.
+Terminal changed-style/preservation verification passes. Fresh SPEC/QUALITY re-review
+approves all four complete correction files and the exact applicability of the other27
+unchanged paths. Root verifies39 original source/test guards, four original tests,18 B06
+owner hashes,82 historical evidence files and both raw indices. The combined affected
+validation passes533 tests across43 files, and a fresh Deno CLI check passes.
+The configuration source checkpoint is accepted for publication; browser/cohort, hosted
+and E3 acceptance remain separate and unproved.
+The separate API actor is terminal DONE and fresh SPEC/QUALITY review approves both
+complete files. Their frozen hashes match, as does the configuration correction. No
+implementer remains active. The next two outcomes are publication/current hosted gates
+and a serialized Native browser preflight on the published reviewed source.
+Root witnesses its real-runner semantic RED: the expired event and first state snapshot
+both retain revision2, so the strict increase assertion fails before later revision3 or
+fresh-lease verification can execute. A second2-FAIL/11-PASS RED proves that an advanced
+Bob-only or disconnected-Alice snapshot was accepted. The final13 semantic cases and62
+focused runner controls pass; the correction preserves one shared original polling bound,
+strict increase, membership, lifecycle and Alice-session identity. The complete terminal
+handoff is independently approved local evidence; publication and hosted acceptance remain.
+
+Completed receipt decoding must be shared once by formation and baseline acceptance.
+The initial proposed shared-test placement conflicts with the unchanged benchmark import
+allowlist. Current source inspection corrects the owner to the existing shared-web
+connection translation boundary beside its capture policy/error, without a public barrel
+export. Remove the private formation decoder and the temporary shared-test copy; use
+`ApiJsonValue` directly in the two affected package tests. Preserve grammar, application
+policy and basic applied-Native admission with unavailable native readouts. Keep strict
+Native acquisition as the separate preflight requirement. The existing architecture guard
+must pass unchanged. This correction creates no protocol/archive migration or public API
+compatibility decision.
+
 **Status:** Read-only readiness audit confirms that an unchanged published431a77 diagnostic
 defaults to Signaling and cannot acquire the missing native lifetime/transport evidence.
 The initial and aligned test-only runs both expose17 intended failures/16 passing controls
@@ -4746,24 +4826,29 @@ hot-path sink, invented capability claim or changed retry/deadline/workload to b
       `tmp/perf/b06-configuration-sealing/test-only-red-1791299706231520000/semantic-red.log`:
       20 FAIL/22 PASS across six suites, all21 original controls preserved. This is actual parser,
       child environment, persisted observation and workflow-shell behavior, not a missing export
-      or source-text assertion. This frozen RED is the next production slice; source-conflict
+      or source-text assertion. This frozen RED earned the initial correction; source-conflict
       repair and independent acceptance of the integrated33-owner Native/Manual/Join slice are complete.
-      Current observation setup resolves catalog configuration from allowlisted environment
-      values and prior initialized CLI values; initial observation receives no parsed CLI
-      selection. Adding a CLI option alone would therefore leave the manifest's resolved
-      configuration different from the actual producer. Prove that the admitted selector
-      drives both producer execution and resolved configuration, with inheritance removed,
-      and that per-Connect receipts match it. Keep the existing scalar/JSON extension
-      boundaries; do not change closed version1 requests or rewrite historical archives.
-      Construct observation configuration from the admitted selection before any runtime
-      observation, using immutable per-run inputs rather than mutable adapter/environment
-      substitution. Reconciliation must retain the selected configuration truthfully.
-      Current B06 catalog source inventory lists only the matrix and hashes the regular
-      playwright.config.ts, while the actual command selects playwright.full-stack.config.ts.
-      Refresh that inventory for the actual producer/configuration owners, including the
-      acquired-recorder path, without relabeling old source archives.
+      Initial GREEN is terminal; independent review identifies the missing-declaration
+      admission gap described above. Its witnessed minimum correction is terminal and receives
+      fresh re-review; required hosted correctness and combined-source browser verification
+      remain outstanding. The current combined affected suite passes533 cases across43 files.
+      Observation now receives the admitted immutable selection before constructing runtime
+      owners. CLI overrides selected environment input and the canonical default; actual
+      allowlisted environment facts remain separate. Producer argv and resolved configuration
+      share the sealed mode, child inheritance is removed, and reconciliation retains the
+      initialized selection. Completed Connect application is checked before successful
+      new-attempt publication. The scalar/JSON extension boundaries and closed version1
+      requests/archive readers remain intact.
+      Current B06 provenance hashes17 exercised producer owners and the actual
+      playwright.full-stack.config.ts, including acquisition/recorder/translation policy.
+      B05 retains its separate inventory. These18 hashes describe the present workload;
+      they do not relabel historical archives or claim full transitive source coverage.
 - [ ] Select the reviewed immutable source and run the requested diagnostic/E3 workload with
       original attempt accounting and measurement isolation.
+      First close the current required hosted failures: configuration closure includes the
+      unchanged architecture guard; the separate API recipe needs the bounded summary-convergence
+      synchronization correction and independent semantic review. Neither failure authorizes a
+      production RTC recovery, retention, retry or timeout change.
       The controller runs the3+11 primary; a passing primary triggers the3+22 repeat only
       when its existing repeat requirement selects RTC-B06. Do not add an unconditional
       repeat, retries or replacement samples.

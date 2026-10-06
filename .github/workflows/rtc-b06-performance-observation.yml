@@ -11,6 +11,15 @@ on:
         options:
           - publish
           - diagnostic
+      rtc_capture_mode:
+        description: Select RTC diagnostics capture
+        required: true
+        default: signaling
+        type: choice
+        options:
+          - off
+          - signaling
+          - native
 
 permissions:
   contents: read
@@ -83,13 +92,16 @@ jobs:
 
       - name: Capture RTC-B06 E3-memory observation
         if: ${{ inputs.mode == 'publish' }}
+        env:
+          RTC_CAPTURE_MODE: ${{ inputs.rtc_capture_mode }}
         run: |
-          env -u DATABASE_URL -u RALLAR_ICE_MODE \
+          env -u DATABASE_URL -u RALLAR_ICE_MODE -u RALLAR_BLACK_BOX_RTC_CAPTURE_MODE \
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 \
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 \
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
             npm run perf:rtc-baseline -- observe-live-rtc \
             --source-ref=main \
+            --rtc-capture-mode="$RTC_CAPTURE_MODE" \
             --github-run-id="$GITHUB_RUN_ID" \
             --github-run-attempt="$GITHUB_RUN_ATTEMPT" \
             --github-run-url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
@@ -152,6 +164,8 @@ jobs:
         run: npm run check --workspace=packages/shared-rtc-bench
 
       - name: Exercise RTC-B06 diagnostic cases
+        env:
+          RTC_CAPTURE_MODE: ${{ inputs.rtc_capture_mode }}
         run: |
           set -o pipefail
           diagnostic_status=0
@@ -163,6 +177,7 @@ jobs:
             -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
+            RALLAR_BLACK_BOX_RTC_CAPTURE_MODE="$RTC_CAPTURE_MODE" \
             RALLAR_BLACK_BOX_STORAGE_DIR="$recorder_storage" \
             RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/default/failure-diagnostics" \
             npm run test:rallar:full-stack:memory:live-rtc-3 -- \
@@ -181,6 +196,7 @@ jobs:
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 \
+            RALLAR_BLACK_BOX_RTC_CAPTURE_MODE="$RTC_CAPTURE_MODE" \
             RALLAR_BLACK_BOX_STORAGE_DIR="$recorder_storage" \
             RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/all-scenarios/failure-diagnostics" \
             npm run test:rallar:full-stack:memory:live-rtc-3 -- \
@@ -202,6 +218,7 @@ jobs:
             -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 \
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
+            RALLAR_BLACK_BOX_RTC_CAPTURE_MODE="$RTC_CAPTURE_MODE" \
             RALLAR_BLACK_BOX_STORAGE_DIR="$recorder_storage" \
             RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/retention-100/failure-diagnostics" \
             npm run test:rallar:full-stack:memory:live-rtc-3 -- \

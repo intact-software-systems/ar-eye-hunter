@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test';
+import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 
 import type {
     RallarBlackBoxTestCommand,
@@ -13,7 +14,6 @@ import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layo
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 
@@ -21,8 +21,7 @@ import { readLiveRtcAgentApiUrls } from './live-rtc-agent-environment.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import {
     jsonRecord,
-    stringArrayValue,
-    type LiveRtcJsonRecord
+    stringArrayValue
 } from './live-rtc-evidence-json.ts';
 import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 
@@ -165,11 +164,6 @@ interface InitialPairPeerReadinessInput {
     readonly suffix: string;
     readonly startedAtMs: number;
 }
-
-type FormationCaptureDecoding = Either<
-    RallarRtcCaptureUnverifiedError.Reason,
-    RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>
->;
 
 interface ReconnectedFormationAgent extends FormationAgentConnection {
     readonly receiverReadinessDurationMs: number;
@@ -652,11 +646,16 @@ async function connectFormationAgent(
     return { commandId, sessionId, rtcCapture, ...(nativeAcquisition === undefined ? {} : { nativeAcquisition }) };
 }
 
+interface FormationConnectCommand extends RallarBlackBoxTestRtcConnectCommand {
+    readonly connection: string;
+    readonly transport: TransportUnderTest;
+}
+
 function toFormationConnectCommand(
     config: CreateGroupFormationLifecycleDriverConfig,
     input: ConnectFormationAgentInput,
     captureOptions: ReturnType<typeof toBrowserRtcCaptureIntent>['options']
-): RallarBlackBoxTestRtcConnectCommand & { readonly connection: string; readonly transport: TransportUnderTest; } {
+): FormationConnectCommand {
     return {
         kind: 'rtc.connect',
         connection: `${input.agent.connection}-${input.transport.replace('.', '-')}`,
@@ -684,7 +683,7 @@ function requireFormationCaptureReceipt(
     requested: RtcSignalingDiagnostics.CaptureConfiguration,
     value: RtcBaselineJson | undefined
 ): RtcSignalingDiagnostics.CaptureReceipt {
-    const decoded = toFormationCaptureReadout(value);
+    const decoded = toRtcCaptureReadout(value);
     const rtcCapture = decoded.right ?? { status: 'unavailable' as const, reason: 'unrecognized' as const };
     const reason = decoded.left ?? resolveRequiredRtcCaptureFailure(requested, rtcCapture);
     if (reason !== undefined || rtcCapture.status !== 'observed') {
@@ -742,140 +741,6 @@ function nativeFormationAcquisitionFailure(
         nativeAcquisitions: [],
         nativeAcquisitionFailure: failure
     });
-}
-
-function toFormationCaptureReadout(value: RtcBaselineJson | undefined): FormationCaptureDecoding {
-    if (value === undefined) {
-        return Either.ofRight({ status: 'unavailable', reason: 'absent' });
-    }
-    const readout = jsonRecord(value);
-    if (readout?.status === 'unavailable') {
-        return Either.ofRight(
-            toFormationCaptureUnavailable(readout) ?? { status: 'unavailable', reason: 'unrecognized' }
-        );
-    }
-    const receipt = readout?.status === 'observed' ? jsonRecord(readout.value) : null;
-    if (receipt === null) {
-        return Either.ofRight({ status: 'unavailable', reason: 'unrecognized' });
-    }
-    const configurationVersion = receipt.configurationVersion;
-    if (configurationVersion !== 1) {
-        return Either.ofLeft('configuration-version-unverified');
-    }
-    const decoded = toFormationCaptureReceipt(receipt, configurationVersion);
-    return Either.ofRight(
-        decoded === undefined
-            ? { status: 'unavailable', reason: 'unrecognized' }
-            : { status: 'observed', value: decoded }
-    );
-}
-
-function toFormationCaptureReceipt(
-    receipt: LiveRtcJsonRecord,
-    configurationVersion: 1
-): RtcSignalingDiagnostics.CaptureReceipt | undefined {
-    const configuration = toFormationCaptureConfiguration(receipt.configuration);
-    const application = toFormationCaptureApplication(receipt.application);
-    const connectionId = toFormationCaptureStringReadout(receipt.connectionId);
-    const nativeScopeId = toFormationCaptureStringReadout(receipt.nativeScopeId);
-    const nativeAvailability = toFormationCaptureAvailability(receipt.nativeAvailability);
-    const nativeCoverage = receipt.nativeCoverage;
-    if (
-        configuration === undefined || application === undefined || connectionId === undefined ||
-        nativeScopeId === undefined ||
-        nativeAvailability === undefined ||
-        (nativeCoverage !== 'attached' && nativeCoverage !== 'partial' && nativeCoverage !== 'unavailable' &&
-            nativeCoverage !== 'not-applicable')
-    ) {
-        return undefined;
-    }
-    return {
-        configuration,
-        application,
-        connectionId,
-        nativeScopeId,
-        configurationVersion,
-        nativeAvailability,
-        nativeCoverage
-    };
-}
-
-function toFormationCaptureConfiguration(
-    value: RtcBaselineJson | undefined
-): RtcSignalingDiagnostics.CaptureConfiguration | undefined {
-    const configuration = jsonRecord(value);
-    if (configuration === null) {
-        return undefined;
-    }
-    const mode = parseRtcCaptureMode(configuration.mode).right?.mode;
-    const origin = configuration.origin;
-    return mode !== undefined &&
-            (origin === 'run' || origin === 'step' || origin === 'recipe' || origin === 'host' ||
-                origin === 'product-default')
-        ? { mode, origin }
-        : undefined;
-}
-
-function toFormationCaptureApplication(
-    value: RtcBaselineJson | undefined
-): RtcSignalingDiagnostics.CaptureApplication | undefined {
-    const application = jsonRecord(value);
-    if (application?.status === 'applied') {
-        const mode = parseRtcCaptureMode(application.mode).right?.mode;
-        return mode === undefined ? undefined : { status: 'applied', mode };
-    }
-    const reason = application?.reason;
-    return application?.status === 'unavailable' &&
-            (reason === 'sink-unavailable' || reason === 'unsupported' || reason === 'initialization-failed')
-        ? { status: 'unavailable', reason }
-        : undefined;
-}
-
-function toFormationCaptureStringReadout(
-    value: RtcBaselineJson | undefined
-): RtcSignalingDiagnostics.Readout<string> | undefined {
-    const readout = jsonRecord(value);
-    return readout?.status === 'observed' && typeof readout.value === 'string'
-        ? { status: 'observed', value: readout.value }
-        : toFormationCaptureUnavailable(value);
-}
-
-function toFormationCaptureAvailability(
-    value: RtcBaselineJson | undefined
-): RtcSignalingDiagnostics.Readout<'enabled'> | undefined {
-    const readout = jsonRecord(value);
-    return readout?.status === 'observed' && readout.value === 'enabled'
-        ? { status: 'observed', value: 'enabled' }
-        : toFormationCaptureUnavailable(value);
-}
-
-function toFormationCaptureUnavailable(
-    value: RtcBaselineJson | undefined
-): RtcSignalingDiagnostics.UnavailableReadout | undefined {
-    const readout = jsonRecord(value);
-    if (readout?.status !== 'unavailable') {
-        return undefined;
-    }
-    const reason = readout.reason;
-    switch (reason) {
-        case 'disabled':
-        case 'no-native-object':
-        case 'absent':
-        case 'unsupported':
-        case 'unrecognized':
-        case 'read-failed':
-        case 'identity-source-absent':
-        case 'identity-source-failed':
-        case 'identity-invalid':
-        case 'initialization-failed':
-        case 'admission-limit':
-        case 'scope-disposed':
-        case 'payload-bytes':
-        case 'not-applicable':
-            return { status: 'unavailable', reason };
-        default:
-            return undefined;
-    }
 }
 
 async function configureMeshTopology(

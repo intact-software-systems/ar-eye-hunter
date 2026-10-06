@@ -5,10 +5,10 @@ import {
 } from 'vitest';
 
 import type { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
-import type { RtcBaselineJson } from '../../shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 
 import {
     createGroupFormationLifecycleDriver,
@@ -96,7 +96,7 @@ const replacementCaptureInput = {
 
 interface FormationCaptureReceiptCase {
     readonly description: string;
-    readonly rtcCapture: RtcBaselineJson | undefined;
+    readonly rtcCapture: ApiJsonValue | undefined;
     readonly reason: RallarRtcCaptureUnverifiedError.Reason;
 }
 
@@ -261,7 +261,7 @@ function requireFormationSessionId(result: LiveRtcControlClient.Result): string 
 }
 
 function createReconnectControl(
-    rtcCapture: RtcBaselineJson | undefined
+    rtcCapture: ApiJsonValue | undefined
 ): LiveRtcControlPort {
     return {
         executeOk: async (input) => {
@@ -270,7 +270,7 @@ function createReconnectControl(
             }
             return successfulResult(input, {
                 sessionId: 'replacement-session-c',
-                ...(rtcCapture === undefined ? {} : { rtcCapture })
+                ...(rtcCapture === undefined ? {} : { rtcCapture: normalizeJson(rtcCapture) })
             });
         },
         executeResult: async () => {

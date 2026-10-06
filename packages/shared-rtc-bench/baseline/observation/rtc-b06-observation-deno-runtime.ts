@@ -1,3 +1,6 @@
+import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import type { RtcBaselineAttemptLocatorDto, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 import type { DenoRtcBaselineAdapters } from '../runtime/rtc-baseline-deno-adapters.ts';
 import type { RtcBaselineDenoPort } from '../runtime/rtc-baseline-deno-port.ts';
@@ -25,6 +28,7 @@ const encoder = new TextEncoder();
 
 export interface RtcB06LiveProducerCommandInput {
     readonly baselineId: string;
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly attempt: RtcBaselineAttemptLocatorDto;
 }
 
@@ -38,6 +42,7 @@ export interface RtcB06ObservationDenoRuntimeInput {
     readonly adapters: DenoRtcBaselineAdapters;
     readonly envelope: RtcBaselineEnvelope;
     readonly producerOutput: RtcB06ProducerOutput;
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
 }
 
 export interface RtcB06ProducerOutput {
@@ -48,11 +53,13 @@ export interface RtcB06ProducerOutput {
 export function createRtcB06ObservationDenoRuntime(
     input: RtcB06ObservationDenoRuntimeInput
 ): RtcB06ObservationRunnerDependencies {
+    const rtcCaptureMode = input.rtcCaptureMode ?? resolveRtcCaptureConfiguration({ sinkAvailable: true }).mode;
     return {
         envelope: input.envelope,
         preflight: () => preflight(input.runtime),
         readSource: () => readRtcPerformanceObservationSource(input.adapters),
-        runLiveRtcProducer: (producer) => runRtcB06LiveProducer(input.runtime, input.producerOutput, producer),
+        runLiveRtcProducer: (producer) =>
+            runRtcB06LiveProducer(input.runtime, input.producerOutput, { ...producer, rtcCaptureMode }),
         readFinalizedArtifacts: (baselineId) =>
             readRtcPerformanceObservationFinalizedArtifacts(input.runtime, baselineId),
         createArchive: createVerifiedRtcPerformanceObservationArchive,
@@ -96,6 +103,9 @@ export function createRtcB06LiveProducerCommand(
             `RALLAR_BLACK_BOX_RTC_INPUT_KEY=${input.attempt.inputKey}`,
             `RALLAR_BLACK_BOX_RTC_INTENDED_PHASE=${input.attempt.intendedPhase}`,
             `RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL=${input.attempt.outerOrdinal}`,
+            `RALLAR_BLACK_BOX_RTC_CAPTURE_MODE=${
+                input.rtcCaptureMode ?? resolveRtcCaptureConfiguration({ sinkAvailable: true }).mode
+            }`,
             ...caseConfiguration(input.attempt.caseId),
             ...liveRtcCommand
         ]

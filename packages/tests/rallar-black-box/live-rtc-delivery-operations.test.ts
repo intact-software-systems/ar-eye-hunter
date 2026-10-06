@@ -5,10 +5,10 @@ import {
     vi
 } from 'vitest';
 
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
-import type { RtcBaselineJson } from '../../shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 
 import type { LiveRtcControlPort } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
@@ -1233,7 +1233,7 @@ namespace RecordingLiveRtcControl {
     export interface InitialState {
         readonly lifecycleState: 'forming' | 'active';
         readonly acceptedSessions: readonly string[];
-        readonly rtcCapture?: RtcBaselineJson;
+        readonly rtcCapture?: ApiJsonValue;
     }
 }
 
@@ -1243,7 +1243,7 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
     readonly connected = new Set<string>();
     private lifecycleState: 'forming' | 'active' | 'connecting' | 'reconfiguring';
     private acceptedSessions: readonly string[];
-    private readonly rtcCapture: RtcBaselineJson | undefined;
+    private readonly rtcCapture: ApiJsonValue | undefined;
     private formationEpoch = 0;
     private groupRevision = 0;
     private deferReadiness = false;
@@ -1324,7 +1324,7 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
             result: {
                 value: {
                     body,
-                    ...(command.kind === 'rtc.connect' && this.rtcCapture !== undefined ? { rtcCapture: this.rtcCapture } : {}),
+                    ...(command.kind === 'rtc.connect' && this.rtcCapture !== undefined ? { rtcCapture: normalizeJson(this.rtcCapture) } : {}),
                     ...(sessionId
                         ? {
                             sessionId,

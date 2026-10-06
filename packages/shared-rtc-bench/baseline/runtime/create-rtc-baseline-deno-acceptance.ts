@@ -136,6 +136,12 @@ export function createRtcBaselineDenoAcceptance(
         initializeStore: (baselineId, initialization) =>
             initializeRtcBaselineDenoStore(evidence, baselineId, initialization),
         readManifest: evidence.readManifest,
+        async readInitializedConfiguration(baselineId) {
+            const environment = await evidence.readEnvironment(baselineId);
+            return environment.ok
+                ? { ok: true, value: environment.value.observation?.resolvedConfiguration ?? [] }
+                : environment;
+        },
         writeAcceptedArtifact: (baselineId, artifact) =>
             writeRtcBaselineAcceptedArtifact(evidence, baselineId, artifact),
         readStagedJson: evidence.store.readJson,

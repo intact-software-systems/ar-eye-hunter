@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 presence lease expiry in a lifecycle-managed group. Bob takes a short lease and Alice the default lease. Current reads must exclude Bob after expiry and preserve monotonic revisions while activation and expiry workers may advance durable state. A named session-disconnected/expired event proves reconciliation; membership and connecting lifecycle remain intact, and Bob can take a fresh lease without rejoining. Read-time filtering preserves its observed causal tuple, as covered by controlled repository snapshot tests; separate live HTTP observations cannot require tuple equality.",
+  "description": "No-browser API-v1 presence lease expiry in a lifecycle-managed group. Bob takes a short lease and Alice the default lease. Current reads must exclude Bob after expiry and preserve monotonic revisions while activation and expiry workers may advance durable state. A named session-disconnected/expired event proves reconciliation. Within the same bounded wait, fresh snapshots must show canonical presence-summary revision advancement while membership and connecting lifecycle remain intact, before Bob can take a fresh lease without rejoining. Read-time filtering preserves its observed causal tuple, as covered by controlled repository snapshot tests; separate live HTTP observations cannot require tuple equality.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -481,93 +481,116 @@
       }
     },
     {
-      "name": "theExpiryIsNamedInTheGroupEvents",
-      "type": "http",
-      "connection": "api",
+      "name": "expirySummaryConverges",
+      "type": "parallel",
+      "maxConcurrency": 1,
+      "failFast": true,
       "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
         "poll": {
           "maxAttempts": 60,
           "maxDurationMs": 95000,
           "backoffMs": 2000,
           "backoffMultiplier": 1
-        },
-        "outputs": {
-          "groupEventsAfterSweep": "body"
         }
       },
-      "expect": {
-        "status": 200,
-        "body": [
-          {
-            "eventType": "session-disconnected",
-            "reason": "expired"
-          }
-        ]
-      }
-    },
-    {
-      "name": "theSweepAdvancedTheChangeToken",
-      "type": "http",
-      "connection": "api",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "outputs": {
-          "presenceRevisionAfterSweep": "body.causalRevision.presenceRevision",
-          "sessionsAfterSweep": "body.activeSessions",
-          "membersAfterSweep": "body.members",
-          "lifecycleStateAfterSweep": "body.group.lifecycleState"
+      "groups": [
+        {
+          "name": "expiryAndCanonicalSummary",
+          "steps": [
+            {
+              "name": "theExpiryIsNamedInTheGroupEvents",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                },
+                "outputs": {
+                  "groupEventsAfterSweep": "body"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": [
+                  {
+                    "eventType": "session-disconnected",
+                    "reason": "expired"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "theSweepAdvancedTheChangeToken",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                },
+                "outputs": {
+                  "presenceRevisionAfterSweep": "body.causalRevision.presenceRevision",
+                  "sessionsAfterSweep": "body.activeSessions",
+                  "membersAfterSweep": "body.members",
+                  "lifecycleStateAfterSweep": "body.group.lifecycleState"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "onlineMemberCount": 1,
+                  "memberCount": 2
+                }
+              }
+            },
+            {
+              "name": "theSweepDroppedPresenceNotMembershipOrTheLifecycle",
+              "type": "assert",
+              "actual": {
+                "lifecycleBefore": "{lifecycleStateBeforeSweep}",
+                "lifecycleAfter": "{lifecycleStateAfterSweep}",
+                "revisionAfterSweep": "{presenceRevisionAfterSweep}",
+                "sessions": "{sessionsAfterSweep}",
+                "members": "{membersAfterSweep}"
+              },
+              "expect": {
+                "missingActualValue": "MISSING",
+                "body": {
+                  "lifecycleBefore": "connecting",
+                  "lifecycleAfter": "connecting"
+                },
+                "comparators": [
+                  {
+                    "path": "revisionAfterSweep",
+                    "gt": "{presenceRevisionBeforeSweep}"
+                  },
+                  {
+                    "path": "sessions",
+                    "length": 1
+                  },
+                  {
+                    "path": "sessions.0.sessionId",
+                    "equals": "{aliceSessionId}"
+                  },
+                  {
+                    "path": "sessions.0.status",
+                    "equals": "active"
+                  },
+                  {
+                    "path": "members",
+                    "length": 2
+                  }
+                ]
+              }
+            }
+          ]
         }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "onlineMemberCount": 1,
-          "memberCount": 2
-        }
-      }
-    },
-    {
-      "name": "theSweepDroppedPresenceNotMembershipOrTheLifecycle",
-      "type": "assert",
-      "actual": {
-        "lifecycleBefore": "{lifecycleStateBeforeSweep}",
-        "lifecycleAfter": "{lifecycleStateAfterSweep}",
-        "revisionAfterSweep": "{presenceRevisionAfterSweep}",
-        "sessions": "{sessionsAfterSweep}",
-        "members": "{membersAfterSweep}"
-      },
-      "expect": {
-        "missingActualValue": "MISSING",
-        "body": {
-          "lifecycleBefore": "connecting",
-          "lifecycleAfter": "connecting"
-        },
-        "comparators": [
-          {
-            "path": "revisionAfterSweep",
-            "gt": "{presenceRevisionBeforeSweep}"
-          },
-          {
-            "path": "sessions",
-            "length": 1
-          },
-          {
-            "path": "members",
-            "length": 2
-          }
-        ]
-      }
+      ]
     },
     {
       "name": "bobCanTakeAFreshLeaseWithoutRejoining",

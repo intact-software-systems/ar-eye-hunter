@@ -3,24 +3,39 @@ import { createRtcB05ObservationRunner } from '../observation/rtc-b05-observatio
 import { createRtcB06ObservationDenoRuntime } from '../observation/rtc-b06-observation-deno-runtime.ts';
 import { createRtcB06ObservationRunner } from '../observation/rtc-b06-observation-runner.ts';
 import { verifyRtcPerformanceObservationArchive } from '../observation/rtc-performance-observation-archive.ts';
-import { isRtcPerformanceObservationCommand } from '../observation/rtc-performance-observation-cli-grammar.ts';
 import {
-    runRtcPerformanceObservationCli,
+    isRtcPerformanceObservationCommand,
+    parseRtcPerformanceObservationCommand,
+    type RtcPerformanceObservationParsedCommand
+} from '../observation/rtc-performance-observation-cli-grammar.ts';
+import {
+    runRtcPerformanceObservationCommand,
     type RtcPerformanceObservationCliDependencies
 } from '../observation/rtc-performance-observation-cli.ts';
+import {
+    resolveRtcBaselineCaptureAdmission,
+    RTC_BASELINE_CAPTURE_ENVIRONMENT_NAME,
+    type RtcBaselineCaptureAdmission
+} from '../runtime/rtc-baseline-capture-admission.ts';
 import { createDenoRtcBaselineAdapters } from '../runtime/rtc-baseline-deno-adapters.ts';
 import { createRtcBaselineDenoRuntime } from '../runtime/rtc-baseline-deno-runtime.ts';
 import type { RtcBaselineEnvelope } from '../runtime/rtc-baseline-envelope.ts';
 import { parseRtcBaselineCommand, type RtcBaselineParsedCommand } from './rtc-baseline-cli-grammar.ts';
 import { writeRtcBaselineCliOutput } from './write-rtc-baseline-cli-output.ts';
 
-interface CliInput {
-    args: readonly string[];
+interface RtcBaselineCliDependencies {
     envelope: RtcBaselineEnvelope;
     observation?: RtcPerformanceObservationCliDependencies;
     writeStdout(value: string): void;
     writeStderr(value: string): void;
 }
+
+type RtcBaselineCliInput =
+    & RtcBaselineCliDependencies
+    & (
+        | { readonly args: readonly string[]; }
+        | { readonly command: RtcBaselineParsedCommand | RtcPerformanceObservationParsedCommand; }
+    );
 
 interface RtcBaselineCliComposition {
     readonly envelope: RtcBaselineEnvelope;
@@ -82,6 +97,22 @@ async function dispatch(envelope: RtcBaselineEnvelope, command: RtcBaselineParse
             result: await envelope.recordExternalCohortAssertion(input)
         };
     }
+    if (
+        command.kind === 'repeat-required' || command.kind === 'compare-paired' || command.kind === 'validate' ||
+        command.kind === 'finalize'
+    ) {
+        return dispatchBaselineRead(envelope, command);
+    }
+    throw new Error(`Unsupported baseline command ${command.kind}.`);
+}
+
+async function dispatchBaselineRead(
+    envelope: RtcBaselineEnvelope,
+    command: Extract<
+        RtcBaselineParsedCommand,
+        { kind: 'repeat-required' | 'compare-paired' | 'validate' | 'finalize'; }
+    >
+) {
     if (command.kind === 'repeat-required') {
         return {
             kind: command.kind,
@@ -104,27 +135,35 @@ async function dispatch(envelope: RtcBaselineEnvelope, command: RtcBaselineParse
     };
 }
 
-export async function runRtcBaselineCli(input: CliInput) {
-    if (isRtcPerformanceObservationCommand(input.args[0])) {
+export async function runRtcBaselineCli(input: RtcBaselineCliInput) {
+    const parsed = 'command' in input
+        ? { ok: true as const, value: input.command }
+        : isRtcPerformanceObservationCommand(input.args[0])
+        ? parseRtcPerformanceObservationCommand(input.args)
+        : parseRtcBaselineCommand(input.args);
+    if (!parsed.ok) {
+        input.writeStderr(`${JSON.stringify(parsed.issues)}\n`);
+        return 64;
+    }
+    const command = parsed.value;
+    if (
+        command.kind === 'observe-browser' || command.kind === 'observe-live-rtc' ||
+        command.kind === 'verify-observation'
+    ) {
         if (input.observation === undefined) {
             input.writeStderr(
                 '[{"path":"$.observation","code":"missing-observation-runtime","message":"Observation runtime is unavailable."}]\n'
             );
             return 1;
         }
-        return runRtcPerformanceObservationCli({
-            args: input.args,
+        return runRtcPerformanceObservationCommand({
+            command,
             ...input.observation,
             writeStdout: input.writeStdout,
             writeStderr: input.writeStderr
         });
     }
-    const parsed = parseRtcBaselineCommand(input.args);
-    if (!parsed.ok) {
-        input.writeStderr(`${JSON.stringify(parsed.issues)}\n`);
-        return 64;
-    }
-    const dispatched = await dispatch(input.envelope, parsed.value);
+    const dispatched = await dispatch(input.envelope, command);
     if (!dispatched.result.ok) {
         input.writeStderr(`${JSON.stringify(dispatched.result.issues)}\n`);
         return 1;
@@ -158,11 +197,7 @@ export async function runRtcBaselineCli(input: CliInput) {
 function defaultRuntime() {
     const deno = Deno;
     return {
-        get args() {
-            return deno.args;
-        },
         envGet: (name: string) => deno.env.get(name),
-        cwd: () => deno.cwd(),
         get build() {
             return deno.build;
         },
@@ -175,7 +210,6 @@ function defaultRuntime() {
         get errors() {
             return deno.errors;
         },
-        stat: (path: string) => deno.stat(path),
         lstat: (path: string) => deno.lstat(path),
         open: (path: string, options: Deno.OpenOptions) => deno.open(path, options),
         mkdir: (path: string, options?: { recursive?: boolean; }) => deno.mkdir(path, options),
@@ -204,13 +238,15 @@ function defaultRuntime() {
 }
 
 export function createDefaultRtcBaselineEnvelope() {
-    return createDefaultRtcBaselineCliComposition().envelope;
+    return createRtcBaselineDenoRuntime(createDenoRtcBaselineAdapters(defaultRuntime()));
 }
 
-function createDefaultRtcBaselineCliComposition(): RtcBaselineCliComposition {
+function createDefaultRtcBaselineCliComposition(
+    captureAdmission: RtcBaselineCaptureAdmission | undefined
+): RtcBaselineCliComposition {
     const runtime = defaultRuntime();
     const adapters = createDenoRtcBaselineAdapters(runtime);
-    const envelope = createRtcBaselineDenoRuntime(adapters);
+    const envelope = createRtcBaselineDenoRuntime(adapters, captureAdmission);
     const browserObservation = createRtcB05ObservationDenoRuntime({
         runtime,
         adapters,
@@ -220,7 +256,8 @@ function createDefaultRtcBaselineCliComposition(): RtcBaselineCliComposition {
         runtime,
         adapters,
         envelope,
-        producerOutput: runtime
+        producerOutput: runtime,
+        rtcCaptureMode: captureAdmission?.mode
     });
     return {
         envelope,
@@ -233,14 +270,35 @@ function createDefaultRtcBaselineCliComposition(): RtcBaselineCliComposition {
     };
 }
 
-if (import.meta.main) {
+async function runDefaultRtcBaselineCli() {
     const deno = Deno;
-    const composition = createDefaultRtcBaselineCliComposition();
+    const parsed = isRtcPerformanceObservationCommand(deno.args[0])
+        ? parseRtcPerformanceObservationCommand(deno.args)
+        : parseRtcBaselineCommand(deno.args);
+    if (!parsed.ok) {
+        writeRtcBaselineCliOutput(deno.stderr, `${JSON.stringify(parsed.issues)}\n`);
+        return 64;
+    }
+    const admission = parsed.value.kind === 'observe-live-rtc'
+        ? resolveRtcBaselineCaptureAdmission(
+            parsed.value.rtcCaptureMode,
+            deno.env.get(RTC_BASELINE_CAPTURE_ENVIRONMENT_NAME)
+        )
+        : { ok: true as const, value: undefined };
+    if (!admission.ok) {
+        writeRtcBaselineCliOutput(deno.stderr, `${JSON.stringify(admission.issues)}\n`);
+        return 64;
+    }
+    const composition = createDefaultRtcBaselineCliComposition(admission.value);
     const code = await runRtcBaselineCli({
-        args: deno.args,
+        command: parsed.value,
         ...composition,
         writeStdout: (value) => writeRtcBaselineCliOutput(deno.stdout, value),
         writeStderr: (value) => writeRtcBaselineCliOutput(deno.stderr, value)
     });
-    deno.exit(code);
+    return code;
+}
+
+if (import.meta.main) {
+    Deno.exit(await runDefaultRtcBaselineCli());
 }

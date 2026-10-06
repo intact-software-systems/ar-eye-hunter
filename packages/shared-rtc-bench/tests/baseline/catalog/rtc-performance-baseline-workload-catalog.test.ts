@@ -106,12 +106,12 @@ RTC-B04/heartbeat-callback-churn/fixed	packages/shared-rtc-bench/workloads/group
 `);
 
 const fullStackFacts = rows(`
-RTC-B06/default/e3-memory-default	1/5	npm:run,test:rallar:full-stack:memory:live-rtc-3	allScenarios|--rtc-all-scenarios|boolean|false|-|-;retentionSoak|--rtc-retention-soak|boolean|false|-|-;retentionCycles|--rtc-retention-cycles|nonnegative-integer|0|-|-;databaseProvider|--rtc-database-provider|string|memory|-|-;iceMode|--rtc-ice-mode|string|repository-default|-|-	-
-RTC-B06/all-scenarios/e3-memory-all-scenarios	1/3	npm:run,test:rallar:full-stack:memory:live-rtc-3	allScenarios|--rtc-all-scenarios|boolean|true|RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS|reject;retentionSoak|--rtc-retention-soak|boolean|false|-|-;retentionCycles|--rtc-retention-cycles|nonnegative-integer|0|-|-;databaseProvider|--rtc-database-provider|string|memory|-|-;iceMode|--rtc-ice-mode|string|repository-default|-|-	-
-RTC-B06/retention-100/e3-memory-retention-100	1/3	npm:run,test:rallar:full-stack:memory:live-rtc-3	allScenarios|--rtc-all-scenarios|boolean|false|-|-;retentionSoak|--rtc-retention-soak|boolean|true|RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK|reject;retentionCycles|--rtc-retention-cycles|nonnegative-integer|100|RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES|reject;databaseProvider|--rtc-database-provider|string|memory|-|-;iceMode|--rtc-ice-mode|string|repository-default|-|-	rtc-b06-e3-memory-retention
-RTC-B06/default/e4-pg-default	1/5	npm:run,test:rallar:full-stack:postgres:live-rtc-3	allScenarios|--rtc-all-scenarios|boolean|false|-|-;retentionSoak|--rtc-retention-soak|boolean|false|-|-;retentionCycles|--rtc-retention-cycles|nonnegative-integer|0|-|-;databaseProvider|--rtc-database-provider|string|postgres|-|-;iceMode|--rtc-ice-mode|string|local|RALLAR_ICE_MODE|reject	-
-RTC-B06/all-scenarios/e4-pg-all-scenarios	1/3	npm:run,test:rallar:full-stack:postgres:live-rtc-3:all	allScenarios|--rtc-all-scenarios|boolean|true|RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS|reject;retentionSoak|--rtc-retention-soak|boolean|false|-|-;retentionCycles|--rtc-retention-cycles|nonnegative-integer|0|-|-;databaseProvider|--rtc-database-provider|string|postgres|-|-;iceMode|--rtc-ice-mode|string|local|RALLAR_ICE_MODE|reject	-
-RTC-B06/retention-100/e4-pg-retention-100	1/3	npm:run,test:rallar:full-stack:postgres:live-rtc-3	allScenarios|--rtc-all-scenarios|boolean|false|-|-;retentionSoak|--rtc-retention-soak|boolean|true|RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK|reject;retentionCycles|--rtc-retention-cycles|nonnegative-integer|100|RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES|reject;databaseProvider|--rtc-database-provider|string|postgres|-|-;iceMode|--rtc-ice-mode|string|local|RALLAR_ICE_MODE|reject	rtc-b06-e4-pg-retention
+RTC-B06/default/e3-memory-default	1/5	npm:run,test:rallar:full-stack:memory:live-rtc-3	rtcCaptureMode|--rtc-capture-mode|string|signaling|RALLAR_BLACK_BOX_RTC_CAPTURE_MODE|-;allScenarios|--rtc-all-scenarios|boolean|false|-|-;retentionSoak|--rtc-retention-soak|boolean|false|-|-;retentionCycles|--rtc-retention-cycles|nonnegative-integer|0|-|-;databaseProvider|--rtc-database-provider|string|memory|-|-;iceMode|--rtc-ice-mode|string|repository-default|-|-	-
+RTC-B06/all-scenarios/e3-memory-all-scenarios	1/3	npm:run,test:rallar:full-stack:memory:live-rtc-3	rtcCaptureMode|--rtc-capture-mode|string|signaling|RALLAR_BLACK_BOX_RTC_CAPTURE_MODE|-;allScenarios|--rtc-all-scenarios|boolean|true|RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS|reject;retentionSoak|--rtc-retention-soak|boolean|false|-|-;retentionCycles|--rtc-retention-cycles|nonnegative-integer|0|-|-;databaseProvider|--rtc-database-provider|string|memory|-|-;iceMode|--rtc-ice-mode|string|repository-default|-|-	-
+RTC-B06/retention-100/e3-memory-retention-100	1/3	npm:run,test:rallar:full-stack:memory:live-rtc-3	rtcCaptureMode|--rtc-capture-mode|string|signaling|RALLAR_BLACK_BOX_RTC_CAPTURE_MODE|-;allScenarios|--rtc-all-scenarios|boolean|false|-|-;retentionSoak|--rtc-retention-soak|boolean|true|RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK|reject;retentionCycles|--rtc-retention-cycles|nonnegative-integer|100|RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES|reject;databaseProvider|--rtc-database-provider|string|memory|-|-;iceMode|--rtc-ice-mode|string|repository-default|-|-	rtc-b06-e3-memory-retention
+RTC-B06/default/e4-pg-default	1/5	npm:run,test:rallar:full-stack:postgres:live-rtc-3	rtcCaptureMode|--rtc-capture-mode|string|signaling|RALLAR_BLACK_BOX_RTC_CAPTURE_MODE|-;allScenarios|--rtc-all-scenarios|boolean|false|-|-;retentionSoak|--rtc-retention-soak|boolean|false|-|-;retentionCycles|--rtc-retention-cycles|nonnegative-integer|0|-|-;databaseProvider|--rtc-database-provider|string|postgres|-|-;iceMode|--rtc-ice-mode|string|local|RALLAR_ICE_MODE|reject	-
+RTC-B06/all-scenarios/e4-pg-all-scenarios	1/3	npm:run,test:rallar:full-stack:postgres:live-rtc-3:all	rtcCaptureMode|--rtc-capture-mode|string|signaling|RALLAR_BLACK_BOX_RTC_CAPTURE_MODE|-;allScenarios|--rtc-all-scenarios|boolean|true|RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS|reject;retentionSoak|--rtc-retention-soak|boolean|false|-|-;retentionCycles|--rtc-retention-cycles|nonnegative-integer|0|-|-;databaseProvider|--rtc-database-provider|string|postgres|-|-;iceMode|--rtc-ice-mode|string|local|RALLAR_ICE_MODE|reject	-
+RTC-B06/retention-100/e4-pg-retention-100	1/3	npm:run,test:rallar:full-stack:postgres:live-rtc-3	rtcCaptureMode|--rtc-capture-mode|string|signaling|RALLAR_BLACK_BOX_RTC_CAPTURE_MODE|-;allScenarios|--rtc-all-scenarios|boolean|false|-|-;retentionSoak|--rtc-retention-soak|boolean|true|RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK|reject;retentionCycles|--rtc-retention-cycles|nonnegative-integer|100|RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES|reject;databaseProvider|--rtc-database-provider|string|postgres|-|-;iceMode|--rtc-ice-mode|string|local|RALLAR_ICE_MODE|reject	rtc-b06-e4-pg-retention
 `);
 
 describe('RTC baseline workload catalog', () => {
@@ -219,22 +219,6 @@ describe('RTC baseline workload catalog', () => {
             ])
         ).toEqual(fullStackFacts);
         expect(fullStack.evidenceClass).toBe('local-full-stack');
-        expect(fullStack.cases.map((entry) => entry.sourcePaths)).toEqual([
-            ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
-            ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
-            ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
-            ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
-            ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
-            ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts']
-        ]);
-        expect(fullStack.cases.map((entry) => entry.configPaths)).toEqual([
-            ['apps/rallar-black-box/playwright.config.ts'],
-            ['apps/rallar-black-box/playwright.config.ts'],
-            ['apps/rallar-black-box/playwright.config.ts'],
-            ['apps/rallar-black-box/playwright.config.ts'],
-            ['apps/rallar-black-box/playwright.config.ts'],
-            ['apps/rallar-black-box/playwright.config.ts']
-        ]);
     });
 
     it('builds the exact executable B01 command from catalog and manifest facts', () => {

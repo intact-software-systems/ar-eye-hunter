@@ -1,3 +1,5 @@
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import type { RtcBaselineAttemptLocatorDto, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 import { createRtcBaselineObservationId, createRtcBaselineRepeatId } from '../contracts/rtc-baseline-id.ts';
 import type { RtcBaselineFinalizedSummary } from '../evidence/rtc-baseline-finalized-evidence.ts';
@@ -26,6 +28,7 @@ type RtcB06ObservationEnvelope = Pick<
 
 export interface RtcB06ObservationRunInput {
     readonly sourceRef: 'main';
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly githubRunId: number;
     readonly githubRunAttempt: number;
     readonly githubRunUrl: string;
@@ -100,25 +103,53 @@ async function runRtcB06Observation(
         return primary;
     }
     const primaryOutcome = outcomeOf(primary.value);
+    const repeat = await captureRequiredRepeat(dependencies, identity.value, primaryOutcome);
+    if (!repeat.ok) {
+        return repeat;
+    }
+    return writeObservationArchive(dependencies, run, {
+        baselineId: identity.value,
+        startedAt,
+        source: source.value,
+        primaryOutcome,
+        ...repeat.value
+    });
+}
+
+interface RtcB06ObservationArchiveInput {
+    baselineId: string;
+    startedAt: string;
+    source: { commit: string; tree: string; };
+    primaryOutcome: RtcPerformanceObservationOutcome;
+    repeatDecision: RtcB06PerformanceObservation['repeat']['decision'];
+    repeatOutcome: RtcB06PerformanceObservation['repeat']['outcome'];
+    repeatArtifacts?: ReadonlyMap<string, Uint8Array>;
+}
+
+async function captureRequiredRepeat(
+    dependencies: RtcB06ObservationRunnerDependencies,
+    baselineId: string,
+    primaryOutcome: RtcPerformanceObservationOutcome
+) {
     let repeatDecision: RtcB06PerformanceObservation['repeat']['decision'] = 'not-required';
     let repeatOutcome: RtcB06PerformanceObservation['repeat']['outcome'] = 'not-run';
     let repeatArtifacts: ReadonlyMap<string, Uint8Array> | undefined;
     if (primaryOutcome === 'passed') {
         const accepted = await dependencies.envelope.readBaselineValidation({
-            baselineId: identity.value
+            baselineId: baselineId
         });
         if (!accepted.ok) {
             return accepted;
         }
         const repeat = await dependencies.envelope.readRepeatRequirement({
-            baselineId: identity.value
+            baselineId: baselineId
         });
         if (!repeat.ok) {
             return repeat;
         }
         if (repeat.value.workloadIds.includes('RTC-B06')) {
             repeatDecision = 'required';
-            const repeated = await captureRepeat(dependencies, identity.value);
+            const repeated = await captureRepeat(dependencies, baselineId);
             if (!repeated.ok) {
                 return repeated;
             }
@@ -126,16 +157,25 @@ async function runRtcB06Observation(
             repeatArtifacts = repeated.value.artifacts;
         }
     }
-    const primaryArtifacts = await dependencies.readFinalizedArtifacts(identity.value);
+    return { ok: true as const, value: { repeatDecision, repeatOutcome, repeatArtifacts } };
+}
+
+async function writeObservationArchive(
+    dependencies: RtcB06ObservationRunnerDependencies,
+    run: RtcB06ObservationRunInput,
+    input: RtcB06ObservationArchiveInput
+) {
+    const { baselineId, startedAt, source, primaryOutcome, repeatDecision, repeatOutcome, repeatArtifacts } = input;
+    const primaryArtifacts = await dependencies.readFinalizedArtifacts(baselineId);
     if (!primaryArtifacts.ok) {
         return primaryArtifacts;
     }
     const observation: RtcB06PerformanceObservation = {
         schema: 'rallar.rtc-b06-performance-observation.v1',
-        observationId: identity.value,
+        observationId: baselineId,
         startedAt,
         completedAt: dependencies.nowUtc(),
-        source: { ...source.value, ref: run.sourceRef },
+        source: { ...source, ref: run.sourceRef },
         workflow: {
             runId: run.githubRunId,
             runAttempt: run.githubRunAttempt,

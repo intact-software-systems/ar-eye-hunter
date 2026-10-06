@@ -9,6 +9,8 @@ import type {
     RtcBaselineJson,
     RtcBaselineOuterAttemptDto,
     RtcBaselineRecordAttemptInputDto,
+    RtcBaselineResolvedConfigurationValueDto,
+    RtcBaselineResult,
     RtcBaselineSampleIdentityDto
 } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
 import { normalizeRtcBaselineJson } from '../../../baseline/contracts/rtc-baseline-decoding.ts';
@@ -89,6 +91,7 @@ function dependencies(overrides: Partial<RtcBaselineEvidenceAcceptanceDependenci
     return {
         initializeStore: async () => ({ ok: true as const, value: undefined }),
         readManifest: async () => ({ ok: true as const, value: manifest }),
+        readInitializedConfiguration: async () => ({ ok: true as const, value: [] }),
         writeAcceptedArtifact: async () => ({ ok: true as const, value: undefined }),
         readStagedJson: async () => ({ ok: false as const, issues: [] }),
         runFreshWorker: async () => ({ outcomes: [] }),
@@ -225,6 +228,180 @@ function normalizeStagedJson(value: object): RtcBaselineJson {
 }
 
 describe('RTC baseline evidence acceptance', () => {
+    it.each(['empty', 'other-case'] as const)(
+        'refuses new B06 admission with %s configuration and accounts every remaining owner once',
+        async (configurationKind) => {
+            const staged = stagedExternalAttempt();
+            const original = {
+                ...staged.samples[0]!,
+                rawEvidence: {
+                    durationMs: 1,
+                    rtcConnectCaptures: [{
+                        receipt: {
+                            configuration: { mode: 'native', origin: 'step' },
+                            application: { status: 'applied', mode: 'native' },
+                            configurationVersion: 1,
+                            connectionId: { status: 'observed', value: 'completed-connect' },
+                            nativeScopeId: { status: 'unavailable', reason: 'unsupported' },
+                            nativeAvailability: { status: 'unavailable', reason: 'unsupported' },
+                            nativeCoverage: 'unavailable'
+                        }
+                    }]
+                }
+            };
+            const laterIdentities = [
+                { ...original.identity, sampleId: 'rtc-b06-case-input-retained-001-002', innerOrdinal: 2 },
+                { ...original.identity, sampleId: 'rtc-b06-case-input-retained-002-001', outerOrdinal: 2 },
+                { ...original.identity, sampleId: 'rtc-b06-other-case-input-retained-001-001', caseId: 'other-case' }
+            ];
+            const firstOuter = manifestFor('RTC-B06').outerAttempts[0]!;
+            const cohort = {
+                cohortId: 'rtc-b06-e3-memory-retention',
+                workloadId: 'RTC-B06' as const,
+                memberSampleIds: [original.identity.sampleId, ...laterIdentities.map((identity) => identity.sampleId)]
+            };
+            const currentManifest: RtcBaselineCaptureManifestDto = {
+                ...manifestFor('RTC-B06'),
+                outerAttempts: [
+                    { ...firstOuter, sampleIds: [original.identity.sampleId, laterIdentities[0]!.sampleId] },
+                    { ...firstOuter, outerOrdinal: 2, sampleIds: [laterIdentities[1]!.sampleId] },
+                    { ...firstOuter, caseId: 'other-case', sampleIds: [laterIdentities[2]!.sampleId] }
+                ],
+                expectedCohorts: [cohort]
+            };
+            const configuration: RtcBaselineResolvedConfigurationValueDto[] = configurationKind === 'empty' ? [] : [{
+                caseKey: { workloadId: 'RTC-B06', caseId: 'other-case', inputKey: 'input' },
+                field: 'rtcCaptureMode',
+                value: 'native',
+                source: 'cli'
+            }];
+            const writes: RtcBaselineAcceptedArtifact[] = [];
+            const service = createRtcBaselineEvidenceAcceptance(dependencies({
+                readManifest: async () => ({ ok: true, value: currentManifest }),
+                readInitializedConfiguration: async () => ({ ok: true, value: configuration }),
+                readStagedJson: async () => ({
+                    ok: true,
+                    value: normalizeStagedJson({
+                        ...staged,
+                        samples: [original, { ...original, identity: laterIdentities[0] }],
+                        sampleOutcomes: [staged.sampleOutcomes[0], { identity: laterIdentities[0], outcome: 'passed', issues: [] }]
+                    })
+                }),
+                writeAcceptedArtifact: collectWrites(writes)
+            }));
+            const result = await service.recordExternalAttempt(externalInput('RTC-B06'));
+            expect(result).toMatchObject({ ok: false, issues: [{ code: 'missing-capture-admission' }] });
+            const failureId = `failure-sample-${original.identity.sampleId}`;
+            expect(writes).toHaveLength(5);
+            expect(writes[0]).toMatchObject({
+                artifactKind: 'failure',
+                identity: original.identity,
+                failureId,
+                causalFailureId: null,
+                issues: [{ code: 'missing-capture-admission' }],
+                rawEvidence: original
+            });
+            expect(writes.slice(1, 4)).toEqual(laterIdentities.map((identity) => ({
+                artifactKind: 'not-run',
+                failureId,
+                identity,
+                outcome: 'not-run',
+                causalFailureId: failureId,
+                issues: [{ path: '$', code: 'causal-not-run', message: 'Not run after the first workload correctness failure.' }],
+                rawEvidence: null
+            })));
+            expect(writes[4]).toEqual({
+                artifactKind: 'failure',
+                failureId: `failure-cohort-${cohort.cohortId}`,
+                identity: cohort,
+                outcome: 'failed',
+                causalFailureId: null,
+                issues: [{
+                    path: '$.identity.memberSampleIds',
+                    code: 'cohort-members-unavailable',
+                    message: 'Cohort assertion cannot run after a member sample failed or was causally not run.'
+                }],
+                rawEvidence: { causalFailureId: failureId, blockedMemberSampleIds: cohort.memberSampleIds }
+            });
+            expect(writes.some((artifact) => 'schema' in artifact)).toBe(false);
+        }
+    );
+
+    it.each(['mode-mismatch', 'receipt-unavailable', 'application-unavailable'])(
+        'refuses new B06 completed Connect evidence with %s and retains the original sample',
+        async (reason) => {
+            const staged = stagedExternalAttempt();
+            const sample = staged.samples[0]!;
+            const receipt = {
+                configuration: { mode: reason === 'mode-mismatch' ? 'signaling' : 'native', origin: 'step' },
+                application: reason === 'application-unavailable'
+                    ? { status: 'unavailable', reason: 'sink-unavailable' }
+                    : { status: 'applied', mode: reason === 'mode-mismatch' ? 'signaling' : 'native' },
+                configurationVersion: 1,
+                connectionId: { status: 'observed', value: 'connection-one' },
+                nativeScopeId: { status: 'unavailable', reason: 'unsupported' },
+                nativeAvailability: { status: 'unavailable', reason: 'unsupported' },
+                nativeCoverage: 'unavailable'
+            };
+            const original = {
+                ...sample,
+                rawEvidence: reason === 'receipt-unavailable'
+                    ? { rtcConnectCaptures: [] }
+                    : { rtcConnectCaptures: [{ receipt }] }
+            };
+            const writes: RtcBaselineAcceptedArtifact[] = [];
+            const initialized = {
+                resolvedConfiguration: [{
+                    caseKey: { workloadId: 'RTC-B06' as const, caseId: 'case', inputKey: 'input' },
+                    field: 'rtcCaptureMode',
+                    value: 'native',
+                    source: 'cli' as const
+                }]
+            };
+            const service = createRtcBaselineEvidenceAcceptance(dependencies({
+                readManifest: async () => ({ ok: true, value: manifestFor('RTC-B06') }),
+                readStagedJson: async () => ({ ok: true, value: normalizeStagedJson({ ...staged, samples: [original] }) }),
+                writeAcceptedArtifact: collectWrites(writes),
+                readInitializedConfiguration: async () => ({ ok: true, value: initialized.resolvedConfiguration })
+            }));
+            const result = await service.recordExternalAttempt(externalInput('RTC-B06'));
+            expect(result).toMatchObject({ ok: false, issues: expect.arrayContaining([expect.objectContaining({ code: reason })]) });
+            expect(writes[0]).toMatchObject({ artifactKind: 'failure', identity: original.identity, rawEvidence: original });
+            expect(writes.some((artifact) => 'schema' in artifact && artifact.schema === 'rallar.rtc-baseline.external-attempt.v1')).toBe(false);
+        }
+    );
+
+    it.each(['off', 'signaling', 'native'] as const)('accepts applied %s while retaining truthful unavailable Native observation', async (mode) => {
+        const staged = stagedExternalAttempt();
+        const receipt = {
+            configuration: { mode, origin: 'step' },
+            application: { status: 'applied', mode },
+            configurationVersion: 1,
+            connectionId: { status: 'observed', value: 'completed-connect' },
+            nativeScopeId: { status: 'unavailable', reason: 'unsupported' },
+            nativeAvailability: { status: 'unavailable', reason: 'unsupported' },
+            nativeCoverage: 'unavailable'
+        };
+        const original = { ...staged.samples[0]!, rawEvidence: { rtcConnectCaptures: [{ receipt }] } };
+        const writes: RtcBaselineAcceptedArtifact[] = [];
+        const service = createRtcBaselineEvidenceAcceptance(dependencies({
+            readManifest: async () => ({ ok: true, value: manifestFor('RTC-B06') }),
+            readStagedJson: async () => ({ ok: true, value: normalizeStagedJson({ ...staged, samples: [original] }) }),
+            writeAcceptedArtifact: collectWrites(writes),
+            readInitializedConfiguration: async () => ({
+                ok: true,
+                value: [{
+                    caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                    field: 'rtcCaptureMode',
+                    value: mode,
+                    source: 'cli'
+                }]
+            })
+        }));
+        expect(await service.recordExternalAttempt(externalInput('RTC-B06'))).toEqual({ ok: true, value: { acceptedSampleCount: 1 } });
+        expect(writes).toEqual([{ ...staged, samples: [original] }]);
+    });
+
     it('starts one fresh child per outer attempt and persists every exact inner outcome', async () => {
         const writes: RtcBaselineAcceptedArtifact[] = [];
         const workerInputs: Array<{ baselineId: string; outerAttempt: RtcBaselineOuterAttemptDto; }> = [];
@@ -261,7 +438,7 @@ describe('RTC baseline evidence acceptance', () => {
     it('gives producer status precedence over valid-looking staged browser evidence', async () => {
         const writes: RtcBaselineAcceptedArtifact[] = [];
         let stagedReadCount = 0;
-        const readStagedJson = async () => {
+        const readStagedJson = async (): Promise<RtcBaselineResult<RtcBaselineJson>> => {
             stagedReadCount += 1;
             return { ok: true as const, value: {} };
         };
@@ -324,10 +501,33 @@ describe('RTC baseline evidence acceptance', () => {
     it('accepts a valid external sample and writes every normalized field', async () => {
         const writes: RtcBaselineAcceptedArtifact[] = [];
         const externalAttempt = stagedExternalAttempt();
+        externalAttempt.samples[0]!.rawEvidence = {
+            durationMs: 1,
+            rtcConnectCaptures: [{
+                receipt: {
+                    configuration: { mode: 'native', origin: 'step' },
+                    application: { status: 'applied', mode: 'native' },
+                    configurationVersion: 1,
+                    connectionId: { status: 'observed', value: 'completed-connect' },
+                    nativeScopeId: { status: 'unavailable', reason: 'unsupported' },
+                    nativeAvailability: { status: 'unavailable', reason: 'unsupported' },
+                    nativeCoverage: 'unavailable'
+                }
+            }]
+        };
         const external = createRtcBaselineEvidenceAcceptance(
             dependencies({
                 readManifest: async () => ({ ok: true, value: manifestFor('RTC-B06') }),
                 readStagedJson: async () => ({ ok: true, value: normalizeStagedJson(externalAttempt) }),
+                readInitializedConfiguration: async () => ({
+                    ok: true,
+                    value: [{
+                        caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                        field: 'rtcCaptureMode',
+                        value: 'native',
+                        source: 'cli'
+                    }]
+                }),
                 writeAcceptedArtifact: collectWrites(writes)
             })
         );
@@ -369,7 +569,7 @@ describe('RTC baseline evidence acceptance', () => {
             issues: [producerIssue]
         });
         let stagedReadCount = 0;
-        const readStagedJson = async () => {
+        const readStagedJson = async (): Promise<RtcBaselineResult<RtcBaselineJson>> => {
             stagedReadCount += 1;
             return {
                 ok: true as const,
