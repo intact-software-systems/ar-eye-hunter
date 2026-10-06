@@ -310,9 +310,11 @@ right after `typeId` (absent for a unicast, or for a room send whose sender cach
 snapshot). The roster moves by the self-service membership route the ensure step
 already uses: `leave-roster` writes `{ status: 'left' }` for the page's own principal,
 which advances the group's roster and snapshot versions, and the next scenario's
-`ensure-member` joins it again. A removed member could not rejoin itself, and only a
-group owner removes one, which no role is by construction (whichever recipient creates
-the group first owns it), so no cell removes.
+`ensure-member` joins it again. The three-agent run starts `recipient-b` only once the
+receiver has connected, so the receiver's prologue creates the run's group and owns it:
+the roles that leave (`recipient-b`, the sender) are never its only owner, whose own
+leave the server refuses `last-owner`. A removed member could not rejoin itself, and
+only the owner removes one, so no cell removes.
 
 - `fenced-delivery`: the sender's room send reaches both recipients. Nothing moves the
   roster inside the cell, so each recipient reads the group snapshot over HTTP after

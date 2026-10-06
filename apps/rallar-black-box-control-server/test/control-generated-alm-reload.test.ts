@@ -99,6 +99,8 @@ interface PortGroup {
     snapshotVersion: number;
     rosterVersion: number;
     readonly left: Set<PortRole>;
+    /** The group's creator and only owner, whose own leave the server refuses `last-owner`. */
+    owner: PortRole;
 }
 
 interface HandedOverOutcome {
@@ -152,7 +154,8 @@ class GeneratedAlmPorts {
     senderDocument = 100;
     /** IndexedDB admission writes per page since its last reset: only a send that opts into a durability writes. */
     readonly writes: Record<PortRole, number> = { sender: 1, receiver: 1, 'recipient-b': 1 };
-    readonly group: PortGroup = { snapshotVersion: 7, rosterVersion: 4, left: new Set() };
+    /** The lane connects the receiver before recipient-b and the sender, so the receiver creates the group. */
+    readonly group: PortGroup = { snapshotVersion: 7, rosterVersion: 4, left: new Set(), owner: 'receiver' };
     readonly inboxAdmitted = new Set<string>();
     readonly messages: PortMessage[] = [];
     readonly handles = new Map<string, PortMessage>();
@@ -870,15 +873,29 @@ class GeneratedAlmPorts {
         });
     }
 
-    /** A read returns the group's versions; a leave or a rejoin moves both, which may lift a waiting send's floor. */
+    /**
+     * A read returns the group's versions; a leave or a rejoin moves both, which may lift a waiting send's floor. The
+     * owner's own leave is refused, as the server refuses the last active owner's, and moves nothing.
+     */
     private requestGroup(role: PortRole, command: PortCommand<'http.request'>): RallarBlackBoxTestCommandOutcome {
         const { method, body } = command.request;
         if (method === 'GET') {
             const { snapshotVersion, rosterVersion } = this.group;
             return { status: 'ok', value: { status: 200, body: { group: { snapshotVersion, rosterVersion } } } };
         }
+        const leaves = method === 'PUT' && isJsonRecordValue(body) && body.status === 'left';
+        if (leaves && role === this.group.owner) {
+            return {
+                status: 'failed',
+                value: { status: 403 },
+                error: {
+                    code: 'RALLAR_BLACK_BOX_HTTP_STATUS_NOT_ACCEPTED',
+                    message: 'http.request received status 403; the last active owner cannot leave the group.'
+                }
+            };
+        }
         if (method === 'PUT' && isJsonRecordValue(body)) {
-            this.moveRoster(role, body.status === 'left');
+            this.moveRoster(role, leaves);
         }
         return { status: 'ok', value: { status: 200 } };
     }
@@ -1490,6 +1507,26 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
 
         assertEquals(received.ok, false, JSON.stringify(received));
         assertEquals(findMarked(ports, 'fenced-catch-up').map((message) => message.submitted), [false, true]);
+    });
+    Deno.test(`the ${carrier} fenced-catch-up trio fails when recipient-b owns the group, whose only owner cannot leave`, async () => {
+        const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'fenced-catch-up');
+        assert(recipientB);
+        const ports = new GeneratedAlmPorts(true);
+        ports.group.owner = 'recipient-b';
+        const floored = `${receiver.recipeId}-received-floored`;
+        // The arrival never comes, so the wait is shortened to keep the absence of a delivery cheap to prove.
+        const shortened = {
+            ...receiver,
+            commands: receiver.commands.map((command) => command.commandId === floored ? { ...command, timeoutMs: 50 } : command)
+        };
+
+        await ports.sender.execute(toRecipeRun(sender));
+        const mover = await ports.recipientB.execute(toRecipeRun(recipientB));
+        const received = await ports.receiver.execute(toRecipeRun(shortened));
+
+        assertEquals(mover.ok, false, JSON.stringify(mover));
+        assertEquals(received.ok, false, JSON.stringify(received));
+        assertEquals([ports.group.snapshotVersion, ports.group.rosterVersion, [...ports.group.left]], [7, 4, []]);
     });
 }
 
