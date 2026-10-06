@@ -1,5 +1,6 @@
 import type { RallarCrdtMessageTransport } from '@shared-web/browser/crdt/browser-crdt-transport.ts';
 import { createRallarCrdtMessageTransport } from '@shared-web/browser/crdt/create-rallar-crdt-message-transport.ts';
+import type { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
@@ -29,6 +30,8 @@ export namespace BrowserRallarMessagesController {
         readonly sessionDeliveries: BrowserSessionDeliveries;
         readonly nowMs: () => number;
         readonly wsInbox: BrowserWebSocketInbox;
+        /** Where `channel(...)` registers a definition's recovery owner, for the resync recovery to find. */
+        readonly recoveryOwners: BrowserChannelRecoveryOwners;
         connect(): Promise<ApiMiddleware>;
         readMiddleware(): ApiMiddleware | undefined;
         requireSession(): AuthSession;
@@ -95,7 +98,8 @@ export class BrowserRallarMessagesController {
             inputValidator,
             sender: this.sender,
             rtc,
-            ws
+            ws,
+            recoveryOwners: input.recoveryOwners
         });
         this.operations = {
             rtc,

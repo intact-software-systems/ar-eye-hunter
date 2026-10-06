@@ -14,6 +14,12 @@ export interface CreateAlmConformanceRecipesInput {
     /** Every recipient role's recipe uses it; each agent names its own connections, so recipients share the label. */
     readonly receiverConnection: string;
     readonly deadlineMs: number;
+    /**
+     * Absent, no connect installs a recovery owner and no cell waits for one: the hosted combined recipe shares one
+     * connect across its cells, so it names no channel's owner. `record` installs the harness's recording owner on each
+     * recipient's connect and lets `ordering-resync` wait for its invocation.
+     */
+    readonly recoveryOwner?: 'record';
 }
 
 export type AlmConformanceScenarioId =
@@ -32,8 +38,10 @@ export type AlmConformanceScenarioId =
     | 'flush-on-hide'
     | 'no-fallback-after-deadline'
     | 'not-yet-in-sync'
+    | 'ordering-gap-repair'
     | 'ordering-resync'
     | 'receipt-exhausted-fallback'
+    | 'repair-exhausted'
     | 'receipted-audience'
     | 'server-command'
     | 'storage-unavailable'

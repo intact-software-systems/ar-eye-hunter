@@ -38,6 +38,7 @@ import {
 } from './al-outbound-pending-admission.ts';
 import {
     computeALOutboundDispatch,
+    toALOutboundAttemptIdentity,
     toALOutboundCommitSettlements,
     type ALOutboundCommitDispatchOptions,
     type ALOutboundComputedDto,
@@ -517,7 +518,10 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             planner: dispatch.planner,
             observedCanonicalEntry: dispatch.options.observedOutboxEntry,
             dequeueAuthority: dispatch.dequeueAuthority,
-            intent: dispatch.intent
+            intent: dispatch.intent,
+            repairAttempt: dispatch.options.repairBudget === undefined
+                ? undefined
+                : { attemptIdentity: toALOutboundAttemptIdentity(dispatch.options), phase: dispatch.phase }
         };
     }
 

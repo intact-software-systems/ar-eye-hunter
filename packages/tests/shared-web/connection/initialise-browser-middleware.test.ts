@@ -32,6 +32,7 @@ const OPTIONS: BrowserConnectOptions = {
     readVolatileSessionLimits: () => ({ maxAdmissions: 3, maxBytes: 4_096 }),
     deliverySettlements: { ws: () => {}, rtc: () => {} },
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
+    onResyncRequired: () => {},
     durableWorkOwnership: new BrowserALDurableWorkClaim({
         scope: defaultStateScope(),
         sessionId: SESSION.sessionId,

@@ -87,6 +87,8 @@ interface OutboundTestRuntimeInput<TPrepared> {
     readonly nowMs?: () => number;
     readonly planOutgoingMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['planOutgoingMessage'];
     readonly planRepairMessage?: ALOutboundMessageRuntime.Dependencies<TPrepared>['planRepairMessage'];
+    /** The hops the composition sends every frame through; absent, as for every carrier but the WS client. */
+    readonly hopPeerIds?: ALOutboundMessageRuntime.Dependencies<TPrepared>['hopPeerIds'];
     readonly afterDequeueAdmission?: ALOutboundMessageRuntime.Dependencies<TPrepared>['afterDequeueAdmission'];
     readonly sendPreparedMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['sendPreparedMessage'];
 }
@@ -193,6 +195,7 @@ export function createOutboundTestRuntimeFor<TPrepared>(
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: options.planOutgoingMessage,
             planRepairMessage: options.planRepairMessage,
+            hopPeerIds: options.hopPeerIds,
             afterDequeueAdmission: options.afterDequeueAdmission,
             sendPreparedMessage: options.sendPreparedMessage
         })
@@ -269,6 +272,19 @@ export async function peekOutboundWorkReadyAt(
             leaseSweeps: { isTimeoutOpen: true, isFinalizationOpen: true }
         }
     );
+}
+
+/**
+ * Resolves once the owner advertises no work at all: nothing new, nothing retried and nothing claimed
+ * in flight, so every effect the runtime's own engine owed has run and committed whatever followed it.
+ */
+export async function waitForOutboundWorkDrained(
+    stores: ALOutboundRuntimeStores<OutboundTestPayload>
+): Promise<void> {
+    await expect.poll(
+        () => peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace),
+        { timeout: 5_000, interval: 10 }
+    ).toBeUndefined();
 }
 
 /** Claims and decodes work the way the owner's batch does. */

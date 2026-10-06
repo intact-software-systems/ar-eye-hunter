@@ -1,5 +1,6 @@
 import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
+import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import {
@@ -45,7 +46,7 @@ export function validateALOutboundControlAdmission(
         return [...issues, ...validateAcknowledgedReceipt(read.pending, payload)];
     }
     const payload = read.parsed.payload;
-    if (!isTrustedRelayRejection(read) && !isExpectedRepairPeer(read.sent, read.pending, payload.fromPeerId)) {
+    if (!isTrustedRelayRejection(read) && !isExpectedRepairPeer(read, payload.fromPeerId)) {
         issues.push({ code: 'unauthorized', message: 'AL repair sender has no retained outbound obligation' });
     }
     if (!hasValidOrderingHints(read.sent, payload)) {
@@ -94,7 +95,7 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
                     prior.fromPeerId === payload.fromPeerId && prior.reason === payload.reason &&
                     prior.orderingKey === payload.orderingKey && prior.expectedSeq === payload.expectedSeq &&
                     prior.serverSnapshotVersion === payload.serverSnapshotVersion &&
-                    equalNumbers(prior.missingSeqs, payload.missingSeqs)
+                    equalSeqRanges(prior.missingRanges, payload.missingRanges)
                 );
         }
         case 'repair': {
@@ -103,7 +104,7 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
                 read.history.values.some((prior) =>
                     prior.fromPeerId === payload.fromPeerId && prior.reason === payload.reason &&
                     prior.orderingKey === payload.orderingKey && prior.expectedSeq === payload.expectedSeq &&
-                    equalNumbers(prior.missingSeqs, payload.missingSeqs)
+                    equalSeqRanges(prior.missingRanges, payload.missingRanges)
                 );
         }
     }
@@ -119,21 +120,21 @@ function isTrustedRelayRejection(read: ALControlAdmissionRead): boolean {
     return isResyncRequired || isALServerRefusalBeforeReceipt(read);
 }
 
-/** A repair or NACK comes from a unicast's addressee or from any peer its receipt expects: on WS, the tracked server hop. */
-function isExpectedRepairPeer(
-    sent: ALStoredOutboundMessage,
-    pending: ALOutboundPendingAckSnapshot | undefined,
-    peerId: string
-): boolean {
-    return sent.unicastPeerId === peerId || pending?.expectedPeerIds.includes(peerId) === true;
+/**
+ * A repair or NACK comes from a unicast's addressee, from any peer its receipt expects, or from a hop the
+ * composition sends every frame through: on WS, the server, tracked by the receipt or named by the client.
+ */
+function isExpectedRepairPeer(read: ALControlAdmissionRead, peerId: string): boolean {
+    return read.sent?.unicastPeerId === peerId || read.pending?.expectedPeerIds.includes(peerId) === true ||
+        read.hopPeerIds?.includes(peerId) === true;
 }
 
 function hasValidOrderingHints(
     sent: ALStoredOutboundMessage,
     payload: ALNackPayload | ALRepairPayload
 ): boolean {
-    const missingSeqs = payload.missingSeqs ?? [];
-    const hasHints = payload.orderingKey !== undefined || payload.expectedSeq !== undefined || missingSeqs.length > 0;
+    const missingRanges = payload.missingRanges ?? [];
+    const hasHints = payload.orderingKey !== undefined || payload.expectedSeq !== undefined || missingRanges.length > 0;
     if (!hasHints) {
         return true;
     }
@@ -145,13 +146,16 @@ function hasValidOrderingHints(
     if (payload.expectedSeq !== undefined && payload.expectedSeq > triggerSeq) {
         return false;
     }
-    return missingSeqs.every((seq) =>
-        seq < triggerSeq && (payload.expectedSeq === undefined || seq >= payload.expectedSeq)
+    return missingRanges.every((range) =>
+        range.to < triggerSeq && (payload.expectedSeq === undefined || range.from >= payload.expectedSeq)
     );
 }
 
-function equalNumbers(left: readonly number[] | undefined, right: readonly number[] | undefined): boolean {
-    const leftValues = left ?? [];
-    const rightValues = right ?? [];
-    return leftValues.length === rightValues.length && leftValues.every((value, index) => value === rightValues[index]);
+function equalSeqRanges(left: readonly ALSeqRange[] | undefined, right: readonly ALSeqRange[] | undefined): boolean {
+    const leftRanges = left ?? [];
+    const rightRanges = right ?? [];
+    return leftRanges.length === rightRanges.length &&
+        leftRanges.every((range, index) =>
+            range.from === rightRanges[index].from && range.to === rightRanges[index].to
+        );
 }

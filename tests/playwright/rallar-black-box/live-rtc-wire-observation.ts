@@ -125,7 +125,7 @@ export function summarizeLiveRtcNackWireObservation(
         if (decoded.typeId) {
             typedFrameCount += 1;
         }
-        if (decoded.typeId === 'al.control.nack.v1') {
+        if (decoded.typeId === 'al.control.nack.v2') {
             nackFrameCount += 1;
             if (!decoded.nack) {
                 malformedNackFrameCount += 1;
@@ -159,7 +159,7 @@ function decodeLiveRtcWireFrame(
     const payload = jsonRecord(message?.payload);
     const typeId = stringValue(payload?.typeId) ?? null;
     const resource = stringValue(payload?.resource);
-    if (typeId !== 'al.control.nack.v1' || !resource) {
+    if (typeId !== 'al.control.nack.v2' || !resource) {
         return { malformed: false, typeId, nack: null };
     }
     try {

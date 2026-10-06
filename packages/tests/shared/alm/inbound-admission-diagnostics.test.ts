@@ -257,7 +257,7 @@ it.each(['memory', 'indexeddb'] as const)(
                 dropReason: 'unauthorized',
                 dropReasonCode: 'unauthorized',
                 localDelivery: { enabled: false, persist: false, deferred: false },
-                nack: { enabled: false, reason: 'unauthorized', missingSeqs: [] }
+                nack: { enabled: false, reason: 'unauthorized', missingRanges: [] }
             })
         });
         const message = createInboundTestMessage({ msgId: 'unauthorized-drop' });

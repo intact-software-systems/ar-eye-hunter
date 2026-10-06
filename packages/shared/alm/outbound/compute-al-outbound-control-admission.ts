@@ -6,6 +6,7 @@ import type {
     ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
+import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
 import type {
     ALOutboundPendingAckSnapshot
 } from '../al-runtime-state-stores.ts';
@@ -18,7 +19,7 @@ import type {
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
-import { toALOutboundAckTimeoutEffectId, toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
+import { toALOutboundAckTimeoutEffectId, toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
     acceptALOutboundPendingAckSnapshot,
     isALOutboundReceiptComplete,
@@ -42,6 +43,8 @@ export interface ALControlAdmissionRead {
     readonly source: ALOutboundControlSource;
     /** The carrier the control reached this owner on: an acknowledgement is recorded under it, whatever its sender named. */
     readonly carrier: ALDeliveryCarrier;
+    /** The composition's fixed hops (a WS client's server), expected repair peers of every send; undefined for none. */
+    readonly hopPeerIds: readonly string[] | undefined;
     readonly targetMsgId: string;
     readonly nowMs: number;
     readonly owner?: string;
@@ -269,26 +272,29 @@ function toRepairHintEffect(
     ) {
         return undefined;
     }
-    const payload = read.parsed.payload;
-    const request: ALOutboundRepairHint = {
-        trigger: read.parsed.type === 'nack' ? 'nack' : 'repair',
-        requestedByPeerId: payload.fromPeerId,
-        orderingTrackKey: payload.orderingKey,
-        missingSeqs: payload.missingSeqs ?? [],
-        failedPeerIds: []
-    };
+    const request = toALOutboundControlRepairHint(read.parsed.payload);
     return {
-        effectId: toALOutboundEffectId([
-            'repair-hint',
-            read.targetMsgId,
-            request.trigger,
-            request.requestedByPeerId ?? '-',
-            request.orderingTrackKey ?? '-',
-            request.missingSeqs.join(',')
-        ]),
+        effectId: toALOutboundRepairHintEffectId(read.targetMsgId, request),
         payload: { kind: 'repair-hint', msgId: read.targetMsgId, request },
         retryAtMs: read.nowMs,
         expireAtTimestamp: read.sent.reference.expiresAtMs
+    };
+}
+
+/**
+ * The hint a peer's gap NACK or repair request raises. The gap is the hint's identity, so its payload
+ * follows the gap too, never the control: `nack` names missing ranges, `repair` asks for the message
+ * itself. The two controls a receiver sends for one gap thus build one hint, written once and absorbed
+ * the second time rather than refused as conflicting content.
+ */
+export function toALOutboundControlRepairHint(control: ALNackPayload | ALRepairPayload): ALOutboundRepairHint {
+    const missingRanges = control.missingRanges ?? [];
+    return {
+        trigger: missingRanges.length > 0 ? 'nack' : 'repair',
+        requestedByPeerId: control.fromPeerId,
+        orderingTrackKey: control.orderingKey,
+        missingRanges,
+        failedPeerIds: []
     };
 }
 

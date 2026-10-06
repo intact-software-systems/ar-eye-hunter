@@ -23,6 +23,7 @@ import {
 import {
     AL_MESSAGE_RESOURCE_LIMITS
 } from './al-message-resource-limits.ts';
+import type { ALSeqRange } from './al-runtime.ts';
 
 export type ALAckStatus = 'accepted' | 'delivered' | 'forwarded' | 'subtree-complete';
 export type ALNackReason =
@@ -62,7 +63,7 @@ export interface ALNackPayload {
     readonly observedAtEpochMs: number;
     readonly orderingKey?: string;
     readonly expectedSeq?: number;
-    readonly missingSeqs?: readonly number[];
+    readonly missingRanges?: readonly ALSeqRange[];
     readonly serverSnapshotVersion?: number;
 }
 
@@ -74,7 +75,7 @@ export interface ALRepairPayload {
     readonly observedAtEpochMs: number;
     readonly orderingKey?: string;
     readonly expectedSeq?: number;
-    readonly missingSeqs?: readonly number[];
+    readonly missingRanges?: readonly ALSeqRange[];
 }
 
 /** The WS server's word to an origin: the frozen audience at admission, the aggregate at completion or timeout. */

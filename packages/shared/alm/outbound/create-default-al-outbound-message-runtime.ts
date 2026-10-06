@@ -69,6 +69,7 @@ export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
                 | 'planDequeuedMessage'
                 | 'afterDequeueAdmission'
                 | 'planRepairMessage'
+                | 'hopPeerIds'
                 | 'diagnostics'
                 | 'settlements'
             >
@@ -92,6 +93,7 @@ export function createDefaultALOutboundMessageRuntime<TPrepared>(
         planDequeuedMessage: dependencies.planDequeuedMessage ?? dependencies.planOutgoingMessage,
         afterDequeueAdmission: dependencies.afterDequeueAdmission,
         planRepairMessage: dependencies.planRepairMessage,
+        hopPeerIds: dependencies.hopPeerIds,
         diagnostics: dependencies.diagnostics,
         settlements: dependencies.settlements
     });

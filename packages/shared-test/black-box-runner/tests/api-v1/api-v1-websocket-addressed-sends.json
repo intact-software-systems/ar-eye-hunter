@@ -438,7 +438,7 @@
         "message": {
           "route": { "topicId": "al-control" },
           "targets": { "mode": "unicast", "toPeerId": "{aliceSessionId}" },
-          "payload": { "typeId": "al.control.nack.v1" }
+          "payload": { "typeId": "al.control.nack.v2" }
         },
         "consume": true
       }
@@ -723,7 +723,7 @@
             "toPeerId": "{aliceElsewhereSessionId}"
           },
           "payload": {
-            "typeId": "al.control.nack.v1"
+            "typeId": "al.control.nack.v2"
           }
         },
         "consume": true

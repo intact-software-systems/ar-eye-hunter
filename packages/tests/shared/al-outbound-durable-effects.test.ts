@@ -223,9 +223,10 @@ describe('AL outbound durable effect lifecycle', () => {
         );
         releaseClaim.resolve();
 
+        // A gap NACK naming no missing range asks for the message itself, so its hint is a `repair` trigger.
         await expect.poll(() => sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
-            { kind: 'repair', msgId: msg.id.msgId, trigger: 'nack', phase: 'immediate' }
+            { kind: 'repair', msgId: msg.id.msgId, trigger: 'repair', phase: 'immediate' }
         ]);
         runtime.dispose();
     });

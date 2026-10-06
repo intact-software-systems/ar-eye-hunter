@@ -60,7 +60,8 @@ async function createExhaustionFixture(receipt: ReceiptRow): Promise<ExhaustionF
             port: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
             clock,
             settlements: (fact) => facts.push(fact),
-            carrier: 'rtc'
+            carrier: 'rtc',
+            hopPeerIds: undefined
         }),
         clock,
         planOutgoingMessage: (msg) => ({
@@ -70,6 +71,7 @@ async function createExhaustionFixture(receipt: ReceiptRow): Promise<ExhaustionF
             preparedMessages: []
         }),
         planRepairMessage: undefined,
+        hopPeerIds: undefined,
         diagnostics: undefined,
         settlements: (fact) => facts.push(fact)
     });

@@ -99,9 +99,12 @@ export function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxT
         workspaceId: input.group.workspaceId,
         roomRef: toRoomRef(input.group),
         transport: input.carrier === 'ws' ? 'messages.ws' : 'messages.rtc',
-        rallar: step.role === 'successor'
-            ? { typeId, topicId: ALM_CONFORMANCE_TOPIC_ID, ...RESTORED_SESSION_RALLAR }
-            : { typeId, topicId: ALM_CONFORMANCE_TOPIC_ID },
+        rallar: {
+            typeId,
+            topicId: ALM_CONFORMANCE_TOPIC_ID,
+            ...(step.role === 'successor' ? RESTORED_SESSION_RALLAR : {}),
+            ...(installsRecoveryOwner(step) ? { recoveryOwner: 'record' } : {})
+        },
         timeoutMs: CONNECT_TIMEOUT_MS,
         ...(input.carrier === 'ws' || !waitsForReadyPeers(step) ? {} : {
             readiness: {
@@ -111,6 +114,11 @@ export function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxT
             }
         })
     };
+}
+
+/** Only a recipient's channel receives, so only its connect installs the lane's recording owner. */
+function installsRecoveryOwner(step: AlmConformanceStepInput): boolean {
+    return step.input.recoveryOwner === 'record' && (step.role === 'receiver' || step.role === 'recipient-b');
 }
 
 /**

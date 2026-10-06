@@ -13,7 +13,8 @@ import { AL_MESSAGE_DROP_REASON_CODES, type ALMessageHandlingPlan } from '../../
 import {
     decodeALAdmissionArray,
     decodeALAdmissionNumber,
-    decodeALAdmissionRecord
+    decodeALAdmissionRecord,
+    decodeALAdmissionSeqRanges
 } from '../al-admission-value-validation.ts';
 
 const PLAN_FIELDS = [
@@ -124,11 +125,11 @@ function assertControlPlan(plan: PersistedALRecord): void {
     requireVariant(ack.algo, ['none', 'hop', 'subtree', 'receiver'], 'ack algorithm');
     requireOptionalPersistedALNonEmptyString(ack.toPeerId, 'ack peer');
     const nack = requirePersistedALRecord(plan.nack, 'nack plan');
-    requirePersistedALFields(nack, ['enabled', 'toPeerId', 'reason', 'missingSeqs'], ['enabled', 'missingSeqs']);
+    requirePersistedALFields(nack, ['enabled', 'toPeerId', 'reason', 'missingRanges'], ['enabled', 'missingRanges']);
     requireBooleans(nack, ['enabled']);
     requireOptionalPersistedALNonEmptyString(nack.toPeerId, 'nack peer');
     requireOptionalPersistedALNonEmptyString(nack.reason, 'nack reason');
-    decodeALAdmissionArray(nack.missingSeqs, decodeALAdmissionNumber);
+    decodeALAdmissionSeqRanges(nack.missingRanges);
     const repair = requirePersistedALRecord(plan.repair, 'repair plan');
     requirePersistedALFields(repair, ['enabled', 'algo', 'reason'], ['enabled', 'algo']);
     requireBooleans(repair, ['enabled']);
@@ -174,9 +175,9 @@ function assertOrderingObservation(value: PersistedALValue): void {
         'seq',
         'expectedSeq',
         'lastContiguousSeq',
-        'missingSeqs',
+        'missingRanges',
         'releasableSeqs'
-    ], ['status', 'missingSeqs', 'releasableSeqs']);
+    ], ['status', 'missingRanges', 'releasableSeqs']);
     requireVariant(
         ordering.status,
         ['untracked', 'in-order', 'gap', 'duplicate', 'stale', 'resync-required'],
@@ -186,7 +187,7 @@ function assertOrderingObservation(value: PersistedALValue): void {
     requireOptionalPersistedALSafeInteger(ordering.seq, 0, 'ordering sequence');
     requireOptionalPersistedALSafeInteger(ordering.expectedSeq, 0, 'ordering expected sequence');
     requireOptionalPersistedALSafeInteger(ordering.lastContiguousSeq, -1, 'ordering contiguous sequence');
-    decodeALAdmissionArray(ordering.missingSeqs, decodeALAdmissionNumber);
+    decodeALAdmissionSeqRanges(ordering.missingRanges);
     decodeALAdmissionArray(ordering.releasableSeqs, decodeALAdmissionNumber);
 }
 

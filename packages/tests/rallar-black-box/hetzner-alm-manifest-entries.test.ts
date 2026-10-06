@@ -4,7 +4,10 @@ import {
     it
 } from 'vitest';
 
-import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import {
+    ALM_CONFORMANCE_CARRIERS,
+    ALM_CONFORMANCE_SINGLE_HOP_CARRIERS
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
@@ -144,14 +147,17 @@ function toStartedCells(entry: ReturnType<typeof createAlmConformance2AgentEntry
 }
 
 describe('ALM conformance hosted lane families', () => {
-    it('withholds exactly the named cells: the refresh variant over the RTC carriers and both checkpoint cells everywhere', () => {
+    it('withholds exactly the named cells: the refresh variant over the RTC carriers, both checkpoint cells and the exhausted repair everywhere, the gap repair where it runs', () => {
         const defined = toFamilyCells(['two-agent', 'addressed']);
         // Removing a withheld cell from hosted manifest 18 is a deliberate act: no plain-member write advances the
-        // snapshot version for the refresh variant, and the checkpoint cells keep manifest 18 as recorded.
+        // snapshot version for the refresh variant, and the checkpoint and repair cells keep manifest 18 as recorded.
         const withheld = [
             'alm-rtc-not-yet-in-sync-delivered-after-refresh',
             'alm-rtc-with-ws-fallback-not-yet-in-sync-delivered-after-refresh',
-            ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) => ['checkpoint-recovery', 'checkpoint-lag'].map((key) => `alm-${carrier}-${key}`))
+            ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
+                ['checkpoint-recovery', 'checkpoint-lag', 'repair-exhausted'].map((key) => `alm-${carrier}-${key}`)
+            ),
+            ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-ordering-gap-repair`)
         ];
         const cells = toStartedCells(createAlmConformance2AgentEntry());
 

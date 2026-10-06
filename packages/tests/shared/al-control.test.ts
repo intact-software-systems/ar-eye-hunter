@@ -46,7 +46,7 @@ const nack: ALNackPayload = {
     observedAtEpochMs: 13,
     orderingKey: 'track',
     expectedSeq: 2,
-    missingSeqs: []
+    missingRanges: []
 };
 const repair: ALRepairPayload = {
     msgId: 'msg-1',
@@ -56,7 +56,7 @@ const repair: ALRepairPayload = {
     observedAtEpochMs: 14,
     orderingKey: 'track',
     expectedSeq: 2,
-    missingSeqs: [2]
+    missingRanges: [{ from: 2, to: 2 }]
 };
 const receipt: ALReceiptPayload = {
     msgId: 'msg-1',
@@ -75,17 +75,22 @@ const controlId: ALMessage['id'] = {
 };
 
 describe('AL control message codec', () => {
-    it('names the v2 acknowledgement and the receipt control as the four supported control ids', () => {
+    it('names the v2 acknowledgement, NACK and repair and the v1 receipt as the four supported control ids', () => {
         expect(AL_CONTROL_ACK_TYPE_ID).toBe('al.control.ack.v2');
+        expect(AL_CONTROL_NACK_TYPE_ID).toBe('al.control.nack.v2');
+        expect(AL_CONTROL_REPAIR_TYPE_ID).toBe('al.control.repair.v2');
         expect(AL_CONTROL_RECEIPT_TYPE_ID).toBe('al.control.receipt.v1');
-        expect(['al.control.ack.v2', 'al.control.nack.v1', 'al.control.repair.v1', 'al.control.receipt.v1']
+        expect(['al.control.ack.v2', 'al.control.nack.v2', 'al.control.repair.v2', 'al.control.receipt.v1']
             .every(isALControlTypeId)).toBe(true);
-        expect(isALControlTypeId('al.control.ack.v1')).toBe(false);
+        expect(['al.control.ack.v1', 'al.control.nack.v1', 'al.control.repair.v1'].some(isALControlTypeId)).toBe(false);
     });
 
-    it('refuses a v1 acknowledgement as unsupported', () => {
-        const v2 = newALAckControlMessage(controlId, ack);
-        const v1 = { ...v2, payload: { ...v2.payload, typeId: 'al.control.ack.v1' } };
+    it.each([
+        ['acknowledgement', newALAckControlMessage(controlId, ack), 'al.control.ack.v1'],
+        ['NACK', newALNackControlMessage(controlId, nack), 'al.control.nack.v1'],
+        ['repair', newALRepairControlMessage(controlId, repair), 'al.control.repair.v1']
+    ])('refuses a v1 %s as unsupported', (_label, v2, v1TypeId) => {
+        const v1 = { ...v2, payload: { ...v2.payload, typeId: v1TypeId } };
         expect(decodeALControlMessage(v1).left).toMatchObject({ code: 'unsupported' });
     });
 
@@ -268,10 +273,14 @@ describe('AL control message codec', () => {
             }))
         ).toThrow(TypeError);
 
+        const rangeAtCap = (_: undefined, index: number) => ({ from: index * 2, to: index * 2 });
+        const rangesAtCap = Array.from({ length: AL_MESSAGE_RESOURCE_LIMITS.repairRanges }, rangeAtCap);
+        expect(parseALControlMessage(controlMessage(AL_CONTROL_NACK_TYPE_ID, { ...nack, missingRanges: rangesAtCap })))
+            .toEqual({ type: 'nack', payload: { ...nack, missingRanges: rangesAtCap } });
         expect(() =>
             parseALControlMessage(controlMessage(AL_CONTROL_NACK_TYPE_ID, {
                 ...nack,
-                missingSeqs: Array.from({ length: AL_MESSAGE_RESOURCE_LIMITS.repairWindow + 1 }, (_, index) => index)
+                missingRanges: Array.from({ length: AL_MESSAGE_RESOURCE_LIMITS.repairRanges + 1 }, rangeAtCap)
             }))
         ).toThrow(TypeError);
 
@@ -281,6 +290,19 @@ describe('AL control message codec', () => {
                 ' '.repeat(AL_MESSAGE_RESOURCE_LIMITS.payloadBytes + 1)
             ))
         ).toThrow(TypeError);
+    });
+
+    it.each([
+        ['an inverted range', [{ from: 3, to: 2 }]],
+        ['a fractional bound', [{ from: 1, to: 1.5 }]],
+        ['a negative bound', [{ from: -1, to: 1 }]],
+        ['overlapping ranges', [{ from: 1, to: 3 }, { from: 3, to: 4 }]],
+        ['unsorted ranges', [{ from: 4, to: 4 }, { from: 1, to: 2 }]],
+        ['a bare sequence list', [2, 3]]
+    ])('rejects a repair whose missing ranges hold %s', (_label, missingRanges) => {
+        const resource = JSON.stringify({ ...repair, missingRanges });
+        expect(() => parseALControlMessage(controlMessageWithResource(AL_CONTROL_REPAIR_TYPE_ID, resource)))
+            .toThrow(TypeError);
     });
 });
 

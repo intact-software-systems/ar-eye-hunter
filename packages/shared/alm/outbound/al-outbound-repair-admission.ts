@@ -22,7 +22,11 @@ import type {
     ALOutboundRuntimeDiagnosticsSink,
     ALOutboundSettlementEmitter
 } from './al-outbound-message-runtime.ts';
-import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
+import {
+    controlTargetMsgId,
+    toALOutboundControlRepairHint,
+    type ALOutboundControlSource
+} from './compute-al-outbound-control-admission.ts';
 import type {
     ALOutboundControlAdmission,
     ALOutboundControlAdmissionResult,
@@ -30,6 +34,7 @@ import type {
 } from './control/al-outbound-control-admission.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './control/write-al-outbound-control-admission-diagnostic.ts';
+import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
 import { toALOutboundAckTimeoutEffectId, toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
@@ -48,6 +53,8 @@ export namespace ALOutboundRepairAdmission {
                 request: ALOutboundRepairRequest
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
+        /** The composition's fixed hops, the sender's own beside a plan's tracked next hops; undefined for none. */
+        readonly hopPeerIds: readonly string[] | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         /** The lane's guarded emitter: where a receipt and a not-yet-in-sync budget state that they ran out. */
         readonly settlements: ALOutboundSettlementEmitter;
@@ -61,7 +68,12 @@ export namespace ALOutboundRepairAdmission {
     }
 }
 
-/** Turns persisted control/ACK/repair state into new durable admission commits; never sends directly. */
+/**
+ * Turns persisted control/ACK/repair state into new durable admission commits; never sends directly.
+ * Without a repair planner a room-scoped gap or repair control carries authority only when the sender's
+ * own hop asked for it, the one repair that cannot widen a room audience; that hop's not-yet-in-sync
+ * NACK on a room send stays not handled, as the hop owns that retry.
+ */
 export class ALOutboundRepairAdmission<TPrepared> {
     private static readonly NOT_YET_IN_SYNC_RETRY_DELAY_MS = 50;
     private readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
@@ -81,7 +93,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             return { kind: 'not-handled' };
         }
         const control = decoded.right!;
-        const admitted: ALOutboundControlAdmissionResult = await this.hasCurrentRepairAuthority(control)
+        const admitted: ALOutboundControlAdmissionResult = await this.readRepairAuthority(control)
             ? await this.dependencies.controlAdmission.admit(msg, source)
             : { kind: 'not-handled' };
         writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
@@ -105,7 +117,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         return replayed.outcome;
     }
 
-    private async hasCurrentRepairAuthority(control: ALPeerControlMessage): Promise<boolean> {
+    private async readRepairAuthority(control: ALPeerControlMessage): Promise<boolean> {
         if (
             control.type === 'ack' ||
             (control.type === 'nack' && control.payload.reason !== 'gap' &&
@@ -124,16 +136,17 @@ export class ALOutboundRepairAdmission<TPrepared> {
         if (!isRoomScopedALMessage(msg)) {
             return true;
         }
-        const planned = await this.dependencies.planRepairMessage?.(msg, {
+        if (this.dependencies.planRepairMessage === undefined) {
+            const asksForGapRepair = control.type === 'repair' || control.payload.reason === 'gap';
+            return asksForGapRepair && read.plan !== undefined &&
+                isALOutboundOwnHopPeer(read.plan, this.dependencies.hopPeerIds, control.payload.fromPeerId);
+        }
+        const planned = await this.dependencies.planRepairMessage(msg, {
+            ...toALOutboundControlRepairHint(control.payload),
             referenceKey: read.storedMessage?.reference.key,
             admittedAudience: read.plan?.admittedAudience,
             recipientScope: read.plan?.recipientScope,
             sessionInvalidation: read.plan?.sessionInvalidation,
-            trigger: control.type,
-            requestedByPeerId: control.payload.fromPeerId,
-            orderingTrackKey: control.payload.orderingKey,
-            missingSeqs: control.payload.missingSeqs ?? [],
-            failedPeerIds: [],
             completedHopPeerIds: [],
             repair: read.plan?.repairTracking ?? { enabled: false, algo: 'none', maxAttempts: 0 }
         });
@@ -286,7 +299,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
                     payload: {
                         kind: 'repair-hint',
                         msgId: msg.id.msgId,
-                        request: { trigger: 'ack-timeout', failedPeerIds, missingSeqs: [] }
+                        request: { trigger: 'ack-timeout', failedPeerIds, missingRanges: [] }
                     }
                 }
             ]

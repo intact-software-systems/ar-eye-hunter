@@ -1,6 +1,6 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
-import type { ALOrderingObservation, ALOrderingTrackSnapshot } from '../al-contracts/al-runtime.ts';
+import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '../al-contracts/al-runtime.ts';
 import { toALOrderingTrackKey } from '../al-contracts/al-runtime.ts';
 
 export interface ComputeALOrderingObservationInput {
@@ -28,7 +28,7 @@ export function computeALOrderingObservation(input: ComputeALOrderingObservation
     const trackKey = toALOrderingTrackKey(input.msg);
     const seq = input.msg.ordering?.seq;
     if (trackKey === undefined || seq === undefined) {
-        return { observation: { status: 'untracked', missingSeqs: [], releasableSeqs: [] } };
+        return { observation: { status: 'untracked', missingRanges: [], releasableSeqs: [] } };
     }
     const snapshot = input.snapshot && input.snapshot.updatedAtMs + input.trackTtlMs > input.nowMs
         ? input.snapshot
@@ -73,7 +73,7 @@ function computeContiguousOrdering(track: ALOrderingTrackInput): ALOrderingAccep
             seq: track.seq,
             expectedSeq: Math.min(Number.MAX_SAFE_INTEGER, observedContiguousSeq + 1),
             lastContiguousSeq: observedContiguousSeq,
-            missingSeqs: [],
+            missingRanges: [],
             releasableSeqs
         },
         nextSnapshot: track.input.apply
@@ -87,12 +87,6 @@ function computeGapOrdering(track: ALOrderingTrackInput): ALOrderingAcceptance {
         return toOrderingNoop(track, 'resync-required');
     }
     const buffered = new Set(track.snapshot?.bufferedSeqs ?? []);
-    const missingSeqs: number[] = [];
-    for (let candidate = track.expectedSeq; candidate < track.seq; candidate += 1) {
-        if (!buffered.has(candidate)) {
-            missingSeqs.push(candidate);
-        }
-    }
     return {
         observation: {
             status: 'gap',
@@ -100,7 +94,7 @@ function computeGapOrdering(track: ALOrderingTrackInput): ALOrderingAcceptance {
             seq: track.seq,
             expectedSeq: track.expectedSeq,
             lastContiguousSeq: track.snapshot?.lastContiguousSeq ?? 0,
-            missingSeqs,
+            missingRanges: computeMissingRanges(track.expectedSeq, track.seq, buffered),
             releasableSeqs: []
         },
         nextSnapshot: track.input.apply
@@ -111,6 +105,24 @@ function computeGapOrdering(track: ALOrderingTrackInput): ALOrderingAcceptance {
             }
             : track.snapshot
     };
+}
+
+/** Each run of sequences in `[expectedSeq, seq)` that the buffer lacks becomes one inclusive range. */
+function computeMissingRanges(expectedSeq: number, seq: number, buffered: ReadonlySet<number>): readonly ALSeqRange[] {
+    const missingRanges: ALSeqRange[] = [];
+    let candidate = expectedSeq;
+    while (candidate < seq) {
+        if (buffered.has(candidate)) {
+            candidate += 1;
+            continue;
+        }
+        const from = candidate;
+        while (candidate < seq && !buffered.has(candidate)) {
+            candidate += 1;
+        }
+        missingRanges.push({ from, to: candidate - 1 });
+    }
+    return missingRanges;
 }
 
 function toOrderingNoop(
@@ -124,7 +136,7 @@ function toOrderingNoop(
             seq: track.seq,
             expectedSeq: track.expectedSeq,
             lastContiguousSeq: track.snapshot?.lastContiguousSeq ?? 0,
-            missingSeqs: [],
+            missingRanges: [],
             releasableSeqs: []
         }
     };

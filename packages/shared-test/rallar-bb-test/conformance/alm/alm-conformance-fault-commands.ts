@@ -6,7 +6,7 @@ import type {
 
 import { toBudgetMs } from './alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from './alm-conformance-carriers.ts';
-import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
+import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import { toCommandId, toScenarioTypeId } from './alm-conformance-step-identities.ts';
 
 export type AlmConformanceFaultCarrier = 'ws' | 'rtc';
@@ -19,6 +19,8 @@ interface AlmConformanceFaultCommandInput {
     /** Prefixes the scenario's type id: one fault id per carrier and purpose. */
     readonly faultName: string;
     readonly carrier: AlmConformanceFaultCarrier;
+    /** The frames the fault meets: every frame of the scenario's type, or the one message a send returned. */
+    readonly match: RallarBlackBoxTestTransportFaultInjectCommand['match'];
     readonly action: 'drop' | 'not-ready';
     readonly remaining: 'until-cleared' | 0;
 }
@@ -34,10 +36,39 @@ export function toHeldFaultCommands(
             name: `${name}-${carrier}`,
             faultName: `hold-${carrier}`,
             carrier,
-            action: carrier === 'ws' ? 'not-ready' : 'drop',
+            match: { typeId: toScenarioTypeId(step) },
+            action: toHoldAction(carrier),
             remaining
         })
     );
+}
+
+/**
+ * Holds one message of the scenario on each carrier the cell can hold, by the message id its send returned: a
+ * frame of the type whose id differs passes. The same ids with `remaining: 0` release it. Over WS the frame is never
+ * submitted; over RTC each attempt settles `not-ready` and its owner resubmits it, as {@link toHeldFaultCommands}.
+ */
+export function toHeldMessageFaultCommands(
+    step: AlmConformanceMessageStepInput,
+    name: string,
+    remaining: 'until-cleared' | 0
+): readonly RallarBlackBoxTestCommand[] {
+    const msgId = `{resultCache.${toCommandId(step, `send-${step.index}`)}.value.msgId}`;
+    return toFaultCarriers(step.input.carrier).map((carrier) =>
+        toFaultCommand({
+            step,
+            name: `${name}-${carrier}`,
+            faultName: `hold-message-${step.index}-${carrier}`,
+            carrier,
+            match: { msgId },
+            action: toHoldAction(carrier),
+            remaining
+        })
+    );
+}
+
+function toHoldAction(carrier: AlmConformanceFaultCarrier): 'drop' | 'not-ready' {
+    return carrier === 'ws' ? 'not-ready' : 'drop';
 }
 
 /**
@@ -54,6 +85,7 @@ export function toRtcDropFaultCommand(
         name,
         faultName: 'drop-rtc',
         carrier: 'rtc',
+        match: { typeId: toScenarioTypeId(step) },
         action: 'drop',
         remaining
     });
@@ -116,13 +148,12 @@ function toStorageQuotaFaultCommand(
 function toFaultCommand(
     input: AlmConformanceFaultCommandInput
 ): RallarBlackBoxTestTransportFaultInjectCommand {
-    const typeId = toScenarioTypeId(input.step);
     return {
         kind: 'fault.inject',
         commandId: toCommandId(input.step, input.name),
-        faultId: `${input.faultName}-${typeId}`,
+        faultId: `${input.faultName}-${toScenarioTypeId(input.step)}`,
         carrier: input.carrier,
-        match: { typeId },
+        match: input.match,
         action: input.action,
         remaining: input.remaining,
         timeoutMs: toBudgetMs(FAULT_TIMEOUT_MS, input.step.input.deadlineMs)

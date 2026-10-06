@@ -117,6 +117,11 @@ export interface BlackBoxRallarConfig {
     readonly logoutOnClose?: boolean;
     /** Harness-only: lowers the volatile bound of the session this connect initialises. */
     readonly almVolatileLimits?: ALVolatileSessionLimits;
+    /**
+     * Harness-only: `record` declares a recovery owner on the typed channel this connect subscribes, one that
+     * records each invocation as a diagnostic. Absent, the channel declares none, as a product channel by default.
+     */
+    readonly recoveryOwner?: 'record';
 }
 
 export interface BlackBoxRallarConnectionConfig {

@@ -141,7 +141,7 @@ export function toRtcRoomSnapshotHandlingPlan(
             enabled: pending && fromPeerId !== undefined,
             toPeerId: fromPeerId,
             reason: pending ? 'not-yet-in-sync' : 'unauthorized',
-            missingSeqs: []
+            missingRanges: []
         },
         repair: { enabled: false, algo: 'none' }
     };

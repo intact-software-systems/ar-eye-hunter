@@ -15,7 +15,10 @@ QueueBox engine. The WS client and server construct the runtime in
 [`WsQueueBoxServerService`](../../services/ws-queue-box-server/ws-queue-box-server-service.ts).
 RTC ingress is wired by
 [`WebRtcRxStreamerService`](../../services/web-rtc-rx-streamer-service.ts).
-These composition owners supply the planner, delivery, forwarding, and control ports.
+These composition owners supply the planner, delivery, forwarding, and control ports. The WS
+client and RTC ingress also pass the optional `onResyncRequired` sink
+(`ALInboundMessageRuntime.Dependencies`), which the browser fills with its resynchronization
+recovery (see "Ordering gaps and resynchronization" below); the WS server passes none.
 
 The runtime constructs its [`ALWorkQueuePort`](../work/al-work-queue-port.ts),
 [`ALInboundMessageAdmission`](./al-inbound-message-admission.ts) and
@@ -308,13 +311,13 @@ cap the cost is redundant relays, never a deadlock. The RTC per-copy cost of
 the list is estimated at about 117 B in a three-session star and at most about
 2.5 KB, well inside every envelope limit; it has not been measured on the wire.
 
-**Repair requests.** A peer attaches an `al.control.repair.v1` retransmit
+**Repair requests.** A peer attaches an `al.control.repair.v2` retransmit
 request to its ACK only for owned children it could not reach (R-S2c-ii-9). A
 peer that owns no children never asks: the retry of a recipient the origin
 already counted is the origin's decision from its receipt (see the outbound
 README for the origin's `no-route` verdict when it owns no child).
 
-The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-scoped-delivery'`. An
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-10-range-repair'`. An
 existing browser database at a different schema identity is deleted and
 recreated once, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
@@ -325,6 +328,11 @@ server's rows gained fields older decoders refuse: the captured policy's `recipi
 `principalTargetId` and `sessionInvalidation`, the `ws-client` source's `authenticatedScope`,
 and the prepared recipient kinds `scoped-recipient`, `room-recipient` and `invalidated-session`.
 A row whose targets name a group stores none of the three captured fields: its `groupRef` scopes it.
+The range-repair bump (D139) followed because the buffered slot rows persist the handling plan,
+whose NACK plan and ordering observation now carry `missingRanges` (inclusive `{ from, to }`
+ranges, at most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges`) where they carried `missingSeqs`
+lists; the retained `repair-hint` work and the outbound control history carry the same field.
+No row is migrated: an older row's `missingSeqs` fails strict decoding.
 
 **The deploy window.** No row kind this change touches lacks an expiry, so
 nothing the WS server's PostgreSQL store holds from before the deploy stays
@@ -364,6 +372,15 @@ scoped-delivery bump resets browsers only. On the server:
 - `ws-client` work an older build retained carries no `authenticatedScope`, fails strict decoding and is
   dropped once as corrupt.
 
+**The range-repair window.** PostgreSQL rows carry no schema identity here either, so the
+range-repair bump resets browsers only. On the server, a buffered-slot row, a retained
+`repair-hint` and a `nacks`/`repairs` control history row written by the old build fail strict
+decoding until they expire: the ordering track TTL (`orderingTrackTtlMs`, 5 minutes by default)
+bounds the buffered slots of a track, and the message deadlines bound the retained work and the
+control history, so the window closes without a migration. A NACK or repair a page still running
+the old build sends is refused `unsupported` (`al.control.nack.v1`, `al.control.repair.v1`) until
+that page reloads, symmetrically with the acknowledgement cutover above.
+
 Web and API deploy together.
 
 ## Admission and invocation paths
@@ -379,6 +396,25 @@ Web and API deploy together.
 `validateALInboundControlAdmission` returns every reason an acknowledgement is
 inadmissible; the caller joins them into one rejection reason. Only an absent pending
 obligation short-circuits, because the remaining checks read that obligation.
+
+**Ordering gaps and resynchronization.** A receiver orders a sender's messages per track
+(ordering key, sender, epoch) behind the last contiguous sequence
+([`compute-al-ordering-observation.ts`](../compute-al-ordering-observation.ts)), buffering what
+arrives early inside a window of `AL_MESSAGE_RESOURCE_LIMITS.repairWindow` (256) sequences and at
+most `bufferedMessages` (256) and `bufferedBytes` (1 MiB) per track. An in-window gap is a `gap`
+observation whose `missingRanges` are the inclusive ranges between the contiguous head and the
+buffered set; the planner's NACK (`al.control.nack.v2`) and repair request
+(`al.control.repair.v2`) carry them, and the sender retransmits them by range. A sequence past the
+window, or a track at a buffer ceiling, is `resync-required`: the message is not buffered and the
+sender is NACKed. When the admission accepts a message `resync-required`, or
+[`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) can no longer order a buffered
+release, the runtime hands `{ msg, cursor }` to the optional `onResyncRequired` sink after the
+NACK has committed, so the owner is told of a resynchronization the sender is already told of. The
+cursor ([`ALInboundResyncCursor`](./al-inbound-resync-required.ts)) is where the track stands:
+`orderingKey`, `senderId`, `epoch`, `lastContiguousSeq`, `expectedSeq`, `observedSeq` and
+`carrier`. The runtime resets no track after a resynchronization; the sender's new epoch is a new
+track. Without the sink -- the WS server's case -- the message is dropped as before and the
+diagnostics state the refusal.
 
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce
@@ -446,14 +482,28 @@ surface therefore never throws `ALAdmissionBackendConflictError`, so the admissi
 the outbound control admission of an ACK included — reaches its own commit and its own typed
 conflict.
 
-What makes that commit conditional: the backend records, for every key the write phase read or
-wrote, the revision and write token it observed there (or that the key was absent), and for every
-prefix it listed, the exact key set that listing returned. Before the transaction commits it
-re-reads exactly those rows and prefixes and rolls back as a typed conflict only when one of them
-moved; an admission, send, or ACK against a different message's rows and a different listed range
-touches none of that and commits alongside it. The three backends are conflict-equivalent under
-this fence: the in-memory backend serializes writers on its own write-tail promise, and IndexedDB
-and PostgreSQL both compare per row instead.
+What makes that commit conditional differs by backend. On memory and IndexedDB every key the
+write phase read or wrote is compared: the in-memory backend serializes writers on its own
+write-tail promise, so what the write phase reads is what its commit sees; IndexedDB records, for
+every key the write phase read or wrote, the revision and write token it observed there (or that
+the key was absent), and for every prefix it listed, the exact key set that listing returned, then
+re-reads exactly those rows and prefixes before the transaction commits and rolls back as a typed
+conflict only when one of them moved. PostgreSQL guards the keys a write touched and not the keys it
+only read: `PSqlAdmissionMutationCollector` emits one insert-if-absent, replace-if-revision or
+delete-if-revision guard per written key, while the store-level re-read of the observed surface
+runs before the transaction opens and fences nothing by itself. The arbitration rests on what the
+three share: every key the two writers of the stale-read then sequential-commit schedule arbitrate
+on — the dedup key, the supersedence latest, the ordering track, the message owner, and on the
+outbound side the supersedence latest and the sender version — is one both writers write, so the
+written-key guard decides the schedule alike on all three. The schedule module
+[`al-shared-key-arbitration.test.ts`](../../../tests/shared/alm/al-shared-key-arbitration.test.ts)
+is the proof: it runs that schedule over memory, IndexedDB and pglite for both stores and names,
+per case, the written key whose guard decides it — the dedup key, the supersedence latest, the
+ordering track, the outbound supersedence latest and the outbound sender version; the same-message
+case of
+[`inbound-supersedence-concurrency.test.ts`](../../../tests/shared/alm/inbound-supersedence-concurrency.test.ts)
+covers the message owner on the same three backends. An admission, send, or ACK against a different
+message's rows and a different listed range touches none of that and commits alongside it.
 
 Every stored key is `topicId/resourceId/contextId`, and inbound work is
 `AL_INBOUND/<namespace>/<effectId>` so one session's rows are a bounded key range.

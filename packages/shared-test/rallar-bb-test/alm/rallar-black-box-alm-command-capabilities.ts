@@ -132,6 +132,8 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         kind: 'fault.inject',
         title: 'Inject Transport or Storage Fault',
         description: 'Schedules a drop for matching WS/RTC traffic, or WS-only delay or not-ready submission faults. ' +
+            'match.msgId may name a {resultCache.<commandId>.<path>} token, such as the msgId an earlier ' +
+            'messages.send returned, so one message is held while every other frame of its type passes. ' +
             'carrier storage instead faults the IndexedDB operations of match.owner (al-admission or al-work) and ' +
             'optionally match.kind: fail, quota (writes only) or a delay. ' +
             'remaining is a finite match count or until-cleared; replacing the same faultId with remaining:0 releases it.',

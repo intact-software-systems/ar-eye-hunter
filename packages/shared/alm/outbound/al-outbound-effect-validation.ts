@@ -12,7 +12,8 @@ import { jsonEquals } from '../../repository/state-utils.ts';
 import {
     decodeALAdmissionArray,
     decodeALAdmissionNumber,
-    decodeALAdmissionRecord
+    decodeALAdmissionRecord,
+    decodeALAdmissionSeqRanges
 } from '../al-admission-value-validation.ts';
 import type {
     ALOutboundDurableEffect,
@@ -26,7 +27,11 @@ import {
     toALOutboundPendingControlId,
     type ALOutboundPendingAdmission
 } from './al-outbound-pending-admission.ts';
-import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
+import {
+    toALOutboundEffectId,
+    toALOutboundSendEffectId,
+    type ALOutboundSendEffectIdentity
+} from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 
 export interface ALOutboundPreparedRead<TPrepared> {
@@ -34,12 +39,9 @@ export interface ALOutboundPreparedRead<TPrepared> {
     readonly message: ALMessage | undefined;
 }
 
-interface RequireALOutboundSendEffectIdentityInput {
+/** A persisted send row's identity beside what its payload claims; the row's own index is read from the identity. */
+interface RequireALOutboundSendEffectIdentityInput extends Omit<ALOutboundSendEffectIdentity, 'index'> {
     readonly effectId: string;
-    readonly msgId: string;
-    readonly phase: 'dequeue' | 'immediate';
-    readonly attemptIdentity: string;
-    readonly preparedFingerprint: string;
 }
 
 export function decodeALOutboundPreparedMessage(value: unknown, msg: ALMessage): ALMessage {
@@ -266,14 +268,14 @@ function requireALOutboundSendEffectIdentity(
         !Number.isSafeInteger(index) ||
         index < 0 ||
         String(index) !== encodedIndex ||
-        effectId !== toALOutboundEffectId(['send', msgId, phase, attemptIdentity, index, preparedFingerprint])
+        effectId !== toALOutboundSendEffectId({ msgId, phase, attemptIdentity, index, preparedFingerprint })
     ) {
         throw new TypeError('Persisted AL outbound send effect identity is invalid');
     }
 }
 
 function decodeALOutboundRepairHint(value: unknown): ALOutboundRepairHint {
-    const request = decodeALAdmissionRecord(value, ['trigger', 'failedPeerIds', 'missingSeqs'], [
+    const request = decodeALAdmissionRecord(value, ['trigger', 'failedPeerIds', 'missingRanges'], [
         'requestedByPeerId',
         'orderingTrackKey'
     ]);
@@ -286,6 +288,6 @@ function decodeALOutboundRepairHint(value: unknown): ALOutboundRepairHint {
         throw new TypeError('Persisted AL repair peer or sequence array is missing');
     }
     requireOptionalPersistedALStringArray(request.failedPeerIds, 'failed repair peers');
-    decodeALAdmissionArray(request.missingSeqs, decodeALAdmissionNumber);
+    decodeALAdmissionSeqRanges(request.missingRanges);
     return value as ALOutboundRepairHint;
 }

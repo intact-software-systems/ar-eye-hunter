@@ -1,6 +1,7 @@
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import {
     ALM_CONFORMANCE_CARRIERS,
+    ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
@@ -60,7 +61,10 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'not-yet-in-sync-delivered-after-refresh', carriers: ALM_CONFORMANCE_CARRIERS },
     // The checkpoint tier's lane evidence is local and the hosted full read's; manifest 18 keeps its recorded cells.
     { scenarioKey: 'checkpoint-recovery', carriers: ALM_CONFORMANCE_CARRIERS },
-    { scenarioKey: 'checkpoint-lag', carriers: ALM_CONFORMANCE_CARRIERS }
+    { scenarioKey: 'checkpoint-lag', carriers: ALM_CONFORMANCE_CARRIERS },
+    // The range repair cells' lane evidence is local and the hosted full read's too; manifest 18 stays as recorded.
+    { scenarioKey: 'ordering-gap-repair', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },
+    { scenarioKey: 'repair-exhausted', carriers: ALM_CONFORMANCE_CARRIERS }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {

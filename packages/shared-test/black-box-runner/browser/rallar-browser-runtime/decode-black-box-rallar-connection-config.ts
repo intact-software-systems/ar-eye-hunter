@@ -188,7 +188,8 @@ export function decodeBlackBoxRallarConfigFields(value: unknown): Partial<BlackB
         expectedSessionId: optionalString(record.expectedSessionId),
         leaveRoomOnClose: optionalBoolean(record.leaveRoomOnClose),
         logoutOnClose: optionalBoolean(record.logoutOnClose),
-        almVolatileLimits: decodeAlmVolatileLimits(record.almVolatileLimits)
+        almVolatileLimits: decodeAlmVolatileLimits(record.almVolatileLimits),
+        recoveryOwner: optionalChoice(record.recoveryOwner, ['record'])
     };
 }
 

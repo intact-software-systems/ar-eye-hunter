@@ -60,7 +60,7 @@ describe('room publication identity at WS planning', () => {
             repair: { enabled: true, algo: 'retransmit', maxAttempts: 2 },
             failedPeerIds: ['frozen', 'late'],
             completedHopPeerIds: [],
-            missingSeqs: [],
+            missingRanges: [],
             admittedAudience: ['frozen'],
             referenceKey
         });

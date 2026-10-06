@@ -13,6 +13,7 @@ import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type {
     ALCheckpointOutboundRuntimeStores,
@@ -113,6 +114,8 @@ export interface InitialiseRtcRxStreamerInput {
     readonly durableWorkOwnership: ALDurableWorkOwnership;
     readonly roomAuthorityRefresh?: WebRtcRxStreamerService.Input['roomAuthorityRefresh'];
     readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
+    /** Absent, no recovery owner is told of a track this receiver can no longer order: a transport built without the messaging composition. */
+    readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
 }
 
 export function initialiseRtcRxStreamer(
@@ -129,6 +132,7 @@ export function initialiseRtcRxStreamer(
         heartbeat: { maxMissedPings: defaultMaxMissedPings, pingFrequencyMsecs: defaultPingFrequencyMsecs },
         roomAuthorityRefresh: input.roomAuthorityRefresh,
         inboundDiagnostics: input.inboundDiagnostics,
+        onResyncRequired: input.onResyncRequired,
         durableWorkOwnership: input.durableWorkOwnership
     });
 }

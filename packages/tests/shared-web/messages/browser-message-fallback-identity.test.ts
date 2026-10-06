@@ -14,6 +14,7 @@ import {
 import { createDefaultOutboundTestRuntime } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../../shared/alm/outbound-test-payload.ts';
 
+import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
@@ -390,7 +391,8 @@ function createChannel(input: ChannelInput): ChannelFixture {
         inputValidator,
         sender,
         rtc: { onMessage: () => () => {} },
-        ws: { onMessage: () => () => {} }
+        ws: { onMessage: () => () => {} },
+        recoveryOwners: new BrowserChannelRecoveryOwners()
     });
     return {
         originalRoom: admission.originalRoom,

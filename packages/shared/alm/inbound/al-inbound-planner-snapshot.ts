@@ -133,7 +133,7 @@ export function computeALInboundOrderingAcceptance(
         return ordering;
     }
     return {
-        observation: { ...ordering.observation, status: 'resync-required', missingSeqs: [], releasableSeqs: [] }
+        observation: { ...ordering.observation, status: 'resync-required', missingRanges: [], releasableSeqs: [] }
     };
 }
 

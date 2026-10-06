@@ -136,7 +136,7 @@ describe('AL state retained across runtime recreation', () => {
 
         await expect.poll(() => dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
         expect(controlMessages.map((msg) => msg.payload.typeId)).toContain(
-            'al.control.nack.v1'
+            'al.control.nack.v2'
         );
     });
 
@@ -204,7 +204,7 @@ describe('AL state retained across runtime recreation', () => {
                     observedAtEpochMs: 1,
                     orderingKey: toALOrderingTrackKey(seq1),
                     expectedSeq: 1,
-                    missingSeqs: [1]
+                    missingRanges: [{ from: 1, to: 1 }]
                 }
             ),
             'peer'

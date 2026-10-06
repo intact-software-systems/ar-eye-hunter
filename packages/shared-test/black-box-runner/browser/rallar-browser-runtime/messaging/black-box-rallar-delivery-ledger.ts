@@ -105,7 +105,8 @@ export class BlackBoxRallarDeliveryLedger {
             roomRef,
             durability: send.durability,
             onStorageUnavailable: send.onStorageUnavailable,
-            purpose: send.toPeer === undefined ? 'notification' : 'command'
+            purpose: send.toPeer === undefined ? 'notification' : 'command',
+            recovery: undefined
         });
         this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.send_started', {
             handleId: send.handleId,

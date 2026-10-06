@@ -28,6 +28,7 @@ import {
     type ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
+import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier } from '@shared/alm/inbound/al-inbound-source-validation.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
@@ -152,6 +153,8 @@ export interface CreateInboundTestRuntimeInput {
     readonly failControlSend?: (msg: ALMessage) => boolean;
     /** Absent leaves the runtime owning its durable work, as every runtime without a session claim does. */
     readonly durableWorkOwnership?: ALDurableWorkOwnership;
+    /** Absent composes the runtime as the server does: no recovery owner is told of a resynchronization. */
+    readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
 }
 
 /** The runtime never owns its engine here: a test drives every round it runs beyond a commit's own. */
@@ -190,6 +193,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
                 throw new NonRetryableException('The control transport refused this message');
             }
         },
+        onResyncRequired: input.onResyncRequired,
         diagnostics: (event) => diagnostics.push(event),
         effectWorkerId: input.effectWorkerId
     });

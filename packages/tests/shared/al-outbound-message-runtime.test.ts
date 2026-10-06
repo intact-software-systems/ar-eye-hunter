@@ -904,7 +904,7 @@ describe('ALOutboundMessageRuntime', () => {
                     observedAtEpochMs: 1,
                     orderingKey: toALOrderingTrackKey(seq1),
                     expectedSeq: 1,
-                    missingSeqs: [1]
+                    missingRanges: [{ from: 1, to: 1 }]
                 }
             ),
             'peer'

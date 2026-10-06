@@ -6,7 +6,8 @@ import {
     newALRepairControlMessage
 } from '@shared/al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
-import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
+import { toALOrderingTrackKey, type ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
+import { toALSeqRangesText } from '@shared/al-contracts/al-seq-range.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { decodeALAdmissionControlValue } from '@shared/alm/al-admission-value-validation.ts';
@@ -113,7 +114,7 @@ describe('outbound control admission identity', () => {
             });
             const id: ALMessage['id'] = { v: 2, msgId: 'control', senderId: 'receiver', ts: Date.now() };
             const common = { fromPeerId: 'receiver', toPeerId: 'sender', observedAtEpochMs: Date.now() };
-            const ordering = { orderingKey: toALOrderingTrackKey(message), missingSeqs: [2], expectedSeq: 2 };
+            const ordering = { orderingKey: toALOrderingTrackKey(message), missingRanges: [{ from: 2, to: 2 }], expectedSeq: 2 };
             const accepted = type === 'ack'
                 ? newALAckControlMessage(id, {
                     ...common,
@@ -184,7 +185,10 @@ describe('outbound control admission identity', () => {
                 expect(retained).toContainEqual(expect.objectContaining({
                     kind: 'repair-hint',
                     msgId,
-                    request: expect.objectContaining({ orderingTrackKey: toALOrderingTrackKey(message), missingSeqs: [2] })
+                    request: expect.objectContaining({
+                        orderingTrackKey: toALOrderingTrackKey(message),
+                        missingRanges: [{ from: 2, to: 2 }]
+                    })
                 }));
             }
         }
@@ -306,7 +310,7 @@ describe('outbound control admission identity', () => {
             request: {
                 trigger: 'repair',
                 requestedByPeerId: 'receiver',
-                missingSeqs: [],
+                missingRanges: [],
                 failedPeerIds: []
             }
         }]);
@@ -353,11 +357,42 @@ describe('outbound control admission identity', () => {
         await seedOrderedObligation(admissionStore);
         const baseline = [...state.data];
 
-        expect((await control.admit(orderedRepairControl('other-track', [2]), 'peer')).kind).toBe('rejected');
+        expect((await control.admit(orderedRepairControl('other-track', [{ from: 2, to: 2 }]), 'peer')).kind)
+            .toBe('rejected');
         expect([...state.data]).toEqual(baseline);
-        expect((await control.admit(orderedRepairControl('stream:sender:7', [11]), 'peer')).kind).toBe('rejected');
+        expect((await control.admit(orderedRepairControl('stream:sender:7', [{ from: 11, to: 11 }]), 'peer')).kind)
+            .toBe('rejected');
         expect([...state.data]).toEqual(baseline);
-        expect(await control.admit(orderedRepairControl('stream:sender:7', [2, 3]), 'peer')).toEqual({ kind: 'committed' });
+        expect((await control.admit(orderedRepairControl('stream:sender:7', [{ from: 2, to: 10 }]), 'peer')).kind)
+            .toBe('rejected');
+        expect((await control.admit(orderedRepairControl('stream:sender:7', [{ from: 1, to: 2 }]), 'peer')).kind)
+            .toBe('rejected');
+        expect([...state.data]).toEqual(baseline);
+        expect(await control.admit(orderedRepairControl('stream:sender:7', [{ from: 2, to: 3 }]), 'peer'))
+            .toEqual({ kind: 'committed' });
+        expect(await control.admit(orderedRepairControl('stream:sender:7', [{ from: 2, to: 3 }, { from: 5, to: 9 }]), 'peer'))
+            .toEqual({ kind: 'committed' });
+    });
+
+    it('commits a gap NACK and a repair request naming the same gap as one repair hint', async () => {
+        const { admissionStore, workQueue, control } = createFixture();
+        await seedOrderedObligation(admissionStore);
+        const gap: readonly ALSeqRange[] = [{ from: 2, to: 3 }];
+
+        expect(await control.admit(orderedGapNack('stream:sender:7', gap), 'peer')).toEqual({ kind: 'committed' });
+        expect(await control.admit(orderedRepairControl('stream:sender:7', gap), 'peer')).toEqual({ kind: 'committed' });
+
+        expect(await readRetainedWork(admissionStore, workQueue)).toEqual([{
+            kind: 'repair-hint',
+            msgId: 'message',
+            request: {
+                trigger: 'nack',
+                requestedByPeerId: 'receiver',
+                orderingTrackKey: 'stream:sender:7',
+                missingRanges: gap,
+                failedPeerIds: []
+            }
+        }]);
     });
 
     it('completes a frozen 256-peer audience after diagnostic ACK history is already full', async () => {
@@ -940,9 +975,25 @@ function repairControl(observedAtEpochMs: number): ALMessage {
     );
 }
 
-function orderedRepairControl(orderingKey: string, missingSeqs: readonly number[]): ALMessage {
+function orderedGapNack(orderingKey: string, missingRanges: readonly ALSeqRange[]): ALMessage {
+    return newALNackControlMessage(
+        { v: 2, msgId: `control-gap-${orderingKey}-${toALSeqRangesText(missingRanges)}`, senderId: 'receiver', ts: 1 },
+        {
+            fromPeerId: 'receiver',
+            toPeerId: 'sender',
+            msgId: 'message',
+            reason: 'gap',
+            observedAtEpochMs: 1,
+            orderingKey,
+            expectedSeq: 2,
+            missingRanges
+        }
+    );
+}
+
+function orderedRepairControl(orderingKey: string, missingRanges: readonly ALSeqRange[]): ALMessage {
     return newALRepairControlMessage(
-        { v: 2, msgId: `control-${orderingKey}-${missingSeqs.join('-')}`, senderId: 'receiver', ts: 1 },
+        { v: 2, msgId: `control-${orderingKey}-${toALSeqRangesText(missingRanges)}`, senderId: 'receiver', ts: 1 },
         {
             fromPeerId: 'receiver',
             toPeerId: 'sender',
@@ -951,7 +1002,7 @@ function orderedRepairControl(orderingKey: string, missingSeqs: readonly number[
             observedAtEpochMs: 1,
             orderingKey,
             expectedSeq: 2,
-            missingSeqs
+            missingRanges
         }
     );
 }
@@ -978,7 +1029,7 @@ function resyncNack(fromPeerId: string, input: ResyncNackInput = {}): ALMessage 
                 : {
                     orderingKey: hints === 'retained-track' ? 'stream:sender:0' : 'foreign-track',
                     expectedSeq: 2,
-                    missingSeqs: []
+                    missingRanges: []
                 })
         }
     );

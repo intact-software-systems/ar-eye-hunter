@@ -39,6 +39,9 @@ import {
 } from '../al-outbound-canonical-message.ts';
 import { readALOutboundCanonicalMessage } from '../al-outbound-canonical-storage.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
+import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
+import { toALOutboundSendEffectId } from '../to-al-outbound-effect-id.ts';
+import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fingerprint.ts';
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
 import { validateALOutboundPlannedMessage } from '../validate-al-outbound-dispatch.ts';
 import {
@@ -56,6 +59,7 @@ import type {
     ALOutboundMessageReadDto,
     ALOutboundOutgoingReadInput,
     ALOutboundPlanner,
+    ALOutboundRepairAttemptIdentity,
     ALOutboundRepairReadDto,
     ALOutboundSupersedenceReadState
 } from './al-outbound-admission-store.ts';
@@ -85,6 +89,14 @@ export interface ALOutboundSupersedenceReadInput {
     readonly msgId: string;
     /** Undefined skips that read: only an admission, which rewrites the predecessor's row, compares it. */
     readonly replacesMsgId: string | undefined;
+}
+
+/** One outgoing read's fence reads: the session they read in, the message and plan they fence, at one clock reading. */
+interface ALOutboundAdmissionFenceReadInput<TPrepared> {
+    readonly session: ALAdmissionReadSession;
+    readonly outgoing: ALOutboundOutgoingReadInput<TPrepared>;
+    readonly plan: ALOutboundDispatchPlan<TPrepared>;
+    readonly nowMs: number;
 }
 
 /** Assembles outbound decisions in a caller-owned read session; the write owner re-reads its fences. */
@@ -133,12 +145,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             observedEntry: observedCanonicalEntry
         });
         const plan = this.readDispatchPlan(input, canonical, stored);
-        const supersedenceInput = toALOutboundSupersedenceInput(msg, plan);
-        const supersedence = await this.readSupersedenceState(session, {
-            key: supersedenceInput?.key,
-            msgId: msg.id.msgId,
-            replacesMsgId: supersedenceInput?.replacesMsgId
-        });
+        const fences = await this.readAdmissionFences({ session, outgoing: input, plan, nowMs });
 
         return {
             kind: 'outgoing',
@@ -154,16 +161,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             sentSnapshot: this.toLiveSentSnapshot(stored, canonical),
             ...control,
             repairs,
-            supersedence,
-            supersedenceAcceptance: supersedenceInput
-                ? acceptALSupersedenceObservation({
-                    supersedence: supersedenceInput,
-                    latest: supersedence.latest,
-                    replacement: supersedence.replacement,
-                    nowMs,
-                    trackTtlMs: this.supersedenceTrackTtlMs
-                })
-                : undefined
+            ...fences
         };
     }
 
@@ -452,6 +450,63 @@ export class ALOutboundAdmissionReads<TPrepared> {
     ): Promise<ResourceEntry | undefined> {
         this.readOperationCount += 1;
         return await session.readWork(key);
+    }
+
+    /**
+     * What the fences say before an admission charges: the supersedence track and the verdict it yields for
+     * this message, and whether the repair attempt's sends are already rows.
+     */
+    private async readAdmissionFences(
+        input: ALOutboundAdmissionFenceReadInput<TPrepared>
+    ): Promise<
+        Pick<ALOutboundMessageReadDto<TPrepared>, 'supersedence' | 'supersedenceAcceptance' | 'repairAttemptCommitted'>
+    > {
+        const { session, outgoing, plan, nowMs } = input;
+        const supersedenceInput = toALOutboundSupersedenceInput(outgoing.msg, plan);
+        const supersedence = await this.readSupersedenceState(session, {
+            key: supersedenceInput?.key,
+            msgId: outgoing.msg.id.msgId,
+            replacesMsgId: supersedenceInput?.replacesMsgId
+        });
+        const repairAttemptCommitted = outgoing.repairAttempt !== undefined &&
+            await this.readRepairAttemptCommitted(session, outgoing.repairAttempt, plan);
+        return {
+            supersedence,
+            repairAttemptCommitted,
+            supersedenceAcceptance: supersedenceInput
+                ? acceptALSupersedenceObservation({
+                    supersedence: supersedenceInput,
+                    latest: supersedence.latest,
+                    replacement: supersedence.replacement,
+                    nowMs,
+                    trackTtlMs: this.supersedenceTrackTtlMs
+                })
+                : undefined
+        };
+    }
+
+    /** Whether a send of the attempt is already a work row; the one commit that wrote one wrote them all. */
+    private async readRepairAttemptCommitted(
+        session: ALAdmissionReadSession,
+        attempt: ALOutboundRepairAttemptIdentity,
+        plan: ALOutboundDispatchPlan<TPrepared>
+    ): Promise<boolean> {
+        const rows = await Promise.all(plan.preparedMessages.map((prepared, index) =>
+            this.readQueueItem(
+                session,
+                toALOutboundWorkKey(
+                    this.namespace,
+                    toALOutboundSendEffectId({
+                        msgId: plan.msg.id.msgId,
+                        phase: attempt.phase,
+                        attemptIdentity: attempt.attemptIdentity,
+                        index,
+                        preparedFingerprint: toALOutboundPreparedFingerprint(prepared)
+                    })
+                )
+            )
+        ));
+        return rows.some((row) => row !== undefined);
     }
 
     private assertSentMessageScope(msgId: string, stored: ALStoredOutboundMessage | undefined): void {

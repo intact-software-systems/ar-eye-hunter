@@ -20,7 +20,7 @@ describe('AL ordering repair window', () => {
         expect(result.observation).toMatchObject({
             status: 'resync-required',
             expectedSeq: 1,
-            missingSeqs: [],
+            missingRanges: [],
             releasableSeqs: []
         });
         expect(result.nextSnapshot).toBeUndefined();
@@ -43,11 +43,30 @@ describe('AL ordering repair window', () => {
         });
 
         expect(atLimit.observation.status).toBe('gap');
-        expect(atLimit.observation.missingSeqs).toEqual(Array.from({ length: 256 }, (_, index) => index + 1));
+        expect(atLimit.observation.missingRanges).toEqual([{ from: 1, to: 256 }]);
         expect(atLimit.nextSnapshot?.bufferedSeqs).toEqual([257]);
         expect(outside.observation.status).toBe('resync-required');
-        expect(outside.observation.missingSeqs).toEqual([]);
+        expect(outside.observation.missingRanges).toEqual([]);
         expect(outside.nextSnapshot).toBeUndefined();
+    });
+
+    it('states a gap of 2..5 with 3 buffered as the ranges 2-2 and 4-5', () => {
+        const result = computeALOrderingObservation({
+            msg: orderedMessage(6),
+            snapshot: { lastContiguousSeq: 1, bufferedSeqs: [3], updatedAtMs: 1_000 },
+            nowMs: 1_001,
+            trackTtlMs: 60_000,
+            apply: true
+        });
+
+        expect(result.observation).toMatchObject({
+            status: 'gap',
+            expectedSeq: 2,
+            lastContiguousSeq: 1,
+            missingRanges: [{ from: 2, to: 2 }, { from: 4, to: 5 }],
+            releasableSeqs: []
+        });
+        expect(result.nextSnapshot).toEqual({ lastContiguousSeq: 1, bufferedSeqs: [3, 6], updatedAtMs: 1_001 });
     });
 
     it('bounds a later gap without changing the observed track', () => {
@@ -64,7 +83,7 @@ describe('AL ordering repair window', () => {
             apply: true
         });
 
-        expect(result.observation).toMatchObject({ status: 'resync-required', expectedSeq: 9, missingSeqs: [] });
+        expect(result.observation).toMatchObject({ status: 'resync-required', expectedSeq: 9, missingRanges: [] });
         expect(result.nextSnapshot).toBeUndefined();
         expect(snapshot).toEqual({ lastContiguousSeq: 8, bufferedSeqs: [10, 12], updatedAtMs: 1_000 });
     });
@@ -145,7 +164,7 @@ describe('AL ordering repair window', () => {
             apply: true
         });
 
-        expect(result.observation).toMatchObject({ status: 'resync-required', expectedSeq: 1, missingSeqs: [] });
+        expect(result.observation).toMatchObject({ status: 'resync-required', expectedSeq: 1, missingRanges: [] });
         expect(result.nextSnapshot).toBeUndefined();
     });
 });

@@ -673,7 +673,8 @@ beside `admittedDurable: false`. A downgraded `local-inbox` send also loses the
 receiver's inbox persistence, and a fallback carrier receives the downgraded
 message. A lane send names no channel, so it always refuses. A WS send with
 scope `world` or `all`, and a `best-effort` send, ask for no receipt unless
-the send states `ack`.
+the send states `ack`. `recovery` names the channel's owner of
+resynchronization (see Ordering, Repair And Resynchronization below).
 
 `durability: 'local-checkpoint'` sits between `volatile` and `local-outbox`. The
 send is admitted and dispatched from memory and spends no storage operation on
@@ -763,7 +764,10 @@ every `ALStorageEvent`:
   old, with that age as `oldestUnsavedAgeMs`, and `failing` with cause
   `checkpoint-lag` beyond the recovery-lag bound;
 - `persist`: the outcome of the connect's one persistence request
-  (`ALStoragePersistOutcome`).
+  (`ALStoragePersistOutcome`);
+- `recovery-owner-invoked`: the `ALInboundResyncCursor` the browser handed a
+  typed channel's recovery owner (below), once per ordering track per runtime,
+  stated even when the owner throws. It names no store.
 
 Room channels add room defaults and default `send(...)` to the existing
 `rtc-with-ws-fallback` strategy. This scopes sends; `onWs(...)` and
@@ -830,6 +834,69 @@ handle `submitted`; the wait resolves on the next settlement.
 then reports whether the resolved state is `accepted`, `queued`,
 `transport-accepted`, or `acknowledged`. Surface every other outcome to the
 product as degraded or failed delivery.
+
+### Ordering, Repair And Resynchronization
+
+A send states its position with `orderingKey` and `seq` together, or neither
+(`RallarRtcSendInput`, `RallarWsSendInput`); an RTC send's `membershipEpoch` is
+the position's epoch. The receiver keeps one ordering track per ordering key,
+sender and epoch, delivers its messages in sequence from the last contiguous
+one and buffers what arrives early; a new epoch is a new track. Three limits
+bound the buffer (`AL_MESSAGE_RESOURCE_LIMITS`): a sequence more than
+`repairWindow` (256) past the expected one, or a track already holding
+`bufferedMessages` (256) or `bufferedBytes` (1 MiB), is refused
+`resync-required`. It is not buffered, and the sender is NACKed.
+
+An in-window gap is repaired by the sender. The hop that keeps the sender's
+ordering track -- the receiver over RTC, the WS server over WS -- NACKs the
+missing sequences as inclusive ranges (`ALSeqRange { from, to }`, at most
+`repairRanges` = 128 per payload), and the sender retransmits them along the
+hop that asked, `repairPageMessages` (32) sequences per round until the ranges
+are served. A message is retransmitted at most `maxRepairs` times (1 by
+default; `qos: { repair: { algo: 'retransmit', opts: { maxRepairs } } }` sets
+it); a report of the same gap once that budget is spent settles the message
+`skipped` with reason `repair-exhausted`, once, so its handle reads `failed`
+with `failure: { kind: 'skipped', reason: 'repair-exhausted' }`. The
+receiver's later sequences stay buffered behind the missing one until the
+track expires or the sender's next epoch opens a new track.
+
+A typed channel may declare the application's owner of resynchronization:
+
+```ts
+interface RoundState {
+    readonly round: number;
+}
+
+const rounds = rallar.messages.channel<RoundState>({
+    topicId: 'match.rounds',
+    typeId: 'match.round.v1',
+    purpose: 'notification',
+    recovery: {
+        onResyncRequired: (cursor) => {
+            void refreshMatchSnapshot(cursor.orderingKey);
+        }
+    }
+});
+```
+
+`RallarChannelRecovery.onResyncRequired(cursor)` is invoked once per ordering
+track (ordering key, sender, epoch) for the life of the browser runtime, after
+the receiver refused a message of that track `resync-required` -- at admission,
+or at an ordered release it can no longer complete -- and after its NACK to the
+sender committed. The cursor (`ALInboundResyncCursor`, exported with
+`RallarChannelRecovery` from `rallar.ts`, `rallar-core.ts` and
+`rallar-messages.ts`) is where the track stands: `orderingKey`, `senderId`,
+`epoch`, `lastContiguousSeq` (`0` before any delivery), `expectedSeq`
+(`lastContiguousSeq + 1`), `observedSeq` (the sequence that arrived) and
+`carrier` (`ws` or `rtc`). What the owner does with it -- fetching a snapshot,
+asking the sender for a new epoch -- is the application's: ALM resets no track
+on its own, and the sender's new epoch re-arms the owner. A throwing owner is
+logged and changes nothing. Every invocation is also stated as
+`recovery-owner-invoked` on the `storage` diagnostics port. Without a
+`recovery` owner the refused message is dropped as before, and the inbound
+diagnostics state the refusal. The WS server declares no owner and keeps
+NACKing `resync-required` to the sender. The once-mark lives in memory, so a
+reload invokes the owner once more for the same track.
 
 ### RTC Status And Readiness
 

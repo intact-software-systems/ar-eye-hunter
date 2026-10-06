@@ -2,13 +2,14 @@ import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-id
 
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
-import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import {
-    toAdmissionCommands,
+    ALM_STORAGE_DIAGNOSTICS_TOPIC,
     toCommittedControlAdmissionWait,
-    toSendCommand
-} from '../alm-conformance-message-commands.ts';
+    toDiagnosticWait,
+    toVerdictTimeoutMs
+} from '../alm-conformance-diagnostic-waits.ts';
+import { toAdmissionCommands, toSendCommand } from '../alm-conformance-message-commands.ts';
 import { toAdmissionOutcomeWait, toSingleArrivalReceiverCommands } from '../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
@@ -66,7 +67,10 @@ function toRelayResyncNackWait(sender: AlmConformanceStepInput): RallarBlackBoxT
     });
 }
 
-/** Over the RTC carriers the receiver is the hop that refuses the gapped send, so it proves its own verdict (D44). */
+/**
+ * Over the RTC carriers the receiver is the hop that refuses the gapped send, so it proves its own verdict (D44) and,
+ * when the lane installed the recording owner on its channel, the owner's one invocation with the track's cursor.
+ */
 function toOrderingResyncReceiverCommands(
     receiver: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
@@ -79,8 +83,34 @@ function toOrderingResyncReceiverCommands(
         toAdmissionOutcomeWait(receiver, {
             name: 'resync-outcome',
             contains: '"carrier":"rtc","outcome":"not-handled","reason":"resync-required"',
-            timeoutMs: receiver.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
+            timeoutMs: toVerdictTimeoutMs(receiver.input.deadlineMs)
         }),
+        ...(receiver.input.recoveryOwner === 'record' ? toRecoveryOwnerWaits(receiver) : []),
         absentSecond
+    ];
+}
+
+/**
+ * The `recovery-owner-invoked` storage event, in its emitted key order (`kind`, `orderingKey`, `senderId`, `epoch`,
+ * `lastContiguousSeq`, `expectedSeq`, `observedSeq`, `carrier`). The sender's peer id is unknown when the recipe is
+ * authored and sits between the track and the cursor, so the track and the cursor are matched by two waits on the
+ * one event: the track stood at seq 1 and expected 2 when seq 300 arrived over RTC.
+ */
+function toRecoveryOwnerWaits(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    const cursor = `"lastContiguousSeq":1,"expectedSeq":2,"observedSeq":${RESYNC_GAP_SEQ},"carrier":"rtc"}`;
+    return [
+        toDiagnosticWait({
+            step: receiver,
+            name: 'recovery-owner-invoked',
+            topic: ALM_STORAGE_DIAGNOSTICS_TOPIC,
+            contains:
+                `"kind":"recovery-owner-invoked","orderingKey":"alm-${receiver.input.carrier}-${receiver.scenarioId}",`
+        }),
+        toDiagnosticWait({
+            step: receiver,
+            name: 'recovery-owner-cursor',
+            topic: ALM_STORAGE_DIAGNOSTICS_TOPIC,
+            contains: cursor
+        })
     ];
 }

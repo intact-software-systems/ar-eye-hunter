@@ -581,7 +581,7 @@
         "withinMs": 20000,
         "message": {
           "payload": {
-            "typeId": "al.control.nack.v1"
+            "typeId": "al.control.nack.v2"
           }
         }
       }

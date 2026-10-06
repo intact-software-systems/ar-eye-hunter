@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { BrowserDirectorRelayTransport } from '@shared-web/browser/director/browser-director-relay-transport.ts';
 import type { RallarDirectorStatus } from '@shared-web/browser/director/rallar-director-facade.ts';
+import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import type { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
@@ -108,7 +109,8 @@ function createCommandTransport(sender: BrowserRallarMessageSender): BrowserDire
         inputValidator: new BrowserMessageInputValidator({ readMaxPayloadBytes: () => 64 * 1024 }),
         sender,
         rtc: { onMessage: () => () => {} },
-        ws: { onMessage: () => () => {} }
+        ws: { onMessage: () => () => {} },
+        recoveryOwners: new BrowserChannelRecoveryOwners()
     });
     return new BrowserDirectorRelayTransport({
         messages: {

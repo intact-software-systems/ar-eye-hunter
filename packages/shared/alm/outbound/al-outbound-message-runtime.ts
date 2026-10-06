@@ -6,6 +6,7 @@ import type {
     ALRepairAlgo,
     ALSupersedenceAlgo
 } from '../../al-contracts/al-policy.ts';
+import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -92,7 +93,8 @@ export interface ALOutboundAckTrackingPlan {
     readonly expectedPeerIdsUpdate?: 'merge' | 'replace';
     /**
      * The next hops this dispatch sends through: the local hop view a `receiver` receipt states beside its
-     * recipients. Under `hop` and `subtree` they are the expected peers; a WS origin names no hop.
+     * recipients. Under `hop` and `subtree` they are the expected peers; a WS origin names its server, once
+     * it knows the server's peer id, and otherwise no hop.
      */
     readonly nextHopPeerIds: readonly string[];
     /** The send's resolved ack algorithm: what the receipt it tracks counts. */
@@ -133,7 +135,7 @@ export interface ALOutboundRepairRequest {
     /** The next hops whose subtree the receipt saw complete; empty for a retry no receipt timed out. */
     readonly completedHopPeerIds: readonly string[];
     readonly orderingTrackKey?: string;
-    readonly missingSeqs: readonly number[];
+    readonly missingRanges: readonly ALSeqRange[];
 }
 
 /** Why a planner dropped the message. `rtc-room-snapshot-admission.ts` sets its two shared values from `ALMessageDropReasonCode`; `'planner-drop'` covers a drop that fits no other code. */
@@ -399,6 +401,12 @@ export namespace ALOutboundMessageRuntime {
                 request: ALOutboundRepairRequest
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
+        /**
+         * The peers every frame of this composition passes through, whether or not the send tracks a receipt
+         * with them: a WS client names its server. Absent, the composition has no fixed hop (an RTC mesh plans
+         * its own repairs; the WS server is the hop), so only a plan's tracked next hops are the sender's own.
+         */
+        readonly hopPeerIds?: readonly string[];
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly settlements: ALDeliverySettlementSink | undefined;
     }
