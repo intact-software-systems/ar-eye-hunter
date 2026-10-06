@@ -60,19 +60,22 @@ interface RecoveryFixture {
     readonly owners: BrowserChannelRecoveryOwners;
     readonly recovery: BrowserResyncRecovery;
     readonly storage: ALStorageEvent[];
-    readonly owner: RallarChannelRecovery & { readonly onResyncRequired: ReturnType<typeof vi.fn<(cursor: ALInboundResyncCursor) => void>>; };
+    readonly owner: RallarChannelRecovery;
+    /** Every cursor the owner was handed, in order. */
+    readonly invocations: ALInboundResyncCursor[];
 }
 
 function createRecoveryFixture(): RecoveryFixture {
     const owners = new BrowserChannelRecoveryOwners();
     const storage: ALStorageEvent[] = [];
-    const owner = { onResyncRequired: vi.fn<(cursor: ALInboundResyncCursor) => void>() };
+    const invocations: ALInboundResyncCursor[] = [];
+    const owner: RallarChannelRecovery = { onResyncRequired: (cursor) => invocations.push(cursor) };
     const recovery = new BrowserResyncRecovery({
         owners,
         storage: (event) => storage.push(event),
         nowMs: () => NOW_MS
     });
-    return { owners, recovery, storage, owner };
+    return { owners, recovery, storage, owner, invocations };
 }
 
 describe('the browser resync recovery', () => {
@@ -85,8 +88,7 @@ describe('the browser resync recovery', () => {
         fixture.recovery.onResyncRequired(first);
         fixture.recovery.onResyncRequired(again);
 
-        expect(fixture.owner.onResyncRequired).toHaveBeenCalledTimes(1);
-        expect(fixture.owner.onResyncRequired).toHaveBeenCalledWith(first.cursor);
+        expect(fixture.invocations).toEqual([first.cursor]);
         expect(fixture.storage).toEqual([{ kind: 'recovery-owner-invoked', ...first.cursor }]);
     });
 
@@ -100,7 +102,7 @@ describe('the browser resync recovery', () => {
         fixture.recovery.onResyncRequired(nextEpoch);
         fixture.recovery.onResyncRequired(nextEpoch);
 
-        expect(fixture.owner.onResyncRequired.mock.calls).toEqual([[first.cursor], [nextEpoch.cursor]]);
+        expect(fixture.invocations).toEqual([first.cursor, nextEpoch.cursor]);
         expect(fixture.storage.map((event) => event.kind === 'recovery-owner-invoked' ? event.epoch : event.kind)).toEqual([0, 1]);
     });
 
@@ -110,7 +112,7 @@ describe('the browser resync recovery', () => {
 
         fixture.recovery.onResyncRequired(toResync(createResyncMessage({ typeId: 'chat.other.v1', seq: 300 })));
 
-        expect(fixture.owner.onResyncRequired).not.toHaveBeenCalled();
+        expect(fixture.invocations).toEqual([]);
         expect(fixture.storage).toEqual([]);
     });
 
@@ -121,12 +123,15 @@ describe('the browser resync recovery', () => {
 
         fixture.recovery.onResyncRequired(resync);
 
-        expect(fixture.owner.onResyncRequired).toHaveBeenCalledWith(resync.cursor);
+        expect(fixture.invocations).toEqual([resync.cursor]);
     });
 
     it('keeps a failing owner from the runtime and still states the invocation', () => {
         const fixture = createRecoveryFixture();
-        const failing = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const reported: string[] = [];
+        const failing = vi.spyOn(console, 'error').mockImplementation((message: string) => {
+            reported.push(message);
+        });
         fixture.owners.setOwner(CHAT_ROUTE, {
             onResyncRequired: () => {
                 throw new Error('owner failed');
@@ -136,7 +141,7 @@ describe('the browser resync recovery', () => {
 
         expect(() => fixture.recovery.onResyncRequired(resync)).not.toThrow();
 
-        expect(failing).toHaveBeenCalledTimes(1);
+        expect(reported).toEqual(['A channel recovery owner failed']);
         expect(fixture.storage).toEqual([{ kind: 'recovery-owner-invoked', ...resync.cursor }]);
         failing.mockRestore();
     });

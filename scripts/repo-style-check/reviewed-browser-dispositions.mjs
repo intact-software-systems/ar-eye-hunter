@@ -58,6 +58,20 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'parseCapturedPayload'
     }),
+    // A typed channel definition arrives from application code of any typing. The
+    // policy validator reads its recovery owner as an untrusted value and admits
+    // only an object whose onResyncRequired is callable; the typed contract starts
+    // past this validation.
+    Object.freeze({
+        path: 'packages/shared-web/browser/messages/validate-rallar-typed-channel-policy.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-web/browser/messages/validate-rallar-typed-channel-policy.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateRallarChannelRecovery'
+    }),
     // The conformance discriminator parses untrusted application JSON and narrows
     // its marker/specimen fields locally. Only a boolean leaves this boundary;
     // malformed or unrelated payloads retain the ordinary QoS policy.

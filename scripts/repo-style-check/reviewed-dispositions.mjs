@@ -147,6 +147,22 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'prefix:state',
         maximumMagnitude: 4
     }),
+    // The inbound ALM directory is one feature: admission, ordered and admitted
+    // delivery, the durable effect store, the work entries and the resynchronization
+    // cursor, each a direct owner the README maps. Its files share the al-inbound
+    // prefix because they are that feature's vocabulary, not a role split.
+    Object.freeze({
+        path: 'packages/shared/alm/inbound',
+        rule: 'layout.directory-density',
+        symbol: 'inbound',
+        maximumMagnitude: 22
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/inbound',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:al',
+        maximumMagnitude: 19
+    }),
     // These tests own deliberate malformed signaling/graph inputs and raw
     // decoded WebSocket captures. Values go straight to the production
     // boundary or an assertion; they do not supply unvalidated domain state.
@@ -472,6 +488,13 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/al-contracts/al-control-value-codec.ts',
         rule: 'boundary.unknown',
         symbol: 'decodeALDeliveryCarrier'
+    }),
+    // The inbound runtime admits a raw carrier value: a WS frame or an RTC datum
+    // whose only shape is what decodeALMessageValue proves before any planning.
+    Object.freeze({
+        path: 'packages/shared/alm/inbound/al-inbound-message-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
     }),
     Object.freeze({
         path: 'packages/shared/al-contracts/al-control.ts',
