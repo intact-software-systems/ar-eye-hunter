@@ -5,9 +5,19 @@ import type {
     RallarTypedMessageChannel
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { RallarValidationError } from '@shared/api/rallar-validation.ts';
-import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import {
+    createRallarTestFacade,
+    readRallarFacadeMocks,
+    resetRallarFacadeTestRuntime,
+    setRallarFacadeRoomSnapshots
+} from '../messages/rallar-facade-test-runtime.ts';
 import { createMessageDelivery, type MessageDeliveryFixture } from '../messages/test-message-delivery.ts';
+
+const mocks = readRallarFacadeMocks();
 
 const current: RallarDirectorStatus = {
     roomRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
@@ -296,6 +306,36 @@ describe('director command', () => {
         }
     );
 });
+
+describe('director notification fence', () => {
+    beforeEach(() => resetRallarFacadeTestRuntime());
+
+    it('stamps the snapshot and the roster of the director\'s cached room snapshot on a receipted room output', async () => {
+        setRallarFacadeRoomSnapshots([toDirectorRoomSnapshot({ snapshotVersion: 9, rosterVersion: 4 })]);
+        const facade = createRallarTestFacade();
+        const transport = new BrowserDirectorRelayTransport({ messages: facade.messages, readSession: () => mocks.ctx.session });
+
+        await transport.sendRoomEnvelope({ ...envelopeInput, ack: 'all-logical-recipients' });
+
+        expect(vi.mocked(mocks.ctx.middleware.rtcRxStreamer).enqueueOutboxIfAbsent.mock.calls[0][0].targets).toMatchObject({
+            mode: 'multicast',
+            groupRef: current.roomRef,
+            minSnapshotVersion: 9,
+            rosterVersion: 4
+        });
+    });
+});
+
+/** The director's room as its cache holds it: the director's own session and one recipient, at the given versions. */
+function toDirectorRoomSnapshot(versions: Readonly<{ snapshotVersion: number; rosterVersion: number; }>): GroupSnapshot {
+    const snapshot = createGroupSnapshotFixture({
+        applicationId: 'app',
+        workspaceId: 'workspace',
+        groupId: 'room',
+        sessionIds: [mocks.ctx.session.sessionId, 'peer-1']
+    });
+    return { ...snapshot, group: { ...snapshot.group, ...versions } };
+}
 
 function recordDirectorReceipt(command: MessageDeliveryFixture): void {
     command.registry.record({

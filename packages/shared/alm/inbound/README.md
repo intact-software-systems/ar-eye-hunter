@@ -426,6 +426,23 @@ cursor ([`ALInboundResyncCursor`](./al-inbound-resync-required.ts)) is where the
 track. Without the sink -- the WS server's case -- the message is dropped as before and the
 diagnostics state the refusal.
 
+**Room authority and the membership fence.** An RTC receiver judges a room send against the room
+snapshot it holds before planning it
+([`rtc-room-snapshot-admission.ts`](../../multicast/rtc-room-snapshot-admission.ts)). Behind the
+send's `minSnapshotVersion` or its `rosterVersion` the verdict is `pending`: the message is dropped
+`not-yet-in-sync`, its hop is NACKed with that reason, and the receiver refreshes the room once and
+re-admits the message once. At or beyond both, a sender whose member is absent or not `active` is
+`membership-fenced`: the message is dropped with that code and its hop is NACKed with that reason,
+with no ordering hints, no repair request and no refresh. A sender whose session is absent while its
+member is present stays `pending` at its own roster, since presence is not the roster, and is fenced
+in a roster beyond its stamp; every other room denial stays `unauthorized` and sends no NACK. The
+fence applies at ingress only (a copy with a `fromPeerId`); the origin and targeted repair keep their
+verdicts. A held relayed copy is re-judged at dispatch with its ingress hop, so a sender fenced since
+the hold resolves `rejected` instead of waiting to its deadline, while the origin's own held copies
+keep today's verdicts. The WS server applies the same two floors and fences a sender with no
+live session or no active member at its admission and its dispatch-time re-authorization; the
+receiving WS client trusts it.
+
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce
 it through `commitWork()`: it asks the rotation page for a head read

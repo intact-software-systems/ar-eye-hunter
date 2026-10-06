@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import {
+    arenaRoomRef,
     ArenaRuntimeTestHarness,
     emitAuthState,
     emptyPeerReadiness,
@@ -14,6 +15,7 @@ import { act } from 'react';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { BrowserDirectorRelayTransport } from '@shared-web/browser/director/browser-director-relay-transport.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 
 import {
@@ -23,6 +25,7 @@ import {
     type RallarGameSendResult
 } from '@shared-web/game/mod.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import {
     createArenaRallarGameMatch,
@@ -35,9 +38,24 @@ import {
     startArenaMatch,
     toArenaSnapshot
 } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
-import type { ArenaSnapshot, MatchEndedAccepted, PlayerPose } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
+import {
+    GAME_DIRECTOR_TOPIC_ID,
+    type ArenaSnapshot,
+    type MatchEndedAccepted,
+    type PlayerPose
+} from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
+import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import {
+    createRallarTestFacade,
+    readRallarFacadeMocks,
+    resetRallarFacadeTestRuntime,
+    setRallarFacadeRoomSnapshots
+} from '../shared-web/messages/rallar-facade-test-runtime.ts';
 import { createMessageDelivery, type MessageDeliveryFixture } from '../shared-web/messages/test-message-delivery.ts';
+
+/** The director's own Rallar session and room cache, for the one case that sends a match output through the real relay. */
+const directorRallar = readRallarFacadeMocks();
 
 describe('arena director delivery and appointment', () => {
     const arena = new ArenaRuntimeTestHarness();
@@ -537,6 +555,38 @@ describe('arena match lifecycle delivery', () => {
         expect(mockMatch.publishEvent).toHaveBeenCalledWith(expect.objectContaining({ kind: 'director-player-state' }));
     });
 
+    it('fences the published match start on the director\'s roster: its relay output carries the cached snapshot and roster', async () => {
+        const nowEpochMs = Date.now();
+        await renderDirector(arena, toArenaSnapshot(createInitialArenaState(44, nowEpochMs), 'arena-1', nowEpochMs));
+        const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
+        mockMatch.sendIntent.mockImplementationOnce(async (payload) => {
+            await config?.onIntent?.(directorEnvelope(payload, nowEpochMs));
+            return { status: 'sent', transport: 'local' };
+        });
+        await act(async () => arena.current?.startArenaMatch(60_000));
+        const [started, options] = mockMatch.publishEvent.mock.calls.find(([event]) => event.kind === 'director-match-started') ?? [];
+        resetRallarFacadeTestRuntime();
+        setRallarFacadeRoomSnapshots([toArenaRoomSnapshot({ snapshotVersion: 9, rosterVersion: 4 })]);
+        const facade = createRallarTestFacade();
+        const relay = new BrowserDirectorRelayTransport({ messages: facade.messages, readSession: () => directorRallar.ctx.session });
+
+        await relay.sendRoomEnvelope({
+            current: { ...freshDirectorStatus(), roomRef: arenaRoomRef },
+            topicId: GAME_DIRECTOR_TOPIC_ID,
+            typeId: `${GAME_DIRECTOR_TOPIC_ID}.event.v1`,
+            payload: started,
+            ack: options?.ack
+        });
+
+        expect(options).toEqual({ ack: 'all-logical-recipients' });
+        expect(vi.mocked(directorRallar.ctx.middleware.rtcRxStreamer).enqueueOutboxIfAbsent.mock.calls[0][0].targets).toMatchObject({
+            mode: 'multicast',
+            groupRef: arenaRoomRef,
+            minSnapshotVersion: 9,
+            rosterVersion: 4
+        });
+    });
+
     it.each(['snapshot-first', 'event-first'] as const)('ends the match exactly once when the snapshot and the event both arrive (%s)', async (order) => {
         const match = createMatchFixture(Date.now());
         await arena.render();
@@ -608,6 +658,12 @@ async function renderDirector(arena: ArenaRuntimeTestHarness, initial: ArenaSnap
     await act(async () => arena.current?.publishArenaSnapshot(initial));
     mockMatch.publishEvent.mockClear();
     return delivery;
+}
+
+/** The arena room as the director's cache holds it: the director's own session and one player, at the given versions. */
+function toArenaRoomSnapshot(versions: Readonly<{ snapshotVersion: number; rosterVersion: number; }>): GroupSnapshot {
+    const snapshot = createGroupSnapshotFixture({ ...arenaRoomRef, sessionIds: [directorRallar.ctx.session.sessionId, 'peer-b'] });
+    return { ...snapshot, group: { ...snapshot.group, ...versions } };
 }
 
 function recordReceipt(delivery: MessageDeliveryFixture, confirmed: readonly string[], complete: boolean): void {

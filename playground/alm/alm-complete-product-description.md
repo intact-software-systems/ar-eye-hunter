@@ -140,13 +140,15 @@ extensions are introduced only through a versioned compatibility rule. All
 identifiers, arrays, payloads, gap windows, and total envelopes have documented
 byte/count bounds.
 
-**CURRENT — bounded envelope:** The v2 envelope, one decoder, the resource
+**CURRENT — bounded envelope:** The v3 envelope, one decoder, the resource
 ceilings in
 [`al-message-resource-limits.ts`](../../packages/shared/al-contracts/al-message-resource-limits.ts)
 with UTF-8 byte accounting, and validated control payloads exist since the first
-release. Authenticated RTC relay provenance remains PARTIAL (S2). The
-membership-epoch field is renamed to the group-state roster version it fences on
-in R2, with an envelope version bump and explicit rejection of older versions.
+release. Authenticated RTC relay provenance remains PARTIAL (S2). R2 renamed the
+membership-epoch field to the group-state roster version it fences on
+(`targets.rosterVersion`) and bumped the envelope to v3
+(`AL_MESSAGE_ENVELOPE_VERSION`); an envelope of any other version is refused
+`unsupported`.
 
 **PLANNED — I1, session and trace identity:** Builders do not populate AL
 `sessionId`/`traceId`, and no end-to-end trace propagation behavior exists.
@@ -228,10 +230,10 @@ authoritative membership snapshot. A supplied `targets.minSnapshotVersion` preve
 receiver or relay with stale group state from silently accepting or forwarding.
 The origin requires valid current room and routing authority and preserves the
 recipient floor on the message; the floor does not raise the origin's own
-snapshot requirement. Membership
-fencing must use an authoritative membership epoch; its current field and
-ordering use do not establish that guarantee. Until that implementation lands,
-requests requiring membership fencing are explicitly unsupported. The outcome
+snapshot requirement. Every room send is fenced on the group's roster: it
+carries the sender's cached `rosterVersion` beside the floor, and a receiver
+delivers it only at or beyond that roster with the sender still an active
+member. The outcome
 identifies the authority snapshot used. For a
 reliable send, the logical audience is frozen at admission: joins do not expand
 it, and departures do not silently reduce the success requirement.
@@ -249,9 +251,22 @@ falls back from RTC to WS keeps its frozen set narrowed to what the server
 authorizes. A `receiver` receipt expects exactly that audience; joins do not widen
 it, and a session that leaves stays expected and reads unconfirmed.
 
-**PLANNED — R2, fencing:** Membership fencing is explicitly rejected as
-unsupported today; R2 defines it on group-state's roster version supplied by the
-sender's snapshot, never on a caller-invented epoch.
+**CURRENT — R2, fencing:** Every room send -- RTC multicast, WS room broadcast,
+and the room broadcast a fallback send becomes -- carries `targets.rosterVersion`
+from the sender's cached room snapshot beside `minSnapshotVersion`, never a
+caller-invented value. A receiver behind either stamp refuses `not-yet-in-sync`
+and the existing bounded catch-up applies: the RTC receiver NACKs, refreshes
+once and re-admits once, and over WS the sender retries until the deadline. At or
+beyond the stamps, a sender whose member is absent or not `active` is refused
+`membership-fenced`, NACKed on both carriers; from the WS server the sender's
+handle reads `rejected` (`relay-rejected` with that reason) when it holds no
+receipt row yet, and an RTC room send hears a peer's fence only through a
+tracked receipt, which ends `receipt-exhausted` with `hop-refused`. WS is fenced at the server,
+whose receiving clients trust it; server-originated room publications carry no
+fence. The conformance lane runs `fenced-delivery` and `fenced-catch-up` over
+`ws` and `rtc` and `fenced-rejection` over `ws`; the RTC peer's fenced refusal is
+proven by unit tests, since a sender's own room authority refuses its send once
+its cache holds the move.
 
 ### Broadcast
 
@@ -925,7 +940,7 @@ in scope by roadmap decision D5.
    sessions, and each durability tier meets its recorded storage budget.
 6. Room multicast requires matching server-provided room authority, preserves
    bounded evidence catch-up/bootstrap and optimistic room progress, enforces
-   authoritative membership fencing when requested and supported, respects required
+   authoritative membership fencing on every room send, respects required
    snapshot floors, and freezes the reliable intended audience at admission.
 7. Every target/ACK mode, including principal, world, all, and fixed audiences
    and the group-leader mode, has one documented semantic proven by the

@@ -273,7 +273,11 @@ Message ownership is concentrated under [`messages/`](./messages/):
   constructs the completed capability and exposes its lifecycle owners.
 - [BrowserRallarMessageSender](./messages/browser-rallar-message-sender.ts)
   owns RTC/WS envelope construction and scoped targets, returning a `RallarMessageHandle`
-  immediately after submission. Consumers await admission with `handle.wait(...)` and inspect
+  immediately after submission. Every room send -- the RTC multicast, the WS room broadcast and the
+  room broadcast a fallback send becomes -- carries `minSnapshotVersion` and `rosterVersion` from
+  the cached room snapshot, read through one resolver of the
+  [room state store](./rooms/room-state-store.ts); a send whose room has no cached snapshot
+  carries neither, and no caller sets the roster. Consumers await admission with `handle.wait(...)` and inspect
   its lifecycle; the delivery registry observes carrier settlements in memory. Each connect's
   settlement epoch ([`BrowserDeliverySettlements`](./connection/browser-delivery-settlements.ts))
   relays once, on the session channel, a durable lane's settlement for a msgId this tab holds no
