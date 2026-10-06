@@ -2,7 +2,7 @@ import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 
 import type { RallarBlackBoxTestWaitCommand } from '../../rallar-black-box-test-contracts.ts';
 
-import { toVerdictTimeoutMs } from './alm-conformance-budgets.ts';
+import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from './alm-conformance-budgets.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import { toCommandId, toScenarioTypeId } from './alm-conformance-step-identities.ts';
 
@@ -88,4 +88,12 @@ export function toRepairDispatchWait(
 /** The message id the send of `step.index` returned, resolved from the result cache when the wait is armed. */
 function toSentMsgIdReference(step: AlmConformanceMessageStepInput): string {
     return `{resultCache.${toCommandId(step, `send-${step.index}`)}.value.msgId}`;
+}
+
+/**
+ * A wait for a verdict the page states on its own diagnostics starts before the other role's sends, so it owns the
+ * evidence deadline and the whole non-expiring send budget, less the margin the recipe keeps to report.
+ */
+export function toVerdictTimeoutMs(deadlineMs: number): number {
+    return deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS;
 }

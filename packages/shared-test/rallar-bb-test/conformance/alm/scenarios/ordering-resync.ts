@@ -2,12 +2,12 @@ import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-id
 
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
-import { toVerdictTimeoutMs } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import {
     ALM_STORAGE_DIAGNOSTICS_TOPIC,
     toCommittedControlAdmissionWait,
-    toDiagnosticWait
+    toDiagnosticWait,
+    toVerdictTimeoutMs
 } from '../alm-conformance-diagnostic-waits.ts';
 import { toAdmissionCommands, toSendCommand } from '../alm-conformance-message-commands.ts';
 import { toAdmissionOutcomeWait, toSingleArrivalReceiverCommands } from '../alm-conformance-receiver-commands.ts';

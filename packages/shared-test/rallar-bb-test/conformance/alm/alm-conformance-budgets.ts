@@ -19,11 +19,3 @@ export const MINIMUM_POST_EXPIRY_OBSERVATION_MS = 2_500;
 export function toBudgetMs(desiredMs: number, deadlineMs: number): number {
     return Math.min(desiredMs, deadlineMs);
 }
-
-/**
- * A wait for a verdict the page states on its own diagnostics starts before the other role's sends, so it owns the
- * evidence deadline and the whole non-expiring send budget, less the margin the recipe keeps to report.
- */
-export function toVerdictTimeoutMs(deadlineMs: number): number {
-    return deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS;
-}
