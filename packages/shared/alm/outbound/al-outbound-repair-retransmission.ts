@@ -45,6 +45,8 @@ export namespace ALOutboundRepairRetransmission {
                 request: ALOutboundRepairRequest
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
+        /** The composition's fixed hops, the sender's own beside a plan's tracked next hops; undefined for none. */
+        readonly hopPeerIds: readonly string[] | undefined;
         /** The lane's guarded emitter: where a spent repair budget states that its message is skipped. */
         readonly settlements: ALOutboundSettlementEmitter;
     }
@@ -231,7 +233,9 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             return undefined;
         }
         if (!this.dependencies.planRepairMessage) {
-            return isRoomScopedALMessage(msg) && !isOwnHopRetry(plan, read.pendingAck) ? undefined : plan;
+            return isRoomScopedALMessage(msg) && !this.isOwnHopRepair(plan, request, read.pendingAck)
+                ? undefined
+                : plan;
         }
         return await this.dependencies.planRepairMessage(msg, {
             ...request,
@@ -256,7 +260,10 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         if (!pending || !msg || !plan || isALOutboundReceiptComplete(pending) || pending.maxAttempts <= 0) {
             return;
         }
-        if (!this.dependencies.planRepairMessage && isRoomScopedALMessage(msg) && !isOwnHopRetry(plan, pending)) {
+        if (
+            !this.dependencies.planRepairMessage && isRoomScopedALMessage(msg) &&
+            !isOwnHopRetry(plan, this.dependencies.hopPeerIds, pending)
+        ) {
             return;
         }
         const retryPlan = this.dependencies.planRepairMessage
@@ -287,6 +294,18 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         });
     }
 
+    /** Whether the hint replays the sender's own hop: that hop asked for its own copy, or every peer still owed is one. */
+    private isOwnHopRepair(
+        plan: ALOutboundDispatchPlan<TPrepared>,
+        request: ALOutboundRepairHint,
+        pending: ALOutboundPendingAckSnapshot | undefined
+    ): boolean {
+        const hopPeerIds = this.dependencies.hopPeerIds;
+        const requestedByOwnHop = request.requestedByPeerId !== undefined &&
+            isALOutboundOwnHopPeer(plan, hopPeerIds, request.requestedByPeerId);
+        return requestedByOwnHop || isOwnHopRetry(plan, hopPeerIds, pending);
+    }
+
     /**
      * Dispatch admission charges the budget under the sender's fence and answers `repair-exhausted` when
      * it finds the budget spent; only that answer, never a read of this owner's own, states the exhaustion.
@@ -309,16 +328,18 @@ export class ALOutboundRepairRetransmission<TPrepared> {
     }
 }
 
-/** Whether the retry replays the sender's own hop: every peer still owed is one of the captured plan's next hops. */
+/** Whether the retry replays the sender's own hop: every peer the receipt still owes is one. */
 function isOwnHopRetry<TPrepared>(
     plan: ALOutboundDispatchPlan<TPrepared>,
+    hopPeerIds: readonly string[] | undefined,
     pending: ALOutboundPendingAckSnapshot | undefined
 ): boolean {
     if (pending === undefined) {
         return false;
     }
     const failedPeerIds = toFailedPeerIds(pending);
-    return failedPeerIds.length > 0 && failedPeerIds.every((peerId) => isALOutboundOwnHopPeer(plan, peerId));
+    return failedPeerIds.length > 0 &&
+        failedPeerIds.every((peerId) => isALOutboundOwnHopPeer(plan, hopPeerIds, peerId));
 }
 
 function toFailedPeerIds(pending: ALOutboundPendingAckSnapshot): readonly string[] {

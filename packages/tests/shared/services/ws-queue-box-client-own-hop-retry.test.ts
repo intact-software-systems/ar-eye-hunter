@@ -130,7 +130,27 @@ describe('WS client retry of its own hop after an acknowledgement timeout', () =
     it('retransmits the sequence its server hop reports missing from an ordered room send, on the server gap NACK alone', async () => {
         vi.useFakeTimers();
         const fixture = createOwnHopRetryFixture();
-        const sends = [1, 2, 3].map(orderedRoomSend);
+        const sends = [1, 2, 3].map((seq) => orderedRoomSend(seq, ORDERED_ROOM_SEND));
+        for (const send of sends) {
+            await enqueueAndSettle(fixture.service, send);
+        }
+        expect(fixture.sentFrames).toHaveLength(3);
+
+        const admitted = await fixture.service.acceptIncomingMessage(serverGapNack(sends[2], [{ from: 2, to: 2 }]));
+
+        expect(admitted.right?.kind).toBe('control');
+        expect(fixture.controlAdmissions).toEqual([{ targetMsgId: sends[2].id.msgId, outcome: 'committed' }]);
+        await expect.poll(async () => {
+            await vi.advanceTimersByTimeAsync(10);
+            return fixture.sentFrames.length;
+        }, { timeout: 5_000 }).toBe(4);
+        expect(decodePersistedALMessage(fixture.sentFrames[3]).id.msgId).toBe(sends[1].id.msgId);
+    });
+
+    it('retransmits the missing sequence of an ordered room send at the browser defaults, which track no receipt, on the server gap NACK', async () => {
+        vi.useFakeTimers();
+        const fixture = createOwnHopRetryFixture();
+        const sends = [1, 2, 3].map((seq) => orderedRoomSend(seq, undefined));
         for (const send of sends) {
             await enqueueAndSettle(fixture.service, send);
         }
@@ -251,15 +271,18 @@ function serverCommand(qos: ALQosPolicyRequest = ONE_RETRY): ALMessage {
     );
 }
 
-/** One sequence of an ordered at-least-once room send, which the WS client sends through its server hop. */
-function orderedRoomSend(seq: number): ALMessage {
+/**
+ * One sequence of an ordered at-least-once room send, which the WS client sends through its server hop. Without
+ * a policy it is the browser's room send at its defaults: `ack` none, so no receipt is tracked, and one repair.
+ */
+function orderedRoomSend(seq: number, qos: ALQosPolicyRequest | undefined): ALMessage {
     return newALBroadcastMessage(
         'self',
         { topicId: 'room.chat', resourceId: `chat-${seq}`, contextId: ROOM.groupId },
         'room',
         'chat.message.v1',
         { seq },
-        { groupRef: ROOM, reliability: 'at-least-once', ordering: { orderingKey: ORDERING_KEY, seq }, qos: ORDERED_ROOM_SEND }
+        { groupRef: ROOM, reliability: 'at-least-once', ordering: { orderingKey: ORDERING_KEY, seq }, qos }
     );
 }
 

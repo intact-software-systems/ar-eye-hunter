@@ -6,7 +6,10 @@ import {
 
 import { newALBroadcastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
-import type { ALOutboundRepairTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundAckTrackingPlan,
+    ALOutboundRepairTrackingPlan
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
 import {
     createDefaultOutboundTestRuntime,
@@ -66,7 +69,11 @@ describe('AL outbound repair policy', () => {
     it('leaves a room gap NACK unhandled without a planner when its requester is not one of the next hops', async () => {
         const sent: OutboundTestPayload[] = [];
         const roomSend = createRoomSend();
-        const runtime = createRoomSendRuntime(sent, { expectedPeerIds: ['peer-1', 'peer-2'], nextHopPeerIds: [] });
+        const runtime = createRoomSendRuntime({
+            sent,
+            ackTracking: trackRoomSendHops({ expectedPeerIds: ['peer-1', 'peer-2'], nextHopPeerIds: [] }),
+            hopPeerIds: undefined
+        });
         await enqueueOutboundOrThrow(runtime, roomSend);
 
         const admitted = await runtime.acceptControlMessage(roomGapNack(roomSend, 'peer-1'), 'peer');
@@ -78,13 +85,43 @@ describe('AL outbound repair policy', () => {
     it('admits a room gap NACK without a planner when its requester is one of the next hops, and retransmits along that hop', async () => {
         const sent: OutboundTestPayload[] = [];
         const roomSend = createRoomSend();
-        const runtime = createRoomSendRuntime(sent, { expectedPeerIds: ['hop-1'], nextHopPeerIds: ['hop-1'] });
+        const runtime = createRoomSendRuntime({
+            sent,
+            ackTracking: trackRoomSendHops({ expectedPeerIds: ['hop-1'], nextHopPeerIds: ['hop-1'] }),
+            hopPeerIds: undefined
+        });
         await enqueueOutboundOrThrow(runtime, roomSend);
 
         const admitted = await runtime.acceptControlMessage(roomGapNack(roomSend, 'hop-1'), 'peer');
-        // The batch that serves the hint commits the retransmit as a new dispatch; the next batch sends it.
-        await runOutboundWorkTask(runtime);
-        await runOutboundWorkTask(runtime);
+        await settleRetransmission(runtime);
+
+        expect(admitted).toEqual({ kind: 'committed' });
+        expect(sent).toEqual([
+            { kind: 'send', msgId: roomSend.id.msgId },
+            { kind: 'send', msgId: roomSend.id.msgId }
+        ]);
+    });
+
+    it('leaves a room gap NACK unhandled without a planner when the send tracks no receipt and the composition declares no hop', async () => {
+        const sent: OutboundTestPayload[] = [];
+        const roomSend = createRoomSend();
+        const runtime = createRoomSendRuntime({ sent, ackTracking: undefined, hopPeerIds: undefined });
+        await enqueueOutboundOrThrow(runtime, roomSend);
+
+        const admitted = await runtime.acceptControlMessage(roomGapNack(roomSend, 'hop-1'), 'peer');
+
+        expect(admitted).toEqual({ kind: 'not-handled' });
+        expect(sent).toEqual([{ kind: 'send', msgId: roomSend.id.msgId }]);
+    });
+
+    it('admits a room gap NACK from the hop the composition declares when the send tracks no receipt, and retransmits along it', async () => {
+        const sent: OutboundTestPayload[] = [];
+        const roomSend = createRoomSend();
+        const runtime = createRoomSendRuntime({ sent, ackTracking: undefined, hopPeerIds: ['hop-1'] });
+        await enqueueOutboundOrThrow(runtime, roomSend);
+
+        const admitted = await runtime.acceptControlMessage(roomGapNack(roomSend, 'hop-1'), 'peer');
+        await settleRetransmission(runtime);
 
         expect(admitted).toEqual({ kind: 'committed' });
         expect(sent).toEqual([
@@ -100,6 +137,13 @@ interface RoomSendHops {
     readonly nextHopPeerIds: readonly string[];
 }
 
+/** A room send's plan and its composition: what its receipt tracks (nothing under `ack: none`) and the hops every frame passes. */
+interface RoomSendRuntimeInput {
+    readonly sent: OutboundTestPayload[];
+    readonly ackTracking: ALOutboundAckTrackingPlan | undefined;
+    readonly hopPeerIds: readonly string[] | undefined;
+}
+
 function createRoomSend() {
     return newALBroadcastMessage(
         'self',
@@ -111,30 +155,41 @@ function createRoomSend() {
     );
 }
 
-/** A runtime without a repair planner, whose plan tracks the given hops and allows a retransmit. */
-function createRoomSendRuntime(sent: OutboundTestPayload[], hops: RoomSendHops) {
+/** A runtime without a repair planner, whose plan tracks the given receipt and allows a retransmit. */
+function createRoomSendRuntime(input: RoomSendRuntimeInput) {
     return createDefaultOutboundTestRuntime({
+        hopPeerIds: input.hopPeerIds,
         planOutgoingMessage: (msg) => ({
             msg: msg,
             dropReasonCode: undefined,
             lane: 'volatile',
             preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-            ackTracking: {
-                enabled: true,
-                timeoutMs: 60_000,
-                maxAttempts: 1,
-                expectedPeerIds: hops.expectedPeerIds,
-                nextHopPeerIds: hops.nextHopPeerIds,
-                mode: hops.nextHopPeerIds.length === 0 ? 'receiver' : 'hop'
-            },
+            ackTracking: input.ackTracking,
             repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 3 }
         }),
         sendPreparedMessage: async (prepared) => {
-            sent.push(prepared);
+            input.sent.push(prepared);
 
             return { status: 'sent' as const, submissionAttempted: true };
         }
     });
+}
+
+function trackRoomSendHops(hops: RoomSendHops): ALOutboundAckTrackingPlan {
+    return {
+        enabled: true,
+        timeoutMs: 60_000,
+        maxAttempts: 1,
+        expectedPeerIds: hops.expectedPeerIds,
+        nextHopPeerIds: hops.nextHopPeerIds,
+        mode: hops.nextHopPeerIds.length === 0 ? 'receiver' : 'hop'
+    };
+}
+
+/** The batch that serves the hint commits the retransmit as a new dispatch; the next batch sends it. */
+async function settleRetransmission(runtime: ReturnType<typeof createRoomSendRuntime>): Promise<void> {
+    await runOutboundWorkTask(runtime);
+    await runOutboundWorkTask(runtime);
 }
 
 function roomGapNack(roomSend: ALMessage, fromPeerId: string): ALMessage {

@@ -53,6 +53,8 @@ export namespace ALOutboundRepairAdmission {
                 request: ALOutboundRepairRequest
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
+        /** The composition's fixed hops, the sender's own beside a plan's tracked next hops; undefined for none. */
+        readonly hopPeerIds: readonly string[] | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         /** The lane's guarded emitter: where a receipt and a not-yet-in-sync budget state that they ran out. */
         readonly settlements: ALOutboundSettlementEmitter;
@@ -134,7 +136,8 @@ export class ALOutboundRepairAdmission<TPrepared> {
             return true;
         }
         if (this.dependencies.planRepairMessage === undefined) {
-            return read.plan !== undefined && isALOutboundOwnHopPeer(read.plan, control.payload.fromPeerId);
+            return read.plan !== undefined &&
+                isALOutboundOwnHopPeer(read.plan, this.dependencies.hopPeerIds, control.payload.fromPeerId);
         }
         const planned = await this.dependencies.planRepairMessage(msg, {
             ...toALOutboundControlRepairHint(control.payload),

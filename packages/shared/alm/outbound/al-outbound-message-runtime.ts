@@ -93,7 +93,8 @@ export interface ALOutboundAckTrackingPlan {
     readonly expectedPeerIdsUpdate?: 'merge' | 'replace';
     /**
      * The next hops this dispatch sends through: the local hop view a `receiver` receipt states beside its
-     * recipients. Under `hop` and `subtree` they are the expected peers; a WS origin names no hop.
+     * recipients. Under `hop` and `subtree` they are the expected peers; a WS origin names its server, once
+     * it knows the server's peer id, and otherwise no hop.
      */
     readonly nextHopPeerIds: readonly string[];
     /** The send's resolved ack algorithm: what the receipt it tracks counts. */
@@ -400,6 +401,12 @@ export namespace ALOutboundMessageRuntime {
                 request: ALOutboundRepairRequest
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
+        /**
+         * The peers every frame of this composition passes through, whether or not the send tracks a receipt
+         * with them: a WS client names its server. Absent, the composition has no fixed hop (an RTC mesh plans
+         * its own repairs; the WS server is the hop), so only a plan's tracked next hops are the sender's own.
+         */
+        readonly hopPeerIds?: readonly string[];
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly settlements: ALDeliverySettlementSink | undefined;
     }

@@ -32,7 +32,8 @@ describe('RTC message diagnostic receipts', () => {
                 port: createOutboundWorkPort(stores.workQueue, admissionStore.namespace),
                 clock: { nowMs: Date.now },
                 settlements: () => {},
-                carrier: 'rtc'
+                carrier: 'rtc',
+                hopPeerIds: undefined
             });
             expect(await readBlackBoxRtcMessageNacks(sessionId, 'attempted')).toEqual([]);
             await admitAttemptedMessage(admissionStore, sessionId);

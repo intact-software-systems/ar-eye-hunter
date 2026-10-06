@@ -46,7 +46,7 @@ export function validateALOutboundControlAdmission(
         return [...issues, ...validateAcknowledgedReceipt(read.pending, payload)];
     }
     const payload = read.parsed.payload;
-    if (!isTrustedRelayRejection(read) && !isExpectedRepairPeer(read.sent, read.pending, payload.fromPeerId)) {
+    if (!isTrustedRelayRejection(read) && !isExpectedRepairPeer(read, payload.fromPeerId)) {
         issues.push({ code: 'unauthorized', message: 'AL repair sender has no retained outbound obligation' });
     }
     if (!hasValidOrderingHints(read.sent, payload)) {
@@ -120,13 +120,13 @@ function isTrustedRelayRejection(read: ALControlAdmissionRead): boolean {
     return isResyncRequired || isALServerRefusalBeforeReceipt(read);
 }
 
-/** A repair or NACK comes from a unicast's addressee or from any peer its receipt expects: on WS, the tracked server hop. */
-function isExpectedRepairPeer(
-    sent: ALStoredOutboundMessage,
-    pending: ALOutboundPendingAckSnapshot | undefined,
-    peerId: string
-): boolean {
-    return sent.unicastPeerId === peerId || pending?.expectedPeerIds.includes(peerId) === true;
+/**
+ * A repair or NACK comes from a unicast's addressee, from any peer its receipt expects, or from a hop the
+ * composition sends every frame through: on WS, the server, tracked by the receipt or named by the client.
+ */
+function isExpectedRepairPeer(read: ALControlAdmissionRead, peerId: string): boolean {
+    return read.sent?.unicastPeerId === peerId || read.pending?.expectedPeerIds.includes(peerId) === true ||
+        read.hopPeerIds?.includes(peerId) === true;
 }
 
 function hasValidOrderingHints(

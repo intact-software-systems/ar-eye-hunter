@@ -43,6 +43,8 @@ export interface ALControlAdmissionRead {
     readonly source: ALOutboundControlSource;
     /** The carrier the control reached this owner on: an acknowledgement is recorded under it, whatever its sender named. */
     readonly carrier: ALDeliveryCarrier;
+    /** The composition's fixed hops (a WS client's server), expected repair peers of every send; undefined for none. */
+    readonly hopPeerIds: readonly string[] | undefined;
     readonly targetMsgId: string;
     readonly nowMs: number;
     readonly owner?: string;

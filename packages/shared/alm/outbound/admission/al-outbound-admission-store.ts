@@ -377,7 +377,10 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
 
     /** The control-admission owner of this scope; the port carries the control it must replay. */
     readonly createControlAdmission: (
-        owner: Pick<CreateALOutboundControlAdmissionInput<TPrepared>, 'port' | 'clock' | 'settlements' | 'carrier'>
+        owner: Pick<
+            CreateALOutboundControlAdmissionInput<TPrepared>,
+            'port' | 'clock' | 'settlements' | 'carrier' | 'hopPeerIds'
+        >
     ) => ALOutboundControlAdmission<TPrepared>;
 }
 
@@ -450,7 +453,10 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     }
 
     createControlAdmission(
-        owner: Pick<CreateALOutboundControlAdmissionInput<TPrepared>, 'port' | 'clock' | 'settlements' | 'carrier'>
+        owner: Pick<
+            CreateALOutboundControlAdmissionInput<TPrepared>,
+            'port' | 'clock' | 'settlements' | 'carrier' | 'hopPeerIds'
+        >
     ): ALOutboundControlAdmission<TPrepared> {
         return new ALOutboundControlAdmission({
             ...owner,

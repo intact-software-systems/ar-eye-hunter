@@ -179,6 +179,15 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'prefix:assess',
         maximumMagnitude: 4
     }),
+    // The outbound ALM directory is one feature: dispatch, repair admission and
+    // retransmission, control admission, effect identities and the own-hop
+    // predicate both repair owners share, each a direct owner the README maps.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound',
+        rule: 'layout.directory-density',
+        symbol: 'outbound',
+        maximumMagnitude: 22
+    }),
     // These tests own deliberate malformed signaling/graph inputs and raw
     // decoded WebSocket captures. Values go straight to the production
     // boundary or an assertion; they do not supply unvalidated domain state.
@@ -755,6 +764,15 @@ export const reviewedDispositions = Object.freeze([
         rule: 'file.cognitive-load',
         symbol: undefined,
         maximumMagnitude: 59
+    }),
+    // The decision reads of one dispatch stay together: the one read that also asks
+    // whether a repair attempt's sends are already committed keeps the budget charge
+    // under the same sender fence as the plan it charges for.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/admission/al-outbound-admission-reads.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 50
     }),
     Object.freeze({
         path: 'packages/shared/services/web-rtc-rx-streamer-service.ts',

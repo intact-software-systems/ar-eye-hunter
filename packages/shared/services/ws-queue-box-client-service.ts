@@ -230,6 +230,7 @@ export class WsQueueBoxClientService {
                 planDequeuedMessage: (msg) => this.planOutgoingMessage(msg),
                 afterDequeueAdmission: undefined,
                 planRepairMessage: undefined,
+                hopPeerIds: this.serverPeerId === undefined ? undefined : [this.serverPeerId],
                 sendPreparedMessage: async (prepared, _phase, lifecycle) => {
                     const msg = reconstructALOutboundTransportMessage(prepared, lifecycle.canonicalMessage);
                     return await this.dispatchOutboxEntry(

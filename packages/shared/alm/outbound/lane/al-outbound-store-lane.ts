@@ -594,6 +594,7 @@ function createALOutboundLaneAdmissions<TPrepared>(
             dispatchAdmission,
             planOutgoingMessage: runtime.planOutgoingMessage,
             planRepairMessage: runtime.planRepairMessage,
+            hopPeerIds: runtime.hopPeerIds,
             settlements
         })
     };
@@ -612,11 +613,13 @@ function createALOutboundLaneRepairAdmission<TPrepared>(
             port: workPort,
             clock: runtime.clock,
             settlements,
-            carrier: runtime.carrier
+            carrier: runtime.carrier,
+            hopPeerIds: runtime.hopPeerIds
         }),
         clock: runtime.clock,
         planOutgoingMessage: runtime.planOutgoingMessage,
         planRepairMessage: runtime.planRepairMessage,
+        hopPeerIds: runtime.hopPeerIds,
         diagnostics: runtime.diagnostics,
         settlements
     });

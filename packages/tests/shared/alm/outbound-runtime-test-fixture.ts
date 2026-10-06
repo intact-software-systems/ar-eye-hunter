@@ -87,6 +87,8 @@ interface OutboundTestRuntimeInput<TPrepared> {
     readonly nowMs?: () => number;
     readonly planOutgoingMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['planOutgoingMessage'];
     readonly planRepairMessage?: ALOutboundMessageRuntime.Dependencies<TPrepared>['planRepairMessage'];
+    /** The hops the composition sends every frame through; absent, as for every carrier but the WS client. */
+    readonly hopPeerIds?: ALOutboundMessageRuntime.Dependencies<TPrepared>['hopPeerIds'];
     readonly afterDequeueAdmission?: ALOutboundMessageRuntime.Dependencies<TPrepared>['afterDequeueAdmission'];
     readonly sendPreparedMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['sendPreparedMessage'];
 }
@@ -193,6 +195,7 @@ export function createOutboundTestRuntimeFor<TPrepared>(
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: options.planOutgoingMessage,
             planRepairMessage: options.planRepairMessage,
+            hopPeerIds: options.hopPeerIds,
             afterDequeueAdmission: options.afterDequeueAdmission,
             sendPreparedMessage: options.sendPreparedMessage
         })

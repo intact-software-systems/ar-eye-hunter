@@ -129,6 +129,7 @@ function createRepairRetransmission(
         }),
         planOutgoingMessage,
         planRepairMessage,
+        hopPeerIds: undefined,
         settlements: record
     });
 }
