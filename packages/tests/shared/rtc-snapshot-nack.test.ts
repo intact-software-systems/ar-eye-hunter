@@ -5,6 +5,10 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type {
+    ALInboundRuntimeDiagnosticsEvent,
+    ALInboundRuntimeDiagnosticsSink
+} from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
@@ -17,6 +21,7 @@ import {
     vi
 } from 'vitest';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import { waitForOwnedQueueWork } from './wait-for-owned-queue-work.ts';
 
 interface SnapshotObservation {
     snapshot: GroupSnapshot | undefined;
@@ -74,6 +79,52 @@ describe('RTC snapshot rejection controls', () => {
         }
     });
 
+    it.each([1, 2])('NACKs a fenced sender membership-fenced with no ordering hints or repair for sequence %s', async (seq) => {
+        const events: ALInboundRuntimeDiagnosticsEvent[] = [];
+        const fixture = createSnapshotAdmissionFixture(seq, false, (event) => events.push(event));
+        try {
+            fixture.observed.snapshot = createRemovedSenderSnapshot();
+            await fixture.runtime.admitIncomingMessage(fixture.message, source);
+            await expect.poll(() => fixture.controls.map(parseALControlMessage)).toEqual([
+                {
+                    type: 'nack',
+                    payload: {
+                        fromPeerId: 'receiver',
+                        toPeerId: 'sender',
+                        msgId: fixture.message.id.msgId,
+                        reason: 'membership-fenced',
+                        observedAtEpochMs: expect.any(Number)
+                    }
+                }
+            ]);
+            expect(fixture.delivered).toEqual([]);
+            expect(events).toContainEqual(expect.objectContaining({
+                kind: 'admission-outcome',
+                msgId: fixture.message.id.msgId,
+                carrier: 'rtc',
+                outcome: 'rejected',
+                reason: 'membership-fenced: Room sender has no live session in a roster beyond its stamp'
+            }));
+        }
+        finally {
+            fixture.runtime.dispose();
+        }
+    });
+
+    it('sends no NACK for a copy with no immediate RTC hop to answer', async () => {
+        const fixture = createSnapshotAdmissionFixture(1, false);
+        try {
+            fixture.observed.snapshot = createRemovedSenderSnapshot();
+            await fixture.runtime.admitIncomingMessage(fixture.message, { kind: 'trusted-server' });
+            await waitForOwnedQueueWork(fixture.stores.workQueue);
+            expect(fixture.controls).toEqual([]);
+            expect(fixture.delivered).toEqual([]);
+        }
+        finally {
+            fixture.runtime.dispose();
+        }
+    });
+
     it('rechecks current authority and retained ingress before retrying admitted work', async () => {
         vi.useFakeTimers();
         onTestFinished(() => {
@@ -100,7 +151,11 @@ describe('RTC snapshot rejection controls', () => {
     });
 });
 
-function createSnapshotAdmissionFixture(seq: number, persist: boolean): SnapshotAdmissionFixture {
+function createSnapshotAdmissionFixture(
+    seq: number,
+    persist: boolean,
+    diagnostics?: ALInboundRuntimeDiagnosticsSink
+): SnapshotAdmissionFixture {
     const observed: SnapshotObservation = { snapshot: undefined };
     const delivered: string[] = [];
     const controls: ALMessage[] = [];
@@ -110,6 +165,7 @@ function createSnapshotAdmissionFixture(seq: number, persist: boolean): Snapshot
             probe: true
         }, {
             minSnapshotVersion: 5,
+            rosterVersion: 1,
             seq,
             ack: 'none',
             reliability: 'at-least-once',
@@ -141,9 +197,22 @@ function createSnapshotAdmissionFixture(seq: number, persist: boolean): Snapshot
         sendControlMessages: async (messages) => {
             controls.push(...messages);
         },
-        diagnostics: undefined
+        diagnostics
     });
     return { runtime, observed, delivered, controls, message, stores };
+}
+
+/** The authoritative shape of a removal: the roster moved past the stamp and lists no session of the removed member. */
+function createRemovedSenderSnapshot(): GroupSnapshot {
+    const current = createCurrentSnapshot();
+    return {
+        ...current,
+        group: { ...current.group, rosterVersion: 2, snapshotVersion: 6 },
+        members: current.members.map((member) =>
+            member.principalId === 'sender' && member.status === 'active' ? { ...member, status: 'removed', removed: member.updated } : member
+        ),
+        activeSessions: current.activeSessions.filter((session) => session.sessionId !== 'sender')
+    };
 }
 
 function createCurrentSnapshot(): GroupSnapshot {

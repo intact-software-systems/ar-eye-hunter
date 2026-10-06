@@ -114,6 +114,18 @@ describe('RTC group-snapshot refresh', () => {
         expect(refreshGroupSnapshot).toHaveBeenCalledWith(roomRef, 6, expect.any(AbortSignal));
     });
 
+    it('reads authority through the snapshot floor for a copy behind its stamped roster', async () => {
+        const refreshGroupSnapshot = vi.fn(async () => undefined);
+        const refresh = new RtcGroupSnapshotRefresh({ refreshGroupSnapshot });
+
+        await expect(refresh.afterInboundAdmission(
+            roomMessage(6, 4),
+            { kind: 'not-admitted', reason: 'not-yet-in-sync: Awaiting the required room roster version' }
+        )).resolves.toBe(true);
+
+        expect(refreshGroupSnapshot).toHaveBeenCalledWith(roomRef, 6, expect.any(AbortSignal));
+    });
+
     it('does not read authority after a denial the refresh cannot repair', async () => {
         const refreshGroupSnapshot = vi.fn(async () => undefined);
         const refresh = new RtcGroupSnapshotRefresh({ refreshGroupSnapshot });
@@ -122,15 +134,24 @@ describe('RTC group-snapshot refresh', () => {
 
         expect(refreshGroupSnapshot).not.toHaveBeenCalled();
     });
+
+    it('permits no re-entry for a membership-fenced denial although its refresh would succeed', async () => {
+        const refresh = new RtcGroupSnapshotRefresh({ refreshGroupSnapshot: async () => undefined });
+
+        await expect(refresh.afterInboundAdmission(
+            roomMessage(6, 4),
+            { kind: 'not-admitted', reason: 'membership-fenced: Room sender has no live session in a roster beyond its stamp' }
+        )).resolves.toBe(false);
+    });
 });
 
-function roomMessage(minSnapshotVersion: number) {
+function roomMessage(minSnapshotVersion: number, rosterVersion?: number) {
     return newALMulticastMessage(
         'sender',
         { topicId: 'room.chat', resourceId: 'message-1', contextId: roomRef.groupId },
         roomRef,
         'chat.message',
         { text: 'hello' },
-        { minSnapshotVersion }
+        { minSnapshotVersion, rosterVersion }
     );
 }
