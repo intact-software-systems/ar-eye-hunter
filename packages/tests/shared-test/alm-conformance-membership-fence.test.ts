@@ -71,7 +71,14 @@ function toMintedIdentities(scenario: AlmConformanceScenario): readonly string[]
     );
 }
 
-function toSelfMembershipPath(carrier: string, scenarioKey: string, role: string, request: string): string {
+interface SelfMembershipRequest {
+    readonly carrier: string;
+    readonly scenarioKey: string;
+    readonly role: string;
+    readonly request: string;
+}
+
+function toSelfMembershipPath({ carrier, scenarioKey, role, request }: SelfMembershipRequest): string {
     return `${GROUP_PATH}/members/{auth.clientId}/requests/alm-conformance-{runtimeIdentity}-${carrier}-${scenarioKey}-${role}-${request}`;
 }
 
@@ -288,7 +295,7 @@ describe('fenced-catch-up', () => {
             kind: 'http.request',
             request: {
                 method: 'PUT',
-                path: toSelfMembershipPath(carrier, 'fenced-catch-up', 'recipient-b', 'leave-roster'),
+                path: toSelfMembershipPath({ carrier, scenarioKey: 'fenced-catch-up', role: 'recipient-b', request: 'leave-roster' }),
                 body: { status: 'left' }
             },
             response: { body: 'json', acceptedStatusCodes: [200, 201] }
@@ -348,7 +355,7 @@ describe('fenced-rejection', () => {
             kind: 'http.request',
             request: {
                 method: 'PUT',
-                path: toSelfMembershipPath('ws', 'fenced-rejection', 'sender', 'leave-roster'),
+                path: toSelfMembershipPath({ carrier: 'ws', scenarioKey: 'fenced-rejection', role: 'sender', request: 'leave-roster' }),
                 body: { status: 'left' }
             }
         });

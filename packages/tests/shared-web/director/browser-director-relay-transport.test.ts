@@ -11,13 +11,13 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import {
     createRallarTestFacade,
-    readRallarFacadeMocks,
+    getRallarFacadeMocks,
     resetRallarFacadeTestRuntime,
     setRallarFacadeRoomSnapshots
 } from '../messages/rallar-facade-test-runtime.ts';
 import { createMessageDelivery, type MessageDeliveryFixture } from '../messages/test-message-delivery.ts';
 
-const mocks = readRallarFacadeMocks();
+const mocks = getRallarFacadeMocks();
 
 const current: RallarDirectorStatus = {
     roomRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
@@ -313,11 +313,11 @@ describe('director notification fence', () => {
     it('stamps the snapshot and the roster of the director\'s cached room snapshot on a receipted room output', async () => {
         setRallarFacadeRoomSnapshots([toDirectorRoomSnapshot({ snapshotVersion: 9, rosterVersion: 4 })]);
         const facade = createRallarTestFacade();
-        const transport = new BrowserDirectorRelayTransport({ messages: facade.messages, readSession: () => mocks.ctx.session });
+        const transport = new BrowserDirectorRelayTransport({ messages: facade.messages, readSession: () => mocks.apiMiddleware.session });
 
         await transport.sendRoomEnvelope({ ...envelopeInput, ack: 'all-logical-recipients' });
 
-        expect(vi.mocked(mocks.ctx.middleware.rtcRxStreamer).enqueueOutboxIfAbsent.mock.calls[0][0].targets).toMatchObject({
+        expect(vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer).enqueueOutboxIfAbsent.mock.calls[0][0].targets).toMatchObject({
             mode: 'multicast',
             groupRef: current.roomRef,
             minSnapshotVersion: 9,
@@ -332,7 +332,7 @@ function toDirectorRoomSnapshot(versions: Readonly<{ snapshotVersion: number; ro
         applicationId: 'app',
         workspaceId: 'workspace',
         groupId: 'room',
-        sessionIds: [mocks.ctx.session.sessionId, 'peer-1']
+        sessionIds: [mocks.apiMiddleware.session.sessionId, 'peer-1']
     });
     return { ...snapshot, group: { ...snapshot.group, ...versions } };
 }

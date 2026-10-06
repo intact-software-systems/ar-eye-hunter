@@ -277,7 +277,7 @@ Message ownership is concentrated under [`messages/`](./messages/):
   room broadcast a fallback send becomes -- carries `minSnapshotVersion` and `rosterVersion` from
   the cached room snapshot, read through one resolver of the
   [room state store](./rooms/room-state-store.ts); a send whose room has no cached snapshot
-  carries neither, and no caller sets the roster. Consumers await admission with `handle.wait(...)` and inspect
+  carries neither, unless it states a floor, which then travels alone, and no caller sets the roster. Consumers await admission with `handle.wait(...)` and inspect
   its lifecycle; the delivery registry observes carrier settlements in memory. Each connect's
   settlement epoch ([`BrowserDeliverySettlements`](./connection/browser-delivery-settlements.ts))
   relays once, on the session channel, a durable lane's settlement for a msgId this tab holds no

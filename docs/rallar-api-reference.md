@@ -906,7 +906,8 @@ broadcast a fallback send becomes -- carries two stamps read from the sender's
 cached room snapshot: `targets.minSnapshotVersion`, the snapshot version (or a
 higher floor the send states), and `targets.rosterVersion`, the group's roster
 version. No caller sets the roster. Both are absent when the sender holds no
-snapshot of the room; a receiver then applies neither floor.
+snapshot of the room, unless the send states a floor, which then travels alone;
+a receiver applies only the floors a send carries.
 
 A receiver judges a room send against the room snapshot it holds:
 

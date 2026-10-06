@@ -555,7 +555,8 @@ room send over one member: the router delivers it to its addressee
 `admitted` receipt names the addressee, and the addressee's own ACK completes it. Any pre-admission `unauthorized`
 or `membership-fenced` refusal by the trusted server is answered with a NACK, which the origin states as a
 trusted-server `relay-rejected` with that reason, so a receipted send reads `rejected` at once rather than at its
-deadline; `membership-fenced` is a room send whose sender the server, at or beyond the send's `rosterVersion`, no
+deadline ([`resolveALOutboundRelayRejection`](./control/resolve-al-outbound-relay-rejection.ts) decides which NACK
+refuses the whole send); `membership-fenced` is a room send whose sender the server, at or beyond the send's `rosterVersion`, no
 longer finds an active member. A peer's `membership-fenced` NACK before any receipt row is a peer
 `relay-rejected` naming it only when the peer is the unicast addressee or a composition hop; an RTC room send names
 no hop, so its sender hears a peer's fence only through a tracked receipt (`receipt-exhausted`, `hop-refused`), and
@@ -563,7 +564,8 @@ a room send with `ack: 'none'` never hears it. The `unauthorized` refusals are a
 the room's admitted audience
 ([`toWsQueueBoxServerAddresseeAuthorization`](../../services/ws-queue-box-server/to-ws-queue-box-server-addressee-authorization.ts)),
 a room unicast whose `route.contextId` names another room than its `groupRef` (R-S3c-i-33), a message whose room or principal names another application or workspace than its connection authenticated (D100, [`toWsQueueBoxServerScopeAuthorization`](../../services/ws-queue-box-server/scope/to-ws-queue-box-server-scope-authorization.ts)), and any room send the room
-authorizer refuses — a halted transport, a scope mismatch, data before activation; a sender without a live session or
+authorizer ([`ws-topic-room-authorizer.ts`](../../../shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts))
+refuses — a halted transport, a scope mismatch, data before activation; a sender without a live session or
 an active member is `membership-fenced` instead. A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
 aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
 audience verbatim, so a session that left since reads unconfirmed (D73).

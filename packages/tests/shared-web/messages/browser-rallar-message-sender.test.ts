@@ -9,7 +9,7 @@ import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createRallarTestFacade,
-    readRallarFacadeMocks,
+    getRallarFacadeMocks,
     resetRallarFacadeTestRuntime,
     setRallarFacadeRoomSnapshots
 } from './rallar-facade-test-runtime.ts';
@@ -19,10 +19,10 @@ interface GroupSnapshotFixtureScope {
     readonly workspaceId?: string;
 }
 
-const mocks = readRallarFacadeMocks();
-let qboxEngine = vi.mocked(mocks.ctx.middleware.qboxEngine);
-let rtcRxStreamer = vi.mocked(mocks.ctx.middleware.rtcRxStreamer);
-let webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
+const mocks = getRallarFacadeMocks();
+let qboxEngine = vi.mocked(mocks.apiMiddleware.middleware.qboxEngine);
+let rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
+let webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
 
 installFakeBroadcastChannelPerTest();
 
@@ -30,9 +30,9 @@ describe('Rallar message send', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         resetRallarFacadeTestRuntime();
-        qboxEngine = vi.mocked(mocks.ctx.middleware.qboxEngine);
-        rtcRxStreamer = vi.mocked(mocks.ctx.middleware.rtcRxStreamer);
-        webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
+        qboxEngine = vi.mocked(mocks.apiMiddleware.middleware.qboxEngine);
+        rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
+        webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
     });
 
     it('reports every unsupported fallback constraint before connecting or queueing', async () => {

@@ -207,15 +207,17 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
-    // The Relic web spec's mock backend answers raw command bodies and reads the
-    // page's raw WS outbox; the addressed-receipt test decodes raw control frames
-    // through the strict payload decoders. Values reach an assertion or a
-    // production decoder only.
+    // The addressed-receipt test decodes raw control frames through the strict
+    // payload decoders; its values reach an assertion or a production decoder only.
     Object.freeze({
         path: 'packages/tests/shared/services/ws-queue-box-server-addressed-receipts.test.ts',
         rule: 'boundary.unknown',
         symbol: 'readControlPayloads'
     }),
+    // The ten Relic web spec entries record pre-existing debt in a file the
+    // envelope version sweep changed by a literal only: double assertions on
+    // `window` and untyped mock-backend fixtures, not checker false positives.
+    // Typing the spec's mock backend is that file's next material change.
     Object.freeze({
         path: 'tests/playwright/relic-hunters/web.spec.ts',
         rule: 'boundary.unknown',

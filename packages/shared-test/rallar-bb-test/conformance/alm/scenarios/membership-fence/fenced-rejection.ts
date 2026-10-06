@@ -16,9 +16,10 @@ import {
 import { toSelfMembershipCommand } from '../../alm-conformance-session-commands.ts';
 
 /**
- * Over `rtc` the sender's own room authority must stay behind the receiver's for its send to leave the page at all:
- * every RTC dispatch attempt re-reads the origin's room authority, which refuses a sender that is no longer a member,
- * and the harness has no hold on the page's inbound group-state stream. So the cell runs where the server judges.
+ * Over `rtc` the sender's own room authority refuses a send from a member that left before any frame leaves the page,
+ * so no receiver can state a fenced refusal: every RTC dispatch attempt re-reads the origin's room authority, and the
+ * harness has no hold on the page's inbound group-state stream. The RTC fenced NACK is a unit pin; the cell runs where
+ * the server judges.
  */
 const FENCED_REJECTION_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
 

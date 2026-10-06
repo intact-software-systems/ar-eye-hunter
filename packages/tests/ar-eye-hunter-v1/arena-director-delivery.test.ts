@@ -48,14 +48,14 @@ import {
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import {
     createRallarTestFacade,
-    readRallarFacadeMocks,
+    getRallarFacadeMocks,
     resetRallarFacadeTestRuntime,
     setRallarFacadeRoomSnapshots
 } from '../shared-web/messages/rallar-facade-test-runtime.ts';
 import { createMessageDelivery, type MessageDeliveryFixture } from '../shared-web/messages/test-message-delivery.ts';
 
 /** The director's own Rallar session and room cache, for the one case that sends a match output through the real relay. */
-const directorRallar = readRallarFacadeMocks();
+const directorRallar = getRallarFacadeMocks();
 
 describe('arena director delivery and appointment', () => {
     const arena = new ArenaRuntimeTestHarness();
@@ -568,7 +568,7 @@ describe('arena match lifecycle delivery', () => {
         resetRallarFacadeTestRuntime();
         setRallarFacadeRoomSnapshots([toArenaRoomSnapshot({ snapshotVersion: 9, rosterVersion: 4 })]);
         const facade = createRallarTestFacade();
-        const relay = new BrowserDirectorRelayTransport({ messages: facade.messages, readSession: () => directorRallar.ctx.session });
+        const relay = new BrowserDirectorRelayTransport({ messages: facade.messages, readSession: () => directorRallar.apiMiddleware.session });
 
         await relay.sendRoomEnvelope({
             current: { ...freshDirectorStatus(), roomRef: arenaRoomRef },
@@ -579,7 +579,7 @@ describe('arena match lifecycle delivery', () => {
         });
 
         expect(options).toEqual({ ack: 'all-logical-recipients' });
-        expect(vi.mocked(directorRallar.ctx.middleware.rtcRxStreamer).enqueueOutboxIfAbsent.mock.calls[0][0].targets).toMatchObject({
+        expect(vi.mocked(directorRallar.apiMiddleware.middleware.rtcRxStreamer).enqueueOutboxIfAbsent.mock.calls[0][0].targets).toMatchObject({
             mode: 'multicast',
             groupRef: arenaRoomRef,
             minSnapshotVersion: 9,
@@ -662,7 +662,7 @@ async function renderDirector(arena: ArenaRuntimeTestHarness, initial: ArenaSnap
 
 /** The arena room as the director's cache holds it: the director's own session and one player, at the given versions. */
 function toArenaRoomSnapshot(versions: Readonly<{ snapshotVersion: number; rosterVersion: number; }>): GroupSnapshot {
-    const snapshot = createGroupSnapshotFixture({ ...arenaRoomRef, sessionIds: [directorRallar.ctx.session.sessionId, 'peer-b'] });
+    const snapshot = createGroupSnapshotFixture({ ...arenaRoomRef, sessionIds: [directorRallar.apiMiddleware.session.sessionId, 'peer-b'] });
     return { ...snapshot, group: { ...snapshot.group, ...versions } };
 }
 

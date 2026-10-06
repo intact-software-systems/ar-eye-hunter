@@ -12,7 +12,9 @@ import { isRoomLayoutOverlay } from '../repository/is-accepted-room-layout-overl
 import {
     resolveRtcRoomPeerDenial,
     resolveRtcRoomRosterPosition,
+    resolveRtcRoomSenderDenial,
     type RtcRoomAuthorityDenial,
+    type RtcRoomRosterPosition,
     type RtcRoomSessionObservation
 } from './resolve-rtc-room-peer-denial.ts';
 
@@ -70,9 +72,12 @@ export function computeRtcRoomSnapshotAdmission(input: RtcRoomSnapshotAdmissionI
         sessions: new Map(snapshot.activeSessions.map((session) => [session.sessionId, session])),
         members: new Map(snapshot.members.map((member) => [member.principalId, member]))
     };
+    const senderRoster = input.fromPeerId === undefined
+        ? undefined
+        : resolveRtcRoomRosterPosition(input.message, snapshot);
     return resolveRoomObservationDenial(roomRef, snapshot, input.nowMs) ??
-        resolveRoomAuthorityDenial(input, authority, snapshot) ??
-        resolveRoomFloorDenial(input, snapshot) ??
+        resolveRoomAuthorityDenial(input, authority, senderRoster) ??
+        resolveRoomFloorDenial(input, snapshot, senderRoster) ??
         toAuthorizedRoomAdmission(input, authority, snapshot);
 }
 
@@ -122,20 +127,26 @@ function toRtcRoomRefusal(denial: RtcRoomAuthorityDenial): RtcRoomRefusal {
         : { code: 'unauthorized', dropReason: 'unauthorized' };
 }
 
-/** An unauthorized denial outranks a pending one, so a fenced sender is refused even while another peer is awaited. */
+/**
+ * An unauthorized denial outranks a pending one, so a fenced sender is refused even while another peer is awaited. A
+ * copy at ingress has a sender roster position, and its sender is judged on that roster; the origin's sender is a peer.
+ */
 function resolveRoomAuthorityDenial(
     input: RtcRoomSnapshotAdmissionInput,
     authority: RtcRoomSessionObservation,
-    snapshot: GroupSnapshot
+    senderRoster: RtcRoomRosterPosition | undefined
 ): RtcRoomAuthorityDenial | undefined {
     const senderId = input.message.id.senderId;
-    const roster = input.fromPeerId === undefined ? undefined : resolveRtcRoomRosterPosition(input.message, snapshot);
-    const requiredPeerIds = new Set([senderId, input.selfPeerId, input.fromPeerId, input.recipientPeerId]);
+    const otherPeerIds = new Set(
+        [input.selfPeerId, input.fromPeerId, input.recipientPeerId].filter((peerId): peerId is string =>
+            peerId !== undefined && peerId !== senderId
+        )
+    );
     const denials = [
-        ...Array.from(requiredPeerIds, (peerId) =>
-            peerId === undefined
-                ? undefined
-                : resolveRtcRoomPeerDenial(authority, peerId, peerId === senderId ? roster : undefined)),
+        senderRoster === undefined
+            ? resolveRtcRoomPeerDenial(authority, senderId)
+            : resolveRtcRoomSenderDenial(authority, senderId, senderRoster),
+        ...Array.from(otherPeerIds, (peerId) => resolveRtcRoomPeerDenial(authority, peerId)),
         resolveRtcRoomEdgeDenial(input, authority.roomRef)
     ];
     return denials.find((candidate) => candidate?.kind === 'unauthorized') ??
@@ -145,7 +156,8 @@ function resolveRoomAuthorityDenial(
 /** The target floors apply at receiver/relay ingress; the origin's own authority is checked above. */
 function resolveRoomFloorDenial(
     input: RtcRoomSnapshotAdmissionInput,
-    snapshot: GroupSnapshot
+    snapshot: GroupSnapshot,
+    senderRoster: RtcRoomRosterPosition | undefined
 ): RtcRoomAuthorityDenial | undefined {
     if (input.fromPeerId === undefined) {
         return undefined;
@@ -155,7 +167,7 @@ function resolveRoomFloorDenial(
     if (floor !== undefined && snapshot.group.snapshotVersion < floor) {
         return { kind: 'pending', reason: 'Awaiting the required room snapshot version' };
     }
-    if (resolveRtcRoomRosterPosition(input.message, snapshot) === 'behind') {
+    if (senderRoster === 'behind') {
         return { kind: 'pending', reason: 'Awaiting the required room roster version' };
     }
     return undefined;
@@ -167,7 +179,7 @@ function toAuthorizedRoomAdmission(
     snapshot: GroupSnapshot
 ): RtcRoomSnapshotAdmission {
     const authorizedPeerIds = snapshot.activeSessions.filter((session) =>
-        resolveRtcRoomPeerDenial(authority, session.sessionId, undefined) === undefined
+        resolveRtcRoomPeerDenial(authority, session.sessionId) === undefined
     ).map((session) => session.sessionId);
     const memberPeerIdSet = new Set(authorizedPeerIds);
     const forwardingPeerIds = isRoomLayoutOverlay(input.overlay, authority.roomRef)

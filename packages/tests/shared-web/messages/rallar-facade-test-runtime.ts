@@ -11,7 +11,7 @@ import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-dou
 const rallarFacadeMocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
     return {
-        ctx: createDefaultApiMiddlewareTestDouble(),
+        apiMiddleware: createDefaultApiMiddlewareTestDouble(),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findFirstGroupStateSnapshotRefSessionIdIsIn>(),
         findGroupStateSnapshotByRef: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef>(),
         getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>()
@@ -19,11 +19,11 @@ const rallarFacadeMocks = await vi.hoisted(async () => {
 });
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), async (original): Promise<typeof MiddlewareModule> => ({
     ...await original(),
-    initialiseMiddleware: async () => ({ middleware: rallarFacadeMocks.ctx.middleware, checkpoints: [] })
+    initialiseMiddleware: async () => ({ middleware: rallarFacadeMocks.apiMiddleware.middleware, checkpoints: [] })
 }));
 vi.mock(import('@shared/api/auth.ts'), async (original): Promise<typeof AuthModule> => ({
     ...await original(),
-    readSession: () => rallarFacadeMocks.ctx.session,
+    readSession: () => rallarFacadeMocks.apiMiddleware.session,
     isLoggedIn: () => true
 }));
 vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), async (original): Promise<typeof GroupStateSnapshotsRepositoryModule> => ({
@@ -36,14 +36,14 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), async 
 setRallarFacadeRoomSnapshots([]);
 
 /** The doubles behind a real facade: its middleware and session, renewed per test, and its room snapshot reads. */
-export function readRallarFacadeMocks(): typeof rallarFacadeMocks {
+export function getRallarFacadeMocks(): typeof rallarFacadeMocks {
     return rallarFacadeMocks;
 }
 
 /** A fresh middleware double, fresh cache repositories and no cached room snapshot. */
 export function resetRallarFacadeTestRuntime(): void {
     configureTestCacheRepositories();
-    rallarFacadeMocks.ctx = createDefaultApiMiddlewareTestDouble();
+    rallarFacadeMocks.apiMiddleware = createDefaultApiMiddlewareTestDouble();
     setRallarFacadeRoomSnapshots([]);
 }
 

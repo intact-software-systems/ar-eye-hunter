@@ -29,18 +29,11 @@ export interface RtcRoomSessionObservation {
 /** Where the receiver's roster stands against the one the copy was stamped with. */
 export type RtcRoomRosterPosition = 'behind' | 'at' | 'beyond' | 'unstamped';
 
-/**
- * A peer needs a live session in the room and an active member behind it. The sender of a copy at ingress, whose
- * roster position is given, is judged on the roster it stamped instead.
- */
+/** A peer needs a live session in the room and an active member behind it. */
 export function resolveRtcRoomPeerDenial(
     observation: RtcRoomSessionObservation,
-    peerId: string,
-    senderRoster: RtcRoomRosterPosition | undefined
+    peerId: string
 ): RtcRoomAuthorityDenial | undefined {
-    if (senderRoster !== undefined) {
-        return resolveRoomSenderDenial(observation, peerId, senderRoster);
-    }
     const session = observation.sessions.get(peerId);
     if (!session) {
         return { kind: 'pending', reason: 'Awaiting room session authority' };
@@ -71,12 +64,12 @@ export function resolveRtcRoomRosterPosition(message: ALMessage, snapshot: Group
 }
 
 /**
- * Behind its stamped roster the floor holds the copy; at or beyond it a member that is absent or not active is fenced.
- * An authoritative snapshot lists live sessions of active members only, and presence moves no roster: so a sender
- * with no session at its own roster is awaited, while one with no session in a later roster has left the roster or
- * its session since the stamp.
+ * The sender of a copy at ingress is judged on the roster it stamped. Behind that roster the floor holds the copy; at
+ * or beyond it a member that is absent or not active is fenced. An authoritative snapshot lists live sessions of
+ * active members only, and presence moves no roster: so a sender with no session at its own roster is awaited, while
+ * one with no session in a later roster has left the roster or its session since the stamp.
  */
-function resolveRoomSenderDenial(
+export function resolveRtcRoomSenderDenial(
     observation: RtcRoomSessionObservation,
     senderId: string,
     roster: RtcRoomRosterPosition
