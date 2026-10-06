@@ -278,7 +278,7 @@ it('emits received WebSocket payloads and releases their subscription on close',
     expect(facade.records.wsMessageUnsubscribeCount).toBe(1);
 });
 
-it('emits typed channel deliveries once per selector and releases their subscription on close', async () => {
+it('emits typed channel deliveries once per selector, with the roster a room send carried, and releases their subscription on close', async () => {
     const { runtime } = await loadConnectedMessageRuntime();
 
     await sendTypedMessage(runtime, 'handle-1');
@@ -294,7 +294,11 @@ it('emits typed channel deliveries once per selector and releases their subscrip
     }
 
     const deliveredOverWs = typedInboundMessage();
-    const deliveredOverRtc: RallarMessage<ChatMessagePayload> = { ...deliveredOverWs, transport: 'rtc' };
+    const deliveredOverRtc: RallarMessage<ChatMessagePayload> = {
+        ...deliveredOverWs,
+        transport: 'rtc',
+        raw: { ...deliveredOverWs.raw, targets: { mode: 'multicast', groupRef: roomRef, rosterVersion: 4 } }
+    };
     await wsHandler(deliveredOverWs.payload, deliveredOverWs);
     await rtcHandler(deliveredOverRtc.payload, deliveredOverRtc);
 
@@ -320,6 +324,7 @@ it('emits typed channel deliveries once per selector and releases their subscrip
             data: {
                 msgId: 'ws-message-1',
                 typeId: 'alm.conformance',
+                rosterVersion: 4,
                 topicId: 'alm',
                 transport: 'rtc',
                 payload: { text: 'received over ws' }

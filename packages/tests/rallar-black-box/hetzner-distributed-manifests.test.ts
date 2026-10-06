@@ -22,9 +22,11 @@ import { toDistributedArtifactSnapshots } from '../../../packages/shared-test/ra
 import type {
     RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import { decodeStringLeaves } from '../../shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
 import { validateDistributedRunManifestContract } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type {
     RallarBlackBoxTestEvent,
+    RallarBlackBoxTestRecord,
     RallarBlackBoxTestState,
     RallarBlackBoxTestWaitMatch
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -35,7 +37,7 @@ interface ManifestCommand {
     readonly kind?: string;
     readonly commandId?: string;
     readonly transport?: string;
-    readonly rallar?: Readonly<Record<string, unknown>>;
+    readonly rallar?: RallarBlackBoxTestRecord;
     readonly commands?: readonly ManifestCommand[];
     readonly groups?: readonly Readonly<{
         commands?: readonly ManifestCommand[];
@@ -55,8 +57,8 @@ interface ManifestCommand {
     readonly maxInFlight?: number;
     readonly maxCommands?: number;
     readonly continueOnSendFailure?: boolean;
-    readonly metadata?: Record<string, unknown>;
-    readonly thresholds?: Record<string, unknown>;
+    readonly metadata?: RallarBlackBoxTestRecord;
+    readonly thresholds?: RallarBlackBoxTestRecord;
 }
 
 interface ControlCommandInput {
@@ -120,19 +122,6 @@ function toExpectedMatrixDiagnosticPaths(): readonly string[] {
             )
         )
     );
-}
-
-function toNestedStringValues(value: unknown): readonly string[] {
-    if (typeof value === 'string') {
-        return [value];
-    }
-    if (Array.isArray(value)) {
-        return value.flatMap(toNestedStringValues);
-    }
-    if (value && typeof value === 'object') {
-        return Object.values(value).flatMap(toNestedStringValues);
-    }
-    return [];
 }
 
 // Every multi-agent Hetzner manifest must carry the standard barrier so agents start synchronized;
@@ -322,7 +311,7 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(greenEntries.every((entry) => entry.manifest.metadata?.expectedFailure !== true)).toBe(true);
 
         for (const entry of catalog) {
-            const strings = toNestedStringValues(entry.manifest);
+            const strings = decodeStringLeaves(entry.manifest);
             expect(strings.some((value) => /bearer|password|secret|token/i.test(value)), entry.filePath).toBe(false);
         }
     });
@@ -1194,8 +1183,6 @@ describe('Hetzner distributed manifest catalog', () => {
         // Both cross-carrier orders run on Hetzner: api-v1 routes a WS-carried multicast room envelope (Task 7, R-S2b-1).
         expect(commandIds.some((commandId) => commandId.includes('cross-carrier-duplicate-ws-then-rtc'))).toBe(true);
         expect(commandIds).toContain('alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-duplicate-outcome-ws');
-        // delivered-after-refresh is withheld: no plain-member write advances the snapshot version.
-        expect(commandIds.some((commandId) => commandId.includes('not-yet-in-sync-delivered-after-refresh'))).toBe(false);
         for (const carrier of ['rtc', 'rtc-with-ws-fallback']) {
             expect(commandIds).toContain(`alm-${carrier}-not-yet-in-sync-expires-receiver-not-yet-in-sync-outcome`);
         }

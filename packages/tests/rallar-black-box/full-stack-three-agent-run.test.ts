@@ -62,11 +62,18 @@ function toAcceptedResponse(url: string): Playwright.APIResponse {
 }
 
 describe('three-agent ALM run', () => {
-    it('selects exactly the receipted-audience scenarios for the three-agent family on every carrier', () => {
+    it('selects exactly the receipted-audience and membership fence scenarios for the three-agent family on every carrier', () => {
         const rtcScenarioKeys = ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership'];
         const expectedKeys = {
-            ws: ['aggregated-receipt', 'missing-recipient-retry', 'frozen-audience-membership'],
-            rtc: rtcScenarioKeys,
+            ws: [
+                'aggregated-receipt',
+                'missing-recipient-retry',
+                'frozen-audience-membership',
+                'fenced-delivery',
+                'fenced-catch-up',
+                'fenced-rejection'
+            ],
+            rtc: [...rtcScenarioKeys, 'fenced-delivery', 'fenced-catch-up'],
             'rtc-with-ws-fallback': rtcScenarioKeys
         };
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {

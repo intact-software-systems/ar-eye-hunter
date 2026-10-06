@@ -147,13 +147,11 @@ function toStartedCells(entry: ReturnType<typeof createAlmConformance2AgentEntry
 }
 
 describe('ALM conformance hosted lane families', () => {
-    it('withholds exactly the named cells: the refresh variant over the RTC carriers, both checkpoint cells and the exhausted repair everywhere, the gap repair where it runs', () => {
+    it('withholds exactly the named cells: both checkpoint cells and the exhausted repair everywhere, the gap repair where it runs', () => {
         const defined = toFamilyCells(['two-agent', 'addressed']);
-        // Removing a withheld cell from hosted manifest 18 is a deliberate act: no plain-member write advances the
-        // snapshot version for the refresh variant, and the checkpoint and repair cells keep manifest 18 as recorded.
+        // Removing a withheld cell from hosted manifest 18 is a deliberate act: the checkpoint and repair cells keep
+        // manifest 18 as recorded.
         const withheld = [
-            'alm-rtc-not-yet-in-sync-delivered-after-refresh',
-            'alm-rtc-with-ws-fallback-not-yet-in-sync-delivered-after-refresh',
             ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
                 ['checkpoint-recovery', 'checkpoint-lag', 'repair-exhausted'].map((key) => `alm-${carrier}-${key}`)
             ),
@@ -170,8 +168,16 @@ describe('ALM conformance hosted lane families', () => {
         ]);
     });
 
-    it('carries the three-agent family in the 3-agent entry', () => {
-        expect(new Set(toStartedCells(createAlmConformance3AgentEntry()))).toEqual(new Set(toFamilyCells(['three-agent'])));
+    it('carries the three-agent family in the 3-agent entry, withholding the membership fence cells wherever they run', () => {
+        const withheld = [
+            ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.flatMap((carrier) => ['fenced-delivery', 'fenced-catch-up'].map((key) => `alm-${carrier}-${key}`)),
+            'alm-ws-fenced-rejection'
+        ];
+        const defined = toFamilyCells(['three-agent']);
+
+        expect(defined).toEqual(expect.arrayContaining(withheld));
+        expect(new Set(toStartedCells(createAlmConformance3AgentEntry())))
+            .toEqual(new Set(defined.filter((cell) => !withheld.includes(cell))));
     });
 
     // A same-context scenario needs two pages of one browser context, which no hosted agent has.

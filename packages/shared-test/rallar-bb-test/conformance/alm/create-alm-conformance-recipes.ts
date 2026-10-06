@@ -24,8 +24,8 @@ import type {
 import {
     toConnectCommand,
     toEnsureGroupCommand,
-    toEnsureMemberCommand,
     toOwnerLeaseLapseWait,
+    toSelfMembershipCommand,
     toStatsCommand
 } from './alm-conformance-session-commands.ts';
 import { toRoomRef, toSendHandleId } from './alm-conformance-step-identities.ts';
@@ -43,6 +43,9 @@ import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts'
 import { checkpointLag } from './scenarios/local-checkpoint/checkpoint-lag.ts';
 import { checkpointRecovery } from './scenarios/local-checkpoint/checkpoint-recovery.ts';
 import { flushOnHide } from './scenarios/local-checkpoint/flush-on-hide.ts';
+import { fencedCatchUp } from './scenarios/membership-fence/fenced-catch-up.ts';
+import { fencedDelivery } from './scenarios/membership-fence/fenced-delivery.ts';
+import { fencedRejection } from './scenarios/membership-fence/fenced-rejection.ts';
 import { noFallbackAfterDeadline } from './scenarios/no-fallback-after-deadline.ts';
 import { notYetInSync } from './scenarios/not-yet-in-sync.ts';
 import { orderingResync } from './scenarios/ordering-resync.ts';
@@ -106,7 +109,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     orderingGapRepair,
     repairExhausted,
     ...crossCarrierDuplicate,
-    ...notYetInSync,
+    notYetInSync,
     fallbackWithinDeadline,
     receiptExhaustedFallback,
     noFallbackAfterDeadline,
@@ -115,6 +118,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     serverCommand,
     capacity,
     ...receiptedAudience,
+    fencedDelivery,
+    fencedCatchUp,
+    fencedRejection,
     durableTakeover,
     flushOnHide
 ];
@@ -193,7 +199,7 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
         },
         commands: [
             toEnsureGroupCommand(recipe),
-            toEnsureMemberCommand(recipe),
+            toSelfMembershipCommand(recipe, 'active'),
             ...(recipe.role === 'successor' ? [toOwnerLeaseLapseWait(recipe)] : []),
             toConnectCommand(recipe),
             ...toConnectedStorageCountersCommands(recipe),

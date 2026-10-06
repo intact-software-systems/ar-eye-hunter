@@ -39,6 +39,9 @@ import {
 
 type MessagesPortKind = 'messages.send' | 'messages.observe' | 'messages.cancel' | 'messages.receipts' | 'messages.received';
 
+/** A page of the run; `recipient-b` is the second recipient of a three-agent cell. */
+type PortRole = 'sender' | 'receiver' | 'recipient-b';
+
 type PortCommand<TKind extends RallarBlackBoxTestCommand['kind']> = Extract<RallarBlackBoxTestCommand, Readonly<{ kind: TKind; }>>;
 
 /** A `local-checkpoint` row: in memory until a checkpoint saves it, lost if its page ends first. */
@@ -60,6 +63,10 @@ interface PortMessage {
     deliveredIndex: number | undefined;
     /** The retransmits a gap report has charged to this message; the budget is one. */
     repairAttempts: number;
+    /** The roster the sender's room snapshot held when it sent, which its room target carries. */
+    readonly rosterVersion: number;
+    /** The snapshot floor the send states; undefined for a send that states none. */
+    readonly floor: number | undefined;
     attemptCarriers: readonly ('rtc' | 'ws')[];
     attemptOutcomes: readonly ('not-ready' | 'sent')[];
     /**
@@ -70,10 +77,28 @@ interface PortMessage {
         | Readonly<{ kind: 'refused'; reason: 'capacity'; }>
         | Readonly<{ kind: 'storage-unavailable'; cause: 'quota' | 'checkpoint-lag'; }>
         | Readonly<{ kind: 'skipped'; reason: 'repair-exhausted'; }>
+        | Readonly<{ kind: 'relay-rejected'; rejection: PortRelayRejection; }>
         | undefined;
+    /** The trusted server's refusal of a send from a sender no longer in the group; undefined otherwise. */
+    relayRejection: PortRelayRejection | undefined;
     carrierFallback: ALDeliveryCarrierFallback | undefined;
     /** A durable send a volatile channel admitted volatile while its storage was full. */
     readonly durabilityDowngrade: Readonly<{ requested: string; cause: 'quota' | 'checkpoint-lag'; }> | undefined;
+}
+
+interface PortRelayRejection {
+    readonly relay: 'trusted-server';
+    readonly reason: 'membership-fenced';
+}
+
+/**
+ * The group as the server holds it. A read returns its versions; a member that leaves or rejoins moves the roster and
+ * the snapshot by one, as every roster write does.
+ */
+interface PortGroup {
+    snapshotVersion: number;
+    rosterVersion: number;
+    readonly left: Set<PortRole>;
 }
 
 interface HandedOverOutcome {
@@ -126,7 +151,8 @@ class GeneratedAlmPorts {
     now = 1_000;
     senderDocument = 100;
     /** IndexedDB admission writes per page since its last reset: only a send that opts into a durability writes. */
-    readonly writes = { sender: 1, receiver: 1 };
+    readonly writes: Record<PortRole, number> = { sender: 1, receiver: 1, 'recipient-b': 1 };
+    readonly group: PortGroup = { snapshotVersion: 7, rosterVersion: 4, left: new Set() };
     readonly inboxAdmitted = new Set<string>();
     readonly messages: PortMessage[] = [];
     readonly handles = new Map<string, PortMessage>();
@@ -143,6 +169,7 @@ class GeneratedAlmPorts {
     handsOverHeldFallback = true;
     lastQuotaFaultId = '';
     readonly receiver: RallarBlackBoxTestRuntime;
+    readonly recipientB: RallarBlackBoxTestRuntime;
     sender: RallarBlackBoxTestRuntime;
     private absence: { duration: number; release: () => void; } | undefined;
     private entered = Promise.withResolvers<void>();
@@ -152,6 +179,7 @@ class GeneratedAlmPorts {
     constructor(replacesDocument: boolean) {
         this.replacesDocument = replacesDocument;
         this.receiver = this.createRuntime('receiver');
+        this.recipientB = this.createRuntime('recipient-b');
         this.sender = this.createRuntime('sender');
     }
 
@@ -188,7 +216,7 @@ class GeneratedAlmPorts {
         this.sender = this.createRuntime('sender');
     }
 
-    private createRuntime(role: 'sender' | 'receiver'): RallarBlackBoxTestRuntime {
+    private createRuntime(role: PortRole): RallarBlackBoxTestRuntime {
         return createRallarBlackBoxTestRuntime({
             now: () => this.now,
             sleep: async (duration) => {
@@ -207,13 +235,13 @@ class GeneratedAlmPorts {
         });
     }
 
-    private executePort(role: 'sender' | 'receiver', command: RallarBlackBoxTestCommand): RallarBlackBoxTestCommandOutcome | undefined {
+    private executePort(role: PortRole, command: RallarBlackBoxTestCommand): RallarBlackBoxTestCommandOutcome | undefined {
         this.settleCheckpoints();
         const document = { origin: 'https://fixture.test', timeOrigin: role === 'sender' ? this.senderDocument : 50 };
         const session = { clientId: role, sessionId: `${role}-stored-session` };
         switch (command.kind) {
             case 'http.request':
-                return { status: 'ok', value: { status: 200 } };
+                return this.requestGroup(role, command);
             case 'rtc.connect':
                 if (role === 'receiver') {
                     this.recoveryOwnerInstalled = command.rallar?.recoveryOwner === 'record';
@@ -282,6 +310,7 @@ class GeneratedAlmPorts {
                 attemptCarriers: message?.attemptCarriers ?? [],
                 attemptOutcomes: message?.attemptOutcomes ?? [],
                 failure: message?.failure,
+                relayRejection: message?.relayRejection,
                 carrierFallback: message?.carrierFallback,
                 durabilityDowngrade: message?.durabilityDowngrade,
                 ...(message?.command.toPeer !== undefined && message.state === 'acknowledged'
@@ -368,7 +397,7 @@ class GeneratedAlmPorts {
         }
     }
 
-    private readStorageCounters(role: 'sender' | 'receiver', reset: boolean): RallarBlackBoxTestCommandOutcome {
+    private readStorageCounters(role: PortRole, reset: boolean): RallarBlackBoxTestCommandOutcome {
         const writes = this.writes[role];
         if (reset) {
             this.writes[role] = 0;
@@ -387,7 +416,7 @@ class GeneratedAlmPorts {
     }
 
     /** The next page of the sender's session, a reloaded document or a successor page, sends what the last one held. */
-    private deliverRecoveredOriginals(role: 'sender' | 'receiver'): void {
+    private deliverRecoveredOriginals(role: PortRole): void {
         if (role !== 'sender') {
             return;
         }
@@ -400,7 +429,7 @@ class GeneratedAlmPorts {
      * Every durable store of the page reports what it restored once its first batch ran, the session inbound store once
      * per carrier lane; the fixture runs it at connect. An outbound store claims the originals the last page held in it.
      */
-    private reportStoreRecoveries(role: 'sender' | 'receiver', sessionId: string): void {
+    private reportStoreRecoveries(role: PortRole, sessionId: string): void {
         if (role !== 'sender') {
             return;
         }
@@ -551,8 +580,11 @@ class GeneratedAlmPorts {
             buffered: false,
             deliveredIndex: undefined,
             repairAttempts: 0,
+            rosterVersion: this.group.rosterVersion,
+            floor: toPortFloor(command.minSnapshotVersion, this.group.snapshotVersion),
             attemptCarriers: [],
             attemptOutcomes: [],
+            relayRejection: undefined,
             failure: capacityRefused
                 ? { kind: 'refused', reason: 'capacity' }
                 : storageRefused
@@ -605,7 +637,10 @@ class GeneratedAlmPorts {
         const handedOver = isJsonRecordValue(command.payload)
             ? HANDED_OVER_WS_OUTCOMES[String(command.payload.marker)]
             : undefined;
-        if (command.minSnapshotVersion !== undefined) {
+        if (this.group.left.has('sender')) {
+            this.refuseFenced(message);
+        }
+        else if (message.floor !== undefined && message.floor > this.group.snapshotVersion) {
             this.refuseNotYetInSync(message);
         }
         else if (isJsonRecordValue(command.payload) && command.payload.seq === 300) {
@@ -657,20 +692,7 @@ class GeneratedAlmPorts {
         message.submitted = true;
         message.buffered = true;
         message.state = 'transport-accepted';
-        this.sender.recordEvent({
-            kind: 'diagnostic',
-            topic: 'rallar.browser.alm.outbound_diagnostics',
-            payload: {
-                data: {
-                    kind: 'control-admission',
-                    msgId: `${message.msgId}-nack`,
-                    typeId: 'al.control.nack.v2',
-                    targetMsgId: message.msgId,
-                    outcome: 'committed',
-                    reason: 'none'
-                }
-            }
-        });
+        this.recordSenderNack(message);
         if (held.repairAttempts >= 1) {
             held.state = 'failed';
             held.failure = { kind: 'skipped', reason: 'repair-exhausted' };
@@ -788,8 +810,16 @@ class GeneratedAlmPorts {
         message.state = 'acknowledged';
     }
 
-    /** The receiver's snapshot is below the send's floor: it refuses the copy over RTC and writes nothing. */
+    /**
+     * The first hop's snapshot is below the send's floor: it refuses the copy and writes nothing, and its NACK is
+     * committed at the sender. Over RTC the receiver is that hop and states the refusal; over WS the server is, out of
+     * the receiver page's sight. The copy waits for a roster move to reach the floor.
+     */
     private refuseNotYetInSync(message: PortMessage): void {
+        this.recordSenderNack(message);
+        if (message.command.carrier === 'ws') {
+            return;
+        }
         this.receiver.recordEvent({
             kind: 'diagnostic',
             topic: 'rallar.browser.alm.inbound_diagnostics',
@@ -808,25 +838,79 @@ class GeneratedAlmPorts {
     }
 
     /**
+     * The WS server finds the sender no longer an active member at or beyond the send's roster: it refuses the send,
+     * and its NACK settles the handle rejected by the trusted server. Over RTC the sender's own room authority would
+     * refuse the send first, so the fixture models the server's verdict only.
+     */
+    private refuseFenced(message: PortMessage): void {
+        assertEquals(message.command.carrier, 'ws', 'only the server judges a sender that left the group');
+        const rejection: PortRelayRejection = { relay: 'trusted-server', reason: 'membership-fenced' };
+        this.recordSenderNack(message);
+        message.state = 'rejected';
+        message.failure = { kind: 'relay-rejected', rejection };
+        message.relayRejection = rejection;
+    }
+
+    private recordSenderNack(message: PortMessage): void {
+        this.sender.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.outbound_diagnostics',
+            payload: {
+                data: {
+                    kind: 'control-admission',
+                    msgId: `${message.msgId}-nack`,
+                    typeId: 'al.control.nack.v2',
+                    targetMsgId: message.msgId,
+                    outcome: 'committed',
+                    reason: 'none'
+                }
+            }
+        });
+    }
+
+    /** A read returns the group's versions; a leave or a rejoin moves both, which may lift a waiting send's floor. */
+    private requestGroup(role: PortRole, command: PortCommand<'http.request'>): RallarBlackBoxTestCommandOutcome {
+        const { method, body } = command.request;
+        if (method === 'GET') {
+            const { snapshotVersion, rosterVersion } = this.group;
+            return { status: 'ok', value: { status: 200, body: { group: { snapshotVersion, rosterVersion } } } };
+        }
+        if (method === 'PUT' && isJsonRecordValue(body)) {
+            this.moveRoster(role, body.status === 'left');
+        }
+        return { status: 'ok', value: { status: 200 } };
+    }
+
+    private moveRoster(role: PortRole, leaves: boolean): void {
+        if (this.group.left.has(role) === leaves) {
+            return;
+        }
+        if (leaves) {
+            this.group.left.add(role);
+        }
+        else {
+            this.group.left.delete(role);
+        }
+        this.group.snapshotVersion += 1;
+        this.group.rosterVersion += 1;
+        for (const message of this.messages.filter((candidate) => this.isFloorLifted(candidate))) {
+            this.deliver(message);
+        }
+    }
+
+    /** A send its floor held back, whose sender's retry the first hop now admits. */
+    private isFloorLifted(message: PortMessage): boolean {
+        return message.floor !== undefined && !message.submitted && message.state !== 'rejected' &&
+            message.floor <= this.group.snapshotVersion;
+    }
+
+    /**
      * The first hop refuses a send past the repair window: over WS the relay NACKs the sender, which commits it as the
      * word of its trusted server (R-S2c-ii-5); over RTC the receiver refuses it.
      */
     private refuseGappedSend(message: PortMessage): void {
         if (message.command.carrier === 'ws') {
-            this.sender.recordEvent({
-                kind: 'diagnostic',
-                topic: 'rallar.browser.alm.outbound_diagnostics',
-                payload: {
-                    data: {
-                        kind: 'control-admission',
-                        msgId: `${message.msgId}-nack`,
-                        typeId: 'al.control.nack.v2',
-                        targetMsgId: message.msgId,
-                        outcome: 'committed',
-                        reason: 'none'
-                    }
-                }
-            });
+            this.recordSenderNack(message);
             return;
         }
         this.receiver.recordEvent({
@@ -968,23 +1052,36 @@ class GeneratedAlmPorts {
         this.releaseBuffered(message);
     }
 
+    /** Every recipient still in the group reads the arrival, with the roster its room target carried. */
     private recordReceiverMessage(message: PortMessage): void {
         this.deliveries += 1;
         message.deliveredIndex = this.deliveries;
-        this.receiver.recordEvent({
-            kind: 'message',
-            connection: 'almConformanceReceiver',
-            topic: 'typed',
-            payload: {
-                data: {
-                    msgId: message.msgId,
-                    typeId: message.command.typeId,
-                    transport: message.command.carrier === 'ws' ? 'ws' : 'rtc',
-                    payload: message.command.payload
+        const recipients = this.group.left.has('recipient-b') ? [this.receiver] : [this.receiver, this.recipientB];
+        for (const recipient of recipients) {
+            recipient.recordEvent({
+                kind: 'message',
+                connection: 'almConformanceReceiver',
+                topic: 'typed',
+                payload: {
+                    data: {
+                        msgId: message.msgId,
+                        typeId: message.command.typeId,
+                        rosterVersion: message.rosterVersion,
+                        transport: message.command.carrier === 'ws' ? 'ws' : 'rtc',
+                        payload: message.command.payload
+                    }
                 }
-            }
-        });
+            });
+        }
     }
+}
+
+/** The floor a send states, resolved against the snapshot its sender held when it sent. */
+function toPortFloor(floor: RallarBlackBoxTestMessagesSendCommand['minSnapshotVersion'], snapshotVersion: number): number | undefined {
+    if (floor === undefined) {
+        return undefined;
+    }
+    return 'absolute' in floor ? floor.absolute : snapshotVersion + floor.aboveCurrentBy;
 }
 
 /** An addressed send's receipt names its one addressee: the server itself, or the receiver's stored session. */
@@ -1334,6 +1431,85 @@ for (const carrier of ['rtc', 'rtc-with-ws-fallback'] as const) {
         assertEquals(ports.recoveryOwnerInstalled, true);
     });
 }
+
+for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
+    Deno.test(`the ${carrier} fenced-delivery trio delivers the member's send stamped with the group's roster`, async () => {
+        const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'fenced-delivery');
+        assert(recipientB);
+        const ports = new GeneratedAlmPorts(true);
+
+        const results = [
+            await ports.sender.execute(toRecipeRun(sender)),
+            await ports.receiver.execute(toRecipeRun(receiver)),
+            await ports.recipientB.execute(toRecipeRun(recipientB))
+        ];
+
+        for (const result of results) {
+            assertEquals(result.ok, true, JSON.stringify(result));
+        }
+        assertEquals(findMarked(ports, 'fenced-delivery').map((message) => [message.submitted, message.rosterVersion]), [[true, 4]]);
+    });
+
+    // The sender runs before recipient-b, which leaves on the cue; the receiver reads what followed.
+    Deno.test(`the ${carrier} fenced-catch-up trio delivers the floored send once recipient-b's leave moves the roster`, async () => {
+        const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'fenced-catch-up');
+        assert(recipientB);
+        const ports = new GeneratedAlmPorts(true);
+
+        const results = [
+            await ports.sender.execute(toRecipeRun(sender)),
+            await ports.recipientB.execute(toRecipeRun(recipientB)),
+            await ports.receiver.execute(toRecipeRun(receiver))
+        ];
+
+        for (const result of results) {
+            assertEquals(result.ok, true, JSON.stringify(result));
+        }
+        assertEquals([ports.group.snapshotVersion, ports.group.rosterVersion, [...ports.group.left]], [8, 5, ['recipient-b']]);
+        assertEquals(
+            findMarked(ports, 'fenced-catch-up').map((message) => [message.floor, message.submitted]),
+            [[8, true], [undefined, true]],
+            'the floored send waited for the move, the cue did not'
+        );
+    });
+
+    Deno.test(`the ${carrier} fenced-catch-up receiver fails while no roster move lifts the floor`, async () => {
+        const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'fenced-catch-up');
+        const ports = new GeneratedAlmPorts(true);
+        const floored = `${receiver.recipeId}-received-floored`;
+        // The arrival never comes, so the wait is shortened to keep the absence of a delivery cheap to prove.
+        const shortened = {
+            ...receiver,
+            commands: receiver.commands.map((command) => command.commandId === floored ? { ...command, timeoutMs: 50 } : command)
+        };
+
+        await ports.sender.execute(toRecipeRun(sender));
+        const received = await ports.receiver.execute(toRecipeRun(shortened));
+
+        assertEquals(received.ok, false, JSON.stringify(received));
+        assertEquals(findMarked(ports, 'fenced-catch-up').map((message) => message.submitted), [false, true]);
+    });
+}
+
+Deno.test('the ws fenced-rejection trio reads the trusted server\'s membership-fenced rejection and delivers nothing', async () => {
+    const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput('ws'), 'fenced-rejection');
+    assert(recipientB);
+    const ports = new GeneratedAlmPorts(true);
+
+    const results = [
+        await ports.sender.execute(toRecipeRun(sender)),
+        await ports.receiver.execute(toRecipeRun(receiver)),
+        await ports.recipientB.execute(toRecipeRun(recipientB))
+    ];
+
+    for (const result of results) {
+        assertEquals(result.ok, true, JSON.stringify(result));
+    }
+    assertEquals(
+        findMarked(ports, 'fenced-rejection').map((message) => [message.state, message.submitted, message.relayRejection]),
+        [['rejected', false, { relay: 'trusted-server', reason: 'membership-fenced' }]]
+    );
+});
 
 function toRecipeRun(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestCommand {
     return { kind: 'recipe.run', commandId: `${recipe.recipeId}-run`, recipe };
