@@ -27,8 +27,8 @@ GitHub Actions, ignored evidence under `tmp/perf/`, and immutable observation ZI
 The accepted measurement contract is retained in Sections 5, 6, and 8 of this
 plan. The approved diagnostics amendment is specified in
 [RTC establishment diagnostics](../../../plans/active/rtc-establishment-diagnostics.md).
-Its current implementation horizon is fenced SDK message capture, followed by inline
-distributed support/application evidence in Section 11. Current product and architecture are [docs/product.md](../../product.md)
+Its current implementation horizon is B06 selected-capture preflight, followed by sealed
+producer/cohort configuration in Section 11. Current product and architecture are [docs/product.md](../../product.md)
 and [docs/architecture.md](../../architecture.md). The canonical executable
 navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
@@ -78,6 +78,136 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 **Updated:** 2026-10-06
 
 ## 1. Current Outcome And Evidence
+
+Current on October6: PR #633 remains draft, OPEN and MERGEABLE after the reviewed
+source-conflict repair is published as
+`b03021514c0339e6fe37aa32f2ad167d00653369`. The initial Task58 checkpoint remains
+`431a77b93ccae63d7ca7ad8869838086e1201967`. The separate feature checkout preserves
+the original independently held work. The reviewed Native/Manual/Join source checkpoint is
+`bd1a03f774521d3cfd911347878eef12831f84ab`, with SPEC PASS and QUALITY APPROVED across
+all33 full touched files; combined-source runtime acceptance remains separate. At the
+original source, Manual selection passes39 unit cases, and the
+Connect-to-Join forwarding repair passes154 affected cases and independent
+specification and quality reviews. The actual browser now proves applied Off and Full native,
+including enabled native coverage, after provisioning its real group precondition.
+Its newly reached retained-export matcher initially rejected the legitimate sessionId
+despite preserved Off/native commands. The test-only nested partial-matcher correction
+retains both mode assertions. The final real-browser run is2 PASS, exit0: actual
+applied receipts, desired/current separation, recorded export, reload and Reset all
+execute successfully. Scoped independent specification and quality reviews are approved.
+The sole final quality correction separates the browser test's workspace import; inverse
+header reconstruction restores its exact passing bytes, without changing any assertion.
+Task58's independent encrypted-output typing decision remains held for explicit
+maintainer approval; its resource-disposal correction is reviewed.
+
+E3 has zero accepted cohorts and no current run. The latest inspected B06 diagnostic,
+[37222104427](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37222104427),
+failed all three diagnostic runners on62f067706; this is newer than the historical
+archive inventory below and is diagnostic evidence only. An unchanged431a77 run still
+uses product-default Signaling: its B06 runtime configuration omits capture selection.
+The original minimum correction passes40 focused cases after23 witnessed failures,
+with1465 maintained test files enforcing zero first-party type errors. Fresh independent
+specification and quality reviews approve that bounded correction. The final import-only
+closure preserves the exact reviewed runtime/test bodies and historical40-case evidence.
+Finite process-environment selection now passes17 cases and61 affected controls; its28
+frozen source/guard/artifact hashes match. Specification and quality reviews approve after
+the body-preserving environment-reader rename; its50 historical/correction identities match.
+The receipt-retention/native-preflight checkpoint has16 witnessed semantic failures
+with all40 existing controls passing. Root verifies64 evidence identities, exact original-test
+reconstruction and eight unchanged source guards; maintained types enforce1465 files with
+zero debt/errors. Two additional strict-acquisition assertions raise the current RED to18
+failures/40 passing controls across58 cases; root witnesses both actual failures and verifies
+13 new source/artifact identities with the original checkpoint unchanged. GREEN initially
+passes58 cases. Review catches session extraction preceding receipt admission; one additional
+witnessed RED fails while58 controls pass, then the correction restores admission first.
+The final five affected suites pass121 cases, including59 formation/delivery cases.
+Maintained/native types, format and whitespace pass; root verifies50 current checkpoint
+identities and64 preservation identities. Independent specification review finds one required
+failure-path gap: a synchronous acquisition invocation throws before the installed promise
+catch, losing its admitted Connect record. Its independent probe reproduces that loss while
+the async rejection control retains the record. A focused regression witnesses one failure
+with59 controls passing; the direct invocation/await catch correction then passes all60
+focused cases. Fresh maintained types, format and whitespace pass; root verifies20 correction
+identities. SPEC re-review approves the correction. Initial QUALITY review finds one
+boundary-free readiness forwarding method and otherwise accepts the five-owner behavior
+and cohesion. The public method now owns the unchanged private async body; root verifies
+20 correction identities and exact full-file inverse. All101 affected cases pass, including
+the60 retention cases; maintained1465-file typing, format and whitespace pass. Scoped SPEC
+preservation and QUALITY re-review approve the correction and complete five-owner closure.
+The next slice's actual test-only memory-browser RED is witnessed: zero retries, one failure,
+exit1 after25.524seconds, expected3 returned captures versus0 after the realtime matrix.
+Three recorded successful Connect receipts confirm applied Signaling/product-default despite
+process Native selection. Producer guards and matrix are unchanged; fresh services tear down.
+Concrete reader/matrix/output implementation now passes204 cases across five affected
+suites; maintained1465-file typing, format and whitespace pass. A root-serialized actual
+Native browser run then fails once, exit1/18.042seconds, during initial-pair room refresh.
+Its recorder proves two applied Native/step Connect receipts and matching initialized
+active scopes. The failure is explicit: product room composition calls explicit Connect
+without capture intent, resolving product-default Signaling against the owned Native
+connection and triggering new-connection-required. This is a newly identified acquisition
+integration defect, not the historical post-ICE trigger. The product correction witnesses
+8 failures/3 passing controls before78 affected cases pass. Nested capture consumption
+additionally witnesses36 failures/12 passes before the combined190-case GREEN; shared-web
+and maintained1466-file typing pass. Root reruns the final11 product cases successfully.
+The next isolated browser run fails once, exit1/17.491seconds, at the black-box topology
+hydration helper's second implicit session.connect call. Its real owned Native runtime
+regression witnesses1 FAIL/4 original passing controls, then all66 affected cases pass.
+Shared-test typing and maintained1466-file typing pass. The corrected isolated browser
+passes1/1, exit0/50.020seconds, with zero retries, six applied Native/step Connect receipts
+and six matching initialized active scopes. Services stop and all source hashes are
+unchanged. Fresh whole-slice SPEC review approves all17 current owners and closes the nested
+capture finding. The integrated33-owner QUALITY review now approves the combined source;
+CLI/workflow/configuration sealing remains pending.
+The earlier
+121-case/native-compilation evidence retains its historical source attribution.
+The subsequent GitHub delivery check reported PR633 CONFLICTING and REPAIR_CONFLICT.
+Read-only merge analysis against fetched main97f6686cf708114b4c8dc78f7d796ec5e3790998
+identified seven content conflicts: browser communication composition, middleware
+initialization, message controller, both browser/headless bundle budgets, AL inbound
+delivery and the WS queue service. That real conflict required repair before broad validation
+or publication, preserving all unpublished and independently held work. The original local
+browser result remains attributed to its frozen source, not the combined source.
+The separate repair checkout now reconciles all seven working-file conflicts, preserving
+147 automatic paths and both branch capture/clock/cleanup and upstream resync requirements.
+Eight mandatory callback bindings remediate the reached capture-reuse fixtures. Final187
+focused cases, affected package typing and maintained1474-file typing pass. Both parents
+fit their own bundle caps; the combined source measures248.249/318.056KiB and initially
+fails the branch247/317 caps. The explicitly selected integration budgets are249/319KiB,
+the smallest whole-KiB caps above those measured outputs, with769/967bytes headroom.
+Browser budget, headless boundary and all32 public controls then pass; emitted bytes and
+hashes remain identical, with historical failures retained. This is a packaging-policy
+adjustment for the combined features, not a runtime optimization or E3 threshold change.
+Independent SPEC and QUALITY reviews approve the current eight-owner reconciliation.
+The two quality import-layout findings are corrected; exact inverses preserve all body
+and oracle bytes. Root's
+automatic-tree comparison verifies all147 automatic path blobs unchanged, with
+differences limited to the seven conflict owners and the required fixture. The index
+has zero unmerged paths. The repair is committed and non-forced published to PR633;
+GitHub reports MERGEABLE and delivery reports WORK. The temporary feature checkout's
+local name does not resolve that PR through the delivery helper, so root queries the
+existing source branch and verifies the actual remote head separately; no duplicate PR
+is created. The frozen33-owner Native/Manual/Join patch is now integrated by its published
+base, committed as `bd1a03f774521d3cfd911347878eef12831f84ab`, with exact reviewed tree
+`c4104f213f625276c2bf8815e5714070167cf6a6`.
+The current focused suites pass309 affected cases,50 acquisition/cleanup controls,60
+retention cases and33 API/boundary cases. Package/app types and build,1475 maintained test
+files, formatting, changed-style, structure and legacy review pass with recorded warning
+dispositions. Browser/headless outputs fit the unchanged249/319KiB caps. The two mechanical
+reconciliations supply an upstream mandatory fixture port and normalize rejected values at
+the retained-failure boundary. Fresh independent review reports SPEC PASS and QUALITY
+APPROVED over all33 full touched files, including every inherited test body. No combined-source browser or
+performance acceptance follows. The two held CRDT source changes and six coupled acquired
+cases remain preserved in the original checkout and excluded from this integration;
+root independently verifies the other39 original guards and the original index unchanged.
+Four configuration test-only RED owners remain frozen for the next slice. The full goal
+is active. E3 is planned after integration and configuration acceptance,
+using the original3+11 primary and only the existing controller-required repeat.
+The B06 observation controller still lacks sealed capture selection for the missing
+native transport/generation evidence. Prioritize explicit B06 selection and actual receipt
+preflight before another cause-finding diagnostic; preserve the accepted sample,
+source, environment and cohort gates for subsequent performance capture. GitHub reports the
+published b030215 repair's normal release, formation-large and medium gates SUCCESS, with RTC
+observation integrity SKIPPED; this does not certify the newer Native/Manual source or E3.
 
 The earlier audited main snapshot is `c727caad561347a151a426579cf0d598e39f8ac4`.
 Task 23 integrated fetched upstream
@@ -229,9 +359,12 @@ and quality approval after four finite corrections. Task 51 records the human-ap
 configuration amendment and explicit authorization to implement when the plan is ready.
 The complete specification and next-two-slice plan have independent readiness
 approval after restoring canonical table fields, typed expected failures and
-existing-owner RED ordering. Subagent-driven semantic TDD is now authorized. A configured sink no longer automatically selects
-native capture: Off, Signaling and Full native become explicit connection settings
-through SDK, UI, recipes, agents and GitHub Actions. No capability is implemented yet.
+existing-owner RED ordering. Subagent-driven semantic TDD is authorized. At that
+design checkpoint, no capability was implemented yet. Subsequent Tasks52–59 implement
+the SDK/native and reviewed recipe/Connect checkpoints and the current Manual work;
+remaining recipe UI, distributed, bootstrap/Actions and B06 acceptance stay required.
+A configured sink no longer automatically selects native capture: Off, Signaling and
+Full native are explicit connection settings through those owners.
 No initial-stall cause, retry policy or new performance cohort is accepted.
 Tasks 0-7 and observation tooling are delivered. The full baseline remains incomplete:
 E1 measurement evidence remains unverified/unrecovered, E3 has no accepted primary, Task 12
@@ -1671,7 +1804,7 @@ justified yet.”
 | 54      | Executable recipe/run intent and actual SDK attribution are locally reviewed after semantic admission-body/composite fixes. Published6d failed six coupling findings; support-only fix2 passes99 focused tests/types/current gates and scoped review. Normal hosted correctness is now independently accepted at853e with exact tested-tree identity,101 passing reports and fresh validation publication. Native/distributed/UI/Actions/B06/E3 acceptance remains outstanding.        |
 | 55      | Read-only distributed source preparation is complete. It identifies missing run selection, explicit-target support bypass, lost actual receipts, unguarded reference bodies, restore/replay attribution gaps and missing runner selection. These are implementation requirements, not delivered behavior or new runtime-cause evidence. The resolved Task54 delivery failure preceded the source-derived SDK message prerequisite.                                                     |
 
-## 11. Current Implementation Horizon After Task 54
+## 11. Current Implementation Horizon
 
 Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
@@ -1743,32 +1876,74 @@ tracing. Original-reviewer scoped specification/quality approval, the covering r
 (46 PASS/64 SKIP) and in-memory full-stack checks (seven PASS) are complete. Fresh
 hosted delivery is now independently accepted for published `a74be0ee561494085f2c18dce38264e404ee792b`.
 All three required workflows succeed; actual checkouts and the fresh validation artifact
-match that source/tree. The next two useful implementation actions are:
+match that source/tree. Task57 Connect readback is now independently accepted and published.
+Task58's initial application/currentness checkpoint is published at
+`431a77b93ccae63d7ca7ad8869838086e1201967`, with all three normal hosted gates independently
+accepted. Its unpublished acquired-send successor has witnessed semantic RED/GREEN.
+The review's unreachable live/tab resources finding is corrected and independently closed;
+quality remains unaccepted for the separate public encrypted-output typing decision.
+The next two useful implementation actions are:
 
-1. **Fenced Connect readback:** Establish meaningful semantic RED at the original
-   acquisition/completion owner, then retain that operation's actual immutable graph
-   evidence through the page result boundary. The current bridge erases middleware
-   success and later reads the global receipt after more callbacks. Page-owned auth is
-   serialized; proposed callback races remain unexecuted. Preserve ordinary connection
-   success, canonical intent, lifecycle and deadlines. Use the existing typed internal
-   middleware/receipt pair where the failing scenario supports it; do not add a connection
-   owner, recorder or mandatory public receipt field merely to expose diagnostics.
-2. **Fenced live CRDT readback:** Establish meaningful semantic RED at the original
-   document-effect owner before changing initial live subscription or send behavior.
-   Preserve actual operation-bound evidence through the document result boundary and
-   avoid later global replacement readback. Retain ordinary document/persistence outcomes,
-   cached-document behavior, canonical intent, lifecycle and deadlines. Required diagnostic
-   verification precedes live effects; it does not fabricate business or native failure.
-   Exact ports follow actual failing scenarios and independent review, without another
-   document or connection owner.
+1. **B06 selected-mode and application preflight TDD:** The published live matrix omits capture
+   selection and therefore resolves product-default Signaling even with its sink installed.
+   Use the existing environment/agent/delivery configuration and the single
+   `create-group-formation-lifecycle-driver.ts::connectFormationAgent` boundary shared by
+   initial connection and reconnect. Forward canonical explicit Off/Signaling/Native and
+   validate the actual returned receipt before readiness or measurement; configuration echo
+   alone cannot prove installation. Existing `group-formation-lifecycle-driver.test.ts` and
+   `live-rtc-delivery-operations.test.ts` must first expose dropped intent or absent/mismatched/
+   unavailable application while preserving ordinary omission and original readiness behavior.
+   Root witnesses semantic RED before minimum GREEN. Follow with scoped independent reviews
+   and a real memory-mode default case proving receipt/native rows at the selected mode.
+   Do not alter lifecycle, retries, timeouts, workloads or sample counts. B06 uses no CRDT
+   owner; the held public typing decision is not a dependency for this slice. Seal observation
+   CLI/workflow/worker/configuration/cohort provenance after this application boundary is proved,
+   before accepted E3 capture. No guessed workflow input or automatic producer dispatch follows
+   from implementing the setting; the user's requested E3 run remains the subsequent action.
+2. **Seal B06 producer and cohort selection after application proof:** Carry the explicit
+   resolved mode through the existing observation CLI, workflow, worker environment,
+   workload descriptor, staged producer facts and raw evidence. Use current runtime
+   allowlists and configuration validators, with actual applied mode in homogeneous
+   cohort/statistical identity. Reject ambient override and absent, unavailable, unproven
+   or mode-mixed receipts. Extend the existing B06 runtime/catalog/CLI and live performance
+   evidence semantic tests before implementation. Preserve three warmups/eleven retained
+   primary attempts, controlled repeat, immutable source/run identity and every failure.
+   Only then select the reviewed clean source for the requested native diagnostic and
+   subsequent E3 capture; no tests/builds/downloads or artifact analysis overlap measurement.
+
+Manual's bounded implementation is now independently accepted:39 unit cases and2 actual
+browser cases pass, and specification/quality reviews approve all eleven touched files.
+The Connect-to-Join correction separately passes154 cases and both reviews. These working-tree
+results do not certify publication, the remaining Task59 Recipe Console work or E3.
+
+The concrete two-owner encrypted-output proposal remains pending explicit maintainer approval.
+It preserves authored input typing and runtime encryption while returning canonical base-batch
+carriers. The resource correction releases only its live/tab resources, preserving persisted
+data and original refusal. Task58 remains correction round3/5 with no blanket cleanup redesign.
+
+The cleanup-error control now extends the same acquired-send family to six cases:
+two meaningful failures and four passing controls, with49 complete-owner controls passing.
+Root accepted the terminal evidence and independently verified the minimum single-document
+functional GREEN. Scoped independent review closes I1/M1; quality remains unaccepted for the
+public typing disposition.
+Manual semantic RED is also accepted: selected modes are lost from commands, cache and export,
+and the real full-stack page lacks the capture selector. The live getter's active transport
+ownership through close/reset and replacement is traced; the six existing Manual owners are
+released for GREEN after the corrected Inherit-option RED. The selector and initial preference
+checks now pass in the real browser. The default-room routing repair passes39 unit cases;
+the following real failure identifies dropped capture intent during room join. Its reviewed
+forwarding correction and the two test-only corrections now allow every applied receipt and
+preference-reset assertion to pass. Final Manual scoped review and delivery remain.
 
 Inline distributed capture follows these operation prerequisites. It still requires one
 finite run override, capability/version checks for every actual assigned target, and
 bounded positive per-agent evidence through real redaction, protocol, storage and export.
 Requested settings, advertised support and global getter readback cannot prove application.
 Its preparation remains a draft because message-handle evidence alone cannot certify
-Connect or live document work. Source analysis has located the missing guarantee; the
-proposed callback races are unexecuted and are not confirmed runtime defects.
+live document work. The executed Connect and startup regressions have distinct accepted
+scopes. Full Task58 still requires finite acquired-message transport/document/page
+readback and fresh/configured/cached/custom boundaries; its cleanup finding has independently
+witnessed semantic RED and a reviewed minimum correction. Public typing disposition remains held.
 
 The full amendment still requires general/distributed recipe configuration and
 per-agent application receipts, visible Manual/Recipe Console controls, local/headless
@@ -3922,9 +4097,17 @@ Its focused validation is GREEN and full touched-file closure is documented; fre
 review returns SPEC PASS and QUALITY APPROVED for the frozen six-file working-tree diff,
 with one minor passing-test logging finding. Broad working-tree validation is GREEN,
 including the actual changed-style gate after scoped independent approval of its exact
-raw-Error test-boundary classification. The next delivery actions are source publication
-through the existing draft PR and new-head hosted evidence. Acquired-send and result-readback
-boundaries still need their own genuine RED.
+raw-Error test-boundary classification. The reviewed initial-live checkpoint is published as
+`431a77b93ccae63d7ca7ad8869838086e1201967` in the existing draft PR and passes its three normal
+hosted gates with source/artifact reconciliation. The acquired-send successor has independently
+witnessed genuine RED. Its two-owner transient startup correction has independently witnessed
+focused GREEN against frozen tests. Its I1 review identifies a refused document unreachable
+by ordinary cleanup after subscription creation. Correction round3/5 earns resource and reached
+cleanup-error TDD, then document-only functional GREEN. Fresh scoped review accepts literal
+disposal and closes I1/M1, while QUALITY remains NOT READY for I2: encryption's returned carrier
+cannot truthfully satisfy the public arbitrary TPayload promise. A concrete public typing
+proposal awaits maintainer approval; source/test/API expansion is held. Full acquired-message
+readback and later operation/configuration boundaries remain incomplete.
 
 **First RED checkpoint:** The actual connected SDK returns its original Native/run receipt
 with unavailable/sink-unavailable application and current middleware ownership. Required
@@ -4026,7 +4209,7 @@ failed-update metadata and authored readback. The admission check protects requi
 diagnostic verification; the additional facade and Error changes close touched-file standards.
 They do not change the CRDT engine, merge or
 persistence algorithms, and they do not diagnose or fix the initial post-ICE RTC stall.
-This initial-live checkpoint is locally accepted with broad validation and ready for draft publication.
+This initial-live checkpoint is locally and normally hosted accepted at the published head.
 
 **Current scoped GREEN:** The original-session capability is passed only for initial hydration,
 so the document does not retain the original completion for its lifetime. The frozen Error
@@ -4046,9 +4229,9 @@ artifacts, preserving both original RED reports and all prior evidence. An inval
 inventory candidate and the root's incorrect byte-identical style assumption are retained as
 tooling findings: corrected inventory passes, and the style delta contains only five shifted
 source locations. They are not semantic RED. No public contract, retry/deadline, cap, engine
-or persistence algorithm changes follow from these checks. New-head hosted, native and
-performance acceptance remains unproven; previous Connect-head evidence cannot certify this
-newer checkpoint. No Issues are created or reused.
+or persistence algorithm changes follow from these checks. Native and performance acceptance
+remain unproven; hosted evidence for the published checkpoint cannot certify newer test-only
+work or full Task58. No Issues are created or reused.
 
 Independent review traces original middleware ownership, transient admission, extracted generic
 open, cache/close ordering, typed validation and Error identity through the actual code. It reports
@@ -4084,6 +4267,121 @@ legitimate observation boundary and is not a real standards exception or legacy 
 The support correction is cumulative fix round2/5; M1 remains explicitly deferred. Original
 failure and all frozen runtime/tests/evidence remain retained. No Issues are created or reused.
 
+**Published initial-live hosted acceptance:** All three original attempt1 runs finish success
+for the exact published head: Branch37433251129, Formation37433250674 and Medium37433250661.
+Actual Branch jobs check out the head; Formation/Medium check out their synthetic merge with
+the identical source tree. Canonical validation-evidence schema/identity/committed-tree digest
+pass. Eight original ZIP digests and753 extracted files match. Hosted units reconcile14,692
+PASS/12 SKIP, including all45 published recipe cases; app46 PASS/64 SKIP, memory7 PASS and
+four native observer cases execute. Recipe Console shards pass109/90 with9/3 skips; PG
+integration85, smokes4+1 and presence10+10 pass. Current static/types/consumer builds pass.
+All101 primary recipe summaries and seven matrices reconcile with zero blocking and192
+explicitly nonblocking failures. Missing overlay WebSocket matches precede dependent capture
+transforms; that chain does not establish a product-versus-infrastructure cause. Five event
+histories, four result lists and three stores have declared omissions. ALM smoke cells pass
+but each has one sample and too-few-samples, retaining HTTP conflict/malformed-RTC warnings.
+This is normal published correctness, not B06/E3, a performance comparison or successor proof.
+
+**Acquired initial-send RED:** A five-case family delegates real SDK send, awaits actual
+canonical catch-up admission and retains the genuine handle's immutable receipt/history.
+An outside callback performs supported disconnect/connect with the same required Off/run
+configuration. The replacement has a distinct observed connection identity and current
+ownership; the original becomes `middleware-not-current`. Its admitted handle/history stays
+unchanged. Current initial open nevertheless admits a subsequent sync-request on the replacement,
+returns opened/sent health with that latest global receipt, publishes opened and omits canonical
+original-refusal JSON. Four semantic assertions fail, while four same-instrumentation applied
+Off, partial Native and omitted-intent controls pass. Final selected1 FAIL/4 PASS and complete
+owner1 FAIL/49 PASS preserve all45 previously accepted cases. Queued/admitted states do not
+prove wire transmission or delivery.
+
+The first five-failure candidate lacks admission/control preconditions and has two timeouts;
+it is retained and excluded as invalid setup. The corrected external hold/release and actual
+handle wait earn the final RED without timer, deadline, retry, fixture or runtime changes.
+Types pass1,465/0 and shared-test checks/format pass. Full test review records1,275 effective
+lines and cognitive146 for its same coherent evidence owner; M1 stays deferred and new tests
+add no passing logs. Root fully reads complete report/392 selected/425 owner lines and verifies
+269 held files,215 prior artifacts, four accepted reports,19 fresh evidence files and nine
+terminal logs. Removing the three additions recovers the old test byte-exact. All267 runtime
+owners remain unchanged at the RED checkpoint. The completed source-only investigation selects
+the existing hydrate-to-live-start admission capability: recheck after durable WS before HTTP
+fallback or sync, after HTTP when invoked, and after live startup before success. This transient
+two-owner correction is released with all 50 test cases frozen; it retains no original completion
+for the document lifetime. A final-result guard alone leaves the demonstrated later admission
+possible. Live-sync's concrete Options/interface and type-only import receive full touched-file
+closure. The fresh entry audit verifies all 270 files before release and freezes the other 268,
+215 old artifacts, four accepted reports and the original RED. The 19 digest-recorded RED files
+plus their separate handoff witness make 20 matching files; earlier records are not rewritten.
+This is a startup guard checkpoint, not the required finite per-message result retention.
+The literal family now passes five cases and the complete unchanged owner passes 50; Error6,
+existing five-file callers75 and adapter8 also pass. All 15 validation invocations terminate
+exit0, maintained types remain1,465/0 and both package types/format pass. The directory style
+reports 12 findings in independent untouched owners; full two-owner review records constructor54
+cohesion and live-start13 lines. Root reads the complete report/raw outputs and verifies all
+frozen records plus 23 fresh GREEN evidence files and exact whole-source inverses. No test,
+fixture, deadline, cap or M1 logging change explains GREEN. Independent review confirms I1:
+WS detach preserves registered listeners, which reattach on replacement; the failed document
+can answer later matching sync requests, and enabled tab channels remain open. The facade/page
+store documents only after hydrate resolves, so neither can close this refused owner. This is
+a source-derived consequence at that review checkpoint. Root fully reads the review
+and verifies the actual ownership path. Those tests manually unsubscribe and disable
+tabs/persistence, so their GREEN does not prove product cleanup. The separately released
+resource reproduction first removes exactly five M1 dumps and preserves50 GREEN. Its final
+five-case family returns1 FAIL/4 PASS; the complete owner returns1 FAIL/49 PASS. The required
+refusal retains its actual channel and five subscriptions, admits a later sync response through
+the real replacement inbox, receives a peer tab update and persists peer state. All observations
+precede test cleanup; current/ordinary controls apply the same real WS/tab stimuli and public
+close suppresses subsequent effects. Authored title/marker survive public persisted reopen.
+The count-only tab observer keeps raw values out of test state. The persistence assertion
+proves an abandoned-owner effect after completed real WS delivery, not exclusively a tab write.
+Invalid seed and premature concurrent-listener attempts remain excluded and unchanged.
+Final maintained types1,465/0, shared-test types and formatting pass; the coherent owner has
+1,422 effective lines/cognitive187 after full-file closure review. Root fully reads final
+failure/control output and verifies all269 held files,276 historical records,49 fresh evidence
+records plus their separate handoff,25 terminal command records and exact whole-test inversion.
+All267 production owners remain frozen at that RED checkpoint. The subsequent cleanup-error
+variant delegates the actual failed owner's tab close before raising one controlled Error.
+Its pre-cleanup fault-reached assertion fails because product cleanup is absent; the canonical
+refusal and acquired capture assertions still pass. The six-case family returns2 FAIL/4 PASS
+and the complete owner2 FAIL/49 PASS. Root reads the complete changed delta and owner output,
+then independently verifies596 held records,24 new evidence files, seven terminal commands,
+eight whole-test inverse edits and the proposal's unchanged prefix. The51-case test is frozen
+for the released minimum GREEN in BrowserRallarCrdtDocument alone. It must attempt owned
+live/tab release and persistence close, preserve authored data and the original startup Error,
+and use the named operational RuntimeFailure result at cleanup boundaries. Normal close's
+new snapshot and destroy's deletion are distinct effects. This phase also resolves the same
+document's expected closed-state check under touched-file standards closure. No lower-owner
+cleanup guarantee, new public API or lifetime admission policy is earned. Focused GREEN and
+scoped independent review remain required before acceptance/publication.
+The document-only disposal successor is now functional GREEN: selected6/full51/Error6/
+callers75/adapter8 pass, including the actual tab-close fault before test finally. All11
+commands terminate exit0; maintained types1,465/0, package types and formatting pass. Root
+fully reads the source/delta/report and final raw outputs, then verifies623 held records,
+31 fresh evidence files, all11 command digests/line counts and11 whole-source inverse edits.
+Normal successful lifecycle order, authored state and original refusal are preserved.
+Full-file review nevertheless finds a retained internal cast from the protected base operation
+batch to arbitrary TPayload. Encryption replaces the payload, while the public applyLocal
+contract promises TPayload and a verified consumer requires returned ciphertext. Generic
+identity or base-batch validation cannot prove that narrower payload. Quality is not ready:
+independent scoped review and a concrete approved public compatibility disposition precede
+any contract/support change. No approval for this new decision is inferred from earlier clock,
+length or historical TDD approvals. No cast relocation, invented validation or retained-legacy
+exception is selected.
+The fresh scoped re-review returns literal disposal SPEC PASS and closes original I1 and M1,
+while QUALITY remains NOT READY for Important I2. It independently authenticates the same11
+terminal outputs and source/test identities, confirms release-attempt limitations and requires
+an approved truthful carrier-output contract. The cumulative correction count stays3/5;
+review does not reset it or authorize the next correction. The bounded compatibility proposal
+is source-only; current public signatures and runtime encryption behavior remain unchanged.
+The concrete proposal changes only the public contracts and browser-document owners:
+caller-authored applyLocal input retains its declared payload, while applyLocal, generated
+helpers and pending/failed/blocked outputs use the canonical RallarCrdtOperationBatch carrier.
+Encryption can hide a caller-required operationGroupId; returning plaintext or moving the cast
+would preserve the false promise or break a verified encrypted consumer. No migration,
+compatibility wrapper, rename alias or retention exception is proposed. Maintainer approval is
+requested for this exact source-compatibility correction; no public implementation is released.
+Full Task58, subsequent readback/fresh/configured/cached/custom boundaries and baseline remain
+open. No Issues are created or reused.
+
 Snapshot canonical optional intent before hydrate/metric callbacks, verify original context
 before required live effects, and retain each actual message handle's immutable evidence
 through named transport/document/page result boundaries. A global latest receipt cannot
@@ -4093,6 +4391,387 @@ Use existing document/session owners and finite contracts; custom absent evidenc
 truthfully unavailable. Required positive actual SDK controls must prevent blanket refusal
 from masquerading as support. Exact ports and covering tests follow the selected failing
 scenarios; inline distributed support/application aggregation follows these prerequisites.
+
+### Task 59: Manual diagnostics selection
+
+**Status:** Required by the approved diagnostics amendment; source audit and semantic RED
+accepted. The corrected Inherit browser RED is independently witnessed and the bounded
+six-owner implementation and earned default-room helper repair pass39 focused unit cases,
+app typecheck and four-test types. Manual specification review conforms at the code boundary;
+its invalid group-only Room Ref example is corrected. The separate Connect-to-Join forwarding
+repair passes154 affected tests and independent specification review. Test-only provisioning
+through the existing authenticated Rooms and clients action supplies the real group precondition.
+The newly reached retained-export matcher is corrected to allow the legitimate sessionId while
+still requiring both submitted modes. Final actual browser replay passes both cases, exit0,
+including applied Off/native receipts, desired/current separation, recorded export, reload
+and Reset. Scoped independent specification and quality reviews approve this bounded
+Manual slice. The final import-only quality correction preserves every passing browser
+body byte; no behavior rerun is required. Recipe Console and full amended acceptance remain.
+
+At the source audit, the Manual draft/cache, rendered controls and direct Connect/Join builders
+omitted capture mode. Existing immutable draft updates and redacted submitted-command history are
+the owners to reuse. The canonical mode parser and connection receipt already exist; the UI
+must carry the visible choice and display actual current evidence separately. Missing optional
+saved preference inherits, with no format rewrite or setting alias. Reset must explicitly
+cover the draft preference; the existing runtime Reset alone does not prove that behavior.
+Recorded export must preserve the selection used even after a later preference edit.
+
+**Inherited preference presentation:** The SDK's sink availability depends on resolved
+application scope, and a previously owned configuration can remain the acquisition default.
+The UI must not duplicate those policies or guess an effective inherited mode. Show Inherit
+alongside the required Off/Signaling/Full native choices. Inherit translates to omitted input;
+it creates no fourth CaptureMode, saved string, alias or migration. Actual effective application
+still comes from the live getter. The new test's exact three-option list was stricter than
+the approved requirement, which requires those choices but does not forbid omission's visible
+representation. A test-only correction adds Inherit and its fresh omitted-preference oracle,
+preserving all applied-receipt, desired-edit, export, reload and reset assertions. The real
+focused browser run passes API readiness, login, visible Manual/Transport/enabled Connect and
+initial saved omission, then fails at the absent selector: one failed case, child exit1.
+Later option/readout/export/reload/reset assertions remain unreached. Root reads the complete
+terminal output and verifies all four current test hashes, six unchanged production owners
+and44 preserved evidence files before releasing the same six-owner GREEN scope.
+
+The focused three-file unit run produces7 intended failures/31 passing controls: direct
+Off/Signaling/native Connect and Off Join omit capture, cache loses Off/native, and recorded
+export loses the submitted selections. All30 original cases and the omitted-saved-input control
+pass. The repeated group creation guard is strengthened without changing its behavior.
+The configured existing Postgres full-stack harness passes the old Manual case and reaches
+real API/login/panel/Transport/enabled Connect in the new case, then fails at the absent capture
+selector. A focused repeat at the corrected test bytes reaches the same missing selector.
+The existing command history and Event Stream result path express applied Off/native evidence,
+including truthful native coverage, but these later assertions and reset remain unexecuted.
+Released-test types/format/whitespace pass. Prior reports/evidence and18 scoped production/support
+owners remain unchanged. Only existing Manual command/action/cache and applicable visible-control
+tests were changed for RED. The released production scope is existing values, commands, cache,
+model, Inputs and Section. The live current readout belongs in a component mounted only under
+Section's existing active boundary, with no hidden model timer or copied historical receipt.
+Close/reset/replacement presentation follows the live active slot, including failed attempts
+that leave an earlier connection current. Preference Reset clears the optional saved selection
+through the existing draft owner. Fixtures/support and other production owners remain held.
+The first implementation browser run passes the old Manual case and the new selector labels,
+initial omitted/empty preference and current readout visibility. Its first completed Connect
+result is failed: `Rallar command roomRef requires applicationId and groupId.` The complete
+run is1 PASS/1 FAIL, child exit1. Source and actual failure-context correlation identify
+`manual-workbench/manual-command-fields.ts::toDefaultRoomRef`, which emits only groupId;
+the existing translator forwards that record and the canonical decoder correctly rejects it
+before SDK acquisition. The old case checks broad action/export text and does not prove
+successful Connect. Its PASS is not capture application evidence. Authorize the existing
+default helper as the seventh production owner, with a focused default-scope regression before
+its minimum repair. Use visible application/workspace/group values and preserve explicit Room
+Ref precedence; do not duplicate fallback policy or relax routing validation. The existing
+scoped test's historical type/id fixture is corrected to canonical explicit Room Ref data,
+preserving its precedence assertions. Browser capture, current/desired, export, reload and
+Reset assertions remain frozen. Whole added-file closure uses the existing JSON normalizer
+instead of retaining its unchecked parsed-record cast. No new public API or migration is needed.
+The default-room regression earns1 intended FAIL/16 SKIP before production; the repaired
+three-file unit set passes39/39 and app/four-test types pass. The second real browser run
+again reaches the selector and initial preference/readout checks but returns failed Connect:
+`A new connection is required to change RTC capture mode.` It is1 PASS/1 FAIL, child exit1.
+The retained error stack enters the SDK compatibility guard through public room join,
+after the black-box operation's explicit connection stage. Source correlation identifies
+`BlackBoxRallarConnectOperation::#openConnection`: the first call forwards its captured
+rtcCaptureMode/context, but rooms.join forwards only timeoutMs/scope. Public join then calls
+explicit session.connect, so the omitted selection resolves a different default and conflicts
+with the owned Off graph. Initial login reuse is not the proved cause; changing test setup to
+close first would conceal this operation defect. Release the existing runtime operation and
+its existing recipe-rtc-capture-application.test.ts owner for semantic RED/GREEN of the same
+captured mode/context across both stages, preserving omission, scope and timeout. The initially
+suggested connection.test.ts double returns an absent receipt and cannot reach explicit join;
+the existing lexical real initializer earns the replacement test owner without a copied fixture.
+Two explicit cases fail at the missing join fields while the omission control passes; the repair
+passes all3 cases and the nine-file154-test covering run. Independent specification review
+conforms; quality review remains separate. No SDK policy copy, acquisition semantics change or
+receipt-test workaround is selected. The seven Manual owners remain frozen for scoped review.
+The invalid group-only Room Ref placeholder is separately corrected to a qualified example.
+The subsequent unchanged browser replay is1 PASS/1 FAIL: the first Off Connect reaches the real
+API, which rejects its uncreated fresh group with400 Group not found. Login never provisions
+that group. This is a newly reached test precondition, not authority to change Connect behavior.
+Release only the browser test's authenticated group creation through the existing Rooms and
+clients UI, outside Manual command history, then return to Manual before direct Connect.
+Preserve all receipt/current/export/reload/Reset assertions and the no-Configure requirement.
+That provisioned browser replay reaches applied Off and Native but fails the retained-export
+matcher: shallow objectContaining requires rallar to contain only the mode, incorrectly rejecting
+the legitimate sessionId. Root reads the actual preserved Off/native commands before releasing
+only nested partial matching. The final unchanged-behavior replay passes2/2 cases, exit0 after
+13.582 seconds; every actual applied/current/export/reload/Reset assertion executes successfully.
+No product behavior is changed to accommodate either test setup or oracle correction.
+Final independent scoped specification/quality review accepts the frozen source and browser
+contract. The only quality finding is the shared workspace import inside the external group;
+moving it to its required group restores the exact prior passing bytes under inverse-header
+verification. Scoped formatter/whitespace checks pass. No assertion or runtime code changes.
+Browser setup or selected widget
+value alone cannot prove installation; resulting commands and actual applied SDK state need
+their corresponding evidence. Recipe Console's distributed Execute UI additionally lacks a
+finite executable run override contract. Its authoring/run/restore/export/saved-recipe outcomes
+remain required later work, alongside the full Task58 and baseline acceptance gates.
+
+### Task 60: B06 selected capture and actual application preflight
+
+**Current checkpoint:** The concrete204-case checkpoint receives one required SPEC finding:
+consume all canonical nested capture locations. Actual regression RED exposes an absent
+top-level normalization error on valid nested bodies;36 assertions fail/12 pass before
+the correction. Product acquisition separately witnesses8 failures/3 passes, then routes
+implicit room/people/call/director operations through the existing owned acquisition boundary
+with complete scoped options. The combined190-case GREEN, shared-web typing and maintained
+1466-file typing pass; root reruns all11 final product cases successfully. Explicit Connect
+semantics and incompatible mode-change rejection remain intact. The corrected serialized
+browser run then fails, exit1/17.491seconds, at the subsequent black-box topology hydration
+helper's implicit session.connect. The existing owned acquisition port corrects that caller
+after a real-runtime RED1/4; all66 affected cases and package/maintained typing pass. Root's
+next isolated browser passes1/1, exit0/50.020seconds, proving six applied Native/step receipts
+and exact initialized scopes with the unchanged matrix oracle and zero retries. Whole-slice
+SPEC re-review approves all17 owners and closes the nested capture finding. The next test-only
+configuration checkpoint witnesses20 FAIL/22 PASS, including all21 original passing controls,
+across six focused suites. Real CLI parsing rejects finite selectors, actual child processes
+inherit Native for omitted/Off/Signaling requests, persisted observation has no capture-mode
+records, and actual workflow shell steps omit the publish selector or inherit an invalid mode
+in all three diagnostic worker cases. Four test owners change; production remains unchanged.
+The seven-source merge conflict is repaired, independently approved and published as b030215.
+The clean33-owner Native/Manual/Join integration passes its focused static/unit checks and
+fresh whole-touched-file SPEC/QUALITY review, committed at bd1a03f77 with its exact reviewed
+tree preserved. CLI/workflow/configuration sealing remains required. This is incomplete
+E3 prerequisite work; no E3 cohort is accepted.
+
+**Status:** Read-only readiness audit confirms that an unchanged published431a77 diagnostic
+defaults to Signaling and cannot acquire the missing native lifetime/transport evidence.
+The initial and aligned test-only runs both expose17 intended failures/16 passing controls
+across33 cases, before any production edit. All15 original cases and the new valid-receipt
+control pass. Root reads complete failure output and test deltas and independently verifies
+both frozen test hashes and all five unchanged production/support hashes. Six additional
+malformed finite-receipt cases fail and one valid applied receipt with unavailable native
+readouts passes: the expanded RED has23 intended failures/17 passing controls across40 cases.
+All33 earlier cases retain their identities and assertions. Root reads that complete output
+and verifies all16 source/test and original evidence hashes before releasing the minimum
+two-owner GREEN. The frozen correction passes40 cases and the unchanged maintained-test
+gate enforces1465 files with zero first-party errors/debt. Shared-test native compilation
+passes. The focused ESNext compiler failure is confined to the third-party Temporal
+declaration conflict and remains preserved; the maintained gate excludes third-party
+declarations and is not a raw compiler zero-error claim. Fresh independent specification
+review approves the exact frozen correction after its48-entry integrity check. Quality
+review approves the bounded correction after the import-only closure: independent58-entry
+integrity and inverse checks restore the originally reviewed source/test bytes exactly.
+No behavioral assertion changed and no artificial layout test was added. No new E3 run
+is dispatched. At the last inspected GitHub snapshot,
+workflow queries return zero in-progress, queued or waiting B06 runs.
+
+The mode cases execute the actual delivery/formation initial and replacement paths and
+observe four missing outbound selections instead of explicit Off/Signaling/Native. Four
+initial and ten replacement refusal cases accept absent, unavailable, version-invalid,
+identity-invalid or mismatched receipts and enter readiness, rather than returning canonical
+unverified failure before those effects. These owned external-result fixtures prove the
+request/validation defect, not actual SDK or browser native availability. The aligned fixture
+uses the actual non-native scope disposition, not-applicable, while availability stays disabled.
+Both original raw failures remain preserved.
+The expanded cases cover malformed or missing mandatory scope, availability, coverage,
+origin and unavailable-reason fields. Its positive unavailable-native case proves only
+basic application admission; it does not satisfy the later native acquisition preflight.
+
+Use only the existing delivery and group-formation driver owners for this correction.
+Add canonical optional selection to their configuration, snapshot intent before effects,
+forward it at the shared initial/reconnect Connect, and validate its actual returned JSON
+before session/readiness work. A private finite decoder beside that Connect is the earned
+transport boundary; reject unknown version without casting it into the version1 contract.
+Reuse canonical intent resolution, required-application policy and unverified errors.
+Do not add another control method, policy table, generic walker, recorder, fixture owner,
+CRDT dependency or lifecycle/retry/deadline/workload change. Full touched-file closure and
+independent specification/quality review precede acceptance.
+The existing61-line initial-pair function also needs touched-file closure. Extract its real
+pre-activation pair-readiness operation in the same file, preserving counterpart selection,
+parallel waits, captured timing, command identities, activation order and returned results.
+
+The launch audit additionally confirms that autoConnect starts the control WebSocket only:
+startup Reset/Configure stores configuration, and connectControl registers that transport.
+It does not open an SDK RTC connection before the matrix's Connect. B06's minimum launch
+path therefore needs finite process selection forwarded into matrix/delivery configuration;
+adding a browser query field is not required for this B06 correction. The broader approved
+bootstrap/distributed configuration amendment remains required separately.
+
+**Process selection checkpoint:** The existing live-RTC environment module admits exactly
+one raw `RALLAR_BLACK_BOX_RTC_CAPTURE_MODE` through the canonical finite parser. Omission
+inherits; explicit Off/Signaling/Native preserve their literals; invalid and blank values
+reject before launch. The admitted scalar remains stable after environment mutation.
+The original API-origin control passes; witnessed test-only RED has15 failures/two passing
+controls, and the frozen minimum GREEN has17 passing cases. The second immutability reads
+are reached in GREEN, not an observed RED mutation counterexample. Four affected suites
+pass61 cases; maintained test types enforce1465 files with zero first-party errors, and
+native shared compilation passes. Root verifies all28 source/guard/artifact hashes.
+Fresh independent specification review approves the frozen two-owner admission after its
+own28-entry verification and exact inverse reconstruction. Quality finds no Critical or
+Important issue and one Minor full-file correction: rename the existing environment/clock
+reader from `resolveLiveRtcBrowserAgentAuth` to `readLiveRtcBrowserAgentAuth`, updating its
+three same-file calls and preserving the complete body. No other consumer exists; this
+harness export is not a public SDK contract. The same implementer completes exactly four
+identifier replacements; the full-source inverse restores the reviewed bytes, the test
+remains unchanged and all50 historical/correction identities match. Fresh maintained types
+enforce1465 first-party files with zero debt/errors, and format/whitespace pass. The original
+quality reviewer marks M1 addressed and approves with no new finding. Historical17/61 runtime
+results retain their original source attribution; no artificial naming test or runtime rerun.
+Matrix composition still omits the scalar: this checkpoint proves admission, not browser
+propagation, native acquisition, publication or an accepted performance cohort.
+
+**Measurement boundary:** The existing recorder JSONL reader reads the growing run log,
+with64MiB transport and8MiB retained-suffix bounds. Initial-C and replacement readiness
+timing already starts before Connect. Reading that log after every Connect would therefore
+add repeated-history work inside the unchanged measured interval. Keep actual receipt
+validation/retention per connection, and prove native-stream acquisition in a separately
+labeled preflight using the existing recorder/projection. Missing or truncated event history
+remains explicit partial evidence; it cannot certify an unobserved scope. The concrete
+preflight/output binding is now concrete from current-source review. The existing
+formation/delivery test owners now expose16 new assertion failures with all40 original
+controls passing across56 cases. Root inspects every new test delta and actual failure
+message, verifies64 evidence identities, reconstructs both original test files exactly and
+confirms eight unchanged production/support guards. Fresh maintained types enforce1465
+files with zero debt/errors; format and whitespace pass. These are operation-port tests,
+not actual acquired browser evidence. The same implementation subagent is released to
+GREEN: retain actual initial/replacement receipts, block preflight presence/readiness until
+exact scoped acquisition, and preserve completed evidence plus original cause after failure.
+Two additional assertions expose strict-acquisition gaps before source implementation:
+unavailable Native incorrectly proceeds to three readiness calls, while a non-Native
+capability request incorrectly performs Connect before failing receipt admission.
+The current RED is18 assertion failures/40 passing controls across58 cases. Root reads
+both full new failure outputs and the complete65-line test delta, verifies13 new
+source/artifact identities and confirms the original frozen manifest unchanged before
+releasing GREEN. All40 controls, including basic applied-Native/unavailable-native
+admission without the strict capability, remain required.
+The completed GREEN retains actual admitted connections/proofs in formation, reconnect,
+delivery and later failure outputs through the existing formation owner. It adds canonical
+control-namespace contracts and a narrow optional acquisition port, without a fake reader
+method or mutable evidence collector. Review catches one admission-order regression;
+the added59th case witnesses the wrong session error before correction restores receipt
+admission first. Final affected validation is121 PASS across five suites; maintained1465-file
+types, native shared-test compilation, format and whitespace pass. Root verifies50 current
+checkpoint identities plus64 preservation identities, with the original frozen evidence
+unchanged. Test changes beyond the frozen RED are three additional cases and four canonical
+fixture type annotations; all original oracles are preserved. Independent SPEC confirms the
+other required behavior but refuses approval for a synchronous acquisition invocation throw:
+the async rejection retains one record/original cause, while the synchronous probe returns
+the bare Error and zero records. One added regression witnesses1 FAIL/59 PASS before
+placing invocation and await inside the direct owned catch; typed Left folding remains outside.
+The correction passes60 focused cases and maintained1465-file typing, format and whitespace.
+Root verifies20 correction identities; SPEC re-review verifies48 preservation identities and
+approves. Initial QUALITY review identifies one sole-use readiness forwarding method in
+the control owner; all five complete owners are otherwise accepted. Consolidating the
+unchanged async body into the public method passes101 cases across three affected suites,
+including all60 retention cases. Maintained1465-file typing, format and whitespace pass.
+Root verifies20 current identities and exact full-source/body preservation; no new behavioral
+or source-shape assertion is needed for this mechanical correction. Scoped SPEC preservation
+and QUALITY re-review approve, with full five-owner standards closure and no remaining finding.
+The next test-only RED uses actual returned captures and initialized rows in the existing
+default B06 browser case with explicit Native selection; root witnesses its real failure:
+expected3 captures, received0 after the realtime operation returned. The zero-retry command
+fails once, exit1/25.524seconds, with fresh local services and no overlapping review/validation.
+All8 producer/canonical guards and prepared matrix remain unchanged. The recorder's3 successful
+Connect rows show Signaling/product-default, confirming missing selector propagation. Actual
+serialized action is `rtc.connect`, not the proposal's human label `Connect`; sessionId and
+rtcCapture are top-level actual fields. The mistaken initial artifact filter is corrected while
+raw originals remain unchanged. This actual pipeline RED releases concrete acquisition,
+matrix wiring and output implementation. Their completed focused GREEN passes204 cases
+across five suites, with1465-file maintained typing/zero debt, format and whitespace.
+Three further witnessed semantic REDs precede malformed-native-row accounting, explicit
+null-source refusal and same-scope disposed-capture corrections. The existing bounded
+recorder mechanics are shared rather than duplicated; source provenance remains unknown.
+The root then runs actual memory-browser verification with the same isolation and zero
+retries. It fails once, exit1/18.042seconds, at room refresh before the third initial Connect.
+The recorder contains two successful applied Native/step receipts with observed connection
+and scope identities, enabled availability, partial coverage and exact matching initialized
+active scopes. Room refresh enters product composition's explicit session.connect with no
+capture selection, resolving product-default Signaling and rejecting the owned Native
+connection. Raw evidence is retained under
+`tmp/perf/b06-native-acquisition/actual-browser-green-20261006T142922854215Z/`.
+No tests, builds or reviews overlap the browser interval; services stop and all11 source
+hashes remain unchanged. A separate implementation subagent owns the bounded implicit-product
+acquisition TDD correction; the concrete11-owner SPEC review proceeds independently.
+Actual browser GREEN remains pending. This failure does not identify the original post-ICE
+trigger, and the121-case/native-compilation result remains historical.
+Fresh concrete SPEC review identifies one nested-disposal consumption gap. The actual
+48-case regression additionally proves that normalization of absent direct capture throws
+on valid nested rows:36 FAIL/12 PASS/64 existing cases skipped. The correction consumes every
+finite direct/native/candidate/service/service.native capture fact, including both service
+positions, and rejects any matching disposal regardless of order. Other session/scope and
+active facts remain eligible. The product correction independently witnesses8 FAIL/3 PASS
+before78 affected cases pass. It preserves complete scoped options and canonical capture
+snapshots while room, people, call and director implicit operations acquire the owned graph.
+Both corrections pass190 affected cases; shared-web typing, maintained1466-file typing,
+format and whitespace pass. Final formatting and a cleanup callback's void-return typing
+adjustment follow that combined run; root then reruns all11 final product cases, exit0.
+The next actual zero-retry browser run traverses the corrected product room acquisition and
+fails at the subsequent `readAndHydrateRoomState` helper's session.connect, still requesting
+default Signaling against Native. Exit1/17.491seconds; all source hashes remain unchanged and
+services stop. Raw evidence is retained under
+`tmp/perf/b06-native-acquisition/actual-browser-corrected-20261006T145452832327Z/`.
+The same worker owns the remaining harness acquisition TDD correction; do not weaken explicit
+Connect compatibility or change observer/measurement/workload policy to bypass either defect.
+That correction is now complete: the narrow room-refresh port invokes the controller's
+existing acquireConnection with the full scope/deadline/AbortSignal options. The regression
+uses the actual owned Native runtime/controller, witnesses1 FAIL/4 original passing controls,
+then passes5/5 and the66-case affected suite. Shared-test compilation, maintained1466-file
+typing, formatting and whitespace pass. Root's next serialized browser passes1/1,
+exit0/50.020seconds, at
+`tmp/perf/b06-native-acquisition/actual-browser-harness-corrected-20261006T150431788589Z/`.
+Its original recorder contains six successful applied Native/step receipts with partial
+coverage and exactly one matching initialized active scope per Connect. Both realtime and
+message trio acquisition-proof assertions execute successfully. The safe projection is
+`actual-connect-native-summary.json`; complete original JSONL is retained. The list reporter
+does not persist attachment bodies, so do not claim exported attachment contents as evidence.
+No validation/review work overlaps measurement; all source hashes are unchanged and owned
+services stop. This is local diagnostic verification, not an accepted E3 cohort or resolution
+of the historical post-ICE stall. Fresh whole-slice SPEC re-review approves all17 current
+owners, independently verifying six exact recorder correlations and preserved controls.
+Source-conflict repair is complete and published; clean33-owner integration now receives
+SPEC PASS and QUALITY APPROVED, including every full test body. Original runtime evidence
+remains scoped to the original source; combined-source browser and E3 acceptance remain required.
+The separate local Native preflight acquires initial
+scopes; governed/replacement calls retain receipts and omit repeated JSONL reads.
+The endpoint can return snapshot fallback with indistinguishable headers, so HTTP200 proves
+received endpoint evidence, not durable origin or stream ordering. Recorder rows retain
+command-derived attribution and actual results, not the complete authored commands.
+Do not add a second observer,
+hot-path sink, invented capability claim or changed retry/deadline/workload to bridge it.
+
+- [x] Trace published acquisition, actual evidence consumers and current workflow/source gates.
+- [x] Run and independently witness semantic test-only RED with original controls preserved.
+- [x] Complete minimum GREEN and affected type/standards checks on the frozen40 cases.
+- [x] Verify actual memory-browser selected receipts and native status rows at their exact scopes.
+- [x] Repair the actual PR633 source conflict against fetched main while preserving unpublished
+      diagnostics/Manual/test work and the independently held CRDT proposal. Current parent
+      source identities remain attributable. The eight-owner reconciliation and import-only
+      closure receive SPEC/QUALITY approval, and the published repair is MERGEABLE. Native
+      runtime verification on the integrated source remains separate.
+- [x] Integrate the clean33-owner Native/Manual/Join slice by its real base and complete fresh
+      whole-touched-file SPEC/QUALITY review. Commit bd1a03f77 preserves the exact reviewed
+      tree, other39 original source/test guards and original index. Current309/50/60/33 focused
+      checks and affected static gates pass; this does not certify combined-source browser/E3.
+- [ ] Seal observation CLI/workflow/worker/configuration and validated same-mode cohort evidence.
+      Test-only RED is witnessed at
+      `tmp/perf/b06-configuration-sealing/test-only-red-1791299706231520000/semantic-red.log`:
+      20 FAIL/22 PASS across six suites, all21 original controls preserved. This is actual parser,
+      child environment, persisted observation and workflow-shell behavior, not a missing export
+      or source-text assertion. This frozen RED is the next production slice; source-conflict
+      repair and independent acceptance of the integrated33-owner Native/Manual/Join slice are complete.
+      Current observation setup resolves catalog configuration from allowlisted environment
+      values and prior initialized CLI values; initial observation receives no parsed CLI
+      selection. Adding a CLI option alone would therefore leave the manifest's resolved
+      configuration different from the actual producer. Prove that the admitted selector
+      drives both producer execution and resolved configuration, with inheritance removed,
+      and that per-Connect receipts match it. Keep the existing scalar/JSON extension
+      boundaries; do not change closed version1 requests or rewrite historical archives.
+      Construct observation configuration from the admitted selection before any runtime
+      observation, using immutable per-run inputs rather than mutable adapter/environment
+      substitution. Reconciliation must retain the selected configuration truthfully.
+      Current B06 catalog source inventory lists only the matrix and hashes the regular
+      playwright.config.ts, while the actual command selects playwright.full-stack.config.ts.
+      Refresh that inventory for the actual producer/configuration owners, including the
+      acquired-recorder path, without relabeling old source archives.
+- [ ] Select the reviewed immutable source and run the requested diagnostic/E3 workload with
+      original attempt accounting and measurement isolation.
+      The controller runs the3+11 primary; a passing primary triggers the3+22 repeat only
+      when its existing repeat requirement selects RTC-B06. Do not add an unconditional
+      repeat, retries or replacement samples.
+
+Manual's accepted browser result supports the SDK application capability but does not replace
+this B06 path. Held Task58 public typing and the remaining Recipe Console/distributed outcomes
+remain independent required goal work. E3 still has zero accepted cohorts; the initial
+post-ICE stall remains unresolved.
 
 ## 12. Baseline Completion Gate
 
