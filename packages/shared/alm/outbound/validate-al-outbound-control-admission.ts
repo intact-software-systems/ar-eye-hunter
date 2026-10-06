@@ -3,11 +3,8 @@ import type { ALMessageRejection } from '../../al-contracts/al-message-persisten
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
-import {
-    isALServerRefusalBeforeReceipt,
-    type ALControlAdmissionCandidate,
-    type ALControlAdmissionRead
-} from './compute-al-outbound-control-admission.ts';
+import type { ALControlAdmissionCandidate, ALControlAdmissionRead } from './compute-al-outbound-control-admission.ts';
+import { resolveALOutboundRelayRejection } from './control/resolve-al-outbound-relay-rejection.ts';
 import { toALOutboundAckedPeerId } from './transition-al-outbound-pending-ack.ts';
 
 /** Every reason this control may not be admitted; an absent obligation makes the rest moot. */
@@ -111,13 +108,11 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
 }
 
 /**
- * The trusted server speaks for the relay it is, so its `resync-required` NACK needs no expected peer, and
- * neither does its `unauthorized` refusal of a message before any receipt row exists (S3c-i C3).
+ * The trusted server speaks for the relay it is, so its `resync-required` NACK needs no expected peer, and neither
+ * does its `unauthorized` or `membership-fenced` refusal of a message before any receipt row exists.
  */
 function isTrustedRelayRejection(read: ALControlAdmissionRead): boolean {
-    const isResyncRequired = read.source === 'trusted-server' && read.parsed.type === 'nack' &&
-        read.parsed.payload.reason === 'resync-required';
-    return isResyncRequired || isALServerRefusalBeforeReceipt(read);
+    return resolveALOutboundRelayRejection(read)?.relay === 'trusted-server';
 }
 
 /**

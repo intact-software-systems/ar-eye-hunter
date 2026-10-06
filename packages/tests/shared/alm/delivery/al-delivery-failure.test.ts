@@ -100,7 +100,7 @@ const SERVER_REFUSAL: ALDeliverySettlement = {
     carrier: 'ws',
     atMs: AT_MS,
     relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
-    detail: 'The server refused the message: unauthorized.'
+    detail: 'The server relay refused the message: unauthorized.'
 };
 
 interface FailureCase {
@@ -143,7 +143,7 @@ const FAILURE_CASES: readonly FailureCase[] = [
             kind: 'relay-rejected',
             rejection: { relay: 'trusted-server', reason: 'unauthorized' }
         },
-        reason: 'The server refused the message: unauthorized.'
+        reason: 'The server relay refused the message: unauthorized.'
     },
     {
         meaning: 'an admission that threw',

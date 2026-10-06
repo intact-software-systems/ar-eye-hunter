@@ -54,7 +54,7 @@ interface OutboundObligationInput {
     readonly retryTracking: ALOutboundRetryTrackingPlan | undefined;
 }
 
-const TERMINAL_NACK_REASONS = ['expired', 'unauthorized', 'stale'] as const;
+const TERMINAL_NACK_REASONS = ['expired', 'unauthorized', 'stale', 'membership-fenced'] as const;
 
 /** A NACK by which the receiving hop refuses the message for good. */
 function terminalNack(reason: (typeof TERMINAL_NACK_REASONS)[number]): ALMessage {
@@ -677,8 +677,54 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
             kind: 'relay-rejected',
             msgId: 'message',
             relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
-            detail: 'The server refused the message: unauthorized.'
+            detail: 'The server relay refused the message: unauthorized.'
         }]);
+    });
+
+    it('admits the trusted server membership-fenced NACK for a sent message with no receipt row, stating the fence', async () => {
+        const settlements: ALOutboundSettlementFact[] = [];
+        const { admissionStore, control } = createFixture(settlements);
+        await seedReceiptlessRoomObligation(admissionStore);
+
+        expect(await control.admit(refusalNack('ws-server-1', 'membership-fenced'), 'trusted-server')).toEqual({
+            kind: 'committed'
+        });
+
+        expect(settlements).toEqual([{
+            kind: 'relay-rejected',
+            msgId: 'message',
+            relayRejection: { relay: 'trusted-server', reason: 'membership-fenced' },
+            detail: 'The server relay refused the message: membership-fenced.'
+        }]);
+    });
+
+    it('states a peer membership-fenced NACK before any receipt row as rejected by that peer', async () => {
+        const settlements: ALOutboundSettlementFact[] = [];
+        const { admissionStore, control } = createFixture(settlements);
+        await seedReceiptlessUnicastObligation(admissionStore);
+
+        expect(await control.admit(refusalNack('receiver', 'membership-fenced'), 'peer')).toEqual({ kind: 'committed' });
+
+        expect(settlements).toEqual([{
+            kind: 'relay-rejected',
+            msgId: 'message',
+            relayRejection: { relay: 'peer', peerId: 'receiver', reason: 'membership-fenced' },
+            detail: 'Hop receiver refused the message: membership-fenced.'
+        }]);
+    });
+
+    it('still refuses a membership-fenced NACK from a peer the send owes nothing', async () => {
+        const settlements: ALOutboundSettlementFact[] = [];
+        const { admissionStore, control, state } = createFixture(settlements);
+        await seedReceiptlessRoomObligation(admissionStore);
+        const seeded = [...state.data];
+
+        expect(await control.admit(refusalNack('other-session', 'membership-fenced'), 'peer')).toEqual({
+            kind: 'rejected',
+            reason: 'AL repair sender has no retained outbound obligation'
+        });
+        expect([...state.data]).toEqual(seeded);
+        expect(settlements).toEqual([]);
     });
 
     it.each(
@@ -909,6 +955,25 @@ async function seedReceiptlessRoomObligation(
     await admissionStore.commitBundle(admission);
 }
 
+/** A unicast that requested no receipt: only its addressee may answer it. */
+async function seedReceiptlessUnicastObligation(
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
+): Promise<void> {
+    const msg: ALMessage = {
+        id: { v: 3, msgId: 'message', senderId: 'sender', ts: 1 },
+        route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
+        payload: { typeId: 'command.v1', resource: '{}' },
+        targets: { mode: 'unicast', toPeerId: 'receiver' },
+        constraints: { expiresAtMs: Date.now() + 30_000 }
+    };
+    const admission = await computeOutboundTestAdmission(
+        admissionStore,
+        msg,
+        (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
+    );
+    await admissionStore.commitBundle(admission);
+}
+
 async function seedOrderedObligation(
     admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
 ): Promise<void> {
@@ -1036,7 +1101,7 @@ function resyncNack(fromPeerId: string, input: ResyncNackInput = {}): ALMessage 
 }
 
 /** A NACK by which a relay refuses the message for good, with no ordering hints. */
-function refusalNack(fromPeerId: string, reason: 'unauthorized' | 'expired'): ALMessage {
+function refusalNack(fromPeerId: string, reason: 'unauthorized' | 'expired' | 'membership-fenced'): ALMessage {
     return newALNackControlMessage(
         { v: 3, msgId: `control-${reason}-${fromPeerId}`, senderId: fromPeerId, ts: 1 },
         { fromPeerId, toPeerId: 'sender', msgId: 'message', reason, observedAtEpochMs: 1 }

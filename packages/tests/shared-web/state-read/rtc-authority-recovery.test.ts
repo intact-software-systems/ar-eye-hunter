@@ -390,6 +390,17 @@ describe('the roster fence at an RTC receiver', () => {
             payload: expect.objectContaining({ msgId: message.id.msgId, toPeerId: 'sender', reason: 'membership-fenced' })
         }]);
         expect(refreshedFloors).toEqual([]);
+
+        await receiver.transferTo(sender);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(sender.settlements.filter((settlement) => settlement.kind === 'receipt-exhausted')).toEqual([
+            expect.objectContaining({
+                msgId: message.id.msgId,
+                cause: 'hop-refused',
+                hopPeerId: 'receiver',
+                nackReason: 'membership-fenced'
+            })
+        ]);
     });
 });
 
