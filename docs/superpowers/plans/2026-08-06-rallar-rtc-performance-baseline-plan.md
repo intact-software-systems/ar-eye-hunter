@@ -1728,8 +1728,22 @@ intent, handle-specific receipt and final admission fence now have independent
 specification/quality approval after a witnessed test-first correction of stale
 storage-to-volatile admission. Its corrected frozen suite passes 14,661 tests with
 12 skipped; current changed gates, browser budgets and four app builds pass.
-Delivery continues through draft PR #633; fresh hosted correctness for this source
-remains open. The next two useful implementation actions are:
+Delivery continues through draft PR #633. Fresh Branch Release app-browser validation
+fails the observer-report disclosure check on published `12eaac58e`; its following memory
+full-stack step is skipped. The unchanged focused browser spec reproduces the failure.
+Read-only instrumentation and the actual reset call path identify a test-readiness race:
+the first event is injected during asynchronous bootstrap reset and cleared 97 ms later.
+The report correctly follows recorder history. The same implementer is released for a
+minimum test-readiness correction, preserving reset behavior and all assertions. The
+same focused browser spec passes both cases, but a broader run exposes the second case's
+own startup-reset race. Scoped review closes the first finding and requires correction
+of the second before delivery. Both failures now have actual reset/event chronology;
+the minimum second readiness correction now passes the original focused pair with default
+tracing. Original-reviewer scoped specification/quality approval, the covering repeat
+(46 PASS/64 SKIP) and in-memory full-stack checks (seven PASS) are complete. Fresh
+hosted delivery of the reviewed correction remains outstanding.
+Connect implementation is held
+during that closure. The next two useful implementation actions after it are:
 
 1. **Fenced Connect readback:** Establish meaningful semantic RED at the original
    acquisition/completion owner, then retain that operation's actual immutable graph
@@ -3398,7 +3412,8 @@ Fix round 1 closes stale volatile admission; no new fix findings remain. Correct
 validation passes 1,493 files/14,661 tests, with four files/12 tests skipped and 16 visible
 Node storage warnings. All 43 hashes agree before/after. Actual changed coupling/style,
 browser budgets and four affected app builds pass. Delivery continues through draft PR
-#633; fresh hosted correctness, end-to-end diagnostics and baseline acceptance remain open.
+#633. Fresh hosted app-browser validation fails the observer-report disclosure check;
+required delivery closure, end-to-end diagnostics and baseline acceptance remain open.
 
 Focused implementation and recursive self-review complete; changed-range
 gates, types, browser boundaries and four affected app builds pass. The first frozen
@@ -3481,6 +3496,80 @@ from its tool output with no original-byte hash claim. Direct source review and 
 SDK semantic evidence decide the verdict. No source or frozen hash was altered by that
 evidence-path correction. Existing nonblocking warnings carry to final whole-branch review.
 
+Fresh Branch Release `37401847307`, app-browser job `112070926065`, actually checks out
+published `12eaac58ebe9494befa865015e4858a19388d039`. `npm run test:rallar` fails
+`observer-presentation.spec.ts:29`: its opened report does not contain the recorded
+`rallar.browser.observer.first` topic within the existing 10-second expectation. The lane
+reports 45 passed/64 skipped/one failed, and its following in-memory full-stack step is
+skipped. The raw failed log is retained. This is a required hosted failure, separate from
+the passing local suite and closed I1. Formation and Medium-Scale pass at pull-merge
+`fc39fe2a8bb78884e67764367ec620b8fb5c7389`, whose actual tree exactly matches published
+`12ea`; all 101 recipe report summaries match their seven matrix totals. Five event
+histories and four result reports remain truncated. Branch retains 134 nonblocking
+command failures and Formation 130; aggregate recipe success does not erase them or
+substitute for the failed browser lane. Branch's fresh validation publication is skipped.
+
+The unchanged existing focused browser spec completes one FAIL/one PASS. An ignored
+instrumented copy retains the final five-event assertion and fails with four events:
+the first injection occurs while bootstrap is busy/resetting, then the recorder clears
+it 97 ms later. Source tracing follows the startup effect through `startBootstrapOnce`,
+`runSample`, `resetForRun` and the runtime reset, which awaits the existing simulated
+executor before replacing recorder state. Visible report controls do not establish
+bootstrap readiness. This is a fixture readiness race, with no demonstrated production
+recorder or observer defect. Raw failures, complete relevant notification projections,
+trace and screenshot are retained; repeated nested report statistics were parsed rather
+than claimed as manually reread verbatim. Root independently verifies all 42 published
+nonplan files unchanged before releasing the same implementer for the minimum test-only
+readiness correction. Preserve every disclosure/navigation/filter/draft/redaction/history
+assertion and all reset/retry/timeout/cap behavior. This genuine fixture RED is separate
+from product semantic TDD; no product GREEN or timing acceptance follows. Independent
+scoped review and fresh required hosted correctness/publication still decide closure.
+The minimum correction adds only an inline causal comment and an expectation that the
+existing workbench status is `passed` before recording the first event. The original
+focused Chromium spec completes two PASS/zero FAIL, preserving every prior assertion;
+strict browser-spec typing, formatting and target-file style pass. All 42 published
+nonplan paths remain unchanged. Initial check-command usage errors are retained and
+excluded from validation. This GREEN repairs test readiness without changing the product
+or accepting observer timing; broader browser validation and independent review remain
+pending at this checkpoint.
+
+The first corrected freeze's full app-browser lane then completes 45 PASS/64 SKIP/one
+FAIL: the report case passes, while the unchanged evidence-panel case loses
+`observer.current` at line 110. Root reads the complete failed output and verifies both
+frozen hashes unchanged. Original-reviewer scoped review marks the first finding
+addressed but requests changes for this remaining touched-file/delivery blocker; no
+breakage introduced by the two-line correction is established. Its subsequent stream
+assertions are unreached in that failed run. The in-memory full-stack check stays held.
+
+The same implementer diagnoses before any further edit. One traced sole-case execution
+passes because injection follows reset by 88 ms; it is retained as a non-reproduction.
+A default-trace execution reproduces the exact failure: entering the workbench starts
+bootstrap reset, `current` is injected while reset is pending, and the recorder clears
+it 12 ms later. Selected browser/warning filters correctly admit the event. This is a
+second fixture-readiness race with no demonstrated production defect. Root reads the
+complete relevant chronology/failure and independently verifies all 42 published paths
+and both frozen paths unchanged before releasing the minimum existing readiness
+expectation at this second injection boundary. Preserve the initial direct-mode event,
+all assertions and the existing helper/reset behavior. Default-trace focused GREEN,
+new scoped review, justified covering repeat and fresh required hosted delivery decide
+closure. The second correction adds one inline existing status expectation before
+`current` is recorded. The unchanged original pair with default tracing completes two
+PASS in 20.6 seconds; strict browser typing, formatting and touched-file style pass, with
+all original assertions and all 42 published paths unchanged. Default tracing produces
+no new successful-run screenshot/trace/console capture, so no such evidence is claimed.
+Original-reviewer scoped specification/quality re-review marks the second finding
+addressed with no new fix breakage or open blocking findings. The justified frozen-source
+full app-browser repeat completes 46 PASS/64 SKIP/zero FAIL, including both observer
+cases; the previously skipped in-memory full-stack script then completes seven PASS.
+Root reads both complete outputs and verifies the frozen files and real HEAD/index
+unchanged. Current repair-range coupling and changed-style checks pass; prior unit and
+product checks retain their original scopes because all 42 published source paths are
+byte-identical. Node color warnings and the full-stack expected missing-ticket 401
+diagnostic remain disclosed. Only final plan outcome prose differs from the reviewed
+freeze before publication. Required fresh exact-source hosted correctness/publication
+still decides delivery closure; Task 57 remains held. This neither waives future product
+TDD nor accepts observer timing.
+
 The first inline proposal assumed that a pre-send `rtcCapture()` getter could certify
 message application. Source tracing disproves that: message acquisition awaits auth
 reconciliation and can replace the getter's graph. Page-generation leases do not identify
@@ -3522,6 +3611,82 @@ and maintained test types, public API snapshots, browser entrypoint/bundle bound
 required affected app builds. Full recursive standards closure and independent specification/
 quality review remain binding. Before broad validation root runs delivery status and updates
 prose before one coherent freeze. No new producer, retry, timeout or performance acceptance.
+
+### Task 57: Fenced Connect operation readback
+
+**Status:** Held during Task56's required hosted observer-test diagnosis/closure. No
+Connect implementer has been dispatched. Once that closure permits progression, release
+the first meaningful semantic RED only. Task56 is published at
+`12eaac58ebe9494befa865015e4858a19388d039`, with local source acceptance and scoped
+independent approval; its fresh hosted gates remain separate. Connect and live CRDT
+are distinct completion/effect owners and receive separate slices. The earlier inline
+distributed draft remains deferred. Root owns the plan, port binding, Git and publication.
+
+Connect must preserve actual immutable capture evidence from its own acquired graph
+through the existing page result boundary. The original transport already creates a typed
+middleware/receipt pair; acceptance projects only middleware. The session checks identity
+before additional lifecycle/state/clock callbacks. The page bridge erases middleware
+success into void, then performs joins, diagnostics and phase callbacks before reading the
+global receipt. These are verified source facts; a runtime replacement race is not yet
+proved. Existing serialized page authentication remains a positive preservation baseline.
+
+Required outcomes:
+
+- Snapshot accepted canonical intent at the existing operation boundary. Use the accepted
+  resolver and finite refusal contracts; do not add another selection or reason union.
+- Capture the original graph readout before reentrant callbacks and carry that immutable
+  value through completion. A later global replacement never certifies this operation.
+- Verify required diagnostic eligibility after callback-capable reads and before the
+  next required measurement/result effect. Preserve genuinely captured historical evidence
+  when currentness fails; report canonical finite unverified facts through existing typed
+  page/error serialization rather than inventing applied evidence.
+- Preserve public `connect(): Promise<ApiMiddleware>` business success, original errors,
+  reservation/cancellation, ordinary no-intent reuse, compatible receipt origin, lifecycle,
+  retries and deadlines. Native partial availability remains distinct from unavailable
+  application. Diagnostic refusal does not tear down or fail successful native construction.
+- Prefer the existing internal middleware/receipt pair through original transport/session
+  completion and the advanced page composition. Before minimum GREEN, root binds the exact
+  port from the meaningful failure and actual consumers. No new owner, store, recorder,
+  generic property walker or mandatory public receipt field merely to expose diagnostics.
+
+The first candidate uses the real SDK-backed page composition and authored Off selection:
+an existing phase-completed diagnostic callback closes its page synchronously. A required
+Connect must not report verified application or start the next RTC measurement after that
+lease ends. Assert the actual result/effect and retained original receipt where available,
+with a non-reentrant Off control. This scenario is unexecuted; if already protected, report
+that truth and trace the next concrete existing completion boundary. Missing new methods,
+invented receipt fixtures, malformed inputs and compiler/setup errors do not earn RED.
+
+The implementer loads the selected current skills and required references before source
+decisions, reads nearby owners/tests/examples, writes/runs the first semantic regression to
+terminal completion, reads its full output and stops before production or support-policy
+edits. Root independently reads the meaningful failure and verifies unchanged production
+before minimum GREEN. Subsequent distinct corrections require their own witnessed RED.
+Non-reentrant actual Off, compatible origin, Native partial/unavailable distinction,
+ordinary no-intent behavior and serialized page auth need positive preservation evidence.
+Actual page JSON success/refusal must retain operation attribution.
+
+Focused Connect/acquisition/lifecycle/page tests precede package and maintained-test types.
+Public snapshots/browser boundaries/budgets apply if exported shape changes; affected
+consumer builds follow the testing skill. Full touched-file standards closure includes
+every recursively changed support file; independent untouched source stays outside.
+Root selects coherent frozen broad validation and independent specification/quality review
+after focused GREEN. No new producer, retry/deadline change, cap expansion, legacy retention,
+Issue, deployment, distributed aggregation or baseline acceptance is authorized here.
+
+### Task 58: Fenced live CRDT operation readback
+
+**Status:** Next useful slice, not released for implementation. After Connect acceptance,
+earn meaningful RED at actual initial live subscription and acquired send boundaries.
+Snapshot canonical optional intent before hydrate/metric callbacks, verify original context
+before required live effects, and retain each actual message handle's immutable evidence
+through named transport/document/page result boundaries. A global latest receipt cannot
+prove multiple effects or a later graph. Preserve document success, persistence, cached
+reuse, ordinary omitted intent, HTTP/local-only behavior and existing lifecycle/deadlines.
+Use existing document/session owners and finite contracts; custom absent evidence remains
+truthfully unavailable. Required positive actual SDK controls must prevent blanket refusal
+from masquerading as support. Exact ports and covering tests follow the selected failing
+scenarios; inline distributed support/application aggregation follows these prerequisites.
 
 ## 12. Baseline Completion Gate
 

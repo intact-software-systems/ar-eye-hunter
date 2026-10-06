@@ -33,6 +33,8 @@ test('report disclosure follows workbench visibility, preserves drafts, and reve
     const output = report.locator('.report-output');
     await expect(report.getByRole('button', { name: 'Show', exact: true })).toBeVisible();
     await expect(output).toHaveCount(0);
+    // Bootstrap resets recorder history; record persistent fixtures after that run completes.
+    await expect(workbench.locator('.workbench-panel .panel-heading .pill')).toHaveText('passed');
     await recordDiagnostic(page, 'first');
     await report.getByRole('button', { name: 'Show', exact: true }).click();
     await expect.poll(() => output.inputValue()).toContain('rallar.browser.observer.first');
@@ -98,6 +100,7 @@ test('evidence panels restore operator filters and window settings against curre
     await openWorkbench(page);
     await expect(trace.locator('.rallar-trace-row')).toHaveCount(0);
     await expect(stream.locator('.event-row')).toHaveCount(0);
+    await expect(page.locator('#panel-local-workbench .workbench-panel .panel-heading .pill')).toHaveText('passed');
     await recordDiagnostic(page, 'current');
     await page.getByLabel('Rallar workspace mode').getByRole('button', { name: /Rallar Direct live Rallar operations/ })
         .click();
