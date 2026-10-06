@@ -343,7 +343,7 @@ describe('immutable RTC capture on browser connections', () => {
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
-            sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, transport),
+            sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, transport, mocks.readSession),
             connectionRuntime: new BrowserFacadeRuntimeState(transport),
             transportRuntime: transport,
             lifecycle,
@@ -477,7 +477,7 @@ describe('immutable RTC capture on browser connections', () => {
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
-            sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, transport),
+            sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, transport, mocks.readSession),
             connectionRuntime,
             transportRuntime: transport,
             lifecycle,

@@ -1,3 +1,4 @@
+import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import type { RallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,6 +29,14 @@ beforeEach(() => {
         accessToken: 'unit-test',
         expiresAtEpochMs: Date.now() + 60_000
     });
+    vi.stubGlobal(
+        'localStorage',
+        {
+            getItem: () => JSON.stringify(auth.readSession()),
+            setItem: vi.fn(),
+            removeItem: vi.fn()
+        } satisfies Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
+    );
     vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
         apiBaseUrl: 'https://test.invalid',
         wsBaseUrl: 'wss://test.invalid',
@@ -44,27 +53,121 @@ afterEach(() => {
 });
 
 interface CaptureApplicationRuntime {
+    readonly events: readonly BlackBoxRallarEvent[];
     readonly facade: BlackBoxBrowserRallarRuntimeDependency;
     readonly page: BlackBoxRallarRuntime;
     readonly runtime: RallarBlackBoxBrowserTestRuntime;
 }
 
 function createRuntime(): CaptureApplicationRuntime {
+    const events: BlackBoxRallarEvent[] = [];
     const volatileLimits = new BlackBoxRallarVolatileLimits();
     const facade = createBlackBoxBrowserRallarRuntimeDependency({ readVolatileSessionLimits: volatileLimits.get });
     const page = createBlackBoxRallarRuntime({
         facade,
         volatileLimits,
-        targetWindow: {},
+        targetWindow: {
+            __blackBoxRallarEmit: (event) => {
+                events.push(event);
+            }
+        },
         clock: { now: Date.now },
         readDocument: () => ({ timeOrigin: 1, origin: 'https://test.invalid' }),
         delay: async () => {}
     });
     vi.stubGlobal('window', Object.assign(new EventTarget(), { __blackBoxRallar: page }));
-    return { facade, page, runtime: createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() }) };
+    return { events, facade, page, runtime: createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() }) };
 }
 
 describe('decoded recipe application through the SPA and SDK initializer', () => {
+    it('carries a recipe run override to an already connected WS acquisition', async () => {
+        const { page, runtime } = createRuntime();
+        try {
+            await page.connect({ connection: 'default', rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app', rtcCaptureMode: 'native' } });
+            const result = await runtime.execute({
+                kind: 'recipe.run',
+                rtcCaptureMode: 'off',
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: 'ws-existing',
+                    commands: [
+                        { kind: 'configure', config: { control: { providerMode: 'browser-rallar' }, rallar: { applicationId: 'app' } } },
+                        { kind: 'ws.send', data: { typeId: 'test', topicId: 'app.capture', payload: {} } }
+                    ]
+                }
+            });
+            expect(result.ok, JSON.stringify(result)).toBe(false);
+        }
+        finally {
+            await page.close();
+        }
+    });
+
+    it('retains typed unavailable capture facts in the serialized page refusal event', async () => {
+        const { page, facade, events } = createRuntime();
+        try {
+            await page.connect({ connection: 'default', rallar: { apiBaseUrl: 'https://test.invalid', rtcCaptureMode: 'native' } });
+            await expect(page.sendWs({ typeId: 'test', topicId: 'app.capture', payload: {} })).rejects.toMatchObject({ code: 'RALLAR_RTC_CAPTURE_UNVERIFIED' });
+            expect(JSON.parse(JSON.stringify(events))).toEqual(expect.arrayContaining([expect.objectContaining({
+                topic: 'rallar.browser.ws.send_failed',
+                error: expect.objectContaining({
+                    code: 'RALLAR_RTC_CAPTURE_UNVERIFIED',
+                    reason: 'application-unavailable',
+                    requestedConfiguration: { mode: 'native', origin: 'step' },
+                    rtcCapture: { status: 'observed', value: facade.rtcCapture() }
+                })
+            })]));
+        }
+        finally {
+            await page.close();
+        }
+    });
+
+    it('refuses incompatible capture passed through the SPA WS operation before sending', async () => {
+        const { page } = createRuntime();
+        try {
+            await page.connect({ connection: 'default', rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app', rtcCaptureMode: 'native' } });
+            const bridge = createSpaBrowserRallarRuntime();
+            const outcome = await bridge.sendWs?.({ typeId: 'test', topicId: 'app.capture', payload: {} }, { rtcCaptureContext: { run: 'off' } }).then(
+                () => ({ sent: true }),
+                (error: unknown) => ({ error })
+            );
+            expect(outcome).toMatchObject({ error: { code: 'new-connection-required', requestedConfiguration: { mode: 'off', origin: 'run' } } });
+        }
+        finally {
+            await page.close();
+        }
+    });
+
+    it('snapshots separate SPA WS intent before its runtime lookup yields', async () => {
+        const { page } = createRuntime();
+        try {
+            await page.connect({ connection: 'default', rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app', rtcCaptureMode: 'off' } });
+            const context: { run: 'off' | 'native'; } = { run: 'off' };
+            const sending = createSpaBrowserRallarRuntime().sendWs?.({ typeId: 'test', topicId: 'app.capture', payload: {} }, { rtcCaptureContext: context });
+            context.run = 'native';
+            expect(await sending).toMatchObject({ rtcCapture: { status: 'observed', value: { configuration: { mode: 'off', origin: 'step' } } } });
+        }
+        finally {
+            await page.close();
+        }
+    });
+
+    it('returns the acquired Off receipt through the existing page WS result and JSON boundary', async () => {
+        const { page, facade } = createRuntime();
+        try {
+            await page.connect({ connection: 'default', rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app', rtcCaptureMode: 'off' } });
+            const result = await page.sendWs({ typeId: 'test', topicId: 'app.capture', payload: { rtcCapture: { status: 'observed', value: 'lookalike' } } });
+            expect(JSON.parse(JSON.stringify(result))).toMatchObject({
+                rtcCapture: { status: 'observed', value: facade.rtcCapture() },
+                message: { rtcCapture: { status: 'observed', value: 'lookalike' } }
+            });
+        }
+        finally {
+            await page.close();
+        }
+    });
+
     it.each([
         { run: 'off', recipe: 'native', step: 'signaling', app: 'app', mode: 'off', origin: 'run', application: { status: 'applied', mode: 'off' } },
         { run: 'native', recipe: 'off', step: 'off', app: 'app', mode: 'native', origin: 'run', application: { status: 'applied', mode: 'native' } },

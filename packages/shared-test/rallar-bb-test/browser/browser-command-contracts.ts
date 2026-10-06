@@ -1,6 +1,7 @@
 import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecord,
@@ -66,7 +67,10 @@ export interface RallarBlackBoxBrowserRallarRuntime {
     connect(config: RallarBlackBoxBrowserRallarConnectionConfig): Promise<unknown>;
     /** The deadline bounds typed-message admission; absence uses the page default budget. */
     send(input: RallarMessagePayload, deadlineEpochMs?: number): Promise<unknown>;
-    sendWs?(input: RallarMessagePayload): Promise<unknown>;
+    sendWs?(
+        input: RallarMessagePayload,
+        capture?: Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'>
+    ): Promise<unknown>;
     sendMessage: RallarBlackBoxBrowserRallarRuntimeMethod;
     observeDelivery: RallarBlackBoxBrowserRallarRuntimeMethod;
     cancelDelivery: RallarBlackBoxBrowserRallarRuntimeMethod;

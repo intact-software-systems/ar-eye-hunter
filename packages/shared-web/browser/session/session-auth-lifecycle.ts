@@ -6,6 +6,7 @@ import type {
     RallarAuthRuntimePort,
     RallarConnectionRuntimePort
 } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
+import { toBrowserRtcCaptureIntent } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import {
     toRallarDiagnosticsPorts,
@@ -14,8 +15,11 @@ import {
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { ApiMiddleware, RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
-import { toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
+import {
+    toRallarCommandOptions,
+    toRallarOperationOptions,
+    type RallarOperationOptions
+} from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
     RallarAuthChangeListener,
@@ -45,7 +49,9 @@ export interface RallarAuthSessionEndOptions {
 
 export interface RallarSessionAuthLifecycle {
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
-    acquireConnection(): Promise<ApiMiddleware>;
+    acquireConnection(
+        capture?: Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'>
+    ): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
     requireSession(): AuthSession;
     activateLoginSession(session: AuthSession): Promise<void>;
@@ -91,9 +97,15 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         return await this.connectWithIntent(scopedOptions, 'explicit');
     }
 
-    /** Internal operations acquire the owned graph without requesting a new capture configuration. */
-    public async acquireConnection(): Promise<ApiMiddleware> {
-        return await this.connectWithIntent({}, 'acquire');
+    /** Omitted capture intent preserves the owned graph's active or pending selection. */
+    public async acquireConnection(
+        capture: Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'> = {}
+    ): Promise<ApiMiddleware> {
+        const intent = toBrowserRtcCaptureIntent(capture);
+        return await this.connectWithIntent(
+            intent.options,
+            intent.connectionIntent
+        );
     }
 
     private async connectWithIntent(

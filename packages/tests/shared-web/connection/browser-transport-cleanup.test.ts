@@ -658,7 +658,7 @@ interface DeliveryObservationFixture {
 
 function createDeliveryObservation(transport: BrowserTransportRuntime): DeliveryObservationFixture {
     const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
-    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, transport);
+    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, transport, () => transport.readMiddleware()?.session);
     onTestFinished(() => {
         deliveries.releaseAll();
     });

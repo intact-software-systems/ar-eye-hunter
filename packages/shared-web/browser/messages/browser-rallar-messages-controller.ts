@@ -15,6 +15,7 @@ import type {
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -29,7 +30,7 @@ export namespace BrowserRallarMessagesController {
         readonly sessionDeliveries: BrowserSessionDeliveries;
         readonly nowMs: () => number;
         readonly wsInbox: BrowserWebSocketInbox;
-        connect(): Promise<ApiMiddleware>;
+        connect(capture?: Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'>): Promise<ApiMiddleware>;
         readMiddleware(): ApiMiddleware | undefined;
         requireSession(): AuthSession;
         resolveDefaultRoom(): string | GroupRef | undefined;
@@ -67,6 +68,7 @@ export class BrowserRallarMessagesController {
             creation: input.creation,
             deliveries: input.deliveries,
             dispatch,
+            sessionDeliveries: input.sessionDeliveries,
             inputValidator,
             connect: input.connect,
             requireSession: input.requireSession,

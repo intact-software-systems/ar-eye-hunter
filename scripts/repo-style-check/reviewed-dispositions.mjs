@@ -7,11 +7,13 @@ import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.m
 export const reviewedDispositions = Object.freeze([
     // The existing browser facade entry exports the single intentional public
     // surface; concrete capabilities remain owned in their feature modules.
+    // Its typed capture refusal adds the thirteenth value; further exports
+    // remain outside this exact reviewed inventory.
     Object.freeze({
         path: 'packages/shared-web/browser/rallar.ts',
         rule: 'file.responsibility-count',
         symbol: undefined,
-        maximumMagnitude: 12
+        maximumMagnitude: 13
     }),
     // These SDK ingress boundaries validate untrusted selections or narrow
     // arbitrary framework rejection reasons through instanceof before policy.

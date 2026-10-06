@@ -1,4 +1,5 @@
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type {
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
@@ -66,8 +67,13 @@ async function writeRallarWebSocketMessage(
         throw new Error('Browser Rallar runtime does not support ws.send.');
     }
     const abort = createBrowserCommandAbortScope(command, context, environment.now);
+    const capture: Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'> =
+        context.rtcCapture === undefined ? {} : {
+            rtcCaptureMode: context.rtcCapture.step,
+            rtcCaptureContext: { run: context.rtcCapture.run, recipe: context.rtcCapture.recipe }
+        };
     try {
-        return decodeBrowserCommandRecord(await withBrowserCommandAbort(runtime.sendWs(data), abort.signal));
+        return decodeBrowserCommandRecord(await withBrowserCommandAbort(runtime.sendWs(data, capture), abort.signal));
     }
     catch (caught) {
         if (!(caught instanceof Error) || !caught.message.includes(RUNTIME_NOT_CONNECTED_MESSAGE)) {
@@ -75,7 +81,7 @@ async function writeRallarWebSocketMessage(
         }
         const connectionConfig = toRallarWebSocketConnectionConfig(command, context.config(), context.rtcCapture);
         await withBrowserCommandAbort(runtime.connect(connectionConfig), abort.signal);
-        return decodeBrowserCommandRecord(await withBrowserCommandAbort(runtime.sendWs(data), abort.signal));
+        return decodeBrowserCommandRecord(await withBrowserCommandAbort(runtime.sendWs(data, capture), abort.signal));
     }
     finally {
         abort.cleanup();

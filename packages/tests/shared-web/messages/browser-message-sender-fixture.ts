@@ -27,12 +27,17 @@ export function createBrowserMessageSenderFixture(
 ): BrowserMessageSenderFixture {
     let activeMiddleware = middleware;
     const feed = new BrowserDeliverySettlements();
-    const sessionDeliveries = new BrowserSessionDeliveries(registry, { deliverySettlements: feed, readMiddleware: () => activeMiddleware });
+    const sessionDeliveries = new BrowserSessionDeliveries(registry, {
+        deliverySettlements: feed,
+        readMiddleware: () => activeMiddleware,
+        readRtcCaptureReceipt: () => undefined
+    }, () => activeMiddleware.session);
     sessionDeliveries.beginSession(middleware.session);
     feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
     const connect = vi.fn<() => Promise<ApiMiddleware>>().mockResolvedValue(middleware);
     const sender = new BrowserRallarMessageSender({
+        sessionDeliveries,
         creation: {
             createUnicast: newALUnicastMessage,
             createMulticast: newALMulticastMessage,

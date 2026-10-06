@@ -153,7 +153,7 @@ function createDefaultAuthFixture(emitState: () => void): AuthFixture {
     onTestFinished(() => runtime.clearAuthExpiryTimer());
     const middleware = createDefaultApiMiddlewareTestDouble();
     const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
-    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, transportRuntime);
+    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, transportRuntime, readSession);
     const connect = vi.fn<RallarSessionConnectionLifecycle['connect']>().mockResolvedValue(middleware);
     runtime.setConnectState('connected');
     const disconnect = async (): Promise<void> => {

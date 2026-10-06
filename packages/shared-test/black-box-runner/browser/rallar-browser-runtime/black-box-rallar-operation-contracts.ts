@@ -267,6 +267,7 @@ export type BlackBoxRallarSendDiagnostics =
 
 /** The room fields appear only when the send names a room or an application. */
 export interface BlackBoxRallarWsSendDiagnostics {
+    readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     readonly status: 'sent';
     readonly connection: string;
     readonly actor: string | undefined;

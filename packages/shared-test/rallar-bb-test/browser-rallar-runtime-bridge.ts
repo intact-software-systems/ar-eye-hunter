@@ -6,6 +6,7 @@ import {
     decodeBlackBoxRallarFormationRoom,
     type BlackBoxRallarFormationInputIssue
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/formation/decode-black-box-rallar-formation-input.ts';
+import { toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
 import type {
@@ -26,7 +27,13 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
         connect: async (config) =>
             await (await readBrowserRallarRuntime()).connect(decodeBlackBoxRallarConnectionConfig(config)),
         send: async (input, deadlineEpochMs) => await (await readBrowserRallarRuntime()).send(input, deadlineEpochMs),
-        sendWs: async (input) => await (await readBrowserRallarRuntime()).sendWs(input),
+        sendWs: async (input, capture = {}) => {
+            const captured = toRallarOperationOptions({
+                rtcCaptureMode: capture.rtcCaptureMode,
+                rtcCaptureContext: capture.rtcCaptureContext
+            });
+            return await (await readBrowserRallarRuntime()).sendWs(input, captured);
+        },
         sendMessage: async (input) => await (await readBrowserRallarRuntime()).sendMessage(input),
         observeDelivery: async (input) => await (await readBrowserRallarRuntime()).observeDelivery(input),
         cancelDelivery: async (input) => await (await readBrowserRallarRuntime()).cancelDelivery(input),

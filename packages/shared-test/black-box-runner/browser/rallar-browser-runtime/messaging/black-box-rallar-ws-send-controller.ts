@@ -1,4 +1,5 @@
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarWsSendInput } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -105,6 +106,7 @@ export class BlackBoxRallarWsSendController {
         const handle = await this.#input.messages.ws.send(prepared.request);
         this.#input.resources.assertCurrent(lease, LATE_SEND_MESSAGE);
         const diagnostics: BlackBoxRallarWsSendDiagnostics = {
+            rtcCapture: handle.rtcCapture(),
             status: 'sent',
             ...context,
             scope: prepared.scope,
@@ -172,6 +174,10 @@ function toWsSendRequest(input: BlackBoxRallarWsSendInput, config: BlackBoxRalla
     const typeId = input.typeId ?? input.topic ?? input.kind ?? DEFAULT_WS_TYPE_ID;
     const defaults = config.rallar;
     const request: RallarWsSendInput<RallarMessagePayload> = {
+        ...toRallarOperationOptions({
+            rtcCaptureMode: input.rtcCaptureMode ?? defaults.rtcCaptureMode,
+            rtcCaptureContext: input.rtcCaptureContext ?? defaults.rtcCaptureContext
+        }),
         typeId,
         topicId: input.topicId ?? input.topic ?? typeId,
         contextId: input.contextId ?? roomId ?? scope,

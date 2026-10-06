@@ -29,10 +29,15 @@ occurrence is needed by that assertion. Related occurrences share a contract;
 distinct executable assertions remain separately reviewable.
 
 An entry's `id` is derived from the occurrence's path, kind, whitespace-normalized
-source text, and its occurrence order within the file. It deliberately excludes
-line and column so that reformatting cannot re-key a registered review; a change
-in what an occurrence _asserts_ re-keys it, a change in where it _sits_ does not.
-The checker report still prints the live `path:line:column` for navigation.
+detected syntax, and its order among identical detected occurrences in the file.
+It deliberately excludes line and column so reformatting does not re-key a
+registered review. Detected syntax can be narrower than the whole assertion:
+for call-count matchers it includes the callee but not the expected count argument.
+Inserting or removing an identical detected occurrence can also shift which
+assertion holds an existing ID. An unchanged ID therefore does not prove that
+its linked contract still describes the live assertion. Review the source and
+`semanticCoverage` together after edits; the report prints the live
+`path:line:column` for that check.
 
 Every entry has a named `owner`. A `durable-boundary` entry additionally
 declares `boundary` as `public`, `security`, `compatibility`, or `interaction`.
@@ -65,10 +70,11 @@ individually. The `--changed <base> <head>` mode fails closed for every current
 changed occurrence without an individual disposition; deleted occurrences stay
 neutral evidence.
 
-Candidate IDs are intentionally occurrence-specific so every occurrence receives
-its own review and an edited assertion cannot silently inherit another
-assertion's exception. In a changed range, the checker compares a rename or
-modification's old and new occurrences by kind and normalized syntax detail:
+Candidate IDs are occurrence-specific so every reported occurrence has its own
+review entry. Reviewers must still check the live association because occurrence
+order can transfer an existing ID to another assertion. In a changed range, the
+checker compares a rename or modification's old and new occurrences by kind and
+normalized syntax detail:
 unmatched old occurrences are neutral `change=deleted` evidence, never a
 semantic replacement. Copies report `origin=copy`. A file move can therefore
 require an explicit registry update after its new candidate IDs are reviewed;
@@ -1320,28 +1326,20 @@ moved or changed test.
       }
     },
     {
-      "id": "mutation-boundary-analysis-interface",
-      "domain": "Mutation boundary analysis interface",
-      "owner": "Rallar server maintainers",
-      "summary": "The routing audit follows imports and exported capabilities through one deterministic analysis model. Executable assertion: “exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions",
-      "coverageRelation": "The analyzer test executes import traversal and inventory checks across the authoritative mutation surface; this file enumeration is the fail-closed production input to that security audit."
-    },
-    {
       "id": "mutation-capability-export-interface",
       "domain": "Mutation capability export analysis",
       "owner": "Rallar server maintainers",
-      "summary": "Exported mutation capabilities resolve to their canonical implementation owner before routing assertions run. Executable assertion: “resolves mutable repository capabilities through the shared-server barrel”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-boundary-traversal.test.ts#resolves mutable repository capabilities through the shared-server barrel",
-      "coverageRelation": "The capability traversal test executes barrel and re-export resolution; this AST parse is the mechanism that follows a mutable capability to its canonical owner."
+      "summary": "Imported mutable repository capabilities resolve from their canonical package modules before receiver mutations are classified.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-provenance.test.ts#follows mutable capability provenance through production receiver shapes",
+      "coverageRelation": "The test executes the boundary analyzer on parameter, bracket, constructor, declared-property and destructured receiver fixtures. Their canonical ClientStateRepository imports reach readCapabilityExports, which parses the repository module and identifies its exported mutable capability; a read-only fixture remains accepted."
     },
     {
       "id": "mutation-capability-type-interface",
       "domain": "Mutation capability type analysis",
       "owner": "Rallar server maintainers",
-      "summary": "Capability declarations remain distinguishable from executable authoritative mutation owners. Executable assertion: “maps all 56 entrypoints and 52 types to real registrations and owners”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#maps all 56 entrypoints and 52 types to real registrations and owners",
-      "coverageRelation": "The route-owner suite executes type-to-owner mapping over the complete inventory; this AST parse distinguishes type declarations from executable mutation owners."
+      "summary": "An imported object type preserves the mutable repository capability of its nested member when the boundary analyzer follows the receiver.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#resolves mutable capability provenance in %s",
+      "coverageRelation": "The imported-object-alias.ts variant imports ImportedRepositoryHolder from alias-types.ts. The real type resolver loads and parses that module, follows its nested repository alias, and the test requires ClientStateRepository.insertPrincipal to be reported for the fixture."
     },
     {
       "id": "mutation-registration-collections--binds-direct-client-registrations-to-their-live-types",
@@ -1363,9 +1361,9 @@ moved or changed test.
       "id": "mutation-registration-collections--rejects-a-missing-direct-group-registration",
       "domain": "Mutation handler registration collections",
       "owner": "Rallar server maintainers",
-      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects a missing direct group registration”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a missing direct group registration",
-      "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
+      "summary": "Removing GROUP_CREATE from the imported live group registration collection disconnects that operation from its authoritative owner.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection",
+      "coverageRelation": "The test reads the shipped group-state inbox contracts, removes GROUP_CREATE from their live registration collection, proves the mutation changed the input, then runs validateMutationRouteInventory with the override and requires the missing-owner connection error."
     },
     {
       "id": "mutation-registration-collections--rejects-a-missing-direct-topology-registration",
@@ -1852,15 +1850,15 @@ moved or changed test.
       "id": "rtc-group-refresh-retries-after-failure",
       "domain": "Browser RTC group authority recovery",
       "owner": "Shared Web maintainers",
-      "summary": "A failed authoritative refresh releases its coalescing slot so the retained QueueBox retry can request authority again. Executable assertion: “leaves failed refreshes to the retained QueueBox retry”.",
-      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#leaves failed refreshes to the retained QueueBox retry",
-      "coverageRelation": "The test rejects the first injected group-refresh request, reports the retained recovery condition again, and observes a second request succeed.",
+      "summary": "A failed authoritative refresh releases its coalescing slot without re-entry so a later independent admission can request authority again.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#reports failure without re-entry and permits a later independent refresh",
+      "coverageRelation": "The test rejects the first injected group-refresh request and observes false, then independently reports the recovery condition again and observes true with two total refresh calls. It does not exercise or claim QueueBox redelivery.",
       "interactionRequirement": {
         "interactionKind": "count",
         "ownedPort": "RtcGroupSnapshotRefresh authoritative group-refresh port",
-        "observableEffect": "Two sequential recovery reports separated by a failed refresh issue two authoritative refresh attempts.",
-        "requiredConstraint": "A settled failed refresh must not leave the scoped group permanently marked active.",
-        "failureRationale": "A retained failed task would suppress every later QueueBox recovery attempt and strand messages behind stale room authority."
+        "observableEffect": "Two sequential independent recovery reports separated by a failed refresh issue two authoritative refresh attempts.",
+        "requiredConstraint": "A settled failed refresh releases the scoped group slot without an inner retry; a later independent admission may refresh again.",
+        "failureRationale": "A retained failed task would suppress a later independent refresh, while an inner retry would spend authority requests not requested by that later admission."
       }
     },
     {
@@ -3687,6 +3685,51 @@ moved or changed test.
         "requiredConstraint": "One initial explicit connection followed by a send after authentication replacement initializes exactly twice in total: once for each session.",
         "failureRationale": "Reporting the replacement session and receipt alone cannot rule out repeated initialization and leaked resources. Reusing the original graph or creating multiple replacement graphs violates session resource ownership."
       }
+    },
+    {
+      "id": "browser-native-initialization-refusal-no-admission",
+      "domain": "Required message capture admission",
+      "owner": "Shared Web maintainers",
+      "summary": "A required Native message whose acquired connection reports initialization-failed must be refused without queue admission; the business connection and its original receipt remain available.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#refuses failed Native initialization without failing or replacing its connection",
+      "coverageRelation": "The SDK connects through the actual capture owner with the native observation capability unavailable, then sends with explicit Native intent. The test observes the typed refusal, retained original connection receipt and zero outbound admissions.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebSocketQueueBox.enqueueOutboxIfAbsent at the browser outbound admission boundary",
+        "observableEffect": "Each queue admission registers outbound message work that can be transmitted independently of the send promise result.",
+        "requiredConstraint": "Native initialization unavailability must leave the WebSocket outbound queue untouched for the refused message.",
+        "failureRationale": "A typed refusal and a healthy connection do not exclude a message being queued first. Admission would send a message for which the required capture cannot be verified."
+      }
+    },
+    {
+      "id": "browser-missing-capture-sink-no-admission",
+      "domain": "Required message capture admission",
+      "owner": "Shared Web maintainers",
+      "summary": "A required Native message whose original connection lacks a diagnostics sink is refused before any queue admission while its business connection remains usable.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#refuses required unavailable capture while preserving the successful connection",
+      "coverageRelation": "The public SDK connects without a signaling sink, observes sink-unavailable on the actual receipt, then sends with explicit Native intent and checks both its typed refusal and the untouched WebSocket queue.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebSocketQueueBox.enqueueOutboxIfAbsent at the browser outbound admission boundary",
+        "observableEffect": "Each queue admission registers outbound message work that can be transmitted independently of the send promise result.",
+        "requiredConstraint": "A required capture request with sink-unavailable admits no message to the WebSocket outbound queue.",
+        "failureRationale": "Rejecting the caller after an admission would still send an unverified message. The refusal result cannot prove the absence of that effect."
+      }
+    },
+    {
+      "id": "browser-auth-changed-during-message-id-no-admission",
+      "domain": "Required message capture admission",
+      "owner": "Shared Web maintainers",
+      "summary": "A required message is refused before admission when its message-ID callback changes authentication after acquiring the original connection.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#does not admit a required send when its message ID callback replaces authentication",
+      "coverageRelation": "The SDK acquires an Off connection, then the injected UUID callback replaces auth storage during message creation. The test checks session-not-current and zero WebSocket queue admissions.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebSocketQueueBox.enqueueOutboxIfAbsent at the browser outbound admission boundary",
+        "observableEffect": "Each queue admission registers outbound message work that can be transmitted independently of the send promise result.",
+        "requiredConstraint": "After the ID callback replaces authentication, the original send must admit no message to the WebSocket outbound queue.",
+        "failureRationale": "A typed session refusal can occur after an erroneous admission. Zero admission proves the stale owner never acquired outbound work under either session."
+      }
     }
   ],
   "entries": [
@@ -4413,7 +4456,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "Opens the SPA distributed-recipes integration module, the single consumer in which a local monitor fork could otherwise hide.",
+      "rationale": "Forbids a local deriveDistributedRunMonitor declaration, which is the primary duplicate implementation this boundary is intended to prevent.",
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
@@ -4424,7 +4467,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "Reads each enumerated control-server module so the assertion covers the whole server import surface, including files added to the approved inventory.",
+      "rationale": "Checks the current server module against the forbidden SPA protocol specifier; this is the negative dependency edge that would expose reversed ownership.",
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#does not import control protocol from the SPA app into the control server"
     },
     {
@@ -4435,7 +4478,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "Forbids a local deriveDistributedRunMonitor declaration, which is the primary duplicate implementation this boundary is intended to prevent.",
+      "rationale": "Opens the SPA distributed-recipes integration module, the single consumer in which a local monitor fork could otherwise hide.",
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
@@ -4479,7 +4522,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "Checks the current server module against the forbidden SPA protocol specifier; this is the negative dependency edge that would expose reversed ownership.",
+      "rationale": "Reads each enumerated control-server module so the assertion covers the whole server import surface, including files added to the approved inventory.",
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#does not import control protocol from the SPA app into the control server"
     },
     {
@@ -4974,8 +5017,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Reads the shared-server barrel as the starting export graph, proving mutable capabilities remain traceable through the package public surface.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-boundary-traversal.test.ts#resolves mutable repository capabilities through the shared-server barrel"
+      "rationale": "Parses the canonical repository module reached by the receiver fixtures so the analyzer can recognize the imported ClientStateRepository as a mutable capability before reporting its mutation.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-provenance.test.ts#follows mutable capability provenance through production receiver shapes"
     },
     {
       "id": "test-structure-coupling-78bf1368cf214172",
@@ -4985,19 +5028,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Inspects the canonical capability declarations so every inventoried mutation type can be joined to an actual registration and owner.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#maps all 56 entrypoints and 52 types to real registrations and owners"
-    },
-    {
-      "id": "test-structure-coupling-70a87a1f1ea479cd",
-      "path": "packages/tests/repo/mutation-route-ownership/boundary/mutation-boundary-analysis.ts",
-      "kind": "exact-file-tree",
-      "contract": "mutation-boundary-analysis-interface",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Parses the analyzer module itself to enumerate its exported syntax-aware entrypoint; consumers need this stable repository-test interface for every supported import form.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions"
+      "rationale": "Parses alias-types.ts reached by the imported-object-alias fixture; resolving its nested imported repository type is required to report the concrete mutable receiver.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#resolves mutable capability provenance in %s"
     },
     {
       "id": "test-structure-coupling-0b58d02400285f7d",
@@ -5458,8 +5490,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Rebinds one group registration in the live owner and requires the audit to report that specific missing live route.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a missing direct group registration"
+      "rationale": "Reads the live group registration collection before removing GROUP_CREATE; the executed inventory validator must report that operation as disconnected from its owner.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection"
     },
     {
       "id": "test-structure-coupling-8daaa2a7222a3e9c",
@@ -6646,8 +6678,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Web maintainers",
-      "rationale": "The two-call assertion proves the failed first refresh released its group slot and the next retained recovery report reached the authority port.",
-      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#leaves failed refreshes to the retained QueueBox retry"
+      "rationale": "Two calls across a rejected first report and a successful later independent report prove the failed slot is released without a hidden retry. This assertion makes no QueueBox redelivery claim.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#reports failure without re-entry and permits a later independent refresh"
     },
     {
       "id": "test-structure-coupling-8e9755e2fc1d5b45",
@@ -8386,6 +8418,39 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "Reporting the replacement session and receipt alone cannot rule out repeated initialization and leaked resources. Reusing the original graph or creating multiple replacement graphs violates session resource ownership.",
       "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#reconciles replaced authentication before acquiring a new connection"
+    },
+    {
+      "id": "test-structure-coupling-14f254bde6a6600d",
+      "path": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-native-initialization-refusal-no-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "A typed refusal and a healthy connection do not exclude a message being queued first. Admission would send a message for which the required capture cannot be verified.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#refuses failed Native initialization without failing or replacing its connection"
+    },
+    {
+      "id": "test-structure-coupling-4ff4fe1a0f22b809",
+      "path": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-missing-capture-sink-no-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "Rejecting the caller after an admission would still send an unverified message. The refusal result cannot prove the absence of that effect.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#refuses required unavailable capture while preserving the successful connection"
+    },
+    {
+      "id": "test-structure-coupling-58ca4f3d43b5faa2",
+      "path": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-auth-changed-during-message-id-no-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "A typed session refusal can occur after an erroneous admission. Zero admission proves the stale owner never acquired outbound work under either session.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#does not admit a required send when its message ID callback replaces authentication"
     }
   ]
 }

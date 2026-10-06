@@ -3,6 +3,7 @@ import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/brow
 import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
@@ -95,6 +96,54 @@ function createCarrierGapFixture(gap: CarrierGap): CarrierGapFixture {
     else {
         origin.groups.accept('room', snapshot);
     }
+    const { context, wsAdmissions } = createCarrierGapAdmissions(origin);
+    const deliveries = new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        retainTerminalMs: 60_000,
+        maxEntries: 512,
+        cancel: () => {}
+    });
+    const feed = new BrowserDeliverySettlements();
+    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, {
+        deliverySettlements: feed,
+        readMiddleware: () => context,
+        readRtcCaptureReceipt: () => undefined
+    }, () => context.session);
+    sessionDeliveries.beginSession(context.session);
+    feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
+    const dispatch = new BrowserRallarMessageDispatch({
+        deliveries,
+        sessionDeliveries,
+        nowMs: Date.now
+    });
+    return {
+        origin,
+        wsAdmissions,
+        send: async (message, canFallback) => {
+            const handle = deliveries.open(message, 'rtc');
+            dispatch.send({
+                requestedConfiguration: undefined,
+                rtcCapture: { status: 'unavailable', reason: 'absent' },
+                context,
+                carrier: 'rtc',
+                message,
+                canFallback,
+                payloadIssues: [],
+                onStorageUnavailable: 'refuse'
+            });
+            await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+            return handle;
+        }
+    };
+}
+
+interface CarrierGapAdmissions {
+    readonly context: ApiMiddleware;
+    readonly wsAdmissions: ALMessage[];
+}
+
+/** Real RTC overlay admission and a WS queue recording the envelopes handed over. */
+function createCarrierGapAdmissions(origin: RtcOriginOverlayFixture): CarrierGapAdmissions {
     const wsAdmissions: ALMessage[] = [];
     const context = createDefaultApiMiddlewareTestDouble({
         session: { sessionId: 'a' },
@@ -115,41 +164,7 @@ function createCarrierGapFixture(gap: CarrierGap): CarrierGapFixture {
             }
         }
     });
-    const deliveries = new BrowserRallarDeliveryRegistry({
-        nowMs: Date.now,
-        retainTerminalMs: 60_000,
-        maxEntries: 512,
-        cancel: () => {}
-    });
-    const feed = new BrowserDeliverySettlements();
-    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, {
-        deliverySettlements: feed,
-        readMiddleware: () => context
-    });
-    sessionDeliveries.beginSession(context.session);
-    feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
-    const dispatch = new BrowserRallarMessageDispatch({
-        deliveries,
-        sessionDeliveries,
-        nowMs: Date.now
-    });
-    return {
-        origin,
-        wsAdmissions,
-        send: async (message, canFallback) => {
-            const handle = deliveries.open(message, 'rtc');
-            dispatch.send({
-                context,
-                carrier: 'rtc',
-                message,
-                canFallback,
-                payloadIssues: [],
-                onStorageUnavailable: 'refuse'
-            });
-            await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
-            return handle;
-        }
-    };
+    return { context, wsAdmissions };
 }
 
 function toGapSnapshot(gap: CarrierGap): GroupSnapshot | undefined {

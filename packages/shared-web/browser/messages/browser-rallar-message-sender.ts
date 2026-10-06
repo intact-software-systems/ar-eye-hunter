@@ -1,3 +1,4 @@
+import { toBrowserRtcCaptureIntent } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
 import type {
     BrowserMessageInputValidator,
     ResolvedWsMessageInput
@@ -15,6 +16,7 @@ import {
     type BrowserTypedChannelPolicy
 } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import {
     newALRoute,
     toALGroupTargetKey,
@@ -29,6 +31,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { throwRallarValidation, type RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import type { BrowserRallarMessageDispatch } from './browser-rallar-message-dispatch.ts';
+import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
 import {
     createBrowserUnicastMessage,
     validateBrowserPeerInput,
@@ -83,8 +86,9 @@ export namespace BrowserRallarMessageSender {
         readonly creation: Creation;
         readonly deliveries: BrowserRallarDeliveryRegistry;
         readonly dispatch: BrowserRallarMessageDispatch;
+        readonly sessionDeliveries: BrowserSessionDeliveries;
         readonly inputValidator: BrowserMessageInputValidator;
-        connect(): Promise<ApiMiddleware>;
+        connect(capture?: Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'>): Promise<ApiMiddleware>;
         requireSession(): AuthSession;
         resolveDefaultRoom(): string | GroupRef | undefined;
         resolveCurrentRoomRef(): GroupRef | undefined;
@@ -109,9 +113,11 @@ export class BrowserRallarMessageSender {
         input: RallarRtcSendInput<T>,
         channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
+        const capture = toBrowserRtcCaptureIntent(input);
         const target = this.resolveRtcMessageTarget(input, []);
         const payloadValidation = this.capturePayload(input.payload);
-        const context = await this.input.connect();
+        const context = await this.input.connect(capture.options);
+        const rtcCapture = this.input.sessionDeliveries.readRtcCapture(context);
         const message = this.createRtcMessage({
             input,
             payloadValidation,
@@ -120,6 +126,8 @@ export class BrowserRallarMessageSender {
             channel
         });
         return this.startDelivery({
+            requestedConfiguration: capture.requestedConfiguration,
+            rtcCapture,
             context,
             carrier: 'rtc',
             message,
@@ -133,6 +141,7 @@ export class BrowserRallarMessageSender {
         input: RallarWsSendInput<T>,
         channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
+        const capture = toBrowserRtcCaptureIntent(input);
         const room = input.roomRef ??
             input.roomId ??
             (input.scope === undefined ? this.input.resolveDefaultRoom() : undefined);
@@ -147,7 +156,8 @@ export class BrowserRallarMessageSender {
         ]);
 
         const payloadValidation = this.capturePayload(input.payload);
-        const context = await this.input.connect();
+        const context = await this.input.connect(capture.options);
+        const rtcCapture = this.input.sessionDeliveries.readRtcCapture(context);
         throwIfMessageIssues(validateBrowserPeerServer({
             peerId: input.peerId,
             strategy: 'ws',
@@ -163,6 +173,8 @@ export class BrowserRallarMessageSender {
         });
 
         return this.startDelivery({
+            requestedConfiguration: capture.requestedConfiguration,
+            rtcCapture,
             context,
             carrier: 'ws',
             message,
@@ -208,6 +220,7 @@ export class BrowserRallarMessageSender {
         peer: BrowserRtcPeerSend<T>,
         channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
+        const capture = toBrowserRtcCaptureIntent(peer.send);
         const target = this.resolveRtcMessageTarget(peer.send, []);
         const resolved: ResolvedWsMessageInput<T> = {
             input: peer.send,
@@ -217,13 +230,16 @@ export class BrowserRallarMessageSender {
         };
         throwIfMessageIssues(validateBrowserRtcPeerSend({ peer, resolved, inputValidator: this.input.inputValidator }));
         const payloadValidation = this.capturePayload(peer.send.payload);
-        const context = await this.input.connect();
+        const context = await this.input.connect(capture.options);
+        const rtcCapture = this.input.sessionDeliveries.readRtcCapture(context);
         throwIfMessageIssues(validateBrowserPeerServer({
             peerId: peer.peerId,
             strategy: peer.strategy,
             serverPeerId: context.middleware.webSocketQueueBox.serverPeerId
         }));
         return this.startDelivery({
+            requestedConfiguration: capture.requestedConfiguration,
+            rtcCapture,
             context,
             carrier: 'rtc',
             message: createBrowserUnicastMessage({
@@ -246,6 +262,7 @@ export class BrowserRallarMessageSender {
         firstCarrier: 'rtc' | 'ws',
         channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
+        const capture = toBrowserRtcCaptureIntent(input);
         const target = this.resolveRtcMessageTarget(input, validateRoomFallbackInput(input));
         throwIfMessageIssues(
             this.input.inputValidator.validateWs({
@@ -256,12 +273,15 @@ export class BrowserRallarMessageSender {
             })
         );
         const payloadValidation = this.capturePayload(input.payload);
-        const context = await this.input.connect();
+        const context = await this.input.connect(capture.options);
+        const rtcCapture = this.input.sessionDeliveries.readRtcCapture(context);
         const message = toRoomFallbackMessage(
             this.createRtcMessage({ input, payloadValidation, target, session: this.input.requireSession(), channel }),
             input.exceptPeerIds
         );
         return this.startDelivery({
+            requestedConfiguration: capture.requestedConfiguration,
+            rtcCapture,
             context,
             carrier: firstCarrier,
             message,
@@ -281,7 +301,7 @@ export class BrowserRallarMessageSender {
     }
 
     private startDelivery(delivery: BrowserRallarMessageDispatch.Delivery): RallarMessageHandle {
-        const handle = this.input.deliveries.open(delivery.message, delivery.carrier);
+        const handle = this.input.deliveries.open(delivery.message, delivery.carrier, delivery.rtcCapture);
         this.input.dispatch.send(delivery);
         return handle;
     }

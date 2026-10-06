@@ -29,6 +29,48 @@ afterEach(() => {
 });
 
 describe('reviewed repository style dispositions', () => {
+    it.each([[12, true], [13, true], [14, false]] as const)(
+        'keeps the public barrel disposition bounded at %s exports',
+        (count, reviewed) => {
+            const findings = scanProductionSources({
+                repoRoot,
+                sources: [{ file: path.join(repoRoot, 'packages/shared-web/browser/rallar.ts'), raw: publicBarrelSource(count) }],
+                options: { cognitiveMetrics: true }
+            }).findings.filter(({ ruleId }) => ruleId === 'file.responsibility-count');
+            expect(findings).toHaveLength(1);
+            expect(findings[0].symbol).toBeUndefined();
+            expect(findings[0].message).toContain(`File exports ${count} runtime values`);
+            expect(isReviewedDisposition(repoRoot, findings[0])).toBe(reviewed);
+        }
+    );
+
+    it('keeps wrong public barrel owners, rules and magnitudes blocking', () => {
+        const finding = {
+            file: path.join(repoRoot, 'packages/shared-web/browser/rallar.ts'),
+            ruleId: 'file.responsibility-count',
+            symbol: undefined,
+            message: 'File exports 13 runtime values'
+        };
+        expect(isReviewedDisposition(repoRoot, { ...finding, file: `${finding.file}.other.ts` })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'unreviewedPublicOwner' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'file.length' })).toBe(false);
+        for (const magnitude of [0, -1, 13.5, 14, Number.MAX_SAFE_INTEGER + 1]) {
+            expect(isReviewedDisposition(repoRoot, { ...finding, message: `File exports ${magnitude} runtime values` })).toBe(false);
+        }
+        expect(isReviewedDisposition(repoRoot, { ...finding, message: 'unparseable magnitude' })).toBe(false);
+    });
+
+    it.each([[12, 0], [13, 0], [14, 1]] as const)(
+        'keeps the public barrel CLI decision bounded at %s exports',
+        (count, exit) => {
+            const fixture = createReviewedFixture();
+            writeFixture(fixture, 'packages/shared-web/browser/rallar.ts', publicBarrelSource(count));
+            const result = runChangedChecker(fixture);
+            expect(result.status, result.stdout).toBe(exit);
+            expect(result.stdout).toContain(exit === 0 ? 'PASS: no new repository style findings' : 'file.responsibility-count');
+        }
+    );
+
     it('keeps reviewed policy entries immutable', () => {
         expect(Object.isFrozen(reviewedDispositions)).toBe(true);
         for (const disposition of reviewedDispositions) {
@@ -557,6 +599,11 @@ describe('reviewed repository style dispositions', () => {
         expect(findings.map((finding) => isReviewedDisposition(repoRoot, finding))).toEqual([true, false]);
     });
 });
+
+/** Synthetic exports exercise policy without coupling a test to SDK implementation source. */
+function publicBarrelSource(count: number): string {
+    return Array.from({ length: count }, (_, index) => `export const publicValue${index} = ${index};`).join('\n');
+}
 
 function createReviewedFixture(): string {
     const fixture = createGitFixture({ 'README.md': 'fixture\n' });

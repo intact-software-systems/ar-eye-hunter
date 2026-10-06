@@ -27,8 +27,8 @@ GitHub Actions, ignored evidence under `tmp/perf/`, and immutable observation ZI
 The accepted measurement contract is retained in Sections 5, 6, and 8 of this
 plan. The approved diagnostics amendment is specified in
 [RTC establishment diagnostics](../../../plans/active/rtc-establishment-diagnostics.md).
-Its current implementation horizon is the source-derived inline distributed TDD slice
-after Task54's reviewed delivery correction in Section 11. Current product and architecture are [docs/product.md](../../product.md)
+Its current implementation horizon is fenced SDK message capture, followed by inline
+distributed support/application evidence in Section 11. Current product and architecture are [docs/product.md](../../product.md)
 and [docs/architecture.md](../../architecture.md). The canonical executable
 navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
@@ -1668,8 +1668,8 @@ justified yet.”
 | 51      | Human approved end-to-end Off/Signaling/Full native configuration and implementation when the plan is ready. Source audits cover SDK/UI, general and distributed recipes, headless/CI and B06 identity. Complete specification and two-slice plan independently APPROVE after three finite readiness fixes; TDD execution is authorized, no code or producer yet. Task45/46 findings remain intact, initial stall unknown, E3 zero, B07 held.                                          |
 | 52      | Complete canonical SDK/core capture selection and actual immutable construction readback at 7d8bd4d0 plus single-flight fix de006d74b. Specification/quality review approves both initialization owners after witnessed reentry RED/GREEN; final shared-web 169 files/1,395 tests and 1,454-file zero-error test types pass. Native remains explicitly unsupported until Task53; UI/recipe/agent/Actions/B06 application and hosted/performance acceptance remain outstanding.         |
 | 53      | Original-owner bounded native evidence and queued-candidate correction are independently approved and published. Two historical TDD deviations were explicitly accepted, with no future waiver; length-only exceptions remain separate. The exact delivery-policy correction at884 passes local and independently audited normal hosted correctness. End-to-end configuration, native availability and B06/performance acceptance remain outstanding.                                  |
-| 54      | Executable recipe/run selection and actual SDK attribution pass local behavioral validation and scoped review after admission-body and finite-composite fixes. Published6d's normal Release fails six coupling classifications; skipped downstream checks remain unaccepted. Support-only fix2 passes99 focused tests/types/current gates and scoped specification/quality review, preserving production behavior. Fresh published-source hosted acceptance remains outstanding.       |
-| 55      | Read-only distributed source preparation is complete. It identifies missing run selection, explicit-target support bypass, lost actual receipts, unguarded reference bodies, restore/replay attribution gaps and missing runner selection. These are implementation requirements, not delivered behavior or new runtime-cause evidence. Task54's actual delivery failure takes precedence.                                                                                             |
+| 54      | Executable recipe/run intent and actual SDK attribution are locally reviewed after semantic admission-body/composite fixes. Published6d failed six coupling findings; support-only fix2 passes99 focused tests/types/current gates and scoped review. Normal hosted correctness is now independently accepted at853e with exact tested-tree identity,101 passing reports and fresh validation publication. Native/distributed/UI/Actions/B06/E3 acceptance remains outstanding.        |
+| 55      | Read-only distributed source preparation is complete. It identifies missing run selection, explicit-target support bypass, lost actual receipts, unguarded reference bodies, restore/replay attribution gaps and missing runner selection. These are implementation requirements, not delivered behavior or new runtime-cause evidence. The resolved Task54 delivery failure preceded the source-derived SDK message prerequisite.                                                     |
 
 ## 11. Current Implementation Horizon After Task 54
 
@@ -1723,21 +1723,38 @@ correction now passes the active gate with witnessed semantic RED/GREEN, preserv
 thresholds, parser, tolerance and native runtime. Independent review approved the correction,
 published at `884db0496cc6a4109a7fc90e225705da8551fce3`. Its normal hosted correctness is
 accepted after checking actual checkout and artifact identities. End-to-end diagnostics,
-supported-manifest and baseline/timing acceptance remain outstanding. The next useful
-implementation actions are:
+supported-manifest and baseline/timing acceptance remain outstanding. Task56's message
+intent, handle-specific receipt and final admission fence now have independent
+specification/quality approval after a witnessed test-first correction of stale
+storage-to-volatile admission. Its corrected frozen suite passes 14,661 tests with
+12 skipped; current changed gates, browser budgets and four app builds pass.
+Delivery continues through draft PR #633; fresh hosted correctness for this source
+remains open. The next two useful implementation actions are:
 
-1. **Required inline distributed capture:** Use Task55's verified owners to add the
-   finite run override, support checks for every actual target and retained actual SDK
-   application receipts. Begin with observable no-effect and attribution failures,
-   preserve existing phase/lifecycle behavior, close all touched files recursively and
-   obtain independent specification/quality review. The approved SDK resolver remains
-   the sole precedence owner; requested mode and agent capability cannot prove application.
-2. **Guarded reference bodies and durable runner evidence:** After the inline contract is
-   verified, guard reference-only execution against its actual staged body/configuration,
-   retain original application attribution through restore/replay/export, and project
-   runner selection through the existing materializer. Establish body replacement, replay
-   and no-spawn semantic REDs before changing those owners. No second runtime, catalog
-   lookup, payload walker, receipt upgrade or migration reader is authorized.
+1. **Fenced Connect readback:** Establish meaningful semantic RED at the original
+   acquisition/completion owner, then retain that operation's actual immutable graph
+   evidence through the page result boundary. The current bridge erases middleware
+   success and later reads the global receipt after more callbacks. Page-owned auth is
+   serialized; proposed callback races remain unexecuted. Preserve ordinary connection
+   success, canonical intent, lifecycle and deadlines. Use the existing typed internal
+   middleware/receipt pair where the failing scenario supports it; do not add a connection
+   owner, recorder or mandatory public receipt field merely to expose diagnostics.
+2. **Fenced live CRDT readback:** Establish meaningful semantic RED at the original
+   document-effect owner before changing initial live subscription or send behavior.
+   Preserve actual operation-bound evidence through the document result boundary and
+   avoid later global replacement readback. Retain ordinary document/persistence outcomes,
+   cached-document behavior, canonical intent, lifecycle and deadlines. Required diagnostic
+   verification precedes live effects; it does not fabricate business or native failure.
+   Exact ports follow actual failing scenarios and independent review, without another
+   document or connection owner.
+
+Inline distributed capture follows these operation prerequisites. It still requires one
+finite run override, capability/version checks for every actual assigned target, and
+bounded positive per-agent evidence through real redaction, protocol, storage and export.
+Requested settings, advertised support and global getter readback cannot prove application.
+Its preparation remains a draft because message-handle evidence alone cannot certify
+Connect or live document work. Source analysis has located the missing guarantee; the
+proposed callback races are unexecuted and are not confirmed runtime defects.
 
 The full amendment still requires general/distributed recipe configuration and
 per-agent application receipts, visible Manual/Recipe Console controls, local/headless
@@ -1745,8 +1762,8 @@ and GitHub Actions propagation, and B06 sealed-mode/cohort validation. These rem
 required outcomes. Task54's behavior is locally validated after the two Important review
 corrections and scoped specification/quality approval. Its final frozen suite passes
 14,607 tests with 12 skipped. The support-only coupling correction now passes its actual
-changed-range gate and scoped review; fresh published-source hosted acceptance remains
-outstanding. The accepted native checkpoint at884 does not certify it. Task55's source trace
+changed-range gate and scoped review. The fresh853e hosted checkpoint below accepts normal
+correctness at that exact source; it does not certify subsequent implementation. Task55's source trace
 is complete; the two distributed outcomes above follow its verified current owners.
 No final amended acceptance is claimed by the staged Full native unavailable result.
 A separately selected unchanged B06 availability/first-stall/perturbation exercise
@@ -3322,12 +3339,26 @@ for these test/registry-only edits. These local results do not claim fresh hoste
 
 All five checked requirements retain their verified local/source scope. Fix2 closes the
 support/test findings through actual changed-range validation and scoped review; the new
-published-source hosted checkpoint remains outstanding.
+published853e normal hosted checkpoint below is accepted at its own scope.
 
 The next outcome after this slice is targeted-agent support, distributed invocation/application
 attribution and materialization/restore. UI, local/hosted bootstrap, Actions/helpers and sealed
 B06 mode/cohort validation remain required later outcomes. No new RTC producer, retry policy,
 accepted E3 cohort, performance result or historical post-ICE cause is selected by this work.
+
+**Corrected853e hosted checkpoint:** [Release37389173416](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37389173416),
+[Formation37389172709](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37389172709)
+and [Medium37389172399](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37389172399)
+all succeed. Release actually tests `853e072c7843f58cfda3e5304f34eb6d329c8a68`; formation/medium
+check out merge `4413fcec1d157ef518364d3132b984d8ccc18000`, independently verified to have
+identical tree `9ff7c7bf8827f24f0c976293104bb05fcce203f4`. The corrected coupling gate and
+formerly skipped reachability/types/build/Deno checks execute successfully. Fresh v2
+publication matches this PR/run/attempt/head and the independently reconstructed build digest.
+All101 current recipe reports pass with zero blocking failures and230 declared nonblocking
+convergence attempts. Hosted units pass14,607 tests/12 skipped; the PostgreSQL lane executes
+the skipped SQL cases. Truncation and broad-mode RTC-integrity skip remain explicit.
+This accepts normal correctness only: native availability, first-stall capture, observer
+cost, B06/E1/E3 and distributed acceptance remain outstanding. Prior884/6d evidence is unchanged.
 
 ### Task 55: Completed distributed source preparation
 
@@ -3359,6 +3390,138 @@ The existing materializer already owns effective body hashes and spawn isolation
 selection must use that owner, preserve authored bodies and GroupRef scope, and avoid a new
 process lifecycle for no-spawn recipes. UI/bootstrap/Actions and B06 attachment remain later
 required outcomes. No distributed behavior is claimed from this read-only preparation.
+
+### Task56: Fenced SDK message capture prerequisite
+
+**Status:** Local source acceptance after independent specification/quality approval.
+Fix round 1 closes stale volatile admission; no new fix findings remain. Corrected frozen
+validation passes 1,493 files/14,661 tests, with four files/12 tests skipped and 16 visible
+Node storage warnings. All 43 hashes agree before/after. Actual changed coupling/style,
+browser budgets and four affected app builds pass. Delivery continues through draft PR
+#633; fresh hosted correctness, end-to-end diagnostics and baseline acceptance remain open.
+
+Focused implementation and recursive self-review complete; changed-range
+gates, types, browser boundaries and four affected app builds pass. The first frozen
+full suite fails two tests: the headless bundle exceeds its strict316KiB shipping budget
+at316.262KiB, and the native supersedence fixture reaches an unavailable auth/storage
+port. Source tracing finds the fixture mock is installed after composition captures
+the real auth reader. Module-time mock binding passes all32 authority cases; the
+authored packaging policy's minimum316→317KiB correction passes its boundary test.
+Both support files receive full recursive review; the failed snapshot remains retained.
+The repaired frozen full suite passes 1,493 files/14,647 tests, with four files/12 tests
+skipped; 16 Node storage warnings remain visible. All 43 before/after hashes agree,
+and repaired changed-range style/coupling gates pass. Independent specification/quality
+review requests changes for one Important finding: storage-to-volatile admission
+awaits, then queues through the original context without repeating the current-auth
+fence. A bounded canonical-message diagnostic queues after authentication replacement
+while ownership reports session-not-current; its malformed first fixture is excluded.
+In fix round 1, two actual SDK regressions fail across the missing-storage shortcut
+and asynchronous storage-unavailable result; 30 tests pass, including both unchanged-owner
+controls and historical receipt assertions. Root reads the complete RED and verifies
+production and policy files unchanged before releasing minimum GREEN to the same
+implementer. A corrected lifecycle RED then fails four cases and passes 32 before
+production changes: stale auth admission and its missing failure evidence, plus late
+admission onto disposed/replaced graphs. An earlier incorrect handle-observability
+assumption and its timeouts remain excluded. The minimum correction passes 58 tests;
+expanded focused validation passes 200 tests, with package and maintained-test types
+passing. Root reads the complete logs and full two-file closure report. Corrected-source
+freeze, affected gates and scoped independent re-review still decide acceptance. Existing
+validation noise remains a nonblocking review finding.
+
+The initial actual-SDK queue run fails two cases
+(active and pending Native) and passes five preservation cases: explicit Off sends enqueue
+instead of returning the existing typed incompatible-configuration refusal. Root read the
+complete157-line failure and verified only the test/plan changed before releasing minimum
+GREEN. Three further semantic failures prove unavailable required capture admits a send,
+authentication replacement in message creation admits on the old session, and opaque payload
+serialization can mutate accepted capture intent. Their focused correction passes ten tests.
+The existing page JSON-result test then fails because the actual Off receipt is absent;
+its focused correction passes. Further semantic failures prove recipe run intent is dropped,
+typed page refusal evidence is lost, and final clock reentry needs an explicit refusal.
+Self-review then exposes an ordinary-send regression: a clock exception escapes instead of
+settling the original failed handle. Its independent RED precedes the correction preserving
+ordinary failure handling. Setup and unsupported-payload fixture failures remain excluded
+from semantic RED evidence. Focused closure passes380 tests; later targeted corrections pass
+270 message,21 page and53 acquisition/auth tests, without pooling those overlapping counts.
+The public snapshot passes12 tests after exactly two intentional additive error exports.
+The author reports whole-file closure of37 package files, followed by two recursively
+reviewed tooling files, the complete evidence registry and the two validation-repair
+support files. The actual changed-style gate rejects the public SDK entrypoint's
+13th value export. Full entrypoint review confirms the new typed refusal belongs to that
+same public responsibility. Controlled policy tests first fail at13, then pass its exact
+reviewed disposition while still rejecting14 and unrelated findings; thresholds, parser
+and growth tolerance remain unchanged. Focused tooling validation passes86 tests and
+maintained test types report1,464 files with zero debt/errors. The initial immutable
+candidate's coupling gate finds five unclassified assertions. Source review removes two
+redundant initializer counts, restores the existing auth-replacement contract's occurrence
+identity, and classifies three exact zero-admission effects. Focused acquisition/checker
+validation passes64 tests; the selected-file check classifies all four remaining findings.
+The first comparison preserves all280 old contracts and427 entries. Subsequent full-file
+registry review finds inaccurate ID guidance, four misplaced rationales, four stale or
+misdirected test references, and one unsupported enumeration approval. Narrow evidence
+corrections and removal of that ungrounded approval follow current source/tests; no
+checker policy or referenced implementation changes. The immutable changed-range gate
+still precedes acceptance. All75 initial legacy
+heuristic candidates map to current routing, translation or public-surface requirements;
+no retained legacy exception is selected. Root read the complete reports and terminal logs;
+current changed gates and frozen-source broad validation still decide delivery. No
+production, deployed or performance acceptance is claimed.
+
+The original reviewer then approves scoped fix-round specification and quality:
+the post-storage continuation repeats the original owner/capture policy and epoch
+check immediately before the volatile effect. Stale required auth settles through the
+existing failed-admission lifecycle with a finite reason; closed epochs receive neither
+late queue effects nor invented terminal settlement. Historical handle receipts remain
+unchanged. Current required owners and omitted-intent callers retain ordinary downgrade.
+The corrected immutable source passes one justified new-source full-suite run, 14,661
+tests/12 skipped. The earlier failed and repaired snapshots remain separate evidence.
+Root also discloses an ignored style-log filename collision: the later changed-style
+PASS log is retained separately, while the complete previously read inventory is recovered
+from its tool output with no original-byte hash claim. Direct source review and actual
+SDK semantic evidence decide the verdict. No source or frozen hash was altered by that
+evidence-path correction. Existing nonblocking warnings carry to final whole-branch review.
+
+The first inline proposal assumed that a pre-send `rtcCapture()` getter could certify
+message application. Source tracing disproves that: message acquisition awaits auth
+reconciliation and can replace the getter's graph. Page-generation leases do not identify
+that SDK session or middleware. Reading a new receipt afterward cannot certify the old send.
+This prerequisite therefore precedes distributed receipt aggregation. A focused refresh also
+locates separate Connect/live-CRDT attribution gaps: the page Connect bridge erases middleware
+success before later global readback, while live document diagnostics read the global receipt
+after opening/reading the document. Existing SDK/page guards precede further callbacks and
+do not establish terminal graph attribution. Page-owned authentication remains serialized;
+no executed replacement race is claimed. Their original-owner, test-first readback correction
+is the next slice. Guarded reference bodies, restore/replay and runner materialization remain
+required later outcomes.
+
+Extend the existing message input with the canonical optional `rtcCaptureMode` and
+`rtcCaptureContext` members from `RallarOperationOptions`; do not add another resolver or
+selection field. Route that snapshotted intent through the original authenticated acquisition.
+No-intent callers retain owned active/pending acquisition. Explicit incompatible mode retains
+the existing typed refusal, with no automatic reconnect or extra constructor.
+
+Expose `RallarMessageHandle.rtcCapture()` returning the canonical
+`RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>` associated with that
+handle's acquired graph. The original transport owner supplies the receipt only for the
+captured middleware/session. The existing sender/delivery/admission owners fence identity after
+ID/clock/diagnostic callbacks and before enqueue. Required explicit capture cannot admit a send
+using unavailable, mismatched or noncurrent application evidence; connection initialization
+keeps its original business result. A handle never reads a later global replacement as its
+own receipt. Preserve original origin on compatible reuse, truthful unavailable results,
+current message lifecycle/fallback/deadlines and all capture/resource caps.
+
+Semantic TDD must first show ignored explicit intent admits the wrong mode, or admits an
+incompatible send, through the actual SDK queue port. Cover auth replacement during acquisition
+and after acquisition in synchronous creation callbacks, plus sink-unavailable refusal,
+compatible reuse, Off without events and unchanged ordinary sends. A missing new method alone
+is not the behavioral RED. The page WS adapter forwards accepted intent and exposes this actual
+handle receipt; distributed DTO/compaction/restore work remains outside this prerequisite.
+
+Run focused sender/session/delivery/actual browser application tests, then shared-web/shared-test
+and maintained test types, public API snapshots, browser entrypoint/bundle boundaries and
+required affected app builds. Full recursive standards closure and independent specification/
+quality review remain binding. Before broad validation root runs delivery status and updates
+prose before one coherent freeze. No new producer, retry, timeout or performance acceptance.
 
 ## 12. Baseline Completion Gate
 

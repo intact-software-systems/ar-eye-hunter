@@ -258,7 +258,11 @@ function createDispatchHarness(
         }
     });
     const feed = new BrowserDeliverySettlements();
-    const sessionDeliveries = new BrowserSessionDeliveries(registry, { deliverySettlements: feed, readMiddleware: () => middleware });
+    const sessionDeliveries = new BrowserSessionDeliveries(registry, {
+        deliverySettlements: feed,
+        readMiddleware: () => middleware,
+        readRtcCaptureReceipt: () => undefined
+    }, () => middleware.session);
     sessionDeliveries.beginSession(middleware.session);
     feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const dispatch = new BrowserRallarMessageDispatch({ deliveries: registry, sessionDeliveries, nowMs: Date.now });
@@ -268,6 +272,8 @@ function createDispatchHarness(
         send: (message) => {
             const handle = registry.open(message, carrier);
             dispatch.send({
+                requestedConfiguration: undefined,
+                rtcCapture: { status: 'unavailable', reason: 'absent' },
                 context: middleware,
                 carrier,
                 message,

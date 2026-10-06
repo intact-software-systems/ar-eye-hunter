@@ -1,3 +1,4 @@
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarWaitForOpenOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ALAckMode, ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -5,6 +6,7 @@ import type { ALDurabilityAlgo, ALQosPolicyRequest } from '@shared/al-contracts/
 import type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { ALDeliveryLifecycle, ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export type RallarTypedMessageSendStrategy = 'ws' | 'rtc' | 'ws-then-rtc' | 'rtc-with-ws-fallback';
 
@@ -34,7 +36,7 @@ export type RallarStateEventListener<TEvent> = (
     message: RallarMessage<TEvent>
 ) => void | Promise<void>;
 
-export interface RallarMessageSendBase<T> {
+export interface RallarMessageSendBase<T> extends Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'> {
     readonly typeId: string;
     readonly payload: T;
     readonly topicId?: string;
@@ -94,6 +96,8 @@ export interface RallarMessageDeliveryOutcome {
 export interface RallarMessageHandle {
     readonly msgId: string;
     readonly typeId: string;
+    /** Immutable receipt of the connection acquired for this send; unassociated internal handles report absent. */
+    rtcCapture(): RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     /** The current lifecycle; the deadline is applied lazily, so a read after `expiresAtMs` says `expired`. */
     lifecycle(): ALDeliveryLifecycle;
     onEvent(listener: RallarMessageDeliveryListener): RallarUnsubscribe;

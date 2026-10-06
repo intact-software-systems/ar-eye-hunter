@@ -83,7 +83,7 @@ export function createBrowserMessagingComposition(
         deliveries: input.deliveries,
         sessionDeliveries: input.sessionDeliveries,
         nowMs: input.nowMs,
-        connect: async () => await input.session.acquireConnection(),
+        connect: async (capture) => await input.session.acquireConnection(capture),
         readMiddleware: input.session.readMiddleware,
         requireSession: input.session.requireSession,
         resolveDefaultRoom: input.state.resolveDefaultRoom,
