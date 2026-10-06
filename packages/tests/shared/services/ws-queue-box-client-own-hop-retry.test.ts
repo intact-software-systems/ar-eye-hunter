@@ -7,14 +7,17 @@ import {
     newALUnicastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import { toALOrderingTrackKey, type ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import {
     createCheckpointALOutboundRuntimeStores,
     createDefaultInMemoryALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
 import type {
     ALCheckpointOutboundRuntimeStores,
+    ALOutboundControlAdmissionResult,
     ALOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
@@ -55,10 +58,25 @@ const ONE_RETRY: ALQosPolicyRequest = {
 
 const ONE_CHECKPOINTED_RETRY: ALQosPolicyRequest = { ...ONE_RETRY, durability: { algo: 'local-checkpoint' } };
 
+/** An ordered room send whose one hop is the server, with a gap repair the server may ask for; its receipt does not time out within the test. */
+const ORDERED_ROOM_SEND: ALQosPolicyRequest = {
+    ack: { algo: 'hop', opts: { timeoutMs: 30_000 } },
+    retry: { algo: 'exp-backoff', opts: { maxAttempts: 1 } },
+    repair: { algo: 'retransmit', opts: { maxRepairs: 1 } }
+};
+const ORDERING_KEY = 'room-stream';
+
+/** What the client's outbound owner decided about one control its server sent. */
+interface ControlAdmissionObservation {
+    readonly targetMsgId: string;
+    readonly outcome: ALOutboundControlAdmissionResult['kind'];
+}
+
 interface OwnHopRetryFixture {
     readonly service: WsQueueBoxClientService;
     readonly sentFrames: readonly string[];
     readonly outboundStores: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
+    readonly controlAdmissions: readonly ControlAdmissionObservation[];
 }
 
 interface CheckpointedOwnHopRetryFixture {
@@ -109,6 +127,26 @@ describe('WS client retry of its own hop after an acknowledgement timeout', () =
         expect(await readOutboundEffectKinds(fixture.outboundStores)).not.toContain('ack-timeout');
     });
 
+    it('retransmits the sequence its server hop reports missing from an ordered room send, on the server gap NACK alone', async () => {
+        vi.useFakeTimers();
+        const fixture = createOwnHopRetryFixture();
+        const sends = [1, 2, 3].map(orderedRoomSend);
+        for (const send of sends) {
+            await enqueueAndSettle(fixture.service, send);
+        }
+        expect(fixture.sentFrames).toHaveLength(3);
+
+        const admitted = await fixture.service.acceptIncomingMessage(serverGapNack(sends[2], [{ from: 2, to: 2 }]));
+
+        expect(admitted.right?.kind).toBe('control');
+        expect(fixture.controlAdmissions).toEqual([{ targetMsgId: sends[2].id.msgId, outcome: 'committed' }]);
+        await expect.poll(async () => {
+            await vi.advanceTimersByTimeAsync(10);
+            return fixture.sentFrames.length;
+        }, { timeout: 5_000 }).toBe(4);
+        expect(decodePersistedALMessage(fixture.sentFrames[3]).id.msgId).toBe(sends[1].id.msgId);
+    });
+
     it('retries a checkpointed command the next service of the session restores, with the same msgId, once its acknowledgement times out', async () => {
         const dbName = `ws-client-own-hop-retry-${crypto.randomUUID()}`;
         const reloaded = createCheckpointedOwnHopRetryFixture(dbName);
@@ -138,15 +176,21 @@ function createOwnHopRetryFixture(): OwnHopRetryFixture {
     const socket = new JsonWebSocketClient('ws://own-hop-retry-test', createPassThroughTransportFaultPort());
     socket.ws = native;
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage });
+    const controlAdmissions: ControlAdmissionObservation[] = [];
     const service = createDefaultWsQueueBoxClientService({
         outbox: new InMemoryQueueBox(new Map()),
         socket,
         sessionId: 'self',
         serverPeerId: SERVER_PEER_ID,
-        outboundStores
+        outboundStores,
+        outboundDiagnostics: (event) => {
+            if (event.kind === 'control-admission') {
+                controlAdmissions.push({ targetMsgId: event.targetMsgId, outcome: event.outcome });
+            }
+        }
     }).enableDefaultCallbacks();
     onTestFinished(() => service.close());
-    return { service, sentFrames: native.sent, outboundStores };
+    return { service, sentFrames: native.sent, outboundStores, controlAdmissions };
 }
 
 /** A WS client over the session's checkpoint pair, owning the session's durable work, as a connected browser document is. */
@@ -204,6 +248,35 @@ function serverCommand(qos: ALQosPolicyRequest = ONE_RETRY): ALMessage {
         'relic.command.v1',
         { kind: 'start-expedition' },
         { groupRef: ROOM, ownership: 'shared', reliability: 'at-least-once', ack: 'receiver', qos }
+    );
+}
+
+/** One sequence of an ordered at-least-once room send, which the WS client sends through its server hop. */
+function orderedRoomSend(seq: number): ALMessage {
+    return newALBroadcastMessage(
+        'self',
+        { topicId: 'room.chat', resourceId: `chat-${seq}`, contextId: ROOM.groupId },
+        'room',
+        'chat.message.v1',
+        { seq },
+        { groupRef: ROOM, reliability: 'at-least-once', ordering: { orderingKey: ORDERING_KEY, seq }, qos: ORDERED_ROOM_SEND }
+    );
+}
+
+/** The server's word, as the client's hop, that the track behind `trigger` misses `missingRanges`. */
+function serverGapNack(trigger: ALMessage, missingRanges: readonly ALSeqRange[]): ALMessage {
+    return newALNackControlMessage(
+        { v: 2, msgId: `server-gap-${trigger.id.msgId}`, senderId: SERVER_PEER_ID, ts: Date.now() },
+        {
+            msgId: trigger.id.msgId,
+            fromPeerId: SERVER_PEER_ID,
+            toPeerId: 'self',
+            reason: 'gap',
+            observedAtEpochMs: Date.now(),
+            orderingKey: toALOrderingTrackKey(trigger),
+            expectedSeq: missingRanges[0].from,
+            missingRanges
+        }
     );
 }
 

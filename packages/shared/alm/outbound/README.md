@@ -18,7 +18,11 @@ one of the captured plan's next hops (`ackTracking.nextHopPeerIds`), so a retry 
 same frame to the same hop and never widens a room audience. A WS client's unicast addressed
 to the server, and its `hop` or `subtree` room send, track the server as that hop; a
 `receiver` room send or session unicast has no client-tracked hop and stays the server's to
-retry.
+retry. Control acceptance applies the same exemption: without a repair planner, a room-scoped
+gap NACK or repair control is admitted only when its requester is one of those next hops, so the
+server's gap NACK to its own WS client commits the repair hint that retransmits the missing
+sequences along that hop. [`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the
+one predicate both owners share.
 [`ALOutboundMessageEffects`](./al-outbound-message-effects.ts) runs the three
 message-shaped effects — `admit-message`, `dequeue-message`, and `send-prepared`.
 [`ALWorkHandler`](../work/al-work-handler.ts) registers outbound work with the

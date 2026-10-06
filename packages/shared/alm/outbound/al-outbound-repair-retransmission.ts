@@ -15,6 +15,7 @@ import type {
     ALOutboundRepairRequest,
     ALOutboundSettlementEmitter
 } from './al-outbound-message-runtime.ts';
+import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
 import { toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
@@ -319,11 +320,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
     }
 }
 
-/**
- * Whether the retry replays the sender's own hop: every peer still owed is one of the next hops the captured
- * plan sends through. Such a retry resends the same prepared frame to the same hop, which re-checks room
- * authority at ingress and deduplicates the repeat, so it cannot widen a room audience.
- */
+/** Whether the retry replays the sender's own hop: every peer still owed is one of the captured plan's next hops. */
 function isOwnHopRetry<TPrepared>(
     plan: ALOutboundDispatchPlan<TPrepared>,
     pending: ALOutboundPendingAckSnapshot | undefined
@@ -331,9 +328,8 @@ function isOwnHopRetry<TPrepared>(
     if (pending === undefined) {
         return false;
     }
-    const nextHopPeerIds = plan.ackTracking?.nextHopPeerIds ?? [];
     const failedPeerIds = toFailedPeerIds(pending);
-    return failedPeerIds.length > 0 && failedPeerIds.every((peerId) => nextHopPeerIds.includes(peerId));
+    return failedPeerIds.length > 0 && failedPeerIds.every((peerId) => isALOutboundOwnHopPeer(plan, peerId));
 }
 
 function toFailedPeerIds(pending: ALOutboundPendingAckSnapshot): readonly string[] {

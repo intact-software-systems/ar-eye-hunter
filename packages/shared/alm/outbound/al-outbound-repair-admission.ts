@@ -30,6 +30,7 @@ import type {
 } from './control/al-outbound-control-admission.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './control/write-al-outbound-control-admission-diagnostic.ts';
+import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
 import { toALOutboundAckTimeoutEffectId, toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
@@ -61,7 +62,11 @@ export namespace ALOutboundRepairAdmission {
     }
 }
 
-/** Turns persisted control/ACK/repair state into new durable admission commits; never sends directly. */
+/**
+ * Turns persisted control/ACK/repair state into new durable admission commits; never sends directly.
+ * Without a repair planner a room-scoped gap or repair control carries authority only when the sender's
+ * own hop asked for it, the one repair that cannot widen a room audience.
+ */
 export class ALOutboundRepairAdmission<TPrepared> {
     private static readonly NOT_YET_IN_SYNC_RETRY_DELAY_MS = 50;
     private readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
@@ -124,7 +129,10 @@ export class ALOutboundRepairAdmission<TPrepared> {
         if (!isRoomScopedALMessage(msg)) {
             return true;
         }
-        const planned = await this.dependencies.planRepairMessage?.(msg, {
+        if (this.dependencies.planRepairMessage === undefined) {
+            return read.plan !== undefined && isALOutboundOwnHopPeer(read.plan, control.payload.fromPeerId);
+        }
+        const planned = await this.dependencies.planRepairMessage(msg, {
             referenceKey: read.storedMessage?.reference.key,
             admittedAudience: read.plan?.admittedAudience,
             recipientScope: read.plan?.recipientScope,
