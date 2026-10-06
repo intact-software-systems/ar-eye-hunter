@@ -105,6 +105,8 @@ export interface RallarServerWsRoomAuthorizationInput {
     readonly topicId: string;
     readonly typeId: string;
     readonly minSnapshotVersion?: number;
+    /** The sender's roster stamp; absent when it stamped none, and no roster floor applies. */
+    readonly rosterVersion?: number;
 }
 
 export interface RallarServerWsRoomAudience {

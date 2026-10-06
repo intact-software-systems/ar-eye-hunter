@@ -237,7 +237,7 @@ it('retains the restored room original until actual scoped presence authorizes i
     };
     expect(await authorize(authorizationInput)).toMatchObject({
         authorized: false,
-        reason: 'unauthorized',
+        reason: 'membership-fenced',
         logMessage: expect.stringContaining('member-not-active')
     });
     await vi.advanceTimersByTimeAsync(100);

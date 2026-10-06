@@ -18,6 +18,8 @@ import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { createIncomingMessage, createRoomMessage, createServerIngressFixture } from './ws-queue-box-server-ingress-fixture.ts';
 
+const PENDING_ADMISSION_DENIALS = ['unauthorized', 'membership-fenced', 'not-yet-in-sync'] as const;
+
 describe('WS server bounded and authorized admission', () => {
     it('captures authenticated scope in admitted provenance before asynchronous admission', async () => {
         const fixture = await createServerIngressFixture();
@@ -136,7 +138,7 @@ describe('WS server bounded and authorized admission', () => {
         expect(fixture.delivered).toEqual([]);
     });
 
-    it.each(['unauthorized', 'not-yet-in-sync'] as const)('rechecks %s room authority before pending admission can commit or acknowledge', async (reason) => {
+    it.each(PENDING_ADMISSION_DENIALS)('rechecks %s room authority before pending admission can commit or acknowledge', async (reason) => {
         let nowMs = Date.now();
         vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
         const fixture = await createServerIngressFixture();
@@ -170,13 +172,13 @@ describe('WS server bounded and authorized admission', () => {
         await expect.poll(async () => {
             const keys = await fixture.admission.workQueue.getAllKeys();
             return (await fixture.admission.workQueue.getItem(keys[0]))?.status;
-        }).toBe(reason === 'unauthorized' ? 'COMPLETED' : 'RETRY');
+        }).toBe(reason === 'not-yet-in-sync' ? 'RETRY' : 'COMPLETED');
         expect(fixture.admission.data).toEqual(observedMetadata);
         expect(fixture.socket.sent).toEqual([]);
         expect(fixture.delivered).toEqual([]);
         const keys = await fixture.admission.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
-        expect((await fixture.admission.workQueue.getItem(keys[0]))?.status).toBe(reason === 'unauthorized' ? 'COMPLETED' : 'RETRY');
+        expect((await fixture.admission.workQueue.getItem(keys[0]))?.status).toBe(reason === 'not-yet-in-sync' ? 'RETRY' : 'COMPLETED');
         if (reason === 'not-yet-in-sync') {
             const waiting = await fixture.admission.workQueue.getItem(keys[0]);
             expect(waiting?.dequeueAudit.attempts).toBe(0);
@@ -229,6 +231,38 @@ describe('WS server bounded and authorized admission', () => {
         else {
             expect(fixture.socket.sent).toEqual([]);
         }
+        expect(fixture.delivered).toEqual([]);
+    });
+
+    it('answers a membership-fenced sender with a fenced NACK and refuses it as unauthorized', async () => {
+        const fixture = await createServerIngressFixture();
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
+            authorize: async () => ({
+                authorized: false,
+                reason: 'membership-fenced',
+                logMessage: 'Rejected room message for room-1: membership-fenced: member-removed: Group member has been removed.',
+                sendNack: true,
+                serverSnapshotVersion: 4
+            })
+        });
+
+        const message: ALMessage = { ...createRoomMessage(), qos: { ack: { algo: 'hop' }, durability: { algo: 'local-inbox' } } };
+        expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).left).toEqual({
+            code: 'unauthorized',
+            message: 'Rejected room message for room-1: membership-fenced: member-removed: Group member has been removed.'
+        });
+        const controls = fixture.socket.sent.map((frame) => decodePersistedALMessage(String(frame)));
+        expect(controls).toHaveLength(1);
+        expect(decodeALNackPayload(JSON.parse(controls[0].payload.resource))).toMatchObject({
+            fromPeerId: 'server',
+            toPeerId: 'session-1',
+            msgId: 'message-1',
+            reason: 'membership-fenced',
+            serverSnapshotVersion: 4
+        });
+        expect(fixture.admission.data.size).toBe(0);
+        expect(await fixture.admission.workQueue.getAllKeys()).toEqual([]);
         expect(fixture.delivered).toEqual([]);
     });
 

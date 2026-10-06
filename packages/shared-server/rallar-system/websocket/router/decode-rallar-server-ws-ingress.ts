@@ -11,6 +11,7 @@ import type {
     RallarServerWsPayload,
     RallarServerWsRoomAudience,
     RallarServerWsRoomAuthorizationDecision,
+    RallarServerWsRoomAuthorizationInput,
     RallarServerWsRoomAuthorizer,
     RallarServerWsTopicDefinition,
     RallarServerWsTopicMetadata
@@ -119,7 +120,7 @@ export async function authorizeRallarServerWsIngress(
             senderId: input.message.id.senderId,
             topicId: input.message.route.topicId,
             typeId: input.message.payload.typeId,
-            minSnapshotVersion: readRallarServerWsMinSnapshotVersion(input.message)
+            ...toRallarServerWsRoomFloors(input.message)
         }),
         input.message
     );
@@ -156,11 +157,13 @@ export function readRallarServerWsRoomRef(message: ALMessage): GroupRef | undefi
         : undefined;
 }
 
-function readRallarServerWsMinSnapshotVersion(message: ALMessage): number | undefined {
+function toRallarServerWsRoomFloors(
+    message: ALMessage
+): Pick<RallarServerWsRoomAuthorizationInput, 'minSnapshotVersion' | 'rosterVersion'> {
     const targets = message.targets;
     return targets?.mode === 'multicast' || targets?.mode === 'broadcast'
-        ? targets.minSnapshotVersion
-        : undefined;
+        ? { minSnapshotVersion: targets.minSnapshotVersion, rosterVersion: targets.rosterVersion }
+        : {};
 }
 
 function normalizeRoomAuthorizationDecision(
