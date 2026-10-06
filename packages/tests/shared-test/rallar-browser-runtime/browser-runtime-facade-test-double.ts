@@ -200,7 +200,7 @@ export const facadeBehavior = {
     directorCreateRelay: vi.fn<BlackBoxBrowserDirectorDependency['createRelay']>(),
     replayCapturedMessage: vi.fn<BlackBoxBrowserDeliveriesDependency['replayCapturedMessage']>(),
     submitRawControl: vi.fn<BlackBoxBrowserDeliveriesDependency['submitRawControl']>(),
-    resolveRoomMinSnapshotVersion: vi.fn<BlackBoxBrowserDeliveriesDependency['resolveRoomMinSnapshotVersion']>(),
+    resolveRoomSendFence: vi.fn<BlackBoxBrowserDeliveriesDependency['resolveRoomSendFence']>(),
     serverPeerId: vi.fn<BlackBoxBrowserPeersDependency['serverPeerId']>(),
     getRoomSessions: vi.fn<BlackBoxBrowserPeersDependency['getRoomSessions']>()
 };
@@ -359,7 +359,7 @@ const deliveries: BlackBoxBrowserDeliveriesDependency = {
     getHandle: (msgId) => deliveryRegistry.getHandle(msgId),
     replayCapturedMessage: async (replay) => await facadeBehavior.replayCapturedMessage(replay),
     submitRawControl: async (control) => await facadeBehavior.submitRawControl(control),
-    resolveRoomMinSnapshotVersion: (roomRef) => facadeBehavior.resolveRoomMinSnapshotVersion(roomRef)
+    resolveRoomSendFence: (roomRef) => facadeBehavior.resolveRoomSendFence(roomRef)
 };
 
 const peers: BlackBoxBrowserPeersDependency = {

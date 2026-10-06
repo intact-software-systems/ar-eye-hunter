@@ -55,7 +55,11 @@ describe('typed message fallback identity', () => {
             const original = fixture.attempts[0].message;
             expect(fixture.attempts[1].message).toEqual(original);
             expect(result.msgId).toBe(original.id.msgId);
-            expect(original.targets).toMatchObject({ groupRef: fixture.originalRoom, minSnapshotVersion: 9 });
+            expect(original.targets).toMatchObject({
+                groupRef: fixture.originalRoom,
+                minSnapshotVersion: 9,
+                rosterVersion: CACHED_ROSTER_VERSION
+            });
             expect(original.ordering).toMatchObject({ seq: 7, orderingKey: 'ready-order' });
             expect(original.route.contextId).toBe('room-one');
             expect(original.constraints?.expiresAtMs).toBe(Date.parse('2026-01-01T00:00:30Z'));
@@ -307,27 +311,23 @@ describe('typed message fallback identity', () => {
         expect(fixture.attempts).toEqual([]);
     });
 
-    it('preserves excluded recipients on both carriers', async () => {
+    it('preserves excluded recipients and the sender fence on both carriers', async () => {
         const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT });
-        const handle = await fixture.channel.send({ action: 'ready' }, { exceptPeerIds: ['excluded-peer'] });
+        const handle = await fixture.channel.send({ action: 'ready' }, { exceptPeerIds: ['excluded-peer'], minSnapshotVersion: 9 });
         await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
-        expect(fixture.attempts.map((attempt) => attempt.message.targets)).toEqual([
-            expect.objectContaining({ scope: 'room', exceptPeerIds: ['excluded-peer'] }),
-            expect.objectContaining({ scope: 'room', exceptPeerIds: ['excluded-peer'] })
-        ]);
+        const roomBroadcast = expect.objectContaining({
+            scope: 'room',
+            exceptPeerIds: ['excluded-peer'],
+            minSnapshotVersion: 9,
+            rosterVersion: CACHED_ROSTER_VERSION
+        });
+        expect(fixture.attempts.map((attempt) => attempt.message.targets)).toEqual([roomBroadcast, roomBroadcast]);
     });
 
     it('rejects a fallback strategy that would change a global audience into a room audience', async () => {
         const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT });
         await expect(fixture.channel.send({ action: 'ready' }, { strategy: 'ws-then-rtc', scope: 'all' }))
             .rejects.toThrow('$.scope');
-        expect(fixture.attempts).toEqual([]);
-    });
-
-    it('rejects unsupported membership fencing before trying either carrier', async () => {
-        const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT });
-        await expect(fixture.channel.send({ action: 'ready' }, { membershipEpoch: 2 }))
-            .rejects.toThrow('$.membershipEpoch');
         expect(fixture.attempts).toEqual([]);
     });
 });
@@ -339,6 +339,7 @@ interface ChannelInput {
     readonly firstPlanner?: (message: ALMessage) => ALOutboundDispatchPlan<never>;
 }
 
+const CACHED_ROSTER_VERSION = 4;
 /** A fresh durable admission: the shape both the default first attempt and every later attempt settle as. */
 const ADMITTED_VERDICT: ALDeliveryAdmissionVerdict = { kind: 'admitted', durable: true, queuedAttempts: 1 };
 const NO_ROUTE_VERDICT: ALDeliveryAdmissionVerdict = { kind: 'unroutable', reason: 'no-route', detail: 'no route' };
@@ -385,7 +386,7 @@ function createChannel(input: ChannelInput): ChannelFixture {
         resolveCurrentRoomRef: () => admission.currentRoom,
         toRoomId: (room) => typeof room === 'string' ? room : room?.groupId,
         resolveRoomRef: (room) => typeof room === 'string' ? { ...admission.originalRoom, groupId: room } : room,
-        resolveRoomMinSnapshotVersion: (_room, explicit) => explicit
+        resolveRoomSendFence: (_room, explicit) => ({ minSnapshotVersion: explicit, rosterVersion: CACHED_ROSTER_VERSION })
     });
     const channels = new BrowserTypedMessageChannels({
         inputValidator,

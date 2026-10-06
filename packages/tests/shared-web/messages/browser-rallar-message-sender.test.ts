@@ -67,12 +67,9 @@ describe('Rallar message send', () => {
             roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
             purpose: 'notification'
         });
-        await expect(channel.send(true, { scope: 'all', membershipEpoch: 1 })).rejects.toMatchObject({
+        await expect(channel.send(true, { scope: 'all' })).rejects.toMatchObject({
             name: 'RallarValidationError',
-            issues: expect.arrayContaining([
-                expect.objectContaining({ path: '$.scope', code: 'unsupported' }),
-                expect.objectContaining({ path: '$.membershipEpoch', code: 'unsupported' })
-            ])
+            issues: [expect.objectContaining({ path: '$.scope', code: 'unsupported' })]
         });
         expect(facade.isConnected()).toBe(false);
         expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
@@ -236,10 +233,11 @@ describe('Rallar message send', () => {
         expect(engineEvents).toEqual(['wake']);
     });
 
-    it('adds cached room snapshotVersion as minSnapshotVersion on RTC room sends', async () => {
+    it('stamps the cached room snapshot and roster versions on RTC room sends', async () => {
         mockGroupSnapshot(withSnapshotVersion(
             createGroupSnapshot('room-1', ['session-1', 'peer-1']),
-            7
+            7,
+            4
         ));
 
         const result = await createFacade().messages.rtc.send({
@@ -258,13 +256,14 @@ describe('Rallar message send', () => {
                 workspaceId: 'workspace-1',
                 groupId: 'room-1'
             },
-            minSnapshotVersion: 7
+            minSnapshotVersion: 7,
+            rosterVersion: 4
         });
         expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0].targets).not.toHaveProperty('groupId');
     });
 
-    it('stamps a typed send\'s stated floor on the room target, and the sender\'s own version without one', async () => {
-        mockGroupSnapshot(withSnapshotVersion(createGroupSnapshot('room-1', ['session-1', 'peer-1']), 7));
+    it('stamps the larger of a typed send\'s stated floor and the cached version, and the cached roster either way', async () => {
+        mockGroupSnapshot(withSnapshotVersion(createGroupSnapshot('room-1', ['session-1', 'peer-1']), 7, 4));
         const channel = createFacade().messages.room({
             typeId: 'chat.message.v1',
             roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
@@ -273,11 +272,26 @@ describe('Rallar message send', () => {
 
         await channel.send({ text: 'stated floor' }, { strategy: 'rtc', minSnapshotVersion: 42 });
         await channel.send({ text: 'sender floor' }, { strategy: 'rtc' });
+        await channel.send({ text: 'stale stated floor' }, { strategy: 'rtc', minSnapshotVersion: 3 });
 
         expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message.targets)).toMatchObject([
-            { mode: 'multicast', minSnapshotVersion: 42 },
-            { mode: 'multicast', minSnapshotVersion: 7 }
+            { mode: 'multicast', minSnapshotVersion: 42, rosterVersion: 4 },
+            { mode: 'multicast', minSnapshotVersion: 7, rosterVersion: 4 },
+            { mode: 'multicast', minSnapshotVersion: 7, rosterVersion: 4 }
         ]);
+    });
+
+    it('stamps neither version on RTC or WS room sends when no room snapshot is cached', async () => {
+        const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+        const facade = createFacade();
+
+        await facade.messages.rtc.send({ roomRef, typeId: 'chat.message.v1', payload: { text: 'uncached rtc' } });
+        await facade.messages.ws.send({ roomRef, topicId: 'room.chat', typeId: 'chat.message.v1', payload: { text: 'uncached ws' } });
+
+        for (const { targets } of [rtcRxStreamer, webSocketQueueBox].map((port) => port.enqueueOutboxIfAbsent.mock.calls[0][0])) {
+            expect(targets).toMatchObject({ groupRef: roomRef });
+            expect(targets).toMatchObject({ minSnapshotVersion: undefined, rosterVersion: undefined });
+        }
     });
 
     it('carries a typed send\'s stated QoS request on the envelope over both carriers, and only the purpose\'s durability without one', async () => {
@@ -458,10 +472,11 @@ describe('Rallar message send', () => {
         expect(engineEvents).toEqual(['wake']);
     });
 
-    it('adds cached room snapshotVersion as minSnapshotVersion on WS room sends', async () => {
+    it('stamps the cached room snapshot and roster versions on WS room sends', async () => {
         mockGroupSnapshot(withSnapshotVersion(
             createGroupSnapshot('room-1', ['session-1', 'peer-1']),
-            11
+            11,
+            5
         ));
 
         const result = await createFacade().messages.ws.send({
@@ -482,7 +497,8 @@ describe('Rallar message send', () => {
                 workspaceId: 'workspace-1',
                 groupId: 'room-1'
             },
-            minSnapshotVersion: 11
+            minSnapshotVersion: 11,
+            rosterVersion: 5
         });
     });
 
@@ -568,13 +584,15 @@ function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
 
 function withSnapshotVersion(
     snapshot: GroupSnapshot,
-    snapshotVersion: number
+    snapshotVersion: number,
+    rosterVersion = snapshot.group.rosterVersion
 ): GroupSnapshot {
     return {
         ...snapshot,
         group: {
             ...snapshot.group,
-            snapshotVersion
+            snapshotVersion,
+            rosterVersion
         }
     };
 }

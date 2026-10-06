@@ -214,7 +214,6 @@ export function blackBoxRallarConnectionOperationKeyOf(
             reliability: rallar.reliability,
             ack: rallar.ack,
             ownership: rallar.ownership,
-            membershipEpoch: rallar.membershipEpoch,
             minSnapshotVersion: rallar.minSnapshotVersion,
             seq: rallar.seq,
             orderingKey: rallar.orderingKey,

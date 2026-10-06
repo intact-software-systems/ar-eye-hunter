@@ -16,6 +16,7 @@ import type {
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -39,10 +40,7 @@ export namespace BrowserRallarMessagesController {
         resolveCurrentRoomRef(): GroupRef | undefined;
         toRoomId(room: string | GroupRef | undefined): string | undefined;
         resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined;
-        resolveRoomMinSnapshotVersion(
-            room: string | GroupRef | undefined,
-            explicitMinSnapshotVersion?: number
-        ): number | undefined;
+        resolveRoomSendFence(room: string | GroupRef | undefined, explicitMinSnapshotVersion?: number): RoomSendFence;
         readMessageMaxPayloadBytes(): number;
     }
 }
@@ -77,7 +75,7 @@ export class BrowserRallarMessagesController {
             resolveCurrentRoomRef: input.resolveCurrentRoomRef,
             toRoomId: input.toRoomId,
             resolveRoomRef: input.resolveRoomRef,
-            resolveRoomMinSnapshotVersion: input.resolveRoomMinSnapshotVersion
+            resolveRoomSendFence: input.resolveRoomSendFence
         });
 
         const rtc: RallarMessagesOperations['rtc'] = {

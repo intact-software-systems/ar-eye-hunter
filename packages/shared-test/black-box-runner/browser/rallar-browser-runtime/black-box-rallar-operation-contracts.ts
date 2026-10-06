@@ -105,7 +105,6 @@ export interface BlackBoxRallarConfig {
     readonly reliability?: 'best-effort' | 'at-least-once';
     readonly ack?: ALAckMode;
     readonly ownership?: 'shared' | 'exclusive';
-    readonly membershipEpoch?: number;
     readonly minSnapshotVersion?: number;
     readonly seq?: number;
     readonly orderingKey?: string;
@@ -155,7 +154,6 @@ export interface BlackBoxRallarSendInput {
     readonly reliability?: 'best-effort' | 'at-least-once';
     readonly ack?: ALAckMode;
     readonly ownership?: 'shared' | 'exclusive';
-    readonly membershipEpoch?: number;
     readonly minSnapshotVersion?: number;
     readonly seq?: number;
     readonly orderingKey?: string;

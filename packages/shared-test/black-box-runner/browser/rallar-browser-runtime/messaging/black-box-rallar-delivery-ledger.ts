@@ -183,7 +183,7 @@ export class BlackBoxRallarDeliveryLedger {
         }
         const current = roomRef === undefined
             ? undefined
-            : this.#input.deliveries.resolveRoomMinSnapshotVersion(roomRef);
+            : this.#input.deliveries.resolveRoomSendFence(roomRef).minSnapshotVersion;
         if (current === undefined) {
             throw new TypeError(
                 'messages.send.minSnapshotVersion.aboveCurrentBy needs the sender\'s room snapshot version; ' +
