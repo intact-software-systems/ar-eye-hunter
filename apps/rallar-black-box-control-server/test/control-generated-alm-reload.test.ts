@@ -648,9 +648,10 @@ class GeneratedAlmPorts {
     }
 
     /**
-     * The hop reads the gap and NACKs the range of the held sequence, which the sender admits as `committed` and answers
-     * with one retransmission; a second report of the same gap finds that budget of one spent and settles the held
-     * message `skipped` as `repair-exhausted`. The revealing frame waits at the receiver for the gap to close.
+     * The hop reads the gap and, once per arrival that reveals it, NACKs the range of the held sequence: one hint per
+     * revealing message, whatever controls that arrival raises. The sender admits each as `committed`; the first hint
+     * answers with one retransmission, and the second finds that budget of one spent and settles the held message
+     * `skipped` as `repair-exhausted`. The revealing frame waits at the receiver for the gap to close.
      */
     private bufferBehindGap(message: PortMessage, held: PortMessage): void {
         message.submitted = true;

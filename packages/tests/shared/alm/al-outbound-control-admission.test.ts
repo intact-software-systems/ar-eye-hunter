@@ -374,6 +374,27 @@ describe('outbound control admission identity', () => {
             .toEqual({ kind: 'committed' });
     });
 
+    it('commits a gap NACK and a repair request naming the same gap as one repair hint', async () => {
+        const { admissionStore, workQueue, control } = createFixture();
+        await seedOrderedObligation(admissionStore);
+        const gap: readonly ALSeqRange[] = [{ from: 2, to: 3 }];
+
+        expect(await control.admit(orderedGapNack('stream:sender:7', gap), 'peer')).toEqual({ kind: 'committed' });
+        expect(await control.admit(orderedRepairControl('stream:sender:7', gap), 'peer')).toEqual({ kind: 'committed' });
+
+        expect(await readRetainedWork(admissionStore, workQueue)).toEqual([{
+            kind: 'repair-hint',
+            msgId: 'message',
+            request: {
+                trigger: 'nack',
+                requestedByPeerId: 'receiver',
+                orderingTrackKey: 'stream:sender:7',
+                missingRanges: gap,
+                failedPeerIds: []
+            }
+        }]);
+    });
+
     it('completes a frozen 256-peer audience after diagnostic ACK history is already full', async () => {
         const { admissionStore, control, state } = createFixture();
         const expectedPeerIds = Array.from({ length: 256 }, (_, index) => `peer-${index}`);
@@ -950,6 +971,22 @@ function repairControl(observedAtEpochMs: number): ALMessage {
             msgId: 'message',
             reason: 'retransmit',
             observedAtEpochMs
+        }
+    );
+}
+
+function orderedGapNack(orderingKey: string, missingRanges: readonly ALSeqRange[]): ALMessage {
+    return newALNackControlMessage(
+        { v: 2, msgId: `control-gap-${orderingKey}-${toALSeqRangesText(missingRanges)}`, senderId: 'receiver', ts: 1 },
+        {
+            fromPeerId: 'receiver',
+            toPeerId: 'sender',
+            msgId: 'message',
+            reason: 'gap',
+            observedAtEpochMs: 1,
+            orderingKey,
+            expectedSeq: 2,
+            missingRanges
         }
     );
 }

@@ -22,7 +22,11 @@ retry. Control acceptance applies the same exemption: without a repair planner, 
 gap NACK or repair control is admitted only when its requester is one of those next hops, so the
 server's gap NACK to its own WS client commits the repair hint that retransmits the missing
 sequences along that hop. [`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the
-one predicate both owners share.
+one predicate both owners share. A NACK and a repair request naming the same gap are one hint: the
+gap names the hint's effect row, and the second control is absorbed into it rather than filed again.
+A hint's budget is charged once per retransmitted message per hint identity, under the sender's
+fence, so a hint re-executed after a conflict or an expired lease charges nothing more and never
+states an exhaustion its own sends did not earn.
 [`ALOutboundMessageEffects`](./al-outbound-message-effects.ts) runs the three
 message-shaped effects — `admit-message`, `dequeue-message`, and `send-prepared`.
 [`ALWorkHandler`](../work/al-work-handler.ts) registers outbound work with the

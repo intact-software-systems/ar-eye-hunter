@@ -34,13 +34,6 @@ interface ALOutboundCommitRepairInput<TPrepared> {
     readonly attemptIdentity: string;
 }
 
-/** A repair budget a message has spent, as its exhaustion settlement states it. */
-interface ALOutboundRepairExhaustion {
-    readonly msgId: string;
-    readonly attempts: number;
-    readonly maxAttempts: number;
-}
-
 export namespace ALOutboundRepairRetransmission {
     export interface Dependencies<TPrepared> {
         readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
@@ -160,12 +153,6 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             return;
         }
 
-        const attempts = read.repairAttempt?.attempts ?? 0;
-        if (attempts >= repair.maxAttempts) {
-            this.settleRepairExhausted({ msgId, attempts, maxAttempts: repair.maxAttempts });
-            return;
-        }
-
         const repairedPlan = await this.readRepairPlan(read, request);
         if (repairedPlan?.dropReason) {
             console.warn(`Skipping outbound repair dispatch: ${repairedPlan.dropReason}`);
@@ -178,7 +165,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         await this.commitRepairPlan({
             msg,
             plan: repairedPlan,
-            priorAttempts: attempts,
+            priorAttempts: read.repairAttempt?.attempts ?? 0,
             maxAttempts: repair.maxAttempts,
             attemptIdentity
         });
@@ -214,12 +201,12 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         }
     }
 
-    /** The terminal statement of a message whose repair budget is spent; a repeat states nothing. */
-    private settleRepairExhausted(exhaustion: ALOutboundRepairExhaustion): void {
-        if (this.exhaustedMsgIds.has(exhaustion.msgId)) {
+    /** The terminal statement of a message whose repair budget dispatch found spent; a repeat states nothing. */
+    private settleRepairExhausted(msgId: string, detail: string): void {
+        if (this.exhaustedMsgIds.has(msgId)) {
             return;
         }
-        this.exhaustedMsgIds.add(exhaustion.msgId);
+        this.exhaustedMsgIds.add(msgId);
         if (this.exhaustedMsgIds.size > AL_MESSAGE_RESOURCE_LIMITS.repairWindow) {
             const [oldest] = this.exhaustedMsgIds;
             this.exhaustedMsgIds.delete(oldest!);
@@ -227,14 +214,9 @@ export class ALOutboundRepairRetransmission<TPrepared> {
 
         this.dependencies.settlements({
             kind: 'admission',
-            msgId: exhaustion.msgId,
+            msgId,
             trackedReceiptAlgo: 'none',
-            verdict: {
-                kind: 'skipped',
-                reason: 'repair-exhausted',
-                detail:
-                    `The repair of ${exhaustion.msgId} ran out of retransmits after ${exhaustion.attempts} of ${exhaustion.maxAttempts}.`
-            }
+            verdict: { kind: 'skipped', reason: 'repair-exhausted', detail }
         });
     }
 
@@ -305,8 +287,12 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         });
     }
 
+    /**
+     * Dispatch admission charges the budget under the sender's fence and answers `repair-exhausted` when
+     * it finds the budget spent; only that answer, never a read of this owner's own, states the exhaustion.
+     */
     private async commitRepairPlan(repair: ALOutboundCommitRepairInput<TPrepared>): Promise<void> {
-        await this.dependencies.dispatchAdmission.commit({
+        const { computed } = await this.dependencies.dispatchAdmission.commit({
             msg: repair.msg,
             planner: () => repair.plan,
             intent: 'repair',
@@ -317,6 +303,9 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 attemptIdentity: repair.attemptIdentity
             }
         });
+        if (computed.verdict.kind === 'skipped' && computed.verdict.reason === 'repair-exhausted') {
+            this.settleRepairExhausted(repair.msg.id.msgId, computed.verdict.detail);
+        }
     }
 }
 

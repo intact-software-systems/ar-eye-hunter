@@ -29,9 +29,9 @@ export const repairExhausted: AlmConformanceScenarioDefinition = {
 };
 
 /**
- * The fourth send reports the gap once more, so the budget of one retransmit is spent however many repair
- * requests one arrival raises. The hold is never released: a late second frame would reach the receiver inside
- * its absence window.
+ * The fourth send reports the gap once more. One arrival raises one hint, whatever controls it sends, so the
+ * third send's report spent the budget of one retransmit and the fourth's finds it spent. The hold is never
+ * released: a late second frame would reach the receiver inside its absence window.
  */
 function toRepairExhaustedSenderCommands(
     sender: AlmConformanceStepInput

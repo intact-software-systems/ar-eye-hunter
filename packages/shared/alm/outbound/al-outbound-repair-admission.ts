@@ -22,7 +22,11 @@ import type {
     ALOutboundRuntimeDiagnosticsSink,
     ALOutboundSettlementEmitter
 } from './al-outbound-message-runtime.ts';
-import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
+import {
+    controlTargetMsgId,
+    toALOutboundControlRepairHint,
+    type ALOutboundControlSource
+} from './compute-al-outbound-control-admission.ts';
 import type {
     ALOutboundControlAdmission,
     ALOutboundControlAdmissionResult,
@@ -133,15 +137,11 @@ export class ALOutboundRepairAdmission<TPrepared> {
             return read.plan !== undefined && isALOutboundOwnHopPeer(read.plan, control.payload.fromPeerId);
         }
         const planned = await this.dependencies.planRepairMessage(msg, {
+            ...toALOutboundControlRepairHint(control.payload),
             referenceKey: read.storedMessage?.reference.key,
             admittedAudience: read.plan?.admittedAudience,
             recipientScope: read.plan?.recipientScope,
             sessionInvalidation: read.plan?.sessionInvalidation,
-            trigger: control.type,
-            requestedByPeerId: control.payload.fromPeerId,
-            orderingTrackKey: control.payload.orderingKey,
-            missingRanges: control.payload.missingRanges ?? [],
-            failedPeerIds: [],
             completedHopPeerIds: [],
             repair: read.plan?.repairTracking ?? { enabled: false, algo: 'none', maxAttempts: 0 }
         });

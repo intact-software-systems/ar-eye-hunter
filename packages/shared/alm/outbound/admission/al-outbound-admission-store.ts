@@ -110,12 +110,20 @@ export type ALOutboundPlanner<TPrepared> = (
     authority: ALOutboundPlanningAuthority | undefined
 ) => ALOutboundDispatchPlan<TPrepared>;
 
+/** The sends a budgeted repair attempt commits, as their effect rows name them. */
+export interface ALOutboundRepairAttemptIdentity {
+    readonly attemptIdentity: string;
+    readonly phase: ALOutboundDispatchPhase;
+}
+
 export interface ALOutboundOutgoingReadInput<TPrepared> {
     readonly msg: ALMessage;
     readonly dequeueAuthority?: ALOutboundDequeueAuthority;
     readonly planner: ALOutboundPlanner<TPrepared>;
     readonly observedCanonicalEntry: ResourceEntry | undefined;
     readonly intent: ALOutboundComputeIntent;
+    /** Present only for a dispatch that charges a repair budget: the read reports whether its sends are already committed. */
+    readonly repairAttempt?: ALOutboundRepairAttemptIdentity;
 }
 
 /** What one bundle's commit fences: the effect rows it may replace and the canonical pair it may write. */
@@ -166,6 +174,12 @@ export interface ALOutboundMessageReadDto<TPrepared> {
     readonly sentSnapshot?: ALOutboundSentMessageSnapshot;
     readonly pendingAck?: ALOutboundPendingAckSnapshot;
     readonly repairAttempt?: ALOutboundRepairAttemptSnapshot;
+    /**
+     * A send row of the read's `repairAttempt` identity already exists: the attempt was committed, and
+     * with it the one charge it makes, so a re-executed hint charges nothing more. False when the read
+     * names no repair attempt.
+     */
+    readonly repairAttemptCommitted: boolean;
     readonly acks: readonly ALAckPayload[];
     readonly nacks: readonly ALNackPayload[];
     readonly repairs: readonly ALRepairPayload[];
@@ -189,6 +203,11 @@ export interface ALOutboundRepairReadDto<TPrepared> {
 }
 
 export interface ALOutboundRepairHint {
+    /**
+     * `ack-timeout` for the receipt schedule's retry. A peer's control names the hint's shape, not the
+     * control: `nack` for missing ranges, `repair` for the message itself, so one gap is one hint
+     * whichever controls report it.
+     */
     readonly trigger: ALOutboundRepairTrigger;
     readonly requestedByPeerId?: string;
     readonly failedPeerIds: readonly string[];

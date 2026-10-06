@@ -39,6 +39,9 @@ import {
 } from '../al-outbound-canonical-message.ts';
 import { readALOutboundCanonicalMessage } from '../al-outbound-canonical-storage.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
+import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
+import { toALOutboundSendEffectId } from '../to-al-outbound-effect-id.ts';
+import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fingerprint.ts';
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
 import { validateALOutboundPlannedMessage } from '../validate-al-outbound-dispatch.ts';
 import {
@@ -56,6 +59,7 @@ import type {
     ALOutboundMessageReadDto,
     ALOutboundOutgoingReadInput,
     ALOutboundPlanner,
+    ALOutboundRepairAttemptIdentity,
     ALOutboundRepairReadDto,
     ALOutboundSupersedenceReadState
 } from './al-outbound-admission-store.ts';
@@ -139,6 +143,8 @@ export class ALOutboundAdmissionReads<TPrepared> {
             msgId: msg.id.msgId,
             replacesMsgId: supersedenceInput?.replacesMsgId
         });
+        const repairAttemptCommitted = input.repairAttempt !== undefined &&
+            await this.readRepairAttemptCommitted(session, input.repairAttempt, plan);
 
         return {
             kind: 'outgoing',
@@ -153,6 +159,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             plan,
             sentSnapshot: this.toLiveSentSnapshot(stored, canonical),
             ...control,
+            repairAttemptCommitted,
             repairs,
             supersedence,
             supersedenceAcceptance: supersedenceInput
@@ -452,6 +459,30 @@ export class ALOutboundAdmissionReads<TPrepared> {
     ): Promise<ResourceEntry | undefined> {
         this.readOperationCount += 1;
         return await session.readWork(key);
+    }
+
+    /** Whether a send of the attempt is already a work row; the one commit that wrote one wrote them all. */
+    private async readRepairAttemptCommitted(
+        session: ALAdmissionReadSession,
+        attempt: ALOutboundRepairAttemptIdentity,
+        plan: ALOutboundDispatchPlan<TPrepared>
+    ): Promise<boolean> {
+        const rows = await Promise.all(plan.preparedMessages.map((prepared, index) =>
+            this.readQueueItem(
+                session,
+                toALOutboundWorkKey(
+                    this.namespace,
+                    toALOutboundSendEffectId({
+                        msgId: plan.msg.id.msgId,
+                        phase: attempt.phase,
+                        attemptIdentity: attempt.attemptIdentity,
+                        index,
+                        preparedFingerprint: toALOutboundPreparedFingerprint(prepared)
+                    })
+                )
+            )
+        ));
+        return rows.some((row) => row !== undefined);
     }
 
     private assertSentMessageScope(msgId: string, stored: ALStoredOutboundMessage | undefined): void {

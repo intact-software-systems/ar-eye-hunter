@@ -343,8 +343,9 @@ and never a fourth; its typed channel hands them over in sequence by constructio
 ordered-delivery buffer until seq 2 arrives.
 
 The `repair-exhausted` conformance scenario runs over every carrier. It is the gap repair whose message hold
-is never released: after the admitted NACK the sender sends seq 4, a second report of the same gap, so the
-budget of one retransmit (`maxRepairs`) is spent however many repair requests one arrival raises. The sender
+is never released: after the admitted NACK the sender sends seq 4, whose arrival reports the gap a second
+time. One arrival raises one hint, whatever controls it sends, so seq 3's report spent the budget of one
+retransmit (`maxRepairs`) and seq 4's finds it spent. The sender
 then observes seq 2's handle `failed` and asserts `failure.kind: 'skipped'` with `failure.reason:
 'repair-exhausted'`; the receiver receives the first send once and proves the absence of a second, since
 seq 3 and seq 4 wait for a seq 2 that never arrives. The hold stays until the page ends: a release would let
