@@ -2,6 +2,7 @@ import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagn
 
 export namespace RallarRtcCaptureUnverifiedError {
     export type Reason =
+        | 'operation-not-current'
         | 'session-not-current'
         | 'middleware-not-current'
         | 'receipt-unavailable'
@@ -25,7 +26,7 @@ export class RallarRtcCaptureUnverifiedError extends Error {
     public readonly reason: RallarRtcCaptureUnverifiedError.Reason;
 
     public constructor(input: RallarRtcCaptureUnverifiedError.Input) {
-        super('Required RTC capture could not be verified for message admission.');
+        super('Required RTC capture could not be verified for operation admission.');
         this.name = 'RallarRtcCaptureUnverifiedError';
         this.requestedConfiguration = Object.freeze({ ...input.requestedConfiguration });
         this.rtcCapture = input.rtcCapture;

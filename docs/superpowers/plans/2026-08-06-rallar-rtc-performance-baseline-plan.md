@@ -75,7 +75,7 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
 **Created:** 2026-08-06
 
-**Updated:** 2026-10-05
+**Updated:** 2026-10-06
 
 ## 1. Current Outcome And Evidence
 
@@ -1728,7 +1728,7 @@ intent, handle-specific receipt and final admission fence now have independent
 specification/quality approval after a witnessed test-first correction of stale
 storage-to-volatile admission. Its corrected frozen suite passes 14,661 tests with
 12 skipped; current changed gates, browser budgets and four app builds pass.
-Delivery continues through draft PR #633. Fresh Branch Release app-browser validation
+Delivery continues through draft PR #633. Initial Branch Release app-browser validation
 fails the observer-report disclosure check on published `12eaac58e`; its following memory
 full-stack step is skipped. The unchanged focused browser spec reproduces the failure.
 Read-only instrumentation and the actual reset call path identify a test-readiness race:
@@ -1741,9 +1741,9 @@ of the second before delivery. Both failures now have actual reset/event chronol
 the minimum second readiness correction now passes the original focused pair with default
 tracing. Original-reviewer scoped specification/quality approval, the covering repeat
 (46 PASS/64 SKIP) and in-memory full-stack checks (seven PASS) are complete. Fresh
-hosted delivery of the reviewed correction remains outstanding.
-Connect implementation is held
-during that closure. The next two useful implementation actions after it are:
+hosted delivery is now independently accepted for published `a74be0ee561494085f2c18dce38264e404ee792b`.
+All three required workflows succeed; actual checkouts and the fresh validation artifact
+match that source/tree. The next two useful implementation actions are:
 
 1. **Fenced Connect readback:** Establish meaningful semantic RED at the original
    acquisition/completion owner, then retain that operation's actual immutable graph
@@ -3412,8 +3412,10 @@ Fix round 1 closes stale volatile admission; no new fix findings remain. Correct
 validation passes 1,493 files/14,661 tests, with four files/12 tests skipped and 16 visible
 Node storage warnings. All 43 hashes agree before/after. Actual changed coupling/style,
 browser budgets and four affected app builds pass. Delivery continues through draft PR
-#633. Fresh hosted app-browser validation fails the observer-report disclosure check;
-required delivery closure, end-to-end diagnostics and baseline acceptance remain open.
+#633. Both subsequently diagnosed observer fixture races have test-first readiness
+corrections and scoped independent approval. Required normal hosted correctness is
+accepted for published `a74be0ee561494085f2c18dce38264e404ee792b`; end-to-end diagnostics
+and baseline acceptance remain open.
 
 Focused implementation and recursive self-review complete; changed-range
 gates, types, browser boundaries and four affected app builds pass. The first frozen
@@ -3566,9 +3568,32 @@ unchanged. Current repair-range coupling and changed-style checks pass; prior un
 product checks retain their original scopes because all 42 published source paths are
 byte-identical. Node color warnings and the full-stack expected missing-ticket 401
 diagnostic remain disclosed. Only final plan outcome prose differs from the reviewed
-freeze before publication. Required fresh exact-source hosted correctness/publication
-still decides delivery closure; Task 57 remains held. This neither waives future product
-TDD nor accepts observer timing.
+freeze before publication. Fresh exact-source hosted correctness/publication now closes
+Task56 delivery at its normal correctness scope. This neither waives future product TDD
+nor accepts observer timing.
+
+**Fresh hosted acceptance:** Published `a74be0ee561494085f2c18dce38264e404ee792b` has
+[Branch Release 37404814266](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37404814266),
+[Formation 37404814043](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37404814043)
+and [Medium 37404814096](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37404814096)
+SUCCESS. The independent audit verifies actual Branch checkout a74 and formation/medium
+pull-merge `3fb63ada40ed0fd46e4643eee88d2ef624d6d1d1`, all with identical tree
+`44c10c2b1d21c5e57fd476996ac9b7cc835af603`. Both repaired observer tests execute and pass:
+app 46 PASS/64 SKIP, followed by memory full-stack seven PASS. Every required Branch lane,
+including static checks and fresh validation publication, succeeds. The actual
+`validation-evidence-v2` record matches repository, PR633, run37404814266/attempt1, full
+a74 head and independently reconstructed build digest
+`42da38f04c49ea9227abeac8088c43449da154d2aa70ed23ae6ad23942dd6eb3`.
+
+Current downloaded artifacts contain 101 passing recipe reports across seven matrices,
+with zero blocking failures and 192 declared nonblocking failures (Branch88, Formation104,
+Medium0). Five event histories/four result-store reports remain truncated. Hosted units
+pass 14,661 tests; their 12 SQL skips receive separate dedicated PostgreSQL coverage.
+App/Recipe Console/ALM skips and conditional broad-mode RTC integrity remain explicit.
+This accepts current normal correctness only; original post-ICE cause, target-native
+availability, observer cost, full distributed application, B06/E1/E3/B07 and the broader
+goal remain outside this checkpoint. Task57 may now start its first semantic regression.
+No Issues were created or reused.
 
 The first inline proposal assumed that a pre-send `rtcCapture()` getter could certify
 message application. Source tracing disproves that: message acquisition awaits auth
@@ -3614,21 +3639,221 @@ prose before one coherent freeze. No new producer, retry, timeout or performance
 
 ### Task 57: Fenced Connect operation readback
 
-**Status:** Held during Task56's required hosted observer-test diagnosis/closure. No
-Connect implementer has been dispatched. Once that closure permits progression, release
-the first meaningful semantic RED only. Task56 is published at
-`12eaac58ebe9494befa865015e4858a19388d039`, with local source acceptance and scoped
-independent approval; its fresh hosted gates remain separate. Connect and live CRDT
-are distinct completion/effect owners and receive separate slices. The earlier inline
-distributed draft remains deferred. Root owns the plan, port binding, Git and publication.
+**Status:** Corrected Connect is independently reviewed and locally accepted. Witnessed
+semantic RED precedes each production correction. The former internal-result consumer
+expectation and its full-file standards findings are corrected; the justified full-unit
+repeat and affected consumer validation pass. Current-head hosted acceptance remains required
+after coherent source publication. Task56 normal hosted correctness is accepted for published
+`a74be0ee561494085f2c18dce38264e404ee792b`; it does not certify the corrected Connect source.
+Connect and live CRDT remain distinct completion/effect
+owners with separate slices. The earlier inline distributed draft remains deferred.
+Root owns the plan, port binding, Git and publication.
+
+**First regression checkpoint:** Valid no-room Connect, with authored run Off and real
+SDK/page/SPA composition, returns recipe success and an `rtc.connect` child with status
+`ok` after its phase-completed callback synchronously closes the page. The original receipt
+and close preconditions pass; four assertions fail on actual success, connected/applied
+publication and missing canonical serialized refusal. Root reads the complete terminal
+RED and non-reentrant Off control (one PASS), then independently verifies that only the
+test and root plan differ from a74 before releasing production. Source tracing confirms
+that close increments generation and aborts the operation immediately; resource cleanup
+waits for the active Connect Promise. Delayed cleanup does not keep the lease current.
+The earlier no-room readiness option made that measurement oracle ambiguous; its logs
+remain preserved and excluded from readiness proof. Valid measurement coverage is separate.
+
+**Bound first port:** Preserve one accepted middleware/readout pair under the original
+transport/session completion owners and their original pending reservation. The existing
+internal session exposes `connectWithRtcCapture`, while public `connect` and existing
+ordinary acquire consumers retain `Promise<ApiMiddleware>` through projection. The
+advanced page dependency's existing `connect` returns the canonical capture readout;
+the page attempt retains it before callbacks and uses it for results/refusals instead
+of later global readback. The demonstrated ended page lease is translated through the
+existing canonical refusal with additive `operation-not-current`, preserving SDK
+session/middleware reasons. No auth loss is inferred from page generation loss. This
+first correction has focused GREEN and remains subject to independent review; further
+SDK reentry, Native eligibility, read/terminal callback and measurement boundaries
+require their own meaningful regression evidence.
+
+**First GREEN checkpoint:** The valid phase-callback regression and actual non-reentrant
+Off control pass. Covering Connect/lifecycle, command/cancellation/cleanup, acquisition/
+Native-construction and public-surface groups pass 252 tests across 22 distinct files;
+the selected two tests overlap that total. Shared-web/shared-test types and the maintained
+test checker pass (1,464 files, zero debt/errors). Changed style, structure, formatting and
+whitespace checks pass. Focused style reports 138 warnings; the implementer reviews full
+touched-file closure, while independent untouched findings remain outside this change.
+The command boundary initially lost the canonical refusal details after the page fix;
+a strengthened JSON regression fails before the narrow existing-error decoder correction,
+then passes. These results accept only the demonstrated correction, not all Task57 outcomes,
+native performance, broad validation or publication. The earlier raw test-project typecheck's
+external library/cache typing failures remain disclosed separately from semantic RED.
+
+**Next callback RED checkpoint:** Test-only real SDK/page/SPA scenarios show that a
+late lane-health read can close the page before successful completion (four actual
+result/refusal failures), and the terminal completion callback can close it before a
+successful result returns (three failures). Genuine original Off/run receipt and closure
+preconditions pass. The causal terminal event remains valid historical evidence; its
+absence is not required. An earlier phase-status-read variant already passes, as do the
+original two controls. Root fully reads the terminal outputs, tests, owner and bounded
+report, then independently verifies all twelve held code/support hashes and HEAD/index
+before releasing two checks at the existing result-read/publication boundaries. Document
+injection still needs a fixture hook and has not been tested; these failures do not prove
+SDK auth replacement, Native eligibility or valid measurement coverage.
+
+**Next callback GREEN checkpoint:** Two calls to the existing currentness check now fence
+the assembled result before completion publication and the returned result after that
+publication. Five selected cases pass, including the valid historical terminal event and
+earlier controls; they overlap the full 11-file covering run of 126 passing tests. Shared-test
+and maintained-test types, owner/changed style, formatting and whitespace pass. Root fully
+reads this bounded report and terminal evidence and verifies that removing exactly the two
+checks recovers the first-GREEN owner hash; the witnessed tests and eleven other changed
+code/support files remain byte-identical. These counts describe this current correction's
+scope and are not added to the overlapping earlier 252-test total. Task57 remains open.
+
+**SDK/Native RED checkpoint:** Actual authored Native without a sink constructs a successful
+SDK graph and a genuine unavailable-application receipt, yet required page/recipe Connect
+reports success. A real SDK lifecycle clock callback also ends the auth session after graph
+acceptance while required Connect reports success with its genuine historical Off receipt.
+Each case fails four observable result/refusal assertions. Applied Native/partial, separate
+document-close, original phase-close and non-reentrant Off controls pass. The initial assumed
+late auth-expiry site was wrong; its hard assertion is excluded and retained with the observed
+earlier WS lifecycle notification trace. Private stack-name test assertions are removed; the
+final RED uses receipt, connected state, reentry and ended-session facts. Root fully reads
+the report/terminal output and independently verifies all twelve held code/support hashes
+and HEAD/index before correction. Specific late expiry and graph replacement remain unproved.
+
+**Bound eligibility projection:** The existing advanced Connect completion will retain the
+original readout together with a closure delegating original-middleware currentness to
+`BrowserSessionDeliveries.captureOwnershipFailure`. Its associated canonical completion type
+replaces the bare advanced readout; public SDK business results and the transport/session
+pair stay intact. The page attempt keeps that single immutable completion and uses the
+existing finite receipt validator and refusal serializer at its direct eligibility guards.
+No copied ownership algorithm, new store/reason union, global receipt lookup or legacy shape
+bridge is selected. The new Native RED also earns correcting the touched tests' obsolete
+successful-required-unavailable setup while preserving SDK construction and refusal coverage.
+**SDK/Native minimum GREEN:** The same implementer returns the immutable advanced
+completion with the original readout and the existing original-middleware ownership
+predicate. Required page diagnostics now refuse actual unavailable Native application
+and the demonstrated ended SDK session; applied partial Native and ordinary omitted
+intent remain preserved. No public business Connect, construction, cleanup or identity
+policy changed. The first verification attempt incorrectly observed construction after
+normal failed-recipe cleanup; its failed log is retained. Real completion and refusal-time
+observations correct that test timing while preserving all semantic refusal assertions.
+The existing absent-receipt consumer now expects required Native's canonical refusal and
+separately preserves omitted-intent success; the obsolete successful-required-unavailable
+WS prerequisite is removed with its finite JSON purpose covered by the actual refusal.
+
+Root fully reads the bounded report and complete terminal logs, independently verifies
+the five current-phase changes, nine unchanged earlier owners, unchanged HEAD/index and
+retained RED log hashes, then freezes the report. Focused checks pass **266 tests across
+23 distinct files**; selected six overlap. Maintained types enforce1,464 files with zero
+debt/errors; public snapshots/browser boundaries, explicit-base structure, changed style,
+format and whitespace pass. Two Node localStorage warnings and the reviewed cohesive
+test-suite load57 warning remain explicit. These counts overlap earlier phases and are
+not added. Whole Task57 acceptance and independent review remain open.
+
+**Final boundary witness:** Against that frozen minimum GREEN, actual SDK-clock page
+closure passes its construction/receipt/ended-lease preconditions but loses the canonical
+refusal and historical evidence at the immediate raw page-currentness check. Two actual
+command/page JSON assertions fail; the complete module returns1 FAIL/32 PASS. Real SDK
+replacement across the room service response already refuses middleware-not-current with
+the original readout, despite a distinct latest replacement receipt and unchanged auth
+session. Both valid room-targeted measurement variants pass: closure prevents readiness
+start, while the non-reentrant control starts actual readiness and truthfully times out
+with no ready peers. This is measurement-start coverage, not live room/network acceptance.
+The first control's incorrect event-field expectation is retained and excluded from RED.
+
+Root fully reads the report, complete terminal output, actual tests and owner, then
+independently verifies13 held hashes, exact original test recovery, retained GREEN logs
+and unchanged HEAD/index. Minimum GREEN is released only to replace that immediate raw
+check with the existing typed eligibility guard after retaining the SDK completion. The
+guard, SDK policy and passing room/measurement boundaries receive no speculative changes.
+Specific late-auth-expiry timing is neither inferred nor forced. Task57 acceptance and
+independent review remain open; Task58 follows Connect acceptance.
+
+**Task57 review freeze:** That exact single guard-call replacement passes selected4 and
+covering135 tests across12 files, including all33 capture cases; counts overlap and are
+not added. Package and maintained types, changed style, explicit-base structure, formatting
+and full owner closure pass. Root fully reads terminal evidence and independently restores
+the prior owner hash by undoing only that call, verifies twelve held owners, unchanged
+regression/RED logs and unchanged HEAD/index, then freezes all14 code/test hashes. A fresh
+independent reviewer receives the whole Task57 diff with complete touched-file context for
+specification and quality review. Broad consumer validation and source publication remain
+pending. Task57 and the goal remain open; no native/network/performance acceptance follows.
+
+**Independent review and fix round1:** Complete14-file specification/quality review returns
+C0/I1/M1. I1 identifies the raw page-currentness check after awaited room join, which loses
+required canonical refusal and the original receipt when the page closes during that await.
+The new actual SDK/page two-variant regression produces1 semantic FAIL/34 PASS across35
+cases: genuine Off/run receipt, accepted construction and ended lease preconditions pass;
+only two command/page refusal assertions fail. Omitted intent preserves ordinary cancellation.
+Root fully reads the report/output/test and independently verifies13 held hashes, exact prior
+test recovery and retained GREEN evidence before releasing only the existing eligibility call
+at that return boundary, with removal of its unused context binding. Scoped independent
+re-review follows focused GREEN; broad validation stays held. M1 records the existing two
+Node localStorage warnings as nonblocking, with no warning suppression or unrelated cleanup.
+
+**Fix-round1 acceptance:** Only the post-room eligibility call and unused local binding
+change; every regression byte remains unchanged. Selected6 PASS overlaps covering137 PASS
+across12 files, including all35 capture cases. Types/style/structure/format pass. Root fully
+reads terminal evidence and independently restores the exact reviewed owner by undoing those
+two lines, verifies13 held hashes and retained RED evidence, then freezes14 current paths.
+Scoped independent re-review marks I1 ADDRESSED, specification PASS and quality APPROVED,
+with no new fix breakage. Combined with the original whole-task review, no Critical or
+Important finding remains. Root now selects one full unit run, affected package checks/four
+consumer builds and the real Black Box browser suite; broader results are not yet accepted.
+
+**First broad-unit outcome:** Frozen source yields1 FAIL/14,675 PASS/12 SKIP across1,497
+files. The only failure is the unchanged pending-initializer cleanup test: it calls the internal
+session lifecycle directly but expects the former top-level middleware session, whereas the
+accepted result now retains middleware and readout together. Public Connect still projects
+middleware. Root completely reads the failure, original666-line test and read-only old/current
+diagnosis, verifies14 frozen hashes, then releases only nesting that existing expectation under
+middleware. Its later old-initializer cancellation and active new-session assertions were not
+reached and remain unchanged acceptance requirements. This is a consumer expectation correction,
+not a new product semantic RED or TDD waiver. The additional touched test enters full standards
+closure and scoped independent review before one justified full-unit repeat. Four affected app
+builds pass with existing Vite chunk advisories; actual browser-suite results remain pending.
+
+**Consumer and standards closure:** Nesting the internal result's exact session expectation
+under `middleware` preserves every later cancellation/current-owner assertion. The selected
+scenario and all14 cleanup cases pass. Independent full-file review accepts that adaptation
+but identifies the meaningful anonymous Web Locks fixture output and import-group layout.
+A private `GrantedWebLocksFixture` beside its helper and external/workspace/local import
+groups close those findings without changing executable fixture bodies or assertions.
+Root independently reconstructs the accepted consumer bytes, verifies all14 earlier frozen
+paths and retained RED/GREEN/failure logs, then fully reads scoped re-review: both findings
+ADDRESSED, specification PASS, quality APPROVED, no new fix breakage. Checker silence was
+insufficient; the earlier incomplete full-file closure claim is explicitly corrected.
+
+**Local broad acceptance:** The single justified full-unit repeat returns exit0 with
+14,676 PASS/12 SKIP across1,497 files (1,493 PASS/four SKIP). The original1 FAIL/14,675 PASS
+run remains retained as failure evidence. Maintained test types enforce1,464 files with
+zero debt/errors; shared, shared-web and shared-test types pass. Previously focused public
+snapshots/browser entrypoint checks remain valid. Fresh post-standards changed style passes;
+structure, formatting and whitespace pass. Scoped cleanup style has eight independent
+untouched-file prompts and no touched-file finding. Every changed human-authored file was
+reviewed and remediated in full; support modified by remediation enters closure recursively,
+and independent untouched code remains outside closure. No additional support changed here.
+
+All four affected builds pass: Black Box UI, headless, AR Eye Hunter and Relic Hunters.
+The actual Black Box browser suite returns exit0,46 PASS/64 SKIP; both observer cases pass.
+Full coupling registry validation and reachability pass (1,767 files,1,761 CI-reached/six
+manual); the actual changed-commit coupling gate remains a pre-push requirement. Existing
+Node experimental-localStorage and Vite chunk advisories remain disclosed. Root verifies
+all15 accepted code/test hashes unchanged after validation. The support-only correction
+does not justify repeating the already-passed app suite/builds. New-head hosted correctness,
+live CRDT, native/performance and baseline/cohort acceptance remain separate required evidence.
 
 Connect must preserve actual immutable capture evidence from its own acquired graph
-through the existing page result boundary. The original transport already creates a typed
-middleware/receipt pair; acceptance projects only middleware. The session checks identity
-before additional lifecycle/state/clock callbacks. The page bridge erases middleware
-success into void, then performs joins, diagnostics and phase callbacks before reading the
-global receipt. These are verified source facts; a runtime replacement race is not yet
-proved. Existing serialized page authentication remains a positive preservation baseline.
+through the existing page result boundary. At published a74, the transport creates a typed
+middleware/receipt pair, but acceptance projects only middleware and the page bridge erases
+that completion before later global receipt readback. The first correction carries the
+accepted pair through the original transport/session reservation and retains its readout in
+the page attempt. Additional lifecycle/state/clock, diagnostic-read and terminal callbacks
+still require concrete currentness evidence before further correction. Controlled real SDK
+replacement across the room service response now preserves refusal with the original receipt;
+this does not prove a live server or network race. Existing serialized page authentication remains a
+positive preservation baseline.
 
 Required outcomes:
 
@@ -3649,19 +3874,20 @@ Required outcomes:
   port from the meaningful failure and actual consumers. No new owner, store, recorder,
   generic property walker or mandatory public receipt field merely to expose diagnostics.
 
-The first candidate uses the real SDK-backed page composition and authored Off selection:
+The executed first candidate uses real SDK-backed page composition and authored Off:
 an existing phase-completed diagnostic callback closes its page synchronously. A required
-Connect must not report verified application or start the next RTC measurement after that
-lease ends. Assert the actual result/effect and retained original receipt where available,
-with a non-reentrant Off control. This scenario is unexecuted; if already protected, report
-that truth and trace the next concrete existing completion boundary. Missing new methods,
-invented receipt fixtures, malformed inputs and compiler/setup errors do not earn RED.
+Connect must not certify successful application after that lease ends. Preserve its actual
+original receipt in refusal and the passing non-reentrant Off control. Subsequent valid
+measurement/currentness cases must use their own actual effects; if already protected,
+report that truth and trace the next concrete boundary. Missing new methods, invented
+receipt fixtures, malformed inputs and compiler/setup errors do not earn RED.
 
 The implementer loads the selected current skills and required references before source
-decisions, reads nearby owners/tests/examples, writes/runs the first semantic regression to
-terminal completion, reads its full output and stops before production or support-policy
-edits. Root independently reads the meaningful failure and verifies unchanged production
-before minimum GREEN. Subsequent distinct corrections require their own witnessed RED.
+decisions and reads nearby owners/tests/examples. Before each distinct correction, it
+writes/runs the semantic regression to terminal completion, reads its full output and stops
+before production or support-policy edits. Root independently reads the meaningful failure
+and verifies unchanged production before minimum GREEN. Further corrections retain this
+witnessed RED requirement.
 Non-reentrant actual Off, compatible origin, Native partial/unavailable distinction,
 ordinary no-intent behavior and serialized page auth need positive preservation evidence.
 Actual page JSON success/refusal must retain operation attribution.

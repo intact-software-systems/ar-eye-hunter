@@ -2,6 +2,7 @@ import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.t
 import type { RallarConnectionRuntimePort } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import type {
     BrowserTransportInitOptions,
+    BrowserTransportRuntime,
     BrowserTransportRuntimePort
 } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { createBrowserConnectionReservation } from '@shared-web/browser/connection/create-browser-connection-reservation.ts';
@@ -35,7 +36,7 @@ export interface RallarSessionConnectionInput {
 }
 
 export interface RallarSessionConnectionLifecycle {
-    connect(input: RallarSessionConnectionInput): Promise<ApiMiddleware>;
+    connect(input: RallarSessionConnectionInput): Promise<BrowserTransportRuntime.Connection>;
     disconnect(): Promise<void>;
     readRtcCaptureConfiguration(): RtcSignalingDiagnostics.CaptureConfiguration | undefined;
 }
@@ -60,7 +61,7 @@ export namespace BrowserSessionConnectionLifecycle {
 export class BrowserSessionConnectionLifecycle implements RallarSessionConnectionLifecycle {
     private connectionGeneration = 0;
     private rtcCaptureConfiguration: RtcSignalingDiagnostics.CaptureConfiguration | undefined;
-    private connectionPromise: Promise<ApiMiddleware> | undefined;
+    private connectionPromise: Promise<BrowserTransportRuntime.Connection> | undefined;
     private disconnectPromise: Promise<void> | undefined;
     private lifecycleIsDisconnected = false;
     private readonly input: BrowserSessionConnectionLifecycle.Input;
@@ -94,7 +95,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             (this.connectionPromise ? this.rtcCaptureConfiguration : undefined);
     }
 
-    public async connect(input: RallarSessionConnectionInput): Promise<ApiMiddleware> {
+    public async connect(input: RallarSessionConnectionInput): Promise<BrowserTransportRuntime.Connection> {
         const compatibility = checkRtcCaptureCompatibility({
             requested: input.rtcCaptureConfiguration,
             current: this.readRtcCaptureConfiguration(),
@@ -103,9 +104,9 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         if (compatibility.left) {
             return Promise.reject(compatibility.left);
         }
-        const cachedMiddleware = this.input.connectionRuntime.readMiddleware();
-        if (cachedMiddleware) {
-            return cachedMiddleware;
+        const cachedConnection = this.input.transportRuntime.readConnection();
+        if (cachedConnection) {
+            return cachedConnection;
         }
         if (this.connectionPromise) {
             return await waitForRallarOperation(this.connectionPromise, input.operationOptions);
@@ -127,14 +128,14 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
     private startConnection(
         input: RallarSessionConnectionInput,
         connection: PendingSessionConnection
-    ): Promise<ApiMiddleware> {
+    ): Promise<BrowserTransportRuntime.Connection> {
         const reservation = createBrowserConnectionReservation();
         this.connectionPromise = reservation.promise;
         try {
             this.input.connectionRuntime.setConnectState('connecting');
             reservation.settle(
                 this.input.transportRuntime.init(connection.middlewareOptions)
-                    .then((middleware) => this.acceptConnectedMiddleware(input, middleware, connection.generation))
+                    .then((connected) => this.acceptConnection(input, connected, connection.generation))
                     .catch(async (error) => {
                         const connectionError = error instanceof Error
                             ? error
@@ -170,11 +171,12 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         }
     }
 
-    private acceptConnectedMiddleware(
+    private acceptConnection(
         input: RallarSessionConnectionInput,
-        middleware: ApiMiddleware,
+        connected: BrowserTransportRuntime.Connection,
         generation: number
-    ): ApiMiddleware {
+    ): BrowserTransportRuntime.Connection {
+        const { middleware } = connected;
         if (
             generation !== this.connectionGeneration ||
             input.hasAuthEndInProgress() ||
@@ -189,7 +191,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         try {
             this.input.lifecycle.attach(middleware);
             this.input.lifecycle.connected();
-            return middleware;
+            return connected;
         }
         catch (error) {
             this.connectionPromise = undefined;

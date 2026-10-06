@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import type { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
@@ -198,13 +199,13 @@ describe('immutable RTC capture on browser connections', () => {
         const { BrowserTransportRuntime } = await import('@shared-web/browser/connection/browser-transport-runtime.ts');
         const failure = new Error('channel unavailable');
         let failSetup = true;
-        const transport = new BrowserTransportRuntime({
-            openSessionChannelPort: () => {
-                if (failSetup) {
-                    throw failure;
-                }
-                return undefined;
+        const openSessionChannel = vi.fn<BrowserTransportRuntime.Input['openSessionChannelPort']>().mockReturnValue(undefined);
+        const transport = new BrowserTransportRuntime({ openSessionChannelPort: openSessionChannel });
+        openSessionChannel.mockImplementation(() => {
+            if (failSetup) {
+                throw failure;
             }
+            return undefined;
         });
         const options = {
             rtcCaptureConfiguration: { mode: 'off' as const, origin: 'step' as const },
@@ -238,16 +239,16 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
-        let reentered: Promise<ApiMiddleware> | undefined;
+        let reentered: Promise<BrowserTransportRuntime.Connection> | undefined;
         let entered = false;
-        const transport = new BrowserTransportRuntime({
-            openSessionChannelPort: () => {
-                if (!entered) {
-                    entered = true;
-                    reentered = transport.init({ ...options, rtcCaptureConfiguration: { mode: 'native', origin: 'step' } });
-                }
-                return undefined;
+        const openSessionChannel = vi.fn<BrowserTransportRuntime.Input['openSessionChannelPort']>().mockReturnValue(undefined);
+        const transport = new BrowserTransportRuntime({ openSessionChannelPort: openSessionChannel });
+        openSessionChannel.mockImplementation(() => {
+            if (!entered) {
+                entered = true;
+                reentered = transport.init({ ...options, rtcCaptureConfiguration: { mode: 'native', origin: 'step' } });
             }
+            return undefined;
         });
         await transport.init(options);
         await expect(reentered).rejects.toMatchObject({ code: 'new-connection-required' });
@@ -279,16 +280,16 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
-        let reentered: Promise<ApiMiddleware> | undefined;
+        let reentered: Promise<BrowserTransportRuntime.Connection> | undefined;
         let entered = false;
-        const transport = new BrowserTransportRuntime({
-            openSessionChannelPort: () => {
-                if (!entered) {
-                    entered = true;
-                    reentered = transport.init({ ...options, rtcCaptureConfiguration: { mode: 'off', origin: 'step' } });
-                }
-                return undefined;
+        const openSessionChannel = vi.fn<BrowserTransportRuntime.Input['openSessionChannelPort']>().mockReturnValue(undefined);
+        const transport = new BrowserTransportRuntime({ openSessionChannelPort: openSessionChannel });
+        openSessionChannel.mockImplementation(() => {
+            if (!entered) {
+                entered = true;
+                reentered = transport.init({ ...options, rtcCaptureConfiguration: { mode: 'off', origin: 'step' } });
             }
+            return undefined;
         });
         onTestFinished(() => transport.shutdown());
         const first = transport.init(options);
@@ -324,17 +325,10 @@ describe('immutable RTC capture on browser connections', () => {
                 }).receipt
             };
         });
-        let reentered: Promise<ApiMiddleware> | undefined;
+        let reentered: Promise<BrowserTransportRuntime.Connection> | undefined;
         let entered = false;
-        const transport = new BrowserTransportRuntime({
-            openSessionChannelPort: () => {
-                if (!entered) {
-                    entered = true;
-                    reentered = connection.connect({ ...input, rtcCaptureConfiguration: { mode: 'off', origin: 'step' } });
-                }
-                return undefined;
-            }
-        });
+        const openSessionChannel = vi.fn<BrowserTransportRuntime.Input['openSessionChannelPort']>().mockReturnValue(undefined);
+        const transport = new BrowserTransportRuntime({ openSessionChannelPort: openSessionChannel });
         onTestFinished(() => transport.shutdown());
         const lifecycle = createRallarLifecycleCoordinator();
         const attachments: ApiMiddleware[] = [];
@@ -359,12 +353,19 @@ describe('immutable RTC capture on browser connections', () => {
             isSessionCurrent: () => true,
             onAuthInvalid: async () => {}
         };
+        openSessionChannel.mockImplementation(() => {
+            if (!entered) {
+                entered = true;
+                reentered = connection.connect({ ...input, rtcCaptureConfiguration: { mode: 'off', origin: 'step' } });
+            }
+            return undefined;
+        });
         const first = connection.connect(input);
         expect(configurations).toEqual([{ mode: 'off', origin: 'host' }]);
         const result = await first;
         expect(await reentered).toBe(result);
         expect(configurations).toEqual([{ mode: 'off', origin: 'host' }]);
-        expect(attachments).toEqual([result]);
+        expect(attachments).toEqual([result.middleware]);
         expect(phases).toEqual(['connected']);
         expect(transport.readRtcCaptureReceipt()).toMatchObject({
             configuration: { mode: 'off', origin: 'host' },
@@ -384,17 +385,17 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
-        let reentered: Promise<ApiMiddleware> | undefined;
+        let reentered: Promise<BrowserTransportRuntime.Connection> | undefined;
         let entered = false;
-        const transport = new BrowserTransportRuntime({
-            openSessionChannelPort: () => {
-                if (!entered) {
-                    entered = true;
-                    reentered = transport.init({ ...options, rtcCaptureConfiguration: { mode: 'off', origin: 'step' } });
-                    throw failure;
-                }
-                return undefined;
+        const openSessionChannel = vi.fn<BrowserTransportRuntime.Input['openSessionChannelPort']>().mockReturnValue(undefined);
+        const transport = new BrowserTransportRuntime({ openSessionChannelPort: openSessionChannel });
+        openSessionChannel.mockImplementation(() => {
+            if (!entered) {
+                entered = true;
+                reentered = transport.init({ ...options, rtcCaptureConfiguration: { mode: 'off', origin: 'step' } });
+                throw failure;
             }
+            return undefined;
         });
         onTestFinished(() => transport.shutdown());
         try {
@@ -422,18 +423,18 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
-        let replacement: Promise<ApiMiddleware> | undefined;
+        let replacement: Promise<BrowserTransportRuntime.Connection> | undefined;
         let entered = false;
-        const transport = new BrowserTransportRuntime({
-            openSessionChannelPort: () => {
-                if (!entered) {
-                    entered = true;
-                    transport.shutdown();
-                    replacement = transport.init({ ...options, rtcCaptureConfiguration: { mode: 'native', origin: 'step' } });
-                    throw failure;
-                }
-                return undefined;
+        const openSessionChannel = vi.fn<BrowserTransportRuntime.Input['openSessionChannelPort']>().mockReturnValue(undefined);
+        const transport = new BrowserTransportRuntime({ openSessionChannelPort: openSessionChannel });
+        openSessionChannel.mockImplementation(() => {
+            if (!entered) {
+                entered = true;
+                transport.shutdown();
+                replacement = transport.init({ ...options, rtcCaptureConfiguration: { mode: 'native', origin: 'step' } });
+                throw failure;
             }
+            return undefined;
         });
         onTestFinished(() => transport.shutdown());
         try {
@@ -457,18 +458,10 @@ describe('immutable RTC capture on browser connections', () => {
         const { BrowserSessionDeliveries } = await import('@shared-web/browser/messages/browser-session-deliveries.ts');
         const { browserDeliveryComposition } = await import('@shared-web/browser/composition/browser-delivery-composition.ts');
         const failure = new Error('session setup failed');
-        let reentered: Promise<ApiMiddleware> | undefined;
+        let reentered: Promise<BrowserTransportRuntime.Connection> | undefined;
         let entered = false;
-        const transport = new BrowserTransportRuntime({
-            openSessionChannelPort: () => {
-                if (!entered) {
-                    entered = true;
-                    reentered = connection.connect({ ...input, rtcCaptureConfiguration: { mode: 'off', origin: 'step' } });
-                    throw failure;
-                }
-                return undefined;
-            }
-        });
+        const openSessionChannel = vi.fn<BrowserTransportRuntime.Input['openSessionChannelPort']>().mockReturnValue(undefined);
+        const transport = new BrowserTransportRuntime({ openSessionChannelPort: openSessionChannel });
         onTestFinished(() => transport.shutdown());
         const lifecycle = createRallarLifecycleCoordinator();
         const phases: string[] = [];
@@ -496,6 +489,14 @@ describe('immutable RTC capture on browser connections', () => {
                 invalidations.push(error);
             }
         };
+        openSessionChannel.mockImplementation(() => {
+            if (!entered) {
+                entered = true;
+                reentered = connection.connect({ ...input, rtcCaptureConfiguration: { mode: 'off', origin: 'step' } });
+                throw failure;
+            }
+            return undefined;
+        });
         const first = connection.connect(input);
         await expect(first).rejects.toBe(failure);
         await expect(reentered).rejects.toBe(failure);

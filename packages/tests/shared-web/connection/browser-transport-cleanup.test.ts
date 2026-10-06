@@ -1,3 +1,11 @@
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import {
@@ -13,7 +21,7 @@ import { createRallarSessionController } from '@shared-web/browser/session/ralla
 import { BrowserSessionConnectionLifecycle, type RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
 import { toALDurableOwnerLockName, type ALBrowserLockOptions } from '@shared/alm/storage/al-browser-locks.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
@@ -271,7 +279,7 @@ describe('Browser transport cleanup', () => {
         });
         resolveSecond?.({ middleware: second.middleware, rtcCaptureReceipt, checkpoints: [] });
         await expect(secondConnection).resolves.toMatchObject({
-            session: { sessionId: 'session-new' }
+            middleware: { session: { sessionId: 'session-new' } }
         });
 
         resolveFirst?.({ middleware: first.middleware, rtcCaptureReceipt, checkpoints: [] });
@@ -603,11 +611,16 @@ describe('the session\'s durable work claim', () => {
     });
 });
 
+interface GrantedWebLocksFixture {
+    readonly names: readonly string[];
+    heldCount(): number;
+}
+
 /**
  * A browser whose every lock request is granted at once and held until its callback settles; `effects` hears
  * `lock-released` the moment a request's signal aborts.
  */
-function stubGrantedWebLocks(effects: string[] = []): { readonly names: readonly string[]; heldCount(): number; } {
+function stubGrantedWebLocks(effects: string[] = []): GrantedWebLocksFixture {
     const names: string[] = [];
     let held = 0;
     const request = async <T>(name: string, options: ALBrowserLockOptions, callback: () => Promise<T>): Promise<T> => {
