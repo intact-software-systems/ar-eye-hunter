@@ -1,6 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toALFreezeComparableMessage } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
+import { toALSequenceMintComparableMessage } from '../../al-contracts/al-runtime.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { hasSameResourceEntryValue } from '../../queuebox/resource-entry-observations.ts';
 import { EntityStatus, isKeysEqual, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -14,6 +15,7 @@ import {
     captureALOutboundCreationExpiry,
     decodeALOutboundCanonicalMessage,
     decodeALOutboundIdentityFact,
+    isALOutboundMintOfPendingRequest,
     toALOutboundCanonicalKey,
     toALOutboundIdentityEntry,
     toALOutboundIdentityKey,
@@ -100,7 +102,10 @@ function validateCanonicalReuse(
             constraints: { ...original.constraints, expiresAtMs: canonical.constraints?.expiresAtMs }
         }
         : original;
-    return jsonEquals(observed, toALFreezeComparableMessage(observed, canonical))
+    return jsonEquals(
+            observed,
+            toALFreezeComparableMessage(observed, toALSequenceMintComparableMessage(observed, canonical))
+        )
         ? Either.ofRight(canonical)
         : Either.ofLeft(new TypeError('Canonical identity has conflicting content'));
 }
@@ -125,6 +130,7 @@ export async function readALOutboundCanonicalWrites(
     const reference = toALOutboundMessageReference(scope, entry, decodePersistedALMessage(entry.resource));
     const identity = toALOutboundIdentityEntry(reference, entry, creationExpiry);
     const expectedIdentity = await queue.getItem(identity.key);
+    const minting = isALOutboundMintOfPendingRequest(activatePendingCanonical, expected, entry);
     // R = D: an awaited getter may already have evicted the other fact at expiry.
     if (reference.expiresAtMs > input.nowMs()) {
         if (expectedIdentity) {
@@ -142,7 +148,7 @@ export async function readALOutboundCanonicalWrites(
                 new TypeError('Live canonical identity fact is missing')
             );
         }
-        if (expected && expected.resource !== entry.resource) {
+        if (expected && expected.resource !== entry.resource && !minting) {
             throw new ALAdmissionCorruptionError(
                 JSON.stringify(expected.key),
                 new TypeError('Canonical identity has conflicting content')
@@ -152,8 +158,8 @@ export async function readALOutboundCanonicalWrites(
     return [{
         entry,
         expected,
-        replaceExisting: activatePendingCanonical && expected?.status === EntityStatus.COMPLETED &&
-            entry.status === EntityStatus.NEW
+        replaceExisting: minting || (activatePendingCanonical && expected?.status === EntityStatus.COMPLETED &&
+            entry.status === EntityStatus.NEW)
     }, { entry: identity, expected: expectedIdentity, replaceExisting: false }];
 }
 

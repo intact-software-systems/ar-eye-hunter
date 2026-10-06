@@ -607,6 +607,26 @@ server's outbound owner feeds one bounded in-memory recorder per process
 256 messages), read as `almReceipts` on `/api/admin/operations/realtime`: per message the confirmed and unconfirmed
 sessions, the last settlement kind and whether the receipt ran out (D61, D73).
 
+**Server-minted sequences.** A message the WS server publishes itself that names `ordering.orderingKey` (and
+an `epoch`) without a `seq` asks the server's outbound for the sequence (D150). The server's planner marks the plan
+`mintsSequence` only at admission (`phase: 'immediate'`) and only when the message's `senderId` is the server's own
+peer id; a relayed browser send that carries a key and no `seq` (an RTC room multicast and its WS fallback carry the
+group key) passes through unsequenced, as it came, and so does a row a producer wrote straight to the outbox. An
+admission of a marked plan that finds no sent row for the `msgId` reads the track's ordering-head row
+(`toALOutboundOrderingHeadKey(namespace, trackKey)`, the track named by `toALSequenceMintTrackKey`: key, sender and
+epoch, as `toALOrderingTrackKey` names it once the `seq` exists) in the session that reads the sender version, and
+stamps `head + 1` on the message; the commit writes the head `{ seq }` beside the canonical row, the sent row and the
+ordering index, fenced by the sender version every commit of the sender bumps, so two instances or two runtimes over
+one store cannot mint one sequence twice and a restart continues where the store stands. The sequence belongs to the
+attempt that commits: a commit that loses the fence retains its pending admission with the message as its sender
+asked for it (no `seq`, and the captured policy keeps `mintsSequence`), and the work queue's replay of that admission
+mints again when it commits, replacing the retained request in the canonical row by the minted message (the only
+change a pending canonical row accepts). An admission of a `msgId` that already has its sent row mints nothing and
+answers with the stored message. The head row expires as the sent row does: a durable pair keeps it
+`max(deadline, sentMessageTtlMs, controlHistoryTtlMs)` past the mint, longer than a receiver's five-minute track TTL,
+so a head that expires restarts at 1 only on a track every receiver has already dropped. The browser's outbound never
+mints: no browser planner marks a plan.
+
 Known limitations:
 
 - An origin whose socket was half-open when its receipt was written to it never gets that receipt; a

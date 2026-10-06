@@ -412,7 +412,8 @@ export function newALBroadcastMessage<T>(
         ack?: ALAckMode;
         ownership?: 'shared' | 'exclusive';
         qos?: ALQosPolicyRequest;
-        ordering?: Readonly<{ orderingKey: string; seq: number; }>;
+        /** A sequence left out is minted by the WS server's outbound for its own publication. */
+        ordering?: Readonly<{ orderingKey: string; epoch?: number; seq?: number; }>;
     }>
 ): ALMessage {
     const groupRef = scope === 'room' && options?.groupRef !== undefined
@@ -441,7 +442,11 @@ export function newALBroadcastMessage<T>(
             }
             : undefined,
         ordering: options?.ordering !== undefined
-            ? { orderingKey: options.ordering.orderingKey, seq: options.ordering.seq }
+            ? {
+                orderingKey: options.ordering.orderingKey,
+                epoch: options.ordering.epoch,
+                seq: options.ordering.seq
+            }
             : undefined,
         delivery: {
             ownership: options?.ownership,

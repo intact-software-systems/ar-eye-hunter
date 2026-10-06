@@ -6,7 +6,7 @@ import type {
 } from '../../../al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import type { ALSupersedenceInput } from '../../../al-contracts/al-runtime.ts';
-import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
+import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../../al-contracts/al-runtime.ts';
 import { EnqueuedType } from '../../../api/api-config.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import {
@@ -19,6 +19,8 @@ import { ALAdmissionCorruptionError, type ALAdmissionDecoder } from '../../al-ad
 import {
     decodeALAdmissionClientRecord,
     decodeALAdmissionControlValue,
+    decodeALAdmissionNumber,
+    decodeALAdmissionRecord,
     decodeALAdmissionString,
     decodeALAdmissionSupersedenceValue
 } from '../../al-admission-value-validation.ts';
@@ -46,6 +48,7 @@ import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-a
 import { validateALOutboundPlannedMessage } from '../validate-al-outbound-dispatch.ts';
 import {
     toALOutboundControlHistoryKey,
+    toALOutboundOrderingHeadKey,
     toALOutboundOrderingMessageKey,
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
@@ -69,6 +72,7 @@ import {
     decodeALOutboundRepairAttempt,
     decodeALOutboundSentMessage,
     type ALOutboundCapturedPolicy,
+    type ALOutboundOrderingHeadRow,
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
@@ -144,7 +148,11 @@ export class ALOutboundAdmissionReads<TPrepared> {
             stored,
             observedEntry: observedCanonicalEntry
         });
-        const plan = this.readDispatchPlan(input, canonical, stored);
+        const { plan, orderingHead } = await this.readSequenceMint(
+            session,
+            this.readDispatchPlan(input, canonical, stored),
+            stored === undefined
+        );
         const fences = await this.readAdmissionFences({ session, outgoing: input, plan, nowMs });
 
         return {
@@ -158,6 +166,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             nowMs,
             clientRecord,
             plan,
+            orderingHead,
             sentSnapshot: this.toLiveSentSnapshot(stored, canonical),
             ...control,
             repairs,
@@ -416,6 +425,33 @@ export class ALOutboundAdmissionReads<TPrepared> {
         return plan;
     }
 
+    /**
+     * An admission whose plan asks for a sequence takes the next one on its track: the head this session
+     * read, plus one. Only a message with no sent row is minted -- a first attempt, or the replay of the
+     * request a lost commit retained -- so a re-admission keeps the sequence its row holds. The commit
+     * writes the head under the sender version this session read.
+     */
+    private async readSequenceMint(
+        session: ALAdmissionReadSession,
+        plan: ALOutboundDispatchPlan<TPrepared>,
+        unadmitted: boolean
+    ): Promise<Pick<ALOutboundMessageReadDto<TPrepared>, 'plan' | 'orderingHead'>> {
+        const trackKey = toALSequenceMintTrackKey(plan.msg);
+        if (!plan.mintsSequence || !unadmitted || trackKey === undefined) {
+            return { plan, orderingHead: undefined };
+        }
+        const head = await this.readValue(
+            session,
+            toALOutboundOrderingHeadKey(this.namespace, trackKey),
+            decodeALOutboundOrderingHead
+        );
+        const seq = (head?.seq ?? 0) + 1;
+        return {
+            plan: { ...plan, msg: { ...plan.msg, ordering: { ...plan.msg.ordering, seq } } },
+            orderingHead: { trackKey, seq }
+        };
+    }
+
     /** Without a known origin there is no receipt row to address; the rest is keyed by the message alone. */
     private async readControlTracking(
         session: ALAdmissionReadSession,
@@ -462,7 +498,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         Pick<ALOutboundMessageReadDto<TPrepared>, 'supersedence' | 'supersedenceAcceptance' | 'repairAttemptCommitted'>
     > {
         const { session, outgoing, plan, nowMs } = input;
-        const supersedenceInput = toALOutboundSupersedenceInput(outgoing.msg, plan);
+        const supersedenceInput = toALOutboundSupersedenceInput(plan.msg, plan);
         const supersedence = await this.readSupersedenceState(session, {
             key: supersedenceInput?.key,
             msgId: outgoing.msg.id.msgId,
@@ -551,6 +587,14 @@ export class ALOutboundAdmissionReads<TPrepared> {
             }
             : undefined;
     }
+}
+
+function decodeALOutboundOrderingHead(value: unknown): ALOutboundOrderingHeadRow {
+    const seq = decodeALAdmissionNumber(decodeALAdmissionRecord(value, ['seq']).seq);
+    if (seq < 1) {
+        throw new TypeError('Stored outbound ordering head is invalid');
+    }
+    return { seq };
 }
 
 function requireALOutboundPlannedMessage(source: ALMessage, planned: ALMessage): void {

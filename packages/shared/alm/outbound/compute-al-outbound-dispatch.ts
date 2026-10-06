@@ -5,7 +5,10 @@ import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.t
 import { Either } from '../../resilience/Either.ts';
 import type { ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundAdmissionMutation } from './admission/al-outbound-admission-mutations.ts';
+import {
+    toALOutboundOrderingHeadMutations,
+    type ALOutboundAdmissionMutation
+} from './admission/al-outbound-admission-mutations.ts';
 import type {
     ALOutboundCommitBundle,
     ALOutboundDurableEffectWrite,
@@ -194,6 +197,7 @@ function computeMessageMutations<TPrepared>(
             expireAtTimestamp: expiresAtMs
         });
     }
+    mutations.push(...toALOutboundOrderingHeadMutations(read.orderingHead, expiresAtMs));
     appendSupersedenceMutations(mutations, read);
     return mutations;
 }

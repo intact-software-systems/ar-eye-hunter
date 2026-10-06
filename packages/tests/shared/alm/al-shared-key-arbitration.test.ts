@@ -10,7 +10,7 @@ import {
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
-import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
+import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
@@ -30,6 +30,7 @@ import {
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import {
+    toALOutboundOrderingHeadKey,
     toALOutboundSentMessageKey,
     toALOutboundSupersedenceLatestKey,
     toALOutboundVersionKey
@@ -187,6 +188,27 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('shared-key arbitratio
 
         expect(await store.commitBundle(await computeOutboundTestAdmission(store, a, OUTBOUND_ONE_COPY_PLANNER))).toBe('committed');
         expect((await store.readSentMessage(a.id.msgId))?.msg).toEqual(a);
+    });
+
+    it('decides on the outbound ordering head: one track, two minted sequences', async () => {
+        const fixture = await createArbitrationFixture(storage);
+        const store = await createOutboundStore(fixture);
+        const a = createMintRequest('mint-loser');
+        const b = createMintRequest('mint-winner');
+
+        await runStaleReadThenSequentialCommit({
+            fixture,
+            arbitratedKey: toALOutboundOrderingHeadKey(fixture.namespace, toALSequenceMintTrackKey(a)!),
+            keyOnlyAWrites: toALOutboundSentMessageKey(fixture.namespace, a.id.msgId),
+            readA: () => computeOutboundTestAdmission(store, a, OUTBOUND_MINTING_PLANNER),
+            readB: () => computeOutboundTestAdmission(store, b, OUTBOUND_MINTING_PLANNER),
+            commitB: (bundle) => store.commitBundle(bundle),
+            commitA: (bundle) => store.commitBundle(bundle)
+        });
+
+        expect(await store.commitBundle(await computeOutboundTestAdmission(store, a, OUTBOUND_MINTING_PLANNER))).toBe('committed');
+        expect((await store.readSentMessage(b.id.msgId))?.msg.ordering?.seq).toBe(1);
+        expect((await store.readSentMessage(a.id.msgId))?.msg.ordering?.seq).toBe(2);
     });
 });
 
@@ -367,6 +389,17 @@ const OUTBOUND_ONE_COPY_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) 
     lane: 'volatile',
     preparedMessages: [{ text: msg.id.msgId }]
 });
+
+/** The same copy, with the sender asking its own outbound for the track's next sequence. */
+const OUTBOUND_MINTING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg, authority) => ({
+    ...OUTBOUND_ONE_COPY_PLANNER(msg, authority),
+    mintsSequence: true
+});
+
+/** One sender's message on one track, naming its key and epoch but no sequence. */
+function createMintRequest(resourceId: string): ALMessage {
+    return { ...createOutboundMessage(resourceId), ordering: { orderingKey: 'round', epoch: 1 } };
+}
 
 function createSupersedingOutboundMessage(senderId: string, sequence: number): ALMessage {
     const message = createOutboundMessage(`superseding-${sequence}`);

@@ -20,6 +20,7 @@ import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-rec
 import type { ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import {
     toALOutboundMessageOwnerKey,
+    toALOutboundOrderingHeadKey,
     toALOutboundOrderingMessageKey,
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
@@ -27,9 +28,11 @@ import {
     toALOutboundSupersedenceLatestKey,
     toALOutboundSupersedenceReplacementKey
 } from './al-outbound-admission-keys.ts';
+import type { ALOutboundOrderingHead } from './al-outbound-admission-store.ts';
 import {
     decodeALOutboundSentMessage,
     type ALOutboundCapturedPolicy,
+    type ALOutboundOrderingHeadRow,
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
 
@@ -37,6 +40,7 @@ export type ALOutboundAdmissionMutation =
     | Readonly<
         { kind: 'set-ordering-message'; trackKey: string; seq: number; msgId: string; expireAtTimestamp: number; }
     >
+    | Readonly<{ kind: 'set-ordering-head'; trackKey: string; seq: number; expireAtTimestamp: number; }>
     | Readonly<{
         kind: 'set-msg-owner';
         msgId: string;
@@ -97,6 +101,7 @@ export interface ALOutboundStateWrite {
         | ALStoredOutboundMessage
         | ALOutboundPendingAckSnapshot
         | ALOutboundRepairAttemptSnapshot
+        | ALOutboundOrderingHeadRow
         | ALLatestSupersedenceValue
         | ALReplacementSupersedenceValue
         | undefined;
@@ -116,6 +121,16 @@ export interface CreateALOutboundAdmissionMutationsInput {
 export type ALOutboundCommitFenceIssue =
     | Readonly<{ kind: 'conflict'; message: string; }>
     | Readonly<{ kind: 'corruption'; key: string; message: string; }>;
+
+/** The head a minting admission advances, expiring with the message rows it is written beside. */
+export function toALOutboundOrderingHeadMutations(
+    head: ALOutboundOrderingHead | undefined,
+    expireAtTimestamp: number | undefined
+): readonly ALOutboundAdmissionMutation[] {
+    return head === undefined || expireAtTimestamp === undefined
+        ? []
+        : [{ kind: 'set-ordering-head', trackKey: head.trackKey, seq: head.seq, expireAtTimestamp }];
+}
 
 /** Owns the outbound mutation vocabulary: the state write each mutation names, its guards, and its apply. */
 export class ALOutboundAdmissionMutations {
@@ -211,6 +226,17 @@ export class ALOutboundAdmissionMutations {
                     key: toALOutboundOrderingMessageKey(this.namespace, mutation.trackKey, mutation.seq),
                     value: mutation.msgId,
                     expireAtTimestamp: mutation.expireAtTimestamp,
+                    supersedenceGuard: undefined
+                };
+            case 'set-ordering-head':
+                return {
+                    key: toALOutboundOrderingHeadKey(this.namespace, mutation.trackKey),
+                    value: { seq: mutation.seq },
+                    expireAtTimestamp: this.computeMessageRowExpiryMs(
+                        mutation.expireAtTimestamp,
+                        nowMs,
+                        this.retention.sentMessageTtlMs
+                    ),
                     supersedenceGuard: undefined
                 };
             case 'set-msg-owner':

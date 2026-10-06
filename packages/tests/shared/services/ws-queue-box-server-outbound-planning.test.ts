@@ -1,9 +1,15 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { AL_WS_SERVER_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
-import { newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALMulticastMessage,
+    newALUnicastMessage,
+    toALGroupTargetKey,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { toALOutboundSentMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import {
     createALOutboundAdmissionStore,
     type ALOutboundAdmissionStore
@@ -141,6 +147,36 @@ describe('WS server outbound planning', () => {
         expect(fixture.sockets.get('e')!.sent).toEqual([]);
     });
 
+    it('mints the sequence of its own keyed publication and leaves a relayed keyed send unsequenced', async () => {
+        const fixture = createPlanningFixture(['b']);
+        const keyedSend = (senderId: string, resourceId: string, orderingKey: string) =>
+            newALMulticastMessage(
+                senderId,
+                { topicId: 'room.app.event', contextId: ROOM.groupId, resourceId },
+                ROOM,
+                'app.event.v1',
+                {},
+                { ttlMs: 30_000, orderingKey }
+            );
+        const relayed = keyedSend('a', 'relayed', toALGroupTargetKey(ROOM));
+
+        const first = await fixture.service.enqueueOutboxIfAbsent(keyedSend('server', 'own-1', 'game-1'));
+        const second = await fixture.service.enqueueOutboxIfAbsent(keyedSend('server', 'own-2', 'game-1'));
+        const passed = await fixture.service.enqueueOutboxIfAbsent(relayed);
+        await drainEngine(fixture.engine);
+        await expect.poll(() => fixture.sockets.get('b')!.sent.length).toBe(3);
+
+        expect([first, second].map((result) => result.message.ordering)).toEqual([
+            { orderingKey: 'game-1', seq: 1 },
+            { orderingKey: 'game-1', seq: 2 }
+        ]);
+        expect(passed.message.ordering?.seq).toBeUndefined();
+        expect(fixture.backend.peek(toALOutboundSentMessageKey('ws-planning-frozen', relayed.id.msgId))?.value)
+            .toMatchObject({ orderingTrackKey: null, orderingSeq: null });
+        expect(fixture.sockets.get('b')!.sent.map((frame) => (JSON.parse(frame) as ALMessage).ordering?.seq))
+            .toEqual([1, 2, undefined]);
+    });
+
     it('keeps a volatile at-least-once room broadcast waiting to resolve its recipients at dequeue', () => {
         const server = new JsonWebSocketServer();
         const planning = new WsQueueBoxServerOutboundPlanning({
@@ -247,6 +283,7 @@ describe('WS server outbound planning', () => {
 });
 
 interface PlanningFixture {
+    readonly backend: InMemoryAdmissionBackend;
     readonly service: WsQueueBoxServerService;
     readonly store: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
     readonly engine: InboxOutboxEngine;
@@ -285,5 +322,5 @@ function createPlanningFixture(roomPeerIds: readonly string[]): PlanningFixture 
         targetResolver: { resolveGroupRecipients: () => roomRecipients }
     });
     onTestFinished(() => service.dispose());
-    return { service, store, engine, sockets };
+    return { backend, service, store, engine, sockets };
 }

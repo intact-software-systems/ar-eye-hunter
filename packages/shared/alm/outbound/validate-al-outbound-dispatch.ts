@@ -6,6 +6,7 @@ import {
     type ALMessageRejection
 } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
+import { toALSequenceMintComparableMessage } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
@@ -60,7 +61,10 @@ export function validateALOutboundPlannedMessage(
     if (
         !Number.isSafeInteger(deadline) ||
         (original.constraints?.expiresAtMs !== undefined && deadline! > original.constraints.expiresAtMs) ||
-        !jsonEquals(toMessageAuthority(original), toMessageAuthority(toALFreezeComparableMessage(original, msg))) ||
+        !jsonEquals(
+            toMessageAuthority(original),
+            toMessageAuthority(toALFreezeComparableMessage(original, toALSequenceMintComparableMessage(original, msg)))
+        ) ||
         !(original.diagnostics?.visitedPeerIds ?? []).every((peerId, index) =>
             msg.diagnostics?.visitedPeerIds?.[index] === peerId
         )
