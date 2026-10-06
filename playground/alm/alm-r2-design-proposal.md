@@ -6,7 +6,8 @@ re-plans its task. Spec: [the roadmap](alm-improvement-plan.md) release map row 
 "Releases 4 to 8" outcome row for R2, the consumer-proof row "5 R1, R2", D3, D5, D8, D10, D24, D26,
 D34, D35, D43, D49, D50, D56, D96, D142; [the product description](alm-complete-product-description.md)
 "Multicast", the envelope paragraph, PC6. Code survey of `main` at `97f6686cf` (R1 merged, #641). The
-implementation plan is `plans/active/alm-r2-membership-fencing-implementation-plan.md`.
+implementation plan `plans/active/alm-r2-membership-fencing-implementation-plan.md` was executed and
+deleted with the close (PR #642).
 
 ## 1. The problem
 
@@ -160,11 +161,10 @@ Declined: a targets-level marker instead of `id.v`; a compatibility window (D3);
 
 A `membership-fence` family in `scenarios/membership-fence/`, three-agent (sender, receiver, and
 the existing third role as the roster mover). The roster moves by a self-service leave (the route the
-lane's ensure-member already uses): ownership of the lane's group is a race between the roles, only an
-owner may remove, and a removed member could not rejoin for the next cell.
+lane's ensure-member already uses): the receiver creates and owns the lane's group (recipient-b starts
+after the receiver's connect, so the leaver is never the owner, whose self-leave the server refuses),
+only an owner may remove, and a removed member could not rejoin for the next cell.
 
-- `fenced-delivery`: a member's fenced room send is delivered and its `targets.rosterVersion` equals
-  the room's roster as the harness reads it.
 - `fenced-delivery` (`ws`, `rtc`): a member's room send is delivered and the harness finds the
   room's roster, read over HTTP, on the delivered message's `rosterVersion`.
 - `fenced-rejection` (`ws` only): the sender leaves the roster and sends; its handle reads
