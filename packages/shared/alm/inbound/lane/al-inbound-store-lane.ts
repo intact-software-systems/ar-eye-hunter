@@ -198,6 +198,19 @@ export class ALInboundStoreLane {
         return Either.ofRight(result.acceptance);
     }
 
+    /** A message its ingress authority cannot judge yet, retained for the replay to re-authorize. */
+    async retainData(
+        msg: ALMessage,
+        source: ALInboundMessageRuntime.Source,
+        planIncomingMessage: ALInboundPlanner
+    ): Promise<ALInboundMessageRuntime.Acceptance> {
+        return await this.readiness.runStoreOperation(
+            async () =>
+                this.announceRetention(await this.admission.retainIncomingMessage(msg, source, planIncomingMessage)),
+            () => ({ kind: 'not-admitted', reason: 'storage-unavailable' })
+        );
+    }
+
     /**
      * A control the lane does not handle or rejects has nothing for the worker to claim; retained work
      * and a commit, which always relays at least the recipient the acknowledgement names, announce one.
@@ -228,7 +241,10 @@ export class ALInboundStoreLane {
         if (pending === undefined) {
             return { kind: 'not-admitted', reason: 'conflict' };
         }
-        const acceptance = await this.admission.retainPending(pending);
+        return this.announceRetention(await this.admission.retainPending(pending));
+    }
+
+    private announceRetention(acceptance: ALInboundMessageRuntime.Acceptance): ALInboundMessageRuntime.Acceptance {
         if (acceptance.kind === 'pending-admission') {
             this.commitWork();
         }

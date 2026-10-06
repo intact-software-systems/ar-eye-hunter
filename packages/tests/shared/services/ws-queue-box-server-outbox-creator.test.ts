@@ -67,7 +67,7 @@ it('enqueues a server receipt with a queue creator that fits the durable column'
     onTestFinished(() => service.dispose());
     const nowMs = Date.now();
     const message = newALReceiptControlMessage(
-        { v: 2, msgId: 'receipt-1', senderId: serverId, ts: nowMs },
+        { v: 3, msgId: 'receipt-1', senderId: serverId, ts: nowMs },
         {
             msgId: 'message-1',
             originPeerId: 'origin',

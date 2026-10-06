@@ -202,7 +202,6 @@ export class BrowserMessageInputValidator {
         input: RallarRtcSendInput<T>,
         issues: RallarValidationIssue[]
     ): void {
-        this.pushOptionalNonNegativeInteger(input.membershipEpoch, '$.membershipEpoch', issues);
         this.pushOptionalNonNegativeInteger(input.minSnapshotVersion, '$.minSnapshotVersion', issues);
         this.pushOptionalNonNegativeInteger(input.seq, '$.seq', issues);
         this.pushOptionalNonNegativeInteger(input.fanoutLimit, '$.fanoutLimit', issues);

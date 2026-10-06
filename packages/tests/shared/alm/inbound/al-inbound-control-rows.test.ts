@@ -72,7 +72,7 @@ async function admitOverRtc(stores: ALInboundRuntimeStores, msg: ALMessage): Pro
 
 function createDownstreamAcknowledgement(msg: ALMessage, fromPeerId: string): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${fromPeerId}`, senderId: fromPeerId, ts: Date.now() },
+        { v: 3, msgId: `ack-${fromPeerId}`, senderId: fromPeerId, ts: Date.now() },
         {
             ackedMsgId: msg.id.msgId,
             originPeerId: msg.id.senderId,

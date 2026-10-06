@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import type { ALTargets } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALTargets } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import {
     RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
@@ -102,7 +102,7 @@ export function toCrdtAuditOutbox(
     });
     const message = {
         id: {
-            v: 2 as const,
+            v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: command.commandId,
             ts: command.capturedAtEpochMs,
             senderId: serviceId
@@ -131,7 +131,7 @@ function toWsOutbox(input: WsOutboxInput): ResourceEntry {
     const effectId = effect === 'reply' ? command.deliveryId : command.commandId;
     const message = {
         id: {
-            v: 2,
+            v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: `crdt:${effectId}:${effect}`,
             ts: command.capturedAtEpochMs,
             senderId: serviceId

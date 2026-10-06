@@ -251,7 +251,7 @@ function createServerAcknowledgement(sessionId: string, msg: ALMessage): ALMessa
     const observedAtEpochMs = Date.now();
     return newALAckControlMessage(
         {
-            v: 2,
+            v: 3,
             msgId: `${HARNESS_SERVER_PEER_ID}-ack:${msg.id.msgId}`,
             senderId: HARNESS_SERVER_PEER_ID,
             ts: observedAtEpochMs

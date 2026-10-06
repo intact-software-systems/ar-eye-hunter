@@ -226,7 +226,10 @@ every session the page opens. The event's `data` is the event itself:
   to that `admission-outcome`, and `targetMsgId` is the sent message it
   answers. `outcome` is `committed`, `pending-control` (a conflict retained as
   `admit-control` work, which the outbound drain replays), `rejected`, or
-  `not-handled` (the control's repair authority failed). `reason` is the
+  `not-handled` (the control's repair authority failed, or a NACK the origin
+  leaves to its hop: the WS server's advisory `not-yet-in-sync` NACK on a room
+  send, which the server retains and delivers itself once its room meets the
+  floor). `reason` is the
   rejection's reasons, or `none` for every other outcome — for an ACK whose
   receipt is gone it reads `AL acknowledgement sender has no pending outbound
   obligation`. A control's replay reports nothing here; its commit is visible
@@ -300,9 +303,14 @@ independent of any connection. The event's `data` is the event itself:
   kind that carries neither. A drop the RTC room-snapshot admission decided
   carries the drop code at the head of that reason and the denial that fired
   after it -- `not-yet-in-sync: Awaiting the required room snapshot version`,
-  and likewise for the missing observation, the missing session, the missing
-  member and the missing server relay authority -- so an RTC delivery lost at
-  ingress names which of the five room-authority branches held it
+  and likewise for the roster floor (`Awaiting the required room roster
+  version`), the missing observation, the missing session, the missing member
+  and the missing server relay authority -- so an RTC delivery lost at ingress
+  names which of the six room-authority branches held it. A copy whose sender
+  is no longer an active member at or beyond the roster it stamped reads
+  `rejected` with `membership-fenced: Room sender is not an active member of
+  the room roster`, or `membership-fenced: Room sender has no live session in a
+  roster beyond its stamp`, and its hop NACKs it `membership-fenced`
 - a raw control a recipe submits through `messages.control` is decided by its
   addressee's ingress like any control, so its addressee states this event
   under the recipe's authored `msgId`: a retired `al.control.ack.v1` reads

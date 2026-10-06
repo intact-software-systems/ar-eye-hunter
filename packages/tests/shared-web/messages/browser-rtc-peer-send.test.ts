@@ -230,7 +230,6 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
 
     it.each([
         ['exclusions', { exceptPeerIds: ['peer-c'] }],
-        ['a membership fence', { membershipEpoch: 1 }],
         ['a next hop', { nextHopPeerIds: ['peer-c'] }],
         ['an overlay', { overlayId: 'overlay-1' }],
         ['a fan-out limit', { fanoutLimit: 2 }]
@@ -450,7 +449,7 @@ function createPeerFallbackFixture(rtcVerdict: ALDeliveryAdmissionVerdict): Peer
         resolveCurrentRoomRef: () => ROOM_REF,
         toRoomId: (room) => typeof room === 'string' ? room : room?.groupId,
         resolveRoomRef: () => ROOM_REF,
-        resolveRoomMinSnapshotVersion: (_room, explicit) => explicit
+        resolveRoomSendFence: (_room, explicit) => ({ minSnapshotVersion: explicit, rosterVersion: undefined })
     });
     return {
         admissions,

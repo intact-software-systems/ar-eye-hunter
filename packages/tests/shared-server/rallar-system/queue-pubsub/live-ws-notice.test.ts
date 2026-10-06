@@ -8,7 +8,7 @@ const scope = { applicationId: 'app', workspaceId: 'workspace' };
 
 function message(resource = ''): ALMessage {
     return {
-        id: { v: 2, msgId: 'message-1', ts: 1, senderId: 'sender' },
+        id: { v: 3, msgId: 'message-1', ts: 1, senderId: 'sender' },
         route: { topicId: 'room.match', resourceId: 'room', contextId: 'room' },
         targets: { mode: 'multicast', groupRef },
         constraints: { expiresAtMs: 1_800_000_000_000 },

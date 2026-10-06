@@ -1,4 +1,4 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     newALAckControlMessage,
     newALNackControlMessage,
@@ -151,7 +151,7 @@ function toCanonicalMessageMutations(
 function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput): ALInboundDurableEffect {
     const { payload, facts, index } = input;
     const id: ALMessage['id'] = {
-        v: 2,
+        v: AL_MESSAGE_ENVELOPE_VERSION,
         msgId: `${facts.controlIdPrefix}:${index}`,
         senderId: facts.selfPeerId,
         ts: facts.observedAtEpochMs

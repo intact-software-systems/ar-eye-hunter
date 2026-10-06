@@ -201,7 +201,7 @@ export const facadeBehavior = {
     directorCreateRelay: vi.fn<BlackBoxBrowserDirectorDependency['createRelay']>(),
     replayCapturedMessage: vi.fn<BlackBoxBrowserDeliveriesDependency['replayCapturedMessage']>(),
     submitRawControl: vi.fn<BlackBoxBrowserDeliveriesDependency['submitRawControl']>(),
-    resolveRoomMinSnapshotVersion: vi.fn<BlackBoxBrowserDeliveriesDependency['resolveRoomMinSnapshotVersion']>(),
+    resolveRoomSendFence: vi.fn<BlackBoxBrowserDeliveriesDependency['resolveRoomSendFence']>(),
     serverPeerId: vi.fn<BlackBoxBrowserPeersDependency['serverPeerId']>(),
     getRoomSessions: vi.fn<BlackBoxBrowserPeersDependency['getRoomSessions']>()
 };
@@ -360,7 +360,7 @@ const deliveries: BlackBoxBrowserDeliveriesDependency = {
     getHandle: (msgId) => deliveryRegistry.getHandle(msgId),
     replayCapturedMessage: async (replay) => await facadeBehavior.replayCapturedMessage(replay),
     submitRawControl: async (control) => await facadeBehavior.submitRawControl(control),
-    resolveRoomMinSnapshotVersion: (roomRef) => facadeBehavior.resolveRoomMinSnapshotVersion(roomRef)
+    resolveRoomSendFence: (roomRef) => facadeBehavior.resolveRoomSendFence(roomRef)
 };
 
 const peers: BlackBoxBrowserPeersDependency = {
@@ -486,7 +486,7 @@ export function openFacadeDelivery(
 ): RallarMessageHandle {
     deliverySequence += 1;
     const handle = deliveryRegistry.open({
-        id: { v: 2, msgId: `facade-message-${deliverySequence}`, ts: Date.now(), senderId: 'client-1' },
+        id: { v: 3, msgId: `facade-message-${deliverySequence}`, ts: Date.now(), senderId: 'client-1' },
         route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
         payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' },
         delivery: { ack: 'receiver', reliability: 'at-least-once' }

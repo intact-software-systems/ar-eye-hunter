@@ -585,7 +585,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "commanded-arena-rtt-{runId}",
             "ts": 0,
             "senderId": "{arenaRttReporter.sessionIdFrom}",

@@ -17,6 +17,7 @@ import {
 } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
+import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.ts';
 import {
     newALRoute,
     toALGroupTargetKey,
@@ -94,10 +95,7 @@ export namespace BrowserRallarMessageSender {
         resolveCurrentRoomRef(): GroupRef | undefined;
         toRoomId(room: string | GroupRef | undefined): string | undefined;
         resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined;
-        resolveRoomMinSnapshotVersion(
-            room: string | GroupRef | undefined,
-            explicitMinSnapshotVersion?: number
-        ): number | undefined;
+        resolveRoomSendFence(room: string | GroupRef | undefined, explicitMinSnapshotVersion?: number): RoomSendFence;
     }
 }
 
@@ -380,9 +378,9 @@ export class BrowserRallarMessageSender {
             {
                 groupRef: roomRef,
                 exceptPeerIds: input.exceptPeerIds,
-                minSnapshotVersion: room
-                    ? this.input.resolveRoomMinSnapshotVersion(room, input.minSnapshotVersion)
-                    : input.minSnapshotVersion,
+                ...(room
+                    ? this.input.resolveRoomSendFence(room, input.minSnapshotVersion)
+                    : { minSnapshotVersion: input.minSnapshotVersion }),
                 ttlHops: input.ttlHops,
                 ttlMs: defaults.ttlMs,
                 reliability: defaults.reliability,
@@ -416,11 +414,7 @@ export class BrowserRallarMessageSender {
             input.typeId,
             parseCapturedPayload(payloadValidation),
             {
-                membershipEpoch: input.membershipEpoch,
-                minSnapshotVersion: this.input.resolveRoomMinSnapshotVersion(
-                    target.room,
-                    input.minSnapshotVersion
-                ),
+                ...this.input.resolveRoomSendFence(target.room, input.minSnapshotVersion),
                 ttlHops: input.ttlHops,
                 ttlMs: defaults.ttlMs,
                 seq: input.seq,
@@ -448,13 +442,6 @@ function validateRoomFallbackInput<T>(
             message: 'RTC/WS fallback requires the same scoped room audience on both carriers.'
         });
     }
-    if (input.membershipEpoch !== undefined) {
-        issues.push({
-            path: '$.membershipEpoch',
-            code: 'unsupported',
-            message: 'Authoritative membership fencing is not supported.'
-        });
-    }
     return issues;
 }
 
@@ -480,6 +467,7 @@ function toRoomFallbackMessage(message: ALMessage, exceptPeerIds: readonly strin
             scope: 'room',
             groupRef: message.targets.groupRef,
             minSnapshotVersion: message.targets.minSnapshotVersion,
+            rosterVersion: message.targets.rosterVersion,
             exceptPeerIds: [...exceptPeerIds]
         }
     };

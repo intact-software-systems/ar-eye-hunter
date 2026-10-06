@@ -364,7 +364,7 @@ function serverNotification(msgId: string, ack: 'receiver' | 'hop' | 'subtree' =
 
 function sessionAck(ackedMsgId: string, recipient: string): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: Date.now() },
+        { v: 3, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: Date.now() },
         {
             ackedMsgId,
             fromPeerId: recipient,

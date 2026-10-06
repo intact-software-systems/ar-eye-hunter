@@ -470,7 +470,7 @@ it('replays a handle\'s envelope on the named carrier and reports that admission
 
 it('stamps an absolute floor as given and resolves aboveCurrentBy against the sender\'s current room version', async () => {
     const runtime = await loadRuntime();
-    facade.behavior.resolveRoomMinSnapshotVersion.mockReturnValue(12);
+    facade.behavior.resolveRoomSendFence.mockReturnValue({ minSnapshotVersion: 12, rosterVersion: 3 });
     await runtime.connect(connection);
     const rtcSend = { ...send, carrier: 'rtc' };
     await runtime.sendMessage({ ...rtcSend, handleId: 'h-absolute', minSnapshotVersion: { absolute: 999_999 } });
@@ -478,10 +478,10 @@ it('stamps an absolute floor as given and resolves aboveCurrentBy against the se
     await runtime.sendMessage({ ...rtcSend, handleId: 'h-default' });
 
     expect(facade.records.typedSends.map(([, options]) => options?.minSnapshotVersion)).toEqual([999_999, 13, undefined]);
-    expect(facade.behavior.resolveRoomMinSnapshotVersion).toHaveBeenCalledWith(
+    expect(facade.behavior.resolveRoomSendFence).toHaveBeenCalledWith(
         expect.objectContaining({ applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' })
     );
-    facade.behavior.resolveRoomMinSnapshotVersion.mockReturnValue(undefined);
+    facade.behavior.resolveRoomSendFence.mockReturnValue({ minSnapshotVersion: undefined, rosterVersion: undefined });
     await expect(runtime.sendMessage({ ...rtcSend, handleId: 'h-uncached', minSnapshotVersion: { aboveCurrentBy: 1 } }))
         .rejects.toThrow('messages.send.minSnapshotVersion.aboveCurrentBy needs the sender\'s room snapshot version; room-1 has none cached.');
     expect(events.some((event) => JSON.stringify(event).includes('h-uncached')), 'a refused floor leaves no send_started').toBe(false);

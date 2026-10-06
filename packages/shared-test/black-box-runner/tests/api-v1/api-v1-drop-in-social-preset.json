@@ -427,7 +427,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "drop-in-live-{runId}",
             "ts": 0,
             "senderId": "{bobSessionId}",

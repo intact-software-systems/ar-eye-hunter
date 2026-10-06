@@ -498,7 +498,7 @@ describe('inbound work owner IndexedDB scan volume', () => {
         const admitted = await fixture.runtime.admitIncomingMessage(
             newALAckControlMessage(
                 {
-                    v: 2,
+                    v: 3,
                     msgId: 'ack-own-message',
                     senderId: INBOUND_TEST_SENDER_PEER_ID,
                     ts: Date.now()

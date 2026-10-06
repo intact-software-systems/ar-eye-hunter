@@ -546,7 +546,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         await expect.poll(() => socket.sentConnectionIds(msg.id.msgId)).toEqual(['conn-1', 'conn-2']);
         await socket.receive(
             shared.newALRepairControlMessage(
-                { v: 2, msgId: 'repair-control', ts: 1, senderId: 'peer-2' },
+                { v: 3, msgId: 'repair-control', ts: 1, senderId: 'peer-2' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-2',

@@ -254,7 +254,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "bb-parity-ws-{aliceSessionId}",
             "ts": 0,
             "senderId": "{aliceSessionId}",

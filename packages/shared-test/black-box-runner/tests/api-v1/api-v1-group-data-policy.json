@@ -402,7 +402,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "data-policy-blocked-{runId}",
             "ts": 0,
             "senderId": "{bobSessionId}",
@@ -504,7 +504,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "data-policy-crdt-exempt-{runId}",
             "ts": 0,
             "senderId": "{bobSessionId}",
@@ -681,7 +681,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "data-policy-allowed-forming-{runId}",
             "ts": 0,
             "senderId": "{bobSessionId}",
@@ -852,7 +852,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "data-policy-default-forming-{runId}",
             "ts": 0,
             "senderId": "{bobSessionId}",
@@ -1017,7 +1017,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "data-policy-active-{runId}",
             "ts": 0,
             "senderId": "{bobSessionId}",
@@ -1189,7 +1189,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "data-policy-paused-{runId}",
             "ts": 0,
             "senderId": "{bobSessionId}",
@@ -1277,7 +1277,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "data-policy-crdt-halted-{runId}",
             "ts": 0,
             "senderId": "{bobSessionId}",
@@ -1369,7 +1369,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "data-policy-resumed-{runId}",
             "ts": 0,
             "senderId": "{bobSessionId}",

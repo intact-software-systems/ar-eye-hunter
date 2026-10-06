@@ -45,7 +45,7 @@ describe('planned outbound message authority', () => {
 
 function withTargets(targets: ALTargets): ALMessage {
     return {
-        id: { v: 2, msgId: 'message', senderId: 'a', ts: 1 },
+        id: { v: 3, msgId: 'message', senderId: 'a', ts: 1 },
         route: { topicId: 'chat', resourceId: 'resource', contextId: 'room' },
         targets,
         constraints: { expiresAtMs: 10_000 },

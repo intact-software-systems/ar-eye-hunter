@@ -121,7 +121,7 @@ describe('RTC frozen room audience', () => {
         await enqueueAndDrain(fixture.manager, message);
 
         await fixture.manager.acceptControlMessage(newALNackControlMessage(
-            { v: 2, msgId: 'nack-resync-from-b', senderId: 'b', ts: Date.now() },
+            { v: 3, msgId: 'nack-resync-from-b', senderId: 'b', ts: Date.now() },
             {
                 msgId: message.id.msgId,
                 fromPeerId: 'b',
@@ -153,7 +153,7 @@ describe('RTC frozen room audience', () => {
         await enqueueAndDrain(fixture.manager, message);
 
         await fixture.manager.acceptControlMessage(newALNackControlMessage(
-            { v: 2, msgId: 'nack-resync-receipt-less', senderId: 'b', ts: Date.now() },
+            { v: 3, msgId: 'nack-resync-receipt-less', senderId: 'b', ts: Date.now() },
             {
                 msgId: message.id.msgId,
                 fromPeerId: 'b',
@@ -215,7 +215,7 @@ describe('the origin receipt of a frozen room multicast', () => {
         await enqueueAndDrain(fixture.manager, message);
 
         await fixture.manager.acceptControlMessage(newALNackControlMessage(
-            { v: 2, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
+            { v: 3, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
             { msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
         ));
         await vi.advanceTimersByTimeAsync(100);

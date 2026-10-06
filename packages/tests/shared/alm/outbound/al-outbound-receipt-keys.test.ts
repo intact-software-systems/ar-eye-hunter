@@ -171,7 +171,7 @@ async function seedObligation(
 ): Promise<void> {
     await admissionStore.ready();
     const msg: ALMessage = {
-        id: { v: 2, msgId: MSG_ID, senderId: ORIGIN, ts: 1 },
+        id: { v: 3, msgId: MSG_ID, senderId: ORIGIN, ts: 1 },
         route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
         payload: { typeId: 'command.v1', resource: '{}' },
         targets: { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
@@ -211,7 +211,7 @@ function toPendingSnapshot(obligation: ReceiptTestObligation): ALOutboundPending
 /** The relay re-originates one ACK per logical recipient it confirmed, each from itself. */
 function relayAck(logicalRecipientPeerId: string, controlMsgId: string, relayPeerId: string = RELAY): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: controlMsgId, senderId: relayPeerId, ts: Date.now() },
+        { v: 3, msgId: controlMsgId, senderId: relayPeerId, ts: Date.now() },
         {
             ackedMsgId: MSG_ID,
             fromPeerId: relayPeerId,

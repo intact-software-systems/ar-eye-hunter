@@ -146,7 +146,7 @@ describe('WS server receipt row across a cluster', () => {
 
         expect(computeWsQueueBoxServerReceiptRepublishDelayMs(receipt, 100_000)).toBe(1_000);
         expect(computeWsQueueBoxServerReceiptRepublishDelayMs(receipt, 104_000)).toBe(4_000);
-        expect(computeWsQueueBoxServerReceiptRepublishDelayMs(receipt, 150_000)).toBe(AL_RECEIPT_DEADLINE_GRACE_MS);
+        expect(computeWsQueueBoxServerReceiptRepublishDelayMs(receipt, 150_000)).toBe(30_000);
         expect(computeWsQueueBoxServerReceiptRepublishDelayMs(receipt, 180_000)).toBe(19_000);
         expect(computeWsQueueBoxServerReceiptRepublishDelayMs(receipt, 199_000)).toBe(1_000);
     });
@@ -191,7 +191,7 @@ async function relayFrames(socket: SimulatedWebSocket, origin: OriginClient): Pr
 
 function receiverAck(recipient: 'b' | 'c', nowMs: number): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${recipient}`, senderId: recipient, ts: nowMs },
+        { v: 3, msgId: `ack-${recipient}`, senderId: recipient, ts: nowMs },
         {
             ackedMsgId: 'room-message-1',
             fromPeerId: recipient,
@@ -208,7 +208,7 @@ function receiverAck(recipient: 'b' | 'c', nowMs: number): ALMessage {
 function receiptMessage(input: ReceiptMessageInput): ALMessage {
     return {
         ...newALReceiptControlMessage(
-            { v: 2, msgId: 'receipt-complete', senderId: 'server', ts: input.observedAtEpochMs },
+            { v: 3, msgId: 'receipt-complete', senderId: 'server', ts: input.observedAtEpochMs },
             {
                 msgId: 'room-message-1',
                 originPeerId: 'a',

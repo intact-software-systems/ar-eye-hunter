@@ -18,6 +18,10 @@ import type {
 } from './admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts';
+import {
+    resolveALOutboundRelayRejection,
+    toALOutboundRelayRejectedFact
+} from './control/resolve-al-outbound-relay-rejection.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { toALOutboundAckTimeoutEffectId, toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
@@ -115,19 +119,17 @@ export function computeALOutboundControlAdmission(
 }
 
 /**
- * The delivery facts a committed control states: the `resync-required` refusal of the message by a relay
- * (D50), or the receipt the control moved -- followed by `receipt-exhausted` when a hop refused the
- * message for good and so ended a receipt it still owed. A control that changed no receipt states nothing.
+ * The delivery facts a committed control states: a relay's refusal of the whole send, or the receipt the control
+ * moved -- followed by `receipt-exhausted` when a hop refused the message for good and so ended a receipt it still
+ * owed. A control that changed no receipt states nothing.
  */
 export function toALOutboundControlSettlements(
     candidate: ALControlAdmissionCandidate
 ): readonly ALOutboundSettlementFact[] {
     const { read, history } = candidate;
-    if (read.parsed.type === 'nack' && read.parsed.payload.reason === 'resync-required') {
-        return [toRelayRejectedFact(read, read.parsed.payload)];
-    }
-    if (isALServerRefusalBeforeReceipt(read)) {
-        return [toServerRefusalFact(read)];
+    const relayRejection = resolveALOutboundRelayRejection(read);
+    if (relayRejection !== undefined) {
+        return [toALOutboundRelayRejectedFact(read.targetMsgId, relayRejection)];
     }
     const snapshot = resolveAcceptedReceipt(candidate);
     if (snapshot === undefined) {
@@ -145,7 +147,7 @@ export function toALOutboundControlSettlements(
     return refused === undefined ? [acknowledgement] : [acknowledgement, refused];
 }
 
-/** An `expired`, `unauthorized` or `stale` NACK removed a receipt its hop will never confirm. */
+/** An `expired`, `unauthorized`, `stale` or `membership-fenced` NACK removed a receipt its hop will never confirm. */
 function toRefusedReceiptFact(
     read: ALControlAdmissionRead,
     receipt: ALOutboundPendingAckSnapshot
@@ -162,42 +164,6 @@ function toRefusedReceiptFact(
         { cause: 'hop-refused', hopPeerId: nack.fromPeerId, nackReason: nack.reason },
         `Hop ${nack.fromPeerId} refused the message: ${nack.reason}.`
     );
-}
-
-/**
- * The trusted server refused a message this owner sent and holds no receipt row for: at admission, or at the
- * dispatch-time re-authorization before its `admitted` receipt reached the origin. The NACK has no row to end, so it
- * needs no expected repair peer and states the refusal itself.
- */
-export function isALServerRefusalBeforeReceipt(read: ALControlAdmissionRead): boolean {
-    return read.parsed.type === 'nack' && read.parsed.payload.reason === 'unauthorized' &&
-        read.source === 'trusted-server' && read.sent !== undefined && read.pending === undefined;
-}
-
-function toServerRefusalFact(read: ALControlAdmissionRead): ALOutboundSettlementFact {
-    return {
-        kind: 'relay-rejected',
-        msgId: read.targetMsgId,
-        relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
-        detail: 'The server refused the message: unauthorized.'
-    };
-}
-
-function toRelayRejectedFact(read: ALControlAdmissionRead, nack: ALNackPayload): ALOutboundSettlementFact {
-    const reason = 'resync-required';
-    return read.source === 'trusted-server'
-        ? {
-            kind: 'relay-rejected',
-            msgId: read.targetMsgId,
-            relayRejection: { relay: 'trusted-server', reason },
-            detail: `The server relay refused the message: ${reason}.`
-        }
-        : {
-            kind: 'relay-rejected',
-            msgId: read.targetMsgId,
-            relayRejection: { relay: 'peer', peerId: nack.fromPeerId, reason },
-            detail: `Hop ${nack.fromPeerId} refused the message: ${reason}.`
-        };
 }
 
 export function controlTargetMsgId(parsed: ALParsedControlMessage): string {
@@ -298,8 +264,8 @@ export function toALOutboundControlRepairHint(control: ALNackPayload | ALRepairP
     };
 }
 
-/** A `resync-required` refusal ends the receipt too (D50): the hop will refuse every resend of the message. */
+/** A `resync-required` refusal ends the receipt too: the hop will refuse every resend of the message. */
 function isTerminalNack(nack: ALNackPayload): boolean {
     return nack.reason === 'expired' || nack.reason === 'unauthorized' || nack.reason === 'stale' ||
-        nack.reason === 'resync-required';
+        nack.reason === 'resync-required' || nack.reason === 'membership-fenced';
 }

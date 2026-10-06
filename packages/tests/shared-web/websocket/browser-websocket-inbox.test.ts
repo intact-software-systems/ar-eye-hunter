@@ -6,7 +6,7 @@ import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-dou
 
 const testMessage: ALMessage = {
     id: {
-        v: 2,
+        v: 3,
         msgId: 'message-1',
         ts: 1,
         senderId: 'sender-1'

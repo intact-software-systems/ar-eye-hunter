@@ -553,13 +553,20 @@ one hop a WS origin has (R-S3a-4). A `receiver` unicast that names its room (`ta
 room send over one member: the router delivers it to its addressee
 ([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-inbound-plan.ts)), the
 `admitted` receipt names the addressee, and the addressee's own ACK completes it. Any pre-admission `unauthorized`
-refusal by the trusted server is answered with a NACK, which the origin states as a trusted-server `relay-rejected`
-`unauthorized`, so a receipted send reads `rejected` at once rather than at its deadline: a unicast to a session outside
+or `membership-fenced` refusal by the trusted server is answered with a NACK, which the origin states as a
+trusted-server `relay-rejected` with that reason, so a receipted send reads `rejected` at once rather than at its
+deadline ([`resolveALOutboundRelayRejection`](./control/resolve-al-outbound-relay-rejection.ts) decides which NACK
+refuses the whole send); `membership-fenced` is a room send whose sender the server, at or beyond the send's `rosterVersion`, no
+longer finds an active member. A peer's `membership-fenced` NACK before any receipt row is a peer
+`relay-rejected` naming it only when the peer is the unicast addressee or a composition hop; an RTC room send names
+no hop, so its sender hears a peer's fence only through a tracked receipt (`receipt-exhausted`, `hop-refused`), and
+a room send with `ack: 'none'` never hears it. The `unauthorized` refusals are a unicast to a session outside
 the room's admitted audience
 ([`toWsQueueBoxServerAddresseeAuthorization`](../../services/ws-queue-box-server/to-ws-queue-box-server-addressee-authorization.ts)),
 a room unicast whose `route.contextId` names another room than its `groupRef` (R-S3c-i-33), a message whose room or principal names another application or workspace than its connection authenticated (D100, [`toWsQueueBoxServerScopeAuthorization`](../../services/ws-queue-box-server/scope/to-ws-queue-box-server-scope-authorization.ts)), and any room send the room
-authorizer refuses — a sender that is not an active member, a halted transport, a scope mismatch, data before
-activation. A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
+authorizer ([`ws-topic-room-authorizer.ts`](../../../shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts))
+refuses — a halted transport, a scope mismatch, data before activation; a sender without a live session or
+an active member is `membership-fenced` instead. A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
 aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
 audience verbatim, so a session that left since reads unconfirmed (D73).
 
@@ -853,7 +860,8 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
   under `receiver`). The handle reads `failed` and keeps who confirmed. The row is gone, so the fact is
   stated once across replays and reloads and a late ACK completes nothing. With the defaults (a 2 000 ms
   ACK timeout, three receipt retries) the budget ends about 8 s after admission.
-- **A hop that refuses for good.** An admitted `expired`, `unauthorized` or `stale` NACK removes the row;
+- **A hop that refuses for good.** An admitted `expired`, `unauthorized`, `membership-fenced` or `stale` NACK
+  removes the row;
   the commit states the incomplete acknowledgement, then `receipt-exhausted`. `resync-required` keeps its
   `relay-rejected` (D50).
 - **Completion at a re-plan.** A retry whose plan replaces the expected set (the RTC missing-recipient

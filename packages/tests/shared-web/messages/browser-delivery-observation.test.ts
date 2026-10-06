@@ -85,7 +85,7 @@ function createObservation(): DeliveryObservationFixture {
 
 function createMessage(msgId: string): ALMessage {
     return {
-        id: { v: 2, msgId, ts: 0, senderId: 'self' },
+        id: { v: 3, msgId, ts: 0, senderId: 'self' },
         route: { topicId: 'app.event', contextId: 'all', resourceId: msgId },
         payload: { typeId: 'app.event', contentType: 'application/json', resource: 'true' },
         delivery: { reliability: 'at-least-once', ack: 'receiver' },

@@ -1,5 +1,5 @@
 import { Either } from '../resilience/Either.ts';
-import type { ALMessage } from './al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from './al-contract.ts';
 
 import { assertPersistedALDelivery } from './al-message-persistence/assert-persisted-al-delivery.ts';
 import { assertPersistedALQos } from './al-message-persistence/assert-persisted-al-qos.ts';
@@ -75,7 +75,7 @@ export function decodeALMessageEnvelopeValue(
         const message = value as PersistedALRecord;
         requirePersistedALFields(message, MESSAGE_SECTIONS, ['id', 'route', 'payload']);
         const id = requirePersistedALRecord(message.id, 'id');
-        if (typeof id.v === 'number' && id.v !== 2) {
+        if (typeof id.v === 'number' && id.v !== AL_MESSAGE_ENVELOPE_VERSION) {
             return Either.ofLeft({ code: 'unsupported', message: 'AL envelope version is unsupported' });
         }
         assertId(message.id);
@@ -187,7 +187,7 @@ function assertId(value: PersistedALValue): void {
         'ts',
         'senderId'
     ]);
-    if (id.v !== 2) {
+    if (id.v !== AL_MESSAGE_ENVELOPE_VERSION) {
         throw new TypeError('Persisted AL id version is invalid');
     }
     requirePersistedALNonEmptyString(id.msgId, 'id message id');

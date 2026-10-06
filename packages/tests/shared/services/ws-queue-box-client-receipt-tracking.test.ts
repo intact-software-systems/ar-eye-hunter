@@ -490,7 +490,7 @@ async function readReceipt(fixture: ReceiptTrackingFixture) {
 
 function roomMessage(): ALMessage {
     return {
-        id: { v: 2, msgId: 'room-message-1', ts: Date.now(), senderId: 'self' },
+        id: { v: 3, msgId: 'room-message-1', ts: Date.now(), senderId: 'self' },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs: Date.now() + 30_000 },
@@ -506,7 +506,7 @@ function receiptMessage(
     expectedRecipientPeerIds: readonly string[] = ['b', 'c']
 ): ALMessage {
     return newALReceiptControlMessage(
-        { v: 2, msgId: `receipt-${phase}`, senderId: 'server', ts: Date.now() },
+        { v: 3, msgId: `receipt-${phase}`, senderId: 'server', ts: Date.now() },
         {
             msgId,
             originPeerId: 'self',
@@ -522,7 +522,7 @@ function receiptMessage(
 /** The server's own ACK: it speaks for itself as the recipient and is addressed to the origin. */
 function serverAck(ackedMsgId: string): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `server-ack-${ackedMsgId}`, senderId: 'server', ts: Date.now() },
+        { v: 3, msgId: `server-ack-${ackedMsgId}`, senderId: 'server', ts: Date.now() },
         {
             ackedMsgId,
             fromPeerId: 'server',

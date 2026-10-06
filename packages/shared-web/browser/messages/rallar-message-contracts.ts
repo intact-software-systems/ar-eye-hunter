@@ -58,7 +58,6 @@ export interface RallarMessageSendBase<T> extends Pick<RallarOperationOptions, '
 export interface RallarRtcSendInput<T> extends RallarMessageSendBase<T> {
     readonly roomId?: string;
     readonly roomRef?: GroupRef;
-    readonly membershipEpoch?: number;
     readonly minSnapshotVersion?: number;
     readonly seq?: number;
     readonly orderingKey?: string;

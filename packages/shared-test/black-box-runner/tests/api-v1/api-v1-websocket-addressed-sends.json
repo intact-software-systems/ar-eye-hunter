@@ -242,7 +242,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "addressed-to-bob-{runId}",
             "ts": 0,
             "senderId": "{aliceSessionId}",
@@ -328,7 +328,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "ack-addressed-to-bob-{runId}",
             "ts": 0,
             "senderId": "{bobSessionId}"
@@ -402,7 +402,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "addressed-to-outsider-{runId}",
             "ts": 0,
             "senderId": "{aliceSessionId}",
@@ -465,7 +465,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "addressed-to-server-{runId}",
             "ts": 0,
             "senderId": "{aliceSessionId}",
@@ -676,7 +676,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "addressed-from-elsewhere-{runId}",
             "ts": 0,
             "senderId": "{aliceElsewhereSessionId}",

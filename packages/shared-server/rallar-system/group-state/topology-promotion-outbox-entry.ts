@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import {
     GROUP_LAYOUT_IDENTITY_KEYS,
@@ -106,7 +106,7 @@ interface TopologyPromotionMessageInput {
 function toTopologyPromotionMessage(input: TopologyPromotionMessageInput): ALMessage {
     return {
         id: {
-            v: 2,
+            v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: input.route.resourceId,
             ts: input.createdAtEpochMs,
             senderId: input.createdBy

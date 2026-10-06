@@ -143,7 +143,7 @@ function createReservedRtcTopologyEntry(): ResourceEntry {
         }
     };
     const message = {
-        id: { v: 2, msgId: key.resourceId, ts: createdAtEpochMs, senderId },
+        id: { v: 3, msgId: key.resourceId, ts: createdAtEpochMs, senderId },
         route: key,
         constraints: { expiresAtMs: expireAtEpochMs },
         payload: {

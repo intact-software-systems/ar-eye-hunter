@@ -586,7 +586,7 @@ describe('multicast QoS integration', () => {
         }
         await manager.acceptControlMessage(
             shared.newALRepairControlMessage(
-                { v: 2, msgId: 'repair-control', senderId: 'peer-2', ts: Date.now() },
+                { v: 3, msgId: 'repair-control', senderId: 'peer-2', ts: Date.now() },
                 { fromPeerId: 'peer-2', toPeerId: 'self', msgId: msg.id.msgId, reason: 'retransmit', observedAtEpochMs: Date.now() }
             )
         );

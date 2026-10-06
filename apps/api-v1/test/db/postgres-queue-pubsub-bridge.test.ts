@@ -103,7 +103,7 @@ Deno.test('postgres live WS transport publishes and receives a validated inline 
         audience: { mode: 'peer' as const, recipientSessionIds: ['session-1'] },
         delivery: 'inline' as const,
         message: {
-            id: { v: 2 as const, msgId: 'message-1', ts: 1, senderId: 'sender' },
+            id: { v: 3 as const, msgId: 'message-1', ts: 1, senderId: 'sender' },
             route: { topicId: 'room.match', resourceId: 'room', contextId: 'room' },
             targets: { mode: 'unicast' as const, toPeerId: 'session-1' },
             constraints: { expiresAtMs: 1_800_000_000_000 },

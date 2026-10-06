@@ -1481,7 +1481,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "rtt-report-{runId}",
             "ts": 0,
             "senderId": "{rttReporter.sessionIdFrom}",

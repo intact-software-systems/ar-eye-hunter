@@ -69,7 +69,6 @@ export function decodeBlackBoxRallarSendInput(
         peerIds: decodePeerIds(envelope.peerIds),
         nextHopPeerIds: decodePeerIds(envelope.nextHopPeerIds),
         remotePeerId: decodeBlackBoxCommandString(envelope.remotePeerId),
-        membershipEpoch: decodeBlackBoxCommandNumber(envelope.membershipEpoch),
         seq: decodeBlackBoxCommandNumber(envelope.seq),
         orderingKey: decodeBlackBoxCommandString(envelope.orderingKey),
         overlayId: decodeBlackBoxCommandString(envelope.overlayId),

@@ -6,6 +6,9 @@ export const ALM_CONFORMANCE_ROLES = ['sender', 'receiver', 'recipient-b', 'succ
 
 export type AlmConformanceRole = typeof ALM_CONFORMANCE_ROLES[number];
 
+/** An origin and two distinguishable recipients: every `three-agent` scenario declares these roles. */
+export const ALM_CONFORMANCE_THREE_AGENT_ROLES: readonly AlmConformanceRole[] = ['sender', 'receiver', 'recipient-b'];
+
 export function isAlmConformanceRole(value: string): value is AlmConformanceRole {
     return (ALM_CONFORMANCE_ROLES as readonly string[]).includes(value);
 }

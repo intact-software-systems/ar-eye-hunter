@@ -1,4 +1,4 @@
-import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
 import { prepareALNackControlMessage, type ALNackPayload } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
@@ -61,8 +61,16 @@ export namespace WsQueueBoxServerInboundAuthority {
 
     export type SocketOriginDecision = { readonly kind: 'origin'; readonly value: SocketOrigin; } | FinishedDecision;
 
+    /** A room message its authority is behind on: retained, never refused, as its sender retries nothing. */
+    export interface RetainDecision {
+        readonly kind: 'retain';
+        readonly message: ALMessage;
+        readonly source: Extract<ALInboundMessageRuntime.Source, { kind: 'ws-client'; }>;
+    }
+
     export type SocketAdmissionDecision =
         | { readonly kind: 'candidate'; readonly value: AuthorizedCandidate; }
+        | RetainDecision
         | FinishedDecision;
 
     export type AdmissionDecision =
@@ -149,9 +157,30 @@ export class WsQueueBoxServerInboundAuthority {
             return current;
         }
         if (!authorization.authorized) {
-            return { kind: 'finished', result: await this.rejectIncomingMessage(message, authorization) };
+            return authorization.reason === 'not-yet-in-sync'
+                ? await this.readRetainDecision(origin.value, authorization)
+                : { kind: 'finished', result: await this.rejectIncomingMessage(message, authorization) };
         }
         return { kind: 'candidate', value: { origin: origin.value, authorization } };
+    }
+
+    /** The scope it is retained under is proven after authorization; the advisory NACK still answers the sender. */
+    private async readRetainDecision(
+        origin: WsQueueBoxServerInboundAuthority.SocketOrigin,
+        authorization: Extract<WsServerInboundAuthorization, { authorized: false; }>
+    ): Promise<WsQueueBoxServerInboundAuthority.SocketAdmissionDecision> {
+        const { message, connection, fromPeerId } = origin;
+        const scope = this.readScopeAuthorization(message, connection);
+        if (!scope.authorized) {
+            return { kind: 'finished', result: await this.rejectIncomingMessage(message, scope) };
+        }
+        await this.sendAdvisoryNack(message, authorization);
+        const { applicationId, workspaceId } = scope.proof.scope;
+        return {
+            kind: 'retain',
+            message,
+            source: { kind: 'ws-client', peerId: fromPeerId, authenticatedScope: { applicationId, workspaceId } }
+        };
     }
 
     resolveAuthorizedSocketAdmission(
@@ -285,13 +314,10 @@ export class WsQueueBoxServerInboundAuthority {
         authorization: Extract<WsServerInboundAuthorization, { authorized: false; }>
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
         await this.sendAdvisoryNack(message, authorization);
-        if (authorization.reason !== 'not-yet-in-sync') {
-            return Either.ofLeft({
-                code: authorization.rejectionCode ?? 'unauthorized',
-                message: authorization.logMessage
-            });
-        }
-        return Either.ofRight({ kind: 'not-admitted', reason: authorization.reason });
+        return Either.ofLeft({
+            code: authorization.rejectionCode ?? 'unauthorized',
+            message: authorization.logMessage
+        });
     }
 
     private async sendAdvisoryNack(
@@ -313,7 +339,12 @@ export class WsQueueBoxServerInboundAuthority {
                 : { serverSnapshotVersion: authorization.serverSnapshotVersion })
         };
         const prepared = prepareALNackControlMessage(
-            { v: 2, msgId: this.#newControlId(), senderId: this.#serverPeerId, ts: observedAtEpochMs },
+            {
+                v: AL_MESSAGE_ENVELOPE_VERSION,
+                msgId: this.#newControlId(),
+                senderId: this.#serverPeerId,
+                ts: observedAtEpochMs
+            },
             payload
         );
         if (prepared.right) {

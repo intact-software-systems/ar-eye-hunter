@@ -21,10 +21,11 @@ import { formatJsonSchemaValidationErrors, validateJsonSchema } from '@shared-te
 import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 
 /**
- * `not-yet-in-sync` (once per variant) is withheld from `ws`: its first hop must be RTC.
+ * `not-yet-in-sync` is withheld from `ws`: its first hop must be RTC.
  * `cross-carrier-duplicate` needs both transports, once per order.
  * The fallback family (D56) needs the fallback cell.
  * The addressed family runs on two agents: server-command over ws only, unicast-fallback on the fallback cell.
+ * The membership fence runs where one hop judges the roster, its rejection only where the WS server does.
  */
 const CARRIER_SCENARIO_IDS = {
     ws: [
@@ -45,6 +46,9 @@ const CARRIER_SCENARIO_IDS = {
         'server-command',
         'capacity',
         ...Array.from({ length: 3 }, () => 'receipted-audience' as const),
+        'fenced-delivery',
+        'fenced-catch-up',
+        'fenced-rejection',
         'durable-takeover',
         'flush-on-hide'
     ],
@@ -63,10 +67,11 @@ const CARRIER_SCENARIO_IDS = {
         'ordering-gap-repair',
         'repair-exhausted',
         'not-yet-in-sync',
-        'not-yet-in-sync',
         'ws-unicast-receipt',
         'capacity',
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const),
+        'fenced-delivery',
+        'fenced-catch-up',
         'durable-takeover',
         'flush-on-hide'
     ],
@@ -85,7 +90,6 @@ const CARRIER_SCENARIO_IDS = {
         'repair-exhausted',
         'cross-carrier-duplicate',
         'cross-carrier-duplicate',
-        'not-yet-in-sync',
         'not-yet-in-sync',
         'fallback-within-deadline',
         'receipt-exhausted-fallback',
@@ -188,7 +192,8 @@ describe('ALM conformance recipe validation', () => {
                     config: { runId, agentId: `${recipe.metadata?.role}-${'a'.repeat(1_000)}` }
                 };
                 for (const command of recipe.commands) {
-                    if (command.kind !== 'http.request') {
+                    // A read writes nothing, so its path ends in no mutation request id.
+                    if (command.kind !== 'http.request' || command.request.method === 'GET') {
                         continue;
                     }
                     const template = command.request.path!.split('/').at(-1)!;

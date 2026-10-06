@@ -21,6 +21,15 @@ import {
     type StateScope
 } from './room-group-state-translation.ts';
 
+/**
+ * What a room send is stamped with from the sender's cached room snapshot: its version, raised to a floor the send
+ * states, and its roster. Both are absent when no room snapshot is cached, except a stated floor, which stands alone.
+ */
+export interface RoomSendFence {
+    readonly minSnapshotVersion: number | undefined;
+    readonly rosterVersion: number | undefined;
+}
+
 export interface RallarRoomStateStorePort {
     state(): RallarRoomState;
     emit(state: RallarRoomState): void;
@@ -34,10 +43,7 @@ export interface RallarRoomStateStorePort {
     findGroupSnapshot(room: string | GroupRef | undefined): GroupSnapshot | undefined;
     /** Whether the cache ever held the room; an expired snapshot reads as absent but stays observed. */
     wasGroupSnapshotObserved(room: string | GroupRef | undefined): boolean;
-    resolveRoomMinSnapshotVersion(
-        room: string | GroupRef | undefined,
-        explicitMinSnapshotVersion?: number
-    ): number | undefined;
+    resolveRoomSendFence(room: string | GroupRef | undefined, explicitMinSnapshotVersion?: number): RoomSendFence;
     setCurrentRoom(snapshot: GroupSnapshot): void;
     clearCurrentRoomIfMatches(room: string | GroupRef, clearCurrent: boolean): void;
     toRoomId(room: string | GroupRef | undefined): string | undefined;
@@ -171,18 +177,15 @@ class RoomStateStore implements RallarRoomStateStorePort {
             .at(0);
     }
 
-    resolveRoomMinSnapshotVersion(
-        room: string | GroupRef | undefined,
-        explicitMinSnapshotVersion?: number
-    ): number | undefined {
+    resolveRoomSendFence(room: string | GroupRef | undefined, explicitMinSnapshotVersion?: number): RoomSendFence {
         const cached = this.findGroupSnapshot(room);
         const cachedVersion = cached ? readGroupVersion(cached) : undefined;
-        if (explicitMinSnapshotVersion === undefined) {
-            return cachedVersion;
-        }
-        return cachedVersion === undefined
-            ? explicitMinSnapshotVersion
-            : Math.max(explicitMinSnapshotVersion, cachedVersion);
+        return {
+            minSnapshotVersion: cachedVersion === undefined || explicitMinSnapshotVersion === undefined
+                ? cachedVersion ?? explicitMinSnapshotVersion
+                : Math.max(explicitMinSnapshotVersion, cachedVersion),
+            rosterVersion: cached?.group.rosterVersion
+        };
     }
 
     setCurrentRoom(snapshot: GroupSnapshot): void {

@@ -180,7 +180,7 @@ async function seedAcknowledgeableMessage(admissionStore: ALInboundAdmissionStor
 
 function newAcknowledgement(message: ALMessage): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `${message.id.msgId}-ack`, senderId: ACKNOWLEDGING_PEER_ID, ts: Date.now() },
+        { v: 3, msgId: `${message.id.msgId}-ack`, senderId: ACKNOWLEDGING_PEER_ID, ts: Date.now() },
         {
             fromPeerId: ACKNOWLEDGING_PEER_ID,
             toPeerId: message.id.senderId,

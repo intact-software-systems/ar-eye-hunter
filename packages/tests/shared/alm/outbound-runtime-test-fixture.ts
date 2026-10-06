@@ -445,7 +445,7 @@ export function trackOutboundTestAcks(expectedPeerIds: readonly string[]): ALOut
 /** A v2 ACK one peer states for a message `self` originated over WS. */
 export function toOutboundTestAck(message: ALMessage, fromPeerId: string): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId },
+        { v: 3, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId },
         {
             ackedMsgId: message.id.msgId,
             originPeerId: 'self',

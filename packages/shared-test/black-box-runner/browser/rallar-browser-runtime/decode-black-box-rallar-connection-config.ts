@@ -190,7 +190,6 @@ export function decodeBlackBoxRallarConfigFields(value: unknown): Partial<BlackB
         reliability: optionalChoice(record.reliability, ['best-effort', 'at-least-once']),
         ack: optionalChoice(record.ack, ['none', 'receiver', 'all-logical-recipients', 'group-leader']),
         ownership: optionalChoice(record.ownership, ['shared', 'exclusive']),
-        membershipEpoch: optionalNumber(record.membershipEpoch),
         minSnapshotVersion: optionalNumber(record.minSnapshotVersion),
         seq: optionalNumber(record.seq),
         orderingKey: optionalString(record.orderingKey),

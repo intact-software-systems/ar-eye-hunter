@@ -577,6 +577,35 @@ describe('ALM browser adapter execution', () => {
         expect(observed.value).toMatchObject({ state: 'rejected', relayRejection: rejection });
     });
 
+    it.each([
+        { relay: 'trusted-server', reason: 'membership-fenced' } as const,
+        { relay: 'peer', peerId: 'relay-session', reason: 'membership-fenced' } as const
+    ])('reads a $relay membership-fenced refusal from a delivery observation, on its failure and its evidence', async (rejection) => {
+        const failure = { kind: 'relay-rejected', rejection } as const;
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
+                observeDelivery: async () => ({
+                    ...DELIVERY_OBSERVATION,
+                    state: 'rejected',
+                    failure,
+                    relayRejection: rejection
+                })
+            }
+        });
+
+        const observed = await runtime.execute({
+            kind: 'messages.observe',
+            commandId: 'alm-observe-fenced-refusal',
+            handleId: 'handle-1',
+            state: ['rejected'],
+            timeoutMs: 2_500
+        });
+
+        expect(observed.ok, observed.error?.message).toBe(true);
+        expect(observed.value).toMatchObject({ state: 'rejected', failure, relayRejection: rejection });
+    });
+
     it('reads the hand-over to the fallback carrier from a delivery observation (D56)', async () => {
         const carrierFallback = {
             from: 'rtc',

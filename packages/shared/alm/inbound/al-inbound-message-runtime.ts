@@ -246,6 +246,25 @@ export class ALInboundMessageRuntime {
         return admitted.mapRight(toALInboundAcceptance);
     }
 
+    /**
+     * A data message its ingress authority cannot judge yet, already decoded and validated at that ingress: kept as
+     * a pending admission whose replay re-authorizes it until it is judged or its deadline passes.
+     */
+    async retainIncomingMessage(
+        msg: ALMessage,
+        source: ALInboundMessageRuntime.Source
+    ): Promise<ALInboundMessageRuntime.Acceptance> {
+        await this.ready();
+        if (this.disposed) {
+            return { kind: 'disposed' };
+        }
+        const lane = this.resolveDataLane(msg);
+        const retained = await lane.retainData(msg, source, this.dependencies.planIncomingMessage);
+        this.recordVolatileBudget(lane, msg, retained);
+        this.recordAdmissionOutcome(msg, source, Either.ofRight(retained));
+        return retained;
+    }
+
     /** A value that never decoded has no identity to record; every identity that does gets one event. */
     private recordAdmissionOutcome(
         msg: ALMessage,
@@ -287,15 +306,23 @@ export class ALInboundMessageRuntime {
         }
         const lane = this.resolveDataLane(msg);
         const admitted = await lane.admitData(msg, source, planIncomingMessage);
+        this.recordVolatileBudget(lane, msg, admitted.right);
+        return admitted;
+    }
+
+    private recordVolatileBudget(
+        lane: ALInboundStoreLane,
+        msg: ALMessage,
+        acceptance: ALInboundMessageRuntime.Acceptance | undefined
+    ): void {
         if (lane === this.volatile) {
             admitALInboundVolatileBudget({
                 msg,
-                acceptance: admitted.right,
+                acceptance,
                 budget: this.dependencies.volatileStores?.budget,
                 nowMs: this.dependencies.clock.nowMs()
             });
         }
-        return admitted;
     }
 
     /** The lane the envelope's durability names, or the only lane of a runtime with one backend. */

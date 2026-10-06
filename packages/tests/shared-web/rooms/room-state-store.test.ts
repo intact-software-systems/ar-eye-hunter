@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
+import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
+import { createRallarStateCacheReadPort } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
@@ -231,6 +234,25 @@ describe('room state store summaries', () => {
                 }
             ]
         });
+    });
+});
+
+describe('room send fence', () => {
+    beforeEach(() => {
+        stateMocks.groups.length = 0;
+        stateMocks.repositoriesConfigured = true;
+    });
+
+    it('lets a floor the send states stand alone, with no roster, when no room snapshot is cached', () => {
+        const store = createRoomStateStore({
+            runtime: new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined })),
+            readSession: () => stateMocks.session,
+            stateCache: createRallarStateCacheReadPort()
+        });
+        const roomRef = createTestGroup({ applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'uncached-room' });
+
+        expect(store.resolveRoomSendFence(roomRef, 5)).toEqual({ minSnapshotVersion: 5, rosterVersion: undefined });
+        expect(store.resolveRoomSendFence(roomRef)).toEqual({ minSnapshotVersion: undefined, rosterVersion: undefined });
     });
 });
 

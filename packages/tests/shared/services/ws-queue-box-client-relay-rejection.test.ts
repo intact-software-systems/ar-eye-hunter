@@ -98,7 +98,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
     it('never relays a session NACK to the peer it names', async () => {
         const fixture = await createRelayFixture();
         const nack = newALNackControlMessage(
-            { v: 2, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
+            { v: 3, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
             { msgId: 'ordered-gapped', fromPeerId: 'b', toPeerId: 'a', reason: 'resync-required', observedAtEpochMs: Date.now() }
         );
 
@@ -127,7 +127,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
                 lane: 'durable',
                 atMs: expect.any(Number),
                 relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
-                detail: 'The server refused the message: unauthorized.'
+                detail: 'The server relay refused the message: unauthorized.'
             }]
         );
         const lifecycle = origin.settlements
@@ -164,6 +164,44 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
             .reduce(computeALDeliveryLifecycle, toInitialLifecycle('broadcast-refused', 'receiver'));
         expect(lifecycle.state).toBe('rejected');
         expect(lifecycle.evidence.relayRejection).toEqual({ relay: 'trusted-server', reason: 'unauthorized' });
+    });
+
+    it('states the room authorizer fencing a sender no longer in the roster; the receipted handle reads rejected', async () => {
+        const fixture = await createRelayFixture(async () => ({
+            authorized: false,
+            reason: 'membership-fenced',
+            rejectionCode: 'unauthorized',
+            logMessage: 'Rejected room message for room-1: the sender is no longer an active member.',
+            sendNack: true
+        }));
+        const origin = await createOriginClient();
+        const broadcast: ALMessage = {
+            ...roomUnicast('broadcast-fenced', 'b'),
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM, minSnapshotVersion: 3, rosterVersion: 2 }
+        };
+        expect((await origin.service.enqueueOutboxIfAbsent(broadcast)).verdict.kind).toBe('admitted');
+
+        const refused = await fixture.server.acceptIncomingMessage(broadcast, 'a');
+
+        expect(refused.left?.code).toBe('unauthorized');
+        await relayFrames(fixture.sockets.a, origin);
+        expect(origin.settlements.filter((settlement) => settlement.kind === 'relay-rejected')).toEqual([{
+            kind: 'relay-rejected',
+            msgId: 'broadcast-fenced',
+            carrier: 'ws',
+            lane: 'durable',
+            atMs: expect.any(Number),
+            relayRejection: { relay: 'trusted-server', reason: 'membership-fenced' },
+            detail: 'The server relay refused the message: membership-fenced.'
+        }]);
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'broadcast-fenced')
+            .reduce(computeALDeliveryLifecycle, toInitialLifecycle('broadcast-fenced', 'receiver'));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.failure).toEqual({
+            kind: 'relay-rejected',
+            rejection: { relay: 'trusted-server', reason: 'membership-fenced' }
+        });
     });
 
     // R-S3c-i-28: the origin tracks the server as the hop of a `hop` room unicast (R-S3a-4), and a NACK from a peer the
@@ -288,7 +326,7 @@ async function relayFrames(socket: SimulatedWebSocket, origin: OriginClient): Pr
 /** The ordering-resync send: a retained room broadcast on one ordering key, with or without a receipt. */
 function orderedRoomMessage(msgId: string, seq: number, ack: 'none' | 'receiver'): ALMessage {
     return {
-        id: { v: 2, msgId, ts: Date.now(), senderId: 'a' },
+        id: { v: 3, msgId, ts: Date.now(), senderId: 'a' },
         route: { topicId: 'room.ordered', resourceId: msgId, contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs: Date.now() + 30_000 },
@@ -301,7 +339,7 @@ function orderedRoomMessage(msgId: string, seq: number, ack: 'none' | 'receiver'
 /** A receipted command to one session of the room, which names its room so the room's authority admits it. */
 function roomUnicast(msgId: string, toPeerId: string): ALMessage {
     return {
-        id: { v: 2, msgId, ts: Date.now(), senderId: 'a' },
+        id: { v: 3, msgId, ts: Date.now(), senderId: 'a' },
         route: { topicId: 'room.command', resourceId: msgId, contextId: ROOM.groupId },
         targets: { mode: 'unicast', toPeerId, groupRef: ROOM },
         constraints: { expiresAtMs: Date.now() + 30_000 },

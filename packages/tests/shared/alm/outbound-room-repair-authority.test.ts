@@ -47,7 +47,7 @@ describe('retained room authority through repair scheduling', () => {
         }
         if (cause === 'nack') {
             await runtime.acceptControlMessage(
-                newALNackControlMessage({ v: 2, msgId: 'nack', senderId: 'frozen-session', ts: 1 }, {
+                newALNackControlMessage({ v: 3, msgId: 'nack', senderId: 'frozen-session', ts: 1 }, {
                     msgId: message.id.msgId,
                     fromPeerId: 'frozen-session',
                     toPeerId: 'self',

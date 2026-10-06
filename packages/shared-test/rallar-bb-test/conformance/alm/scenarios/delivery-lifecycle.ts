@@ -3,7 +3,7 @@ import { AL_CONTROL_ACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-c
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
-import { toCommittedControlAdmissionWait } from '../alm-conformance-diagnostic-waits.ts';
+import { toControlAdmissionWait } from '../alm-conformance-diagnostic-waits.ts';
 import { toHeldFaultCommands } from '../alm-conformance-fault-commands.ts';
 import {
     toAdmissionCommands,
@@ -92,16 +92,18 @@ function toSubmissionReceiptCommands(sender: AlmConformanceStepInput): readonly 
     const peerLists = isWs ? 'RecipientPeerIds' : 'HopPeerIds';
     return [
         isWs
-            ? toCommittedControlAdmissionWait({
+            ? toControlAdmissionWait({
                 step: { ...sender, index: 1 },
                 name: 'receipt-complete-1',
                 controlTypeId: AL_CONTROL_RECEIPT_TYPE_ID,
+                outcome: 'committed',
                 receiptPhase: 'complete'
             })
-            : toCommittedControlAdmissionWait({
+            : toControlAdmissionWait({
                 step: { ...sender, index: 1 },
                 name: 'ack-admitted-1',
-                controlTypeId: AL_CONTROL_ACK_TYPE_ID
+                controlTypeId: AL_CONTROL_ACK_TYPE_ID,
+                outcome: 'committed'
             }),
         toReceiptsCommand({ ...sender, index: 1 }),
         toResultAssertion({

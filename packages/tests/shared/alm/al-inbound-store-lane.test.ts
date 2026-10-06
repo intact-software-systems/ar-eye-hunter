@@ -94,7 +94,7 @@ describe('inbound store lanes', () => {
         const volatileRead = vi.spyOn(pairs.volatile.stores.admissionStore, 'readControlDecisionSurface');
         const durableRead = vi.spyOn(pairs.durable.stores.admissionStore, 'readControlDecisionSurface');
         const own = newALAckControlMessage(
-            { v: 2, msgId: 'ack-own-message', senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now() },
+            { v: 3, msgId: 'ack-own-message', senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now() },
             {
                 ackedMsgId: 'own-message',
                 fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
@@ -317,7 +317,7 @@ async function seedPendingAcknowledgement(store: ALInboundAdmissionStore, messag
 
 function toSenderAck(tracked: ALMessage): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${tracked.id.msgId}`, senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now() },
+        { v: 3, msgId: `ack-${tracked.id.msgId}`, senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now() },
         {
             ackedMsgId: tracked.id.msgId,
             fromPeerId: INBOUND_TEST_SENDER_PEER_ID,

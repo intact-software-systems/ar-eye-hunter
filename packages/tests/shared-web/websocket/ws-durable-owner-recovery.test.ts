@@ -237,7 +237,7 @@ it('retains the restored room original until actual scoped presence authorizes i
     };
     expect(await authorize(authorizationInput)).toMatchObject({
         authorized: false,
-        reason: 'unauthorized',
+        reason: 'membership-fenced',
         logMessage: expect.stringContaining('member-not-active')
     });
     await vi.advanceTimersByTimeAsync(100);
@@ -307,7 +307,7 @@ it('keeps another scoped room and canonical bootstrap/control traffic moving whi
     const held = createRoomOriginal(sessionId, roomA);
     const ready = createRoomOriginal(sessionId, roomB);
     const signaling = newALUnicastMessage(sessionId, { topicId: AppTopics.rtcSignaling, contextId: 'bootstrap', resourceId: 'signal' }, 'peer', 'signal', {});
-    const control = newALNackControlMessage({ v: 2, msgId: crypto.randomUUID(), senderId: sessionId, ts: Date.now() }, {
+    const control = newALNackControlMessage({ v: 3, msgId: crypto.randomUUID(), senderId: sessionId, ts: Date.now() }, {
         fromPeerId: sessionId,
         toPeerId: 'peer',
         msgId: 'missing',

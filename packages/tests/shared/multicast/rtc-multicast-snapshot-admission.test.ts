@@ -172,8 +172,8 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
             reason: 'Awaiting room session authority'
         },
         {
-            denial: 'a session whose principal has no member row',
-            toSnapshot: () => withoutMember(createSnapshot(), 'peer-1'),
+            denial: 'a receiver session whose principal has no member row',
+            toSnapshot: () => withoutMember(createSnapshot(), 'self'),
             fromPeerId: 'peer-1',
             reason: 'Awaiting room member authority'
         },

@@ -44,7 +44,7 @@ describe('middleware relayed ACK notices', () => {
         const owner = await createMiddlewareInstance({ transport, inboundStores, publisherId: 'server-a', sessionIds: ['a'] });
         const other = await createMiddlewareInstance({ transport, inboundStores, publisherId: 'server-b', sessionIds: ['c'] });
         const message: ALMessage = {
-            id: { v: 2, msgId: 'room-message-1', ts: Date.now(), senderId: 'a' },
+            id: { v: 3, msgId: 'room-message-1', ts: Date.now(), senderId: 'a' },
             route: {
                 topicId: 'room.notification',
                 resourceId: 'resource',
@@ -157,7 +157,7 @@ async function createMiddlewareInstance(input: MiddlewareInstanceInput): Promise
 
 function receiverAck(recipient: string): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() },
+        { v: 3, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() },
         {
             ackedMsgId: 'room-message-1',
             fromPeerId: recipient,

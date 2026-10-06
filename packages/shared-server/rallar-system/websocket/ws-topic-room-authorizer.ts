@@ -7,7 +7,7 @@ import { readALTargetGroupRef, type ALMessage, type ALTargets } from '@shared/al
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import type { GroupPreActivationAppData } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
+import type { GroupPolicyDenied, GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RALLAR_CRDT_APP_TOPIC_ID, RALLAR_CRDT_ROOM_TOPIC_ID } from '@shared/crdt/crdt-types.ts';
 
@@ -157,37 +157,56 @@ async function readRoomAuthorizationSnapshot(
         };
     }
     if (!snapshot) {
-        return {
-            kind: 'denied',
-            decision: input.minSnapshotVersion === undefined
-                ? false
-                : {
-                    authorized: false,
-                    reason: 'not-yet-in-sync',
-                    logMessage:
-                        `Room ${input.roomId} cache is missing; requires snapshot version ${input.minSnapshotVersion}`
-                }
-        };
+        return { kind: 'denied', decision: toMissingRoomCacheDecision(input) };
     }
+    const floorDenial = resolveRoomFloorDenial(input, snapshot);
+    if (floorDenial) {
+        return { kind: 'denied', decision: floorDenial };
+    }
+    return { kind: 'ready', snapshot, serverSnapshotVersion: readGroupVersion(snapshot) };
+}
 
+function toMissingRoomCacheDecision(
+    input: RallarServerWsRoomAuthorizationInput
+): RallarServerWsRoomAuthorizationDecision {
+    const floors = [
+        input.minSnapshotVersion === undefined ? undefined : `snapshot version ${input.minSnapshotVersion}`,
+        input.rosterVersion === undefined ? undefined : `roster version ${input.rosterVersion}`
+    ].filter((floor) => floor !== undefined);
+    if (floors.length === 0) {
+        return false;
+    }
+    return {
+        authorized: false,
+        reason: 'not-yet-in-sync',
+        logMessage: `Room ${input.roomId} cache is missing; requires ${floors.join(' and ')}`
+    };
+}
+
+function resolveRoomFloorDenial(
+    input: RallarServerWsRoomAuthorizationInput,
+    snapshot: GroupSnapshot
+): RallarServerWsRoomAuthorizationDenied | undefined {
     const serverSnapshotVersion = readGroupVersion(snapshot);
-    if (
-        input.minSnapshotVersion !== undefined &&
-        serverSnapshotVersion < input.minSnapshotVersion
-    ) {
+    if (input.minSnapshotVersion !== undefined && serverSnapshotVersion < input.minSnapshotVersion) {
         return {
-            kind: 'denied',
-            decision: {
-                authorized: false,
-                reason: 'not-yet-in-sync',
-                logMessage:
-                    `Room ${input.roomId} cache version ${serverSnapshotVersion} is older than required version ${input.minSnapshotVersion}`,
-                serverSnapshotVersion
-            }
+            authorized: false,
+            reason: 'not-yet-in-sync',
+            logMessage:
+                `Room ${input.roomId} cache version ${serverSnapshotVersion} is older than required version ${input.minSnapshotVersion}`,
+            serverSnapshotVersion
         };
     }
-
-    return { kind: 'ready', snapshot, serverSnapshotVersion };
+    if (input.rosterVersion !== undefined && snapshot.group.rosterVersion < input.rosterVersion) {
+        return {
+            authorized: false,
+            reason: 'not-yet-in-sync',
+            logMessage:
+                `Room ${input.roomId} cache roster version ${snapshot.group.rosterVersion} is older than required roster version ${input.rosterVersion}`,
+            serverSnapshotVersion
+        };
+    }
+    return undefined;
 }
 
 /**
@@ -220,10 +239,17 @@ function toPolicyDeniedDecision(
     denial: GroupPolicyDenied,
     serverSnapshotVersion?: number
 ): RallarServerWsRoomAuthorizationDenied {
+    const reason = resolveRoomPolicyDenialReason(denial.code);
     return {
         authorized: false,
-        reason: 'unauthorized',
-        logMessage: `Rejected room message for ${roomId}: ${denial.code}: ${denial.message}`,
+        reason,
+        logMessage: `Rejected room message for ${roomId}: ${reason}: ${denial.code}: ${denial.message}`,
         serverSnapshotVersion
     };
+}
+
+function resolveRoomPolicyDenialReason(code: GroupPolicyReasonCode): 'membership-fenced' | 'unauthorized' {
+    return code === 'member-not-active' || code === 'member-removed' || code === 'member-banned'
+        ? 'membership-fenced'
+        : 'unauthorized';
 }

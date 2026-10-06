@@ -171,7 +171,7 @@ describe('AL ordering repair window', () => {
 
 function orderedMessage(seq: number): ALMessage {
     return {
-        id: { v: 2, msgId: `message-${seq}`, senderId: 'sender', ts: 1_000 },
+        id: { v: 3, msgId: `message-${seq}`, senderId: 'sender', ts: 1_000 },
         route: { topicId: 'chat', resourceId: 'conversation', contextId: 'room' },
         targets: { mode: 'unicast', toPeerId: 'receiver' },
         ordering: { orderingKey: 'conversation', epoch: 0, seq },

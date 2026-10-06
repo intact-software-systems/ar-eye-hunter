@@ -28,6 +28,31 @@ const ENSURE_TIMEOUT_MS = 5_000;
 const CONNECT_READINESS_INTERVAL_MS = 100;
 const OWNER_LEASE_LAPSE_TOPIC = 'rallar.black-box.alm.owner-lease-lapsed';
 
+export type AlmConformanceSelfMembershipStatus = 'active' | 'left';
+
+/** Each names one mutation request of a role in a scenario, so a re-run replays it rather than writing twice. */
+type AlmConformanceEnsureRequest = 'group' | 'member' | 'leave-roster';
+
+interface AlmConformanceSelfMembershipWrite {
+    readonly commandName: string;
+    readonly requestName: AlmConformanceEnsureRequest;
+    readonly purpose: string;
+}
+
+const SELF_MEMBERSHIP_WRITES: Readonly<Record<AlmConformanceSelfMembershipStatus, AlmConformanceSelfMembershipWrite>> =
+    {
+        active: {
+            commandName: 'ensure-member',
+            requestName: 'member',
+            purpose: 'Ensure the logged-in browser client is an active group member before the ALM carrier connects.'
+        },
+        left: {
+            commandName: 'leave-roster',
+            requestName: 'leave-roster',
+            purpose: 'Leave the group, so its roster version advances.'
+        }
+    };
+
 /** A connect that keeps the auth session its document already holds: no credentials, so it never signs in afresh. */
 export const RESTORED_SESSION_RALLAR = { username: '', password: '', restoreSession: true } as const;
 
@@ -59,24 +84,33 @@ export function toEnsureGroupCommand(step: AlmConformanceStepInput): RallarBlack
     };
 }
 
-export function toEnsureMemberCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+/**
+ * The member's own write through the self-service membership route, which takes `active` and `left` only. `active`
+ * ensures the logged-in client is an active member before the carrier connects, a no-op for one that already is;
+ * `left` leaves the group, which advances its roster and snapshot versions, and the next scenario's `active` joins it
+ * again. A removed member could not rejoin itself.
+ */
+export function toSelfMembershipCommand(
+    step: AlmConformanceStepInput,
+    status: AlmConformanceSelfMembershipStatus
+): RallarBlackBoxTestCommand {
     const group = step.input.group;
+    const write = SELF_MEMBERSHIP_WRITES[status];
     return {
         kind: 'http.request',
-        commandId: toCommandId(step, 'ensure-member'),
+        commandId: toCommandId(step, write.commandName),
         timeoutMs: toBudgetMs(ENSURE_TIMEOUT_MS, step.input.deadlineMs),
         metadata: {
-            purpose: 'Ensure the logged-in browser client is an active group member ' +
-                'before the ALM carrier connects.',
+            purpose: write.purpose,
             idempotent: true,
             group: toRoomRef(group)
         },
         request: {
             method: 'PUT',
             path: `${toStatePrefix(group)}/groups/${group.groupId}/members/{auth.clientId}` +
-                `/requests/${toEnsureRequestId(step, 'member')}`,
+                `/requests/${toEnsureRequestId(step, write.requestName)}`,
             body: {
-                status: 'active'
+                status
             }
         },
         response: {
@@ -231,7 +265,7 @@ export function toStoreRecoveryWait(
 
 function toEnsureRequestId(
     step: AlmConformanceStepInput,
-    operation: 'group' | 'member'
+    operation: AlmConformanceEnsureRequest
 ): string {
     return `alm-conformance-{runtimeIdentity}-${step.input.carrier}-${step.scenarioKey}` +
         `-${step.role}-${operation}`;

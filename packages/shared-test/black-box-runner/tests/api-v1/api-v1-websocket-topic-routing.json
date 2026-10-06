@@ -277,7 +277,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "api-v1-bb-ws-{runId}",
             "ts": 0,
             "senderId": "{aliceSessionId}",

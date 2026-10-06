@@ -494,7 +494,7 @@ function createUnicastMessage(
     resourceId = 'reply-1'
 ): ALMessage {
     return {
-        id: { v: 2, msgId, ts: Date.now(), senderId: 'server-worker' },
+        id: { v: 3, msgId, ts: Date.now(), senderId: 'server-worker' },
         route: { ...RAW_ENTRY_KEY, resourceId },
         targets: { mode: 'unicast', toPeerId: 'writer-session' },
         constraints: { expiresAtMs: Date.now() + 60_000 },
