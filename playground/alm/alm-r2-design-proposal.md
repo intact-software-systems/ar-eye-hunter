@@ -97,8 +97,9 @@ audience, S2's floor). Within one group incarnation every roster bump is a snaps
 receiver at the snapshot floor is at the roster too and the roster floor costs no extra catch-up; the
 field states what the receiver's membership judgement rests on. A recreated group id restarts the
 roster at 1 while the snapshot continues: a fenced send from the old incarnation reaches a receiver on
-the new one with a passing snapshot floor and a roster behind the stamp, is caught up once and
-refused when its sender is not in the new roster. Declined: fencing on `snapshotVersion` alone (every
+the new one with a passing snapshot floor and a roster behind the stamp for good, so the WS server
+holds it `not-yet-in-sync` until its deadline and the RTC receiver NACKs `not-yet-in-sync` until the
+sender's retry budget exhausts; nobody can deliver it, and the group it names no longer exists. Declined: fencing on `snapshotVersion` alone (every
 director or layout change would read as a membership change); an incarnation identity on the wire
 (the sender of the old incarnation is not a member of the new one, which the fence refuses already).
 
@@ -108,9 +109,10 @@ Both receivers judge a room send against their current snapshot in this order:
 
 - **Behind the stamp** (`group.rosterVersion < targets.rosterVersion`, or the snapshot floor as
   today): `not-yet-in-sync`, the existing bounded catch-up — the RTC receiver NACKs its hop,
-  refreshes once and re-admits once; the WS server retains and retries every 50 ms; the sender
-  retries on the NACK schedule, exhausts into the fallback trigger, and the deadline ends it. No new
-  constant and no new wait.
+  refreshes once and re-admits once; the WS server answers an advisory NACK at ingress (its 50 ms
+  retry covers retained pending work and the dispatch-time re-check); the sender retries on the NACK
+  schedule, then on its acknowledgement-timeout schedule inside the receipt budget, exhausts into the
+  fallback trigger, and the deadline ends it. No new constant and no new wait.
 - **At or beyond the stamp with the sender's member absent or not `active`:** the new typed verdict
   `membership-fenced`. The RTC receiver NACKs it to its hop, where `unauthorized` stays silent; the
   WS server sends it as its advisory NACK and refuses the admission with that code, at admission and
@@ -119,9 +121,11 @@ Both receivers judge a room send against their current snapshot in this order:
   yet, exactly as a trusted-server `unauthorized` does today, and otherwise the hop's refusal lands on
   the receipt (`hop-refused`, `nackReason: 'membership-fenced'`). The RTC drop reason and the inbound
   diagnostic state `membership-fenced`.
-- **An absent session with a present member** stays `pending` (presence is not the roster) and
-  **a session in another scope, an inactive or foreign overlay, or a room refusal** stays
-  `unauthorized`, silent on RTC as today.
+- **An absent session with a present member at the stamp** stays `pending` on RTC (presence is not
+  the roster); in a roster beyond the stamp an absent session reads as a departure and is fenced, since
+  an authoritative snapshot lists live sessions of active members only. The WS server, whose presence
+  is its own authority, fences every missing live session. **A session in another scope, an inactive or
+  foreign overlay, or a room refusal** stays `unauthorized`, silent on RTC as today.
 
 The verdict is on the roster the receiver holds: a receiver past a later removal refuses while a
 receiver at the stamp delivers, which is what "at or beyond that roster" means. Declined: a retained
@@ -154,18 +158,24 @@ Declined: a targets-level marker instead of `id.v`; a compatibility window (D3);
 ### 2.f The lane (D148)
 
 A `membership-fence` family in `scenarios/membership-fence/`, three-agent (sender, receiver, and
-the existing third role as the roster mover), each over `ws` and `rtc`:
+the existing third role as the roster mover). The roster moves by a self-service leave (the route the
+lane's ensure-member already uses): ownership of the lane's group is a race between the roles, only an
+owner may remove, and a removed member could not rejoin for the next cell.
 
 - `fenced-delivery`: a member's fenced room send is delivered and its `targets.rosterVersion` equals
   the room's roster as the harness reads it.
-- `fenced-rejection`: the third role removes the sender from the roster; the sender's send reads
-  `relay-rejected` / `membership-fenced` on its handle and the receiver's diagnostic states the
-  refusal. Over `rtc` the sender's WS is held so its own authority stays stale; the cell runs there as
-  far as the overlay keeps the lane after the removal, which the plan's prototype decides.
-- `catch-up-then-delivery`: over `ws` the sender sends with the harness floor `aboveCurrentBy: 1`
-  and the third role joins; the server's retained admission admits when the roster moves. Over `rtc`
-  the receiver's WS is held while the third role joins, the sender stamps the advanced roster, the
-  receiver refuses `not-yet-in-sync`, refreshes over HTTP and delivers on re-admission.
+- `fenced-delivery` (`ws`, `rtc`): a member's room send is delivered and the harness finds the
+  room's roster, read over HTTP, on the delivered message's `rosterVersion`.
+- `fenced-rejection` (`ws` only): the sender leaves the roster and sends; its handle reads
+  `relay-rejected` / `membership-fenced` from the trusted server and neither recipient receives it.
+  Over `rtc` the sender re-checks its own room authority on every attempt and no harness step holds a
+  page's incoming group-state updates, so a stale fenced frame cannot reach an RTC receiver from the
+  lane: the RTC fenced NACK and the peer relay rejection are unit pins.
+- `fenced-catch-up` (`ws`, `rtc`): the sender sends with the harness floor `aboveCurrentBy: 1`,
+  waits for the refusal's `not-yet-in-sync` NACK to commit, then cues the third role, which leaves;
+  the move lifts the floor and a retry inside the sender's receipt budget is delivered (over `rtc`
+  after the receiver's own refusal). The cell proves behind, catch-up and delivery on the snapshot
+  floor; the roster floor itself is a unit pin.
 
 `not-yet-in-sync-delivered-after-refresh`, the named red, is deleted: its proof is the catch-up cell.
 Hosted manifests 18 and 22 withhold the new family and stay byte-identical; the control-server
@@ -238,4 +248,10 @@ Eye Hunter (2.a has none).
 - A receiver-side check of a trusted-server WS delivery.
 - A dispatch-time server refusal reaches no handle: as today the server completes the delivery
   without a NACK when the sender left between admission and dispatch.
-- A recreated group id: a fenced send from the previous incarnation is refused after one catch-up.
+- A recreated group id: a fenced send from the previous incarnation is never refused with a reason;
+  the WS server holds it `not-yet-in-sync` to its deadline and the RTC receiver until the sender's
+  retry budget exhausts.
+- The lane proves fenced rejection over `ws` and the catch-up on the snapshot floor; the RTC fenced
+  NACK, the peer relay rejection and the roster floor are unit pins.
+- The lane's roster moves by a member leaving, not by an owner's removal; `removed` and `banned` are
+  unit pins.
