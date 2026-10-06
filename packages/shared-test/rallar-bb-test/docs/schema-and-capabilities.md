@@ -330,9 +330,9 @@ Over `ws` the relay refuses the gapped send before the receiver sees it, so no o
 The hosted combined recipe shares one connect across its cells and names no owner, so manifest 18 carries
 neither the field nor the waits.
 
-The `ordering-gap-repair` conformance scenario runs over every carrier and repairs an in-window gap by
-range. The sender sends seq 1 and proves it left (`observe-transport-accepted-1`, asserted
-`transport-accepted` or `acknowledged`), arms the native hold of its type on each carrier the cell can hold,
+The `ordering-gap-repair` conformance scenario runs over the single-hop carriers `ws` and `rtc`
+(`ALM_CONFORMANCE_SINGLE_HOP_CARRIERS`) and repairs an in-window gap by range. The sender sends seq 1 and
+proves it left (`observe-transport-accepted-1`, asserted `transport-accepted` or `acknowledged`), arms the native hold of its type on each carrier the cell can hold,
 sends seq 2, then holds that one message by the id its send returned (`hold-message-2-<carrier>`, a
 `fault.inject` whose `match.msgId` names `{resultCache.<send-2>.value.msgId}`) and releases the hold of
 the type, so seq 3 passes while seq 2 stays held across every retransmission. The hop reads the gap and
@@ -340,7 +340,9 @@ NACKs the range `2-2`: over `ws` the relay, over the RTC carriers the receiver. 
 `control-admission` of that `al.control.nack.v2` as `committed`, pinned on seq 3's msgId (`gap-nack`), then
 releases the message hold. The receiver receives the first send once, all three within the send budget,
 and never a fourth; its typed channel hands them over in sequence by construction, since seq 3 waits in the
-ordered-delivery buffer until seq 2 arrives.
+ordered-delivery buffer until seq 2 arrives. The cell has no `rtc-with-ws-fallback` variant: a hand-over moves
+one message of an ordering track to WS, whose relay never saw the track's other messages and gates the one it
+receives as its own gap, so the hand-over of an ordered message is a carried limit, not a cell.
 
 The `repair-exhausted` conformance scenario runs over every carrier. It is the gap repair whose message hold
 is never released: after the admitted NACK the sender sends seq 4, whose arrival reports the gap a second

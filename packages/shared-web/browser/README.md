@@ -282,7 +282,24 @@ Message ownership is concentrated under [`messages/`](./messages/):
   The receiving tab records it through its own observers, which ignore a msgId they never opened,
   and never relays it again. A handle's `cancel()` reaches only its own tab's carriers.
 - [BrowserTypedMessageChannels](./messages/browser-typed-message-channels.ts)
-  owns typed channels and the current RTC-with-WS and WS-then-RTC policies.
+  owns typed channels and the current RTC-with-WS and WS-then-RTC policies. A
+  channel definition's optional `recovery: RallarChannelRecovery` names the
+  application's owner of resynchronization, `onResyncRequired(cursor)`, which
+  `channel(...)` registers by route (topic and type, or type alone) in
+  [BrowserChannelRecoveryOwners](./messages/browser-channel-recovery-owners.ts);
+  the latest declaration for a route stands.
+- [BrowserResyncRecovery](./messages/browser-resync-recovery.ts) is the
+  `onResyncRequired` sink of the WS and RTC inbound runtimes, composed before
+  the session by `createBrowserResyncRecoveryComposition` in
+  [browser-communication-composition.ts](./composition/browser-communication-composition.ts).
+  When an inbound runtime can no longer order a sender's messages it hands the
+  sink the refused message and its `ALInboundResyncCursor`; the sink invokes the
+  message's route owner once per ordering track (ordering key, sender, epoch)
+  for the life of the runtime, states `recovery-owner-invoked` with that cursor
+  on the `storage` diagnostics port even when the owner throws (the error is
+  logged), and states nothing for a route without an owner, whose message is
+  dropped as before. A new epoch is a new track; a reload invokes the owner
+  again.
 - [BrowserRallarMessageSubscriptions](./messages/browser-rallar-message-subscriptions.ts)
   owns selector registries, WS inbox lifetime, RTC callback lifetime, and
   listener delivery.

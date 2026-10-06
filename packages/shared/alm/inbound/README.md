@@ -15,7 +15,10 @@ QueueBox engine. The WS client and server construct the runtime in
 [`WsQueueBoxServerService`](../../services/ws-queue-box-server/ws-queue-box-server-service.ts).
 RTC ingress is wired by
 [`WebRtcRxStreamerService`](../../services/web-rtc-rx-streamer-service.ts).
-These composition owners supply the planner, delivery, forwarding, and control ports.
+These composition owners supply the planner, delivery, forwarding, and control ports. The WS
+client and RTC ingress also pass the optional `onResyncRequired` sink
+(`ALInboundMessageRuntime.Dependencies`), which the browser fills with its resynchronization
+recovery (see "Ordering gaps and resynchronization" below); the WS server passes none.
 
 The runtime constructs its [`ALWorkQueuePort`](../work/al-work-queue-port.ts),
 [`ALInboundMessageAdmission`](./al-inbound-message-admission.ts) and
@@ -393,6 +396,25 @@ Web and API deploy together.
 `validateALInboundControlAdmission` returns every reason an acknowledgement is
 inadmissible; the caller joins them into one rejection reason. Only an absent pending
 obligation short-circuits, because the remaining checks read that obligation.
+
+**Ordering gaps and resynchronization.** A receiver orders a sender's messages per track
+(ordering key, sender, epoch) behind the last contiguous sequence
+([`compute-al-ordering-observation.ts`](../compute-al-ordering-observation.ts)), buffering what
+arrives early inside a window of `AL_MESSAGE_RESOURCE_LIMITS.repairWindow` (256) sequences and at
+most `bufferedMessages` (256) and `bufferedBytes` (1 MiB) per track. An in-window gap is a `gap`
+observation whose `missingRanges` are the inclusive ranges between the contiguous head and the
+buffered set; the planner's NACK (`al.control.nack.v2`) and repair request
+(`al.control.repair.v2`) carry them, and the sender retransmits them by range. A sequence past the
+window, or a track at a buffer ceiling, is `resync-required`: the message is not buffered and the
+sender is NACKed. When the admission accepts a message `resync-required`, or
+[`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) can no longer order a buffered
+release, the runtime hands `{ msg, cursor }` to the optional `onResyncRequired` sink after the
+NACK has committed, so the owner is told of a resynchronization the sender is already told of. The
+cursor ([`ALInboundResyncCursor`](./al-inbound-resync-required.ts)) is where the track stands:
+`orderingKey`, `senderId`, `epoch`, `lastContiguousSeq`, `expectedSeq`, `observedSeq` and
+`carrier`. The runtime resets no track after a resynchronization; the sender's new epoch is a new
+track. Without the sink -- the WS server's case -- the message is dropped as before and the
+diagnostics state the refusal.
 
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce

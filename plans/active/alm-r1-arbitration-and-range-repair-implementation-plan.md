@@ -457,6 +457,10 @@ the resync sink), the shared-web browser README (the recovery owner), `docs/rall
 (`schema-and-capabilities.md`, `runtime-diagnostic-contract.md` for `recovery-owner-invoked` and the
 `v2` ids), and the product description's `PLANNED — R1` paragraphs become `CURRENT — R1`. One commit.
 
+- [x] Done. `runtime-diagnostic-contract.md` and `alm-observation-artifact.md` needed nothing (Task 6 covered the
+      event; the artifact did not change). The byte ceiling (`bufferedBytes`) as a `resync-required` cause is now
+      stated. The roadmap's traceability table rows F12 and F14 are historical audit text and stay for the close.
+
 ---
 
 ### Task 8: Close

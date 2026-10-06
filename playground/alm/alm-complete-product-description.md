@@ -505,9 +505,18 @@ repair, release, expiry, and restart behavior exist. Outbound ACK history uses
 applies the 256-sequence repair window and the 256-message, 1 MiB buffered-track
 ceilings and returns `resync-required` without enumerating an oversized gap.
 
-**PLANNED — R1, range repair and resync integration:** Repair controls still
-carry individual sequence lists; R1 replaces them with compact ranges and pages
-and invokes the topic's declared recovery owner with bounded cursor information.
+**CURRENT — R1, range repair and resync integration:** The ordering observation,
+the planner's NACK plan, the NACK and repair payloads (`al.control.nack.v2`,
+`al.control.repair.v2`; the `v1` ids are refused `unsupported`), the repair hint
+and the effect ids carry missing sequences as inclusive `ALSeqRange` ranges, at
+most 128 per payload
+([`al-seq-range.ts`](../../packages/shared/al-contracts/al-seq-range.ts), D139).
+A repair hint retransmits 32 sequences per execution and re-commits the rest as
+one follow-up hint (D140); exhausted repair settles the sender's message
+`skipped`/`repair-exhausted` once, on its handle (D141); a typed channel's
+declared recovery owner is invoked with a bounded cursor (D142, under "Repair
+and resynchronization"). The lane's `ordering-gap-repair` and `repair-exhausted`
+cells prove the repair and its end.
 
 ## Deduplication and supersedence
 
@@ -532,12 +541,17 @@ that ignores the message deadline. A replay of a longer-lived message that
 arrives after 60 s is therefore admitted again. I2a makes the retention at least
 the deadline plus the receipt grace for every durability tier (D85).
 
-**PLANNED — R1, shared arbitration proof:** Since the first release both
-admission stores re-read the dedup and supersedence observations inside the
-write transaction and return `conflict` when they changed, so two stale
-cross-sender reads cannot both win. The cross-backend proof (memory, IndexedDB,
-PostgreSQL, A/B stale-read then sequential-commit schedule with one winner) lands
-in R1.
+**CURRENT — R1, shared arbitration proof:** Both admission stores re-read the
+dedup and supersedence observations inside the write transaction and return
+`conflict` when they changed, so two stale cross-sender reads cannot both win.
+[`al-shared-key-arbitration.test.ts`](../../packages/tests/shared/alm/al-shared-key-arbitration.test.ts)
+runs the A/B stale-read then sequential-commit schedule over memory, IndexedDB
+and pglite for both stores and names, per case, the written key whose guard
+decides it (D137); the gated real-PostgreSQL suite adds the outbound
+supersedence case over two connections. PostgreSQL fences written keys only: a
+key a writer only reads is checked by the store's re-read before the transaction
+opens, which is not atomic with the commit (D138). Every arbitrated key of the
+schedule is one both writers write.
 
 ## Congestion and RTC flow control
 
@@ -675,10 +689,20 @@ Repair is receiver-driven and bounded:
 **PARTIAL:** Durable ACK timeout, targeted retransmission, ordered-message lookup,
 and RTC alternate-parent repair exist.
 
-**PLANNED — R1, complete resync contract:** `resync-required` exists as an
-outcome since the first release, but no generic snapshot/cursor recovery owner is
-invoked after repair-window exhaustion, and server/client transport parity is
-proven only by the conformance lane (F1 onward).
+**CURRENT — R1, the recovery owner:** A typed channel may declare
+`recovery: { onResyncRequired(cursor) }`. When the browser's inbound runtime
+refuses a message `resync-required` at admission, or can no longer order a
+buffered release, it hands the channel's owner the cursor `{ orderingKey,
+senderId, epoch, lastContiguousSeq, expectedSeq, observedSeq, carrier }` once per
+ordering track per runtime, after its NACK to the sender committed, and states
+`recovery-owner-invoked` on the storage diagnostics port
+([`browser-resync-recovery.ts`](../../packages/shared-web/browser/messages/browser-resync-recovery.ts),
+D142). ALM resets no track; the sender's new epoch re-arms the owner, and a
+reload invokes it once more. Without an owner the message is dropped as before.
+The WS server declares no owner and keeps NACKing `resync-required`. The
+conformance lane's `ordering-resync` cell observes the owner over the RTC
+carriers; over `ws` the relay refuses the gapped send before the receiver sees
+it, so no owner is invoked there.
 
 ## Ownership
 
