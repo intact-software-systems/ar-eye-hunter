@@ -1,4 +1,5 @@
 import type {
+    RallarChannelRecovery,
     RallarMessagePayload,
     RallarStorageUnavailablePolicy
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
@@ -28,6 +29,8 @@ export interface TypedChannelRoute {
     readonly durability: ALDurabilityAlgo | undefined;
     readonly onStorageUnavailable: RallarStorageUnavailablePolicy | undefined;
     readonly purpose: ALChannelPurpose;
+    /** The channel's recovery owner; undefined declares none, so a message the receiver cannot order is dropped. */
+    readonly recovery: RallarChannelRecovery | undefined;
 }
 
 interface TypedChannelMessageEvent {
@@ -63,7 +66,8 @@ export class BlackBoxRallarTypedChannels {
             roomRef: route.roomRef,
             purpose: route.purpose,
             ...(route.durability === undefined ? {} : { durability: route.durability }),
-            ...(route.onStorageUnavailable === undefined ? {} : { onStorageUnavailable: route.onStorageUnavailable })
+            ...(route.onStorageUnavailable === undefined ? {} : { onStorageUnavailable: route.onStorageUnavailable }),
+            ...(route.recovery === undefined ? {} : { recovery: route.recovery })
         });
         const selector = config.rallar.messageSelector
             ? normalizeRallarMessageSelector(config.rallar.messageSelector)
@@ -96,7 +100,10 @@ export class BlackBoxRallarTypedChannels {
         return channel;
     }
 
-    /** A receiver that only connects still needs the inbound topics a send would otherwise install. */
+    /**
+     * A receiver that only connects still needs the inbound topics a send would otherwise install. Only this channel
+     * carries the connect's recovery owner: a topic selector subscribes the lanes directly and opens no channel.
+     */
     subscribe(config: BlackBoxRallarConnectionConfig): void {
         if (config.rallar.messageSelector) {
             this.#subscribeSelector(config, normalizeRallarMessageSelector(config.rallar.messageSelector));
@@ -108,8 +115,20 @@ export class BlackBoxRallarTypedChannels {
             roomRef: blackBoxRallarRoomRefOf(config),
             durability: undefined,
             onStorageUnavailable: undefined,
-            purpose: 'notification'
+            purpose: 'notification',
+            recovery: config.rallar.recoveryOwner === 'record' ? this.#toRecordingRecoveryOwner(config) : undefined
         });
+    }
+
+    /** The harness's owner does what a recording application would: it states the cursor it was handed. */
+    #toRecordingRecoveryOwner(config: BlackBoxRallarConnectionConfig): RallarChannelRecovery {
+        return {
+            onResyncRequired: (cursor) => {
+                this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.recovery_owner_invoked', {
+                    ...cursor
+                });
+            }
+        };
     }
 
     /** A combined recipe keeps its authored topic selector on WS; RTC subscribes once per type it must hear. */

@@ -3,8 +3,10 @@ import { assert, assertEquals } from '@std/assert';
 import { toAgentReloadResult } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import {
     ALM_CONFORMANCE_CARRIERS,
+    ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmReloadCheckpoints, toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
     createAlmConformanceRecipes,
@@ -52,12 +54,22 @@ interface PortMessage {
     checkpoint: PortCheckpoint | undefined;
     state: string;
     submitted: boolean;
+    /** An ordered send the receiver holds back behind a gap: submitted, but handed to no channel yet. */
+    buffered: boolean;
+    /** The order the receiver's channel saw it in; undefined until it did. */
+    deliveredIndex: number | undefined;
+    /** The retransmits a gap report has charged to this message; the budget is one. */
+    repairAttempts: number;
     attemptCarriers: readonly ('rtc' | 'ws')[];
     attemptOutcomes: readonly ('not-ready' | 'sent')[];
-    /** The volatile bound's refusal or a refused durable send under a storage quota; undefined for every send admitted. */
-    readonly failure:
+    /**
+     * The volatile bound's refusal, a refused durable send under a storage quota, or a repair budget spent while the
+     * message stayed held; undefined for every send admitted and delivered.
+     */
+    failure:
         | Readonly<{ kind: 'refused'; reason: 'capacity'; }>
         | Readonly<{ kind: 'storage-unavailable'; cause: 'quota' | 'checkpoint-lag'; }>
+        | Readonly<{ kind: 'skipped'; reason: 'repair-exhausted'; }>
         | undefined;
     carrierFallback: ALDeliveryCarrierFallback | undefined;
     /** A durable send a volatile channel admitted volatile while its storage was full. */
@@ -98,6 +110,17 @@ const HANDED_OVER_WS_OUTCOMES: Readonly<Record<string, HandedOverOutcome>> = {
     }
 };
 
+/**
+ * A transport hold the sender's page keeps: every frame of a type, the one message a send returned, or a control
+ * type, which holds no data frame of the fixture's.
+ */
+type PortHold =
+    | Readonly<{ kind: 'type'; typeId: string; }>
+    | Readonly<{ kind: 'message'; msgId: string; }>
+    | Readonly<{ kind: 'control'; }>;
+
+const HOLD_MSG_ID_REFERENCE = /^\{resultCache\.(.+)\.value\.msgId\}$/u;
+
 /** Controlled external facts prove recipe/control composition, never native storage or transport behavior. */
 class GeneratedAlmPorts {
     now = 1_000;
@@ -107,7 +130,10 @@ class GeneratedAlmPorts {
     readonly inboxAdmitted = new Set<string>();
     readonly messages: PortMessage[] = [];
     readonly handles = new Map<string, PortMessage>();
-    readonly holds = new Map<string, string>();
+    readonly holds = new Map<string, PortHold>();
+    /** Whether the receiver's connect installed the recording recovery owner on its channel. */
+    recoveryOwnerInstalled = false;
+    private deliveries = 0;
     /** A held admission quota fault fails every durable admission of the sender's page; its id names the failure. */
     storageQuotaFaultId: string | undefined = undefined;
     storageFailing = false;
@@ -189,6 +215,9 @@ class GeneratedAlmPorts {
             case 'http.request':
                 return { status: 'ok', value: { status: 200 } };
             case 'rtc.connect':
+                if (role === 'receiver') {
+                    this.recoveryOwnerInstalled = command.rallar?.recoveryOwner === 'record';
+                }
                 this.reportStoreRecoveries(role, session.sessionId);
                 this.deliverRecoveredOriginals(role);
                 return { status: 'ok', value: { document, ...session } };
@@ -299,7 +328,7 @@ class GeneratedAlmPorts {
     private advanceHeldFallback(message: PortMessage): void {
         if (
             !this.handsOverHeldFallback || message.command.carrier !== 'rtc-with-ws-fallback' || message.submitted ||
-            !this.isHeld(message.command.typeId)
+            !this.isHeld(message)
         ) {
             return;
         }
@@ -318,9 +347,9 @@ class GeneratedAlmPorts {
     }
 
     private readReceived(command: PortCommand<'messages.received'>): RallarBlackBoxTestCommandOutcome {
-        // A command addressed to the server reaches no member of the room.
+        // A command addressed to the server reaches no member of the room; a buffered one has not reached its channel.
         const arrived = this.messages.filter((message) =>
-            message.command.typeId === command.typeId && message.submitted &&
+            message.command.typeId === command.typeId && message.submitted && !message.buffered &&
             message.command.toPeer !== 'server'
         );
         this.admitReceiverInbox(arrived);
@@ -437,7 +466,7 @@ class GeneratedAlmPorts {
         }
         this.checkpointHealth = status;
         const overRtc = row.command.carrier === 'rtc' ||
-            (row.command.carrier === 'rtc-with-ws-fallback' && !this.isHeld(row.command.typeId));
+            (row.command.carrier === 'rtc-with-ws-fallback' && !this.isHeld(row));
         this.sender.recordEvent({
             kind: 'diagnostic',
             topic: 'rallar.browser.alm.storage',
@@ -489,11 +518,11 @@ class GeneratedAlmPorts {
             this.holds.delete(command.faultId);
         }
         else {
-            this.holds.set(command.faultId, String(command.match?.typeId));
+            this.holds.set(command.faultId, this.toPortHold(command.match));
         }
         for (const message of this.messages) {
-            if (message.state === 'accepted' && !this.isHeld(message.command.typeId)) {
-                this.deliver(message);
+            if (message.state === 'accepted') {
+                this.routeAdmitted(message);
             }
         }
         return { status: 'ok', value: { faultId: command.faultId } };
@@ -519,6 +548,9 @@ class GeneratedAlmPorts {
             checkpoint: checkpointed && !storageRefused && !downgraded ? 'unsaved' : undefined,
             state: storageRefused ? 'failed' : rejected ? 'rejected' : command.payload.seq === 300 ? 'queued' : 'accepted',
             submitted: false,
+            buffered: false,
+            deliveredIndex: undefined,
+            repairAttempts: 0,
             attemptCarriers: [],
             attemptOutcomes: [],
             failure: capacityRefused
@@ -585,8 +617,83 @@ class GeneratedAlmPorts {
         else if (command.toPeer === 'server') {
             this.acknowledgeByServer(message);
         }
-        else if (!rejected && !this.isHeld(command.typeId)) {
-            this.deliver(message);
+        else if (!rejected) {
+            this.routeAdmitted(message);
+        }
+    }
+
+    /** A held frame stays with its page; an ordered frame behind a held one is buffered at the receiver; the rest deliver. */
+    private routeAdmitted(message: PortMessage): void {
+        if (this.isHeld(message)) {
+            return;
+        }
+        const held = this.findHeldPredecessor(message);
+        if (held !== undefined) {
+            this.bufferBehindGap(message, held);
+            return;
+        }
+        this.deliver(message);
+    }
+
+    /** The earlier sequence of the message's ordering track that its sender still holds, if any. */
+    private findHeldPredecessor(message: PortMessage): PortMessage | undefined {
+        const { orderingKey, seq } = message.command;
+        if (orderingKey === undefined || seq === undefined) {
+            return undefined;
+        }
+        return this.messages.find((candidate) =>
+            candidate.command.orderingKey === orderingKey && candidate.command.seq !== undefined &&
+            candidate.command.seq < seq && !candidate.submitted && this.isHeld(candidate)
+        );
+    }
+
+    /**
+     * The hop reads the gap and NACKs the range of the held sequence, which the sender admits as `committed` and answers
+     * with one retransmission; a second report of the same gap finds that budget of one spent and settles the held
+     * message `skipped` as `repair-exhausted`. The revealing frame waits at the receiver for the gap to close.
+     */
+    private bufferBehindGap(message: PortMessage, held: PortMessage): void {
+        message.submitted = true;
+        message.buffered = true;
+        message.state = 'transport-accepted';
+        this.sender.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.outbound_diagnostics',
+            payload: {
+                data: {
+                    kind: 'control-admission',
+                    msgId: `${message.msgId}-nack`,
+                    typeId: 'al.control.nack.v2',
+                    targetMsgId: message.msgId,
+                    outcome: 'committed',
+                    reason: 'none',
+                    missingRanges: [{ from: held.command.seq, to: held.command.seq }]
+                }
+            }
+        });
+        if (held.repairAttempts >= 1) {
+            held.state = 'failed';
+            held.failure = { kind: 'skipped', reason: 'repair-exhausted' };
+            return;
+        }
+        held.repairAttempts += 1;
+    }
+
+    /** The receiver's channel reads the released sequence, then every buffered successor the gap no longer holds back. */
+    private releaseBuffered(delivered: PortMessage): void {
+        const orderingKey = delivered.command.orderingKey;
+        if (orderingKey === undefined) {
+            return;
+        }
+        const successors = this.messages
+            .filter((candidate) => candidate.command.orderingKey === orderingKey && candidate.buffered)
+            .sort((left, right) => (left.command.seq ?? 0) - (right.command.seq ?? 0));
+        for (const successor of successors) {
+            if (this.findHeldPredecessor(successor) !== undefined) {
+                return;
+            }
+            successor.buffered = false;
+            this.recordReceiverMessage(successor);
         }
     }
 
@@ -681,6 +788,29 @@ class GeneratedAlmPorts {
                 }
             }
         });
+        if (this.recoveryOwnerInstalled) {
+            this.recordRecoveryOwnerInvocation(message);
+        }
+    }
+
+    /** The receiver's channel owner is invoked once with the track's cursor and the browser states it on the storage port. */
+    private recordRecoveryOwnerInvocation(message: PortMessage): void {
+        this.receiver.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.storage',
+            payload: {
+                data: {
+                    kind: 'recovery-owner-invoked',
+                    orderingKey: message.command.orderingKey,
+                    senderId: 'sender',
+                    epoch: 0,
+                    lastContiguousSeq: 1,
+                    expectedSeq: 2,
+                    observedSeq: message.command.seq,
+                    carrier: 'rtc'
+                }
+            }
+        });
     }
 
     /** The receiver's one inbound identity refuses the replayed copy as a duplicate, so nothing more is delivered. */
@@ -747,8 +877,24 @@ class GeneratedAlmPorts {
         }
     }
 
-    private isHeld(typeId: string): boolean {
-        return [...this.holds.values()].includes(typeId);
+    private isHeld(message: PortMessage): boolean {
+        return [...this.holds.values()].some((hold) =>
+            hold.kind === 'type' ? hold.typeId === message.command.typeId : hold.kind === 'message' && hold.msgId === message.msgId
+        );
+    }
+
+    /**
+     * The browser adapter resolves a `match.msgId` token against the recipe's result cache before it arms the fault;
+     * this port reads the same identity from the send the token names.
+     */
+    private toPortHold(match: RallarBlackBoxTestFaultInjectCommand['match']): PortHold {
+        if ('msgId' in match && typeof match.msgId === 'string') {
+            const sendCommandId = HOLD_MSG_ID_REFERENCE.exec(match.msgId)?.[1];
+            const sent = this.messages.find((message) => message.command.commandId === sendCommandId);
+            assert(sent, `the hold names ${match.msgId}, which no send of this run returned`);
+            return { kind: 'message', msgId: sent.msgId };
+        }
+        return 'typeId' in match && typeof match.typeId === 'string' ? { kind: 'type', typeId: match.typeId } : { kind: 'control' };
     }
 
     private deliver(message: PortMessage): void {
@@ -762,6 +908,13 @@ class GeneratedAlmPorts {
         else if (receipted) {
             this.admitServerReceipts(message);
         }
+        this.recordReceiverMessage(message);
+        this.releaseBuffered(message);
+    }
+
+    private recordReceiverMessage(message: PortMessage): void {
+        this.deliveries += 1;
+        message.deliveredIndex = this.deliveries;
         this.receiver.recordEvent({
             kind: 'message',
             connection: 'almConformanceReceiver',
@@ -963,16 +1116,20 @@ Deno.test('the rtc-with-ws-fallback owner fails while its held RTC leg never han
     assertEquals(owner.ok, false, JSON.stringify(owner));
 });
 
-function findCatalogScenario(carrier: AlmConformanceCarrier, scenarioId: string): AlmConformanceScenario {
-    const scenario = createAlmConformanceRecipes({
+function toCatalogInput(carrier: AlmConformanceCarrier): CreateAlmConformanceRecipesInput {
+    return {
         group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
         carrier,
         typeId: 'alm.conformance',
         senderConnection: 'almConformanceSender',
         receiverConnection: 'almConformanceReceiver',
         deadlineMs: 18_000
-    }).find((candidate) => candidate.scenarioId === scenarioId);
-    assert(scenario, `${scenarioId} over ${carrier}`);
+    };
+}
+
+function findCatalogScenario(input: CreateAlmConformanceRecipesInput, scenarioId: string): AlmConformanceScenario {
+    const scenario = createAlmConformanceRecipes(input).find((candidate) => candidate.scenarioId === scenarioId);
+    assert(scenario, `${scenarioId} over ${input.carrier}`);
     return scenario;
 }
 
@@ -990,7 +1147,7 @@ function findMarked(ports: GeneratedAlmPorts, marker: string): readonly PortMess
 
 for (const carrier of ALM_CONFORMANCE_CARRIERS) {
     Deno.test(`the ${carrier} checkpoint-recovery pair restores the interval's checkpoint across the reload`, async () => {
-        const { sender, receiver } = findCatalogScenario(carrier, 'checkpoint-recovery');
+        const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'checkpoint-recovery');
         const [checkpoint] = toAlmReloadCheckpoints(sender.metadata?.almReloadCheckpoints) ?? [];
         assert(checkpoint);
         const ports = new GeneratedAlmPorts(true);
@@ -1013,7 +1170,7 @@ for (const carrier of ALM_CONFORMANCE_CARRIERS) {
     });
 
     Deno.test(`the ${carrier} checkpoint-lag recipes lag, refuse, recover and deliver the admitted sends`, async () => {
-        const { sender, receiver } = findCatalogScenario(carrier, 'checkpoint-lag');
+        const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'checkpoint-lag');
         const ports = new GeneratedAlmPorts(true);
 
         const owner = await ports.sender.execute(toRecipeRun(sender));
@@ -1030,7 +1187,7 @@ for (const carrier of ALM_CONFORMANCE_CARRIERS) {
 
 for (const carrier of ['ws', 'rtc'] as const) {
     Deno.test(`the ${carrier} flush-on-hide successor restores what the owner's lifecycle flush saved`, async () => {
-        const { sender, receiver, successor } = findCatalogScenario(carrier, 'flush-on-hide');
+        const { sender, receiver, successor } = findCatalogScenario(toCatalogInput(carrier), 'flush-on-hide');
         assert(successor);
         const ports = new GeneratedAlmPorts(true);
 
@@ -1047,7 +1204,7 @@ for (const carrier of ['ws', 'rtc'] as const) {
     });
 
     Deno.test(`the ${carrier} flush-on-hide successor restores nothing when the owner's page ends unflushed inside the interval`, async () => {
-        const { sender, successor } = findCatalogScenario(carrier, 'flush-on-hide');
+        const { sender, successor } = findCatalogScenario(toCatalogInput(carrier), 'flush-on-hide');
         assert(successor);
         const ports = new GeneratedAlmPorts(true);
 
@@ -1057,6 +1214,68 @@ for (const carrier of ['ws', 'rtc'] as const) {
 
         assertEquals(restored.ok, false, JSON.stringify(restored));
         assertEquals(findMarked(ports, 'flush-on-hide').map((message) => message.submitted), [false], 'the unsaved admission is lost with its page');
+    });
+}
+
+for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
+    Deno.test(`the ${carrier} ordering-gap-repair pair holds the second frame, reads the range NACK and delivers all three in order`, async () => {
+        const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'ordering-gap-repair');
+        const ports = new GeneratedAlmPorts(true);
+
+        const sent = await ports.sender.execute(toRecipeRun(sender));
+        const received = await ports.receiver.execute(toRecipeRun(receiver));
+
+        assertEquals(sent.ok, true, JSON.stringify(sent));
+        assertEquals(received.ok, true, JSON.stringify(received));
+        const messages = findMarked(ports, 'ordering-gap-repair');
+        assertEquals(messages.map((message) => [message.command.seq, message.buffered, message.failure]), [
+            [1, false, undefined],
+            [2, false, undefined],
+            [3, false, undefined]
+        ]);
+        assertEquals(
+            [...messages].sort((left, right) => left.deliveredIndex! - right.deliveredIndex!).map((message) => message.command.seq),
+            [1, 2, 3],
+            'the channel read the sequences in order once the gap closed'
+        );
+        assertEquals(messages[1].repairAttempts, 1, 'the one gap report spent one retransmit');
+    });
+}
+
+for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+    Deno.test(`the ${carrier} repair-exhausted pair keeps the hold, spends the budget and reads the second send skipped`, async () => {
+        const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'repair-exhausted');
+        const ports = new GeneratedAlmPorts(true);
+
+        const sent = await ports.sender.execute(toRecipeRun(sender));
+        const received = await ports.receiver.execute(toRecipeRun(receiver));
+
+        assertEquals(sent.ok, true, JSON.stringify(sent));
+        assertEquals(received.ok, true, JSON.stringify(received));
+        assertEquals(findMarked(ports, 'repair-exhausted').map((message) => [message.command.seq, message.state, message.buffered, message.failure]), [
+            [1, 'acknowledged', false, undefined],
+            [2, 'failed', false, { kind: 'skipped', reason: 'repair-exhausted' }],
+            [3, 'transport-accepted', true, undefined],
+            [4, 'transport-accepted', true, undefined]
+        ]);
+    });
+}
+
+for (const carrier of ['rtc', 'rtc-with-ws-fallback'] as const) {
+    // The receiver connects before the sender starts, as the sender's readiness wait orders the lane.
+    Deno.test(`the ${carrier} ordering-resync receiver with a recording owner reads the owner's invocation and its cursor`, async () => {
+        const { sender, receiver } = findCatalogScenario({ ...toCatalogInput(carrier), recoveryOwner: 'record' }, 'ordering-resync');
+        const connectId = `${receiver.recipeId}-connect`;
+        const ports = new GeneratedAlmPorts(true);
+
+        const connected = await ports.receiver.execute(toRecipeRun(toSegment(receiver, undefined, connectId)));
+        const sent = await ports.sender.execute(toRecipeRun(sender));
+        const received = await ports.receiver.execute(toRecipeRun(toSegment(receiver, connectId, undefined)));
+
+        for (const [role, result] of [['receiver connect', connected], ['sender', sent], ['receiver', received]] as const) {
+            assertEquals(result.ok, true, `${role}: ${JSON.stringify(result)}`);
+        }
+        assertEquals(ports.recoveryOwnerInstalled, true);
     });
 }
 

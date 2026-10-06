@@ -15,8 +15,10 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
+import { toCommandId } from '../alm-conformance-step-identities.ts';
 
 const RESYNC_GAP_SEQ = 300;
+const STORAGE_TOPIC = 'rallar.browser.alm.storage';
 
 export const orderingResync: AlmConformanceScenarioDefinition = {
     scenarioId: 'ordering-resync',
@@ -66,7 +68,10 @@ function toRelayResyncNackWait(sender: AlmConformanceStepInput): RallarBlackBoxT
     });
 }
 
-/** Over the RTC carriers the receiver is the hop that refuses the gapped send, so it proves its own verdict (D44). */
+/**
+ * Over the RTC carriers the receiver is the hop that refuses the gapped send, so it proves its own verdict (D44) and,
+ * when the lane installed the recording owner on its channel, the owner's one invocation with the track's cursor.
+ */
 function toOrderingResyncReceiverCommands(
     receiver: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
@@ -79,8 +84,43 @@ function toOrderingResyncReceiverCommands(
         toAdmissionOutcomeWait(receiver, {
             name: 'resync-outcome',
             contains: '"carrier":"rtc","outcome":"not-handled","reason":"resync-required"',
-            timeoutMs: receiver.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
+            timeoutMs: toVerdictTimeoutMs(receiver)
         }),
+        ...(receiver.input.recoveryOwner === 'record' ? toRecoveryOwnerWaits(receiver) : []),
         absentSecond
     ];
+}
+
+/**
+ * The `recovery-owner-invoked` storage event, in its emitted key order (`kind`, `orderingKey`, `senderId`, `epoch`,
+ * `lastContiguousSeq`, `expectedSeq`, `observedSeq`, `carrier`). The sender's peer id is unknown when the recipe is
+ * authored and sits between the track and the cursor, so the track and the cursor are matched by two waits on the
+ * one event: the track stood at seq 1 and expected 2 when seq 300 arrived over RTC.
+ */
+function toRecoveryOwnerWaits(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    const cursor = `"lastContiguousSeq":1,"expectedSeq":2,"observedSeq":${RESYNC_GAP_SEQ},"carrier":"rtc"}`;
+    return [
+        toStorageEventWait(receiver, {
+            name: 'recovery-owner-invoked',
+            contains:
+                `"kind":"recovery-owner-invoked","orderingKey":"alm-${receiver.input.carrier}-${receiver.scenarioId}",`
+        }),
+        toStorageEventWait(receiver, { name: 'recovery-owner-cursor', contains: cursor })
+    ];
+}
+
+function toStorageEventWait(
+    receiver: AlmConformanceStepInput,
+    event: Readonly<{ name: string; contains: string; }>
+): RallarBlackBoxTestCommand {
+    return {
+        kind: 'wait',
+        commandId: toCommandId(receiver, event.name),
+        match: { kind: 'diagnostic', topic: STORAGE_TOPIC, payloadPath: 'data', contains: event.contains },
+        timeoutMs: toVerdictTimeoutMs(receiver)
+    };
+}
+
+function toVerdictTimeoutMs(receiver: AlmConformanceStepInput): number {
+    return receiver.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS;
 }

@@ -127,6 +127,8 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'checkpoint-recovery',
         'checkpoint-lag',
         'ordering-resync',
+        'ordering-gap-repair',
+        'repair-exhausted',
         'ws-unicast-receipt',
         'server-command',
         'capacity'
@@ -143,6 +145,8 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'checkpoint-recovery',
         'checkpoint-lag',
         'ordering-resync',
+        'ordering-gap-repair',
+        'repair-exhausted',
         'not-yet-in-sync-delivered-after-refresh',
         'not-yet-in-sync-expires',
         'ws-unicast-receipt',
@@ -160,6 +164,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'checkpoint-recovery',
         'checkpoint-lag',
         'ordering-resync',
+        'repair-exhausted',
         'cross-carrier-duplicate-rtc-then-ws',
         'cross-carrier-duplicate-ws-then-rtc',
         'not-yet-in-sync-delivered-after-refresh',
@@ -409,7 +414,7 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('keeps reload, storage-unavailable, the checkpoint scenarios, ordering-resync and the takeover full-only while preserving the smoke scenarios', () => {
+    it('keeps reload, storage-unavailable, the checkpoint scenarios, the ordering scenarios and the takeover full-only while preserving the smoke scenarios', () => {
         expect(
             createAlmConformanceRecipes(toConformanceInput('ws'))
                 .filter((scenario) => scenario.tags.includes('smoke'))
@@ -432,6 +437,7 @@ describe('alm-conformance recipe family', () => {
             'checkpoint-recovery',
             'checkpoint-lag',
             'ordering-resync',
+            'repair-exhausted',
             'cross-carrier-duplicate',
             'cross-carrier-duplicate',
             'not-yet-in-sync',
@@ -456,6 +462,8 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],

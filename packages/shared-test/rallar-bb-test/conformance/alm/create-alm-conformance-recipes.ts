@@ -45,9 +45,11 @@ import { checkpointRecovery } from './scenarios/local-checkpoint/checkpoint-reco
 import { flushOnHide } from './scenarios/local-checkpoint/flush-on-hide.ts';
 import { noFallbackAfterDeadline } from './scenarios/no-fallback-after-deadline.ts';
 import { notYetInSync } from './scenarios/not-yet-in-sync.ts';
+import { orderingGapRepair } from './scenarios/ordering-gap-repair.ts';
 import { orderingResync } from './scenarios/ordering-resync.ts';
 import { receiptExhaustedFallback } from './scenarios/receipt-exhausted-fallback.ts';
 import { receiptedAudience } from './scenarios/receipted-audience.ts';
+import { repairExhausted } from './scenarios/repair-exhausted.ts';
 import { serverCommand } from './scenarios/server-command.ts';
 import { storageUnavailable } from './scenarios/storage-unavailable.ts';
 import { unicastFallback } from './scenarios/unicast-fallback.ts';
@@ -101,6 +103,8 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     checkpointRecovery,
     checkpointLag,
     orderingResync,
+    orderingGapRepair,
+    repairExhausted,
     ...crossCarrierDuplicate,
     ...notYetInSync,
     fallbackWithinDeadline,

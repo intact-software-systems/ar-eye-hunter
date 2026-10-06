@@ -320,7 +320,36 @@ the sender, so the sender waits for its `rallar.browser.alm.outbound_diagnostics
 `control-admission` of that `al.control.nack.v2`, pinned on the gapped send's msgId through a wait
 result reference. The sender admits that NACK as the word of its trusted server and states the
 relay rejection (`relayRejection: { relay: 'trusted-server' }`); the send requested no ACK, so its
-handle is already `transport-accepted` and keeps that state.
+handle is already `transport-accepted` and keeps that state. When the lane's catalog input names
+`recoveryOwner: 'record'`, the receiver's connect carries `rallar.recoveryOwner: 'record'` (below) and the
+RTC receivers add two waits on `rallar.browser.alm.storage` for the one `recovery-owner-invoked` event:
+`recovery-owner-invoked` matches the event's kind and the cell's ordering key, `recovery-owner-cursor`
+the cursor it handed the owner (`lastContiguousSeq: 1`, `expectedSeq: 2`, `observedSeq: 300`, carrier
+`rtc`); the sender's peer id sits between them in the emitted order, so one `contains` cannot span both.
+Over `ws` the relay refuses the gapped send before the receiver sees it, so no owner is invoked there.
+The hosted combined recipe shares one connect across its cells and names no owner, so manifest 18 carries
+neither the field nor the waits.
+
+The `ordering-gap-repair` conformance scenario runs over every carrier and repairs an in-window gap by
+range. The sender sends seq 1 and proves it left (`observe-transport-accepted-1`, asserted
+`transport-accepted` or `acknowledged`), arms the native hold of its type on each carrier the cell can hold,
+sends seq 2, then holds that one message by the id its send returned (`hold-message-2-<carrier>`, a
+`fault.inject` whose `match.msgId` names `{resultCache.<send-2>.value.msgId}`) and releases the hold of
+the type, so seq 3 passes while seq 2 stays held across every retransmission. The hop reads the gap and
+NACKs the range `2-2`: over `ws` the relay, over the RTC carriers the receiver. The sender waits for its
+`control-admission` of that `al.control.nack.v2` as `committed`, pinned on seq 3's msgId (`gap-nack`), then
+releases the message hold. The receiver receives the first send once, all three within the send budget,
+and never a fourth; its typed channel hands them over in sequence by construction, since seq 3 waits in the
+ordered-delivery buffer until seq 2 arrives.
+
+The `repair-exhausted` conformance scenario runs over every carrier. It is the gap repair whose message hold
+is never released: after the admitted NACK the sender sends seq 4, a second report of the same gap, so the
+budget of one retransmit (`maxRepairs`) is spent however many repair requests one arrival raises. The sender
+then observes seq 2's handle `failed` and asserts `failure.kind: 'skipped'` with `failure.reason:
+'repair-exhausted'`; the receiver receives the first send once and proves the absence of a second, since
+seq 3 and seq 4 wait for a seq 2 that never arrives. The hold stays until the page ends: a release would let
+the second frame reach the receiver inside its absence window. Both cells are withheld from the hosted
+manifests, as the checkpoint cells are; they run in the local lane and in the observation's full read.
 
 The `not-yet-in-sync` conformance scenario runs over `rtc` and
 `rtc-with-ws-fallback`, in two variants. Its receiver first waits for its own
@@ -590,6 +619,26 @@ harness capability, never a `rallar.connect` option. A facade that is already co
 read, and a connect that names the field on a live facade has no effect until its next session, so a recipe closes
 the connection before a connect that names the field, and closes and reconnects without it
 to restore the constants (`AL_VOLATILE_SESSION_MAX_ADMISSIONS`, `AL_VOLATILE_SESSION_MAX_BYTES`).
+
+### The lane-only `rallar.recoveryOwner` connect field
+
+`rtc.connect.rallar.recoveryOwner` is `'record'` or absent; any other value fails the connect. Like
+`almVolatileLimits` it is validated in the page only, since the schema and the control validator treat
+`rallar` as a free record. `record` declares a recovery owner on the typed channel the connect subscribes
+for its `typeId` and `topicId`: the harness's recording owner, which states each invocation as a
+`rallar.browser.messages.recovery_owner_invoked` diagnostic carrying the cursor it was handed. The browser
+states the same invocation as `recovery-owner-invoked` on `rallar.browser.alm.storage`, which is what the
+`ordering-resync` receiver waits for. A connect with a `messageSelector` subscribes the lanes directly and
+opens no channel, so it declares no owner; absent, the channel declares none and a message the receiver can
+no longer order is dropped, as a product channel does by default.
+
+### A `fault.inject` that holds one message
+
+A transport `fault.inject` whose `match.msgId` names `{resultCache.<commandId>.<path>}` resolves the token
+against an earlier command's result before the fault is armed, as `messages.control` resolves its
+identities; the usual case is the `msgId` a `messages.send` returned, which holds that one message across
+its retransmissions while every other frame of the type passes. A token no earlier command returned fails
+the `fault.inject`.
 
 ## RTC Connect Readiness
 

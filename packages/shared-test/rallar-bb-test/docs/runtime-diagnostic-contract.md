@@ -519,6 +519,17 @@ are the sync points of a paired `agent.reload`.
   `checkpoint-lag`, releases the fault, waits for the store's `healthy`, and
   then proves the next send admitted and delivered.
 
+- `recovery-owner-invoked`: the browser handed a typed channel's recovery owner
+  the cursor of an ordering track it can no longer order, once per track
+  (ordering key, sender, epoch) for the life of the runtime, after the sender
+  was NACKed `resync-required`. The event is the cursor with its `kind` first:
+  `orderingKey`, `senderId`, `epoch`, `lastContiguousSeq`, `expectedSeq`,
+  `observedSeq` and `carrier`, in that order. It has no `storeId`. It is stated
+  even when the owner throws; without an owner nothing is stated and the
+  message is dropped as before. The harness's recording owner, installed by the
+  lane-only `rtc.connect.rallar.recoveryOwner: 'record'`, states the same cursor
+  as a `rallar.browser.messages.recovery_owner_invoked` diagnostic.
+
 - `persist`: `outcome` (`granted`, `denied` or `unsupported`), once per connect
   after its first durable admission: `granted` when the origin already
   persisted or the browser granted the request, `denied` when it refused or the

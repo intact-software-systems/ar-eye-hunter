@@ -111,6 +111,18 @@ observation shape; 6 consumes 1, 3, 4 and 5 through the browser only.
   `'recovery-owner-invoked'` with the cursor, so the lane observes it on its existing topic. _Cost if
   wrong:_ the harness waits on a different topic.
 - **R-R1-9:** The new two-agent cells are withheld from hosted manifests 18 and 22 (as I2b's were); they run locally and in the observation's full read. Manifest 18 is regenerated once in Task 3 where its `ordering-resync` cell waits on the NACK type id, which moves to `v2`; no other manifest line moves. _Cost if wrong:_ no hosted proof of the new cells; the hosted run of 18 is a regression read of the `v2` id.
+- **R-R1-11 (added at Task 6):** `ordering-gap-repair` runs over the single-hop carriers `ws` and `rtc` only
+  (`ALM_CONFORMANCE_SINGLE_HOP_CARRIERS`); `repair-exhausted` runs over all three. A D56 hand-over moves one message
+  of an ordering track to WS, whose relay never saw the track's other messages and gates the one it received as its
+  own gap, so the hand-over of an ordered message is a carried limit, not a cell. _Cost if wrong:_ one cell's carrier
+  list widens.
+- **R-R1-12 (added at Task 6):** A receiver's NACK (`gap`) and repair request (`missing-seq`) for one arrival are one
+  repair hint at the sender: the hint's effect identity carries no trigger, and the stored hint names one trigger for
+  any ranged request, so the second control is absorbed by the write-if-absent effect store. The repair-authority
+  guard grants the sender's own hop (`fromPeerId` among `ackTracking.nextHopPeerIds`) authority without a planner,
+  as R-R1-1 grants the retransmitter. A hint re-executed after a conflict or lease expiry charges the budget once:
+  the exhaustion verdict comes from dispatch, which skips `set-repair-attempt` when its send effects already exist.
+  _Cost if wrong:_ a message is exhausted by its own repair's echo, or charged twice.
 - **R-R1-10:** The Relic full-stack case runs once in Task 1 (it needs `RALLAR_AUTH_CREDENTIAL_SECRET`
   and Chromium build 1228); its summary line goes to the PR body; a red there is diagnosed before any
   change. _Cost if wrong:_ one manual run.
@@ -125,6 +137,8 @@ observation shape; 6 consumes 1, 3, 4 and 5 through the browser only.
 - ALM resets no ordering track after a resync; the sender's new epoch closes it (D142).
 - The WS server has no recovery owner and keeps NACKing `resync-required`.
 - Hosted manifests 18 and 22 carry none of the new cells; 18 changes only by the `v2` NACK id (R-R1-9).
+- An ordering track whose message is handed over to WS mid-track (D56) is gated by the WS relay's own ordering view;
+  `ordering-gap-repair` therefore runs over `ws` and `rtc` only (R-R1-11).
 
 ---
 
@@ -404,8 +418,17 @@ D8 reuse: the inbound runtime's optional dependency pattern, the typed channel r
 - Tests: `packages/tests/shared-test/alm-conformance-ordering-repair.test.ts` (new) pinning the three
   scenarios' command names and assertions; the manifests `--check` byte-identical.
 
-- [ ] Steps: failing pins; red; scenarios; fixture; docs; format; focused green; `deno test` on the
+- [x] Steps: failing pins; red; scenarios; fixture; docs; format; focused green; `deno test` on the
       fixture from the repo root; manifests check; commit.
+
+**Corrections recorded at execution.** The hold of the second frame is composed from the type hold and a
+message hold by the id its send returned (`toHeldMessageFaultCommands`; the browser adapter resolves
+`{resultCache…}` in `fault.inject.match.msgId`). No `messages.subscribe` command exists: the owner is installed by
+the lane-only connect field `rtc.connect.rallar.recoveryOwner: 'record'`, switched by
+`CreateAlmConformanceRecipesInput.recoveryOwner` so the hosted catalog stays as recorded (`ordering-resync` is in
+manifest 18). `repair-exhausted` reports the gap a second time with a fourth send. `ordering-gap-repair` runs over
+the single-hop carriers (R-R1-11). The local lane over `ws` exposed the repair-authority gap and the local run
+exposed the double control per gap arrival, both fixed under R-R1-12 in the commits that follow this task's.
 
 ```text
 The lane repairs an in-window gap by range, states exhausted repair and observes the recovery owner

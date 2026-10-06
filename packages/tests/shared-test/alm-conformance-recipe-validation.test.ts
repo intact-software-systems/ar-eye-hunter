@@ -39,6 +39,8 @@ const CARRIER_SCENARIO_IDS = {
         'checkpoint-recovery',
         'checkpoint-lag',
         'ordering-resync',
+        'ordering-gap-repair',
+        'repair-exhausted',
         'ws-unicast-receipt',
         'server-command',
         'capacity',
@@ -58,6 +60,8 @@ const CARRIER_SCENARIO_IDS = {
         'checkpoint-recovery',
         'checkpoint-lag',
         'ordering-resync',
+        'ordering-gap-repair',
+        'repair-exhausted',
         'not-yet-in-sync',
         'not-yet-in-sync',
         'ws-unicast-receipt',
@@ -78,6 +82,7 @@ const CARRIER_SCENARIO_IDS = {
         'checkpoint-recovery',
         'checkpoint-lag',
         'ordering-resync',
+        'repair-exhausted',
         'cross-carrier-duplicate',
         'cross-carrier-duplicate',
         'not-yet-in-sync',
@@ -119,11 +124,14 @@ const ALM_CONFORMANCE_SCOPES: readonly AlmConformanceTag[] = ['smoke', 'full'];
  * Recipe ids whose hold stays until the page ends. Recipient-b of the frozen audience withholds its ACK,
  * leaves and rejoins past the expiry; the hold matches only that scenario's type id, so no later block sees it.
  * The takeover's and the flush's senders hold their carrier until the lane ends their page, which no later block shares.
+ * The exhausted repair's sender holds its second message through every retransmission: a release would let it reach
+ * the receiver inside the absence window; the hold matches that one message id, so no later block sees it.
  */
 const HELD_UNTIL_PAGE_ENDS_RECIPE_SUFFIXES = [
     '-frozen-audience-membership-recipient-b',
     '-durable-takeover-sender',
-    '-flush-on-hide-sender'
+    '-flush-on-hide-sender',
+    '-repair-exhausted-sender'
 ];
 
 /**
