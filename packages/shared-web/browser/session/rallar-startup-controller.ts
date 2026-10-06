@@ -96,6 +96,9 @@ function toRefreshOptions(
 ): RallarScopedOperationOptions {
     return {
         ...(operationOptions.rtcCaptureMode !== undefined ? { rtcCaptureMode: operationOptions.rtcCaptureMode } : {}),
+        ...(operationOptions.rtcCaptureContext !== undefined
+            ? { rtcCaptureContext: operationOptions.rtcCaptureContext }
+            : {}),
         ...(options.scope ? { scope: options.scope } : {}),
         ...(operationOptions.signal ? { signal: operationOptions.signal } : {}),
         ...(operationOptions.timeoutMs !== undefined

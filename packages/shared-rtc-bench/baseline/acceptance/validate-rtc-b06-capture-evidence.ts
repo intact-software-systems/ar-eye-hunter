@@ -1,5 +1,8 @@
 import { resolveRequiredRtcCaptureFailure } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
-import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
+import {
+    toRtcCaptureConfiguration,
+    toRtcCaptureReadout
+} from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 
 import type {
@@ -36,13 +39,28 @@ export function validateRtcB06CaptureEvidence(
         return [captureIssue('receipt-unavailable')];
     }
     return captures.flatMap((capture) => {
-        const receipt = typeof capture === 'object' && capture !== null && !Array.isArray(capture)
-            ? capture.receipt
-            : undefined;
+        if (typeof capture !== 'object' || capture === null || Array.isArray(capture)) {
+            return [captureIssue('invalid-capture-record')];
+        }
+        const hasAttribution = ['runId', 'agentId', 'commandId', 'connection', 'sessionId'].every((field) => {
+            const value = capture[field];
+            return typeof value === 'string' && value.length > 0;
+        });
+        const requested = toRtcCaptureConfiguration(capture.requestedConfiguration);
+        if (
+            !hasAttribution || (capture.transport !== 'realtime' && capture.transport !== 'messages.rtc') ||
+            requested === undefined
+        ) {
+            return [captureIssue('invalid-capture-record')];
+        }
+        if (requested.mode !== mode) {
+            return [captureIssue('mode-mismatch')];
+        }
+        const receipt = capture.receipt;
         const decoded = toRtcCaptureReadout(receipt === undefined ? undefined : { status: 'observed', value: receipt });
         const reason = decoded.left ?? (decoded.right === undefined
             ? 'receipt-unavailable'
-            : resolveRequiredRtcCaptureFailure({ mode, origin: 'step' }, decoded.right));
+            : resolveRequiredRtcCaptureFailure(requested, decoded.right));
         return reason === undefined ? [] : [captureIssue(reason)];
     });
 }

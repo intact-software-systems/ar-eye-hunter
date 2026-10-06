@@ -160,7 +160,7 @@ export class BrowserHttpRequests {
         const resolvedRequest = replaceCommandPlaceholders(command.request, { config, session, wsTicket });
         const resolvedCommand = { ...command, request: resolvedRequest };
         const url = toRequestUrl(resolvedCommand, config, session);
-        const headers = shouldAttachRallarAuth(resolvedCommand, config, url)
+        const headers = shouldAttachRallarAuth(config, url)
             ? withRallarAuthHeaders(resolvedRequest.headers, session)
             : resolvedRequest.headers;
         return { url, headers, resolvedRequest };
@@ -208,13 +208,9 @@ function recordHttpResponse(
 }
 
 function shouldAttachRallarAuth(
-    command: HttpRequestCommand,
     config: RallarBlackBoxTestConfig | undefined,
     url: string
 ): boolean {
-    if (command.request.path) {
-        return true;
-    }
     const apiBaseUrl = resolveConfigApiBaseUrl(config);
     return apiBaseUrl !== undefined && (url === apiBaseUrl || url.startsWith(`${apiBaseUrl}/`));
 }

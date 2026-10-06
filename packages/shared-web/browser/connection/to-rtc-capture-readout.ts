@@ -65,7 +65,7 @@ function toRtcCaptureReceipt(
     };
 }
 
-function toRtcCaptureConfiguration(
+export function toRtcCaptureConfiguration(
     value: ApiJsonValue | undefined
 ): RtcSignalingDiagnostics.CaptureConfiguration | undefined {
     const configuration = jsonRecord(value);

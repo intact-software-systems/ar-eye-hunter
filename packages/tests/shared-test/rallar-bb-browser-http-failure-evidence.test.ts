@@ -2,6 +2,8 @@ import { spawnSync } from 'node:child_process';
 
 import { afterEach, expect, it, vi } from 'vitest';
 
+import type { AuthSession } from '@shared/api/api-config.ts';
+
 import { controlEventArtifactJsonl } from '../../../apps/rallar-black-box-control-server/src/control-artifacts.ts';
 import { toLiveRtcLifecycleHistory } from '../../../tests/playwright/rallar-black-box/live-rtc-agent-diagnostics.ts';
 import { createBrowserCommandAbortScope } from '../../shared-test/rallar-bb-test/browser/browser-command-cancellation.ts';
@@ -22,6 +24,163 @@ const command = {
 } as const;
 
 afterEach(() => vi.useRealTimers());
+
+const httpSession: AuthSession = {
+    clientId: 'synthetic-client',
+    accessToken: 'synthetic-access-token',
+    username: 'synthetic-user',
+    sessionId: 'synthetic-session',
+    expiresAtEpochMs: 60_000
+};
+
+it.each([
+    {
+        name: 'foreign absolute path',
+        request: { path: 'https://foreign.test/items' },
+        apiBaseUrl: 'https://api.example.test',
+        destination: 'https://foreign.test/items',
+        authorized: false
+    },
+    {
+        name: 'foreign network path',
+        request: { path: '//foreign.test/items' },
+        apiBaseUrl: 'https://api.example.test',
+        destination: 'https://foreign.test/items',
+        authorized: false
+    },
+    {
+        name: 'foreign URL overriding a path',
+        request: { url: 'https://foreign.test/items', path: '/api/items' },
+        apiBaseUrl: 'https://api.example.test',
+        destination: 'https://foreign.test/items',
+        authorized: false
+    },
+    {
+        name: 'different scheme',
+        request: { path: 'http://api.example.test/items' },
+        apiBaseUrl: 'https://api.example.test',
+        destination: 'http://api.example.test/items',
+        authorized: false
+    },
+    {
+        name: 'different port',
+        request: { path: 'https://api.example.test:8443/items' },
+        apiBaseUrl: 'https://api.example.test',
+        destination: 'https://api.example.test:8443/items',
+        authorized: false
+    },
+    {
+        name: 'lookalike hostname path',
+        request: { path: 'https://api.example.test.foreign.test/items' },
+        apiBaseUrl: 'https://api.example.test',
+        destination: 'https://api.example.test.foreign.test/items',
+        authorized: false
+    },
+    {
+        name: 'lookalike hostname URL',
+        request: { url: 'https://api.example.test.foreign.test/items' },
+        apiBaseUrl: 'https://api.example.test',
+        destination: 'https://api.example.test.foreign.test/items',
+        authorized: false
+    },
+    {
+        name: 'placeholder-resolved foreign path',
+        request: { path: '//foreign.test/{auth.sessionId}' },
+        apiBaseUrl: 'https://api.example.test',
+        destination: 'https://foreign.test/synthetic-session',
+        authorized: false
+    },
+    {
+        name: 'configured relative route',
+        request: { path: '/api/items' },
+        apiBaseUrl: 'https://api.example.test',
+        destination: 'https://api.example.test/api/items',
+        authorized: true
+    },
+    {
+        name: 'configured base-relative route',
+        request: { path: 'items' },
+        apiBaseUrl: 'https://api.example.test/root/',
+        destination: 'https://api.example.test/root/items',
+        authorized: true
+    },
+    {
+        name: 'configured absolute path',
+        request: { path: 'https://api.example.test/api/items' },
+        apiBaseUrl: 'https://api.example.test',
+        destination: 'https://api.example.test/api/items',
+        authorized: true
+    },
+    {
+        name: 'configured absolute URL',
+        request: { url: 'https://api.example.test/api/items' },
+        apiBaseUrl: 'https://api.example.test',
+        destination: 'https://api.example.test/api/items',
+        authorized: true
+    },
+    {
+        name: 'configured placeholder URL',
+        request: { url: '{config.apiBaseUrl}/items' },
+        apiBaseUrl: 'https://api.example.test/root/',
+        destination: 'https://api.example.test/root/items',
+        authorized: true
+    },
+    {
+        name: 'lookalike base-path URL',
+        request: { url: 'https://api.example.test/rooted/items' },
+        apiBaseUrl: 'https://api.example.test/root',
+        destination: 'https://api.example.test/rooted/items',
+        authorized: false
+    }
+])('confines automatic HTTP credentials for $name', async ({ request, apiBaseUrl, destination, authorized }) => {
+    const sent: { url: string; authorization: boolean; clientId: boolean; }[] = [];
+    const environment: BrowserCommandEnvironment = {
+        ...createEnvironment(async (url, init) => {
+            const headers = new Headers(init?.headers);
+            sent.push({ url: String(url), authorization: headers.has('authorization'), clientId: headers.has('x-client-id') });
+            return new Response('{}');
+        }),
+        readSession: () => httpSession
+    };
+    const context = { ...createContext(), config: () => ({ apiBaseUrl }) };
+
+    const result = await new BrowserHttpRequests(environment).httpRequest({ ...command, request }, context);
+
+    expect(result.status).toBe('ok');
+    expect(sent).toEqual([{ url: destination, authorization: authorized, clientId: authorized }]);
+});
+
+it.each([undefined, '/api/items'])('preserves explicit foreign HTTP headers with path %s', async (path) => {
+    const sent: { url: string; authorizationPreserved: boolean; clientIdPreserved: boolean; contentType: string | null; }[] = [];
+    const callerHeaders = { authorization: 'caller-authorization', 'x-client-id': 'caller-client', 'content-type': 'application/json' };
+    const environment: BrowserCommandEnvironment = {
+        ...createEnvironment(async (url, init) => {
+            const headers = new Headers(init?.headers);
+            sent.push({
+                url: String(url),
+                authorizationPreserved: headers.get('authorization') === callerHeaders.authorization,
+                clientIdPreserved: headers.get('x-client-id') === callerHeaders['x-client-id'],
+                contentType: headers.get('content-type')
+            });
+            return new Response('{}');
+        }),
+        readSession: () => httpSession
+    };
+    const context = { ...createContext(), config: () => ({ apiBaseUrl: 'https://api.example.test' }) };
+
+    const result = await new BrowserHttpRequests(environment).httpRequest({
+        ...command,
+        request: { url: 'https://foreign.test/items', path, headers: callerHeaders }
+    }, context);
+
+    expect(result.status).toBe('ok');
+    expect(sent).toEqual([{
+        url: 'https://foreign.test/items',
+        authorizationPreserved: true,
+        clientIdPreserved: true,
+        contentType: 'application/json'
+    }]);
+});
 
 it.each(['fetch', 'body'] as const)('retains the reached %s phase without attributing an AbortError to the scope', async (phase) => {
     const failure = new Error('private-error-sentinel');
