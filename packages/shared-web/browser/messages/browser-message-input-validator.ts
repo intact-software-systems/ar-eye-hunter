@@ -43,6 +43,7 @@ interface RoomMessageIdentity {
 }
 
 interface RoomAudience {
+    readonly exceptPeerIds?: readonly string[];
     readonly principalId?: string;
     readonly recipientPeerIds?: readonly string[];
 }
@@ -84,6 +85,7 @@ export class BrowserMessageInputValidator {
         this.pushRtcRouteIssues(input, issues);
         this.pushRtcSequenceIssues(input, issues);
         this.pushRoomIdentityIssue(input, issues);
+        this.pushScopeIssue(input.scope ?? 'room', 'RTC', issues);
         this.pushAudienceIssues(input, input.scope ?? 'room', issues);
         if (roomId !== undefined) {
             this.pushOptionalRouteId({
@@ -107,14 +109,6 @@ export class BrowserMessageInputValidator {
             issues
         });
         this.pushOptionalGroupRef(input.roomRef, '$.roomRef', issues);
-        input.exceptPeerIds?.forEach((peerId, index) =>
-            this.pushOptionalRouteId({
-                value: peerId,
-                path: `$.exceptPeerIds[${index}]`,
-                label: 'Peer ID',
-                issues
-            })
-        );
         this.pushOptionalNonNegativeInteger(input.minSnapshotVersion, '$.minSnapshotVersion', issues);
         this.pushWsScopeIssues(resolved, issues);
         if (scope === 'room' || scope === 'principal') {
@@ -244,14 +238,18 @@ export class BrowserMessageInputValidator {
         resolved: ResolvedWsMessageInput<T>,
         issues: RallarValidationIssue[]
     ): void {
-        if (!['room', 'world', 'principal'].includes(resolved.scope)) {
+        this.pushScopeIssue(resolved.scope, 'WS', issues);
+        this.pushRoomIdentityIssue(resolved.input, issues);
+    }
+
+    private pushScopeIssue(scope: RallarMessageScope, carrier: 'RTC' | 'WS', issues: RallarValidationIssue[]): void {
+        if (!['room', 'world', 'principal'].includes(scope)) {
             issues.push({
                 path: '$.scope',
                 code: 'invalid-scope',
-                message: 'WS scope must be room, world, or principal.'
+                message: `${carrier} scope must be room, world, or principal.`
             });
         }
-        this.pushRoomIdentityIssue(resolved.input, issues);
     }
 
     private pushWsRoomIssues(
@@ -277,7 +275,7 @@ export class BrowserMessageInputValidator {
         this.pushOptionalGroupRef(roomRef, '$.roomRef', issues);
     }
 
-    /** A principal send names its principal, and a fixed list rides a room send; every issue is returned. */
+    /** A principal send names its principal, a fixed list rides a room send, and every named session is a route id. */
     private pushAudienceIssues(
         audience: RoomAudience,
         scope: RallarMessageScope,
@@ -298,6 +296,9 @@ export class BrowserMessageInputValidator {
             });
         }
         this.pushOptionalRouteId({ value: audience.principalId, path: '$.principalId', label: 'Principal ID', issues });
+        audience.exceptPeerIds?.forEach((peerId, index) =>
+            this.pushOptionalRouteId({ value: peerId, path: `$.exceptPeerIds[${index}]`, label: 'Peer ID', issues })
+        );
         if (audience.recipientPeerIds !== undefined) {
             this.pushFixedAudienceIssues(audience.recipientPeerIds, scope, issues);
         }

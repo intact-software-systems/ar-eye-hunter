@@ -60,9 +60,11 @@ export interface RallarMessageSendBase<T> {
  */
 export type RallarMessageScope = 'room' | 'world' | 'principal';
 
-/** The audience a room send narrows to: one principal's sessions, or a fixed list of sessions in the room. */
+/** The audience a send names, and how a room send narrows it: one principal, a fixed list, or skipped sessions. */
 interface RallarRoomAudienceInput {
     readonly scope?: RallarMessageScope;
+    /** Sessions the send skips. */
+    readonly exceptPeerIds?: readonly string[];
     /** With `scope: 'principal'` and a room: the principal whose live sessions in the room the send reaches. */
     readonly principalId?: string;
     /** With room scope: at most 256 distinct session ids; a listed session outside the room is not reached. */
@@ -84,7 +86,6 @@ export interface RallarWsSendInput<T> extends RallarMessageSendBase<T>, RallarRo
     readonly roomId?: string;
     readonly roomRef?: GroupRef;
     readonly minSnapshotVersion?: number;
-    readonly exceptPeerIds?: readonly string[];
     /** The one session or server a send addresses; absent, the send reaches its scope. */
     readonly peerId?: string;
     /** Stated together with `orderingKey` or not at all; absent, the broadcast is unordered. */

@@ -3298,6 +3298,21 @@ moved or changed test.
       }
     },
     {
+      "id": "browser-rtc-invalid-scope-no-admission",
+      "domain": "Typed message audience validation",
+      "owner": "Rallar browser maintainers",
+      "summary": "An rtc-strategy send naming a scope outside room, world and principal rejects before the RTC carrier can publish it.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#an rtc-strategy send with an invalid scope produces no RTC admission",
+      "coverageRelation": "The room channel's rtc strategy rejects the scope issue; the RTC carrier admission port is observed.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebRtcRxStreamerService enqueueOutboxIfAbsent carrier admission port",
+        "observableEffect": "Carrier admission can retain or publish a message to its resolved audience.",
+        "requiredConstraint": "A scope a browser may not address must produce no RTC admission.",
+        "failureRationale": "An error response can follow an illicit send; the validation error alone does not prove absence of publication."
+      }
+    },
+    {
       "id": "browser-world-send-on-rtc-refused-alone",
       "domain": "Typed message audience routing",
       "owner": "Rallar browser maintainers",
@@ -7800,6 +7815,17 @@ moved or changed test.
       "owner": "Rallar browser maintainers",
       "rationale": "The WS admission absence proves an unaddressable scope publishes nothing despite the public validation rejection.",
       "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#names the three scopes a browser WS send may take"
+    },
+    {
+      "id": "test-structure-coupling-f157f20037eeae8e",
+      "path": "packages/tests/shared-web/messages/browser-message-audiences.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-rtc-invalid-scope-no-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The RTC admission absence proves an rtc-strategy send with an unaddressable scope publishes nothing despite the public validation rejection.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#an rtc-strategy send with an invalid scope produces no RTC admission"
     },
     {
       "id": "test-structure-coupling-c050a5fee8ee1213",

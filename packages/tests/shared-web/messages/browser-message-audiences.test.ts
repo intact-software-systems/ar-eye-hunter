@@ -61,7 +61,7 @@ describe('the routed carrier of a world send', () => {
         expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0]![0].targets).toEqual({ mode: 'broadcast', scope: 'world' });
         expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0]![1]).toBe('hold');
         expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
-        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle).toMatchObject({ state: 'rejected', evidence: { failure: { kind: 'refused', reason: 'unsupported' } } });
     });
 
     it('defaults a WS send that names neither a room nor a scope to the sender\'s world', async () => {
@@ -101,7 +101,7 @@ describe('a principal or listed room send', () => {
         }
     );
 
-    it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc', 'rtc-with-ws-fallback'])(
+    it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc', 'rtc-with-ws-fallback', 'ws-then-rtc'])(
         'addresses a fixed list in its room as a listed room broadcast on %s',
         async (strategy) => {
             await createRoomChannel().send({ text: 'listed' }, { strategy, recipientPeerIds: ['peer-1'] });
@@ -115,6 +115,37 @@ describe('a principal or listed room send', () => {
             });
         }
     );
+
+    it('a typed rtc send excludes its exceptPeerIds as a room broadcast', async () => {
+        await createRoomChannel().send({ text: 'others' }, { strategy: 'rtc', exceptPeerIds: ['peer-1'] });
+
+        expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0]![0].targets).toMatchObject({
+            mode: 'broadcast',
+            scope: 'room',
+            groupRef: ROOM_REF,
+            exceptPeerIds: ['peer-1']
+        });
+    });
+
+    it('resolves the default room for a principal send on ws, as for a room send', async () => {
+        const facade = createRallarTestFacade();
+        facade.setDefaults({ applicationId: 'app-1', room: { roomRef: ROOM_REF } });
+
+        await facade.messages.ws.send({
+            scope: 'principal',
+            principalId: 'principal-1',
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            payload: { text: 'mine' }
+        });
+
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0]![0].targets).toMatchObject({
+            mode: 'broadcast',
+            scope: 'principal',
+            groupRef: ROOM_REF,
+            principalRef: PRINCIPAL_REF
+        });
+    });
 
     it('hands the principal broadcast to WS as it came when the RTC leg cannot freeze it', async () => {
         rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementationOnce(async (message) =>
@@ -135,6 +166,7 @@ describe('the audience inputs of a send', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         resetRallarFacadeTestRuntime();
+        rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
         webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
     });
 
@@ -202,6 +234,21 @@ describe('the audience inputs of a send', () => {
             issues: [expect.objectContaining({ code: 'invalid-scope', message: 'WS scope must be room, world, or principal.' })]
         });
         expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+    });
+
+    it('an rtc-strategy send with an invalid scope produces no RTC admission', async () => {
+        setRallarFacadeRoomSnapshots([createGroupSnapshotFixture({ ...ROOM_REF, sessionIds: ['session-1', 'peer-1'] })]);
+
+        await expect(createRoomChannel().send({ text: 'all' }, { strategy: 'rtc', scope: JSON.parse('"all"') }))
+            .rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.scope', code: 'invalid-scope' })] });
+        expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+    });
+
+    it('refuses an rtc send whose exceptPeerIds names an invalid session id', async () => {
+        setRallarFacadeRoomSnapshots([createGroupSnapshotFixture({ ...ROOM_REF, sessionIds: ['session-1', 'peer-1'] })]);
+
+        await expect(createRoomChannel().send({ text: 'others' }, { strategy: 'rtc', exceptPeerIds: ['bad peer'] }))
+            .rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.exceptPeerIds[0]' })] });
     });
 });
 

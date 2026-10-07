@@ -270,6 +270,11 @@ export class FakeCrdtTransportNetwork {
         return this.sent.filter((entry) => entry.transport === transport).map((entry) => entry.scope);
     }
 
+    /** The audience scope of every message of one type, in send order. */
+    public sentScopesOfType(typeId: string): RallarCrdtTransportSendInput<never>['scope'][] {
+        return this.sent.filter((entry) => entry.typeId === typeId).map((entry) => entry.scope);
+    }
+
     public sentUpdateTransports(): RallarCrdtTransportKind[] {
         return this.sent
             .filter((entry) => entry.typeId === RALLAR_CRDT_UPDATE_TYPE_ID)

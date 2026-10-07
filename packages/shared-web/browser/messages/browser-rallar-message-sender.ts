@@ -12,6 +12,7 @@ import type {
 import {
     resolveBrowserStorageUnavailablePolicy,
     toBrowserMessageSendDefaults,
+    type BrowserMessageSendDefaults,
     type BrowserTypedChannelPolicy
 } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
@@ -58,6 +59,12 @@ interface CreateWsMessageInput<T> {
     readonly payloadValidation: CapturedMessagePayload;
     readonly session: AuthSession;
     readonly channel: BrowserTypedChannelPolicy | undefined;
+}
+
+/** The room a WS-shaped send resolved, beside the audience it resolved to. */
+interface ResolvedWsAudience<T> {
+    readonly room: string | GroupRef | undefined;
+    readonly resolved: ResolvedWsMessageInput<T>;
 }
 
 /** The audience a room send narrows to, beside the room it names. */
@@ -144,25 +151,16 @@ export class BrowserRallarMessageSender {
         return await this.sendScoped(input, 'ws', channel);
     }
 
-    /**
-     * The broadcast a WS send builds; a send that names neither a room nor a scope reaches the sender's world,
-     * and a world send names no room even when its channel does.
-     */
     private async sendScoped<T>(
         input: RallarWsSendInput<T>,
         carrier: 'ws' | 'rtc',
         channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
-        const room = input.scope === 'world'
-            ? undefined
-            : input.roomRef ?? input.roomId ??
-                (input.scope === undefined ? this.input.resolveDefaultRoom() : undefined);
-        const roomId = this.input.toRoomId(room);
-        const scope = input.scope ?? (roomId ? 'room' : 'world');
-        const roomRef = scope === 'world' ? undefined : this.input.resolveRoomRef(room);
+        const { room, resolved } = this.resolveWsAudience(input);
+        const { roomRef } = resolved;
 
         throwIfMessageIssues([
-            ...this.input.inputValidator.validateWs({ input, scope, roomId, roomRef }),
+            ...this.input.inputValidator.validateWs(resolved),
             ...this.input.inputValidator.validateWsOrdering(input),
             ...validateBrowserPeerInput({ send: input, roomRef })
         ]);
@@ -176,7 +174,7 @@ export class BrowserRallarMessageSender {
         }));
         const session = this.input.requireSession();
         const message = this.createWsSendMessage({
-            resolved: { input, scope, roomId, roomRef },
+            resolved,
             room,
             payloadValidation,
             session,
@@ -191,6 +189,20 @@ export class BrowserRallarMessageSender {
             payloadIssues: payloadValidation.issues,
             onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel)
         });
+    }
+
+    /**
+     * A world send names no room even when its channel does; every room audience, principal and list included,
+     * names its room or the default room; a send that names neither a room nor a scope reaches the sender's world.
+     */
+    private resolveWsAudience<T>(input: RallarWsSendInput<T>): ResolvedWsAudience<T> {
+        const room = input.scope === 'world'
+            ? undefined
+            : input.roomRef ?? input.roomId ?? this.input.resolveDefaultRoom();
+        const roomId = this.input.toRoomId(room);
+        const scope = input.scope ?? (roomId ? 'room' : 'world');
+        const roomRef = scope === 'world' ? undefined : this.input.resolveRoomRef(room);
+        return { room, resolved: { input, scope, roomId, roomRef } };
     }
 
     public async sendTyped<T>(
@@ -377,7 +389,28 @@ export class BrowserRallarMessageSender {
             input.resourceId ?? this.input.creation.newResourceId()
         );
         const payload = parseCapturedPayload(payloadValidation);
-        const options = {
+        const options = this.toWsBroadcastOptions(input, room, defaults);
+        if (scope !== 'principal') {
+            const listed = { ...options, groupRef: roomRef, recipientPeerIds: input.recipientPeerIds };
+            return this.input.creation.createBroadcast(session.sessionId, route, scope, input.typeId, payload, listed);
+        }
+        const target = toPrincipalTarget(roomRef, input.principalId);
+        return this.input.creation.createPrincipalBroadcast(
+            session.sessionId,
+            route,
+            target,
+            input.typeId,
+            payload,
+            options
+        );
+    }
+
+    private toWsBroadcastOptions<T>(
+        input: RallarWsSendInput<T>,
+        room: string | GroupRef | undefined,
+        defaults: BrowserMessageSendDefaults
+    ): NonNullable<Parameters<typeof newALPrincipalBroadcastMessage>[5]> {
+        return {
             exceptPeerIds: input.exceptPeerIds,
             ...(room
                 ? this.input.resolveRoomSendFence(room, input.minSnapshotVersion)
@@ -392,19 +425,6 @@ export class BrowserRallarMessageSender {
                 ? { orderingKey: input.orderingKey, seq: input.seq }
                 : undefined
         };
-        if (scope !== 'principal') {
-            const listed = { ...options, groupRef: roomRef, recipientPeerIds: input.recipientPeerIds };
-            return this.input.creation.createBroadcast(session.sessionId, route, scope, input.typeId, payload, listed);
-        }
-        const target = toPrincipalTarget(roomRef, input.principalId);
-        return this.input.creation.createPrincipalBroadcast(
-            session.sessionId,
-            route,
-            target,
-            input.typeId,
-            payload,
-            options
-        );
     }
 
     private createRtcMessage<T>(
