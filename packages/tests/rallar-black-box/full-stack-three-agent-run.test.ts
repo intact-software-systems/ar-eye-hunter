@@ -62,7 +62,7 @@ function toAcceptedResponse(url: string): Playwright.APIResponse {
 }
 
 describe('three-agent ALM run', () => {
-    it('selects exactly the receipted-audience and membership fence scenarios for the three-agent family on every carrier', () => {
+    it('selects exactly the receipted-audience, membership fence and leader scenarios for the three-agent family on every carrier', () => {
         const rtcScenarioKeys = ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership'];
         const expectedKeys = {
             ws: [
@@ -71,10 +71,13 @@ describe('three-agent ALM run', () => {
                 'frozen-audience-membership',
                 'fenced-delivery',
                 'fenced-catch-up',
-                'fenced-rejection'
+                'fenced-rejection',
+                'leader-confirms',
+                'no-leader-refused',
+                'leader-outside-list'
             ],
-            rtc: [...rtcScenarioKeys, 'fenced-delivery', 'fenced-catch-up'],
-            'rtc-with-ws-fallback': rtcScenarioKeys
+            rtc: [...rtcScenarioKeys, 'fenced-delivery', 'fenced-catch-up', 'leader-confirms', 'no-leader-refused'],
+            'rtc-with-ws-fallback': [...rtcScenarioKeys, 'leader-confirms']
         };
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const threeAgent = toScenarios(carrier).filter((scenario) => scenario.laneFamily === 'three-agent');

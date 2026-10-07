@@ -55,6 +55,7 @@ import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.t
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import {
     createCountingIndexedDbOperationObserver,
@@ -151,6 +152,8 @@ export interface BlackBoxBrowserDeliveriesDependency extends Pick<BrowserRallarD
 export interface BlackBoxBrowserPeersDependency extends Pick<RallarConnectionOperations, 'serverPeerId' | 'session'> {
     /** Undefined while the page holds no snapshot of the room. */
     getRoomSessions(roomRef: GroupRef): readonly GroupPresenceSession[] | undefined;
+    /** Undefined while the page holds no snapshot of the room, or the room has no active director. */
+    getRoomLeaderSessionId(roomRef: GroupRef): string | undefined;
 }
 
 /** The scripted ports the runtime hands the browser facade and reads back for fault and storage commands. */
@@ -217,7 +220,6 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
     const director = createBrowserDirectorComposition({
         state,
         messaging,
-        rooms,
         session: session.session
     });
     registerBlackBoxBrowserRallarLifecycle({
@@ -275,7 +277,11 @@ function toBlackBoxBrowserMessagingPorts(
         peers: {
             serverPeerId: () => session.connection.serverPeerId(),
             session: () => session.connection.session(),
-            getRoomSessions: (roomRef) => state.roomStateStore.findGroupSnapshot(roomRef)?.activeSessions
+            getRoomSessions: (roomRef) => state.roomStateStore.findGroupSnapshot(roomRef)?.activeSessions,
+            getRoomLeaderSessionId: (roomRef) => {
+                const snapshot = state.roomStateStore.findGroupSnapshot(roomRef);
+                return snapshot === undefined ? undefined : resolveRallarGroupLeaderSessionId(snapshot);
+            }
         }
     };
 }

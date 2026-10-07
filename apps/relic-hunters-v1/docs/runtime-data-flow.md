@@ -66,9 +66,22 @@ reset -> REST reset endpoint -> persisted new game -> outbox snapshot -> REST re
 ```
 
 REST (`POST /api/relic/games/:gameId/commands`) stays for one release: the browser uses it only before it knows the WS
-server's peer id, never after a WS attempt. A rule error the server meets on the WS path is logged there and not
-shown in the browser until a reply channel exists (D72's stated regression); the UI shows the command's receipt state
-and the applied snapshot's arrival.
+server's peer id, never after a WS attempt. The UI shows the command's receipt state and the applied snapshot's
+arrival.
+
+The server also tells the acting hunter what became of a command, on `room.relic.hunter` / `relic.hunter.v1`: a
+principal broadcast in the room, receipted, that only the acting hunter's own live sessions in the room receive.
+Relic keys its players by session, so the event names the session that sent the command (`playerId`) and only that
+session uses it; the hunter's other sessions are other players and drop it. After a submitted plan it carries the
+recorded action for the round (`action-recorded`), which the page does not render because the locked-plan card
+already shows the plan it submitted; after a command a rule refused it carries the rule's text (`command-refused`),
+which the page shows as the command error. A storage or session failure on the WS path is still only logged until a
+reply channel exists.
+
+```text
+submit-action -> applyCommand -> outbox snapshot (room) -> outbox hunter event (the hunter's principal in the room)
+refused command -> outbox hunter event with the rule's text (the hunter's principal in the room)
+```
 
 ## Expedition Setup Path
 

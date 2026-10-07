@@ -7,6 +7,7 @@ import { resolveALAdmittedRoomAudience } from '../al-contracts/al-frozen-multica
 import type { ALMessageDropReasonCode, ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
 import type { OverlayInfo } from '../api/api-config.ts';
 import { isSameGroupRef } from '../api/api-type-utils.ts';
+import { resolveRallarGroupLeaderSessionId } from '../api/group-director.ts';
 import type { GroupPresenceSession, GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import { isRoomLayoutOverlay } from '../repository/is-accepted-room-layout-overlay.ts';
 import {
@@ -38,6 +39,8 @@ export type RtcRoomSnapshotAdmission =
         readonly memberSessions: readonly GroupPresenceSession[];
         readonly forwardingPeerIds: readonly string[];
         readonly snapshotVersion: number;
+        /** The room's leader the snapshot appoints and holds present, to which a `group-leader` send narrows. */
+        readonly leaderSessionId: string | undefined;
         /** Only a session of the frozen audience delivers locally and counts as a logical recipient. */
         readonly deliversLocally: boolean;
     }
@@ -194,6 +197,7 @@ function toAuthorizedRoomAdmission(
         memberSessions: authorizedSessions,
         forwardingPeerIds,
         snapshotVersion: snapshot.group.snapshotVersion,
+        leaderSessionId: resolveRallarGroupLeaderSessionId(snapshot),
         deliversLocally: resolveALAdmittedRoomAudience(input.message, authorizedPeerIds).includes(input.selfPeerId)
     };
 }

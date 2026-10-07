@@ -48,7 +48,8 @@ const MESSAGE_PEER_ROLES: readonly NonNullable<BlackBoxRallarMessageSendInput['t
     'receiver'
 ];
 const MESSAGE_RECIPIENT_PEER_ROLES: readonly NonNullable<BlackBoxRallarMessageSendInput['recipientPeer']>[] = [
-    'receiver'
+    'receiver',
+    'recipient-b'
 ];
 /** Every field an ordinary send names and a replay does not: the replayed envelope already fixes them all. */
 const REPLAY_REFUSED_FIELDS = [
@@ -142,7 +143,7 @@ function decodeMessageAudience(
     }
     const recipientPeer = MESSAGE_RECIPIENT_PEER_ROLES.find((role) => role === record.recipientPeer);
     if (record.recipientPeer !== undefined && recipientPeer === undefined) {
-        return Either.ofLeft({ message: 'messages.send.recipientPeer must be receiver.' });
+        return Either.ofLeft({ message: 'messages.send.recipientPeer must be receiver or recipient-b.' });
     }
     return Either.ofRight({ toPeer, principalId: decodeBlackBoxCommandString(record.principalId), recipientPeer });
 }

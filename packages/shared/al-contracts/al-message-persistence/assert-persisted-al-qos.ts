@@ -11,7 +11,7 @@ const ALGORITHMS: Readonly<Record<string, readonly string[]>> = {
     delivery: ['best-effort', 'at-least-once'],
     forwarding: ['target'],
     repair: ['none', 'retransmit'],
-    ack: ['none', 'hop', 'subtree', 'receiver'],
+    ack: ['none', 'hop', 'subtree', 'receiver', 'leader'],
     expiry: ['ttl-only', 'expires-at', 'fresh-until'],
     retry: ['none', 'exp-backoff'],
     dedup: ['msg-id', 'msg-id+sender', 'semantic-key'],

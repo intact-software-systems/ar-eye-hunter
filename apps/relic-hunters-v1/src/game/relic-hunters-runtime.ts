@@ -27,6 +27,7 @@ import { fetchRelicSnapshot, resetRelicGame, sendRelicCommand } from './api.ts';
 import { createRelicAuthorityClientBridge, type RelicAuthorityClientBridge } from './rallar-game-authority-adapter.ts';
 import type { RelicSnapshotRejectionReason, RelicSnapshotSource } from './relic-snapshot-ordering.ts';
 import { sendRelicWsCommand, type RelicWsCommandDelivery } from './send-relic-ws-command.ts';
+import { subscribeRelicHunterEvents, type RelicHunterEventSubscription } from './subscribe-relic-hunter-events.ts';
 import {
     subscribeRelicRoundTransitions,
     type RelicRoundTransitionSubscription
@@ -157,6 +158,7 @@ export type RelicHuntersRuntimeDeps = Readonly<{
     onRtcSnapshotMessage(handler: (event: RelicServerEvent) => void): () => void;
     onAuthoritySnapshotMessage(handler: (event: RelicServerEvent) => void): () => void;
     onRoundTransitionMessage(roomId: string, subscription: RelicRoundTransitionSubscription): () => void;
+    onHunterEventMessage(roomId: string, subscription: RelicHunterEventSubscription): () => void;
     authorityStatus(): RallarGameAuthorityClientStatus | undefined;
     publishRtcSnapshot(snapshot: RelicPublicSnapshot): Promise<boolean>;
     createRoom(
@@ -292,6 +294,10 @@ export class RelicHuntersRuntime {
                 void this.readResyncHydration(roomId).then(listeners.onResyncHydration);
             }
         });
+    }
+
+    subscribeHunterEvents(roomId: string, subscription: RelicHunterEventSubscription): () => void {
+        return this.deps.onHunterEventMessage(roomId, subscription);
     }
 
     async fetchSnapshot(roomId: string): Promise<RelicPublicSnapshot | undefined> {
@@ -441,6 +447,7 @@ function browserRelicRuntimeDeps(): RelicHuntersRuntimeDeps {
         onAuthoritySnapshotMessage: (handler) => authority.start(handler),
         onRoundTransitionMessage: (roomId, subscription) =>
             subscribeRelicRoundTransitions(rallar, roomId, subscription),
+        onHunterEventMessage: (roomId, subscription) => subscribeRelicHunterEvents(rallar, roomId, subscription),
         authorityStatus: () => authority.status(),
         publishRtcSnapshot: async (snapshot) => {
             return authority.publishSnapshotRepair(snapshot);

@@ -339,7 +339,8 @@ describe('the RTC subtree targeted repair keeps every unfinished hop expected (R
 
     it('adds the requester to the hops a subtree receipt expects, never replacing the others with it', async () => {
         const origin = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a', 'b', 'c'], 4), nextHopPeerIds: ['b', 'c'] });
-        const message = { ...createOriginSubtreeMulticast('targeted-repair'), qos: { repair: { algo: 'retransmit' } } } as const;
+        const subtree = createOriginSubtreeMulticast('targeted-repair');
+        const message = { ...subtree, qos: { ...subtree.qos, repair: { algo: 'retransmit' } } } as const;
         await enqueueAndDrain(origin.manager, message);
 
         await origin.manager.acceptControlMessage(newALNackControlMessage(
@@ -454,7 +455,7 @@ function createOriginSubtreeMulticast(resourceId: string): ALMessage {
         ORIGIN_ROOM,
         'chat.message.v1',
         { text: resourceId },
-        { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000 }
+        { reliability: 'at-least-once', ttlMs: 30_000, qos: { ack: { algo: 'subtree' } } }
     );
 }
 

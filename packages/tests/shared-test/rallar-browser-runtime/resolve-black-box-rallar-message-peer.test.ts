@@ -72,7 +72,13 @@ describe('the lane role a messages.send addresses (C11)', () => {
 
 describe('the lane role a messages.send lists as its fixed audience', () => {
     const nowMs = Date.now();
-    const input = { ownSessionId: 'sender-session', ownPrincipalId: 'alice', nowMs };
+    const input = {
+        recipientPeer: 'receiver' as const,
+        ownSessionId: 'sender-session',
+        ownPrincipalId: 'alice',
+        leaderSessionId: undefined,
+        nowMs
+    };
     const sibling = toRoomRosterSession('sibling-session', { principalId: 'alice' });
 
     it('names the receiver as the one other live session of another principal, beside a second session of the sender\'s', () => {
@@ -101,5 +107,21 @@ describe('the lane role a messages.send lists as its fixed audience', () => {
         expect(withoutRoster.left).toBe('the page holds no snapshot of the room');
         expect(onlyTheSibling.left).toBe('the room holds 0 other live sessions of another principal, not exactly one');
         expect(twoOthers.left).toBe('the room holds 2 other live sessions of another principal, not exactly one');
+    });
+
+    it('names recipient-b as the one other live session of another principal that is not the room\'s leader', () => {
+        const roomSessions = [
+            toRoomRosterSession('sender-session', { principalId: 'alice' }),
+            toRoomRosterSession('receiver-session', { principalId: 'bob' }),
+            toRoomRosterSession('recipient-b-session', { principalId: 'carol' })
+        ];
+        const recipientB = { ...input, recipientPeer: 'recipient-b' as const, roomSessions };
+
+        expect(resolveBlackBoxRallarRecipientPeer({ ...recipientB, leaderSessionId: 'receiver-session' }).right)
+            .toBe('recipient-b-session');
+        expect(resolveBlackBoxRallarRecipientPeer({ ...recipientB, leaderSessionId: undefined }).left)
+            .toBe('the room holds 2 other live sessions of another principal beside its leader, not exactly one');
+        expect(resolveBlackBoxRallarRecipientPeer({ ...input, roomSessions, leaderSessionId: 'receiver-session' }).left)
+            .toBe('the room holds 2 other live sessions of another principal, not exactly one');
     });
 });

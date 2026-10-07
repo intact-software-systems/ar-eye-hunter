@@ -110,10 +110,8 @@ describe('typed message fallback identity', () => {
         [
             ['rtc-with-ws-fallback', 'none', ['rtc', 'ws'], 'queued'],
             ['rtc-with-ws-fallback', 'receiver', ['rtc', 'ws'], 'queued'],
-            ['rtc-with-ws-fallback', 'group-leader', ['rtc', 'ws'], 'queued'],
             ['rtc', 'none', ['rtc'], 'rejected'],
-            ['rtc', 'receiver', ['rtc'], 'rejected'],
-            ['rtc', 'group-leader', ['rtc'], 'rejected']
+            ['rtc', 'receiver', ['rtc'], 'rejected']
         ] as const
     )('moves a %s send with ack %s whose RTC room exceeds the wire audience bound (R-S2c-ii-13)', async (strategy, ack, carriers, state) => {
         const audience = { recipientPeerIds: Array.from({ length: 299 }, (_, index) => `s${index}`), snapshotVersion: 4 };

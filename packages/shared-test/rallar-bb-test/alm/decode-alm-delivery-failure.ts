@@ -24,7 +24,8 @@ const ALM_REFUSAL_REASONS: Readonly<Record<ALDeliveryRefusalReason, true>> = {
     malformed: true,
     oversized: true,
     unsupported: true,
-    capacity: true
+    capacity: true,
+    'no-leader': true
 };
 
 const ALM_SKIPPED_REASONS: Readonly<Record<ALDeliverySkippedReason, true>> = {
@@ -73,7 +74,8 @@ const ALM_NACK_REASONS: Readonly<Record<ALNackReason, true>> = {
     overloaded: true,
     stale: true,
     'not-yet-in-sync': true,
-    'membership-fenced': true
+    'membership-fenced': true,
+    'no-leader': true
 };
 
 /** Keyed by every failure kind, so a new kind fails to compile here instead of decoding as invalid. */
@@ -112,8 +114,8 @@ export function decodeAlmDeliveryFailure(value: unknown): Either<string, ALDeliv
 
 /**
  * A trusted server relay is never named, so an id on one is refused. A trusted server refuses with `resync-required`
- * after admission, `unauthorized` before it, or `membership-fenced`; a peer relay with `resync-required` or
- * `membership-fenced`.
+ * after admission, `unauthorized` or `no-leader` before it, or `membership-fenced`; a peer relay with
+ * `resync-required` or `membership-fenced`.
  */
 export function decodeAlmRelayRejection(
     value: unknown,
@@ -122,7 +124,7 @@ export function decodeAlmRelayRejection(
     const rejection = decodeAlmRuntimeRecord(value);
     if (
         (rejection.reason === 'resync-required' || rejection.reason === 'unauthorized' ||
-            rejection.reason === 'membership-fenced') &&
+            rejection.reason === 'membership-fenced' || rejection.reason === 'no-leader') &&
         rejection.relay === 'trusted-server' && rejection.peerId === undefined
     ) {
         return Either.ofRight<string, ALDeliveryRelayRejection>({

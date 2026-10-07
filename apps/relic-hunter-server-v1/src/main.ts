@@ -67,8 +67,7 @@ const relicGame = await installRelicHunterGame(rallar, {
             );
         }
     }),
-    readSessionUsername: async (sessionId) =>
-        (await rallar.runtime.authSessionRepository.findBySessionId(sessionId))?.username
+    readSession: (sessionId) => rallar.runtime.authSessionRepository.findBySessionId(sessionId)
 });
 
 const apiCors = cors({
@@ -150,7 +149,7 @@ app.post('/api/relic/games/:gameId/commands', async (c) => {
             return c.json({ error: 'Invalid relic command' }, 400);
         }
 
-        return c.json(await relicGame.applyCommand(command, session.sessionId));
+        return c.json(await relicGame.applyCommand(command, session));
     }
     catch (error) {
         return relicRestErrorResponse(c, toError(error));

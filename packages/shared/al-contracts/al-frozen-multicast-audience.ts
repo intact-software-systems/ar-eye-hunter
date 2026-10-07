@@ -1,5 +1,6 @@
 import { isSameGroupRef } from '../api/api-type-utils.ts';
 import { jsonEquals } from '../repository/state-utils.ts';
+import { isALLeaderRoomBroadcast } from './al-audience-narrowing.ts';
 import type { ALMessage, ALTargets } from './al-contract.ts';
 
 export interface ALFrozenMulticastAudience {
@@ -35,8 +36,9 @@ export function toALFrozenMulticastMessage(message: ALMessage, audience: ALFroze
 /**
  * The candidate as the original would compare to it. Freezing an unfrozen multicast's audience is the one
  * change a planned or stored copy may add to its original, so that change alone is removed; a copy that drops
- * or changes a frozen audience still differs. A principal or listed room broadcast is frozen as the multicast of
- * its room, floors and narrowed audience: a frozen copy of that room within the list compares as its original.
+ * or changes a frozen audience still differs. A principal or listed room broadcast, or a room broadcast to its
+ * leader, is frozen as the multicast of its room, floors and narrowed audience: a frozen copy of that room within the
+ * list compares as its original.
  */
 export function toALFreezeComparableMessage(original: ALMessage, candidate: ALMessage): ALMessage {
     const frozen = resolveALFrozenMulticastAudience(candidate.targets);
@@ -44,9 +46,13 @@ export function toALFreezeComparableMessage(original: ALMessage, candidate: ALMe
         return candidate;
     }
     if (original.targets?.mode === 'broadcast') {
-        return isALNarrowedBroadcastFrozenAs(original.targets, candidate.targets, frozen)
-            ? { ...candidate, targets: original.targets }
-            : candidate;
+        const freeze = {
+            original: original.targets,
+            addressesLeader: isALLeaderRoomBroadcast(original),
+            frozenTargets: candidate.targets,
+            frozen
+        };
+        return isALNarrowedBroadcastFrozenAs(freeze) ? { ...candidate, targets: original.targets } : candidate;
     }
     if (
         original.targets?.mode !== 'multicast' || original.targets.recipientPeerIds !== undefined ||
@@ -88,13 +94,20 @@ export function resolveALAdmittedRoomAudience(
         );
 }
 
+/** A broadcast that names its own audience, and the multicast a candidate froze it as. */
+interface ALNarrowedBroadcastFreeze {
+    readonly original: Extract<ALTargets, { readonly mode: 'broadcast'; }>;
+    /** The original addresses its room's leader, which narrows a room broadcast as a list does. */
+    readonly addressesLeader: boolean;
+    readonly frozenTargets: Extract<ALTargets, { readonly mode: 'multicast'; }>;
+    readonly frozen: ALFrozenMulticastAudience;
+}
+
 function isALNarrowedBroadcastFrozenAs(
-    original: Extract<ALTargets, { readonly mode: 'broadcast'; }>,
-    frozenTargets: Extract<ALTargets, { readonly mode: 'multicast'; }>,
-    frozen: ALFrozenMulticastAudience
+    { original, addressesLeader, frozenTargets, frozen }: ALNarrowedBroadcastFreeze
 ): boolean {
     const narrowed = (original.scope === 'principal' && original.principalRef !== undefined) ||
-        (original.scope === 'room' && original.recipientPeerIds !== undefined);
+        (original.scope === 'room' && original.recipientPeerIds !== undefined) || addressesLeader;
     const listed = original.recipientPeerIds;
     return narrowed && original.groupRef !== undefined &&
         isSameGroupRef(original.groupRef, frozenTargets.groupRef) &&

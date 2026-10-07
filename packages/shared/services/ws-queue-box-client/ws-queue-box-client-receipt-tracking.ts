@@ -2,6 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
 import type { ALQosEffectivePolicy } from '../../al-contracts/al-policy.ts';
 import { isALUnicastAddressedTo } from '../../al-contracts/is-al-unicast-addressed-to.ts';
+import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundMessageRuntime
@@ -10,10 +11,10 @@ import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/contro
 
 /**
  * The receipt a WS send tracks. The server is the one hop a WS origin has (R-S3a-4): a unicast addressed to the server
- * and every `hop` or `subtree` send expect the server's own ACK. A `receiver` send to a session or a room expects
- * nobody yet: the server's `admitted` receipt names the frozen audience the row is created from (D53). With no server
- * id known (a server that predates S3c-i), a send tracks what it did before: a unicast its addressee, a room send
- * nothing unless it asks `receiver`.
+ * and every `hop` or `subtree` send expect the server's own ACK. A `receiver` send to a session or a room, and a
+ * `leader` room send, expect nobody yet: the server's `admitted` receipt names the frozen audience the row is created
+ * from (D53), the leader alone for a `leader` send. With no server id known (a server that predates S3c-i), a send
+ * tracks what it did before: a unicast its addressee, a room send nothing unless it asks `receiver` or `leader`.
  */
 export function toWsQueueBoxClientAckTrackingPlan(
     effective: ALQosEffectivePolicy,
@@ -46,7 +47,7 @@ function toReceiptAudience(
     if (serverPeerId === undefined) {
         return toServerUnknownReceiptAudience(effective, targets);
     }
-    return isALUnicastAddressedTo(msg, serverPeerId) || effective.ack.algo !== 'receiver'
+    return isALUnicastAddressedTo(msg, serverPeerId) || !isALLogicalReceiptMode(effective.ack.algo)
         ? [serverPeerId]
         : [];
 }
@@ -56,9 +57,9 @@ function toServerUnknownReceiptAudience(
     targets: NonNullable<ALMessage['targets']>
 ): readonly string[] | undefined {
     if (targets.mode === 'unicast') {
-        return effective.ack.algo === 'receiver' ? [] : [targets.toPeerId];
+        return isALLogicalReceiptMode(effective.ack.algo) ? [] : [targets.toPeerId];
     }
-    return effective.ack.algo === 'receiver' ? [] : undefined;
+    return isALLogicalReceiptMode(effective.ack.algo) ? [] : undefined;
 }
 
 /**

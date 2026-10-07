@@ -462,7 +462,7 @@ function toAckAlgo(ack: 'none' | 'receiver' | 'all-logical-recipients' | 'group-
         case 'all-logical-recipients':
             return 'receiver';
         case 'group-leader':
-            return 'subtree';
+            return 'leader';
     }
 }
 

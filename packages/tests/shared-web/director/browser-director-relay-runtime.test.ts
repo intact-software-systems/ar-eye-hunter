@@ -294,7 +294,7 @@ describe('Rallar director relay', () => {
             { command: 'sync request', typeId: 'game.sync-request' }
         ] as const
     )(
-        'sends a director $command as one room-naming command unicast whose WS fallback keeps its msgId (D60)',
+        'sends a director $command as one command to the room\'s leader whose WS fallback keeps its msgId',
         async ({ command, typeId }) => {
             vi.useFakeTimers();
             vi.setSystemTime(Date.now());
@@ -336,11 +336,10 @@ describe('Rallar director relay', () => {
                 id: { msgId: result.receipt?.msgId },
                 route: { topicId: 'app.game.director', contextId: 'room-1' },
                 targets: {
-                    mode: 'unicast',
-                    toPeerId: 'director-session',
+                    mode: 'multicast',
                     groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
                 },
-                delivery: { reliability: 'at-least-once', ack: 'receiver' }
+                delivery: { reliability: 'at-least-once', ack: 'group-leader' }
             });
             // The mocked carriers deliver no receipt, so the command must not read as sent (correction 11).
             expect(result).toMatchObject({
@@ -400,6 +399,84 @@ describe('Rallar director relay', () => {
 
         expect(intents).toEqual([{ move: 'left' }]);
         expect(syncRequests).toEqual([{ reason: 'late-join' }]);
+    });
+
+    it('routes a command stamped with an earlier appointment epoch to the successor director, since its carrier addressed the director at admission', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const rtcInbox = captureRtcInbox();
+        const wsInbox = captureWsInbox();
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'session-1',
+            principalId: 'principal-1',
+            epoch: 3,
+            appointedAtEpochMs: Date.now(),
+            heartbeatTtlMs: 60_000
+        }));
+        const facade = createRallarFacade();
+        const received: string[] = [];
+        const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
+            roomId: 'room-1',
+            topicId: 'app.game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+            syncRequestTypeId: 'game.sync-request',
+            heartbeatIntervalMs: 60_000,
+            onIntent: (message) => {
+                received.push(`${message.transport}:intent:${message.envelope.epoch}`);
+            },
+            onSyncRequest: (message) => {
+                received.push(`${message.transport}:sync-request:${message.envelope.epoch}`);
+            }
+        });
+        await facade.connect();
+
+        await rtcInbox.get('game.intent')?.onMessage(
+            toDirectorCommandAtEpoch('game.intent', { move: 'left' }, 2),
+            toResourceEntry('game.intent', {})
+        );
+        await wsInbox.deliver(toDirectorCommandAtEpoch('game.sync-request', { reason: 'late-join' }, 1));
+        relay.stop();
+
+        expect(received).toEqual(['rtc:intent:2', 'ws:sync-request:1']);
+    });
+
+    it.each(
+        [
+            { case: 'a later appointment epoch than the local one', directorSessionId: 'session-1', commandEpoch: 4 },
+            { case: 'an earlier epoch to a session that is not the director', directorSessionId: 'director-session', commandEpoch: 2 }
+        ] as const
+    )('drops a director command stamped with $case', async ({ directorSessionId, commandEpoch }) => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const wsInbox = captureWsInbox();
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: directorSessionId,
+            principalId: 'principal-1',
+            epoch: 3,
+            appointedAtEpochMs: Date.now(),
+            heartbeatTtlMs: 60_000
+        }));
+        const facade = createRallarFacade();
+        const intents: DirectorMove[] = [];
+        const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
+            roomId: 'room-1',
+            topicId: 'app.game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+            heartbeatIntervalMs: 60_000,
+            onIntent: (message) => {
+                intents.push(message.data);
+            }
+        });
+        await facade.connect();
+
+        await wsInbox.deliver(toDirectorCommandAtEpoch('game.intent', { move: 'left' }, commandEpoch));
+        relay.stop();
+
+        expect(intents).toEqual([]);
     });
 
     it('delivers a director command that arrives over the WS fallback leg to onIntent once (D60)', async () => {
@@ -833,6 +910,15 @@ interface WsInboxDouble {
     deliver(message: ALMessage): Promise<void>;
 }
 
+function captureRtcInbox(): Map<string, Parameters<typeof mocks.rtcRxStreamer.onInboxMessageDo>[1]> {
+    const rtcInbox = new Map<string, Parameters<typeof mocks.rtcRxStreamer.onInboxMessageDo>[1]>();
+    mocks.rtcRxStreamer.onInboxMessageDo.mockImplementation((typeId, callback) => {
+        rtcInbox.set(typeId, callback);
+        return mocks.ctx.middleware.rtcRxStreamer;
+    });
+    return rtcInbox;
+}
+
 function captureWsInbox(): WsInboxDouble {
     const callbacks: Array<Parameters<typeof mocks.webSocketQueueBox.onAnyInboxMessageDo>[1]> = [];
     mocks.webSocketQueueBox.onAnyInboxMessageDo.mockImplementation((_id, callback) => {
@@ -849,6 +935,10 @@ function captureWsInbox(): WsInboxDouble {
 }
 
 function toDirectorCommand(typeId: string, payload: object): ALMessage {
+    return toDirectorCommandAtEpoch(typeId, payload, 3);
+}
+
+function toDirectorCommandAtEpoch(typeId: string, payload: object, epoch: number): ALMessage {
     return newALUnicastMessage(
         'session-2',
         newALRoute('app.game.director', 'room-1', `${typeId}-1`),
@@ -859,7 +949,7 @@ function toDirectorCommand(typeId: string, payload: object): ALMessage {
             topicId: 'app.game.director',
             typeId,
             roomId: 'room-1',
-            epoch: 3,
+            epoch,
             sentAtEpochMs: Date.now(),
             payload
         },

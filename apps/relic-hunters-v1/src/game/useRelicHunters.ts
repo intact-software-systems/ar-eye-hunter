@@ -2,6 +2,7 @@ import {
     decodeRelicSnapshotPayload,
     type RelicActionInput,
     type RelicCharacterId,
+    type RelicHunterEvent,
     type RelicPublicSnapshot,
     type RelicRoundTransitionEvent,
     type RelicServerEvent
@@ -34,6 +35,8 @@ export type RelicHuntersConnection = Readonly<{
     rooms: readonly RallarRoomSummary[];
     snapshot?: RelicPublicSnapshot;
     roundTransition?: RelicRoundTransitionEvent;
+    /** What the server last told this session's hunter alone; a refusal's text is also the command error. */
+    lastHunterEvent?: RelicHunterEvent;
     login(username: string, password: string): Promise<void>;
     register(username: string, password: string, displayName?: string): Promise<void>;
     logout(): Promise<void>;
@@ -68,6 +71,7 @@ export function useRelicHunters(): RelicHuntersConnection {
     const [rooms, setRooms] = useState<readonly RallarRoomSummary[]>([]);
     const [snapshot, setSnapshot] = useState<RelicPublicSnapshot | undefined>();
     const [roundTransition, setRoundTransition] = useState<RelicRoundTransitionEvent | undefined>();
+    const [lastHunterEvent, setLastHunterEvent] = useState<RelicHunterEvent | undefined>();
     const timedOutRoundRepairKey = snapshot ? toTimedOutRoundRepairKey(snapshot) : undefined;
     const sessionRef = useRef<AuthSession | undefined>(session);
     const roomIdRef = useRef<string | undefined>(roomId);
@@ -215,6 +219,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         setRooms([]);
         clearSnapshot();
         setRoundTransition(undefined);
+        setLastHunterEvent(undefined);
         setError(undefined);
         setPhase('signed-out', initialRelicDiagnostics(undefined));
     }, [clearSnapshot, closeSubscriptions, runtime, setPhase]);
@@ -310,6 +315,13 @@ export function useRelicHunters(): RelicHuntersConnection {
         }));
     }, []);
 
+    const acceptHunterEvent = useCallback((event: RelicHunterEvent) => {
+        setLastHunterEvent(event);
+        if (event.kind === 'command-refused') {
+            setError(event.text);
+        }
+    }, []);
+
     const acceptResyncHydration = useCallback((hydration: RelicResyncHydration) => {
         if (roomIdRef.current !== hydration.roomId) {
             return;
@@ -340,6 +352,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         }));
         if (nextRoomId !== previousRoomId) {
             setRoundTransition(undefined);
+            setLastHunterEvent(undefined);
         }
 
         if (!nextRoomId) {
@@ -364,6 +377,7 @@ export function useRelicHunters(): RelicHuntersConnection {
             roomIdRef.current = undefined;
             clearSnapshot();
             setRoundTransition(undefined);
+            setLastHunterEvent(undefined);
             setError(undefined);
             setPhase('signed-out', initialRelicDiagnostics(undefined));
             return;
@@ -558,6 +572,19 @@ export function useRelicHunters(): RelicHuntersConnection {
         runtime
     ]);
 
+    const localPrincipalId = session?.clientId;
+    const localPlayerId = session?.sessionId;
+    useEffect(() => {
+        if (!roomId || !localPrincipalId || !localPlayerId || !diagnostics.middlewareConnected) {
+            return;
+        }
+        return runtime.subscribeHunterEvents(roomId, {
+            principalId: localPrincipalId,
+            playerId: localPlayerId,
+            onEvent: acceptHunterEvent
+        });
+    }, [acceptHunterEvent, diagnostics.middlewareConnected, localPlayerId, localPrincipalId, roomId, runtime]);
+
     const refreshRooms = useCallback(async () => {
         const state = await runtime.refreshRooms();
         applyRoomState(state);
@@ -628,6 +655,7 @@ export function useRelicHunters(): RelicHuntersConnection {
             const result = await work();
             if (result.roomId !== roomIdRef.current) {
                 setRoundTransition(undefined);
+                setLastHunterEvent(undefined);
             }
             setRoomId(result.roomId);
             setRooms(result.roomState.rooms);
@@ -796,6 +824,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         rooms,
         snapshot,
         roundTransition,
+        lastHunterEvent,
         login,
         register,
         logout,
@@ -819,6 +848,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         rooms,
         snapshot,
         roundTransition,
+        lastHunterEvent,
         login,
         register,
         logout,

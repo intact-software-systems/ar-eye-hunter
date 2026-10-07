@@ -5346,6 +5346,42 @@ this B06 path. Held Task58 public typing and the remaining Recipe Console/distri
 remain independent required goal work. E3 still has zero accepted cohorts; the initial
 post-ICE stall remains unresolved.
 
+**Current parent reconciliation:** Main advanced to
+94e72f4828e9db5111dc06e4746f1ce09f68ead2 and PR633 acquired two real conflicts.
+The earlier exact administrator-merge proposal is stale; no default-branch commit,
+push or merge is authorized by that proposal. A feature-only merge preserves current
+main semantics and the reviewed capture/acquisition work. Reconciliation retains the
+real null-delete HTTP test with independently specified request/response expectations,
+and the unchanged251KiB bundle cap. Actual browser entry is256666B Brotli
+(250.650390625KiB), leaving358B under that cap.
+
+Fresh SPEC/QUALITY review accepts both conflict owners. The SAME author then records
+one exact path/rule/undefined-owner disposition for the test's raw HTTP observations;
+the SAME reviewer verifies both captures feed independent assertions, all451 prior
+entries/order and matcher/caps are preserved, and unrelated/named owners remain blocking.
+This is a reviewed untrusted observation boundary, with no production legacy exception,
+new decoder, migration or broad checker suppression. Focused checker suites pass88cases.
+
+The reconciled focused consumer suite passes332cases; shared-web typing and browser
+bundle reporting/checks pass. Broader validation passes480 benchmark-package cases,
+shared/shared-test typing,1490 maintained test-file typing with zero debt, and the
+headless boundary case. Initial game builds stop on a missing local React plugin.
+Installing pinned dependencies solely in this repair worktree leaves the lock and
+protected original checkout untouched; both canonical game builds then pass. Existing
+large-chunk warnings remain disclosed. A concurrent verification wrapper briefly
+contends on Git's index lock before starting the Relic build; no source changes result,
+and only that unstarted child is subsequently executed. Original failed setup evidence
+is retained. Final prospective style passes with no new findings against the actual pre-merge
+merge-base d5db1569. Committed current-main style/coupling gates pass at parent979. Fresh Branch, Formation, Medium and CodeQL all succeed with independently verified original artifacts, checkout proofs, published validation and equivalent synthetic merge tree. These parent results are correctness/build evidence; combined continuation acceptance remains separate, with no native cohort acceptance.
+
+Full diagnostics configuration through UI, recipes, workers and Actions remains required.
+The separate continuation PR645 publishes bounded source/test slices promptly; its
+simulated UI/clipboard proofs do not replace actual SDK/native application/refusal,
+fresh external effects, existing reload semantics or B01–B06/E3 acceptance. The confirmed
+observer overhead and connection-expiry mechanism remain established; the initial
+post-ICE trigger remains unresolved. E3 has zero accepted cohorts, and B07/retry work is
+held. No Issues were created or reused.
+
 ### Task 61: Executable distributed run capture intent
 
 **Status:** Locally implemented and independently accepted for executable intent.
@@ -6861,15 +6897,20 @@ Load/Run/Reset passes1/1 in16.7s at corrected source, scoped typing/format pass,
 the SAME reviewer closes SPEC/QUALITY with no findings. Root verifies22 frozen/current
 bindings, unchanged retained witness bodies and21 unchanged non-spec owners. No production
 correction, migration, duplicate policy or artificial RED is released. The separate real
-PR645 conflict against parent979 is confined to this plan; source auto-composes. Reconcile
-that feature parent before broad combined-source final validation.
+PR645 conflict against parent979 is confined to this plan; source auto-composes. Root
+reconciles both plan additions and preserves all continuation evidence and parent facts.
+Independent composition review and affected combined-source validation precede publication.
 
 **Next authored-intent outcomes:** Finish concrete actual UI SDK application/refusal and
 fresh external-effect witnesses. Recover only existing storage/reload paths from code;
-invent no saved recipe store, API, migration or duplicate policy. Existing controlled SDK
-composition proves unavailable Native capture produces typed refusal without completion;
-corresponding actual UI behavior remains mandatory. Publish each coherent tested/reviewed
-slice promptly rather than holding unrelated completed slices for later work.
+invent no saved recipe store, API, migration or duplicate policy. Actual UI unavailable-Native
+refusal is now independently accepted within the limits above. The next two concrete outcomes
+are a scoped Local Native run with an independently observed receiving-browser payload, then
+recovery of existing Copy/repeat execution boundaries with attributable fresh effects after
+canonical Close. Applied receipts and fresh invocation IDs alone do not prove delivery;
+create no new placeholder or policy to manufacture a freshness discriminator. Publish each
+coherent tested/reviewed slice promptly rather than holding unrelated completed slices for
+later work.
 
 Full Task65, Console, existing Load/Copy/storage/restore/repeat outcomes, workers, Actions
 and B01–B06/E3 remain required. No retry, recovery, CRDT or RTC transport behavior changes.

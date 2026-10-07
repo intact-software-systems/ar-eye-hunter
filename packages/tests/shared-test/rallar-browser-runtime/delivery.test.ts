@@ -29,6 +29,7 @@ import {
     type ALDeliveryAdmissionVerdict,
     type ALDeliveryCarrier
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
@@ -38,7 +39,6 @@ import { RallarValidationError } from '@shared/api/rallar-validation.ts';
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
-import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { createBrowserMessageSenderFixture } from '../../shared-web/messages/browser-message-sender-fixture.ts';
 import {
     computeOutboundTestAdmission,
@@ -607,8 +607,8 @@ it('fails a fixed audience or a scope the page cannot send with its own failure,
             `${prefix}: messages.send.recipientPeer receiver names no peer: the room holds 2 other live sessions of ` +
                 'another principal, not exactly one.'
         );
-    await expect(runtime.sendMessage({ ...send, handleId: 'h-role', recipientPeer: 'recipient-b' }))
-        .rejects.toThrow('messages.send.recipientPeer must be receiver.');
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-role', recipientPeer: 'sibling' }))
+        .rejects.toThrow('messages.send.recipientPeer must be receiver or recipient-b.');
     await expect(runtime.sendMessage({ ...send, handleId: 'h-all', scope: 'all' }))
         .rejects.toThrow('messages.send.scope must be room, world, or principal.');
     const replay = { connection: 'aliceAlm', timeoutMs: 100, replayOnCarrier: { handleId: 'h-list', carrier: 'ws' } };
@@ -617,6 +617,54 @@ it('fails a fixed audience or a scope the page cannot send with its own failure,
             'messages.send names principalId beside replayOnCarrier; a replay names only the handle and its carrier.'
         );
     expect(facade.records.typedSends).toEqual([]);
+});
+
+it('lists recipient-b by its role as the one other session of another principal that is not the room\'s leader', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect(connection);
+    facade.behavior.getRoomSessions.mockReturnValue([
+        toRoomRosterSession(facade.session.sessionId, { principalId: facade.session.clientId }),
+        toRoomRosterSession('bob-session', { principalId: 'bob' }),
+        toRoomRosterSession('carol-session', { principalId: 'carol' })
+    ]);
+    facade.behavior.getRoomLeaderSessionId.mockReturnValue('bob-session');
+
+    await runtime.sendMessage({ ...send, handleId: 'h-beside-leader', recipientPeer: 'recipient-b', ack: 'group-leader' });
+
+    expect(facade.records.typedSends.map(([, options]) => [options?.ack, options?.recipientPeerIds]))
+        .toEqual([['group-leader', ['carol-session']]]);
+    facade.behavior.getRoomLeaderSessionId.mockReturnValue(undefined);
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-no-leader', recipientPeer: 'recipient-b' }))
+        .rejects.toThrow(
+            `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.peerUnresolved}: messages.send.recipientPeer recipient-b ` +
+                'names no peer: the room holds 2 other live sessions of another principal beside its leader, not exactly one.'
+        );
+});
+
+it('projects a group-leader room send on rtc, refused no-leader by the injected middleware double, as rejected with no carrier attempt', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect(connection);
+    const fixture = createBrowserMessageSenderFixture(64, facade.deliveries);
+    vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockImplementation(async (message) => ({
+        message,
+        entries: [],
+        trackedReceiptAlgo: 'none',
+        verdict: { kind: 'refused', reason: 'no-leader', detail: 'The room has no active director.' }
+    }));
+    facade.behavior.typedSend.mockImplementation(async (payload, options) =>
+        await fixture.sender.sendTyped({ ...options, typeId: 'alm.conformance', topicId: 'room.alm-conformance', payload }, undefined)
+    );
+
+    await runtime.sendMessage({ ...send, carrier: 'rtc', handleId: 'h-leader', ack: 'group-leader' });
+
+    expect(await runtime.observeDelivery({ connection: 'aliceAlm', handleId: 'h-leader', state: ['rejected'], timeoutMs: 100 }))
+        .toMatchObject({
+            state: 'rejected',
+            failure: { kind: 'refused', reason: 'no-leader' },
+            attempts: 0,
+            attemptCarriers: [],
+            carrierFallback: undefined
+        });
 });
 
 it('projects a world send on rtc, refused unsupported by the injected middleware double, as rejected with no carrier attempt', async () => {

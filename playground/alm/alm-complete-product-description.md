@@ -310,8 +310,9 @@ in on a second agent, runs `principal-delivery`, `fixed-list-delivery` and
 `world-routing` over `ws`, `rtc` and `rtc-with-ws-fallback`; a client's `all`
 is no browser input, so its refusal is pinned at the server, the RTC origin and
 the browser validator rather than in a lane cell; manifests 18 and 22 are
-unchanged (D161). A server-originated principal publication and the
-deployment-wide principal audience are not client sends and stay carried (D163).
+unchanged (D161). A server-originated principal publication was carried to A2a,
+where Relic's hunter event is the first (D168); the deployment-wide principal
+audience stays state-sync (D163).
 
 ## Transport selection and parity
 
@@ -456,8 +457,9 @@ caller's ack wins (R-S3a-2). A WebSocket frame accepted by the browser API or an
 RTC payload accepted by `RTCDataChannel.send` is not a logical delivery receipt.
 A director command can reach the director twice after a fallback, because AL
 dedup is per carrier lane: relay commands are at-least-once, and the game's
-sequence tracker refuses the copy (S3c-ii, R-S3c-ii-4). The relay reports a
-command `sent` only when the director's receipt arrives, waiting at most 30 s.
+sequence tracker refuses the copy (S3c-ii, R-S3c-ii-4). The relay addresses a
+command to the director by role (`ack: 'group-leader'`, D167) and reports it
+`sent` only when the director's receipt arrives, waiting at most 30 s.
 A command the typed send refuses at validation becomes a `failed` result with
 the refusal as its reason; any other error from the send still propagates.
 
@@ -518,9 +520,29 @@ server's own room notifications carry `receiver` receipts over the room's live s
 delivery honours that audience (D58, D77). Since #566 the router freezes the audience for every server or proxy
 publish that carries a `groupRef`, and cluster delivery reads it once from the captured policy (D104).
 
-**PLANNED — A2, distinct leader ACK:** `group-leader` still maps to the subtree
-behavior; all-recipient is the frozen logical audience since S2. A2 defines the
-leader as the group's appointed director session.
+**CURRENT — A2a, the leader ACK:** `group-leader` is its own receipt algorithm,
+`leader`, declared by every carrier, and no longer maps to the subtree behavior
+(D166). The leader is the room's appointed director session present at
+admission: the carrier that admits a room, principal or fixed-list send resolves
+it from the room snapshot it holds and freezes the audience to that session
+alone, and its ordinary ACK confirms the send; a succession after admission does
+not move the frozen leader, and no leader epoch rides the wire (D164, D170). A
+room with no active director, a sender that is the director, and a named
+audience that leaves the director out are refused `no-leader` on both carriers:
+a typed refusal that ends the handle `rejected` (on RTC `refused` before any
+attempt, on WS a trusted-server `relay-rejected` after the frame left) and is no
+fallback trigger. A unicast, `world` or `all` send asking for it is refused
+`unsupported` (D165, D166), as is a send that asks for the `leader` receipt
+through `qos.ack` without the `group-leader` ack. AR Eye Hunter's director relay
+sends intents and sync requests by role with `group-leader` and reads a
+`no-leader` refusal as `no-director`, while the director's own outputs stay
+all-recipient (D167); the director acts on an intent or sync request stamped
+with its appointment's epoch or an earlier one, whose sender had not yet read a
+succession. The conformance lane's `leader-ack` family proves the director's
+confirmation over `ws`, `rtc` and `rtc-with-ws-fallback`, the `no-leader`
+refusal after the director resigns over `ws` and `rtc`, and the refusal of a
+list that omits the director over `ws`; manifests 18 and 22 are unchanged
+(D169).
 
 ## Ordering and gap recovery
 
@@ -784,7 +806,7 @@ system is added.
 
 **PARTIAL:** Current services use `exclusive` to select one local callback.
 
-**PLANNED — A2, ownership scope:** The contract does not say whether exclusive
+**PLANNED — A2b, ownership scope:** The contract does not say whether exclusive
 is local or distributed, and no distributed exclusive-consumer claim exists. A2
 defines `exclusive` as a claim on the message's resource key backed by the
 existing ResourceInbox reservation with lease, expiry, and redelivery, surfaced
@@ -986,7 +1008,19 @@ in the browser, shows in the asking browser at once and is sent as a principal
 broadcast in the room over WS (`ai.broadcastJson` with `scope: 'principal'` and
 the hunter's principal id), so the hunter's other sessions in the room receive
 it and no other hunter does; the receiver keeps its room and revision checks
-(D162). Per-player private events from the server are carried (D163).
+(D162). **CURRENT — A2a, the hunter's private event:** the server publishes
+`relic.hunter.v1` on `room.relic.hunter` as a principal broadcast to the acting
+hunter's sessions in the room (`newALPrincipalBroadcastMessage` with the room's
+`groupRef`, `receiver` receipts, the outbox, a 15 s TTL): `action-recorded`
+with the round and the action after a command that records the hunter's action,
+and `command-refused` with the command and the rule's text after a command the
+rules refuse. Relic keys its players by session, so each event names the session
+that sent the command (`playerId`): the browser reads it through a typed room
+channel, and only that session shows a refusal's text where the command's
+error shows; the hunter's other sessions are other players and drop it, and the
+locked-plan card stays the display of the plan a session submitted. No other
+hunter receives it. This closes D72's lost rule text for the acting session
+without a correlated reply (D168).
 
 ## Current validation baseline
 

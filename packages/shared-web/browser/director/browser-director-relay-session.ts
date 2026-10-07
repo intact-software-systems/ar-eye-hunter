@@ -14,7 +14,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
-    isCurrentDirectorEnvelope,
+    isAcceptedDirectorRelayEnvelope,
     isDirectorRelayEnvelope,
     recordDirectorRelayHeartbeat
 } from './browser-director-relay-observation.ts';
@@ -224,8 +224,8 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         if (!isDirectorRelayEnvelope(input.envelope, this.topicId)) {
             return;
         }
-        const current = this.status();
-        if (this.stopped || !isCurrentDirectorEnvelope(current, input.envelope)) {
+        const commandTypeIds = [this.input.config.intentTypeId, this.syncRequestTypeId];
+        if (this.stopped || !isAcceptedDirectorRelayEnvelope(this.status(), input.envelope, commandTypeIds)) {
             return;
         }
         await this.route({

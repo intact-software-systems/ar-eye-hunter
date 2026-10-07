@@ -101,6 +101,7 @@ import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 import {
     computeRtcBroadcastScopeRefusal,
     computeRtcFrozenAudienceRefusal,
+    computeRtcLeaderRefusal,
     toRtcEmptyAudienceDispatchPlan,
     toRtcFrozenAudienceDispatchPlan,
     toRtcFrozenAudienceRepairPlan,
@@ -542,9 +543,13 @@ export class WebRtcOverlayMulticastManager {
                 (refusal) => Either.ofLeft(refusal),
                 (admissible) => computeALOutboundOrderingRefusal({ msg: admissible, policy })
             )
-            .flatMap(
+            .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
                 (carried) => computeRtcFrozenAudienceRefusal(carried, original)
+            )
+            .flatMap(
+                (refusal) => Either.ofLeft(refusal),
+                (carried) => computeRtcLeaderRefusal(carried, original)
             )
             .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, availability, alreadyOwned));
         return toRtcFrozenAudienceDispatchPlan(toRtcEmptyAudienceDispatchPlan(plan, policy.effective), selfPeerId);

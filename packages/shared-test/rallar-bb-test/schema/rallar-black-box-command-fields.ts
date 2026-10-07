@@ -305,7 +305,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     /** Roles, not session ids: no session exists when a recipe is written. */
     messagesToPeer: ['server', 'receiver'],
     /** A role, as `messagesToPeer`: the page resolves it to the one session of a fixed audience. */
-    messagesRecipientPeer: ['receiver'],
+    messagesRecipientPeer: ['receiver', 'recipient-b'],
     /** One carrier leg: the carrier a replay or a raw control is admitted on. */
     messagesCarrierLeg: ['ws', 'rtc'],
     faultCarrier: ['ws', 'rtc', 'storage'],

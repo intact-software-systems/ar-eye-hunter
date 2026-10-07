@@ -286,6 +286,7 @@ function toALOutboundAdmissionVerdict<TPrepared>(
         case 'unauthorized':
         case 'unsupported':
         case 'capacity':
+        case 'no-leader':
             return { kind: 'refused', reason: plan.dropReasonCode, detail };
         case 'not-yet-in-sync':
             return { kind: 'deferred', reason: 'not-yet-in-sync', detail };

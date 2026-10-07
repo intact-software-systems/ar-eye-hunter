@@ -1,22 +1,22 @@
 import type { ALAckAlgo, ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
-import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
-import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
-import type { BlackBoxRallarCrdtConnectionInput } from '../black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
-import type { ControlClientIdentity } from './control-protocol.ts';
-import type { RecipeCaptureSequence } from './recipe/recipe-capture-sequence.ts';
-
 import type {
     ALDeliveryCarrier,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type {
     IndexedDbOperationKind,
     IndexedDbOperationOwner
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { ScriptedStorageFault } from '@shared/persistence/storage-fault-port.ts';
 import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
+import type { BlackBoxRallarCrdtConnectionInput } from '../black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { RallarBlackBoxTestMessagesControlFields } from './alm/rallar-black-box-test-messages-control-fields.ts';
+import type { ControlClientIdentity } from './control-protocol.ts';
+import type { RecipeCaptureSequence } from './recipe/recipe-capture-sequence.ts';
+
 export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'configure',
     'recipe.load',
@@ -336,10 +336,11 @@ export type RallarBlackBoxTestMessagesSendCommand =
         /** With scope `principal`: the principal whose live sessions in the room the send addresses. */
         principalId?: string;
         /**
-         * A fixed audience of one inside the room, by lane role: `receiver` is the one other live session of the room
-         * whose principal is not the sender's, resolved by the page at send time. Absent, the send names no list.
+         * A fixed audience of one inside the room, by lane role, resolved by the page at send time among the room's other
+         * live sessions whose principal is not the sender's: `receiver` is the one such session, `recipient-b` the one
+         * that is not the room's leader. Absent, the send names no list.
          */
-        recipientPeer?: 'receiver';
+        recipientPeer?: 'receiver' | 'recipient-b';
         reliability?: 'best-effort' | 'at-least-once';
         ack?: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
         durability?: ALDurabilityAlgo;
