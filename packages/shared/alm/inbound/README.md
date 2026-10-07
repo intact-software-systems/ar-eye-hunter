@@ -205,7 +205,7 @@ control id. The same file defines `al.control.receipt.v1`, the WS server's
 word to an origin, addressed and routed to `originPeerId`.
 
 On the WS server the same inbound admission runs for every client message,
-with two receipt rules. A `receiver` room message the server aggregates
+with two receipt rules. A `receiver` or `leader` room message the server aggregates
 withholds the server's own ACK
 ([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-inbound-plan.ts)):
 the receipt speaks for the audience, and a relay row would re-originate the
@@ -473,7 +473,10 @@ by the rule a multicast's frozen list applies
 room broadcast is therefore delivered only at listed sessions, over WS as over RTC; a WS server
 whose router owns the room fanout hands a listed broadcast that leaves it out to its router, as it
 hands a room unicast to another session. A broadcast without a list keeps the `exceptPeerIds` rule
-alone.
+alone. A `group-leader` send is the narrowest of these audiences: the room's director session alone,
+frozen at the RTC origin and admitted by the WS server (D164). Only the director delivers it, and its
+ordinary ACK, sent at admission as any recipient's, is the one the `leader` receipt expects; a room
+peer that carries it over RTC only forwards it and ends its subtree with `subtree-complete`.
 
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce

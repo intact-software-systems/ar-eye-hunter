@@ -202,7 +202,8 @@ export const facadeBehavior = {
     submitRawControl: vi.fn<BlackBoxBrowserDeliveriesDependency['submitRawControl']>(),
     resolveRoomSendFence: vi.fn<BlackBoxBrowserDeliveriesDependency['resolveRoomSendFence']>(),
     serverPeerId: vi.fn<BlackBoxBrowserPeersDependency['serverPeerId']>(),
-    getRoomSessions: vi.fn<BlackBoxBrowserPeersDependency['getRoomSessions']>()
+    getRoomSessions: vi.fn<BlackBoxBrowserPeersDependency['getRoomSessions']>(),
+    getRoomLeaderSessionId: vi.fn<BlackBoxBrowserPeersDependency['getRoomLeaderSessionId']>()
 };
 
 const auth: BlackBoxBrowserAuthDependency = {
@@ -365,7 +366,8 @@ const deliveries: BlackBoxBrowserDeliveriesDependency = {
 const peers: BlackBoxBrowserPeersDependency = {
     serverPeerId: () => facadeBehavior.serverPeerId(),
     session: () => facadeSession,
-    getRoomSessions: (roomRef) => facadeBehavior.getRoomSessions(roomRef)
+    getRoomSessions: (roomRef) => facadeBehavior.getRoomSessions(roomRef),
+    getRoomLeaderSessionId: (roomRef) => facadeBehavior.getRoomLeaderSessionId(roomRef)
 };
 
 /** The one session registry the facade's senders open handles in and the harness reads them back from. */

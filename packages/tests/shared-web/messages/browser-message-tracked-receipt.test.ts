@@ -8,9 +8,14 @@ import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-s
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALNackControlMessage, newALReceiptControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { resolveALChannelSendDefaults } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import { isALDeliveryTerminal, type ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import {
+    isALDeliveryTerminal,
+    type ALDeliveryCarrier,
+    type ALDeliverySettlement
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -18,7 +23,14 @@ import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } fr
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
-import { createOriginSnapshot, createRtcOriginOverlayFixture, ORIGIN_ROOM } from '../../shared/multicast/rtc-origin-overlay-fixture.ts';
+import {
+    acknowledgeAtOrigin,
+    createOriginSnapshot,
+    createRtcOriginOverlayFixture,
+    ORIGIN_ROOM,
+    toOriginDirectedSnapshot,
+    type RtcOriginOverlayFixture
+} from '../../shared/multicast/rtc-origin-overlay-fixture.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
@@ -47,9 +59,9 @@ describe('the receipt a WS send tracks reaches its handle (R-S3a-4)', () => {
             requested: 'hop' as const
         },
         {
-            ackLabel: 'ack group-leader',
-            ack: 'group-leader' as const,
-            qos: undefined,
+            ackLabel: 'qos.ack subtree',
+            ack: 'none' as const,
+            qos: { ack: { algo: 'subtree' as const } },
             requested: 'subtree' as const
         }
     ])(
@@ -78,9 +90,9 @@ describe('the receipt a WS send tracks reaches its handle (R-S3a-4)', () => {
             requested: 'hop' as const
         },
         {
-            ackLabel: 'ack group-leader',
-            ack: 'group-leader' as const,
-            qos: undefined,
+            ackLabel: 'qos.ack subtree',
+            ack: 'none' as const,
+            qos: { ack: { algo: 'subtree' as const } },
             requested: 'subtree' as const
         }
     ])(
@@ -206,6 +218,147 @@ describe('the receipt a WS fallback leg tracks reaches its handle (R-S3a-4)', ()
         expect(isALDeliveryTerminal(handle.lifecycle())).toBe(false);
     });
 });
+
+describe('the leader receipt of a group-leader room send reaches its handle', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        TestWebSocket.instances.length = 0;
+    });
+
+    it.each(['rtc', 'rtc-with-ws-fallback'] as const)(
+        'ends a group-leader send on %s acknowledged when the director session confirms it, with no WS leg',
+        async (strategy) => {
+            const leg = await createLeaderRtcLeg(toOriginDirectedSnapshot(createOriginSnapshot(['a', 'b', 'c'], 4), 'c'), strategy);
+            const handle = leg.harness.send(createLeaderSend('a', `leader-acknowledged-${strategy}`));
+            await expect.poll(() => handle.lifecycle().evidence.admittedAtMs).toBeDefined();
+
+            await acknowledgeAtOrigin(leg.fixture.manager, {
+                msgId: handle.msgId,
+                fromPeerId: 'c',
+                logicalRecipientPeerId: 'c',
+                status: 'delivered'
+            });
+            await recordCompleteAcknowledgement(leg);
+
+            expect(handle.lifecycle()).toMatchObject({
+                state: 'acknowledged',
+                receiptAlgo: 'leader',
+                evidence: { receiptMode: 'leader', expectedRecipientPeerIds: ['c'], confirmedRecipientPeerIds: ['c'] }
+            });
+            expect(leg.wsAdmissions).toEqual([]);
+        }
+    );
+
+    it.each(['rtc', 'rtc-with-ws-fallback'] as const)(
+        'ends a group-leader send on %s rejected for no leader when the room appoints no director, with no fallback',
+        async (strategy) => {
+            const leg = await createLeaderRtcLeg(createOriginSnapshot(['a', 'b', 'c'], 4), strategy);
+            const handle = leg.harness.send(createLeaderSend('a', `leader-refused-${strategy}`));
+
+            await expect.poll(() => handle.lifecycle().state).toBe('rejected');
+
+            expect(handle.lifecycle().evidence.failure).toEqual({ kind: 'refused', reason: 'no-leader' });
+            expect(handle.lifecycle().evidence.carrierFallback).toBeUndefined();
+            expect(leg.wsAdmissions).toEqual([]);
+        }
+    );
+
+    it('ends a group-leader send on ws acknowledged when the server\'s receipt names the director confirmed', async () => {
+        const registry = createRegistry();
+        const ws = await createWsClient(registry, SESSION_ID, SERVER_PEER_ID);
+        const harness = createDispatchHarness(registry, 'ws', { ws: (message) => ws.enqueueOutboxIfAbsent(message) });
+        const handle = harness.send(createLeaderSend(SESSION_ID, 'leader-acknowledged-ws'));
+        await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
+
+        await ws.acceptIncomingMessage(toLeaderReceipt(handle.msgId, 'admitted', []));
+        await ws.acceptIncomingMessage(toLeaderReceipt(handle.msgId, 'complete', ['director']));
+
+        await expect.poll(() => handle.lifecycle().state).toBe('acknowledged');
+        expect(handle.lifecycle()).toMatchObject({
+            receiptAlgo: 'leader',
+            evidence: { receiptMode: 'leader', expectedRecipientPeerIds: ['director'], confirmedRecipientPeerIds: ['director'] }
+        });
+    });
+
+    it('ends a group-leader send on ws rejected by the server\'s no-leader refusal, as its relay rejection', async () => {
+        const registry = createRegistry();
+        const ws = await createWsClient(registry, SESSION_ID, SERVER_PEER_ID);
+        const harness = createDispatchHarness(registry, 'ws', { ws: (message) => ws.enqueueOutboxIfAbsent(message) });
+        const handle = harness.send(createLeaderSend(SESSION_ID, 'leader-refused-ws'));
+        await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
+
+        await ws.acceptIncomingMessage(newALNackControlMessage(
+            { v: 3, msgId: 'nack-no-leader', senderId: SERVER_PEER_ID, ts: Date.now() },
+            { msgId: handle.msgId, fromPeerId: SERVER_PEER_ID, toPeerId: SESSION_ID, reason: 'no-leader', observedAtEpochMs: Date.now() }
+        ));
+
+        await expect.poll(() => handle.lifecycle().state).toBe('rejected');
+        expect(handle.lifecycle().evidence.failure).toEqual({
+            kind: 'relay-rejected',
+            rejection: { relay: 'trusted-server', reason: 'no-leader' }
+        });
+    });
+});
+
+interface LeaderRtcLeg {
+    readonly fixture: RtcOriginOverlayFixture;
+    readonly harness: DispatchHarness;
+    readonly wsAdmissions: readonly ALMessage[];
+}
+
+/** The RTC origin `a` and, on the fallback strategy, a WS leg that records every message handed to it. */
+async function createLeaderRtcLeg(
+    snapshot: ReturnType<typeof createOriginSnapshot>,
+    strategy: 'rtc' | 'rtc-with-ws-fallback'
+): Promise<LeaderRtcLeg> {
+    const registry = createRegistry();
+    const fixture = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b', 'c'] });
+    const wsAdmissions: ALMessage[] = [];
+    const ws = strategy === 'rtc' ? undefined : await createWsClient(registry, 'a', SERVER_PEER_ID);
+    const harness = createDispatchHarness(registry, 'rtc', {
+        rtc: (message) => fixture.manager.enqueueIfAbsent(message),
+        ...(ws === undefined ? {} : {
+            ws: (message: ALMessage) => {
+                wsAdmissions.push(message);
+                return ws.enqueueOutboxIfAbsent(message);
+            }
+        })
+    });
+    return { fixture, harness, wsAdmissions };
+}
+
+/**
+ * The harness opens its delivery feed with a no-op relay, so the test relays the RTC origin's complete settlement to
+ * the handle registry itself.
+ */
+async function recordCompleteAcknowledgement(leg: LeaderRtcLeg): Promise<void> {
+    const isComplete = (settlement: ALDeliverySettlement) => settlement.kind === 'acknowledgement' && settlement.complete;
+    await expect.poll(() => leg.fixture.settlements.some(isComplete)).toBe(true);
+    leg.fixture.settlements.filter(isComplete).forEach((settlement) => leg.harness.registry.record(settlement));
+}
+
+function createLeaderSend(senderId: string, resourceId: string): ALMessage {
+    return newALMulticastMessage(senderId, toRoute(resourceId), ORIGIN_ROOM, 'chat.message.v1', { text: 'lead' }, {
+        reliability: 'at-least-once',
+        ack: 'group-leader',
+        ttlMs: TTL_MS
+    });
+}
+
+function toLeaderReceipt(msgId: string, phase: ALReceiptPayload['phase'], confirmedRecipientPeerIds: readonly string[]): ALMessage {
+    return newALReceiptControlMessage(
+        { v: 3, msgId: `receipt-${phase}-${msgId}`, senderId: SERVER_PEER_ID, ts: Date.now() },
+        {
+            msgId,
+            originPeerId: SESSION_ID,
+            expectedRecipientPeerIds: ['director'],
+            confirmedRecipientPeerIds,
+            snapshotVersion: 4,
+            phase,
+            observedAtEpochMs: Date.now()
+        }
+    );
+}
 
 function toRoute(resourceId: string): ALMessage['route'] {
     return { topicId: 'chat', resourceId, contextId: ORIGIN_ROOM.groupId };

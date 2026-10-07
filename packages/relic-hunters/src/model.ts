@@ -296,6 +296,31 @@ export interface RelicRoundTransitionEvent {
 }
 
 /**
+ * What the server tells the acting hunter's own sessions in the room alone: the action it recorded for the round,
+ * or the text of the rule that refused a command. A hunter plays as a session, so `playerId` names the session that
+ * sent the command; the hunter's other sessions are other players of the game.
+ */
+export type RelicHunterEvent =
+    | Readonly<{
+        protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+        gameId: string;
+        principalId: string;
+        playerId: string;
+        kind: 'action-recorded';
+        round: number;
+        action: RelicActionInput;
+    }>
+    | Readonly<{
+        protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+        gameId: string;
+        principalId: string;
+        playerId: string;
+        kind: 'command-refused';
+        command: RelicCommand['kind'];
+        text: string;
+    }>;
+
+/**
  * The ordering key of the round transitions names the incarnation of the game: a reset keeps the game
  * id and starts a new incarnation, whose rounds are new tracks.
  */
@@ -457,6 +482,36 @@ export function isRelicRoundTransitionEvent(value: unknown): value is RelicRound
             'finished'
         ]) &&
         typeof value.text === 'string';
+}
+
+export function isRelicHunterEvent(value: unknown): value is RelicHunterEvent {
+    if (
+        !isRecord(value) || value.protocolVersion !== RELIC_PROTOCOL_VERSION || typeof value.gameId !== 'string' ||
+        typeof value.principalId !== 'string' || typeof value.playerId !== 'string'
+    ) {
+        return false;
+    }
+    if (value.kind === 'action-recorded') {
+        return isFiniteNumber(value.round) && isRelicActionInput(value.action);
+    }
+    return value.kind === 'command-refused' && isRelicCommandKind(value.command) && typeof value.text === 'string';
+}
+
+/** As a command's action is read: its kind decides the rest, which the rules validate. */
+function isRelicActionInput(value: unknown): value is RelicActionInput {
+    return isRecord(value) && isRelicActionKind(value.kind);
+}
+
+function isRelicCommandKind(value: unknown): value is RelicCommand['kind'] {
+    return isOneOf<RelicCommand['kind']>(value, [
+        'join-expedition',
+        'start-expedition',
+        'submit-action',
+        'force-resolve-round',
+        'pickup-relic',
+        'continue-review',
+        'set-round-limit'
+    ]);
 }
 
 function isRelicGamePhase(value: unknown): value is RelicGamePhase {

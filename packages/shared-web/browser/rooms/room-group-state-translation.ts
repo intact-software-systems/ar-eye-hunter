@@ -256,11 +256,15 @@ export function toRoomLifecycleGroupStateRequest(
     };
 }
 
+/** A top-level `null` in the patch removes its key, as a JSON merge patch does; any other value replaces it. */
 export function toRoomMetadataGroupStateRequest(
     input: ToRoomMetadataGroupStateRequestInput
 ): UpdateStateGroupBody {
+    const merged = Object.entries({ ...input.currentMetadata, ...input.patch });
     return {
-        metadata: { ...input.currentMetadata, ...input.patch },
+        metadata: Object.fromEntries(
+            merged.filter(([key, value]) => value !== null || !Object.hasOwn(input.patch, key))
+        ),
         ...toActorRequest(input)
     };
 }

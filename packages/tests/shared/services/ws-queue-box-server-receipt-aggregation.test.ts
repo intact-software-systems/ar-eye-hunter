@@ -65,6 +65,8 @@ interface ReceiptFixtureOptions {
     readonly fanout: 'forward' | 'outbox';
     /** `remote`: the origin's live session is on a second instance that shares the outbox. */
     readonly origin: 'local' | 'remote';
+    /** The room authority's audience for a room message; the whole room `a`, `b` and `c` when absent. */
+    readonly authorizedPeerIds?: readonly string[];
 }
 
 describe('WS server receipt aggregation for receiver acknowledgements', () => {
@@ -221,6 +223,25 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
             await fixture.engine.executeOnce();
         }
 
+        const acknowledgementsToOrigin = fixture.sockets.a.sent
+            .map((frame) => decodePersistedALMessage(frame))
+            .filter((message) => message.payload.typeId === AL_CONTROL_ACK_TYPE_ID);
+        expect(acknowledgementsToOrigin).toEqual([]);
+    });
+
+    it('aggregates a group-leader room send against the one leader its room authority admitted, as the receipt of that leader', async () => {
+        const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local', authorizedPeerIds: ['a', 'c'] });
+        const leaderSend: ALMessage = { ...roomMessage(fixture.clock.nowMs), delivery: { reliability: 'at-least-once', ack: 'group-leader' } };
+
+        expect((await fixture.service.acceptIncomingMessage(leaderSend, 'a')).right?.kind).toBe('admitted');
+        await expect.poll(() => readSentReceipts(fixture.sockets.a).map((receipt) => [receipt.phase, receipt.expectedRecipientPeerIds]))
+            .toEqual([['admitted', ['c']]]);
+        await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
+
+        await expect.poll(() => readSentReceipts(fixture.sockets.a).map((receipt) => [receipt.phase, receipt.confirmedRecipientPeerIds]))
+            .toEqual([['admitted', []], ['complete', ['c']]]);
+        expect(readRoomMessageCopies(fixture.sockets.c)).toBe(1);
+        expect(readRoomMessageCopies(fixture.sockets.b)).toBe(0);
         const acknowledgementsToOrigin = fixture.sockets.a.sent
             .map((frame) => decodePersistedALMessage(frame))
             .filter((message) => message.payload.typeId === AL_CONTROL_ACK_TYPE_ID);
@@ -465,7 +486,10 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
         sendNacks: true,
         authorize: async (message) =>
             isRoomScopedALMessage(message)
-                ? { authorized: true, roomAudience: { recipientPeerIds: ['a', 'b', 'c'], snapshotVersion: SNAPSHOT_VERSION } }
+                ? {
+                    authorized: true,
+                    roomAudience: { recipientPeerIds: options.authorizedPeerIds ?? ['a', 'b', 'c'], snapshotVersion: SNAPSHOT_VERSION }
+                }
                 : { authorized: true }
     });
     service.onAnyInboxMessageDo('router', {

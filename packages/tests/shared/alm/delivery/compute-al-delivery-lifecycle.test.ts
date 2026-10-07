@@ -608,6 +608,41 @@ describe('logical recipient evidence', () => {
         expect(claimed.state).toBe('queued');
     });
 
+    it('reads acknowledged under leader only when its one expected leader confirmed, a hop completion confirming nothing', () => {
+        const leaderReceipt = (confirmed: readonly string[]) => ({
+            ...toReceiverReceipt([], true),
+            mode: 'leader' as const,
+            confirmedHopPeerIds: ['b'],
+            unconfirmedHopPeerIds: [],
+            expectedRecipientPeerIds: ['d'],
+            confirmedRecipientPeerIds: confirmed,
+            unconfirmedRecipientPeerIds: ['d'].filter((peerId) => !confirmed.includes(peerId))
+        });
+
+        const confirmed = computeALDeliveryLifecycle(toQueuedLifecycle('group-leader'), leaderReceipt(['d']));
+        const hopOnly = computeALDeliveryLifecycle(toQueuedLifecycle('group-leader'), leaderReceipt([]));
+
+        expect(confirmed.state).toBe('acknowledged');
+        expect(confirmed.evidence).toMatchObject({
+            receiptMode: 'leader',
+            expectedRecipientPeerIds: ['d'],
+            confirmedRecipientPeerIds: ['d'],
+            confirmedHopPeerIds: ['b']
+        });
+        expect(hopOnly.state).toBe('queued');
+    });
+
+    it('ends a send its carrier refused for no leader rejected with the typed failure', () => {
+        const previous = createLifecycle('group-leader');
+        const next = computeALDeliveryLifecycle(
+            previous,
+            toAdmissionSettlement(previous, { kind: 'refused', reason: 'no-leader', detail: 'no-leader' }, 'none')
+        );
+
+        expect(next.state).toBe('rejected');
+        expect(next.evidence.failure).toEqual({ kind: 'refused', reason: 'no-leader' });
+    });
+
     it('reads an empty receiver audience as acknowledged by all of its zero recipients', () => {
         const next = computeALDeliveryLifecycle(toQueuedLifecycle('receiver'), {
             ...toReceiverReceipt([], true),
@@ -1222,10 +1257,17 @@ function createLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
         msgId: MSG_ID,
         typeId: 'chat.private-text.v1',
         ackMode,
-        receiptAlgo: ackMode === 'none' ? 'none' : 'receiver',
+        receiptAlgo: toReceiptAlgo(ackMode),
         expiresAtMs: undefined,
         submittedAtMs: SUBMITTED_AT_MS
     });
+}
+
+function toReceiptAlgo(ackMode: ALAckMode): ALAckAlgo {
+    if (ackMode === 'none') {
+        return 'none';
+    }
+    return ackMode === 'group-leader' ? 'leader' : 'receiver';
 }
 
 function createExpiringLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {

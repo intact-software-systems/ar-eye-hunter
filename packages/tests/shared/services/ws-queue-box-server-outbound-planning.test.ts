@@ -147,6 +147,36 @@ describe('WS server outbound planning', () => {
         expect(fixture.sockets.get('e')!.sent).toEqual([]);
     });
 
+    it('expects the leader its admitted audience names for a group-leader room send whose leader is connected to another instance', () => {
+        const planning = new WsQueueBoxServerOutboundPlanning({
+            serverPeerId: 'server',
+            qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
+            targetResolution: new WsQueueBoxServerTargetResolution({
+                socket: new JsonWebSocketServer(),
+                targetResolver: { resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
+            }),
+            deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
+        });
+        const message = newALMulticastMessage(
+            'a',
+            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'leader-elsewhere' },
+            ROOM,
+            'chat.message.v1',
+            {},
+            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'group-leader' }
+        );
+
+        const plan = planning.planOutboundMessage({
+            message,
+            phase: 'dequeue',
+            clusterPublisherRegistered: true,
+            admittedAudience: ['a', 'c']
+        });
+
+        expect(plan.ackTracking).toMatchObject({ mode: 'leader', expectedPeerIds: ['c'] });
+        expect(plan.preparedMessages).toMatchObject([{ kind: 'cluster-local-complete' }]);
+    });
+
     it('mints the sequence of its own keyed publication and leaves a relayed keyed send unsequenced', async () => {
         const fixture = createPlanningFixture(['b']);
         const keyedSend = (senderId: string, resourceId: string, orderingKey: string) =>

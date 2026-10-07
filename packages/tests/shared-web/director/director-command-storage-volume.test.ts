@@ -92,8 +92,8 @@ describe('director command browser storage volume (D60, D87)', () => {
 
         expect(admitted).toHaveLength(1);
         expect(admitted[0]).toMatchObject({
-            targets: { mode: 'unicast', toPeerId: 'director', groupRef: ROOM_REF },
-            delivery: { reliability: 'at-least-once', ack: 'receiver' },
+            targets: { mode: 'multicast', groupRef: ROOM_REF },
+            delivery: { reliability: 'at-least-once', ack: 'group-leader' },
             qos: { durability: { algo: 'volatile' } }
         });
         expect(counts.byOwner['al-admission'], 'a director command commits nothing to IndexedDB')
@@ -145,7 +145,7 @@ function recordDirectorReceipt(
         carrier: 'rtc',
         msgId: message.id.msgId,
         atMs: Date.now(),
-        mode: 'receiver',
+        mode: 'leader',
         confirmedHopPeerIds: [],
         unconfirmedHopPeerIds: [],
         expectedRecipientPeerIds: ['director'],

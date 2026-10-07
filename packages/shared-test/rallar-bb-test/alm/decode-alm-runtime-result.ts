@@ -41,7 +41,12 @@ const ALM_MESSAGES_CARRIERS: readonly RallarBlackBoxTestMessagesCarrier[] = [
 ];
 
 /** Keyed by every receipt mode, so a new mode fails to compile here instead of decoding as an invalid result. */
-const ALM_RECEIPT_MODES: Readonly<Record<ALReceiptMode, true>> = { hop: true, subtree: true, receiver: true };
+const ALM_RECEIPT_MODES: Readonly<Record<ALReceiptMode, true>> = {
+    hop: true,
+    subtree: true,
+    receiver: true,
+    leader: true
+};
 
 /** Every value an observation may carry as its receipt mode: none before a receipt settles, or a known mode. */
 const ALM_RECEIPT_MODE_FIELD_VALUES: readonly (ALReceiptMode | undefined)[] = [

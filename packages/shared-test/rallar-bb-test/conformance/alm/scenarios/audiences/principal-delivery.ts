@@ -29,10 +29,11 @@ export const principalDelivery: AlmConformanceScenarioDefinition = {
         ...toAudienceSendCommands({
             sender,
             ttlMs: NON_EXPIRING_TTL_MS,
+            ack: 'all-logical-recipients',
             audience: { scope: 'principal', principalId: '{auth.clientId}' }
         }),
         ...toServerReceiptCommands(sender),
-        ...toReceiptWindowCommands(sender, SIBLING_CONFIRMED, 'acknowledged')
+        ...toReceiptWindowCommands(sender, { roles: SIBLING_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
     ],
     toRecipientCommands: (recipient) =>
         recipient.role === 'sibling'

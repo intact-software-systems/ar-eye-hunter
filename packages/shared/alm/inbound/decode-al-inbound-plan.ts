@@ -122,7 +122,7 @@ function assertControlPlan(plan: PersistedALRecord): void {
     const ack = requirePersistedALRecord(plan.ack, 'ack plan');
     requirePersistedALFields(ack, ['enabled', 'algo', 'toPeerId', 'deferred'], ['enabled', 'algo', 'deferred']);
     requireBooleans(ack, ['enabled', 'deferred']);
-    requireVariant(ack.algo, ['none', 'hop', 'subtree', 'receiver'], 'ack algorithm');
+    requireVariant(ack.algo, ['none', 'hop', 'subtree', 'receiver', 'leader'], 'ack algorithm');
     requireOptionalPersistedALNonEmptyString(ack.toPeerId, 'ack peer');
     const nack = requirePersistedALRecord(plan.nack, 'nack plan');
     requirePersistedALFields(nack, ['enabled', 'toPeerId', 'reason', 'missingRanges'], ['enabled', 'missingRanges']);

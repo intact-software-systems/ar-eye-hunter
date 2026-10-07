@@ -1,6 +1,7 @@
 import { isALHopCompletionAck, type ALAckPayload } from '../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALAckAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
+import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type {
     ALOutboundAckTrackingPlan,
@@ -45,7 +46,7 @@ export function isALOutboundAckTrackingWritable(tracking: ALOutboundAckTrackingP
 
 /**
  * The receipt an admission tracks: the mode of the receipt row its commit writes, `none` when it writes
- * none (R-S3a-4, and a `qos.ack` timeout of 0). A `receiver` receipt that expects nobody yet is the
+ * none (R-S3a-4, and a `qos.ack` timeout of 0). A `receiver` or `leader` receipt that expects nobody yet is the
  * exception: the WS server's `admitted` receipt creates its row, and an empty frozen audience completes
  * it at admission.
  */
@@ -55,8 +56,8 @@ export function toALOutboundTrackedReceiptAlgo(
     if (ackTracking?.enabled !== true) {
         return 'none';
     }
-    if (ackTracking.mode === 'receiver' && ackTracking.expectedPeerIds.length === 0) {
-        return 'receiver';
+    if (isALLogicalReceiptMode(ackTracking.mode) && ackTracking.expectedPeerIds.length === 0) {
+        return ackTracking.mode;
     }
     return isALOutboundAckTrackingWritable(ackTracking) ? ackTracking.mode : 'none';
 }
@@ -124,13 +125,14 @@ export function acceptALOutboundPendingAckSnapshot(
 
 /**
  * The peer an ACK confirms in a receipt of this mode: the logical recipient it speaks for under
- * `receiver`, and the hop that sent it otherwise. A hop ACK names the hop itself, so it never stands in
+ * `receiver` and `leader`, and the hop that sent it otherwise. A hop ACK names the hop itself, so it never stands in
  * for a logical recipient it did not name. Under `subtree` only the completion ACK of the hop itself
  * confirms it, never an ACK it relays for a recipient below it.
  */
 export function toALOutboundAckedPeerId(mode: ALReceiptMode, ack: ALAckPayload): string | undefined {
     switch (mode) {
         case 'receiver':
+        case 'leader':
             return ack.logicalRecipientPeerId;
         case 'subtree':
             return isALHopCompletionAck(ack) ? ack.fromPeerId : undefined;
@@ -158,13 +160,13 @@ export function toALOutboundAckRetryScheduleEndTimestamp(
 
 /**
  * The acknowledgement a receipt row states. Under `hop` and `subtree` the row counts next hops, so its
- * peers are both the hop and the recipient lists. Under `receiver` the row counts logical recipients,
+ * peers are both the hop and the recipient lists. Under `receiver` and `leader` the row counts logical recipients,
  * and the hop lists come from the hop view alone: the completed hops, and the next hops still open.
  */
 export function toALOutboundAcknowledgementFact(input: ToALOutboundAcknowledgementFactInput): ALOutboundSettlementFact {
     const { receipt, hops } = input;
     const unconfirmed = receipt.expectedPeerIds.filter((peerId) => !receipt.ackedPeerIds.includes(peerId));
-    const receiverHops = receipt.mode === 'receiver';
+    const receiverHops = isALLogicalReceiptMode(receipt.mode);
     return {
         kind: 'acknowledgement',
         msgId: receipt.msgId,

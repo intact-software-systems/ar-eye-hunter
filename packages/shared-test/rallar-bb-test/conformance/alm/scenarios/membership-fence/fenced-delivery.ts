@@ -28,7 +28,8 @@ export const fencedDelivery: AlmConformanceScenarioDefinition = {
     carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
-    toSenderCommands: (sender) => toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS }),
+    toSenderCommands: (sender) =>
+        toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS, ack: 'all-logical-recipients' }),
     toRecipientCommands: toFencedDeliveryRecipientCommands
 };
 

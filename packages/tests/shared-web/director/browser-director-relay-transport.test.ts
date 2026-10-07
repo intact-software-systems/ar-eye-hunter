@@ -8,6 +8,12 @@ import type { RallarMessagesOperations } from '@shared-web/browser/messages/rall
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { RallarValidationError } from '@shared/api/rallar-validation.ts';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import {
+    createOriginPrincipalSnapshot,
+    createRtcOriginOverlayFixture,
+    ORIGIN_ROOM
+} from '../../shared/multicast/rtc-origin-overlay-fixture.ts';
+import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import {
     createRallarTestFacade,
@@ -144,13 +150,13 @@ describe('director command', () => {
     afterEach(() => vi.useRealTimers());
 
     it.each(['room.director.intent.v1', 'room.director.sync-request.v1'])(
-        'sends %s on its own command channel to the director and reports sent on the director\'s receipt',
+        'sends %s on its own command channel to the room\'s leader and reports sent on the leader\'s receipt',
         async (typeId) => {
             const command = createMessageDelivery('rtc', {
                 kind: 'admitted',
                 durable: false,
                 queuedAttempts: 1
-            }, 'receiver');
+            }, 'group-leader');
             const sentEnvelopes: RallarDirectorRelayEnvelope<OutputPayload>[] = [];
             const room = createRoomChannel(async (envelope) => {
                 sentEnvelopes.push(envelope);
@@ -184,8 +190,30 @@ describe('director command', () => {
                     epoch: 1,
                     payload: { revision: 7 }
                 }),
-                { peerId: 'director', strategy: 'rtc-with-ws-fallback' }
+                { ack: 'group-leader', strategy: 'rtc-with-ws-fallback' }
             );
+        }
+    );
+
+    it.each(['rtc', 'ws'] as const)(
+        'reports a command refused for no leader on %s as no-director, with its receipt and reason',
+        async (carrier) => {
+            const command = toNoLeaderCommand(carrier);
+            const transport = createTransport(
+                createMessageDelivery('rtc', undefined),
+                rejectCarrierSend,
+                {
+                    room: toRoomOperation(createRoomChannel(async () => command.handle)),
+                    rtcSend: rejectCarrierSend
+                }
+            );
+
+            expect(await transport.sendCommand(commandInput)).toEqual({
+                status: 'no-director',
+                receipt: command.handle,
+                reason: command.handle.lifecycle().evidence.reason
+            });
+            expect(command.handle.lifecycle().state).toBe('rejected');
         }
     );
 
@@ -326,6 +354,33 @@ describe('director notification fence', () => {
     });
 });
 
+describe('director command over a real RTC origin', () => {
+    beforeEach(() => resetRallarFacadeTestRuntime());
+
+    it('reports the command the RTC origin refuses for a room with no leader as no-director', async () => {
+        const snapshot = createOriginPrincipalSnapshot();
+        const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b', 'c'] });
+        mocks.apiMiddleware = createDefaultApiMiddlewareTestDouble({
+            session: { sessionId: 'a' },
+            middleware: { rtcRxStreamer: { enqueueOutboxIfAbsent: (message) => origin.manager.enqueueIfAbsent(message) } }
+        });
+        setRallarFacadeRoomSnapshots([snapshot]);
+        const transport = new BrowserDirectorRelayTransport({
+            messages: createRallarTestFacade().messages,
+            readSession: () => mocks.apiMiddleware.session
+        });
+
+        const result = await transport.sendCommand({ ...commandInput, current: { ...clientStatus, roomRef: ORIGIN_ROOM } });
+
+        expect(result).toMatchObject({
+            status: 'no-director',
+            reason: 'no-leader: the room has no active leader inside the audience the send names'
+        });
+        expect(result.receipt?.lifecycle().evidence.failure).toEqual({ kind: 'refused', reason: 'no-leader' });
+        expect(result.receipt?.lifecycle().evidence.carrierFallback).toBeUndefined();
+    });
+});
+
 /** The director's room as its cache holds it: the director's own session and one recipient, at the given versions. */
 function toDirectorRoomSnapshot(versions: Readonly<{ snapshotVersion: number; rosterVersion: number; }>): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({
@@ -337,13 +392,34 @@ function toDirectorRoomSnapshot(versions: Readonly<{ snapshotVersion: number; ro
     return { ...snapshot, group: { ...snapshot.group, ...versions } };
 }
 
+/** The RTC origin refuses the command at its admission; the server refuses it at WS ingress, after the client admitted it. */
+function toNoLeaderCommand(carrier: 'rtc' | 'ws'): MessageDeliveryFixture {
+    if (carrier === 'rtc') {
+        return createMessageDelivery('rtc', {
+            kind: 'refused',
+            reason: 'no-leader',
+            detail: 'no-leader: the room has no active leader inside the audience the send names'
+        }, 'group-leader');
+    }
+    const command = createMessageDelivery('ws', { kind: 'admitted', durable: false, queuedAttempts: 1 }, 'group-leader');
+    command.registry.record({
+        kind: 'relay-rejected',
+        msgId: command.handle.msgId,
+        carrier: 'ws',
+        atMs: Date.now(),
+        relayRejection: { relay: 'trusted-server', reason: 'no-leader' },
+        detail: 'The server relay refused the message: no-leader.'
+    });
+    return command;
+}
+
 function recordDirectorReceipt(command: MessageDeliveryFixture): void {
     command.registry.record({
         kind: 'acknowledgement',
         carrier: 'rtc',
         msgId: command.handle.msgId,
         atMs: Date.now(),
-        mode: 'receiver',
+        mode: 'leader',
         confirmedHopPeerIds: [],
         unconfirmedHopPeerIds: [],
         expectedRecipientPeerIds: ['director'],

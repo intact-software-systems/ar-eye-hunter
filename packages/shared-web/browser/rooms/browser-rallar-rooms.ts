@@ -158,6 +158,7 @@ export interface BrowserRallarRooms {
         principalId: string,
         options?: RallarRoomGovernanceOptions
     ): Promise<GroupSnapshot>;
+    /** Merges `patch` into the room's current metadata; a key whose patch value is `null` is removed. */
     updateMetadata(
         room: string | GroupRef,
         patch: ApiJsonObject,

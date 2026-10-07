@@ -17,6 +17,7 @@ import {
     type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
 import { toALSequenceMintTrackKey } from '../../al-contracts/al-runtime.ts';
+import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import { resolveALOutboundScopeAuthority } from '../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import type { ALSessionInvalidationAuthority } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import type {
@@ -360,12 +361,12 @@ interface ToExpectedPeerIdsInput {
 }
 
 /**
- * A `receiver` receipt counts logical recipients, so a message admitted to an audience expects all of it,
+ * A `receiver` or `leader` receipt counts logical recipients, so a message admitted to an audience expects all of it,
  * connected here or not; every other receipt counts the hops this instance sends to.
  */
 function toExpectedPeerIds(input: ToExpectedPeerIdsInput): readonly string[] {
     const { message, recipients, audience } = input;
-    return input.effective.ack.algo === 'receiver' && audience !== undefined
+    return isALLogicalReceiptMode(input.effective.ack.algo) && audience !== undefined
         ? audience.filter((peerId) => peerId !== message.id.senderId)
         : recipients.map((recipient) => recipient.peerId);
 }

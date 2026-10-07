@@ -270,6 +270,10 @@ the accepted layout only.
 `rooms.update(input)` updates owner/admin-controlled room fields, including
 display metadata, `joinMode`, and capacity limits.
 
+`rooms.updateMetadata(room, patch, options?)` merges `patch` into the room's
+current metadata, owner/admin-only: a key whose patch value is `null` is
+removed, and any other value replaces the key's value.
+
 `rooms.archive(room, options?)` marks a room archived through the group update
 policy. Archived groups reject joins, presence, room messaging, invites, and
 member governance mutations.
@@ -500,8 +504,28 @@ says the appointed session is active with a fresh heartbeat; check both before
 running authoritative work. `director.createRelay(...)` builds the
 intent/output/snapshot relay around that appointment.
 
-`director.resign(room?, options?)` clears this session's appointment through
-`rooms.updateMetadata(...)`, so it is subject to the same owner/admin policy;
+The relay addresses the director by role (D167): its `sendIntent(...)` and
+`requestSync(...)` send on the room channel with `ack: 'group-leader'` over
+`rtc-with-ws-fallback` and name no session, so the carrier that admits the send
+resolves the director from the room snapshot (see Acknowledgement Modes) and
+the director's ACK is the receipt. The result is `sent` once that ACK arrives,
+within 30 s; a send the carrier refuses `no-leader` returns
+`status: 'no-director'`. Before it sends, the relay itself returns
+`no-director` when no director is appointed, `stale-director` when the
+appointed director is not fresh, and `not-director` when the local session is
+the director. The director's own outputs go to the whole room: with
+`ack: 'all-logical-recipients'` when the output states it, best effort
+otherwise. While the local session is the director, its relay acts on an intent
+or sync request stamped with its own appointment epoch or an earlier one, since
+the carrier addressed the director at admission and an earlier epoch only means
+the sender had not yet read the succession; it drops one stamped with a later
+epoch, and an output or snapshot that is not the current director's.
+
+`director.resign(room?, options?)` reads the room as the server holds it and,
+while the appointment there still names this session, removes the appointment
+key with the metadata write `rooms.updateMetadata(...)` makes for a `null`
+patch value, so it is subject to the same owner/admin policy; an appointment the
+server has since given a successor stays, whatever this session's cache shows.
 `director.onStatus(listener)` subscribes to director status changes.
 
 ```ts
@@ -844,13 +868,13 @@ audiences: each names its room (`roomId` or `roomRef`) and resolves to that
 room's live sessions at the sender's room snapshot, minus `exceptPeerIds`, on
 both carriers. `world` and `all` name no room (D156).
 
-| Audience   | Who receives it                                                               | Send input                                                       | RTC                                                                 | WS                                                               | Receipts                                                         |
-| ---------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------- |
-| room       | The room's live sessions                                                      | the room; `scope: 'room'`, the default for a send that names one | multicast, its audience frozen at the origin                        | `broadcast/room`                                                 | `receiver` and `all-logical-recipients` over the frozen audience |
-| principal  | The principal's live sessions in the room                                     | the room and `principalId`, with `scope: 'principal'`            | multicast, its frozen audience narrowed to the principal's sessions | `broadcast/principal` naming the room's `groupRef`               | as `room`, over the narrowed audience                            |
-| fixed list | The listed sessions that are live in the room                                 | the room and `recipientPeerIds`, with room scope                 | multicast, its frozen audience narrowed to the list                 | `broadcast/room` with `recipientPeerIds`                         | as `room`, over the narrowed audience                            |
-| world      | Every authenticated live connection in the sender's application and workspace | `scope: 'world'`                                                 | refused `unsupported`                                               | `broadcast/world`, bound to the connection's authenticated scope | none                                                             |
-| all        | Every authenticated connection the server holds, across scopes                | none: the server's `toAll` and its own publications              | refused `unsupported`                                               | a client's `all` is refused `unauthorized`                       | none                                                             |
+| Audience   | Who receives it                                                               | Send input                                                       | RTC                                                                 | WS                                                               | Receipts                                                                                                                              |
+| ---------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| room       | The room's live sessions                                                      | the room; `scope: 'room'`, the default for a send that names one | multicast, its audience frozen at the origin                        | `broadcast/room`                                                 | `receiver` and `all-logical-recipients` over the frozen audience; `group-leader` from the room's director (see Acknowledgement Modes) |
+| principal  | The principal's live sessions in the room                                     | the room and `principalId`, with `scope: 'principal'`            | multicast, its frozen audience narrowed to the principal's sessions | `broadcast/principal` naming the room's `groupRef`               | as `room`, over the narrowed audience                                                                                                 |
+| fixed list | The listed sessions that are live in the room                                 | the room and `recipientPeerIds`, with room scope                 | multicast, its frozen audience narrowed to the list                 | `broadcast/room` with `recipientPeerIds`                         | as `room`, over the narrowed audience                                                                                                 |
+| world      | Every authenticated live connection in the sender's application and workspace | `scope: 'world'`                                                 | refused `unsupported`                                               | `broadcast/world`, bound to the connection's authenticated scope | none                                                                                                                                  |
+| all        | Every authenticated connection the server holds, across scopes                | none: the server's `toAll` and its own publications              | refused `unsupported`                                               | a client's `all` is refused `unauthorized`                       | none                                                                                                                                  |
 
 `messages.rtc.send`, `messages.ws.send` and a room channel's options take
 `principalId` and `recipientPeerIds`; a send's `scope` is `'room'`, `'world'` or
@@ -882,7 +906,9 @@ session and relays it only to listed children. On RTC a principal or list
 multicast still travels the room's overlay, so room peers that are not
 recipients relay its bytes; only the audience delivers it. A WS client trusts
 the server's resolution. Relic Hunters sends its AI suggestions to the asking
-hunter's principal over WS.
+hunter's principal over WS, and its server publishes each hunter's recorded
+action and refused-command text to that hunter's principal in the room, where
+only the session that sent the command uses it (D168).
 
 The strategy picks the carrier per audience (D157):
 
@@ -940,6 +966,82 @@ await rallar.messages.ws.send({
 `scope: 'room' | 'principal'`, `'room'` by default, and `principalId`, which
 `scope: 'principal'` requires: the generated result then reaches the
 principal's sessions in the room instead of the whole room.
+
+### Acknowledgement Modes
+
+A send's `ack` (or `qos.ack`) names who confirms it. A confirmation is the ALM
+ACK a session sends when its ALM admits the message, never the application's
+handling of it; an application's answer is a message of its own.
+
+| Mode                     | Who confirms                                                                                             | Audiences                                                                | Default for                                          |
+| ------------------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------- |
+| `none`                   | nobody: `transport-accepted` is terminal                                                                 | every audience                                                           | a lane send, a `best-effort` send and a `world` send |
+| `receiver`               | the addressee of a unicast; every session of the frozen audience of a room, principal or fixed-list send | a unicast (over WS one that names its room), room, principal, fixed list | a `command` channel                                  |
+| `all-logical-recipients` | as `receiver`: one algorithm                                                                             | as `receiver`                                                            | a `notification` channel                             |
+| `group-leader`           | the room's director session alone                                                                        | room, principal, fixed list                                              | nothing                                              |
+
+`group-leader` addresses the room's leader: the session the room's group
+metadata appoints as director (`director.appoint`, see Director above) when
+that session is among the room's active sessions at admission (D164). The
+carrier that admits the send resolves it from the room snapshot it holds -- the
+RTC origin from its own room snapshot, the WS server from the snapshot its room
+authorizer reads -- and freezes the send's audience to that one session at the
+snapshot version it read; the send stays a room send and is fenced as one (see
+Membership Fencing below). Only the director delivers it, and the director's
+ordinary ACK is the one confirmation its receipt expects, so the handle reads
+`acknowledged` when that ACK arrives; its `receiptAlgo` reads `leader`. Over RTC
+the message still travels the room's overlay, so room peers that are not the
+director may relay its bytes. A succession after admission does not move the
+frozen leader: the receipt keeps expecting the session it froze and ends
+unconfirmed if that session never answers, and a resend is admitted against the
+current appointment; an RTC leg the fallback hands to WS after a succession is
+refused `no-leader` by the server, since the session it froze is no longer the
+director. No leader epoch rides the wire, and the carriers judge presence only:
+the heartbeat freshness `director.status(...)` reports as `isFresh` stays the
+application's check.
+
+The send is refused `no-leader` when the room has no director at admission (no
+appointment, or an appointed session that is not among the room's active
+sessions), when the sender is the director, since a sender is never in its own
+audience, and when the director is outside the audience the send names after
+its exclusions: a fixed list, or a principal other than the director's, that
+leaves the director's session out, or `exceptPeerIds` that name it (D165). The
+RTC origin refuses it at its own admission, before any attempt; the WS server
+refuses it at ingress with a `no-leader` NACK after the frame left. The handle
+ends `rejected`: on RTC with `failure: { kind: 'refused', reason: 'no-leader' }`,
+on WS with `failure: { kind: 'relay-rejected', rejection }` and
+`evidence.relayRejection` reading `{ relay: 'trusted-server', reason: 'no-leader' }`.
+`no-leader` is no fallback trigger: the other carrier reads the same
+appointment, so `rtc-with-ws-fallback` and `ws-then-rtc` end `rejected` without
+a second leg.
+
+`group-leader` needs a room (D166): a carrier refuses it `unsupported` on a
+unicast, a `world` send or the server's `all`, and the browser validator
+refuses a `group-leader` send that names a `peerId` or `scope: 'world'` before
+either carrier admits it. A send that asks for the `leader` receipt through
+`qos.ack` alone, without `ack: 'group-leader'`, is refused `unsupported` on
+both carriers: only the `group-leader` ack narrows its audience to the director.
+
+```ts
+interface MoveIntent {
+    readonly dx: number;
+}
+
+const intents = rallar.messages.room<MoveIntent>({
+    topicId: 'room.match.intent',
+    typeId: 'match.intent.v1',
+    purpose: 'command'
+});
+
+const handle = await intents.send({ dx: 1 }, { ack: 'group-leader' });
+const outcome = await handle.wait({ until: ['acknowledged'], timeoutMs: 30_000 });
+const failure = outcome.lifecycle.evidence.failure;
+const noLeader = (failure?.kind === 'refused' && failure.reason === 'no-leader') ||
+    (failure?.kind === 'relay-rejected' && failure.rejection.reason === 'no-leader');
+if (noLeader) {
+    console.warn('The room has no director to confirm the intent.');
+}
+```
 
 ### Ordering, Repair And Resynchronization
 

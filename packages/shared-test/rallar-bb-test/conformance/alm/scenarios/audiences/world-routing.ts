@@ -3,9 +3,9 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import {
     toAdmissionCommands,
-    toObserveCommand,
-    toResultAssertion,
-    toSendCommand
+    toSendCommand,
+    toVerdictCommands,
+    type AlmConformanceVerdictFact
 } from '../../alm-conformance-message-commands.ts';
 import { toAudiencePayload, toSelfAbsenceCommand } from '../../alm-conformance-receipt-commands.ts';
 import { toReceivedCommand, toSingleArrivalReceiverCommands } from '../../alm-conformance-receiver-commands.ts';
@@ -16,25 +16,18 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 
-type WorldVerdictFact = readonly [
-    name: string,
-    field: string,
-    operator: 'exists' | 'equals',
-    expected: string | number | boolean
-];
-
 /**
  * RTC carries no world audience: the RTC carrier refuses the send at admission, a carrier-unsupported rejection that
  * no carrier attempt follows, so no WS leg carries it either.
  */
-const RTC_REFUSAL_FACTS: readonly WorldVerdictFact[] = [
+const RTC_REFUSAL_FACTS: readonly AlmConformanceVerdictFact[] = [
     ['refused', 'failure.kind', 'equals', 'refused'],
     ['unsupported', 'failure.reason', 'equals', 'unsupported'],
     ['no-attempt', 'attempts', 'equals', 0]
 ];
 
 /** A strategy that allows WS sends a world send there at once: one WS attempt and no hand-over from an RTC leg. */
-const WS_ROUTE_FACTS: readonly WorldVerdictFact[] = [
+const WS_ROUTE_FACTS: readonly AlmConformanceVerdictFact[] = [
     ['one-attempt', 'attempts', 'equals', 1],
     ['ws-attempt', 'attemptCarriers.0', 'equals', 'ws'],
     ['no-fallback', 'carrierFallback', 'exists', false]
@@ -80,24 +73,4 @@ function toWorldVerdictCommands(sender: AlmConformanceStepInput): readonly Ralla
         case 'rtc-with-ws-fallback':
             return toVerdictCommands(sender, 'transport-accepted', WS_ROUTE_FACTS);
     }
-}
-
-function toVerdictCommands(
-    sender: AlmConformanceStepInput,
-    state: 'rejected' | 'transport-accepted',
-    facts: readonly WorldVerdictFact[]
-): readonly RallarBlackBoxTestCommand[] {
-    return [
-        toObserveCommand({ ...sender, index: 1, state }),
-        ...facts.map(([name, field, operator, expected]) =>
-            toResultAssertion({
-                step: sender,
-                name: `assert-${name}-1`,
-                resultName: `observe-${state}-1`,
-                field,
-                operator,
-                expected
-            })
-        )
-    ];
 }

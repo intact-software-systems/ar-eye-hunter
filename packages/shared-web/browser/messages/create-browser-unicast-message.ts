@@ -136,6 +136,13 @@ function validatePeerCarriage<T>(send: RallarWsSendInput<T>): readonly RallarVal
             message: 'A peer-addressed send carries no snapshot floor and no hop limit.'
         });
     }
+    if (send.ack === 'group-leader') {
+        issues.push({
+            path: '$.ack',
+            code: 'leader-requires-room-audience',
+            message: 'A group-leader send addresses its room\'s leader: it names a room audience, never one peer.'
+        });
+    }
     return issues;
 }
 

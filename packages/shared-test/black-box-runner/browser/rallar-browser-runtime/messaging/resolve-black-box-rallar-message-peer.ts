@@ -13,10 +13,13 @@ export interface ResolveBlackBoxRallarMessagePeerInput {
 }
 
 export interface ResolveBlackBoxRallarRecipientPeerInput {
+    readonly recipientPeer: NonNullable<BlackBoxRallarMessageSendInput['recipientPeer']>;
     readonly ownSessionId: string | undefined;
     readonly ownPrincipalId: string | undefined;
     /** Undefined while the page holds no snapshot of the room. */
     readonly roomSessions: readonly GroupPresenceSession[] | undefined;
+    /** Undefined while the room has no active director. */
+    readonly leaderSessionId: string | undefined;
     readonly nowMs: number;
 }
 
@@ -44,7 +47,8 @@ export function resolveBlackBoxRallarMessagePeer(
 
 /**
  * A room that holds a second session of the sender's principal tells the receiver apart by principal: `receiver` is
- * the one other live session whose principal is not the sender's.
+ * the one other live session whose principal is not the sender's. A room of three principals tells `recipient-b`
+ * apart by the room's leader, the role the receiver takes there: it is the one such session that is not the leader.
  */
 export function resolveBlackBoxRallarRecipientPeer(
     input: ResolveBlackBoxRallarRecipientPeerInput
@@ -52,13 +56,17 @@ export function resolveBlackBoxRallarRecipientPeer(
     if (input.roomSessions === undefined) {
         return Either.ofLeft('the page holds no snapshot of the room');
     }
-    const receivers = toOtherLiveSessions(input.roomSessions, input).filter((session) =>
-        session.principalId !== input.ownPrincipalId
+    const besideLeader = input.recipientPeer === 'recipient-b';
+    const recipients = toOtherLiveSessions(input.roomSessions, input).filter((session) =>
+        session.principalId !== input.ownPrincipalId && !(besideLeader && session.sessionId === input.leaderSessionId)
     );
-    const [receiver] = receivers;
-    return receivers.length === 1 && receiver !== undefined
-        ? Either.ofRight(receiver.sessionId)
-        : Either.ofLeft(`the room holds ${receivers.length} other live sessions of another principal, not exactly one`);
+    const [recipient] = recipients;
+    return recipients.length === 1 && recipient !== undefined
+        ? Either.ofRight(recipient.sessionId)
+        : Either.ofLeft(
+            `the room holds ${recipients.length} other live sessions of another principal` +
+                `${besideLeader ? ' beside its leader' : ''}, not exactly one`
+        );
 }
 
 function toOtherLiveSessions(

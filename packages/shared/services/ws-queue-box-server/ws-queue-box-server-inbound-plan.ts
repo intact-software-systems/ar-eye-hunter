@@ -1,6 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import { isALUnicastAddressedTo } from '../../al-contracts/is-al-unicast-addressed-to.ts';
+import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import { AppTopics } from '../../api/api-config.ts';
 
@@ -39,7 +40,7 @@ export function toWsQueueBoxServerInboundPlan(
         return input.plan;
     }
     const plan = toRouterDeliveredPlan(input);
-    const aggregated = plan.ack.algo === 'receiver' &&
+    const aggregated = isALLogicalReceiptMode(plan.ack.algo) &&
         !isALUnicastAddressedTo(input.message, input.serverPeerId);
     return aggregated
         ? { ...plan, ack: { enabled: false, algo: plan.ack.algo, deferred: false } }
