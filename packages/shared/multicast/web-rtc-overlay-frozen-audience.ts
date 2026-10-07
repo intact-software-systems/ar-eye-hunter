@@ -1,3 +1,4 @@
+import { isALAudienceSession, type ALAudienceNarrowing } from '../al-contracts/al-audience-narrowing.ts';
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import {
     resolveALFrozenMulticastAudience,
@@ -8,36 +9,29 @@ import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-
 import { resolveALOutboundStoreDurability, type ALQosEffectivePolicy } from '../al-contracts/al-policy.ts';
 import type { ALOutboundDispatchPlan } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '../alm/outbound/al-outbound-transport-message.ts';
-import type { GroupPresenceSession } from '../api/group-types.ts';
 import { Either } from '../resilience/Either.ts';
 import type { OverlayMulticasterContext } from './overlay-multicast-contracts.ts';
 import { computeRtcRoomSnapshotAdmission, type RtcRoomSnapshotAdmission } from './rtc-room-snapshot-admission.ts';
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 
-/** The room-bounded audience an origin freezes instead of the whole room: one principal's sessions, or a fixed list. */
-export type RtcAudienceNarrowing =
-    | Readonly<{ kind: 'principal'; principalId: string; }>
-    | Readonly<{ kind: 'list'; recipientPeerIds: readonly string[]; }>;
-
 export interface ComputeFrozenAudienceInput {
     readonly admission: Extract<RtcRoomSnapshotAdmission, { readonly kind: 'authorized'; }>;
     readonly selfPeerId: string;
     /** `undefined` freezes every authorized session of the room. */
-    readonly narrowing: RtcAudienceNarrowing | undefined;
+    readonly narrowing: ALAudienceNarrowing | undefined;
 }
 
 export function computeFrozenAudience(input: ComputeFrozenAudienceInput): ALFrozenMulticastAudience {
     const { admission, selfPeerId, narrowing } = input;
     return {
         recipientPeerIds: admission.memberSessions
-            .filter((session) => session.sessionId !== selfPeerId && isNarrowedSession(session, narrowing))
+            .filter((session) => session.sessionId !== selfPeerId && isALAudienceSession(session, narrowing))
             .map((session) => session.sessionId),
         snapshotVersion: admission.snapshotVersion
     };
 }
 
-/** The narrowing a principal broadcast or a listed room broadcast names in its room; a whole-room send names none. */
-export function toRtcAudienceNarrowing(message: ALMessage): RtcAudienceNarrowing | undefined {
+export function toRtcAudienceNarrowing(message: ALMessage): ALAudienceNarrowing | undefined {
     const targets = message.targets;
     if (targets?.mode !== 'broadcast' || targets.groupRef === undefined) {
         return undefined;
@@ -95,13 +89,11 @@ export function toRtcOriginFrozenMessage(
     return admission.kind === 'authorized' ? toRtcFrozenRoomMessage(message, admission, selfPeerId) : message;
 }
 
-/** A room multicast without its frozen audience, or a principal or listed room broadcast the origin has yet to freeze. */
 export function isRtcUnfrozenRoomMessage(message: ALMessage): boolean {
     return toRtcAudienceNarrowing(message) !== undefined ||
         (message.targets?.mode === 'multicast' && resolveALFrozenMulticastAudience(message.targets) === undefined);
 }
 
-/** The room multicast frozen to the admitted sessions, narrowed to a principal or a list less its excepted sessions. */
 export function toRtcFrozenRoomMessage(
     message: ALMessage,
     admission: Extract<RtcRoomSnapshotAdmission, { readonly kind: 'authorized'; }>,
@@ -155,17 +147,6 @@ export function computeRtcFrozenAudienceRefusal(
             lane: 'volatile',
             preparedMessages: []
         });
-}
-
-function isNarrowedSession(session: GroupPresenceSession, narrowing: RtcAudienceNarrowing | undefined): boolean {
-    switch (narrowing?.kind) {
-        case undefined:
-            return true;
-        case 'principal':
-            return session.principalId === narrowing.principalId;
-        case 'list':
-            return narrowing.recipientPeerIds.includes(session.sessionId);
-    }
 }
 
 function toUnfrozenMulticastMessage(msg: ALMessage): ALMessage {

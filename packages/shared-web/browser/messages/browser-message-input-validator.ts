@@ -2,6 +2,7 @@ import type {
     RallarMessageScope,
     RallarMessageSendBase,
     RallarMessageTransport,
+    RallarRoomAudienceInput,
     RallarRtcSendInput,
     RallarTypedMessageChannelDefinition,
     RallarWsSendInput
@@ -40,12 +41,6 @@ interface PushOptionalRouteIdIssueInput {
 interface RoomMessageIdentity {
     readonly roomId?: string;
     readonly roomRef?: GroupRef;
-}
-
-interface RoomAudience {
-    readonly exceptPeerIds?: readonly string[];
-    readonly principalId?: string;
-    readonly recipientPeerIds?: readonly string[];
 }
 
 export namespace BrowserMessageInputValidator {
@@ -277,7 +272,7 @@ export class BrowserMessageInputValidator {
 
     /** A principal send names its principal, a fixed list rides a room send, and every named session is a route id. */
     private pushAudienceIssues(
-        audience: RoomAudience,
+        audience: Omit<RallarRoomAudienceInput, 'scope'>,
         scope: RallarMessageScope,
         issues: RallarValidationIssue[]
     ): void {

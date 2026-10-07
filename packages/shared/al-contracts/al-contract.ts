@@ -1,6 +1,7 @@
 import type { ClientPrincipalRef } from '../api/client-types.ts';
 import type { GroupRef } from '../api/group-types.ts';
 import type { ALQosPolicyRequest } from './al-policy.ts';
+import { toALPrincipalBroadcastTargets } from './read-al-principal-broadcast-target.ts';
 
 // -------------------------------------------------------
 // 1) Message identity
@@ -178,7 +179,7 @@ type ALMessageBuilderOptions = Readonly<{
     ttlMs?: number;
 }>;
 
-type ALBroadcastMessageBuilderOptions = Readonly<{
+export type ALBroadcastMessageBuilderOptions = Readonly<{
     exceptPeerIds?: readonly string[];
     minSnapshotVersion?: number;
     rosterVersion?: number;
@@ -394,10 +395,6 @@ export function isRoomScopedALMessage(message: ALMessage): boolean {
             (targets.scope === 'room' || (targets.scope === 'principal' && targets.groupRef !== undefined)));
 }
 
-export function isALWorldBroadcast(message: ALMessage): boolean {
-    return message.targets?.mode === 'broadcast' && message.targets.scope === 'world';
-}
-
 export function readALTargetGroupRef(message: ALMessage): GroupRef | undefined {
     const targets = message.targets;
     if (targets?.mode === 'unicast') {
@@ -473,30 +470,17 @@ export function newALBroadcastMessage<T>(
     };
 }
 
+export type ALPrincipalBroadcastTarget = Readonly<{ groupRef: GroupRef; principalRef: ClientPrincipalRef; }>;
+
 /** A broadcast to the principal's live sessions in one room: room-bounded, so both carriers resolve it from the room. */
 export function newALPrincipalBroadcastMessage<T>(
     senderId: string,
     route: ALRoute,
-    target: Readonly<{ groupRef: GroupRef; principalRef: ClientPrincipalRef; }>,
+    target: ALPrincipalBroadcastTarget,
     typeId: string,
     resource: T,
     options?: ALBroadcastMessageBuilderOptions
 ): ALMessage {
     const roomBroadcast = newALBroadcastMessage(senderId, route, 'room', typeId, resource, options);
-    return {
-        ...roomBroadcast,
-        targets: {
-            mode: 'broadcast',
-            scope: 'principal',
-            groupRef: toALGroupRef(target.groupRef),
-            principalRef: {
-                applicationId: target.principalRef.applicationId,
-                workspaceId: target.principalRef.workspaceId,
-                principalId: target.principalRef.principalId
-            },
-            exceptPeerIds: options?.exceptPeerIds,
-            minSnapshotVersion: options?.minSnapshotVersion,
-            rosterVersion: options?.rosterVersion
-        }
-    };
+    return { ...roomBroadcast, targets: toALPrincipalBroadcastTargets(target, options) };
 }

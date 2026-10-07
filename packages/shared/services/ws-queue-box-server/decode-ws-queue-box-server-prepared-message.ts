@@ -1,4 +1,5 @@
-import { isALWorldBroadcast, readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
+import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
+import { isALWorldBroadcast } from '../../al-contracts/is-al-world-broadcast.ts';
 import {
     decodeALAdmissionRecord,
     decodeALAdmissionString

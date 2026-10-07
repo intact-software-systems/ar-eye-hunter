@@ -6,8 +6,15 @@ import {
     type RelicGameState,
     type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
+import {
+    newALBroadcastMessage,
+    newALPrincipalBroadcastMessage,
+    newALRoute,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { transitionRallarAiResultLifecycle } from '@shared/rallar-ai/mod.ts';
 import { describe, expect, it } from 'vitest';
+import { isRelicPlanningAiProposalOfPrincipal } from '../src/game/ai/is-relic-planning-ai-proposal-of-principal.ts';
 import {
     addRelicPlanningAiProposal,
     buildRelicPlanningAiContext,
@@ -23,6 +30,14 @@ import { deriveSceneObjective } from '../src/game/scene/objectives.ts';
 const NOW = 1_700_000_000_000;
 
 describe('Relic planning browser AI', () => {
+    it.each([
+        { label: 'addressed to the local principal', raw: proposalTo('principal-alice'), expected: true },
+        { label: 'addressed to another principal', raw: proposalTo('principal-bob'), expected: false },
+        { label: 'sent to the whole room', raw: roomProposal(), expected: false }
+    ])('accepts a received proposal $label: $expected', ({ raw, expected }) => {
+        expect(isRelicPlanningAiProposalOfPrincipal(raw, 'principal-alice')).toBe(expected);
+    });
+
     it('builds a compact context without raw hidden relic details', () => {
         const snapshot = planningSnapshot();
         const context = contextFor(snapshot);
@@ -268,4 +283,21 @@ function planningSnapshot(): RelicPublicSnapshot {
         now: () => NOW + 3
     }).state;
     return toPublicRelicSnapshot(state);
+}
+
+const PROPOSAL_ROOM = { applicationId: 'relic-hunters', workspaceId: 'workspace-1', groupId: 'room-1' };
+const PROPOSAL_ROUTE = newALRoute('relic.ai.planning', 'room-1', 'proposal-1');
+
+function proposalTo(principalId: string): ALMessage {
+    return newALPrincipalBroadcastMessage(
+        'alice-session',
+        PROPOSAL_ROUTE,
+        { groupRef: PROPOSAL_ROOM, principalRef: { applicationId: 'relic-hunters', workspaceId: 'workspace-1', principalId } },
+        'relic.ai.planning.proposal.v1',
+        {}
+    );
+}
+
+function roomProposal(): ALMessage {
+    return newALBroadcastMessage('alice-session', PROPOSAL_ROUTE, 'room', 'relic.ai.planning.proposal.v1', {}, { groupRef: PROPOSAL_ROOM });
 }

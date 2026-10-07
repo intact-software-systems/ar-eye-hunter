@@ -1,4 +1,5 @@
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import { isALWorldBroadcast } from '@shared/al-contracts/is-al-world-broadcast.ts';
 import { validateALOutboundRecipientScope } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import type { PublishRallarServerWsMessageInput } from './publish-rallar-server-ws-message.ts';
 
@@ -11,12 +12,12 @@ export function validateRallarServerWsPublishScope(
             ? ['A group-addressed publication takes its scope from targets.groupRef']
             : [];
     }
-    const targets = input.message.targets;
-    if (targets?.mode === 'broadcast' && targets.scope === 'world') {
+    if (isALWorldBroadcast(input.message)) {
         return validateALOutboundRecipientScope(input.inboundScope).length === 0
             ? []
             : ['A world publication requires the application and workspace scope it reaches'];
     }
+    const targets = input.message.targets;
     return targets?.mode === 'unicast'
         ? validateALOutboundRecipientScope(input.inboundScope)
         : [];

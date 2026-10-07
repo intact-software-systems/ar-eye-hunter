@@ -1,5 +1,6 @@
-import { isALWorldBroadcast, type ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
+import { isALWorldBroadcast } from '../../al-contracts/is-al-world-broadcast.ts';
 import { validateALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import { validateALSessionInvalidationMessage } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';

@@ -1,6 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
+import { isALWorldBroadcast } from '@shared/al-contracts/is-al-world-broadcast.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
@@ -403,15 +404,10 @@ function sendToCapturedLocalTargets(
         admittedPeerIds: captured,
         inboundScope: message.targets?.mode === 'unicast' ? recipientScope : undefined,
         recipientPrincipalId: policy?.principalTargetId,
-        recipientScope: directBroadcast || isWorldBroadcast(message) || policy?.principalTargetId !== undefined
+        recipientScope: directBroadcast || isALWorldBroadcast(message) || policy?.principalTargetId !== undefined
             ? recipientScope
             : undefined
     });
-}
-
-/** A world broadcast, from a producer or a client's admitted send, reaches the scope its row captured. */
-function isWorldBroadcast(message: ALMessage): boolean {
-    return message.targets?.mode === 'broadcast' && message.targets.scope === 'world';
 }
 
 export interface ToPubSubMessageInput {

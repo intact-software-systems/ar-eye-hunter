@@ -1,5 +1,6 @@
-import { isALWorldBroadcast, type ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '../../../al-contracts/al-control.ts';
+import { isALWorldBroadcast } from '../../../al-contracts/is-al-world-broadcast.ts';
 import type { ALOutboundCapturedPolicy } from '../../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     resolveALOutboundScopeAuthority,
@@ -30,7 +31,7 @@ export function isWsQueueBoxServerDirectWorldBroadcastRow(
     referenceKey: Key | undefined
 ): boolean {
     return referenceKey !== undefined && referenceKey.topicId !== 'AL_OUTBOUND_MESSAGE' &&
-        message.targets?.mode === 'broadcast' && message.targets.scope === 'world';
+        isALWorldBroadcast(message);
 }
 
 export function readWsQueueBoxServerScopedTargetScope(message: ALMessage): StateScope | undefined {

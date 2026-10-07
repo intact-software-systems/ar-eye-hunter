@@ -7,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import type { ALAudienceNarrowing } from '@shared/al-contracts/al-audience-narrowing.ts';
 import {
     newALBroadcastMessage,
     newALMulticastMessage,
@@ -21,16 +22,17 @@ import type { GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import {
     computeFrozenAudience,
-    computeRtcFrozenAudienceRefusal,
-    type RtcAudienceNarrowing
+    computeRtcFrozenAudienceRefusal
 } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 
 import {
     createOriginOverlay,
+    createOriginPrincipalSnapshot,
     createOriginReceiverMulticast,
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
     enqueueAndDrain,
+    ORIGIN_PRINCIPAL_REF,
     ORIGIN_ROOM,
     readSentTargets,
     toOriginFrozenTargets,
@@ -323,13 +325,13 @@ describe('computeFrozenAudience', () => {
         expect(admission.snapshotVersion).toBe(4);
     });
 
-    it.each<{ label: string; narrowing: RtcAudienceNarrowing; recipientPeerIds: readonly string[]; }>([
+    it.each<{ label: string; narrowing: ALAudienceNarrowing; recipientPeerIds: readonly string[]; }>([
         { label: 'a principal', narrowing: { kind: 'principal', principalId: 'principal-1' }, recipientPeerIds: ['b', 'd'] },
         { label: 'a list', narrowing: { kind: 'list', recipientPeerIds: ['a', 'c', 'z'] }, recipientPeerIds: ['c'] }
     ])('narrows the authorized sessions except the origin to $label', ({ narrowing, recipientPeerIds }) => {
         const admission = computeRtcRoomSnapshotAdmission({
             message: createOriginReceiverMulticast('narrowed'),
-            snapshot: createPrincipalSnapshot(),
+            snapshot: createOriginPrincipalSnapshot(),
             overlay: createOriginOverlay(['b', 'c']),
             selfPeerId: 'a',
             fromPeerId: undefined,
@@ -357,7 +359,7 @@ describe('the RTC leg of a principal or listed room send', () => {
     });
 
     it('freezes a principal broadcast in its room as the principal\'s other sessions, the multicast every copy and the receipt carry', async () => {
-        const fixture = createFixture({ snapshot: createPrincipalSnapshot(), nextHopPeerIds: ['b', 'c'] });
+        const fixture = createFixture({ snapshot: createOriginPrincipalSnapshot(), nextHopPeerIds: ['b', 'c'] });
         const message = createAudienceBroadcast('principal');
 
         const admitted = await enqueueLegAndDrain(fixture, message);
@@ -391,7 +393,7 @@ describe('the RTC leg of a principal or listed room send', () => {
     )(
         'holds a durable $audience send admitted before its room snapshot and freezes it to $recipientPeerIds when the snapshot arrives',
         async ({ audience, recipientPeerIds }) => {
-            const fixture = createFixture({ snapshot: createPrincipalSnapshot(), nextHopPeerIds: ['b', 'c'] });
+            const fixture = createFixture({ snapshot: createOriginPrincipalSnapshot(), nextHopPeerIds: ['b', 'c'] });
             fixture.groups.delete('room');
             const message = createAudienceBroadcast(audience, ORIGIN_ROOM, 'local-outbox');
 
@@ -401,7 +403,7 @@ describe('the RTC leg of a principal or listed room send', () => {
             expect(admitted.verdict).toEqual({ kind: 'admitted', durable: true, queuedAttempts: 0 });
             expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
 
-            fixture.groups.accept('room', createPrincipalSnapshot());
+            fixture.groups.accept('room', createOriginPrincipalSnapshot());
             await vi.advanceTimersByTimeAsync(200);
 
             expect(readSentTargets(fixture.channels.b!)).toEqual([toAudienceFrozenTargets(recipientPeerIds)]);
@@ -411,11 +413,11 @@ describe('the RTC leg of a principal or listed room send', () => {
     );
 
     it('answers a replay of the held row after its freeze as the duplicate of the frozen row that replaced it', async () => {
-        const fixture = createFixture({ snapshot: createPrincipalSnapshot(), nextHopPeerIds: ['b', 'c'] });
+        const fixture = createFixture({ snapshot: createOriginPrincipalSnapshot(), nextHopPeerIds: ['b', 'c'] });
         fixture.groups.delete('room');
         const admitted = await enqueueLegAndDrain(fixture, createAudienceBroadcast('list', ORIGIN_ROOM, 'local-outbox'));
         const held = await fixture.resources.workQueue.getItem(admitted.entries[0]!.key);
-        fixture.groups.accept('room', createPrincipalSnapshot());
+        fixture.groups.accept('room', createOriginPrincipalSnapshot());
         await vi.advanceTimersByTimeAsync(200);
         const canonical = await fixture.resources.workQueue.getItem(admitted.entries[0]!.key);
 
@@ -451,8 +453,8 @@ describe('the RTC leg of a principal or listed room send', () => {
         const fixture = createFixture({
             snapshot: {
                 ...snapshot,
-                activeSessions: snapshot.activeSessions.map((session) => ({ ...session, principalId: PRINCIPAL_REF.principalId })),
-                members: [...snapshot.members, { ...snapshot.members[0]!, principalId: PRINCIPAL_REF.principalId }]
+                activeSessions: snapshot.activeSessions.map((session) => ({ ...session, principalId: ORIGIN_PRINCIPAL_REF.principalId })),
+                members: [...snapshot.members, { ...snapshot.members[0]!, principalId: ORIGIN_PRINCIPAL_REF.principalId }]
             },
             nextHopPeerIds: ['b', 'c']
         });
@@ -487,7 +489,6 @@ describe('the RTC leg of a principal or listed room send', () => {
     );
 });
 
-const PRINCIPAL_REF = { applicationId: 'app', workspaceId: 'workspace', principalId: 'principal-1' };
 const AUDIENCE_FLOORS = { minSnapshotVersion: 4, rosterVersion: 4 } as const;
 
 /** The frozen multicast of an audience send keeps the roster fence its sender stamped. */
@@ -512,7 +513,7 @@ function createAudienceBroadcast(
         return newALMulticastMessage('a', route, groupRef, 'chat.message.v1', {}, options);
     }
     return audience === 'principal'
-        ? newALPrincipalBroadcastMessage('a', route, { groupRef, principalRef: PRINCIPAL_REF }, 'chat.message.v1', {}, options)
+        ? newALPrincipalBroadcastMessage('a', route, { groupRef, principalRef: ORIGIN_PRINCIPAL_REF }, 'chat.message.v1', {}, options)
         : newALBroadcastMessage('a', route, 'room', 'chat.message.v1', {}, {
             ...options,
             groupRef,
@@ -525,7 +526,7 @@ function createRoomlessBroadcast(scope: 'world' | 'all' | 'principal'): ALMessag
     const route = { topicId: 'chat', resourceId: `roomless-${scope}`, contextId: 'app' };
     const message = newALBroadcastMessage('a', route, 'world', 'chat.message.v1', {}, { ttlMs: 30_000 });
     return scope === 'principal'
-        ? { ...message, targets: { mode: 'broadcast', scope, principalRef: PRINCIPAL_REF } }
+        ? { ...message, targets: { mode: 'broadcast', scope, principalRef: ORIGIN_PRINCIPAL_REF } }
         : { ...message, targets: { mode: 'broadcast', scope } };
 }
 
@@ -533,18 +534,6 @@ async function enqueueLegAndDrain(fixture: RtcOriginOverlayFixture, message: ALM
     const result = await fixture.manager.enqueueLegIfAbsent(message, 'hold');
     await vi.advanceTimersByTimeAsync(0);
     return result;
-}
-
-/** The room of `a`, `b`, `c` and `d`, where `a`, `b` and `d` are sessions of one principal. */
-function createPrincipalSnapshot(): GroupSnapshot {
-    const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
-    return {
-        ...snapshot,
-        activeSessions: snapshot.activeSessions.map((session) =>
-            ['a', 'b', 'd'].includes(session.sessionId) ? { ...session, principalId: PRINCIPAL_REF.principalId } : session
-        ),
-        members: [...snapshot.members, { ...snapshot.members[0]!, principalId: PRINCIPAL_REF.principalId }]
-    };
 }
 
 /** Sessions a snapshot still lists but the room authority refuses: `x` has an expired lease, `y` was removed. */

@@ -138,7 +138,7 @@ async function readLiveWsPublicationAudience(
         targets.mode === 'multicast' || targets.scope === 'room' ||
         (targets.scope === 'principal' && targets.groupRef !== undefined)
     ) {
-        return readRoomLiveWsPublicationAudience(input);
+        return toRoomLiveWsPublicationAudience(input);
     }
     if (targets.scope === 'principal') {
         if (!targets.principalRef || !input.livePublication?.readPrincipalSessionIds) {
@@ -161,7 +161,7 @@ async function readLiveWsPublicationAudience(
 }
 
 /** A principal broadcast that names its room is a room audience, so it takes the room notice and its inbound key. */
-function readRoomLiveWsPublicationAudience(input: PublishRallarServerWsMessageInput): LiveWsAudience | undefined {
+function toRoomLiveWsPublicationAudience(input: PublishRallarServerWsMessageInput): LiveWsAudience | undefined {
     const groupRef = resolveLiveWsRoomGroupRef(input.message);
     if (!input.audience || !groupRef) {
         return undefined;

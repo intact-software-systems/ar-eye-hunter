@@ -5,6 +5,7 @@ import type {
 import type {
     RallarMessageHandle,
     RallarMessagePayload,
+    RallarRoomAudienceInput,
     RallarRtcSendInput,
     RallarTypedMessageSendStrategy,
     RallarWsSendInput
@@ -20,12 +21,15 @@ import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.t
 import {
     newALRoute,
     toALGroupTargetKey,
+    type ALBroadcastMessageBuilderOptions,
     type ALMessage,
+    type ALPrincipalBroadcastTarget,
     type newALBroadcastMessage,
     type newALMulticastMessage,
     type newALPrincipalBroadcastMessage,
     type newALUnicastMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { toALPrincipalBroadcastTargets } from '@shared/al-contracts/read-al-principal-broadcast-target.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -61,17 +65,9 @@ interface CreateWsMessageInput<T> {
     readonly channel: BrowserTypedChannelPolicy | undefined;
 }
 
-/** The room a WS-shaped send resolved, beside the audience it resolved to. */
 interface ResolvedWsAudience<T> {
     readonly room: string | GroupRef | undefined;
     readonly resolved: ResolvedWsMessageInput<T>;
-}
-
-/** The audience a room send narrows to, beside the room it names. */
-interface RoomSendAudience {
-    readonly exceptPeerIds?: readonly string[];
-    readonly principalId?: string;
-    readonly recipientPeerIds?: readonly string[];
 }
 
 interface CreateRtcMessageInput<T> {
@@ -409,7 +405,7 @@ export class BrowserRallarMessageSender {
         input: RallarWsSendInput<T>,
         room: string | GroupRef | undefined,
         defaults: BrowserMessageSendDefaults
-    ): NonNullable<Parameters<typeof newALPrincipalBroadcastMessage>[5]> {
+    ): ALBroadcastMessageBuilderOptions {
         return {
             exceptPeerIds: input.exceptPeerIds,
             ...(room
@@ -480,7 +476,7 @@ function throwIfMessageIssues(issues: readonly RallarValidationIssue[]): void {
  * list, or the principal broadcast in the room. The RTC leg freezes a principal or listed broadcast as a room
  * multicast; a leg that cannot freeze it hands it to WS as it is.
  */
-function toRoomFallbackMessage(message: ALMessage, audience: RoomSendAudience): ALMessage {
+function toRoomFallbackMessage(message: ALMessage, audience: Omit<RallarRoomAudienceInput, 'scope'>): ALMessage {
     const { exceptPeerIds, principalId, recipientPeerIds } = audience;
     if (
         message.targets?.mode !== 'multicast' ||
@@ -494,12 +490,7 @@ function toRoomFallbackMessage(message: ALMessage, audience: RoomSendAudience): 
         ...message,
         targets: principalId === undefined
             ? { mode: 'broadcast', scope: 'room', ...room, recipientPeerIds: recipientPeerIds && [...recipientPeerIds] }
-            : {
-                mode: 'broadcast',
-                scope: 'principal',
-                ...room,
-                principalRef: toPrincipalTarget(groupRef, principalId).principalRef
-            }
+            : toALPrincipalBroadcastTargets(toPrincipalTarget(groupRef, principalId), room)
     };
 }
 
@@ -507,7 +498,7 @@ function toRoomFallbackMessage(message: ALMessage, audience: RoomSendAudience): 
 function toPrincipalTarget(
     roomRef: GroupRef | undefined,
     principalId: string | undefined
-): Parameters<typeof newALPrincipalBroadcastMessage>[2] {
+): ALPrincipalBroadcastTarget {
     if (roomRef === undefined || principalId === undefined) {
         throw new Error('A validated principal send names its room and its principal.');
     }

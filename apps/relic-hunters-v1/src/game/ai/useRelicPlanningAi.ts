@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type 
 import type { ActionDraft, RelicGameViewModel } from '../game-view-model.ts';
 import type { Lang } from '../lang.ts';
 import type { SceneObjective } from '../scene/objectives.ts';
+import { isRelicPlanningAiProposalOfPrincipal } from './is-relic-planning-ai-proposal-of-principal.ts';
 import {
     addRelicPlanningAiProposal,
     buildRelicPlanningAiContext,
@@ -170,6 +171,9 @@ export function useRelicPlanningAi({
                 typeId: RELIC_TYPES.aiPlanningProposal
             },
             (message) => {
+                if (!isRelicPlanningAiProposalOfPrincipal(message.raw, localPrincipalId)) {
+                    return;
+                }
                 acceptRemoteProposal(message, {
                     currentBaseStateRevision: revisionRef.current,
                     currentRoomId: roomIdRef.current,
@@ -177,7 +181,7 @@ export function useRelicPlanningAi({
                 });
             }
         );
-    }, [snapshot?.roomId]);
+    }, [snapshot?.roomId, localPrincipalId]);
 
     useEffect(() => () => {
         abortRef.current?.abort();

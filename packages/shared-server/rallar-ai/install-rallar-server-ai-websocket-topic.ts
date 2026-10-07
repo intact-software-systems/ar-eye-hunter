@@ -44,7 +44,7 @@ export interface RallarServerAiWebSocketMessageContext {
     readonly senderId: string;
     readonly roomId?: string;
     readonly roomRef?: GroupRef;
-    readonly authenticatedScope?: StateScope;
+    readonly authenticatedScope: StateScope | undefined;
 }
 
 export type RallarServerAiWebSocketHandler = (

@@ -6,7 +6,7 @@ import type { ALMessagePlanningContext } from './al-policy.ts';
  * unicast it does not address itself, or the overlay neighbours of a group message that are neither this
  * peer nor its sender, not already visited or excepted, in the room and in a broadcast's fixed list, and within
  * the forwarding hint when one is given. A peer that owns none is a leaf and never asks for a retransmit: the retry of a recipient
- * the origin already counted is the decision of the origin (R-S2c-ii-9).
+ * the origin already counted is the decision of the origin.
  */
 export function resolveALOwnedChildPeerIds(
     msg: ALMessage,

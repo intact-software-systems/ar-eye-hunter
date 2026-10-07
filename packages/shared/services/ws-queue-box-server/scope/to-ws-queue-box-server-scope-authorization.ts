@@ -32,11 +32,11 @@ export function toWsQueueBoxServerScopeAuthorization(
             logMessage: `AL message ${message.id.msgId} arrived without a current authenticated WS scope`
         });
     }
-    const audienceRefusal = readClientAudienceRefusal(message);
+    const audienceRefusal = resolveClientAudienceRefusal(message);
     if (audienceRefusal !== undefined) {
         return toScopeRefusal(input, audienceRefusal);
     }
-    const outside = readAddressedScopes(message).find((addressed) =>
+    const outside = toAddressedScopes(message).find((addressed) =>
         addressed.applicationId !== proof.scope.applicationId || addressed.workspaceId !== proof.scope.workspaceId
     );
     if (outside !== undefined) {
@@ -60,7 +60,7 @@ interface ScopeRefusalCause {
  * A client addresses a principal only inside the room it names and the world only off a room topic, which is room-scoped
  * by its name; every connection the server holds is the server's audience alone.
  */
-function readClientAudienceRefusal(message: ALMessage): ScopeRefusalCause | undefined {
+function resolveClientAudienceRefusal(message: ALMessage): ScopeRefusalCause | undefined {
     const targets = message.targets;
     if (targets?.mode !== 'broadcast') {
         return undefined;
@@ -88,7 +88,7 @@ function readClientAudienceRefusal(message: ALMessage): ScopeRefusalCause | unde
         : undefined;
 }
 
-function readAddressedScopes(message: ALMessage): readonly StateScope[] {
+function toAddressedScopes(message: ALMessage): readonly StateScope[] {
     const targets = message.targets;
     const principalRef = targets?.mode === 'broadcast' && targets.scope === 'principal'
         ? targets.principalRef

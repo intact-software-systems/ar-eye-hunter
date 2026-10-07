@@ -88,38 +88,41 @@ export function createRallarServerAiResultPublisher(
             result: input.result,
             kind: 'envelope-broadcast-started'
         });
-
-        try {
-            const message = toRallarServerAiResultMessage({
-                publication: input,
-                senderId: publisher.serverSenderId,
-                target
-            });
-            const result = await publisher.publication.publish(
-                toRallarServerAiPublishInput(
-                    message,
-                    input.fanout,
-                    input.scope === 'world' ? input.worldScope : undefined
-                )
-            );
-            await reportRallarServerAiPublication({
-                publisher,
-                result: input.result,
-                kind: 'envelope-broadcast-completed'
-            });
-            return result;
-        }
-        catch (error) {
-            const cause = error instanceof Error ? error : new Error(String(error));
-            await reportRallarServerAiPublication({
-                publisher,
-                result: input.result,
-                kind: 'envelope-broadcast-failed',
-                error: cause
-            });
-            throw cause;
-        }
+        return await publishRallarServerAiResult(publisher, input, target);
     };
+}
+
+async function publishRallarServerAiResult<TValue extends RallarAiJsonValue>(
+    publisher: CreateRallarServerAiResultPublisherInput,
+    input: RallarServerAiResultPublicationInput<TValue>,
+    target: RallarServerAiResultPublicationTarget
+): Promise<RallarServerWsPublishResult> {
+    try {
+        const message = toRallarServerAiResultMessage({
+            publication: input,
+            senderId: publisher.serverSenderId,
+            target
+        });
+        const result = await publisher.publication.publish(
+            toRallarServerAiPublishInput(message, input.fanout, input.scope === 'world' ? input.worldScope : undefined)
+        );
+        await reportRallarServerAiPublication({
+            publisher,
+            result: input.result,
+            kind: 'envelope-broadcast-completed'
+        });
+        return result;
+    }
+    catch (error) {
+        const cause = error instanceof Error ? error : new Error(String(error));
+        await reportRallarServerAiPublication({
+            publisher,
+            result: input.result,
+            kind: 'envelope-broadcast-failed',
+            error: cause
+        });
+        throw cause;
+    }
 }
 
 interface ToRallarServerAiResultMessageInput<TValue extends RallarAiJsonValue> {

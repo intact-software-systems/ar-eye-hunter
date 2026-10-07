@@ -18,7 +18,12 @@ import type {
     RallarTypedPayloadHandler,
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALPrincipalBroadcastMessage,
+    newALRoute,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
@@ -34,13 +39,17 @@ interface MockWsMessage {
     readonly receivedAtEpochMs: number;
 }
 
+interface MockWsAiMessage extends MockWsMessage {
+    readonly raw: ALMessage;
+}
+
 const rallarMock = vi.hoisted(() => ({
     session: undefined as AuthSession | undefined,
     roomState: undefined as object | undefined,
     connectCalls: 0,
     refreshCalls: 0,
     wsMessageHandler: undefined as ((message: MockWsMessage) => void) | undefined,
-    wsAiMessageHandler: undefined as ((message: MockWsMessage) => void) | undefined,
+    wsAiMessageHandler: undefined as ((message: MockWsAiMessage) => void) | undefined,
     roundTransitionHandler: undefined as RallarTypedPayloadHandler<RelicRoundTransitionEvent> | undefined,
     wsSend: vi.fn(async (input: RallarWsSendInput<object>) => ({
         transport: 'ws',
@@ -506,6 +515,7 @@ describe('Relic Hunters browser app', () => {
                 payload: { ...sent.payload, generationId: 'sibling-generation-1', dedupeKey: 'sibling-dedupe-1' },
                 senderId: 'alice-tablet-session',
                 roomId: 'room-1',
+                raw: toOwnPrincipalProposal(),
                 receivedAtEpochMs: Date.now() + 1_000
             });
         });
@@ -860,5 +870,17 @@ function installMemoryLocalStorage(): void {
                 return values.size;
             }
         } satisfies Storage
+    );
+}
+
+/** The principal broadcast that carries a suggestion to the local hunter's own sessions in the room. */
+function toOwnPrincipalProposal() {
+    const scope = { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID };
+    return newALPrincipalBroadcastMessage(
+        'alice-tablet-session',
+        newALRoute('room.relic.ai.planning', 'room-1', 'sibling-generation-1'),
+        { groupRef: { ...scope, groupId: 'room-1' }, principalRef: { ...scope, principalId: 'client-1' } },
+        'relic.ai.planning-proposal.v1',
+        {}
     );
 }

@@ -1,3 +1,4 @@
+import { isALAudienceSession, toALAudienceNarrowing } from '@shared/al-contracts/al-audience-narrowing.ts';
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
@@ -87,7 +88,6 @@ function currentSnapshotAudience(snapshot: GroupSnapshot, nowMs: number): Readon
     );
 }
 
-/** The room's live open sessions the targets address: a principal broadcast names its principal's, a fixed list its own. */
 function resolveLiveGroupSessions(
     input: ResolveWsGroupTargetInput,
     snapshot: GroupSnapshot
@@ -95,12 +95,10 @@ function resolveLiveGroupSessions(
     const { message } = input;
     const targets = message.targets;
     const nowEpochMs = input.options.now?.() ?? Date.now();
-    const principalId = targets?.mode === 'broadcast' && targets.scope === 'principal'
-        ? targets.principalRef?.principalId
-        : undefined;
+    const narrowing = toALAudienceNarrowing(targets);
     const liveSessionIds = snapshot.activeSessions
         .filter((session) =>
-            (principalId === undefined || session.principalId === principalId) &&
+            isALAudienceSession(session, narrowing) &&
             isGroupSnapshotSessionLive(session, nowEpochMs) &&
             input.webSocketServer.connections.get(session.sessionId)?.isOpen
         )

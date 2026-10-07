@@ -61,7 +61,7 @@ export interface RallarMessageSendBase<T> {
 export type RallarMessageScope = 'room' | 'world' | 'principal';
 
 /** The audience a send names, and how a room send narrows it: one principal, a fixed list, or skipped sessions. */
-interface RallarRoomAudienceInput {
+export interface RallarRoomAudienceInput {
     readonly scope?: RallarMessageScope;
     /** Sessions the send skips. */
     readonly exceptPeerIds?: readonly string[];

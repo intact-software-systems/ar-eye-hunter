@@ -1,10 +1,5 @@
 import { AL_WS_SERVER_CAPABILITIES, toALCarrierQosInputProvider } from '../../al-contracts/al-carrier-capabilities.ts';
-import {
-    isALWorldBroadcast,
-    isRoomScopedALMessage,
-    readALTargetGroupRef,
-    type ALMessage
-} from '../../al-contracts/al-contract.ts';
+import { isRoomScopedALMessage, readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     decodeALMessageValue,
     decodePersistedALMessage,
@@ -16,6 +11,7 @@ import {
     type ALQosInputProvider,
     type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
+import { isALWorldBroadcast } from '../../al-contracts/is-al-world-broadcast.ts';
 import type { ALDeliverySettlementSink } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeStores } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';

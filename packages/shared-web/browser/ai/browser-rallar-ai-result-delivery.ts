@@ -120,25 +120,9 @@ async function broadcastWithTransport<TValue>(
     input: RallarBrowserAiBroadcastInput<TValue>,
     transport: RallarBrowserAiTransport
 ): Promise<RallarBrowserAiBroadcastResult> {
-    if (transport === 'realtime' && input.scope === 'principal') {
-        throwRallarValidation([{
-            path: '$.transport',
-            code: 'unsupported',
-            message: 'A principal-scoped AI result is broadcast over messages.ws or messages.rtc.'
-        }]);
-    }
     if (transport === 'realtime') {
-        return {
-            transport,
-            realtime: await rallar.realtime.sendJson({
-                data: input.result,
-                laneId: input.laneId ?? DEFAULT_AI_RESULT_LANE_ID,
-                roomId: input.roomId,
-                roomRef: input.roomRef
-            })
-        };
+        return await sendRealtimeAiResult(rallar, input);
     }
-
     const messageInput = {
         topicId: input.topicId ?? DEFAULT_AI_RESULT_TOPIC_ID,
         typeId: input.typeId ?? DEFAULT_AI_RESULT_TYPE_ID,
@@ -154,5 +138,27 @@ async function broadcastWithTransport<TValue>(
         message: transport === 'messages.ws'
             ? await rallar.messages.ws.send(messageInput)
             : await rallar.messages.rtc.send(messageInput)
+    };
+}
+
+async function sendRealtimeAiResult<TValue>(
+    rallar: RallarBrowserAiRallar,
+    input: RallarBrowserAiBroadcastInput<TValue>
+): Promise<RallarBrowserAiBroadcastResult> {
+    if (input.scope === 'principal') {
+        throwRallarValidation([{
+            path: '$.transport',
+            code: 'unsupported',
+            message: 'A principal-scoped AI result is broadcast over messages.ws or messages.rtc.'
+        }]);
+    }
+    return {
+        transport: 'realtime',
+        realtime: await rallar.realtime.sendJson({
+            data: input.result,
+            laneId: input.laneId ?? DEFAULT_AI_RESULT_LANE_ID,
+            roomId: input.roomId,
+            roomRef: input.roomRef
+        })
     };
 }

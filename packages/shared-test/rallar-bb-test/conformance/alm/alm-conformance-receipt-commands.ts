@@ -133,7 +133,6 @@ export function toReceiptWindowCommands(
     ];
 }
 
-/** The scenario window spent proving the sender's own channel never receives its send. */
 export function toSelfAbsenceCommand(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
     const windowMs = sender.input.deadlineMs - RESPONSE_MARGIN_MS;
     return {

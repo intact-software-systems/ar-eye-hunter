@@ -15,10 +15,10 @@ export interface ToWsQueueBoxServerInboundPlanInput {
 
 /**
  * The WS server's own changes to the plan of a message its router admitted to a room audience. A room unicast to
- * another session, and a room broadcast whose fixed list leaves the server out, is the router's to deliver (Q4): the
+ * another session, and a room broadcast whose fixed list leaves the server out, is the router's to deliver: the
  * server receives it locally and plans its own ACK as for any message it receives. A `receiver` message the server
  * aggregates withholds that ACK, because the receipt speaks for the audience; a message addressed to the server itself
- * keeps it and opens no aggregate (D57 as applied).
+ * keeps it and opens no aggregate.
  */
 export function toWsQueueBoxServerInboundPlan(
     input: ToWsQueueBoxServerInboundPlanInput

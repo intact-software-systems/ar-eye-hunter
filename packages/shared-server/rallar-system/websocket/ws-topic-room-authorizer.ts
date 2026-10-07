@@ -3,12 +3,13 @@ import {
     canSendGroupMessage
 } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { denyGroupPolicy } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import { isALAudienceSession, toALAudienceNarrowing } from '@shared/al-contracts/al-audience-narrowing.ts';
 import { readALTargetGroupRef, type ALMessage, type ALTargets } from '@shared/al-contracts/al-contract.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import type { GroupPreActivationAppData } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied, GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
-import type { GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RALLAR_CRDT_APP_TOPIC_ID, RALLAR_CRDT_ROOM_TOPIC_ID } from '@shared/crdt/crdt-types.ts';
 
 import type { RallarSnapshotPresenceClock } from '../presence/snapshot-presence.ts';
@@ -124,6 +125,7 @@ export function toAuthorizedRoomAudience(
     targets: ALTargets,
     nowEpochMs: number
 ): RallarServerWsRoomAudience {
+    const narrowing = toALAudienceNarrowing(targets);
     const activePrincipals = new Set(
         snapshot.members.filter((member) => member.status === 'active').map((member) => member.principalId)
     );
@@ -131,20 +133,10 @@ export function toAuthorizedRoomAudience(
         targets,
         sessions: snapshot.activeSessions.filter((session) =>
             activePrincipals.has(session.principalId) && isGroupSnapshotSessionLive(session, nowEpochMs) &&
-            isAddressedRoomSession(targets, session)
+            isALAudienceSession(session, narrowing)
         ),
         snapshotVersion: readGroupVersion(snapshot)
     };
-}
-
-/** A principal broadcast addresses that principal's sessions in the room; a fixed list, the listed sessions in it. */
-function isAddressedRoomSession(targets: ALTargets, session: GroupPresenceSession): boolean {
-    if (targets.mode !== 'broadcast') {
-        return true;
-    }
-    return targets.scope === 'principal'
-        ? session.principalId === targets.principalRef?.principalId
-        : targets.recipientPeerIds === undefined || targets.recipientPeerIds.includes(session.sessionId);
 }
 
 async function readRoomAuthorizationSnapshot(

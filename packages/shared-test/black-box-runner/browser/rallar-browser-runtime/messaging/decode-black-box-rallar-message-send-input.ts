@@ -133,7 +133,6 @@ function decodeOrdinarySend(
     );
 }
 
-/** Who the send reaches beyond its scope: one peer, the principal of a principal scope, or a fixed audience. */
 function decodeMessageAudience(
     record: BlackBoxRallarCommandRecord
 ): Either<BlackBoxRallarInputIssue, MessageSendAudience> {

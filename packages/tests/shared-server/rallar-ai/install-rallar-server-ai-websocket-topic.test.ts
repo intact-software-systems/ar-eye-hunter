@@ -109,7 +109,7 @@ describe('Rallar server AI WebSocket topic', () => {
 
         await expect(topic.authorize(
             { payload: createRallarServerAiTestRequest() },
-            { senderId: 'peer-1', roomId: 'room-1' }
+            { senderId: 'peer-1', roomId: 'room-1', authenticatedScope: undefined }
         )).resolves.toBe(false);
     });
 
@@ -177,7 +177,7 @@ describe('Rallar server AI WebSocket topic', () => {
 
         await expect(websocket.invoke(
             createRallarServerAiTestRequest(),
-            { senderId: 'peer-1', roomId: 'room-1' }
+            { senderId: 'peer-1', roomId: 'room-1', authenticatedScope: undefined }
         )).rejects.toThrow('complete GroupRef');
         expect(websocket.publications).toEqual([]);
     });

@@ -121,9 +121,7 @@ function toRecoveredAudience(
         if (
             message.route.topicId !== AppTopics.rtcSignaling ||
             message.payload.typeId !== AppTopics.rtcSignaling ||
-            targets?.mode !== 'unicast' ||
-            source.authenticatedScope.applicationId !== notice.scope.applicationId ||
-            source.authenticatedScope.workspaceId !== notice.scope.workspaceId
+            targets?.mode !== 'unicast' || !isSameGroupScope(source.authenticatedScope, notice.scope)
         ) {
             return undefined;
         }
@@ -153,8 +151,7 @@ function toRecoveredAudience(
     if (notice.targetMode === 'all') {
         return { mode: 'broad', targetMode: 'all' };
     }
-    return source.authenticatedScope.applicationId === notice.scope.applicationId &&
-            source.authenticatedScope.workspaceId === notice.scope.workspaceId
+    return isSameGroupScope(source.authenticatedScope, notice.scope)
         ? { mode: 'broad', targetMode: 'world' }
         : undefined;
 }

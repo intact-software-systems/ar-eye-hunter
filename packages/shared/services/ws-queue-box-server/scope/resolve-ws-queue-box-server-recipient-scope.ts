@@ -1,4 +1,5 @@
 import { readALTargetGroupRef, type ALMessage } from '../../../al-contracts/al-contract.ts';
+import { isALWorldBroadcast } from '../../../al-contracts/is-al-world-broadcast.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 
 /** A message whose targets name a group is scoped by that group; any other takes the scope its producer proved. */
@@ -20,10 +21,10 @@ export function resolveWsQueueBoxServerProvenScope(
     message: ALMessage,
     provenScope: StateScope | null | undefined
 ): StateScope | null | undefined {
-    const targets = message.targets;
-    if (targets?.mode === 'broadcast' && targets.scope === 'world') {
+    if (isALWorldBroadcast(message)) {
         return provenScope;
     }
+    const targets = message.targets;
     if (targets?.mode !== 'unicast') {
         return undefined;
     }
