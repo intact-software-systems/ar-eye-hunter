@@ -1,11 +1,12 @@
+import { NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
+import { toAudienceSendCommand } from '../../alm-conformance-receipt-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../../alm-conformance-roles.ts';
 import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
 import {
     toDirectorResignCommand,
     toLeaderActivityWait,
-    toLeaderSendCommand,
     toNoLeaderVerdictCommands
 } from './leader-ack-commands.ts';
 
@@ -26,7 +27,7 @@ export const noLeaderRefused: AlmConformanceScenarioDefinition = {
     laneFamily: 'three-agent',
     toSenderCommands: (sender) => [
         toLeaderActivityWait(sender, false),
-        toLeaderSendCommand(sender, undefined),
+        toAudienceSendCommand({ sender, ttlMs: NON_EXPIRING_TTL_MS, ack: 'group-leader' }),
         ...toNoLeaderVerdictCommands(sender)
     ],
     toRecipientCommands: (recipient) => [

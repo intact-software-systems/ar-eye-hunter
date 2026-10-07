@@ -1,21 +1,11 @@
-import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestMessagesSendCommand
-} from '../../../../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import {
-    MESSAGE_CONTROL_TIMEOUT_MS,
-    NON_EXPIRING_SEND_TIMEOUT_MS,
-    NON_EXPIRING_TTL_MS,
-    toBudgetMs
-} from '../../alm-conformance-budgets.ts';
+import { MESSAGE_CONTROL_TIMEOUT_MS, NON_EXPIRING_SEND_TIMEOUT_MS, toBudgetMs } from '../../alm-conformance-budgets.ts';
 import {
     toResultAssertion,
-    toSendCommand,
     toVerdictCommands,
     type AlmConformanceVerdictFact
 } from '../../alm-conformance-message-commands.ts';
-import { toAudiencePayload } from '../../alm-conformance-receipt-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toRoomRef } from '../../alm-conformance-step-identities.ts';
 
@@ -84,7 +74,7 @@ export function toLeaderActivityWait(sender: AlmConformanceStepInput, active: bo
             },
             toResultAssertion({
                 step: sender,
-                name: 'assert-leader-active',
+                name: active ? 'assert-leader-active' : 'assert-leader-inactive',
                 resultName: `${name}:i{loop.iteration}:c1:${status}`,
                 field: 'directorStatus.active',
                 operator: 'equals',
@@ -92,25 +82,6 @@ export function toLeaderActivityWait(sender: AlmConformanceStepInput, active: bo
             })
         ]
     };
-}
-
-/** The first send of a leader cell: a room send, or one listing a role, that asks the room's leader to confirm it. */
-export function toLeaderSendCommand(
-    sender: AlmConformanceStepInput,
-    recipientPeer: RallarBlackBoxTestMessagesSendCommand['recipientPeer']
-): RallarBlackBoxTestCommand {
-    return toSendCommand({
-        ...sender,
-        index: 1,
-        payload: toAudiencePayload(sender),
-        delivery: {
-            ack: 'group-leader',
-            reliability: 'at-least-once',
-            ttlMs: NON_EXPIRING_TTL_MS,
-            commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS,
-            ...(recipientPeer === undefined ? {} : { recipientPeer })
-        }
-    });
 }
 
 /** The leader send ends rejected for `no-leader`: refused by the RTC origin, or NACKed by the WS server. */

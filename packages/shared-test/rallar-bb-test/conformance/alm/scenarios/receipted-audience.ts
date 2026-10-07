@@ -51,7 +51,7 @@ const aggregatedReceipt: AlmConformanceScenarioDefinition = {
     laneFamily: 'three-agent',
     toReceiptRoles: () => BOTH_CONFIRMED,
     toSenderCommands: (sender) => [
-        ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS }),
+        ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS, ack: 'all-logical-recipients' }),
         ...toServerReceiptCommands(sender),
         ...toReceiptWindowCommands(sender, { roles: BOTH_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
     ],
@@ -75,7 +75,8 @@ const missingRecipientRetry: AlmConformanceScenarioDefinition = {
     toSenderCommands: (sender) => [
         ...toAudienceSendCommands({
             sender,
-            ttlMs: sender.input.carrier === 'ws' ? EXPIRY_TTL_MS : NON_EXPIRING_TTL_MS
+            ttlMs: sender.input.carrier === 'ws' ? EXPIRY_TTL_MS : NON_EXPIRING_TTL_MS,
+            ack: 'all-logical-recipients'
         }),
         ...toReceiptWindowCommands(sender, {
             roles: toRetryReceiptRoles(sender.input.carrier),
@@ -100,7 +101,7 @@ const frozenAudienceMembership: AlmConformanceScenarioDefinition = {
     laneFamily: 'three-agent',
     toReceiptRoles: () => RECIPIENT_B_UNCONFIRMED,
     toSenderCommands: (sender) => [
-        ...toAudienceSendCommands({ sender, ttlMs: EXPIRY_TTL_MS }),
+        ...toAudienceSendCommands({ sender, ttlMs: EXPIRY_TTL_MS, ack: 'all-logical-recipients' }),
         ...toReceiptWindowCommands(sender, { roles: RECIPIENT_B_UNCONFIRMED, ending: 'expired', mode: 'receiver' })
     ],
     toRecipientCommands: toMembershipRecipientCommands
@@ -121,7 +122,7 @@ const unknownAckVersion: AlmConformanceScenarioDefinition = {
     laneFamily: 'three-agent',
     toReceiptRoles: () => BOTH_CONFIRMED,
     toSenderCommands: (sender) => [
-        ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS }),
+        ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS, ack: 'all-logical-recipients' }),
         toControlAdmissionOutcomeWait(sender, {
             name: 'unknown-ack-version-refused',
             controlMsgId: toRetiredAckMsgId(sender, `{resultCache.${toCommandId(sender, 'send-1')}.value.msgId}`),

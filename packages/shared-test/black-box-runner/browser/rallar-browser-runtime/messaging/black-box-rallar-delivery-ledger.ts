@@ -227,7 +227,9 @@ export class BlackBoxRallarDeliveryLedger {
             ownSessionId: session?.sessionId,
             ownPrincipalId: session?.clientId,
             roomSessions,
-            leaderSessionId: roomRef === undefined ? undefined : peers.getRoomLeaderSessionId(roomRef),
+            leaderSessionId: roomRef === undefined || send.recipientPeer !== 'recipient-b'
+                ? undefined
+                : peers.getRoomLeaderSessionId(roomRef),
             nowMs
         }).fold((detail) => {
             throw toPeerUnresolvedError('recipientPeer', send.recipientPeer, detail);

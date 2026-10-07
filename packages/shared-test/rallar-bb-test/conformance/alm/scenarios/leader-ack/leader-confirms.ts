@@ -1,6 +1,7 @@
+import { NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
-import { toAdmissionCommands } from '../../alm-conformance-message-commands.ts';
 import {
+    toAudienceSendCommands,
     toReceiptWindowCommands,
     toServerReceiptCommands,
     type AlmConformanceReceiptRoles
@@ -11,8 +12,7 @@ import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conf
 import {
     toDirectorAppointCommand,
     toDirectorResignCommand,
-    toLeaderActivityWait,
-    toLeaderSendCommand
+    toLeaderActivityWait
 } from './leader-ack-commands.ts';
 
 const RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = { confirmed: ['receiver'], unconfirmed: [] };
@@ -33,8 +33,7 @@ export const leaderConfirms: AlmConformanceScenarioDefinition = {
     toReceiptRoles: () => RECEIVER_CONFIRMED,
     toSenderCommands: (sender) => [
         toLeaderActivityWait(sender, true),
-        toLeaderSendCommand(sender, undefined),
-        ...toAdmissionCommands({ ...sender, index: 1 }),
+        ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS, ack: 'group-leader' }),
         ...toServerReceiptCommands(sender),
         ...toReceiptWindowCommands(sender, { roles: RECEIVER_CONFIRMED, ending: 'acknowledged', mode: 'leader' })
     ],

@@ -1,4 +1,6 @@
+import { NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
+import { toAudienceSendCommand } from '../../alm-conformance-receipt-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../../alm-conformance-roles.ts';
 import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
@@ -6,7 +8,6 @@ import {
     toDirectorAppointCommand,
     toDirectorResignCommand,
     toLeaderActivityWait,
-    toLeaderSendCommand,
     toNoLeaderVerdictCommands
 } from './leader-ack-commands.ts';
 
@@ -27,7 +28,12 @@ export const leaderOutsideList: AlmConformanceScenarioDefinition = {
     laneFamily: 'three-agent',
     toSenderCommands: (sender) => [
         toLeaderActivityWait(sender, true),
-        toLeaderSendCommand(sender, 'recipient-b'),
+        toAudienceSendCommand({
+            sender,
+            ttlMs: NON_EXPIRING_TTL_MS,
+            ack: 'group-leader',
+            audience: { recipientPeer: 'recipient-b' }
+        }),
         ...toNoLeaderVerdictCommands(sender)
     ],
     toRecipientCommands: (recipient) =>

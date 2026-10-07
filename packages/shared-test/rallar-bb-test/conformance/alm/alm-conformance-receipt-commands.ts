@@ -51,6 +51,8 @@ export type AlmConformanceSendAudience =
 interface AlmConformanceAudienceSendInput {
     readonly sender: AlmConformanceStepInput;
     readonly ttlMs: number;
+    /** `all-logical-recipients` asks every session of the frozen audience, `group-leader` the room's leader alone. */
+    readonly ack: Extract<RallarBlackBoxTestMessagesSendCommand['ack'], 'all-logical-recipients' | 'group-leader'>;
     /** Absent, every live session of the room. */
     readonly audience?: AlmConformanceSendAudience;
 }
@@ -77,28 +79,30 @@ export function toAddressedSendCommands(
     ];
 }
 
+/** The first send of an audience scenario: one room send, its audience frozen at its admission. */
+export function toAudienceSendCommand(
+    { sender, ttlMs, ack, audience }: AlmConformanceAudienceSendInput
+): RallarBlackBoxTestCommand {
+    return toSendCommand({
+        ...sender,
+        index: 1,
+        payload: toAudiencePayload(sender),
+        delivery: {
+            ack,
+            reliability: 'at-least-once',
+            ttlMs,
+            commandTimeoutMs: Math.min(ttlMs, NON_EXPIRING_SEND_TIMEOUT_MS),
+            ...audience
+        }
+    });
+}
+
 /**
- * One room send that asks for every logical recipient of the audience frozen at its admission (D41): the request
- * name maps to `receiver`, so the receipt of the origin expects that audience minus itself.
+ * The audience send, admitted. Asking for every logical recipient of the audience frozen at its admission (D41) maps
+ * to `receiver`, so the receipt of the origin expects that audience minus itself.
  */
-export function toAudienceSendCommands(
-    { sender, ttlMs, audience }: AlmConformanceAudienceSendInput
-): readonly RallarBlackBoxTestCommand[] {
-    return [
-        toSendCommand({
-            ...sender,
-            index: 1,
-            payload: toAudiencePayload(sender),
-            delivery: {
-                ack: 'all-logical-recipients',
-                reliability: 'at-least-once',
-                ttlMs,
-                commandTimeoutMs: Math.min(ttlMs, NON_EXPIRING_SEND_TIMEOUT_MS),
-                ...audience
-            }
-        }),
-        ...toAdmissionCommands({ ...sender, index: 1 })
-    ];
+export function toAudienceSendCommands(input: AlmConformanceAudienceSendInput): readonly RallarBlackBoxTestCommand[] {
+    return [toAudienceSendCommand(input), ...toAdmissionCommands({ ...input.sender, index: 1 })];
 }
 
 /**
