@@ -155,8 +155,8 @@ describe('browser runtime construction', () => {
         });
         const first = createRallarFacade();
         const second = createRallarFacade();
-        const firstHandle = await first.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true, ack: 'receiver' });
-        const secondHandle = await second.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true, ack: 'receiver' });
+        const firstHandle = await first.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true, ack: 'receiver' });
+        const secondHandle = await second.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true, ack: 'receiver' });
         expect(runtime.initialiseMiddleware).toHaveBeenCalledTimes(1);
         sinks[0]({
             kind: 'acknowledgement',
@@ -195,7 +195,7 @@ describe('browser runtime construction', () => {
         const first = createRallarFacade();
         const second = createRallarFacade();
         const handle = await first.messages.ws.send({
-            scope: 'all',
+            scope: 'world',
             typeId: 'app.ready',
             payload: true,
             ack: 'receiver'
@@ -236,7 +236,7 @@ describe('browser runtime construction', () => {
             const second = createRallarFacade();
             await first.connect();
             const handle = await second.messages.ws.send({
-                scope: 'all',
+                scope: 'world',
                 typeId: 'app.ready',
                 payload: true,
                 ack: 'receiver'
@@ -266,7 +266,7 @@ describe('browser runtime construction', () => {
             oldSink = options.deliverySettlements.ws;
             return { middleware: runtime.middleware.middleware, checkpoints: [] };
         });
-        const handle = await facade.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true, ack: 'receiver' });
+        const handle = await facade.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true, ack: 'receiver' });
         await handle.wait({ until: ['queued'] });
         await facade.disconnect();
         oldSink?.({
@@ -322,7 +322,7 @@ describe('browser runtime construction', () => {
             };
             return admission.promise;
         };
-        const handle = await second.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true });
+        const handle = await second.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true });
         await first.disconnect();
         if (!result) {
             throw new Error('Expected pending carrier admission');
@@ -357,7 +357,7 @@ describe('browser runtime construction', () => {
     it('fences failed initialization and registers again before retry initialization', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
-        const handle = await facade.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true, ack: 'receiver' });
+        const handle = await facade.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true, ack: 'receiver' });
         await handle.wait({ until: ['queued'] });
         await facade.disconnect();
         let failedSink: ALDeliverySettlementSink | undefined;
@@ -404,7 +404,7 @@ describe('browser runtime construction', () => {
     it('releases observations when connect discovers a replacement auth session', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
-        const handle = await facade.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true, ack: 'receiver' });
+        const handle = await facade.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true, ack: 'receiver' });
         await handle.wait({ until: ['queued'] });
         runtime.readSession.mockReturnValue({ ...runtime.middleware.session, sessionId: 'replacement-session' });
         await facade.connect();
@@ -424,11 +424,11 @@ describe('browser runtime construction', () => {
         };
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
-        const cancelled = await facade.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true });
+        const cancelled = await facade.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true });
         cancelled.cancel();
         expect(cancelled.lifecycle().state).toBe('cancelled');
         expect(cancellations.sort()).toEqual([`rtc:${cancelled.msgId}`, `ws:${cancelled.msgId}`]);
-        const pending = await facade.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true });
+        const pending = await facade.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true });
         vi.spyOn(authApi, 'logoutFromApi').mockResolvedValue({ loggedOut: true });
         await facade.auth.logout();
         expect((await pending.wait()).lifecycle.state).toBe('unobservable');

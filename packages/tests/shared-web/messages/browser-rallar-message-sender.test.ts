@@ -35,26 +35,10 @@ describe('Rallar message send', () => {
         webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
     });
 
-    it('reports every unsupported fallback constraint before connecting or queueing', async () => {
-        const facade = createRallarTestFacade();
-        const channel = facade.messages.room({
-            typeId: 'app.ready',
-            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
-            purpose: 'notification'
-        });
-        await expect(channel.send(true, { scope: 'all' })).rejects.toMatchObject({
-            name: 'RallarValidationError',
-            issues: [expect.objectContaining({ path: '$.scope', code: 'unsupported' })]
-        });
-        expect(facade.isConnected()).toBe(false);
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
-        expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
-    });
-
     it('rejects invalid WS user topics before queueing', async () => {
         await expect(
             createRallarTestFacade().messages.ws.send({
-                scope: 'all',
+                scope: 'world',
                 topicId: 'manual.chat',
                 typeId: 'chat.message.v1',
                 payload: { text: 'invalid topic' }
@@ -93,13 +77,13 @@ describe('Rallar message send', () => {
         });
 
         await expect(facade.messages.ws.send({
-            scope: 'all',
+            scope: 'world',
             topicId: 'app.chat',
             typeId: 'chat.message.v1',
             payload: 1n
         })).rejects.toSatisfy(isRallarValidationError);
         const oversized = await facade.messages.ws.send({
-            scope: 'all',
+            scope: 'world',
             topicId: 'app.chat',
             typeId: 'chat.message.v1',
             payload: { text: 'too large' }
@@ -292,7 +276,7 @@ describe('Rallar message send', () => {
     it('rejects a QoS request the envelope cannot carry', async () => {
         await expect(
             createRallarTestFacade().messages.ws.send({
-                scope: 'all',
+                scope: 'world',
                 topicId: 'app.chat',
                 typeId: 'chat.message.v1',
                 payload: { text: 'unknown ack algorithm' },
@@ -365,7 +349,7 @@ describe('Rallar message send', () => {
         });
 
         const result = await createRallarTestFacade().messages.ws.send({
-            scope: 'all',
+            scope: 'world',
             topicId: 'app.chat',
             typeId: 'chat.message.v1',
             resourceId: 'msg-ws',
@@ -383,18 +367,18 @@ describe('Rallar message send', () => {
             route: {
                 topicId: 'app.chat',
                 resourceId: 'msg-ws',
-                contextId: 'all'
+                contextId: 'world'
             },
             targets: {
                 mode: 'broadcast',
-                scope: 'all'
+                scope: 'world'
             }
         });
     });
 
     it('carries a WS send\'s client-assigned ordering on its broadcast envelope, and none without it', async () => {
         const facade = createRallarTestFacade();
-        const send = { scope: 'all', topicId: 'app.chat', typeId: 'chat.message.v1' } as const;
+        const send = { scope: 'world', topicId: 'app.chat', typeId: 'chat.message.v1' } as const;
 
         await facade.messages.ws.send({ ...send, payload: { text: 'ordered' }, orderingKey: 'k', seq: 7 });
         await facade.messages.ws.send({ ...send, payload: { text: 'unordered' } });
@@ -406,7 +390,7 @@ describe('Rallar message send', () => {
 
     it('rejects a WS send that states only one half of its ordering with a typed issue for the missing half', async () => {
         const facade = createRallarTestFacade();
-        const send = { scope: 'all', topicId: 'app.chat', typeId: 'chat.message.v1', payload: { text: 'half' } } as const;
+        const send = { scope: 'world', topicId: 'app.chat', typeId: 'chat.message.v1', payload: { text: 'half' } } as const;
 
         await expect(facade.messages.ws.send({ ...send, seq: 7 })).rejects.toMatchObject({
             name: 'RallarValidationError',
@@ -434,7 +418,7 @@ describe('Rallar message send', () => {
         });
 
         const sent = await createRallarTestFacade().messages.ws.send({
-            scope: 'all',
+            scope: 'world',
             topicId: 'app.chat',
             typeId: 'chat.message.v1',
             resourceId: 'msg-queued-ws',

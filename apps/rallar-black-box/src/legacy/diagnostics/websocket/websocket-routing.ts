@@ -1,5 +1,6 @@
 import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestConfig } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { recordValue as optionalRecord } from '../../shared/record-value.ts';
 import { stringValue } from '../../shared/string-value.ts';
@@ -90,14 +91,14 @@ export function defaultWebSocketValuesFromContext(
         applicationId: globalValues.applicationId,
         workspaceId: globalValues.workspaceId,
         groupId,
-        contextId: groupId || 'all'
+        contextId: groupId || 'world'
     };
 }
 
 export function webSocketSendData(
     values: WebSocketCommandCenterValues,
-    payload: unknown
-): unknown {
+    payload: RallarMessagePayload
+): RallarMessagePayload {
     const payloadRecord = optionalRecord(payload);
     const hasTypedFields = [
         'payload',
@@ -111,7 +112,7 @@ export function webSocketSendData(
         'resourceId'
     ].some((key) => key in payloadRecord);
     const base = hasTypedFields ? payloadRecord : { payload };
-    const wsScope = base.scope === 'room' || base.scope === 'all' || base.scope === 'world'
+    const wsScope = base.scope === 'room' || base.scope === 'world'
         ? base.scope
         : values.wsScope;
     const explicitGroupId = stringValue(base.roomId) ?? stringValue(base.groupId);
@@ -152,15 +153,11 @@ export function webSocketRoutePreview(
         ? groupId
             ? `Group ${groupId}`
             : 'No group selected'
-        : values.wsScope === 'all'
-        ? 'All WS subscribers'
         : 'World scope';
     const destinationDetail = values.wsScope === 'room'
         ? groupId
             ? `Application ${values.applicationId || '-'} / workspace ${values.workspaceId || '-'}`
             : 'Room-scoped messages need a Group before send.'
-        : values.wsScope === 'all'
-        ? 'Group is ignored for this send.'
         : 'Uses Rallar world scope; Group is ignored.';
     const usesRallarAppWebSocket = providerMode === 'browser-rallar';
     const transport = usesRallarAppWebSocket
@@ -187,8 +184,6 @@ export function webSocketRoutePreview(
             ? groupId
                 ? `Send JSON to group ${groupId}`
                 : 'Send JSON to group'
-            : values.wsScope === 'all'
-            ? 'Send JSON to all'
             : 'Send JSON to world'
     };
 }

@@ -293,7 +293,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     formationCommand: ['plan', 'connect', 'activate', 'reconfigure', 'pause', 'resume', 'reset', 'start'],
     httpResponseBody: ['none', 'text', 'json'],
     messagesCarrier: ['ws', 'rtc', 'rtc-with-ws-fallback'],
-    messagesScope: ['room', 'world', 'all'],
+    messagesScope: ['room', 'world'],
     messagesReliability: ['best-effort', 'at-least-once'],
     messagesAck: ['none', 'receiver', 'all-logical-recipients', 'group-leader'],
     messagesDurability: AL_DURABILITY_ALGOS,

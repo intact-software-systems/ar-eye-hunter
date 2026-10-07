@@ -3283,18 +3283,48 @@ moved or changed test.
       }
     },
     {
-      "id": "browser-invalid-fallback-no-admission",
+      "id": "browser-invalid-scope-no-admission",
       "domain": "Typed message audience validation",
       "owner": "Rallar browser maintainers",
-      "summary": "An unsupported all-scope fallback rejects before either carrier can publish.",
-      "semanticCoverage": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts#reports every unsupported fallback constraint before connecting or queueing",
-      "coverageRelation": "The public room channel rejects the scope issue alone and remains disconnected; both carrier admission ports are observed.",
+      "summary": "A WS send naming a scope outside room, world and principal rejects before the WS carrier can publish it.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#names the three scopes a browser WS send may take",
+      "coverageRelation": "The public WS lane rejects the scope issue alone; the WS carrier admission port is observed.",
       "interactionRequirement": {
         "interactionKind": "absence",
-        "ownedPort": "WebSocketQueueBox and WebRtcRxStreamerService enqueueOutboxIfAbsent carrier admission ports",
+        "ownedPort": "WebSocketQueueBox enqueueOutboxIfAbsent carrier admission port",
         "observableEffect": "Carrier admission can retain or publish a message to its resolved audience.",
-        "requiredConstraint": "An unsupported fallback scope must produce no WS or RTC admission.",
-        "failureRationale": "An error response can follow an illicit send; validation errors and disconnected facade state alone do not prove absence of publication."
+        "requiredConstraint": "A scope a browser may not address must produce no WS admission.",
+        "failureRationale": "An error response can follow an illicit send; the validation error alone does not prove absence of publication."
+      }
+    },
+    {
+      "id": "browser-world-send-on-rtc-refused-alone",
+      "domain": "Typed message audience routing",
+      "owner": "Rallar browser maintainers",
+      "summary": "A world send on the rtc strategy reaches only the RTC carrier, as the world broadcast it holds, and WS admits nothing.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone, which refuses it unsupported, and the handle ends rejected",
+      "coverageRelation": "The RTC carrier admission port receives the world broadcast with the hold gap admission, the WS port is never called, and the handle ends rejected.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebRtcRxStreamerService and WebSocketQueueBox enqueueOutboxIfAbsent carrier admission ports",
+        "observableEffect": "Carrier admission can retain or publish a message to its resolved audience.",
+        "requiredConstraint": "A world send whose strategy names RTC alone must offer RTC the world broadcast and must produce no WS admission.",
+        "failureRationale": "A rejected handle can follow a WS publication; the handle state alone does not prove which carriers admitted the send."
+      }
+    },
+    {
+      "id": "browser-ai-principal-result-not-realtime",
+      "domain": "Browser AI result delivery",
+      "owner": "Rallar browser maintainers",
+      "summary": "A principal-scoped AI result is never broadcast over realtime, which reaches the whole room.",
+      "semanticCoverage": "packages/tests/shared-web/ai/browser-rallar-ai.test.ts#broadcasts a principal-scoped result to the principal over a message transport, and never over realtime",
+      "coverageRelation": "The realtime transport rejects the principal scope and its send port is observed.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarFacade realtime.sendJson",
+        "observableEffect": "A realtime send reaches every live session of the room.",
+        "requiredConstraint": "A principal-scoped AI result must produce no realtime send.",
+        "failureRationale": "The validation error alone does not prove that no room-wide realtime send happened first."
       }
     },
     {
@@ -7761,26 +7791,48 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/composition/browser-runtime-construction.test.ts#shares one bounded session observation owner across facades"
     },
     {
-      "id": "test-structure-coupling-15952e596b786253",
-      "path": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts",
+      "id": "test-structure-coupling-78cc2cae7c81d48d",
+      "path": "packages/tests/shared-web/messages/browser-message-audiences.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "browser-invalid-fallback-no-admission",
+      "contract": "browser-invalid-scope-no-admission",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The WS admission absence prevents fallback publication to an unsupported audience despite the public validation rejection.",
-      "semanticCoverage": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts#reports every unsupported fallback constraint before connecting or queueing"
+      "rationale": "The WS admission absence proves an unaddressable scope publishes nothing despite the public validation rejection.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#names the three scopes a browser WS send may take"
     },
     {
-      "id": "test-structure-coupling-63fb37f78610c2ea",
-      "path": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts",
+      "id": "test-structure-coupling-c050a5fee8ee1213",
+      "path": "packages/tests/shared-web/messages/browser-message-audiences.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "browser-invalid-fallback-no-admission",
+      "contract": "browser-world-send-on-rtc-refused-alone",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The RTC admission absence prevents the preferred carrier from publishing despite the public validation rejection.",
-      "semanticCoverage": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts#reports every unsupported fallback constraint before connecting or queueing"
+      "rationale": "The RTC admission port's first call carries the world broadcast, the envelope the RTC carrier refuses as unsupported.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone, which refuses it unsupported, and the handle ends rejected"
+    },
+    {
+      "id": "test-structure-coupling-8342e0b1c624e7b8",
+      "path": "packages/tests/shared-web/messages/browser-message-audiences.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-world-send-on-rtc-refused-alone",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The RTC admission port's first call names the hold gap admission: a world send on rtc has no fallback carrier.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone, which refuses it unsupported, and the handle ends rejected"
+    },
+    {
+      "id": "test-structure-coupling-c0a128e08129b94a",
+      "path": "packages/tests/shared-web/ai/browser-rallar-ai.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-ai-principal-result-not-realtime",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The realtime send absence proves a principal-scoped AI result never reaches the whole room.",
+      "semanticCoverage": "packages/tests/shared-web/ai/browser-rallar-ai.test.ts#broadcasts a principal-scoped result to the principal over a message transport, and never over realtime"
     },
     {
       "id": "test-structure-coupling-a11dc68fc52eaed6",

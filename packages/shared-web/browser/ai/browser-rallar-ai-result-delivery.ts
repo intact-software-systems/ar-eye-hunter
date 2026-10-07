@@ -11,6 +11,7 @@ import type {
     RallarBrowserAiRallar,
     RallarBrowserAiTransport
 } from '@shared-web/browser/rallar-ai.ts';
+import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 import { RallarAiError, type RallarAiJsonResult } from '@shared/rallar-ai/mod.ts';
 
 const DEFAULT_AI_RESULT_TOPIC_ID = 'room.ai';
@@ -119,6 +120,13 @@ async function broadcastWithTransport<TValue>(
     input: RallarBrowserAiBroadcastInput<TValue>,
     transport: RallarBrowserAiTransport
 ): Promise<RallarBrowserAiBroadcastResult> {
+    if (transport === 'realtime' && input.scope === 'principal') {
+        throwRallarValidation([{
+            path: '$.transport',
+            code: 'unsupported',
+            message: 'A principal-scoped AI result is broadcast over messages.ws or messages.rtc.'
+        }]);
+    }
     if (transport === 'realtime') {
         return {
             transport,
@@ -135,7 +143,8 @@ async function broadcastWithTransport<TValue>(
         topicId: input.topicId ?? DEFAULT_AI_RESULT_TOPIC_ID,
         typeId: input.typeId ?? DEFAULT_AI_RESULT_TYPE_ID,
         payload: input.result,
-        scope: 'room' as const,
+        scope: input.scope ?? 'room',
+        principalId: input.principalId,
         roomId: input.roomId,
         roomRef: input.roomRef
     };

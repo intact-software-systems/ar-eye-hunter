@@ -275,7 +275,7 @@ export interface BlackBoxRallarWsSendDiagnostics {
     readonly roomRef?: BlackBoxRallarRoomRef;
     readonly applicationId?: string;
     readonly workspaceId?: string;
-    readonly scope: 'room' | 'world' | 'all';
+    readonly scope: 'room' | 'world';
     readonly typeId: string;
     readonly topicId: string | undefined;
     readonly contextId: string | undefined;
@@ -295,7 +295,7 @@ export interface BlackBoxRallarMessageSendInput {
     readonly topicId: string | undefined;
     readonly payload: RallarMessagePayload;
     readonly roomRef: BlackBoxRallarRoomRef | undefined;
-    readonly scope: 'room' | 'world' | 'all' | undefined;
+    readonly scope: 'room' | 'world' | undefined;
     readonly reliability: 'best-effort' | 'at-least-once' | undefined;
     readonly ack: ALAckMode | undefined;
     /** Absent, the send is volatile. */

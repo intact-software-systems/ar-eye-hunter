@@ -53,7 +53,23 @@ export interface RallarMessageSendBase<T> {
     readonly qos?: ALQosPolicyRequest;
 }
 
-export interface RallarRtcSendInput<T> extends RallarMessageSendBase<T> {
+/**
+ * Who a send reaches: `room`, the room's live sessions; `principal`, one principal's live sessions in the room
+ * (`principalId`); `world`, every live session of the sender's authenticated scope. RTC carries room audiences
+ * only: a `world` send takes WS when its strategy allows WS and is refused `unsupported` on RTC alone.
+ */
+export type RallarMessageScope = 'room' | 'world' | 'principal';
+
+/** The audience a room send narrows to: one principal's sessions, or a fixed list of sessions in the room. */
+interface RallarRoomAudienceInput {
+    readonly scope?: RallarMessageScope;
+    /** With `scope: 'principal'` and a room: the principal whose live sessions in the room the send reaches. */
+    readonly principalId?: string;
+    /** With room scope: at most 256 distinct session ids; a listed session outside the room is not reached. */
+    readonly recipientPeerIds?: readonly string[];
+}
+
+export interface RallarRtcSendInput<T> extends RallarMessageSendBase<T>, RallarRoomAudienceInput {
     readonly roomId?: string;
     readonly roomRef?: GroupRef;
     readonly minSnapshotVersion?: number;
@@ -64,8 +80,7 @@ export interface RallarRtcSendInput<T> extends RallarMessageSendBase<T> {
     readonly fanoutLimit?: number;
 }
 
-export interface RallarWsSendInput<T> extends RallarMessageSendBase<T> {
-    readonly scope?: 'room' | 'world' | 'all';
+export interface RallarWsSendInput<T> extends RallarMessageSendBase<T>, RallarRoomAudienceInput {
     readonly roomId?: string;
     readonly roomRef?: GroupRef;
     readonly minSnapshotVersion?: number;
