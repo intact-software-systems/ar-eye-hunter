@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ControlClientIdentity } from '@shared-test/rallar-bb-test/control-protocol.ts';
+
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandContext,
-    RallarBlackBoxTestRecipe
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestResult
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+
+const CONTROL_A = Object.freeze({ runId: 'callback-A', agentId: 'agent-A' } satisfies ControlClientIdentity);
+const CONTROL_B = Object.freeze({ runId: 'callback-B', agentId: 'agent-B' } satisfies ControlClientIdentity);
 
 describe('accepted recipe capture structure', () => {
     it('captures loaded commands and capture fields without traversing opaque payloads', async () => {
@@ -224,5 +230,180 @@ describe('accepted recipe capture structure', () => {
         });
         await runtime.execute({ kind: 'recipe.run' });
         expect(effects).toEqual(['second', 'third']);
+    });
+
+    it.each(['none', 'same', 'other'] as const)(
+        'captures the admitted owner before a command-ID callback reenters; owner=%s',
+        async (owner) => {
+            let sequence = 0;
+            let onCommandId = (): void => {};
+            const effects: string[] = [];
+            const observed: RallarBlackBoxTestCommandContext[] = [];
+            const runtime = createRallarBlackBoxTestRuntime({
+                idFactory: (prefix) => {
+                    if (prefix === 'command') {
+                        onCommandId();
+                    }
+                    return `${prefix}-${++sequence}`;
+                },
+                commandExecutor: async (command, context) => {
+                    if (command.kind === 'rtc.connect') {
+                        effects.push(command.connection ?? 'missing');
+                        observed.push(context);
+                        context.recordEvent({ kind: 'event', topic: command.connection ?? 'missing', commandId: command.commandId });
+                    }
+                    return { status: 'ok' };
+                }
+            });
+            await runtime.execute({ kind: 'configure', commandId: 'initial-config', config: { rallar: { rtcCaptureMode: 'off' } } }, CONTROL_A);
+            const reentered: ReturnType<typeof runtime.execute>[] = [];
+            const current = owner === 'other' ? CONTROL_B : CONTROL_A;
+            let armed = true;
+            onCommandId = () => {
+                if (!armed || owner === 'none') {
+                    return;
+                }
+                armed = false;
+                if (owner === 'other') {
+                    reentered.push(
+                        runtime.execute({ kind: 'configure', commandId: 'callback-config', config: { rallar: { rtcCaptureMode: 'native' } } }, current)
+                    );
+                }
+                reentered.push(runtime.execute({ kind: 'rtc.connect', commandId: 'callback-connect', connection: 'callback' }, current));
+            };
+            const outer = await runtime.execute({ kind: 'rtc.connect', connection: 'outer' }, CONTROL_A);
+            const callbackResults = await Promise.all(reentered);
+            const state = runtime.state();
+            const outerEvents = state.events.filter((event) => event.commandId === outer.commandId);
+            expect(callbackResults.every((result) => result.ok)).toBe(true);
+            expect.soft(outer.ok).toBe(owner !== 'other');
+            expect.soft(effects).toEqual(owner === 'none' ? ['outer'] : owner === 'other' ? ['callback'] : ['callback', 'outer']);
+            if (owner === 'other') {
+                expect.soft(state.resultCache[outer.commandId]).toBeUndefined();
+                expect.soft(outerEvents).toEqual([]);
+            }
+            else {
+                expect(state.resultCache[outer.commandId]).toBe(outer);
+                expect(
+                    outerEvents.every((event) =>
+                        event.control?.runId === CONTROL_A.runId && event.control.agentId === CONTROL_A.agentId &&
+                        event.control.rootCommandId === outer.commandId
+                    )
+                ).toBe(true);
+                expect(observed.at(-1)?.rtcCapture?.step).toBe('off');
+            }
+            if (owner !== 'none') {
+                expect(state.resultCache['callback-connect']).toBe(callbackResults.at(-1));
+                const callbackEvent = state.events.find((event) => event.topic === 'callback');
+                expect(callbackEvent?.control).toEqual({ ...current, rootCommandId: 'callback-connect' });
+            }
+            const later = await runtime.execute({ kind: 'rtc.connect', commandId: 'later-connect', connection: 'later' }, current);
+            expect(later.ok).toBe(true);
+            expect(observed.at(-1)?.rtcCapture?.step).toBe(owner === 'other' ? 'native' : 'off');
+        }
+    );
+
+    it.each([false, true])('captures defaults before a command-ID callback reconfigures the same owner; callback=%s', async (callback) => {
+        let sequence = 0;
+        let onCommandId = (): void => {};
+        const effects: string[] = [];
+        const observed: RallarBlackBoxTestCommandContext[] = [];
+        const runtime = createRallarBlackBoxTestRuntime({
+            idFactory: (prefix) => {
+                if (prefix === 'command') {
+                    onCommandId();
+                }
+                return `${prefix}-${++sequence}`;
+            },
+            commandExecutor: async (command, context) => {
+                if (command.kind === 'rtc.connect') {
+                    effects.push(command.connection ?? 'missing');
+                    observed.push(context);
+                }
+                return { status: 'ok' };
+            }
+        });
+        await runtime.execute({ kind: 'configure', commandId: 'initial-defaults', config: { rallar: { rtcCaptureMode: 'off' } } }, CONTROL_A);
+        let reconfigured: ReturnType<typeof runtime.execute> | undefined;
+        onCommandId = () => {
+            if (callback && !reconfigured) {
+                reconfigured = runtime.execute(
+                    { kind: 'configure', commandId: 'callback-defaults', config: { rallar: { rtcCaptureMode: 'native' } } },
+                    CONTROL_A
+                );
+            }
+        };
+        const outer = await runtime.execute({ kind: 'rtc.connect', connection: 'first' }, CONTROL_A);
+        const configured = await reconfigured;
+        const later = await runtime.execute({ kind: 'rtc.connect', commandId: 'later-defaults', connection: 'later' }, CONTROL_A);
+        expect(outer.ok).toBe(true);
+        expect(later.ok).toBe(true);
+        expect(effects).toEqual(['first', 'later']);
+        if (callback) {
+            expect(configured?.ok).toBe(true);
+        }
+        expect.soft(observed[0].rtcCapture?.step).toBe('off');
+        expect(observed[1].rtcCapture?.step).toBe(callback ? 'native' : 'off');
+    });
+
+    it.each([false, true])('fences an owned context event after its event-ID callback changes the owner; reassigned=%s', async (reassigned) => {
+        let sequence = 0;
+        let eventArmed = false;
+        let onEventId = (): void => {};
+        const effects: string[] = [];
+        const observed: RallarBlackBoxTestCommandContext[] = [];
+        const reentered: Promise<RallarBlackBoxTestResult>[] = [];
+        const runtime = createRallarBlackBoxTestRuntime({
+            idFactory: (prefix) => {
+                if (prefix === 'event' && eventArmed) {
+                    eventArmed = false;
+                    onEventId();
+                }
+                return `${prefix}-${++sequence}`;
+            },
+            commandExecutor: async (command, context) => {
+                if (command.kind === 'rtc.connect') {
+                    effects.push(command.connection ?? 'missing');
+                    observed.push(context);
+                    if (command.connection === 'event-A') {
+                        eventArmed = true;
+                        context.recordEvent({ kind: 'diagnostic', topic: 'owned-A-event', commandId: command.commandId });
+                    }
+                    if (command.connection === 'event-B') {
+                        context.recordEvent({ kind: 'diagnostic', topic: 'owned-B-event', commandId: command.commandId });
+                    }
+                }
+                return { status: 'ok' };
+            }
+        });
+        await runtime.execute({ kind: 'configure', commandId: 'event-A-config', config: { rallar: { rtcCaptureMode: 'off' } } }, CONTROL_A);
+        onEventId = () => {
+            if (reassigned) {
+                reentered.push(
+                    runtime.execute({ kind: 'configure', commandId: 'event-B-config', config: { rallar: { rtcCaptureMode: 'native' } } }, CONTROL_B)
+                );
+                reentered.push(runtime.execute({ kind: 'rtc.connect', commandId: 'event-B-connect', connection: 'event-B' }, CONTROL_B));
+            }
+        };
+        const outer = await runtime.execute({ kind: 'rtc.connect', commandId: 'event-A-connect', connection: 'event-A' }, CONTROL_A);
+        const callbackResults = await Promise.all(reentered);
+        const state = runtime.state();
+        const owned = state.events.filter((event) => event.topic === 'owned-A-event');
+        expect(outer.ok).toBe(true);
+        expect(callbackResults.every((result) => result.ok)).toBe(true);
+        expect(observed[0].rtcCapture?.step).toBe('off');
+        expect.soft(owned).toHaveLength(reassigned ? 0 : 1);
+        if (reassigned) {
+            expect(effects).toEqual(['event-A', 'event-B']);
+            expect(observed[1].rtcCapture?.step).toBe('native');
+            expect(state.resultCache['event-B-connect']).toBeDefined();
+            expect(state.resultCache[outer.commandId]).toBeUndefined();
+            expect(state.events.find((event) => event.topic === 'owned-B-event')?.control).toEqual({ ...CONTROL_B, rootCommandId: 'event-B-connect' });
+        }
+        else {
+            expect(effects).toEqual(['event-A']);
+            expect(owned[0].control).toEqual({ ...CONTROL_A, rootCommandId: 'event-A-connect' });
+            expect(state.resultCache[outer.commandId]).toBe(outer);
+        }
     });
 });

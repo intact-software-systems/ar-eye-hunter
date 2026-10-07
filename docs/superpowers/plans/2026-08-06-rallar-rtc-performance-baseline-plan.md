@@ -42,11 +42,13 @@ snapshot function's size/duplication. The measured320.778KiB headless boundary u
 existing minimum adjustable cap321; forbidden dependencies remain excluded. The existing
 large-chunk build warning is disclosed. Five fixture corrections now have independent
 local acceptance:17 artifact cases, eight unchanged tuning cases and14 native cases pass,
-with final typing/format/navigation and whole-file closure. Fresh hosted ce6 ALM passes
-three smoke transport cases with nine intentional skips; its headless check passes.
-That unit run also exposes a reference-run callback regression, now reproduced as one
-failure/two controls. Runtime correction and exact changed-style publication closure
-remain required. This continuation is published in draft
+with final typing/format/navigation and whole-file closure. Fresh hosted e088 correctness
+confirms the fixture slice:13750 unit passes with one callback failure/12 skips, and360
+controller passes/zero failures/one ignored. Headless and ALM checks pass. The original
+reference-run callback RED and three related admission/event failures remain preserved.
+Their minimum correction is independently accepted:227 affected cases, typing, navigation,
+formatting and the headless boundary pass without increasing its321KiB cap. Fresh hosted
+validation of this correction and exact changed-style publication closure remain required. This continuation is published in draft
 [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645); Task64's complete
 CI outcome remains open.
 Publish each coherent validated slice on the feature branch; keep incomplete acceptance
@@ -56,7 +58,7 @@ fixture correction is independently accepted and published at
 Its original eleven failed observer cases and their semantic RED/GREEN correction remain
 retained. The local Native correctness preflight has six correlated applied receipts with
 partial coverage; this is separate from homogeneous performance acceptance. PR633's exact
-main integration approval remains pending. Remaining body/replay, visible recipe controls,
+main integration approval remains pending. Remaining style publication, visible recipe controls,
 runner and Actions outcomes stay mandatory.
 B06 selection and producer configuration are published; governed E3 has zero accepted cohorts
 and remains required in Section 11. Current product and architecture are [docs/product.md](../../product.md)
@@ -6032,13 +6034,15 @@ legacy retention, new store or Task64 implementation is authorized by the audit.
 
 ### Task 64: Accepted recipe intent and execution after reassignment or reload
 
-**Status:** The initial implementation passes129 focused SDK/owner tests and177 controller
-tests, types, app build and mechanics checks. Independent SPEC/QUALITY review requires
-three behavioral fixes and snapshot standards closure; tests-first fix round1 is released.
-The approved shared composition refactor closes file-size violations, while a named
-snapshot function remains above its function backstop. Task63 is independently accepted
-locally. The full RTC baseline and governed E3 remain incomplete; this work is published
-as a draft feature-branch checkpoint.
+**Status:** The implementation, correction round1, five CI fixtures and callback-admission
+correction are independently accepted locally. Latest affected runtime corpus is227/227;
+typing, navigation, formatting and headless checks pass. Exacte088 hosted CI confirms the
+fixture fixes and leaves the now-locally-corrected callback case as its sole unit failure.
+Fresh hosted validation of the callback correction and exact changed-style publication
+closure remain open. Tasks61–63 retain their local acceptance. Draft PR645 publishes each
+coherent accepted slice; visible controls, workers/Actions, B01–B06 and governed E3 remain
+mandatory. The following retained records describe earlier evidence and corrections;
+the final accepted observations and remaining gates appear below.
 
 The first actual SDK/controller witness now fails semantically: genuine queued load A and
 its serialized acknowledgment succeed, then local replacement B with the same recipe ID
@@ -6308,13 +6312,12 @@ and its test passes with all forbidden-dependency checks intact. The existing ap
 warning and dependency-only test typing skip remain disclosed; this is no optimization
 or E3 acceptance claim.
 
-A current full-range changed-style observation still fails with17 findings. Each needs
-its actual whole-owner cohesion/normalization judgment and exact current publication
-closure under the existing reviewed-disposition policy; no real violation may be waived.
-The next bounded correction preserves five artifact/deduplication/disk/group/restore test
-assertions while replacing malformed or unowned fixture facts with truthful current
-contracts. Production decoder/admission behavior is authoritative. Keep all historical
-failures; neither green local tests nor skipped RTC integrity supplies E3 evidence.
+The first full-range changed-style observation fails with17 findings; exacte088 hosted
+publication reports19, adding two already-reviewed malformed-fixture untrusted boundaries
+in tuning tests. Each needs its actual whole-owner cohesion/normalization judgment and
+exact current publication closure under the existing reviewed-disposition policy; no real
+violation may be waived. Production decoder/admission behavior is authoritative. Keep all
+historical failures; neither green local tests nor skipped RTC integrity supplies E3 evidence.
 
 **Five CI fixtures accepted locally:** Current finite lifecycle/error, actual queued
 socket dispatch, ordinary-result admission and coherent restore identities now reach their
@@ -6343,6 +6346,41 @@ Capture command admission before external effects; test analogous cache-owner/ad
 and capture-default reads before changing them. No new API/store, callback-wide repair,
 retry/watchdog, CRDT change or E3 claim follows from this evidence. Preserve all failed
 source-bound records and return to the same implementer/reviewer for minimum correction.
+
+**Fixture checkpoint confirmed by hosted CI:** Release
+[37648214097](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37648214097)
+checks out exacte0886ae22549a92cae5ddfbff6eca57c67e87ee4. Unit13750pass/one failure/12skip
+leaves only the existing reference-run command-ID regression. The controller has360pass,
+zero failures/one ignored; shared-server has603pass/zero failures. Headless, browser/app,
+Recipe Console, ALM observation, API recipes and Postgres/scale checks report success.
+RTC observation integrity remains intentionally skipped. The static gate reports19
+new/worsened findings; its two additional fixture-boundary prompts are preserved for exact
+publication closure. This verifies fixture correctness rather than governed E3 acceptance.
+
+**Additional admission RED:** Seven tests use the current runtime and actual executor/
+context boundaries:three failures/four passing controls. A command-ID callback that switches
+from A to B lets outer A work execute, cache and publish under B; a same-address Configure
+changes accepted Off to Native; an owned event-ID callback appends a late A-provenance event
+into current B state. B's actual work, later capture defaults, unchanged-address execution
+and normal owned events remain controls. The event finding proves a current-state append
+failure, not that client B forwards the A-attributed event. The minimum correction binds
+accepted ownership/body/selection before ID generation and checks original event ownership
+after callback-capable construction. Keep the original body-binding RED and these failures
+append-only; public contracts and manual event behavior remain current.
+
+**Callback correction independently accepted locally:** The same reviewer approves both
+complete runtime/test owners with no findings. Accepted body, cache owner, address and
+applicable capture sequence are captured before command-ID generation; each child still
+admits its current loaded body, and an owned event rechecks ownership after construction.
+Replay, Configure defaults, child attribution and manual global events retain their
+verified behavior. Final227 cases in16 files, package/scoped test typing, formatting/diff,
+expanded class/callback spans and five compiler-definition probes pass. The cohesive
+50/55/55-line methods receive explicit separation review; no named function exceeds60.
+Headless measures320.94921875KiB and passes the unchanged321KiB cap. Root verifies all141
+frozen source copies in every final packet. Only runtime and its existing test owner change;
+there is no new public contract, support file, store, migration or affected retained legacy.
+Fresh remote CI and exact reviewed-finding publication closure remain open; no E3 acceptance
+or generic callback-safety claim follows.
 
 ### Task 65: Visible recipe controls and persisted intent (prepared next slice)
 
