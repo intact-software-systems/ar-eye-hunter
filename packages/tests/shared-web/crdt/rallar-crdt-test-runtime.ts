@@ -5,6 +5,7 @@ import type {
     RallarCrdtTransportSendInput,
     RallarCrdtTransportSendResult
 } from '@shared-web/browser/crdt/browser-crdt-transport.ts';
+import type { RallarCrdtOpenScope } from '@shared-web/browser/crdt/rallar-crdt-contracts.ts';
 import { createRallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import { createRallarDataFacade, type RallarDataScope } from '@shared-web/browser/rallar-data.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
@@ -34,6 +35,8 @@ export interface CreateTransportDocumentInput {
     readonly network: FakeCrdtTransportNetwork;
     readonly transport: 'ws' | 'rtc' | 'ws-then-rtc' | 'rtc-with-ws-fallback';
     readonly options?: TransportDocumentOptions;
+    /** Absent, the shared room document. */
+    readonly scope?: RallarCrdtOpenScope;
 }
 
 interface HttpCatchUpRequest {
@@ -49,6 +52,7 @@ interface FakeCrdtTransportNetworkOptions {
 interface FakeCrdtSentMessage {
     transport: RallarCrdtTransportKind;
     typeId: string;
+    scope: RallarCrdtTransportSendInput<never>['scope'];
 }
 
 interface FakeCrdtTransportSelector {
@@ -140,7 +144,7 @@ export async function createTransportDocument(input: CreateTransportDocumentInpu
         workspaceId: 'main',
         documentType: 'checklist',
         documentId: roomRef.groupId,
-        scope: {
+        scope: input.scope ?? {
             kind: 'room',
             roomRef
         },
@@ -232,7 +236,8 @@ export class FakeCrdtTransportNetwork {
     ): Promise<RallarCrdtTransportSendResult> {
         this.sent.push({
             transport,
-            typeId: input.typeId
+            typeId: input.typeId,
+            scope: input.scope
         });
         const status = transport === 'rtc' ? (this.rtcStatuses.shift() ?? 'sent') : 'sent';
         if (status === 'sent') {
@@ -258,6 +263,16 @@ export class FakeCrdtTransportNetwork {
 
     public sentTransports(): RallarCrdtTransportKind[] {
         return this.sent.map((entry) => entry.transport);
+    }
+
+    /** The audience scope of every message one carrier sent, in send order. */
+    public sentScopes(transport: RallarCrdtTransportKind): RallarCrdtTransportSendInput<never>['scope'][] {
+        return this.sent.filter((entry) => entry.transport === transport).map((entry) => entry.scope);
+    }
+
+    /** The audience scope of every message of one type, in send order. */
+    public sentScopesOfType(typeId: string): RallarCrdtTransportSendInput<never>['scope'][] {
+        return this.sent.filter((entry) => entry.typeId === typeId).map((entry) => entry.scope);
     }
 
     public sentUpdateTransports(): RallarCrdtTransportKind[] {

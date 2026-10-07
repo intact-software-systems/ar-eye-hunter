@@ -27,17 +27,33 @@ GitHub Actions, ignored evidence under `tmp/perf/`, and immutable observation ZI
 The accepted measurement contract is retained in Sections 5, 6, and 8 of this
 plan. The approved diagnostics amendment is specified in
 [RTC establishment diagnostics](../../../plans/active/rtc-establishment-diagnostics.md).
-Its current implementation horizon is the evidenced WS fixture correction, reviewed publication
-and fresh hosted/main acceptance. The fifteen-owner history-fixture, three-owner policy,
-current-main reconciliation, final corrective code/architecture and scoped prose reviews are
-accepted; the composed correction is published at `a3b1662df1184ff2cf9a56e9ded12b7356897604`.
-A fresh local Native correctness preflight passes with six correlated applied receipts and
-partial coverage. Formation and medium-scale gates pass, while the original Release Gate
-fails eleven WS observer tests because their common positive fixture still sends the previous
-envelope version. Immediate admission assertions witness eleven semantic failures; the
-canonical typed current-version fixture passes all eleven cases plus eighty adjacent controls.
-Independent full-file correction review returns SPEC PASS and QUALITY PASS; reviewed publication
-and fresh corrected-source hosted acceptance remain required.
+The WS observer fixture correction is published at
+`9d683b3ba00cc0a450a8a940ecdd2eab4c55bbed`, with normal hosted correctness
+accepted. The original eleven failures and semantic RED/GREEN remain preserved.
+Its five source conflicts against pinned main
+`d5db1569d5072a714df314b2d5eceed5011407d5` are now resolved locally. A new
+semantic RED demonstrates that the feature's obsolete room-only fallback policy
+rejects main's valid world-scoped fallback before acquisition. The integrated
+sender preserves current audience/fallback behavior, one capture/acquisition,
+original applied receipts and live-owner fencing. The existing initializer is
+mocked in that witness; it proves policy/admission, not native ICE establishment.
+Final focused checks pass 228 behavior cases, 18 public API/bundle cases, package
+and 1487-test typing, and both affected app builds. Fresh measured Brotli sizes
+are 250.069 KiB for the browser facade and 320.244 KiB for headless; their existing
+adjustable packaging caps become 251 and 321. No workload, sample or runtime limit
+changes. Final independent review returns SPEC compliant and QUALITY Approved,
+closing the unused private validation parameter without a compatibility path. The
+maintained style gate after the feature merge commit remains required before push.
+The precommit style attempt failed 14 inherited Relic findings because its merge-base predates pinned main; do not
+claim that attempt passed or remediate independent untouched owners.
+Publish each reviewed, validated feature slice promptly. Continue through existing
+[PR633](https://github.com/intact-software-systems/ar-eye-hunter/pull/633) and stacked
+[PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645), without a
+duplicate pull request. PR645's d586 hosted run 37655992935 passes all selected
+correctness jobs; static now reaches four unclassified network-interaction
+assertions. Narrow classification of those independently required I/O boundaries
+is the next continuation slice. Visible recipe controls, worker/Actions outcomes,
+B01–B06 acceptance and a new exact main-integration decision remain required.
 B06 selection and producer configuration are published; governed E3 has zero accepted cohorts
 and remains required in Section 11. Current product and architecture are [docs/product.md](../../product.md)
 and [docs/architecture.md](../../architecture.md). The canonical executable

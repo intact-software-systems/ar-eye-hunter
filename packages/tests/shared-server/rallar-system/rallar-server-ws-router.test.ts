@@ -71,7 +71,7 @@ describe('RallarServerWsRouter', () => {
             delivered.push(message.raw.id.msgId);
         });
         fixture.router.install();
-        const message = newALBroadcastMessage('peer-1', newALRoute('app.deadline', 'message', 'all'), 'all', 'app.deadline.v1', {});
+        const message = newALBroadcastMessage('peer-1', newALRoute('app.deadline', 'message', 'world'), 'world', 'app.deadline.v1', {});
 
         await fixture.socket.receive(message);
         const keys = await stores.workQueue.getAllKeys();
@@ -121,7 +121,7 @@ describe('RallarServerWsRouter', () => {
                 }
             });
         }
-        const message = newALBroadcastMessage('peer-1', newALRoute('app.retry', 'message', 'all'), 'all', 'app.retry.v1', {});
+        const message = newALBroadcastMessage('peer-1', newALRoute('app.retry', 'message', 'world'), 'world', 'app.retry.v1', {});
 
         await fixture.socket.receive(message);
 
@@ -775,7 +775,8 @@ describe('RallarServerWsRouter', () => {
 
         await fixture.sockets['peer-1']!.receive(message);
 
-        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2', 'peer-3']);
+        // A client's room broadcast reaches its admitted audience but never its own origin session.
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-2', 'peer-3']);
     });
 
     it('sends only to the connected part of the admitted audience and keeps the disconnected one expected', async () => {
@@ -789,7 +790,8 @@ describe('RallarServerWsRouter', () => {
 
         await fixture.sockets['peer-1']!.receive(message);
 
-        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2']);
+        // A client's room broadcast reaches its admitted audience but never its own origin session.
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-2']);
         await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toEqual([
             expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: ['peer-2', 'peer-3'] })
         ]);
@@ -886,7 +888,8 @@ describe('RallarServerWsRouter', () => {
 
         await fixture.sockets['peer-1']!.receive(message);
 
-        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2']);
+        // A client's room broadcast reaches its admitted audience but never its own origin session.
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-2']);
         expect(await fixture.outboundStores.admissionStore.readReceiptState({ originPeerId: 'peer-1', msgId: message.id.msgId }))
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['peer-2'], ackedPeerIds: [] });
         expect(fixture.sockets['peer-4']!.sent.filter((sent) => sent.payload.typeId === 'chat.message.v1')).toEqual([]);
@@ -915,8 +918,9 @@ describe('RallarServerWsRouter', () => {
             groupRecipientPeerIds: sessionIds
         });
 
+        // Every admitted session but the sender's own origin session receives it.
         await expect.poll(() => Object.values(fixture.sockets).filter((socket) => socket.sent.some((sent) => sent.id.msgId === 'large-room-1')).length).toBe(
-            sessionIds.length
+            sessionIds.length - 1
         );
         const delivered = Object.values(fixture.sockets).flatMap((socket) => socket.sent.filter((sent) => sent.id.msgId === 'large-room-1'));
         expect(delivered.every((sent) => sent.targets?.mode === 'broadcast' && sent.targets.recipientPeerIds === undefined)).toBe(true);

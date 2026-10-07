@@ -38,11 +38,13 @@ export type AlmConformanceScenarioId =
     | 'fenced-catch-up'
     | 'fenced-delivery'
     | 'fenced-rejection'
+    | 'fixed-list-delivery'
     | 'flush-on-hide'
     | 'no-fallback-after-deadline'
     | 'not-yet-in-sync'
     | 'ordering-gap-repair'
     | 'ordering-resync'
+    | 'principal-delivery'
     | 'receipt-exhausted-fallback'
     | 'repair-exhausted'
     | 'receipted-audience'
@@ -50,6 +52,7 @@ export type AlmConformanceScenarioId =
     | 'storage-unavailable'
     | 'unicast-fallback'
     | 'volatile-default'
+    | 'world-routing'
     | 'ws-unicast-receipt';
 
 export type AlmConformanceTag = 'smoke' | 'full';
@@ -70,8 +73,9 @@ export interface AlmConformanceMessageStepInput extends AlmConformanceStepInput 
 /**
  * The addressed sends run on their own two agents, so the baseline cell keeps its wall time. A `same-context`
  * scenario runs its sender and its successor as two pages of one browser context, which only the Playwright lane has.
+ * A `same-principal` scenario signs the sender's user in a second time on an agent of its own.
  */
-export type AlmConformanceLaneFamily = 'two-agent' | 'addressed' | 'three-agent' | 'same-context';
+export type AlmConformanceLaneFamily = 'two-agent' | 'addressed' | 'three-agent' | 'same-context' | 'same-principal';
 
 export interface AlmConformanceScenarioDefinition {
     readonly scenarioId: AlmConformanceScenarioId;
@@ -80,12 +84,12 @@ export interface AlmConformanceScenarioDefinition {
     readonly carriers: readonly AlmConformanceCarrier[];
     /**
      * Every scenario declares the sender and the receiver; a three-agent scenario adds `recipient-b`, a same-context
-     * scenario adds `successor`.
+     * scenario adds `successor`, a same-principal scenario adds `sibling`.
      */
     readonly roles: readonly AlmConformanceRole[];
     /**
      * The lane test that runs it: `three-agent` exactly when `roles` declares `recipient-b`, `same-context` exactly
-     * when it declares `successor`.
+     * when it declares `successor`, `same-principal` exactly when it declares `sibling`.
      */
     readonly laneFamily: AlmConformanceLaneFamily;
     /** Called once per page of the sender's session: the sender, and the successor a scenario declares. */

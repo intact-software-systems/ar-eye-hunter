@@ -23,7 +23,8 @@ export interface ALAckSupportInput {
 
 /**
  * One issue naming an unsupported algorithm/carrier/target pair (D42). `receiver` needs a logical audience, which
- * only a unicast addressee or a room has; a world, all or principal broadcast has none. A WS unicast has its
+ * only a unicast addressee or a room has: a multicast, a room broadcast with or without its fixed list, or a
+ * principal broadcast that names its room; a world or all broadcast has none. A WS unicast has its
  * addressee as its audience only when it names its room: the room's router delivers it and the server aggregates
  * the addressee's ACK (D53). One that names no room has no aggregate on the server and is refused.
  */
@@ -52,7 +53,11 @@ function hasLogicalReceiverAudience(
     if (targets?.mode === 'unicast') {
         return carrier !== 'ws' || targets.groupRef !== undefined;
     }
-    return targets !== undefined && (targets.mode !== 'broadcast' || targets.scope === 'room');
+    return targets !== undefined && (
+        targets.mode !== 'broadcast' ||
+        targets.scope === 'room' ||
+        (targets.scope === 'principal' && targets.groupRef !== undefined)
+    );
 }
 
 function toTargetsName(targets: ALTargets | undefined): string {

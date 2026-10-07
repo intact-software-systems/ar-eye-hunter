@@ -12,6 +12,7 @@ type RuntimeHook = Readonly<{
         ignoredSnapshotCount: number;
         lastSnapshotSource?: string;
         lastIgnoredSnapshotReason?: string;
+        roundTransitionCues: readonly string[];
         lastAcceptedSnapshot?: Readonly<{
             source: string;
             phase: string;
@@ -77,6 +78,7 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
                 playerCount: 2,
                 submittedCount: 0
             });
+            await expectRoundTransitionCues(pageA, pageB, ['1:round-started']);
 
             await pageA.getByRole('button', { name: 'Submit Plan' }).click();
             await expectConverged(pageA, pageB, {
@@ -94,6 +96,11 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
                 submittedCount: 0,
                 minEventCount: 3
             });
+            await expectRoundTransitionCues(pageA, pageB, [
+                '1:round-started',
+                '1:round-resolved',
+                '2:review-continued'
+            ]);
 
             await pageB.reload();
             await expect(pageB.getByRole('button', { name: 'Refresh' })).toBeVisible();
@@ -104,6 +111,17 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
                 submittedCount: 0,
                 minEventCount: 3
             });
+
+            await pageA.getByRole('button', { name: 'Submit Plan' }).click();
+            await pageB.getByRole('button', { name: 'Submit Plan' }).click();
+            await expectConverged(pageA, pageB, {
+                phase: 'planning',
+                round: 3,
+                playerCount: 2,
+                submittedCount: 0,
+                minEventCount: 5
+            });
+            await expectCuesResumedAfterReload(pageA, pageB);
 
             await pageA.getByRole('button', { name: 'Reset' }).click();
             await expectConverged(pageA, pageB, {
@@ -352,6 +370,31 @@ async function expectConverged(
     return comparableSnapshot(lastA.snapshot);
 }
 
+/** Both pages cued exactly these round transitions, in this order. */
+async function expectRoundTransitionCues(pageA: Page, pageB: Page, expected: readonly string[]): Promise<void> {
+    for (const page of [pageA, pageB]) {
+        await expect.poll(async () => (await readRuntime(page))?.diagnostics.roundTransitionCues ?? [], {
+            timeout: 30_000
+        }).toEqual(expected);
+    }
+}
+
+/**
+ * The page that stayed cued round 2 out and round 3 in. The reloaded page cues round 3 at the latest: what it cued of
+ * round 2 depends on the server repairing that track for it, and whatever it cued is in the track order.
+ */
+async function expectCuesResumedAfterReload(stayed: Page, reloaded: Page): Promise<void> {
+    const roundTwoAndThree = ['2:review-continued', '2:round-resolved', '3:review-continued'];
+    await expect.poll(async () => (await readRuntime(stayed))?.diagnostics.roundTransitionCues ?? [], {
+        timeout: 30_000
+    }).toEqual(['1:round-started', '1:round-resolved', ...roundTwoAndThree]);
+    await expect.poll(async () => (await readRuntime(reloaded))?.diagnostics.roundTransitionCues.at(-1), {
+        timeout: 30_000
+    }).toBe('3:review-continued');
+    const reloadedCues = (await readRuntime(reloaded))?.diagnostics.roundTransitionCues ?? [];
+    expect(roundTwoAndThree.filter((cue) => reloadedCues.includes(cue))).toEqual(reloadedCues);
+}
+
 async function waitForRuntime(
     page: Page,
     predicate: (runtime: RuntimeHook) => boolean
@@ -366,7 +409,7 @@ async function waitForRuntime(
 
 async function readRuntime(page: Page): Promise<RuntimeHook | undefined> {
     return await page.evaluate(() =>
-        (window as unknown as { __relicHuntersRuntime?: RuntimeHook; }).__relicHuntersRuntime
+        (window as Window & { __relicHuntersRuntime?: RuntimeHook; }).__relicHuntersRuntime
     );
 }
 

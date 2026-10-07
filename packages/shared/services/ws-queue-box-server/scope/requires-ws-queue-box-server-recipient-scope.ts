@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '../../../al-contracts/al-control.ts';
+import { isALWorldBroadcast } from '../../../al-contracts/is-al-world-broadcast.ts';
 import type { ALOutboundCapturedPolicy } from '../../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     resolveALOutboundScopeAuthority,
@@ -30,7 +31,7 @@ export function isWsQueueBoxServerDirectWorldBroadcastRow(
     referenceKey: Key | undefined
 ): boolean {
     return referenceKey !== undefined && referenceKey.topicId !== 'AL_OUTBOUND_MESSAGE' &&
-        message.targets?.mode === 'broadcast' && message.targets.scope === 'world';
+        isALWorldBroadcast(message);
 }
 
 export function readWsQueueBoxServerScopedTargetScope(message: ALMessage): StateScope | undefined {
@@ -85,8 +86,8 @@ export function validateWsQueueBoxServerRecipientAuthority(
         case 'none':
             return requiresWsQueueBoxServerRecipientScope(message) ||
                     isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey) ||
-                    isWsQueueBoxServerDirectWorldBroadcastRow(message, referenceKey)
-                ? ['Public WS unicast requires explicit application and workspace scope']
+                    isALWorldBroadcast(message)
+                ? ['Public WS unicast and world broadcast require explicit application and workspace scope']
                 : [];
     }
 }

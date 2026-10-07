@@ -4,7 +4,8 @@ import type {
     RallarAiGenerationPolicy,
     RallarAiJsonProvider,
     RallarAiJsonRequest,
-    RallarAiJsonResult
+    RallarAiJsonResult,
+    RallarAiJsonValue
 } from '@shared/rallar-ai/mod.ts';
 import type { RallarDataDurability, RallarDataScope } from './rallar-data.ts';
 import type { RallarFacade, RallarMessageHandle, RallarRealtimeSendResult } from './rallar.ts';
@@ -28,12 +29,15 @@ export interface CreateRallarBrowserAiOptions {
     ) => string | undefined;
 }
 
-export interface RallarBrowserAiBroadcastInput<TValue = unknown> {
+export interface RallarBrowserAiBroadcastInput<TValue> {
     readonly result: RallarAiJsonResult<TValue>;
     readonly transport?: RallarBrowserAiTransport;
     readonly laneId?: string;
     readonly roomId?: string;
     readonly roomRef?: GroupRef;
+    /** Absent, the room; `principal` reaches only `principalId`'s live sessions in the room, over a message transport. */
+    readonly scope?: 'room' | 'principal';
+    readonly principalId?: string;
     readonly topicId?: string;
     readonly typeId?: string;
 }
@@ -44,7 +48,7 @@ export interface RallarBrowserAiBroadcastResult {
     readonly message?: RallarMessageHandle;
 }
 
-export interface RallarBrowserAiPersistInput<TValue = unknown> {
+export interface RallarBrowserAiPersistInput<TValue> {
     readonly result: RallarAiJsonResult<TValue>;
     readonly storeName?: string;
     readonly key?: string;
@@ -53,13 +57,13 @@ export interface RallarBrowserAiPersistInput<TValue = unknown> {
 }
 
 export interface RallarBrowserAiFacade {
-    generateJson<TValue = unknown, TContext = unknown>(
+    generateJson<TValue, TContext = RallarAiJsonValue>(
         request: RallarAiJsonRequest<TContext>
     ): Promise<RallarAiJsonResult<TValue>>;
-    broadcastJson<TValue = unknown>(
+    broadcastJson<TValue>(
         input: RallarBrowserAiBroadcastInput<TValue>
     ): Promise<RallarBrowserAiBroadcastResult>;
-    persistJson<TValue = unknown>(
+    persistJson<TValue>(
         input: RallarBrowserAiPersistInput<TValue>
     ): Promise<void>;
 }

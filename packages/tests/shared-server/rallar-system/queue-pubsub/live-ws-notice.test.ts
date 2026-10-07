@@ -28,39 +28,46 @@ function publication(resource = '') {
 }
 
 describe('live WS notice codec', () => {
-    it('round trips broad inline and canonical key notices without an invented scope', () => {
-        const broadMessage: ALMessage = {
+    it('round trips a world notice inline and as a canonical key with the scope it reaches, and refuses one without it', () => {
+        const worldMessage: ALMessage = {
             ...message(),
             targets: { mode: 'broadcast', scope: 'world' }
         };
-        const broad = {
+        const world = {
             channel: 'ws-channel',
             publisherId: 'publisher-a',
+            scope,
             expiresAtMs: 1_800_000_000_000,
             audience: { mode: 'broad' as const, targetMode: 'world' as const },
-            message: broadMessage
+            message: worldMessage
         };
-        const inline = encodeLiveWsNotice(broad);
+        const inline = encodeLiveWsNotice(world);
         expect(inline.kind).toBe('inline');
         if (inline.kind === 'inline') {
-            expect(Object.hasOwn(inline.notice, 'scope')).toBe(false);
+            expect(inline.notice.scope).toEqual(scope);
             expect(decodeLiveWsNotice(JSON.parse(inline.serialized), 'ws-channel', 1)).toEqual(inline.notice);
+            const { scope: _scope, ...unscoped } = inline.notice;
+            expect(decodeLiveWsNotice(unscoped, 'ws-channel', 1)).toBeUndefined();
         }
         const key = encodeLiveWsNotice({
-            ...broad,
-            message: { ...broadMessage, payload: { ...broadMessage.payload, resource: JSON.stringify('x'.repeat(8_000)) } },
+            ...world,
+            message: { ...worldMessage, payload: { ...worldMessage.payload, resource: JSON.stringify('x'.repeat(8_000)) } },
             inbound: { namespace: 'ws', reference: { senderId: 'sender', msgId: 'message-1' } }
         });
         expect(key.kind).toBe('inbound-key');
         if (key.kind === 'inbound-key') {
-            expect(Object.hasOwn(key.notice, 'scope')).toBe(false);
-            expect(key.notice).toMatchObject({ audienceMode: 'broad', targetMode: 'world' });
+            expect(key.notice).toMatchObject({ scope, audienceMode: 'broad', targetMode: 'world' });
             expect(decodeLiveWsNotice(JSON.parse(key.serialized), 'ws-channel', 1)).toEqual(key.notice);
             if (key.notice.delivery === 'inbound-key' && key.notice.audienceMode === 'broad') {
                 const { targetMode: _targetMode, ...missingTargetMode } = key.notice;
                 expect(decodeLiveWsNotice(missingTargetMode, 'ws-channel', 1)).toBeUndefined();
+                const { scope: _scope, ...missingScope } = key.notice;
+                expect(decodeLiveWsNotice(missingScope, 'ws-channel', 1)).toBeUndefined();
             }
         }
+        const withoutScope = { ...world };
+        Reflect.deleteProperty(withoutScope, 'scope');
+        expect(() => encodeLiveWsNotice(withoutScope)).toThrow(TypeError);
     });
 
     it('rejects broad scope spoofing and scoped notices missing scope', () => {

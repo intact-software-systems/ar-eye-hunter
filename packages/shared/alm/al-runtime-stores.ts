@@ -11,7 +11,7 @@ import {
 } from './al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from './al-admission-work-backend.ts';
 import type { ALRuntimeStoreRetentionConfig } from './ALStoreRetention.ts';
-import { normalizeALRuntimeStoreRetention } from './ALStoreRetention.ts';
+import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from './ALStoreRetention.ts';
 import type { ALCheckpointWriter } from './checkpoint/al-checkpoint-writer.ts';
 import { ALCheckpoint, type ALCheckpointStorage } from './checkpoint/al-checkpoint.ts';
 import {
@@ -429,7 +429,9 @@ function toDefaultInMemoryInput(
         canonicalScope: options.canonicalScope,
         inboundBackend: options.inboundBackend,
         outboundBackend: options.outboundBackend,
-        orderingTrackTtlMs: options.orderingTrackTtlMs ?? 5 * 60_000,
+        // A receiver remembers a track at least as long as its sender keeps the head, or a silence past it reads as
+        // a gap the sender can no longer repair.
+        orderingTrackTtlMs: options.orderingTrackTtlMs ?? DEFAULT_AL_REPOSITORY_TTL_MS,
         supersedenceTrackTtlMs: options.supersedenceTrackTtlMs ?? 5 * 60_000,
         retention: options.retention
     };

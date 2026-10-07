@@ -38,7 +38,7 @@ const REALTIME_ENVELOPE_FIELDS: readonly string[] = [
     'resourceId'
 ];
 const ENVELOPE_PAYLOAD_FIELDS = ['payload', 'data'] as const;
-const WEB_SOCKET_SCOPES: readonly NonNullable<BlackBoxRallarWsSendInput['scope']>[] = ['room', 'world', 'all'];
+const WEB_SOCKET_SCOPES: readonly NonNullable<BlackBoxRallarWsSendInput['scope']>[] = ['room', 'world'];
 
 export function decodeBlackBoxRallarSendCommand(
     value: unknown

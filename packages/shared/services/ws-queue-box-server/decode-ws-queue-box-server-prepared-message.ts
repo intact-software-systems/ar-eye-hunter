@@ -1,4 +1,5 @@
 import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
+import { isALWorldBroadcast } from '../../al-contracts/is-al-world-broadcast.ts';
 import {
     decodeALAdmissionRecord,
     decodeALAdmissionString
@@ -76,7 +77,7 @@ function isConnectionCheckedRow(message: ALMessage, referenceKey: Key): boolean 
     return requiresWsQueueBoxServerRecipientScope(message) ||
         (message.targets?.mode === 'unicast' && message.targets.groupRef !== undefined) ||
         isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey) ||
-        isWsQueueBoxServerDirectWorldBroadcastRow(message, referenceKey);
+        isALWorldBroadcast(message);
 }
 
 function decodeRoomRecipientPrepared(
@@ -173,6 +174,11 @@ function validateScopedRecipientTarget(input: ScopedRecipientTargetInput): reado
         return message.route.contextId !== scope.applicationId || !addressesItsConnection ||
                 principalTargetId !== undefined
             ? ['Persisted scoped recipient differs from direct world target']
+            : [];
+    }
+    if (isALWorldBroadcast(message)) {
+        return !addressesItsConnection || principalTargetId !== undefined
+            ? ['Persisted scoped recipient differs from world target']
             : [];
     }
     const targets = message.targets;

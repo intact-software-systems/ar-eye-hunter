@@ -1,6 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
+import { isALWorldBroadcast } from '@shared/al-contracts/is-al-world-broadcast.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
@@ -19,7 +20,6 @@ import {
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import {
     isWsQueueBoxServerDirectScopedBroadcastRow,
-    isWsQueueBoxServerDirectWorldBroadcastRow,
     validateWsQueueBoxServerRecipientAuthority
 } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
 import { resolveWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
@@ -404,8 +404,7 @@ function sendToCapturedLocalTargets(
         admittedPeerIds: captured,
         inboundScope: message.targets?.mode === 'unicast' ? recipientScope : undefined,
         recipientPrincipalId: policy?.principalTargetId,
-        recipientScope: directBroadcast || isWsQueueBoxServerDirectWorldBroadcastRow(message, entry.key) ||
-                policy?.principalTargetId !== undefined
+        recipientScope: directBroadcast || isALWorldBroadcast(message) || policy?.principalTargetId !== undefined
             ? recipientScope
             : undefined
     });

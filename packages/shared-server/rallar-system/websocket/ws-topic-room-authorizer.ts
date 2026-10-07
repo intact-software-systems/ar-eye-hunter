@@ -3,6 +3,7 @@ import {
     canSendGroupMessage
 } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { denyGroupPolicy } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import { isALAudienceSession, toALAudienceNarrowing } from '@shared/al-contracts/al-audience-narrowing.ts';
 import { readALTargetGroupRef, type ALMessage, type ALTargets } from '@shared/al-contracts/al-contract.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
@@ -124,13 +125,15 @@ export function toAuthorizedRoomAudience(
     targets: ALTargets,
     nowEpochMs: number
 ): RallarServerWsRoomAudience {
+    const narrowing = toALAudienceNarrowing(targets);
     const activePrincipals = new Set(
         snapshot.members.filter((member) => member.status === 'active').map((member) => member.principalId)
     );
     return {
         targets,
         sessions: snapshot.activeSessions.filter((session) =>
-            activePrincipals.has(session.principalId) && isGroupSnapshotSessionLive(session, nowEpochMs)
+            activePrincipals.has(session.principalId) && isGroupSnapshotSessionLive(session, nowEpochMs) &&
+            isALAudienceSession(session, narrowing)
         ),
         snapshotVersion: readGroupVersion(snapshot)
     };

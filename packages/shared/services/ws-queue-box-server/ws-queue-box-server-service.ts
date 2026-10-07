@@ -11,6 +11,7 @@ import {
     type ALQosInputProvider,
     type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
+import { isALWorldBroadcast } from '../../al-contracts/is-al-world-broadcast.ts';
 import type { ALDeliverySettlementSink } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeStores } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
@@ -91,12 +92,12 @@ export namespace WsQueueBoxServerService {
         /** Absent on a single instance: an ACK no aggregate here counts is then refused at ingress. */
         readonly publishRelayedAck?: WsServerAckRelayPublisher;
         /**
-         * Whether inbound ALM forwarding relays room-scoped messages (default
+         * Whether inbound ALM forwarding relays room-scoped messages and world broadcasts (default
          * true, the standalone service contract). A composition that installs a
          * topic router with a room authorizer must pass false: the router owns
-         * room-scoped fanout behind its authorization, and relaying here would
-         * deliver messages the authorizer rejects (and double-deliver the ones
-         * it accepts).
+         * that fanout behind its authorization and the topic's fanout, and relaying here would
+         * deliver messages the authorizer rejects or the topic does not fan out
+         * (and double-deliver the ones it accepts).
          */
         readonly forwardsRoomScopedMessages?: boolean;
     }
@@ -333,7 +334,8 @@ export class WsQueueBoxServerService {
             },
             readRelayedAckRejection: (ack) => this.ackRelay.readRelayedAckRejection(ack),
             forwardMessage: (input) => this.inboundDelivery.forwardIncomingMessage(input),
-            canForwardMessage: (message) => this.forwardsRoomScopedMessages || !isRoomScopedALMessage(message),
+            canForwardMessage: (message) =>
+                this.forwardsRoomScopedMessages || (!isRoomScopedALMessage(message) && !isALWorldBroadcast(message)),
             diagnostics: dependencies.inboundDiagnostics
         });
     }

@@ -50,6 +50,34 @@ describe('validateALAckSupport', () => {
         }
     });
 
+    it('admits receiver on a principal broadcast in a room and on a listed room broadcast, over both carriers', () => {
+        const principalRef = { applicationId: 'app', workspaceId: 'workspace', principalId: 'principal-1' };
+        const principalInRoom: ALTargets = { mode: 'broadcast', scope: 'principal', groupRef: room, principalRef };
+        const listedRoom: ALTargets = { ...roomBroadcastTargets, recipientPeerIds: ['b'] };
+
+        for (const targets of [principalInRoom, listedRoom]) {
+            expect(validateALAckSupport({ algo: 'receiver', carrier: 'ws', targets, capabilities: wsCapabilities })).toEqual([]);
+            expect(validateALAckSupport({ algo: 'receiver', carrier: 'rtc', targets, capabilities: rtcCapabilities })).toEqual([]);
+        }
+    });
+
+    it('refuses receiver on a principal broadcast that names no room and on an all broadcast', () => {
+        const principalRef = { applicationId: 'app', workspaceId: 'workspace', principalId: 'principal-1' };
+
+        expect(validateALAckSupport({
+            algo: 'receiver',
+            carrier: 'ws',
+            targets: { mode: 'broadcast', scope: 'principal', principalRef },
+            capabilities: wsCapabilities
+        })).toEqual([{ aspect: 'ack', detail: 'ack receiver is unsupported for ws principal targets' }]);
+        expect(validateALAckSupport({
+            algo: 'receiver',
+            carrier: 'ws',
+            targets: { mode: 'broadcast', scope: 'all' },
+            capabilities: wsCapabilities
+        })).toEqual([{ aspect: 'ack', detail: 'ack receiver is unsupported for ws all targets' }]);
+    });
+
     it('admits receiver on a WS unicast that names its room and refuses one that names none (D53, C2)', () => {
         const roomless: ALTargets = { mode: 'unicast', toPeerId: 'peer' };
         const inRoom: ALTargets = { mode: 'unicast', toPeerId: 'peer', groupRef: room };

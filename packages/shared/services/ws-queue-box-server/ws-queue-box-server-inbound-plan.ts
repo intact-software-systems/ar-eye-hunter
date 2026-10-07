@@ -15,9 +15,10 @@ export interface ToWsQueueBoxServerInboundPlanInput {
 
 /**
  * The WS server's own changes to the plan of a message its router admitted to a room audience. A room unicast to
- * another session is the router's to deliver (Q4): the server receives it locally and plans its own ACK as for any
- * message it receives. A `receiver` message the server aggregates withholds that ACK, because the receipt speaks for
- * the audience; a message addressed to the server itself keeps it and opens no aggregate (D57 as applied).
+ * another session, and a room broadcast whose fixed list leaves the server out, is the router's to deliver: the
+ * server receives it locally and plans its own ACK as for any message it receives. A `receiver` message the server
+ * aggregates withholds that ACK, because the receipt speaks for the audience; a message addressed to the server itself
+ * keeps it and opens no aggregate.
  */
 export function toWsQueueBoxServerInboundPlan(
     input: ToWsQueueBoxServerInboundPlanInput
@@ -47,8 +48,8 @@ export function toWsQueueBoxServerInboundPlan(
 
 function toRouterDeliveredPlan(input: ToWsQueueBoxServerInboundPlanInput): ALMessageHandlingPlan {
     const { plan, message } = input;
-    const routerDelivers = input.routerOwnsRoomFanout && message.targets?.mode === 'unicast' &&
-        !isALUnicastAddressedTo(message, input.serverPeerId) && plan.dropReasonCode === undefined;
+    const routerDelivers = input.routerOwnsRoomFanout && isAddressedPastServer(message, input.serverPeerId) &&
+        plan.dropReasonCode === undefined;
     return routerDelivers
         ? {
             ...plan,
@@ -59,4 +60,16 @@ function toRouterDeliveredPlan(input: ToWsQueueBoxServerInboundPlanInput): ALMes
             }
         }
         : plan;
+}
+
+function isAddressedPastServer(message: ALMessage, serverPeerId: string): boolean {
+    const targets = message.targets;
+    switch (targets?.mode) {
+        case 'unicast':
+            return !isALUnicastAddressedTo(message, serverPeerId);
+        case 'broadcast':
+            return targets.recipientPeerIds !== undefined && !targets.recipientPeerIds.includes(serverPeerId);
+        default:
+            return false;
+    }
 }

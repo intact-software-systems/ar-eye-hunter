@@ -10,7 +10,7 @@ import {
 
 type WsSendCommand = Extract<CommandWithId, { kind: 'ws.send'; }>;
 
-const WEB_SOCKET_SCOPES = ['room', 'world', 'all'] as const;
+const WEB_SOCKET_SCOPES = ['room', 'world'] as const;
 
 interface WebSocketRoomSelection {
     readonly applicationId: string | undefined;
@@ -163,7 +163,7 @@ function resolveWebSocketRoom(sources: WebSocketRoomSources): WebSocketRoomSelec
     const roomIdCandidate = decodeNonEmptyBrowserCommandString(
         resolveFirstDefined([data.roomId, data.groupId, config?.roomId])
     );
-    const roomId = wsScope === 'all' || wsScope === 'world' ? undefined : roomIdCandidate;
+    const roomId = wsScope === 'world' ? undefined : roomIdCandidate;
     return {
         applicationId,
         workspaceId,
@@ -184,7 +184,7 @@ function decodeNonEmptyBrowserCommandString(value: unknown): string | undefined 
     return text && text.length > 0 ? text : undefined;
 }
 
-function decodeWebSocketScope(value: unknown): 'room' | 'world' | 'all' | undefined {
+function decodeWebSocketScope(value: unknown): 'room' | 'world' | undefined {
     return typeof value === 'string' ? WEB_SOCKET_SCOPES.find((scope) => scope === value) : undefined;
 }
 

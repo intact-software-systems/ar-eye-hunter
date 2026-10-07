@@ -40,6 +40,8 @@ export interface ALOutboundCapturedPolicy {
     readonly retryTracking: NonNullable<ALOutboundDispatchPlan<never>['retryTracking']> | null;
     readonly repairTracking: NonNullable<ALOutboundDispatchPlan<never>['repairTracking']> | null;
     readonly supersedenceTracking: NonNullable<ALOutboundDispatchPlan<never>['supersedenceTracking']> | null;
+    /** Kept only for a WS server publication whose admission mints its sequence, so a retained replay mints too. */
+    readonly mintsSequence?: true;
     /** Kept only for a message a server admitted to an audience; absent for every other message. */
     readonly admittedAudience?: readonly string[];
     readonly recipientScope?: StateScope;
@@ -54,6 +56,7 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
         retryTracking: plan.retryTracking ?? null,
         repairTracking: plan.repairTracking ?? null,
         supersedenceTracking: plan.supersedenceTracking ?? null,
+        ...(plan.mintsSequence ? { mintsSequence: true } : {}),
         ...(plan.admittedAudience === undefined ? {} : { admittedAudience: plan.admittedAudience }),
         ...(plan.sessionInvalidation === undefined
             ? {}
@@ -147,7 +150,10 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         'retryTracking',
         'repairTracking',
         'supersedenceTracking'
-    ], ['admittedAudience', 'recipientScope', 'principalTargetId', 'sessionInvalidation']);
+    ], ['mintsSequence', 'admittedAudience', 'recipientScope', 'principalTargetId', 'sessionInvalidation']);
+    if (policy.mintsSequence !== undefined && policy.mintsSequence !== true) {
+        throw new TypeError('Captured sequence minting is invalid');
+    }
     if (policy.sessionInvalidation !== undefined) {
         decodeALSessionInvalidationAuthority(policy.sessionInvalidation);
         if (policy.recipientScope !== undefined) {

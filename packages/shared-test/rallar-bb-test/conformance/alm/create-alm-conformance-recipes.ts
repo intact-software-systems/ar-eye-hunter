@@ -30,6 +30,9 @@ import {
 } from './alm-conformance-session-commands.ts';
 import { toRoomRef, toSendHandleId } from './alm-conformance-step-identities.ts';
 import type { AlmReloadCheckpoint } from './alm-reload-pair.ts';
+import { fixedListDelivery } from './scenarios/audiences/fixed-list-delivery.ts';
+import { principalDelivery } from './scenarios/audiences/principal-delivery.ts';
+import { worldRouting } from './scenarios/audiences/world-routing.ts';
 import { boundedRejection } from './scenarios/bounded-rejection.ts';
 import { capacity } from './scenarios/capacity.ts';
 import { crossCarrierDuplicate } from './scenarios/cross-carrier-duplicate.ts';
@@ -71,6 +74,8 @@ export interface AlmConformanceScenario {
     readonly recipientB: RallarBlackBoxTestRecipe | undefined;
     /** The sender's second page's recipe; undefined exactly when `roles` does not declare `successor`. */
     readonly successor: RallarBlackBoxTestRecipe | undefined;
+    /** The second session of the sender's principal; undefined exactly when `roles` does not declare `sibling`. */
+    readonly sibling: RallarBlackBoxTestRecipe | undefined;
     readonly tags: readonly AlmConformanceTag[];
 }
 
@@ -121,6 +126,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     fencedDelivery,
     fencedCatchUp,
     fencedRejection,
+    principalDelivery,
+    fixedListDelivery,
+    worldRouting,
     durableTakeover,
     flushOnHide
 ];
@@ -174,7 +182,8 @@ function toAlmConformanceScenario(
         sender: toRoleRecipe('sender'),
         receiver: toRoleRecipe('receiver'),
         recipientB: definition.roles.includes('recipient-b') ? toRoleRecipe('recipient-b') : undefined,
-        successor: definition.roles.includes('successor') ? toRoleRecipe('successor') : undefined
+        successor: definition.roles.includes('successor') ? toRoleRecipe('successor') : undefined,
+        sibling: definition.roles.includes('sibling') ? toRoleRecipe('sibling') : undefined
     };
 }
 

@@ -3280,18 +3280,63 @@ moved or changed test.
       }
     },
     {
-      "id": "browser-invalid-fallback-no-admission",
+      "id": "browser-invalid-scope-no-admission",
       "domain": "Typed message audience validation",
       "owner": "Rallar browser maintainers",
-      "summary": "An unsupported all-scope fallback rejects before either carrier can publish.",
-      "semanticCoverage": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts#reports every unsupported fallback constraint before connecting or queueing",
-      "coverageRelation": "The public room channel rejects the scope issue alone and remains disconnected; both carrier admission ports are observed.",
+      "summary": "A WS send naming a scope outside room, world and principal rejects before the WS carrier can publish it.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#names the three scopes a browser WS send may take",
+      "coverageRelation": "The public WS lane rejects the scope issue alone; the WS carrier admission port is observed.",
       "interactionRequirement": {
         "interactionKind": "absence",
-        "ownedPort": "WebSocketQueueBox and WebRtcRxStreamerService enqueueOutboxIfAbsent carrier admission ports",
+        "ownedPort": "WebSocketQueueBox enqueueOutboxIfAbsent carrier admission port",
         "observableEffect": "Carrier admission can retain or publish a message to its resolved audience.",
-        "requiredConstraint": "An unsupported fallback scope must produce no WS or RTC admission.",
-        "failureRationale": "An error response can follow an illicit send; validation errors and disconnected facade state alone do not prove absence of publication."
+        "requiredConstraint": "A scope a browser may not address must produce no WS admission.",
+        "failureRationale": "An error response can follow an illicit send; the validation error alone does not prove absence of publication."
+      }
+    },
+    {
+      "id": "browser-rtc-invalid-scope-no-admission",
+      "domain": "Typed message audience validation",
+      "owner": "Rallar browser maintainers",
+      "summary": "An rtc-strategy send naming a scope outside room, world and principal rejects before the RTC carrier can publish it.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#an rtc-strategy send with an invalid scope produces no RTC admission",
+      "coverageRelation": "The room channel's rtc strategy rejects the scope issue; the RTC carrier admission port is observed.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebRtcRxStreamerService enqueueOutboxIfAbsent carrier admission port",
+        "observableEffect": "Carrier admission can retain or publish a message to its resolved audience.",
+        "requiredConstraint": "A scope a browser may not address must produce no RTC admission.",
+        "failureRationale": "An error response can follow an illicit send; the validation error alone does not prove absence of publication."
+      }
+    },
+    {
+      "id": "browser-world-send-on-rtc-refused-alone",
+      "domain": "Typed message audience routing",
+      "owner": "Rallar browser maintainers",
+      "summary": "A world send on the rtc strategy reaches only the RTC carrier, as the world broadcast it holds, and WS admits nothing.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal",
+      "coverageRelation": "The RTC carrier admission port receives the world broadcast with the hold gap admission and the WS port is never called. The RTC port double injects the unsupported refusal, so the pinned outcome is the ledger projection of that refusal: the handle ends rejected.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebRtcRxStreamerService and WebSocketQueueBox enqueueOutboxIfAbsent carrier admission ports",
+        "observableEffect": "Carrier admission can retain or publish a message to its resolved audience.",
+        "requiredConstraint": "A world send whose strategy names RTC alone must offer RTC the world broadcast and must produce no WS admission.",
+        "failureRationale": "A rejected handle can follow a WS publication; the handle state alone does not prove which carriers admitted the send."
+      }
+    },
+    {
+      "id": "browser-ai-principal-result-not-realtime",
+      "domain": "Browser AI result delivery",
+      "owner": "Rallar browser maintainers",
+      "summary": "A principal-scoped AI result is never broadcast over realtime, which reaches the whole room.",
+      "semanticCoverage": "packages/tests/shared-web/ai/browser-rallar-ai.test.ts#broadcasts a principal-scoped result to the principal over a message transport, and never over realtime",
+      "coverageRelation": "The realtime transport rejects the principal scope and its send port is observed.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarFacade realtime.sendJson",
+        "observableEffect": "A realtime send reaches every live session of the room.",
+        "requiredConstraint": "A principal-scoped AI result must produce no realtime send.",
+        "failureRationale": "The validation error alone does not prove that no room-wide realtime send happened first."
       }
     },
     {
@@ -3414,6 +3459,51 @@ moved or changed test.
         "observableEffect": "A command whose WS send returned a delivery makes no REST request.",
         "requiredConstraint": "The runtime falls back to REST only when the WS path returned no delivery (no server id known), never after a WS attempt.",
         "failureRationale": "The WS outcome reads the same whether or not a REST copy was also sent, and a REST copy after a WS command could apply the command twice on the server; the absent REST call is the only witness."
+      }
+    },
+    {
+      "id": "relic-unauthorized-auth-change-never-logs-out",
+      "domain": "Relic Hunters browser session",
+      "owner": "Relic Hunters maintainers",
+      "summary": "An auth change that reports the session unauthorized clears the browser runtime state without a manual logout of its own.",
+      "semanticCoverage": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts#clears relic runtime state when auth is unauthorized outside manual logout",
+      "coverageRelation": "The test connects the hook, emits an unauthorized auth state and checks the cleared session, room, snapshot and diagnostics, the cleared stored room id and the absent logout call.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "rallar.auth logout",
+        "observableEffect": "An unauthorized auth change makes no logout request.",
+        "requiredConstraint": "Only the player's own logout action calls the auth logout; the hook reacts to an unauthorized state by clearing its own state.",
+        "failureRationale": "The cleared hook state reads the same whether or not a logout was also requested, and a logout from inside the auth listener would re-enter the auth change it is reacting to; the absent call is the only witness."
+      }
+    },
+    {
+      "id": "relic-web-api-signed-out-requests-nothing",
+      "domain": "Relic Hunters browser REST client",
+      "owner": "Relic Hunters maintainers",
+      "summary": "Without a browser auth session the Relic REST client answers every read and command with no result and sends no request.",
+      "semanticCoverage": "packages/tests/relic-hunters/relic-web-api.test.ts#does not call relic endpoints without a browser auth session",
+      "coverageRelation": "The test clears the session, calls the snapshot read, the command and the reset, and checks that each resolves undefined and that no request was sent.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "browser fetch to the Relic REST API",
+        "observableEffect": "A signed-out client sends no Relic request.",
+        "requiredConstraint": "The client sends a Relic request only with the credentials of a browser auth session.",
+        "failureRationale": "Every call resolves undefined whether or not a request was also sent, and an unauthenticated request would reach the server without credentials; the absent call is the only witness."
+      }
+    },
+    {
+      "id": "relic-web-api-command-sends-one-request",
+      "domain": "Relic Hunters browser REST client",
+      "owner": "Relic Hunters maintainers",
+      "summary": "A command submission is one POST to the game's encoded commands route carrying the session's credentials and the command.",
+      "semanticCoverage": "packages/tests/relic-hunters/relic-web-api.test.ts#sends command requests with encoded game id and browser auth headers",
+      "coverageRelation": "The test submits one command and checks the single request's encoded URL, method, auth headers and body.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "browser fetch to the Relic REST API",
+        "observableEffect": "One command submission sends exactly one request.",
+        "requiredConstraint": "The server applies a REST command once per request, so the client sends one request per submission.",
+        "failureRationale": "The URL, headers and body read from the first request hold whether or not a second request followed it, and a second request would apply the command twice; the count is the only witness."
       }
     },
     {
@@ -7927,26 +8017,59 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/composition/browser-runtime-construction.test.ts#shares one bounded session observation owner across facades"
     },
     {
-      "id": "test-structure-coupling-15952e596b786253",
-      "path": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts",
+      "id": "test-structure-coupling-78cc2cae7c81d48d",
+      "path": "packages/tests/shared-web/messages/browser-message-audiences.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "browser-invalid-fallback-no-admission",
+      "contract": "browser-invalid-scope-no-admission",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The WS admission absence prevents fallback publication to an unsupported audience despite the public validation rejection.",
-      "semanticCoverage": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts#reports every unsupported fallback constraint before connecting or queueing"
+      "rationale": "The WS admission absence proves an unaddressable scope publishes nothing despite the public validation rejection.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#names the three scopes a browser WS send may take"
     },
     {
-      "id": "test-structure-coupling-63fb37f78610c2ea",
-      "path": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts",
+      "id": "test-structure-coupling-f157f20037eeae8e",
+      "path": "packages/tests/shared-web/messages/browser-message-audiences.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "browser-invalid-fallback-no-admission",
+      "contract": "browser-rtc-invalid-scope-no-admission",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The RTC admission absence prevents the preferred carrier from publishing despite the public validation rejection.",
-      "semanticCoverage": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts#reports every unsupported fallback constraint before connecting or queueing"
+      "rationale": "The RTC admission absence proves an rtc-strategy send with an unaddressable scope publishes nothing despite the public validation rejection.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#an rtc-strategy send with an invalid scope produces no RTC admission"
+    },
+    {
+      "id": "test-structure-coupling-c050a5fee8ee1213",
+      "path": "packages/tests/shared-web/messages/browser-message-audiences.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-world-send-on-rtc-refused-alone",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The RTC admission port's first call carries the world broadcast, the envelope the RTC carrier refuses as unsupported.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal"
+    },
+    {
+      "id": "test-structure-coupling-8342e0b1c624e7b8",
+      "path": "packages/tests/shared-web/messages/browser-message-audiences.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-world-send-on-rtc-refused-alone",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The RTC admission port's first call names the hold gap admission: a world send on rtc has no fallback carrier.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal"
+    },
+    {
+      "id": "test-structure-coupling-c0a128e08129b94a",
+      "path": "packages/tests/shared-web/ai/browser-rallar-ai.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-ai-principal-result-not-realtime",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The realtime send absence proves a principal-scoped AI result never reaches the whole room.",
+      "semanticCoverage": "packages/tests/shared-web/ai/browser-rallar-ai.test.ts#broadcasts a principal-scoped result to the principal over a message transport, and never over realtime"
     },
     {
       "id": "test-structure-coupling-a11dc68fc52eaed6",
@@ -8178,6 +8301,39 @@ moved or changed test.
       "owner": "Relic Hunters maintainers",
       "rationale": "`expect(deps.sendRestCommand).not.toHaveBeenCalled();` pins that a WS-delivered command is not repeated over REST, which could apply it twice (C13).",
       "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#sends gameplay commands to the server over WS and reports the receipt (D57 as applied)"
+    },
+    {
+      "id": "test-structure-coupling-a8b22d69e6c0d234",
+      "path": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-unauthorized-auth-change-never-logs-out",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(mockRallar.auth.logout).not.toHaveBeenCalled();` pins that an unauthorized auth change clears the hook without requesting a logout of its own.",
+      "semanticCoverage": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts#clears relic runtime state when auth is unauthorized outside manual logout"
+    },
+    {
+      "id": "test-structure-coupling-ac3ba88485ec04d8",
+      "path": "packages/tests/relic-hunters/relic-web-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-web-api-signed-out-requests-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(fetch).not.toHaveBeenCalled();` pins that a signed-out client sends no Relic request for a snapshot read, a command or a reset.",
+      "semanticCoverage": "packages/tests/relic-hunters/relic-web-api.test.ts#does not call relic endpoints without a browser auth session"
+    },
+    {
+      "id": "test-structure-coupling-bf4f16d3c0e6e3b9",
+      "path": "packages/tests/relic-hunters/relic-web-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-web-api-command-sends-one-request",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(fetch).toHaveBeenCalledTimes(1);` pins that one command submission sends one request, the one whose URL, headers and body the test then reads.",
+      "semanticCoverage": "packages/tests/relic-hunters/relic-web-api.test.ts#sends command requests with encoded game id and browser auth headers"
     },
     {
       "id": "test-structure-coupling-0f97b8e668773ecb",

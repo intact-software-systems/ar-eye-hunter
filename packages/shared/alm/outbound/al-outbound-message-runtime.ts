@@ -168,6 +168,12 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly repairTracking?: ALOutboundRepairTrackingPlan;
     readonly supersedenceTracking?: ALOutboundSupersedenceTrackingPlan;
     /**
+     * The sender asks its own outbound for the sequence: a first admission of a message that names an
+     * ordering key without one takes the next sequence of that track. Only the WS server plans it, and only
+     * for a message it publishes itself; absent, a keyed message without a sequence stays unsequenced.
+     */
+    readonly mintsSequence?: true;
+    /**
      * The audience a server admitted the message to, carried beside the message rather than on the wire,
      * where a large room would exceed the collection limit. The owner keeps it with the captured policy and
      * hands it to its planners on every later plan. Absent when nothing admitted the message to an audience.

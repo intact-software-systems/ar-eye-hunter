@@ -175,6 +175,24 @@ export function createOriginSnapshot(sessionIds: readonly string[], snapshotVers
     };
 }
 
+export const ORIGIN_PRINCIPAL_REF = {
+    applicationId: ORIGIN_ROOM.applicationId,
+    workspaceId: ORIGIN_ROOM.workspaceId,
+    principalId: 'principal-1'
+} as const;
+
+/** The room of `a`, `b`, `c` and `d`, where `a`, `b` and `d` are sessions of one principal. */
+export function createOriginPrincipalSnapshot(): GroupSnapshot {
+    const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
+    return {
+        ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) =>
+            ['a', 'b', 'd'].includes(session.sessionId) ? { ...session, principalId: ORIGIN_PRINCIPAL_REF.principalId } : session
+        ),
+        members: [...snapshot.members, { ...snapshot.members[0]!, principalId: ORIGIN_PRINCIPAL_REF.principalId }]
+    };
+}
+
 export function createOriginOverlay(nextHopSessionIds: readonly string[]): OverlayInfo {
     return {
         sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 1 },

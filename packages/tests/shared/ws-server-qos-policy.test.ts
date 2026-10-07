@@ -199,7 +199,8 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const delivery = { reliability: 'at-least-once', ack: 'receiver' } as const;
 
         const world = await service.enqueueOutboxIfAbsent(
-            shared.newALBroadcastMessage('server-1', route, 'world', 'chat.message.v1', { text: 'everyone' }, delivery)
+            shared.newALBroadcastMessage('server-1', route, 'world', 'chat.message.v1', { text: 'everyone' }, delivery),
+            { admittedAudience: undefined, recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
 
         expect(world.verdict).toEqual({

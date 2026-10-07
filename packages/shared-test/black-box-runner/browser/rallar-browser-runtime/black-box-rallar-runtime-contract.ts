@@ -40,7 +40,7 @@ export interface BlackBoxRallarRoomWaitOptions {
 export interface BlackBoxRallarWsSendInput
     extends Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'> {
     readonly payload: RallarMessagePayload;
-    readonly scope?: 'room' | 'world' | 'all';
+    readonly scope?: 'room' | 'world';
     readonly roomId?: string;
     readonly groupId?: string;
     readonly roomRef?: BlackBoxRallarSendInput['roomRef'];

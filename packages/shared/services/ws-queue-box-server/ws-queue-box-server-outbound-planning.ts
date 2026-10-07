@@ -11,6 +11,7 @@ import {
     type ALQosInputProvider,
     type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
+import { toALSequenceMintTrackKey } from '../../al-contracts/al-runtime.ts';
 import { resolveALOutboundScopeAuthority } from '../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import type { ALSessionInvalidationAuthority } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import { computeALOutboundAckRefusal } from '../../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
@@ -155,7 +156,17 @@ export class WsQueueBoxServerOutboundPlanning {
         if (refusal.left) {
             return refusal.left;
         }
-        return this.planRecipientDispatch(request, message, normalized);
+        const plan = this.planRecipientDispatch(request, message, normalized);
+        return this.isOwnSequenceRequest(request) ? { ...plan, mintsSequence: true } : plan;
+    }
+
+    /**
+     * The server sequences only what it publishes itself, at its admission; a relayed sender's keyed send,
+     * and a row a producer wrote straight to the outbox, stay as they came.
+     */
+    private isOwnSequenceRequest({ message, phase }: WsQueueBoxServerOutboundPlanning.Request): boolean {
+        return phase === 'immediate' && message.id.senderId === this.#serverPeerId &&
+            toALSequenceMintTrackKey(message) !== undefined;
     }
 
     private planRecipientDispatch(

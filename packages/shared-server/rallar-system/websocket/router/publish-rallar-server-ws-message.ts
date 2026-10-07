@@ -1,7 +1,9 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALSequenceMintTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { hasALDeliveryDurableWork } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { resolveWsQueueBoxServerProvenScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { LiveWsInboundReference } from '../../queue-pubsub/live-ws-notice.ts';
 import { publishRallarServerLiveWsNotice } from './publish-rallar-server-live-ws-notice.ts';
@@ -92,6 +94,12 @@ async function publishAuthorizedRallarServerWsMessage(
     if (scopeIssues.length > 0) {
         return toFailedPublishResult(input, scopeIssues.join('; '));
     }
+    if (isUnmintedServerSequence(input)) {
+        return toFailedPublishResult(
+            input,
+            'A server publication that names an ordering key without a sequence needs the outbox fanout, which mints it.'
+        );
+    }
     if (input.fanout === 'none') {
         return await publishRallarServerWsFanout(input);
     }
@@ -125,15 +133,14 @@ async function publishRallarServerWsFanout(
         case 'outbox': {
             const result = await input.service.enqueueOutboxIfAbsent(input.message, {
                 admittedAudience: toAdmittedAudience(input),
-                recipientScope:
-                    input.message.targets?.mode === 'unicast' && input.message.targets.groupRef === undefined
-                        ? input.inboundScope ?? undefined
-                        : undefined
+                recipientScope: readALTargetGroupRef(input.message) === undefined
+                    ? resolveWsQueueBoxServerProvenScope(input.message, input.inboundScope) ?? undefined
+                    : undefined
             });
             if (hasALDeliveryDurableWork(result.verdict)) {
                 input.wakeOutbox?.();
             }
-            return toRallarServerWsOutboxPublishResult(input.message, input.fanout, result);
+            return toRallarServerWsOutboxPublishResult(input.fanout, result);
         }
         case 'live-only': {
             const groupRef = readALTargetGroupRef(input.message);
@@ -157,6 +164,12 @@ async function publishRallarServerWsFanout(
             return toRallarServerWsLivePublishResult(input.message, input.fanout, result);
         }
     }
+}
+
+/** Only the outbox admission mints the server's own sequence; any other fanout would send the keyed message unsequenced. */
+function isUnmintedServerSequence(input: PublishRallarServerWsMessageInput): boolean {
+    return input.fanout !== 'outbox' && input.message.id.senderId === input.service.name &&
+        toALSequenceMintTrackKey(input.message) !== undefined;
 }
 
 function toFailedPublishResult(input: PublishRallarServerWsMessageInput, reason: string): RallarServerWsPublishResult {

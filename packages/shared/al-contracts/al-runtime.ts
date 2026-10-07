@@ -78,5 +78,20 @@ export function toALOrderingTrackKey(msg: ALMessage): string | undefined {
         return undefined;
     }
 
+    return toTrackKey(orderingKey, msg);
+}
+
+/** The track a message names a key on but no sequence for: the WS server's outbound mints the next one there. */
+export function toALSequenceMintTrackKey(msg: ALMessage): string | undefined {
+    const orderingKey = msg.ordering?.orderingKey;
+
+    if (orderingKey === undefined || msg.ordering?.seq !== undefined) {
+        return undefined;
+    }
+
+    return toTrackKey(orderingKey, msg);
+}
+
+function toTrackKey(orderingKey: string, msg: ALMessage): string {
     return `${orderingKey}:${msg.id.senderId}:${msg.ordering?.epoch ?? 0}`;
 }

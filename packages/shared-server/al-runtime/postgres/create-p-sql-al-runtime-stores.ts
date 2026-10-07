@@ -7,7 +7,7 @@ import {
     type ALRuntimeStoreId
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
 import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
-import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import {
@@ -152,7 +152,7 @@ function toDefaultPSqlALRuntimeStoresInput(
     return {
         repository: options.repository,
         namespace: options.namespace ?? DEFAULT_NAMESPACE,
-        orderingTrackTtlMs: options.orderingTrackTtlMs ?? 5 * 60_000,
+        orderingTrackTtlMs: options.orderingTrackTtlMs ?? DEFAULT_AL_REPOSITORY_TTL_MS,
         supersedenceTrackTtlMs: options.supersedenceTrackTtlMs ?? 5 * 60_000,
         retention: options.retention
     };
