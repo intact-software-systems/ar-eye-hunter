@@ -2,6 +2,7 @@ import {
     decodeRelicSnapshotPayload,
     type RelicActionInput,
     type RelicCharacterId,
+    type RelicHunterEvent,
     type RelicPublicSnapshot,
     type RelicRoundTransitionEvent,
     type RelicServerEvent
@@ -34,6 +35,8 @@ export type RelicHuntersConnection = Readonly<{
     rooms: readonly RallarRoomSummary[];
     snapshot?: RelicPublicSnapshot;
     roundTransition?: RelicRoundTransitionEvent;
+    /** What the server last told the signed-in hunter alone; a refusal's text is also the command error. */
+    lastHunterEvent?: RelicHunterEvent;
     login(username: string, password: string): Promise<void>;
     register(username: string, password: string, displayName?: string): Promise<void>;
     logout(): Promise<void>;
@@ -68,6 +71,7 @@ export function useRelicHunters(): RelicHuntersConnection {
     const [rooms, setRooms] = useState<readonly RallarRoomSummary[]>([]);
     const [snapshot, setSnapshot] = useState<RelicPublicSnapshot | undefined>();
     const [roundTransition, setRoundTransition] = useState<RelicRoundTransitionEvent | undefined>();
+    const [lastHunterEvent, setLastHunterEvent] = useState<RelicHunterEvent | undefined>();
     const timedOutRoundRepairKey = snapshot ? toTimedOutRoundRepairKey(snapshot) : undefined;
     const sessionRef = useRef<AuthSession | undefined>(session);
     const roomIdRef = useRef<string | undefined>(roomId);
@@ -308,6 +312,13 @@ export function useRelicHunters(): RelicHuntersConnection {
             roundTransitionCues: [...prev.roundTransitionCues, `${event.round}:${event.transition}`]
                 .slice(-ROUND_TRANSITION_CUE_LOG_SIZE)
         }));
+    }, []);
+
+    const acceptHunterEvent = useCallback((event: RelicHunterEvent) => {
+        setLastHunterEvent(event);
+        if (event.kind === 'command-refused') {
+            setError(event.text);
+        }
     }, []);
 
     const acceptResyncHydration = useCallback((hydration: RelicResyncHydration) => {
@@ -558,6 +569,14 @@ export function useRelicHunters(): RelicHuntersConnection {
         runtime
     ]);
 
+    const localPrincipalId = session?.clientId;
+    useEffect(() => {
+        if (!roomId || !localPrincipalId || !diagnostics.middlewareConnected) {
+            return;
+        }
+        return runtime.subscribeHunterEvents(roomId, { principalId: localPrincipalId, onEvent: acceptHunterEvent });
+    }, [acceptHunterEvent, diagnostics.middlewareConnected, localPrincipalId, roomId, runtime]);
+
     const refreshRooms = useCallback(async () => {
         const state = await runtime.refreshRooms();
         applyRoomState(state);
@@ -796,6 +815,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         rooms,
         snapshot,
         roundTransition,
+        lastHunterEvent,
         login,
         register,
         logout,
@@ -819,6 +839,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         rooms,
         snapshot,
         roundTransition,
+        lastHunterEvent,
         login,
         register,
         logout,

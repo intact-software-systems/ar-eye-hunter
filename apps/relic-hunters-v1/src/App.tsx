@@ -7,6 +7,7 @@ import type {
     RelicCharacterId,
     RelicEvent,
     RelicEventType,
+    RelicHunterEvent,
     RelicPlayer,
     RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
@@ -206,6 +207,9 @@ export default function App() {
         !!currentPlayer &&
         !currentPlayer.escaped &&
         !currentPlayer.defeated;
+    const recordedElsewhere = lockedAction === undefined && game.snapshot
+        ? toRecordedHunterAction(game.lastHunterEvent, game.snapshot)
+        : undefined;
     const showReviewControls = game.snapshot?.phase === 'review' &&
         !!currentPlayer;
     const reviewPlaybackKey = game.snapshot?.phase === 'review'
@@ -960,6 +964,13 @@ export default function App() {
                                         snapshot={game.snapshot}
                                         localPlayerId={game.session.sessionId}
                                     />
+
+                                    {recordedElsewhere && (
+                                        <p className="hunter-recorded-action" aria-live="polite">
+                                            <span className="panel-label">Recorded on another device</span>
+                                            <strong>{toRelicActionLabel(recordedElsewhere, game.snapshot)}</strong>
+                                        </p>
+                                    )}
 
                                     {isLocked && (
                                         <LockedPlanCard
@@ -2931,31 +2942,12 @@ function LockedPlanCard({
     const submitted = active.filter((p) => snapshot.submittedPlayerIds.includes(p.playerId));
     const waiting = active.filter((p) => !snapshot.submittedPlayerIds.includes(p.playerId));
 
-    const actionLabel = (): string => {
-        if (!action) {
-            return 'Plan submitted';
-        }
-
-        switch (action.kind) {
-            case 'move': {
-                const target = snapshot.map.find((r) => r.id === action.targetRoomId);
-                return `Move → ${target?.name ?? action.targetRoomId}`;
-            }
-            case 'search':
-                return 'Search this room';
-            case 'steal': {
-                const target = snapshot.players.find((p) => p.playerId === action.targetPlayerId);
-                return `Steal from ${target?.username ?? '—'}`;
-            }
-            case 'escape':
-                return 'Escape the ruin';
-        }
-    };
-
     return (
         <div className="locked-plan-card">
             <span className="panel-label">Plan Locked</span>
-            <strong className="locked-action-label">{actionLabel()}</strong>
+            <strong className="locked-action-label">
+                {action ? toRelicActionLabel(action, snapshot) : 'Plan submitted'}
+            </strong>
             <div className="locked-waiting-list">
                 {submitted.map((p) => (
                     <span
@@ -2976,6 +2968,33 @@ function LockedPlanCard({
                 : <small>All plans locked. The castle is about to answer.</small>}
         </div>
     );
+}
+
+function toRelicActionLabel(action: RelicActionInput, snapshot: RelicPublicSnapshot): string {
+    switch (action.kind) {
+        case 'move': {
+            const target = snapshot.map.find((r) => r.id === action.targetRoomId);
+            return `Move → ${target?.name ?? action.targetRoomId}`;
+        }
+        case 'search':
+            return 'Search this room';
+        case 'steal': {
+            const target = snapshot.players.find((p) => p.playerId === action.targetPlayerId);
+            return `Steal from ${target?.username ?? '—'}`;
+        }
+        case 'escape':
+            return 'Escape the ruin';
+    }
+}
+
+/** The action the server recorded for this round from another session of the signed-in hunter. */
+function toRecordedHunterAction(
+    event: RelicHunterEvent | undefined,
+    snapshot: RelicPublicSnapshot
+): RelicActionInput | undefined {
+    return event?.kind === 'action-recorded' && event.gameId === snapshot.gameId && event.round === snapshot.round
+        ? event.action
+        : undefined;
 }
 
 function EscapeDecisionPanel({

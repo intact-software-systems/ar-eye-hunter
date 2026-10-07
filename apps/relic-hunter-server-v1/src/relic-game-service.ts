@@ -7,6 +7,7 @@ import {
     toRelicRoomGroupRef,
     type RelicCommand,
     type RelicGameState,
+    type RelicHunterEvent,
     type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 import type { RallarServerAppDataStoreOptions } from '@shared-server/app-data/app-data-store-definition.ts';
@@ -20,27 +21,35 @@ import type {
     RallarServerWsTopicDefinition
 } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { Try } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import {
     applyRelicWsCommand,
     toRelicWsCommandWarning,
-    type RelicCommandApplication
+    type RelicCommandApplication,
+    type RelicCommandSender,
+    type RelicSessionIdentity
 } from './apply-relic-ws-command.ts';
 import { decodeRelicGameStateAppData } from './decode-relic-game-state-app-data.ts';
 import { encodeRelicGameStateAppData } from './encode-relic-game-state-app-data.ts';
 import type { RelicInitialStateFactory } from './relic-expedition-ai.ts';
+import {
+    toRelicActionRecordedEvent,
+    toRelicCommandRefusedEvent,
+    toRelicHunterEventMessage
+} from './to-relic-hunter-event-message.ts';
 import { toRelicRoundTransitionEvent, toRelicRoundTransitionMessage } from './to-relic-round-transition-message.ts';
 import { toRelicSnapshotMessage } from './to-relic-snapshot-message.ts';
 
 export interface RelicHunterGameServiceOptions {
     readonly createInitialState: RelicInitialStateFactory;
-    readonly readSessionUsername: (sessionId: string) => Promise<string | undefined>;
+    readonly readSession: (sessionId: string) => Promise<RelicSessionIdentity | undefined>;
 }
 
 export interface RelicHunterGameService {
     readSnapshot(gameId: string): Promise<RelicPublicSnapshot | undefined>;
     ensureSnapshot(gameId: string): Promise<RelicPublicSnapshot>;
-    applyCommand(command: RelicCommand, senderId: string): Promise<RelicPublicSnapshot>;
+    applyCommand(command: RelicCommand, sender: RelicCommandSender): Promise<RelicPublicSnapshot>;
     reset(gameId: string): Promise<RelicPublicSnapshot>;
 }
 
@@ -97,6 +106,14 @@ namespace RelicGameService {
         readonly rallar: RelicHunterServer;
         readonly options: RelicHunterGameServiceOptions;
     }
+
+    /** A command the rules applied: the state before and after it, and the principal whose sessions hear of it. */
+    export interface AppliedCommand {
+        readonly previous: RelicGameState;
+        readonly next: RelicGameState;
+        readonly command: RelicCommand;
+        readonly principalId: string;
+    }
 }
 
 class RelicGameService implements RelicHunterGameService {
@@ -123,8 +140,22 @@ class RelicGameService implements RelicHunterGameService {
         });
     }
 
-    private async publishCommandResult(previous: RelicGameState, next: RelicGameState): Promise<void> {
+    private async publishHunterEvent(roomId: string, event: RelicHunterEvent): Promise<void> {
+        const { rallar } = this.dependencies;
+        await rallar.ws.publish({
+            message: toRelicHunterEventMessage(roomId, event, rallar.ws.serverPeerId),
+            fanout: 'outbox'
+        });
+    }
+
+    /** The snapshot, then the hunter's recorded action, then the round transition the command made. */
+    private async publishCommandResult(applied: RelicGameService.AppliedCommand): Promise<void> {
+        const { previous, next, command, principalId } = applied;
         await this.publishSnapshot(next);
+        const recorded = toRelicActionRecordedEvent(previous, command, principalId);
+        if (recorded !== undefined) {
+            await this.publishHunterEvent(next.roomId, recorded);
+        }
         const transition = toRelicRoundTransitionEvent(previous, next);
         if (transition === undefined) {
             return;
@@ -138,30 +169,47 @@ class RelicGameService implements RelicHunterGameService {
 
     private applyAndPublishCommand(
         command: RelicCommand,
-        senderId: string
+        sender: RelicCommandSender
     ): Promise<RelicCommandApplication> {
         const { games, options } = this.dependencies;
         return this.enqueueForGame(command.gameId, async () => {
             const previous = await games.get(command.gameId) ??
                 await options.createInitialState(command.gameId, 'command');
-            const result = applyRelicCommand(previous, command, { senderId });
-            await games.set(command.gameId, result.state);
-            const snapshot = toPublicRelicSnapshot(result.state);
-            try {
-                await this.publishCommandResult(previous, result.state);
-                return { snapshot, publishFailure: undefined };
-            }
-            catch (error) {
-                return { snapshot, publishFailure: toError(error) };
-            }
+            return await Try.compute(() => applyRelicCommand(previous, command, { senderId: sender.sessionId }).state)
+                .fold(
+                    async (error): Promise<RelicCommandApplication> => ({
+                        kind: 'refused',
+                        error,
+                        publishFailure: await toPublishFailure(() =>
+                            this.publishHunterEvent(
+                                previous.roomId,
+                                toRelicCommandRefusedEvent(command, sender.clientId, error)
+                            )
+                        )
+                    }),
+                    async (next) =>
+                        await this.writeAndPublishCommand({ previous, next, command, principalId: sender.clientId })
+                );
         });
+    }
+
+    private async writeAndPublishCommand(applied: RelicGameService.AppliedCommand): Promise<RelicCommandApplication> {
+        await this.dependencies.games.set(applied.command.gameId, applied.next);
+        return {
+            kind: 'applied',
+            snapshot: toPublicRelicSnapshot(applied.next),
+            publishFailure: await toPublishFailure(() => this.publishCommandResult(applied))
+        };
     }
 
     async applyCommand(
         command: RelicCommand,
-        senderId: string
+        sender: RelicCommandSender
     ): Promise<RelicPublicSnapshot> {
-        const application = await this.applyAndPublishCommand(command, senderId);
+        const application = await this.applyAndPublishCommand(command, sender);
+        if (application.kind === 'refused') {
+            throw application.error;
+        }
         if (application.publishFailure !== undefined) {
             throw application.publishFailure;
         }
@@ -194,8 +242,8 @@ class RelicGameService implements RelicHunterGameService {
                 const outcome = await applyRelicWsCommand({
                     command: message.payload,
                     senderId: context.senderId,
-                    readSessionUsername: this.dependencies.options.readSessionUsername,
-                    applyCommand: (command, senderId) => this.applyAndPublishCommand(command, senderId)
+                    readSession: this.dependencies.options.readSession,
+                    applyCommand: (command, sender) => this.applyAndPublishCommand(command, sender)
                 });
                 const warning = toRelicWsCommandWarning(context.senderId, outcome);
                 if (warning !== undefined) {
@@ -231,6 +279,17 @@ class RelicGameService implements RelicHunterGameService {
             await this.publishSnapshot(state);
             return toPublicRelicSnapshot(state);
         });
+    }
+}
+
+/** A publication failure after the write is the command's outcome, not a reason to retry it (C12). */
+async function toPublishFailure(publish: () => Promise<void>): Promise<Error | undefined> {
+    try {
+        await publish();
+        return undefined;
+    }
+    catch (error) {
+        return toError(error);
     }
 }
 

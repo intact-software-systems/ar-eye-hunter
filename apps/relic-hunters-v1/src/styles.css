@@ -953,6 +953,16 @@ label {
     color: #facc5b;
 }
 
+.hunter-recorded-action {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+}
+
+.hunter-recorded-action strong {
+    color: #facc5b;
+}
+
 .turn-plan-counters {
     display: grid;
     gap: 4px;

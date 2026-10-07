@@ -10,6 +10,7 @@ import {
     RELIC_TYPES,
     toPublicRelicSnapshot,
     type RelicGameState,
+    type RelicHunterEvent,
     type RelicPublicSnapshot,
     type RelicRoundTransitionEvent
 } from '@relic-hunters/mod.ts';
@@ -51,6 +52,7 @@ const rallarMock = vi.hoisted(() => ({
     wsMessageHandler: undefined as ((message: MockWsMessage) => void) | undefined,
     wsAiMessageHandler: undefined as ((message: MockWsAiMessage) => void) | undefined,
     roundTransitionHandler: undefined as RallarTypedPayloadHandler<RelicRoundTransitionEvent> | undefined,
+    hunterEventHandler: undefined as RallarTypedPayloadHandler<RelicHunterEvent> | undefined,
     wsSend: vi.fn(async (input: RallarWsSendInput<object>) => ({
         transport: 'ws',
         status: 'queued',
@@ -159,9 +161,15 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
                 onMessage: () => () => undefined,
                 send: vi.fn(async () => ({ status: 'no-route' }))
             },
-            room: () => ({
-                onWs: (handler: RallarTypedPayloadHandler<RelicRoundTransitionEvent>) => {
-                    rallarMock.roundTransitionHandler = handler;
+            room: (definition: { topicId: string; }) => ({
+                onWs: <T>(handler: RallarTypedPayloadHandler<T>) => {
+                    if (definition.topicId === 'room.relic.hunter') {
+                        rallarMock.hunterEventHandler = handler as RallarTypedPayloadHandler<RelicHunterEvent>;
+                        return () => {
+                            rallarMock.hunterEventHandler = undefined;
+                        };
+                    }
+                    rallarMock.roundTransitionHandler = handler as RallarTypedPayloadHandler<RelicRoundTransitionEvent>;
                     return () => {
                         rallarMock.roundTransitionHandler = undefined;
                     };
@@ -268,6 +276,7 @@ describe('Relic Hunters browser app', () => {
         rallarMock.wsMessageHandler = undefined;
         rallarMock.wsAiMessageHandler = undefined;
         rallarMock.roundTransitionHandler = undefined;
+        rallarMock.hunterEventHandler = undefined;
         rallarMock.wsSend.mockClear();
         container = document.createElement('div');
         document.body.appendChild(container);
@@ -367,6 +376,58 @@ describe('Relic Hunters browser app', () => {
 
         const banner = container.querySelector('.phase-banner.phase-banner-start');
         expect(banner?.textContent).toContain('The Hunt Begins!');
+    });
+
+    it('shows the rule text of a refused command where the command error shows', async () => {
+        writeSession(session());
+        rallarMock.roomState = roomState(2);
+        stubSnapshotFetch(snapshotWithPlayers(2, 'planning'));
+
+        await renderApp();
+        await waitFor(() => rallarMock.hunterEventHandler !== undefined);
+        expect(container.querySelector('.error-panel')).toBeNull();
+        await act(async () => {
+            await rallarMock.hunterEventHandler?.(REFUSED, toHunterEventMessage(REFUSED));
+        });
+
+        expect(container.querySelector('.error-panel')?.textContent).toBe('Round timer has not expired.');
+    });
+
+    it('shows the action recorded on another device of the hunter where the local submission shows, until this device submits', async () => {
+        writeSession(session());
+        rallarMock.roomState = roomState(2);
+        // A round that has just started, so the page does not submit for the hunter when its timer runs out.
+        stubSnapshotFetch({ ...snapshotWithPlayers(2, 'planning'), roundStartedAtEpochMs: Date.now() });
+
+        await renderApp();
+        await waitFor(() => rallarMock.hunterEventHandler !== undefined && submitPlanButton() !== undefined);
+        await act(async () => {
+            await rallarMock.hunterEventHandler?.(RECORDED, toHunterEventMessage(RECORDED));
+        });
+
+        const line = container.querySelector('.action-command-panel .hunter-recorded-action');
+        expect(line?.textContent).toBe('Recorded on another deviceSearch this room');
+        await act(async () => {
+            submitPlanButton()?.click();
+        });
+        expect(container.querySelector('.hunter-recorded-action')).toBeNull();
+    });
+
+    it('shows no recorded action of another round or another game', async () => {
+        writeSession(session());
+        rallarMock.roomState = roomState(2);
+        // A round that has just started, so the page does not submit for the hunter when its timer runs out.
+        stubSnapshotFetch({ ...snapshotWithPlayers(2, 'planning'), roundStartedAtEpochMs: Date.now() });
+
+        await renderApp();
+        await waitFor(() => rallarMock.hunterEventHandler !== undefined && submitPlanButton() !== undefined);
+        await act(async () => {
+            for (const event of [{ ...RECORDED, round: 2 }, { ...RECORDED, gameId: 'room-2' }]) {
+                await rallarMock.hunterEventHandler?.(event, toHunterEventMessage(event));
+            }
+        });
+
+        expect(container.querySelector('.hunter-recorded-action')).toBeNull();
     });
 
     it('lets scene doorway prompts prime the normal turn-based move action', async () => {
@@ -724,6 +785,50 @@ const ROUND_STARTED: RelicRoundTransitionEvent = {
     transition: 'round-started',
     text: 'Alice started the expedition.'
 };
+
+const RECORDED: RelicHunterEvent = {
+    protocolVersion: RELIC_PROTOCOL_VERSION,
+    gameId: 'room-1',
+    principalId: 'client-1',
+    kind: 'action-recorded',
+    round: 1,
+    action: { kind: 'search' }
+};
+
+const REFUSED: RelicHunterEvent = {
+    protocolVersion: RELIC_PROTOCOL_VERSION,
+    gameId: 'room-1',
+    principalId: 'client-1',
+    kind: 'command-refused',
+    command: 'force-resolve-round',
+    text: 'Round timer has not expired.'
+};
+
+function toHunterEventMessage(event: RelicHunterEvent): RallarMessage<RelicHunterEvent> {
+    const groupRef = { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: 'room-1' };
+    const raw = newALPrincipalBroadcastMessage(
+        'default-qbox-server',
+        newALRoute(RELIC_TOPICS.hunter, 'room-1', `${event.gameId}:${event.principalId}`),
+        {
+            groupRef,
+            principalRef: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId, principalId: event.principalId }
+        },
+        RELIC_TYPES.hunter,
+        event
+    );
+    return {
+        transport: 'ws',
+        typeId: RELIC_TYPES.hunter,
+        topicId: RELIC_TOPICS.hunter,
+        contextId: 'room-1',
+        resourceId: raw.route.resourceId,
+        roomId: 'room-1',
+        senderId: 'default-qbox-server',
+        payload: event,
+        raw,
+        receivedAtEpochMs: Date.now()
+    };
+}
 
 function toRoundTransitionMessage(event: RelicRoundTransitionEvent): RallarMessage<RelicRoundTransitionEvent> {
     const raw = newALBroadcastMessage(
