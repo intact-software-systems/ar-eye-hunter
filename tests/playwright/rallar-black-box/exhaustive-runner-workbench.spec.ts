@@ -175,6 +175,159 @@ test('preserves loaded Local recipe intent through capture choices and experienc
         .toBe('rtc-messages-principal-multicast-sender');
 });
 
+test('preserves copied Manual history through Local Load, run choices, and experience remount', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto('/?provider=simulated&experience=legacy&workspace=black-box-runner&tab=manual-rallar');
+    const manual = page.locator('#panel-manual-rallar');
+    await expect(manual.getByRole('button', { name: 'Connect', exact: true })).toBeEnabled();
+    await page.getByRole('textbox', { name: 'Global Application', exact: true }).fill('copy-local-app');
+    await page.getByRole('textbox', { name: 'Global Workspace', exact: true }).fill('copy-local-workspace');
+    await page.getByRole('textbox', { name: 'Global Room', exact: true }).fill('copy-local-group');
+    await page.getByRole('textbox', { name: 'Global Client', exact: true }).fill('copy-local-actor');
+    await page.getByRole('textbox', { name: 'Global Session', exact: true }).fill('copy-local-session');
+    await expect(manual.getByLabel('Session', { exact: true })).toHaveValue('copy-local-session');
+    await manual.getByLabel('Scope JSON', { exact: true }).fill('');
+    await manual.getByLabel('Room Ref JSON', { exact: true }).fill('');
+    await manual.getByLabel('Min Snapshot', { exact: true }).fill('0');
+    await manual.getByLabel('Timeout', { exact: true }).fill('5000');
+    await manual.getByLabel('Target Client', { exact: true }).fill('copy-local-target');
+    await manual.getByRole('combobox', { name: 'Transport', exact: true }).selectOption('realtime');
+    const manualCapture = manual.getByRole('combobox', { name: 'RTC capture', exact: true });
+    await manual.getByLabel('Connection', { exact: true }).fill('copy-local-off');
+    await manualCapture.selectOption('off');
+    await manual.getByRole('button', { name: 'Connect', exact: true }).click();
+    await expect(manual.locator('.manual-action-row')).toHaveCount(1);
+    await expect(manual.getByRole('button', { name: 'Connect', exact: true })).toBeEnabled();
+    await manual.getByLabel('Connection', { exact: true }).fill('copy-local-native');
+    await manualCapture.selectOption('native');
+    await manual.getByRole('button', { name: 'Connect', exact: true }).click();
+    await expect(manual.locator('.manual-action-row')).toHaveCount(2);
+    await expect(manualCapture).toBeEnabled();
+    await manualCapture.selectOption('signaling');
+    await manual.getByRole('button', { name: 'Show Recipe', exact: true }).click();
+    const expectedRecipe = {
+        schemaVersion: 1,
+        recipeId: 'manual-workbench-recipe',
+        name: 'Manual workbench recipe',
+        continueOnFailure: false,
+        commands: [
+            {
+                kind: 'rtc.connect',
+                commandId: 'manual-rtc-connect-1',
+                label: 'Connect manual RTC client',
+                connection: 'copy-local-off',
+                actor: 'copy-local-actor',
+                roomId: 'copy-local-group',
+                applicationId: 'copy-local-app',
+                workspaceId: 'copy-local-workspace',
+                roomRef: {
+                    applicationId: 'copy-local-app',
+                    workspaceId: 'copy-local-workspace',
+                    groupId: 'copy-local-group'
+                },
+                transport: 'realtime',
+                timeoutMs: 5000,
+                rallar: { sessionId: 'copy-local-session', rtcCaptureMode: 'off' },
+                metadata: { manual: { deliveryMode: 'direct', expectedClients: ['copy-local-target'] } }
+            },
+            {
+                kind: 'rtc.connect',
+                commandId: 'manual-rtc-connect-3',
+                label: 'Connect manual RTC client',
+                connection: 'copy-local-native',
+                actor: 'copy-local-actor',
+                roomId: 'copy-local-group',
+                applicationId: 'copy-local-app',
+                workspaceId: 'copy-local-workspace',
+                roomRef: {
+                    applicationId: 'copy-local-app',
+                    workspaceId: 'copy-local-workspace',
+                    groupId: 'copy-local-group'
+                },
+                transport: 'realtime',
+                timeoutMs: 5000,
+                rallar: { sessionId: 'copy-local-session', rtcCaptureMode: 'native' },
+                metadata: { manual: { deliveryMode: 'direct', expectedClients: ['copy-local-target'] } }
+            }
+        ]
+    } satisfies RallarBlackBoxTestRecipe;
+    expect(JSON.parse(await manual.locator('.manual-recipe-output').inputValue())).toEqual(expectedRecipe);
+    await page.evaluate(() => navigator.clipboard.writeText('copy-local-sentinel-not-a-recipe'));
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('copy-local-sentinel-not-a-recipe');
+    await manual.getByRole('button', { name: 'Copy Recipe', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText()))
+        .toBe(JSON.stringify(expectedRecipe, null, 2));
+    const copiedText = await page.evaluate(() => navigator.clipboard.readText());
+    expect(validateSchemaAuthoringText('recipe', copiedText).ok).toBe(true);
+    expect(JSON.parse(copiedText)).toEqual(expectedRecipe);
+
+    await openTab(page, 'local-workbench');
+    const local = page.locator('#panel-local-workbench');
+    const editor = local.getByRole('textbox', { name: 'Recipe JSON', exact: true });
+    await editor.fill(copiedText);
+    await local.getByRole('button', { name: 'Load', exact: true }).click();
+    await expect.poll(() =>
+        page.evaluate(async () => {
+            const modulePath = '/src/runtime-store.ts';
+            const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+            return rallarBlackBoxRuntimeStore.getSnapshot().state.loadedRecipe;
+        })
+    ).toEqual(expectedRecipe);
+    await expect(editor).toHaveValue(copiedText);
+
+    const capture = local.getByRole('combobox', { name: /RTC capture/i });
+    const invocations: string[] = [];
+    for (const choice of ['off', '']) {
+        await capture.selectOption(choice);
+        await local.getByRole('button', { name: 'Run', exact: true }).click();
+        await expect(local.locator('.workbench-panel .panel-heading .pill')).toHaveText('passed');
+        const latest = await page.evaluate(async () => {
+            const modulePath = '/src/runtime-store.ts';
+            const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+            return rallarBlackBoxRuntimeStore.getSnapshot().state.commandHistory
+                .filter((result: RallarBlackBoxTestResult) => result.kind === 'recipe.run').at(-1);
+        });
+        expect(latest?.ok).toBe(true);
+        expect(latest?.replayed).not.toBe(true);
+        const invocation = decodeRecord(decodeRecord(latest?.value).invocation);
+        expect(invocation.run).toBe(choice === '' ? undefined : choice);
+        const invocationId = decodeNonBlankText(invocation.invocationId);
+        if (invocationId === undefined) {
+            throw new Error('The copied local recipe run did not publish an invocation identity.');
+        }
+        expect(invocations).not.toContain(invocationId);
+        invocations.push(invocationId);
+        await expect(editor).toHaveValue(copiedText);
+        expect(
+            await page.evaluate(async () => {
+                const modulePath = '/src/runtime-store.ts';
+                const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                return rallarBlackBoxRuntimeStore.getSnapshot().state.loadedRecipe;
+            })
+        ).toEqual(expectedRecipe);
+    }
+
+    await page.evaluate(() => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('experience', 'recipe-console');
+        window.history.pushState({}, '', url);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await expect(page.locator('.recipe-console')).toBeVisible();
+    await expect(local).toHaveCount(0);
+    await page.goBack();
+    await expect(local).toBeVisible();
+    await expect(page.locator('.recipe-console')).toHaveCount(0);
+    await expect(editor).toHaveValue(copiedText);
+    expect(
+        await page.evaluate(async () => {
+            const modulePath = '/src/runtime-store.ts';
+            const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+            return rallarBlackBoxRuntimeStore.getSnapshot().state.loadedRecipe;
+        })
+    ).toEqual(expectedRecipe);
+});
+
 test.describe('exhaustive runner workbench tabs', () => {
     test.skip(!config.enabled, config.skipReason);
 

@@ -6753,19 +6753,54 @@ warnings remain outside closure. All35 packet hashes and all eight current/froze
 bindings are independently verified. Both original REDs remain immutable. Fresh independent
 SPEC/QUALITY review approves all three complete owners with no actionable findings and
 confirms all four proof manifests. Final current-parent WORKTREE style passes with no
-new findings. Publish the coherent tested/reviewed source promptly; full Task65 is open.
+new findings. The coherent four-file source/plan slice is published at
+379f8aff5cce8545957d2e46c02787c2eec6443e, tree
+5121b406102eed27913f84f13a21df2566276516, with normal feature push and exact
+remote/API/PR-body readback. Full Task65 is open.
 This proves existing in-memory route restoration through simulated UI and actual runtime
 state; it does not establish browser reload durability, copied executable consumption,
 independent fresh external effects or actual UI SDK/native application/refusal.
 
-**Next authored-intent outcome:** Exercise canonical executable Copy through existing
-visible Load, followed by temporary Off/Inherit and genuine remount, against the actual
-copied body. Use only existing storage/reload paths recovered from code; invent no saved
-recipe store, API, migration or duplicate policy. The existing manual-history Copy owner
-already preserves per-command Off/Native intent in focused units; consumption through
-Local UI remains unwitnessed. Existing controlled SDK composition proves unavailable
-Native capture produces typed refusal without completion. Corresponding actual UI
-application/refusal and fresh-effect witnesses remain mandatory.
+**Executable Copy → Local independently accepted:** The visible Manual history records
+Off and Native commands under an explicitly established Global context, then builds the
+complete expected recipe independently of the producer. Before real Copy, the test writes
+and reads a distinct non-recipe sentinel through the native browser clipboard. Actual
+Copy must replace it with the complete authored recipe; that actual text passes the
+canonical schema and visible Local Load. Temporary Off/Inherit runs preserve the accepted
+body and command intent, produce distinct non-replayed invocation receipts, and genuine
+experience unmount/Back remount preserves the complete editor/runtime body.
+
+Two setup failures remain preserved: an implicit-label selector mismatch before commands,
+then visible Global room synchronization changing unrelated scope before Copy. Correcting
+those test prerequisites yields four maintained browser passes in48.5s. Independent review
+then identifies stale-clipboard false-positive risk; the SAME author adds only the two-line
+native sentinel precondition and the SAME reviewer closes SPEC/QUALITY without remaining
+findings. The affected final witness passes1/1 in16.0s. All eleven frozen/current bindings
+match; the accepted Local and observer controls remain byte-identical. Final current-parent
+WORKTREE style passes. This is a tests-only acceptance of existing behavior, with no
+production regression claimed, manufactured RED, timeout/retry expansion or new store.
+It proves simulated-provider UI consumption and real clipboard/lifecycle behavior, not
+actual SDK/native RTC application, reload durability or fresh external effects.
+
+**Parent delivery refresh:** Main advanced to94e72f4828e9db5111dc06e4746f1ce09f68ead2,
+creating two real PR633 conflicts. The earlier exact main-merge proposal is stale and has
+no approval. A feature-only pending merge reconciles the actual null-delete room test
+and measured bundle budget, preserving current main semantics and the RTC capture work.
+Fresh review accepts both complete owners; focused checks pass332cases and the actual
+browser entry measures256666B Brotli within the unchanged251KiB cap. Broader checks pass
+480 benchmark-package cases, shared/shared-test typing,1490 test-file typing and the
+headless boundary case. Two canonical game builds stop at a missing local React plugin;
+pinned dependency isolation succeeds without changing the lock, and those two builds are
+being retried. An exact reviewed raw-HTTP observation disposition receives same-reviewer
+closure and final style before publication. No default-branch operation or E3 follows
+from this pending feature reconciliation.
+
+**Next authored-intent outcomes:** Finish concrete actual UI SDK application/refusal and
+fresh external-effect witnesses. Recover only existing storage/reload paths from code;
+invent no saved recipe store, API, migration or duplicate policy. Existing controlled SDK
+composition proves unavailable Native capture produces typed refusal without completion;
+corresponding actual UI behavior remains mandatory. Publish each coherent tested/reviewed
+slice promptly rather than holding unrelated completed slices for later work.
 
 Full Task65, Console, existing Load/Copy/storage/restore/repeat outcomes, workers, Actions
 and B01–B06/E3 remain required. No retry, recovery, CRDT or RTC transport behavior changes.
