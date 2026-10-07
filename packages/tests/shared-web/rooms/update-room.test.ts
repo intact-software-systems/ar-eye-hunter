@@ -1,21 +1,21 @@
-import { beforeEach, expect, it } from 'vitest';
+import {
+    beforeEach,
+    expect,
+    it
+} from 'vitest';
 
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
-import { createRoomSnapshot, readRoomWorkflowMocks, resetRoomWorkflowTestRuntime } from './room-workflow-test-runtime.ts';
+import {
+    createRoomSnapshot,
+    getRoomWorkflowMocks,
+    resetRoomWorkflowTestRuntime
+} from './room-workflow-test-runtime.ts';
 
-const roomWorkflowMocks = readRoomWorkflowMocks();
+const roomWorkflowMocks = getRoomWorkflowMocks();
 
 installFakeBroadcastChannelPerTest();
 
 beforeEach(resetRoomWorkflowTestRuntime);
-
-it('exposes the owning room update operations', async () => {
-    const { archiveRoom, deleteRoom, updateRoom, updateRoomMetadata } = await import('@shared-web/browser/rooms/update-room.ts');
-    expect(typeof updateRoom).toBe('function');
-    expect(typeof archiveRoom).toBe('function');
-    expect(typeof deleteRoom).toBe('function');
-    expect(typeof updateRoomMetadata).toBe('function');
-});
 
 it('routes a detail update through the room update owner', async () => {
     const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');

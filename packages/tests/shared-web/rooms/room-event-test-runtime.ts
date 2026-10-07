@@ -1,15 +1,14 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { OnInboxMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import { vi } from 'vitest';
 
-import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
-import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
+import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { OnInboxMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
@@ -33,14 +32,14 @@ export interface RoomEventFixtureInput {
 
 const roomEventMocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
-    const ctx = createDefaultApiMiddlewareTestDouble();
+    const context = createDefaultApiMiddlewareTestDouble();
 
     return {
         wsInboxCallbacks: new Map<string, OnInboxMessageCallback>(),
-        session: ctx.session,
-        ctx,
+        session: context.session,
+        context,
         hydrateStateCache: vi.fn(async (): Promise<void> => undefined),
-        initialiseApiMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
+        initialiseMiddleware: vi.fn<typeof MiddlewareModule.initialiseMiddleware>(),
         listStateGroupEvents: vi.fn(async (_groupId: string): Promise<GroupEvent[]> => []),
         listStateGroupEventPage: vi.fn<StateEventHttpApiModule['listStateGroupEventPage']>(
             async (): Promise<StateEventPage<GroupEvent>> => ({
@@ -55,7 +54,7 @@ const roomEventMocks = await vi.hoisted(async () => {
 });
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
-    initialiseMiddleware: async (): Promise<BrowserConnectedMiddleware> => ({ middleware: roomEventMocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] })
+    initialiseMiddleware: roomEventMocks.initialiseMiddleware
 }));
 
 vi.mock(import('@shared-web/browser/state-read/state-event-http-api.ts'), (): Partial<StateEventHttpApiModule> => ({
@@ -96,7 +95,7 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), () => 
     getAllGroupStateSnapshots: roomEventMocks.getAllGroupStateSnapshots
 }));
 
-export function readRoomEventMocks(): typeof roomEventMocks {
+export function getRoomEventMocks(): typeof roomEventMocks {
     return roomEventMocks;
 }
 
@@ -104,12 +103,16 @@ export function resetRoomEventTestRuntime(): void {
     vi.clearAllMocks();
     roomEventMocks.wsInboxCallbacks.clear();
     roomEventMocks.hydrateStateCache.mockResolvedValue(undefined);
-    roomEventMocks.initialiseApiMiddleware.mockResolvedValue(roomEventMocks.ctx);
+    roomEventMocks.initialiseMiddleware.mockResolvedValue({
+        middleware: roomEventMocks.context.middleware,
+        rtcCaptureReceipt,
+        checkpoints: []
+    });
     roomEventMocks.listStateGroupEvents.mockRejectedValue(new Error('group events not mocked'));
     roomEventMocks.listStateGroupEventPage.mockRejectedValue(
         new Error('group event page not mocked')
     );
-    const { webSocketQueueBox, webRtcConnectionService } = roomEventMocks.ctx.middleware;
+    const { webSocketQueueBox, webRtcConnectionService } = roomEventMocks.context.middleware;
     vi.mocked(webSocketQueueBox.close).mockImplementation((code, reason) => {
         webSocketQueueBox.socket.close(code, reason);
     });

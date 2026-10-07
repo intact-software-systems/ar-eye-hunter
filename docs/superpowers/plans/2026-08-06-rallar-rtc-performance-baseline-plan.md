@@ -27,8 +27,14 @@ GitHub Actions, ignored evidence under `tmp/perf/`, and immutable observation ZI
 The accepted measurement contract is retained in Sections 5, 6, and 8 of this
 plan. The approved diagnostics amendment is specified in
 [RTC establishment diagnostics](../../../plans/active/rtc-establishment-diagnostics.md).
-Its current implementation horizon is B06 selected-capture preflight, followed by sealed
-producer/cohort configuration in Section 11. Current product and architecture are [docs/product.md](../../product.md)
+Its current implementation horizon is corrected-source publication and hosted/main acceptance.
+The fifteen-owner history-fixture and three-owner policy corrections have independent
+specification and full-file quality acceptance. Current-main reconciliation and final corrective
+code/architecture review are independently accepted locally. The final review's sole finding is
+current-status prose clarity; scoped prose acceptance precedes publication. The HTTP
+credential destination, startup capture-context and B06 emitted-schema corrections are independently approved locally. B06 selected
+capture and producer configuration are published; governed E3 acceptance remains required
+in Section 11. Current product and architecture are [docs/product.md](../../product.md)
 and [docs/architecture.md](../../architecture.md). The canonical executable
 navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
@@ -75,11 +81,193 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
 **Created:** 2026-08-06
 
-**Updated:** 2026-10-06
+**Updated:** 2026-10-07
 
 ## 1. Current Outcome And Evidence
 
-Current on October6: PR #633 remains draft, OPEN and MERGEABLE after the reviewed
+The latest published checkpoint is `7c3e2478cd0dd7b8e999dfd92fe957fb04f6594e`, tree
+`dc0cd28058e604c7f57043e6ec8480acbf648d54`. Its bounded support correction has independent
+SPEC PASS and QUALITY PASS. Fresh Release Gate37518135000, formation37518134506 and
+medium-scale37518134819 are terminal SUCCESS on that exact head. Release's RTC observation
+integrity job is SKIPPED; no E3 cohort follows from these correctness gates. The earlier
+bef74 failures remain retained with their original outcomes.
+
+Whole-PR current-body and diff coverage is complete across257 changed paths:77 product,
+127 invocation/UI and53 measurement/support. Terminal cross-domain review returns SPEC and
+QUALITY CHANGES REQUIRED, affected legacy/duplication closure incomplete and ready-for-main
+NO at frozen7c3. The six confirmed findings below still block that candidate; the HTTP,
+startup and B06 findings are separately closed only at their independently accepted local correction bytes.
+The review confirms
+two corrections in touched code: startup drops `rtcCaptureContext` before room/people refresh,
+so run-level Off plus step-level Native can connect Off and then incorrectly request Native;
+HTTP implicit auth is selected from the presence of `path`, although absolute/network paths
+and an overriding `url` can resolve outside the configured API. Synthetic fake-fetch controls
+reproduce automatic bearer/client-ID attachment to foreign destinations without a real
+request. Root independently witnesses8 semantic failures/25 passing controls before the
+minimum HTTP source correction. GREEN passes33 focused cases plus14 immediate HTTP/auth
+controls; package typing, maintained1476-file typing and affected gates pass. Independent
+scoped review returns SPEC PASS, QUALITY PASS and full affected-file closure. Root accepts
+the exact local correction bytes; they are not in the published7c3 checkpoint and publication
+remains held for the corrective batch. Startup forwarding now has root-witnessed semantic
+RED (3 failures /8 passing controls), followed by minimum GREEN with the exact witnessed
+test bytes unchanged (11 startup cases and71 immediate capture controls pass). Typing and
+affected gates pass; root independently verifies protected source, indexes and2511 prior
+artifacts. Independent startup SPEC and QUALITY review and full affected-file closure pass;
+root accepts these exact local source/test bytes. This is local correctness
+evidence, not published-source or E3 acceptance.
+
+The configured-API CRDT admission branch discards Connect completion before starting live
+effects. The SDK can truthfully return successful Connect with unavailable capture
+application; the actual configured-API outcome has not yet been reproduced, so this remains
+a source-supported review concern. B06's reusable gate is now confirmed to accept anonymous
+receipts and invalid transport/missing existing producer fields; the actual acceptance test
+persists anonymous evidence for all three modes. Current inputs provide no independently
+expected controller identities, so no replay or complete-participant proof is inferred.
+The emitted-schema correction now has independently witnessed semantic RED: the real
+external-attempt service accepts and writes all27 malformed/inconsistent records, while34
+valid-record/admission/failure-accounting controls pass. The complete emitted fixture inputs
+first pass29 controls; current test bytes pass benchmark and maintained1476-file typing.
+Root's actual focused witness retains original failures and verifies both worktrees, indexes,
+accepted HTTP/startup bytes and16692 prior artifacts. Minimum pure-validator GREEN is terminal:
+61 focused cases,54 canonical configuration/intent controls and32 public API/bundle-boundary
+controls pass (147 total). Benchmark, browser, maintained1476-file and Deno typing pass,
+alongside affected format/style/structure checks. The witnessed test bytes remain unchanged;
+the existing configuration decoder is exported in place without a new public barrel. Root
+independently verifies both worktrees and indexes, the four accepted HTTP/startup paths,
+16731 prior artifacts and all32 new GREEN artifacts. The first root audit falsely reports
+source mismatches because it compares a digest with the entire identity object; the retained
+corrected audit compares its hash field and passes. Independent SPEC then QUALITY/full-file
+correction review passes at the exact terminal bytes; root fully reads and accepts that
+bounded correction report. Publication remains pending. Complete invocation/UI
+review also identifies two inert history-fixture guards and an unused workflow mock inside
+touched files. Root verifies the source and named consumers; no product regression is claimed.
+Measurement review also confirms three duplicate browser disposition records and a stale
+disposition plus its coupled fixture for a deleted benchmark owner. Root verifies these exact
+source facts. Remove duplicate and obsolete policy records together with the retired-owner
+fixture; a passing coupled test does not justify retained dead policy. Invocation review's
+ten requested registry-to-effect associations pass within their explicit assertion limits.
+The fixture correction is now independently accepted at its frozen fifteen-owner bytes:
+87 semantic cases across sixteen consumers pass, including the eleven construction/history
+controls. The two message tests use complete public composition; five obsolete private
+inventories are retired. Both earlier adverse reviews remain preserved. Current policy
+has independently witnessed semantic RED: the unchecked-cast classifier denial fails while
+87 controls pass. The first specimen-owner failure is preserved as a setup mistake rather
+than RED. Minimum GREEN is frozen in the three existing policy owners:154 focused cases,
+maintained1478-file typing with zero errors, formatting and real inventory/backstop checks
+pass. Independent full-three-file review is approved and root has accepted its frozen bytes.
+The correct-e366 changed-style gate passes with no new findings. Structure passes with18
+review observations; the default full scan reports3441 nonblocking observations. Those
+exits do not replace human closure or approve E3. Checker algorithms and unrelated
+consumers remain outside the correction. The affected policy findings are closed, and final
+corrective code review confirms SPEC PASS and architecture APPROVED. All18 structure observations
+have concrete human keep/navigation judgments. The sole remaining review finding is the current-status
+prose correction; corrected-source publication and hosted/main acceptance remain required.
+None authorizes speculative changes or the independently held CRDT
+acquired-send/encrypted-output successor. The original post-ICE trigger stays UNKNOWN.
+At the earlier current-main conflict checkpoint, delivery status required REPAIR_CONFLICT.
+The live main ref was
+`e366f60ebf8ad5ee39165793d6decbe3da911418`, adding the independently published ALM membership
+fencing change. Its actual Git merge with published7c3 has five conflicts: the browser message
+sender, messages controller, bundle budgets, sender test and server receipt-row test.
+The previously displayed97f6686 base still merges cleanly to the old7c3 tree, but it is not
+the live main source. Preserve all seven approved local correction files and held original
+work while reconciling current-main fencing with reviewed RTC capture/admission. No
+broader final validation or publication proceeds before this real source conflict is repaired.
+The seven independently approved HTTP/startup/B06 files are preserved in local checkpoint
+`0ea0f964f529013bb4a66336946796f90d792102`, tree
+`d504fc56f247361287d54ec6dc95563817c5a35b`, parent7c3. It is unpushed. Root verifies all
+source bodies and16791 prior plus36 additional artifacts remain unchanged through that
+checkpoint. Readonly preparation identifies two dependent fixture owners beyond the five
+markers: the current-main shared facade initializer needs the canonical capture receipt;
+the PR's extracted server receipt fixture still emits v2 while main requires v3. Initial
+reconciliation resolves the five markers and exercises existing focused semantic controls;
+the initial marker-free candidate is staged at7d547444bb00145730a2988fd30eaf053edf91f5.
+Actor and independent root runs both produce3 semantic receipt-admission failures/96 passing
+controls. Source correlation identifies the unchanged extracted v2 message against main's
+strict v3 contract; no detailed rejection code is inferred from those assertion logs.
+All21 shared-facade sender cases pass. Maintained1478-file typing independently fails with
+exactly one error in each identified support: the missing mandatory capture receipt and
+literal2 where3 is required. Detailed TS2322 diagnostics verify both causes; compiler-only
+contract reconciliation is qualified separately from the three semantic failures. Root's
+before/after witness proof verifies6086 candidate files,6049 original tracked files,20127
+immutable artifacts, both Git/index identities, all seven checkpoint corrections and held
+three successors unchanged. Minimum GREEN corrects only the two current fixture owners;
+full-file closure also replaces two production-derived expected values with independent
+literals. Those assertion-only corrections are qualified separately from semantic TDD,
+and all original witnessed bytes and raw results remain retained. No artificial parser,
+import or type-only failure establishes semantic RED.
+
+The sole implementer is terminal/stopped at actual working-source tree
+`617062ab318ce737dcd25f0fe37a5f92ae1ecd57`, bound through a private index while the real
+index still retains the initial7d staged candidate. The six-file command passes99 cases,
+actual facade consumers42, public API/bundle boundaries32, earlier checkpoint controls105
+and real isolated PostgreSQL worker handoff1. The final receipt-row assertion correction
+earns only its four-case rerun and final scoped checks. Package and maintained1478-file
+typing pass with zero debt/errors. Actual composed facade248.5 KiB passes the unchanged
+249 KiB ceiling. Root fully reads the terminal report and manual delta, independently
+verifies6086 current files,6049 original tracked files, exact checkpoint7/held3,20136 prior
+immutable artifacts and62 new GREEN artifacts, and confirms the six raw passing summaries.
+Independent SPEC and QUALITY/full seven-file standards and preservation review pass at
+these exact frozen bytes, with no findings. Root fully reads and accepts the complete
+independent review. The exact tree is preserved in clean local merge checkpoint
+`12197c382c74e37a09413b75413377cf01e2c961`, parents0ea/e366. Only the four final correction
+paths are newly staged over Git's existing composed index; staged and committed tree both
+match617062ab. Root's post-checkpoint proof verifies6086 current files,6049 original tracked
+files,checkpoint7/held3,20203 prior immutable artifacts and five checkpoint artifacts.
+Original held work and its index remain unchanged. No remote publication or default-branch
+operation occurred.
+
+The broad changed-style command genuinely exits1 on composed
+`scripts/repo-style-check/reviewed-dispositions.mjs`: scanner1227 lines exceeds the1200
+navigation backstop. Incoming main has930 splitlines, published/checkpoint1113 and
+composed source1226; the threshold crossing comes from combining both branches. The
+command precedes the final assertion edit, so it is not final-byte delivery validation.
+That owner is already queued for policy closure; the failed check and seven automatic
+structure prompts remain explicit. Correctly based final delivery validation is still
+required. The merge checkpoint is local on `codex/rtc-baseline-integrated`; publication,
+default-branch integration and E3 remain pending. The next fixture six-file scope and
+sixteen actual consumers are rechecked against the composed source and remain unchanged.
+The two current history consumers produce an actual semantic TEST-ONLY RED: both cold
+public Connect calls resolve despite a literal injected construction Error, while all nine
+original controls, including five cold history reads, pass. Root independently runs the
+exact frozen tests and witnesses the same2 FAIL/9 PASS with source, index and prior
+evidence preserved. Minimum canonical fixture GREEN now passes all11 focused cases and
+92 cases across the16 actual fixture consumers; maintained typing enforces1478 test files
+with zero debt/errors. Independent review confirms SPEC PASS but QUALITY/full-file
+NEEDS FIXES: three in-memory getters, three mock-setting helper names and four named
+import layouts violate current touched-file rules. The first bounded fix is terminal across
+fifteen files, including nine verified additional consumers. Final formatted bytes pass
+all11 focused cases, the same92 direct-consumer cases, maintained1478-file typing and
+affected formatting/style/structure checks. Root verifies the mechanical delta and
+preservation. Scoped review accepts all previous findings and confirms SPEC PASS, but
+full-file review of the nine newly affected consumers finds two invalid mandatory
+dependency constructions and five obsolete private-export inventories. The second bounded
+fix is now terminal in six existing test files: actual public composition preserves the
+literal message/storage expectations, and only the private inventories retire. The same
+sixteen consumer suites pass87 cases, including the unchanged11 construction/history
+controls; five obsolete inventories explain the count reduction. Typing and affected
+gates pass. Root verifies the delta, literal expectations and preserved evidence. Scoped
+independent re-review is complete: SPEC PASS and full-file QUALITY APPROVED across all fifteen
+owners. Test-maintenance corrections need no fabricated RED.
+This is fixture integrity debt, not a demonstrated product history regression. The completed
+current-policy correction removes duplicate3/deleted1 records and nine unsupported debt
+exemptions while preserving the genuinely narrowing predicate. Root independently witnesses
+actual classifier-denial RED,1 FAIL/87 PASS; minimum GREEN passes154 cases and maintained1478-file
+typing with zero errors. The bounded canonical cleanup clears the1227-line backstop without a
+split or checker relaxation, and independent full-three-file SPEC/QUALITY review approves.
+Final corrective code review accepts the composed source and all18 structural dispositions.
+Only this review's current-status prose correction remains before corrected-source publication.
+E3 has zero accepted cohorts and no current producer. After corrected-source review and
+hosted acceptance support integration, select the reviewed exact main snapshot and run the
+existing3+11 primary with its controller-selected repeat and original failure accounting.
+The primary contains one warmup for each of default, all-scenarios and retention, then
+5/3/3 retained attempts respectively. The100-cycle workload applies to the retention case.
+The selected repeat retains10/6/6 attempts with the same three warmups; it runs only after
+a passing primary when the existing controller selects RTC-B06.
+
+**Retained historical checkpoints:** The paragraphs below preserve the evidence and
+decisions leading to the current7c3 checkpoint; they do not supersede the latest status
+above. At the earlier October6 checkpoint, PR #633 remains draft, OPEN and MERGEABLE after the reviewed
 source-conflict repair is published as
 `b03021514c0339e6fe37aa32f2ad167d00653369`. The initial Task58 checkpoint remains
 `431a77b93ccae63d7ca7ad8869838086e1201967`. The separate feature checkout preserves
@@ -121,8 +309,8 @@ remains `0a9e94c2140c67fcd6653407264412fbb86d209d45358a0257037cabdb975942`.
 Root independently verifies the exact two clarity edits and preservation of6075 untouched
 target paths,6048 original source/test paths,167 historical evidence files,26 previous
 correction artifacts, both HEADs and both raw indices. This support checkpoint is approved
-for publication; a fresh candidate's hosted acceptance and whole-PR integration review
-remain required. The failed bef74 attempt stays retained. No hosted rerun or E3 producer
+for publication and is now published at7c3e2478 with the fresh normal hosted gates above
+accepted. Whole-PR review remains required. The failed bef74 attempt stays retained. No hosted rerun or E3 producer
 was started, and no new production, workflow, browser, retry or timeout change is included.
 The previous plan-only head was `7adaef7d21547fbfe8fddd901ce341254ec97af5`.
 [Release Gate37498708746](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37498708746),
@@ -1944,32 +2132,34 @@ The review's unreachable live/tab resources finding is corrected and independent
 quality remains unaccepted for the separate public encrypted-output typing decision.
 The next two useful implementation actions are:
 
-1. **B06 selected-mode and application preflight TDD:** The published live matrix omits capture
-   selection and therefore resolves product-default Signaling even with its sink installed.
-   Use the existing environment/agent/delivery configuration and the single
-   `create-group-formation-lifecycle-driver.ts::connectFormationAgent` boundary shared by
-   initial connection and reconnect. Forward canonical explicit Off/Signaling/Native and
-   validate the actual returned receipt before readiness or measurement; configuration echo
-   alone cannot prove installation. Existing `group-formation-lifecycle-driver.test.ts` and
-   `live-rtc-delivery-operations.test.ts` must first expose dropped intent or absent/mismatched/
-   unavailable application while preserving ordinary omission and original readiness behavior.
-   Root witnesses semantic RED before minimum GREEN. Follow with scoped independent reviews
-   and a real memory-mode default case proving receipt/native rows at the selected mode.
-   Do not alter lifecycle, retries, timeouts, workloads or sample counts. B06 uses no CRDT
-   owner; the held public typing decision is not a dependency for this slice. Seal observation
-   CLI/workflow/worker/configuration/cohort provenance after this application boundary is proved,
-   before accepted E3 capture. No guessed workflow input or automatic producer dispatch follows
-   from implementing the setting; the user's requested E3 run remains the subsequent action.
-2. **Seal B06 producer and cohort selection after application proof:** Carry the explicit
-   resolved mode through the existing observation CLI, workflow, worker environment,
-   workload descriptor, staged producer facts and raw evidence. Use current runtime
-   allowlists and configuration validators, with actual applied mode in homogeneous
-   cohort/statistical identity. Reject ambient override and absent, unavailable, unproven
-   or mode-mixed receipts. Extend the existing B06 runtime/catalog/CLI and live performance
-   evidence semantic tests before implementation. Preserve three warmups/eleven retained
-   primary attempts, controlled repeat, immutable source/run identity and every failure.
-   Only then select the reviewed clean source for the requested native diagnostic and
-   subsequent E3 capture; no tests/builds/downloads or artifact analysis overlap measurement.
+1. **Corrected-source publication:** HTTP, startup, B06 schema, current-main reconciliation,
+   fixture and policy corrections have independent local acceptance. Final corrective code
+   SPEC passes and architecture is approved; all18 structural observations have explicit
+   human dispositions. After scoped review of the sole current-status prose finding, publish
+   one reviewed corrective batch to PR633. The published7c3 conflict is already repaired locally.
+2. **Hosted acceptance and main integration:** Inspect fresh required hosted evidence for the
+   exact published correction source. Obtain the repository-required exact main integration
+   approval and select its accepted immutable source for the governed E3 primary. Source
+   acceptance does not complete E3 or the broader UI/recipe scope.
+
+Immutable7c3 full-body/diff coverage is complete across all257 paths; its adverse review
+remains retained. HTTP credential routing, startup context forwarding and B06 emitted-schema
+corrections now have independent local SPEC/QUALITY/full-file acceptance. The exact
+current-main e366 reconciliation is independently accepted in local merge12197c38,
+tree617062ab, preserving membership fencing and reviewed RTC capture/admission. The
+fixture and current policy corrections are independently accepted. Correct-e366 delivery
+checks pass; final corrective code/architecture review and all18 structural dispositions are
+accepted. Close the bounded prose finding and publish the corrective batch. No source concern
+alone authorizes a CRDT, retry, timeout
+or immutable-context redesign; held original successors remain excluded.
+
+B06 selection/application and producer/cohort sealing are published at7c3 and have local
+Native correctness plus fresh normal hosted acceptance. After the corrections and complete
+review, obtain the repository's exact default-branch approval where required and select the
+reviewed immutable main source for the requested E3 primary. Preserve3 warmups and11
+measured attempts, the existing controller's conditional3+22 repeat,100 cycles for the
+retention case, zero retries and every failure.
+Do not overlap measurement with agents, tests, builds, downloads or artifact analysis.
 
 Manual's bounded implementation is now independently accepted:39 unit cases and2 actual
 browser cases pass, and specification/quality reviews approve all eleven touched files.
@@ -4567,7 +4757,18 @@ remain required later work, alongside the full Task58 and baseline acceptance ga
 
 ### Task 60: B06 selected capture and actual application preflight
 
-**Current checkpoint:** The concrete204-case checkpoint receives one required SPEC finding:
+**Current checkpoint:** B06 selection/application and producer/cohort configuration are
+published at7c3e2478. Its combined affected checks pass533 cases/43 files, actual Native preflight
+passes1 case/zero retries, and all three normal hosted workflows succeed at that source.
+The later HTTP destination, startup-context, B06 emitted-schema, current-main, fixture and
+policy corrections are independently accepted locally. Final corrective code SPEC passes,
+architecture is approved and all18 structural observations have explicit human dispositions.
+The only remaining review finding is current-status prose clarity; publication and fresh hosted/main
+acceptance of the corrected source follow scoped prose review. Configured-API CRDT admission
+remains an unreproduced source concern and the held successor is excluded. E3 has zero accepted
+cohorts. The earlier checkpoints below preserve their own evidence and limits.
+
+**Earlier checkpoint:** The concrete204-case checkpoint receives one required SPEC finding:
 consume all canonical nested capture locations. Actual regression RED exposes an absent
 top-level normalization error on valid nested bodies;36 assertions fail/12 pass before
 the correction. Product acquisition separately witnesses8 failures/3 passes, then routes
@@ -4870,8 +5071,9 @@ hot-path sink, invented capability claim or changed retry/deadline/workload to b
       admission gap described above. Its witnessed minimum correction is terminal and receives
       fresh re-review. The clean published source's zero-retry Native browser preflight passes
       one matrix case in50.532 seconds; all six applied receipts correlate to their initialized
-      scopes before Connect completion. Required hosted correctness and governed producer/cohort
-      acceptance remain outstanding. The current combined affected suite passes533 cases across43 files.
+      scopes before Connect completion. Fresh required hosted correctness passes at7c3;
+      governed producer/cohort acceptance remains outstanding. The current combined affected
+      suite passes533 cases across43 files.
       Observation now receives the admitted immutable selection before constructing runtime
       owners. CLI overrides selected environment input and the canonical default; actual
       allowlisted environment facts remain separate. Producer argv and resolved configuration
@@ -4891,10 +5093,16 @@ hot-path sink, invented capability claim or changed retry/deadline/workload to b
       failure is the old exact workflow dispatch shape rejecting the approved capture selector;
       static checks additionally require six individual resource/admission classifications.
       Their bounded two-file correction receives SPEC PASS and QUALITY PASS after final
-      clarity closure, with production and checker unchanged. Publish that correction and
-      accept its fresh hosted gates, then complete whole-PR integration review. Select the
-      reviewed exact main snapshot required by the governed producer after those gates support
-      integration and the repository's explicit main-commit approval is obtained.
+      clarity closure, with production and checker unchanged. That correction is published
+      at7c3 and all three fresh hosted workflows pass. The HTTP destination, startup context
+      and B06 emitted-schema corrections are now independently accepted locally. The
+      fixture/policy closure is independently accepted, and final corrective code SPEC and
+      architecture review approve the composed source. Correct-e366 changed-style validation
+      passes and all18 structural observations have human dispositions; the original composed
+      style failure remains preserved as resolved historical evidence. Close the sole current-status
+      prose finding, publish the reviewed correction batch and inspect its fresh hosted acceptance.
+      Select the reviewed exact main snapshot required by the governed producer after those gates
+      support integration and the repository's explicit main-commit approval is obtained.
       Neither historical nor current failure authorizes a production RTC recovery, retention,
       retry or timeout change.
       The controller runs the3+11 primary; a passing primary triggers the3+22 repeat only

@@ -29,6 +29,48 @@ afterEach(() => {
 });
 
 describe('reviewed repository style dispositions', () => {
+    it('keeps an unchecked Relic browser cast blocking', () => {
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{
+                file: path.join(repoRoot, 'tests/playwright/relic-hunters/web.spec.ts'),
+                raw: 'void (window as unknown as { readonly __rallarWsOutbox: readonly string[]; }).__rallarWsOutbox;\n'
+            }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+
+        expect(findings).not.toEqual([]);
+        for (const finding of findings) {
+            expect(finding.symbol).toBeUndefined();
+            expect(isReviewedDisposition(repoRoot, finding)).toBe(false);
+        }
+    });
+
+    it('preserves a genuine Relic command-kind predicate review', () => {
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{
+                file: path.join(repoRoot, 'tests/playwright/relic-hunters/web.spec.ts'),
+                raw: [
+                    'function isCommandKind(body: unknown, kind: string): boolean {',
+                    '    return typeof body === \'object\' &&',
+                    '        body !== null &&',
+                    '        \'kind\' in body &&',
+                    '        (body as { kind?: unknown; }).kind === kind;',
+                    '}',
+                    ''
+                ].join('\n')
+            }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+
+        expect(findings).not.toEqual([]);
+        for (const finding of findings) {
+            expect(finding.symbol).toBe('isCommandKind');
+            expect(isReviewedDisposition(repoRoot, finding)).toBe(true);
+        }
+    });
+
     it.each([[12, true], [13, true], [14, false]] as const)(
         'keeps the public barrel disposition bounded at %s exports',
         (count, reviewed) => {
@@ -117,11 +159,6 @@ describe('reviewed repository style dispositions', () => {
                 path: 'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts',
                 ruleId: 'layout.primary-export-name',
                 symbol: 'parseRtcBaselineCommand'
-            },
-            {
-                path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-acceptance.ts',
-                ruleId: 'layout.primary-export-name',
-                symbol: 'createRtcBaselineDenoAcceptance'
             },
             {
                 path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-repeat-initializer.ts',
@@ -626,13 +663,6 @@ function reviewedSources(root: string) {
                 'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts'
             ),
             raw: primaryExportSource('parseRtcBaselineCommand')
-        },
-        {
-            file: path.join(
-                root,
-                'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-acceptance.ts'
-            ),
-            raw: primaryExportSource('createRtcBaselineDenoAcceptance')
         },
         {
             file: path.join(

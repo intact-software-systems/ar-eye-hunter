@@ -1,34 +1,33 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createRoomSnapshot,
-    readRoomWorkflowMocks,
+    getRoomWorkflowMocks,
+    mockRoomCreateSuccess,
+    mockRoomLeaveSuccess,
     rejectCreateWith,
     rejectLeaveWith,
     resetRoomWorkflowTestRuntime,
-    resolveCreateWith,
-    resolveLeaveWith,
     seedRoomSnapshots
 } from './room-workflow-test-runtime.ts';
 
-const roomWorkflowMocks = readRoomWorkflowMocks();
+const roomWorkflowMocks = getRoomWorkflowMocks();
 
 installFakeBroadcastChannelPerTest();
 
 describe('room create operations', () => {
     beforeEach(resetRoomWorkflowTestRuntime);
 
-    it('exposes the owning create operation entries', async () => {
-        const { createAndJoinRoom, createAndSwitchRoom } = await import('@shared-web/browser/rooms/create-and-join-room.ts');
-        expect(typeof createAndJoinRoom).toBe('function');
-        expect(typeof createAndSwitchRoom).toBe('function');
-    });
-
     it('returns the authoritative snapshot and hydrates current room state', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const snapshot = createRoomSnapshot('created-room', ['session-1']);
-        resolveCreateWith(snapshot);
+        mockRoomCreateSuccess(snapshot);
         const facade = createRallarFacade();
 
         await expect(facade.rooms.create('Created Room')).resolves.toBe(snapshot);
@@ -41,7 +40,7 @@ describe('room create operations', () => {
     it('forwards only the supported room fields and command options', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
-        resolveCreateWith(createRoomSnapshot('custom-room', ['session-1']));
+        mockRoomCreateSuccess(createRoomSnapshot('custom-room', ['session-1']));
 
         await createRallarFacade().rooms.create({
             groupId: 'custom-room',
@@ -83,8 +82,8 @@ describe('room create operations', () => {
         const newRoom = createRoomSnapshot('new-room', ['session-1']);
         const leftOldRoom = createRoomSnapshot('old-room', []);
         seedRoomSnapshots([oldRoom]);
-        resolveCreateWith(newRoom);
-        resolveLeaveWith(leftOldRoom);
+        mockRoomCreateSuccess(newRoom);
+        mockRoomLeaveSuccess(leftOldRoom);
         const facade = createRallarFacade();
 
         await expect(facade.rooms.createAndSwitch({ displayName: 'New Room' })).resolves.toBe(newRoom);
@@ -104,7 +103,7 @@ describe('room create operations', () => {
         const newRoom = createRoomSnapshot('new-room', ['session-1']);
         const leaveError = new Error('leave failed');
         seedRoomSnapshots([oldRoom]);
-        resolveCreateWith(newRoom);
+        mockRoomCreateSuccess(newRoom);
         rejectLeaveWith(leaveError);
         const facade = createRallarFacade();
 

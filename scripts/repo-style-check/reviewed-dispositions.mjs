@@ -237,59 +237,13 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'readControlPayloads'
     }),
-    // The ten Relic web spec entries record pre-existing debt in a file the
-    // envelope version sweep changed by a literal only: double assertions on
-    // `window` and untyped mock-backend fixtures, not checker false positives.
-    // Typing the spec's mock backend is that file's next material change.
-    Object.freeze({
-        path: 'tests/playwright/relic-hunters/web.spec.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'tests/playwright/relic-hunters/web.spec.ts',
-        rule: 'boundary.unknown',
-        symbol: 'installBrowserDoubles'
-    }),
-    Object.freeze({
-        path: 'tests/playwright/relic-hunters/web.spec.ts',
-        rule: 'boundary.unknown',
-        symbol: 'nextCommandSnapshot'
-    }),
-    Object.freeze({
-        path: 'tests/playwright/relic-hunters/web.spec.ts',
-        rule: 'boundary.unknown',
-        symbol: 'mockBackend'
-    }),
-    Object.freeze({
-        path: 'tests/playwright/relic-hunters/web.spec.ts',
-        rule: 'boundary.unknown',
-        symbol: 'json'
-    }),
-    Object.freeze({
-        path: 'tests/playwright/relic-hunters/web.spec.ts',
-        rule: 'boundary.unknown',
-        symbol: 'parseJsonBody'
-    }),
+    // This predicate checks typeof, null and property presence before comparing
+    // kind. Only a boolean leaves the boundary; its unknown values stay local.
+    // The checker reports the boolean signature as a manual-review signal.
     Object.freeze({
         path: 'tests/playwright/relic-hunters/web.spec.ts',
         rule: 'boundary.unknown',
         symbol: 'isCommandKind'
-    }),
-    Object.freeze({
-        path: 'tests/playwright/relic-hunters/web.spec.ts',
-        rule: 'boundary.unknown',
-        symbol: 'relicSnapshotWithPlayers'
-    }),
-    Object.freeze({
-        path: 'tests/playwright/relic-hunters/web.spec.ts',
-        rule: 'boundary.unknown',
-        symbol: 'continuedStoragePlanningSnapshot'
-    }),
-    Object.freeze({
-        path: 'tests/playwright/relic-hunters/web.spec.ts',
-        rule: 'boundary.unknown',
-        symbol: 'finishedRelicSnapshot'
     }),
     // This caught-value boundary immediately normalizes arbitrary thrown values
     // to Error, exactly as required by the code standard. No unknown value
@@ -344,14 +298,9 @@ export const reviewedDispositions = Object.freeze([
         rule: 'layout.primary-export-name',
         symbol: 'parseRtcBaselineCommand'
     }),
-    // These runtime capability modules intentionally use noun-based filenames:
-    // each contains the cohesive helpers needed to construct that capability,
+    // This runtime capability module intentionally uses a noun-based filename:
+    // it contains the cohesive helpers needed to construct that capability,
     // while the checker sees only the exported factory as the primary symbol.
-    Object.freeze({
-        path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-acceptance.ts',
-        rule: 'layout.primary-export-name',
-        symbol: 'createRtcBaselineDenoAcceptance'
-    }),
     Object.freeze({
         path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-repeat-initializer.ts',
         rule: 'layout.primary-export-name',

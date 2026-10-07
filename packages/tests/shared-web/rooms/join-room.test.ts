@@ -1,30 +1,30 @@
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
-import { beforeEach, describe, expect, it } from 'vitest';
 
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createRoomSnapshot,
-    readRoomWorkflowMocks,
+    getRoomWorkflowMocks,
+    mockRoomJoinSuccess,
+    mockRoomLeaveSuccess,
     rejectJoinWith,
     rejectLeaveWith,
     resetRoomWorkflowTestRuntime,
-    resolveJoinWith,
-    resolveLeaveWith,
     seedRoomSnapshots
 } from './room-workflow-test-runtime.ts';
 
-const roomWorkflowMocks = readRoomWorkflowMocks();
+const roomWorkflowMocks = getRoomWorkflowMocks();
 
 installFakeBroadcastChannelPerTest();
 
 describe('room join operations', () => {
     beforeEach(resetRoomWorkflowTestRuntime);
-
-    it('exposes the owning join operation entries', async () => {
-        const { enterRoom, joinRoom } = await import('@shared-web/browser/rooms/join-room.ts');
-        expect(typeof joinRoom).toBe('function');
-        expect(typeof enterRoom).toBe('function');
-    });
 
     it('resolves roomId and roomRef object targets', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
@@ -60,7 +60,7 @@ describe('room join operations', () => {
     it('forwards invite credentials and safe command options', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const signal = new AbortController().signal;
-        resolveJoinWith(createRoomSnapshot('room-1', ['session-1']));
+        mockRoomJoinSuccess(createRoomSnapshot('room-1', ['session-1']));
 
         await createRallarFacade().rooms.join({
             roomId: 'room-1',
@@ -86,7 +86,7 @@ describe('room join operations', () => {
 
     it('applies the documented retry classification', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        resolveJoinWith(createRoomSnapshot('room-1', ['session-1']));
+        mockRoomJoinSuccess(createRoomSnapshot('room-1', ['session-1']));
 
         await createRallarFacade().rooms.join('room-1', { maxAttempts: 3 });
 
@@ -107,8 +107,8 @@ describe('room join operations', () => {
         const oldRoom = createRoomSnapshot('old-room', ['session-1']);
         const newRoom = createRoomSnapshot('new-room', ['session-1']);
         seedRoomSnapshots([oldRoom]);
-        resolveJoinWith(newRoom);
-        resolveLeaveWith(createRoomSnapshot('old-room', []));
+        mockRoomJoinSuccess(newRoom);
+        mockRoomLeaveSuccess(createRoomSnapshot('old-room', []));
         const facade = createRallarFacade();
 
         await expect(facade.rooms.join('new-room')).resolves.toBe(newRoom);
@@ -128,7 +128,7 @@ describe('room join operations', () => {
         const newRoom = createRoomSnapshot('new-room', ['session-1']);
         const leaveError = new Error('leave failed');
         seedRoomSnapshots([oldRoom]);
-        resolveJoinWith(newRoom);
+        mockRoomJoinSuccess(newRoom);
         rejectLeaveWith(leaveError);
         const facade = createRallarFacade();
 

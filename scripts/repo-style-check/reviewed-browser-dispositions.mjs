@@ -8,24 +8,6 @@ export const reviewedBrowserDispositions = Object.freeze([
         symbol: 'toRallarRtcCaptureContext'
     }),
     Object.freeze({
-        path:
-            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
-        rule: 'boundary.unknown',
-        symbol: 'dataChannelLanes'
-    }),
-    Object.freeze({
-        path:
-            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
-        rule: 'boundary.unknown',
-        symbol: 'decodeBlackBoxRallarConfigFields'
-    }),
-    Object.freeze({
-        path:
-            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
-        rule: 'boundary.unknown',
-        symbol: 'decodeBlackBoxRallarConnectionConfig'
-    }),
-    Object.freeze({
         path: 'packages/shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts',
         rule: 'boundary.unknown',
         symbol: 'validateRallarBlackBoxTestCommand'
