@@ -390,7 +390,7 @@ describe('Relic Hunter server game service', () => {
         ]);
     });
 
-    it('publishes the finish on the last round\'s track', async () => {
+    it('publishes the finish on the track of the round past the last, so no track spans a review', async () => {
         const fake = createFakeRallar();
         const service = await installRelicHunterGame(fake.rallar, {
             ...TEST_GAME_SERVICE_OPTIONS,
@@ -405,7 +405,7 @@ describe('Relic Hunter server game service', () => {
         expect(fake.published.filter(isRoundEvent).map(toPublishedRoundEvent).at(-1)).toEqual({
             resourceId: 'room-1:1',
             orderingKey: 'room-1:1',
-            epoch: 1,
+            epoch: 2,
             round: 1,
             phase: 'finished',
             transition: 'finished',

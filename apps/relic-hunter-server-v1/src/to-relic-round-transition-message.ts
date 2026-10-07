@@ -60,8 +60,9 @@ export function toRelicRoundTransitionEvent(
 }
 
 /**
- * The transition rides the ordered track of its round in the game's incarnation: the incarnation keys
- * the track, the round is its epoch, and the server's outbound admission mints the sequence.
+ * The transition rides the ordered track of the round it enters in the game's incarnation: the
+ * incarnation keys the track, that round is its epoch, and the server's outbound admission mints the
+ * sequence.
  */
 export function toRelicRoundTransitionMessage(
     state: RelicGameState,
@@ -83,7 +84,15 @@ export function toRelicRoundTransitionMessage(
             reliability: 'at-least-once',
             ack: 'receiver',
             ttlMs: RELIC_EVENT_TTL_MS,
-            ordering: { orderingKey: toRelicRoundTrackKey(state), epoch: event.round }
+            ordering: { orderingKey: toRelicRoundTrackKey(state), epoch: toRelicTransitionEpoch(event) }
         }
     );
+}
+
+/**
+ * The round the transition enters; the finish enters the round past the last. Every track is bounded
+ * by one round's time limit, and none spans a review, which has no limit.
+ */
+function toRelicTransitionEpoch(event: RelicRoundTransitionEvent): number {
+    return event.transition === 'finished' ? event.round + 1 : event.round;
 }
