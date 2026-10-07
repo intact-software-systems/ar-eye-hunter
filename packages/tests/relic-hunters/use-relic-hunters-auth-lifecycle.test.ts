@@ -404,6 +404,7 @@ describe('useRelicHunters auth lifecycle', () => {
 });
 
 interface CapturedRoomChannel {
+    readonly roomId: string;
     readonly definition: RallarRoomMessageChannelDefinition;
     onTransition: RallarTypedPayloadHandler<RelicRoundTransitionEvent> | undefined;
 }
@@ -422,8 +423,12 @@ interface Deferred<T> {
 function captureRoomChannels(): ReadonlyMap<string, CapturedRoomChannel> {
     const channels = new Map<string, CapturedRoomChannel>();
     mockRallar.messages.room.mockImplementation((definition: RallarRoomMessageChannelDefinition) => {
-        const channel: CapturedRoomChannel = { definition, onTransition: undefined };
-        channels.set(definition.roomRef.groupId, channel);
+        const roomId = definition.roomRef?.groupId;
+        if (roomId === undefined) {
+            throw new Error('A Relic round-transition channel names its room');
+        }
+        const channel: CapturedRoomChannel = { roomId, definition, onTransition: undefined };
+        channels.set(roomId, channel);
         return {
             onWs: vi.fn((handler: RallarTypedPayloadHandler<RelicRoundTransitionEvent>) => {
                 channel.onTransition = handler;
@@ -444,19 +449,15 @@ function captureRoomsChange(): CapturedRoomsChange {
     return {
         enter: async (roomId) => {
             await act(async () => {
-                listener?.({
-                    rooms: [{ roomId, groupId: roomId, name: 'Relic Hunters Expedition' }],
-                    currentRoomId: roomId
-                } as RallarRoomState);
+                listener?.({ rooms: [], currentRoomId: roomId, members: [] });
             });
         }
     };
 }
 
 function requireResync(channel: CapturedRoomChannel): void {
-    const gameId = channel.definition.roomRef.groupId;
     channel.definition.recovery?.onResyncRequired({
-        orderingKey: toRelicRoundTrackKey({ gameId, createdAtEpochMs: 20 }),
+        orderingKey: toRelicRoundTrackKey({ gameId: channel.roomId, createdAtEpochMs: 20 }),
         senderId: 'default-qbox-server',
         epoch: 1,
         lastContiguousSeq: 0,
