@@ -49,6 +49,7 @@ export function LocalWorkbenchSection({
             <WorkbenchPanel
                 busy={busy}
                 runState={runState}
+                loadedRecipe={state.loadedRecipe}
                 loadedFixtureId={loadedFixtureId}
                 lastError={lastError}
             />

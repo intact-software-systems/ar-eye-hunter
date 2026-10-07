@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 
+import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
     toRecipeFixtureText,
@@ -41,14 +42,15 @@ interface WorkbenchDraftControls {
 interface WorkbenchPanelProps {
     readonly busy: boolean;
     readonly runState: string;
+    readonly loadedRecipe: RallarBlackBoxTestRecipe | undefined;
     /** Absent for a hand-authored recipe or after reset. */
     readonly loadedFixtureId?: string;
     /** Absent while the last runtime action carries no failure. */
     readonly lastError?: string;
 }
 
-export function WorkbenchPanel({ busy, runState, loadedFixtureId, lastError }: WorkbenchPanelProps) {
-    const draft = useWorkbenchDraft(loadedFixtureId);
+export function WorkbenchPanel({ busy, runState, loadedRecipe, loadedFixtureId, lastError }: WorkbenchPanelProps) {
+    const draft = useWorkbenchDraft(loadedRecipe, loadedFixtureId);
     return (
         <section className="panel workbench-panel">
             <div className="panel-heading">
@@ -66,9 +68,14 @@ export function WorkbenchPanel({ busy, runState, loadedFixtureId, lastError }: W
     );
 }
 
-function useWorkbenchDraft(loadedFixtureId: string | undefined): WorkbenchDraft {
+function useWorkbenchDraft(
+    loadedRecipe: RallarBlackBoxTestRecipe | undefined,
+    loadedFixtureId: string | undefined
+): WorkbenchDraft {
     const [fixtureId, setFixtureId] = useState(loadedFixtureId ?? RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].fixtureId);
-    const [recipeText, setRecipeText] = useState(() => toRecipeFixtureText(fixtureId));
+    const [recipeText, setRecipeText] = useState(() =>
+        loadedRecipe === undefined ? toRecipeFixtureText(fixtureId) : JSON.stringify(loadedRecipe, null, 2)
+    );
     const [commandText, setCommandText] = useState(() =>
         JSON.stringify(RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE, null, 2)
     );
@@ -191,7 +198,11 @@ function WorkbenchRecipeActions({ busy, draft }: WorkbenchDraftControls) {
                 type="button"
                 onClick={() =>
                     runDecodedWorkbenchAction(
-                        () => rallarBlackBoxRuntimeStore.loadRecipeFromJson(draft.recipeText, draft.fixtureId),
+                        () =>
+                            rallarBlackBoxRuntimeStore.loadRecipeFromJson(
+                                draft.recipeText,
+                                resolveWorkbenchFixtureId(draft)
+                            ),
                         draft.setLocalError
                     )}
                 disabled={busy || !draft.recipeValidation.ok}
@@ -257,4 +268,10 @@ function WorkbenchManualCommandEditor({ busy, draft }: WorkbenchDraftControls) {
             </button>
         </div>
     );
+}
+
+function resolveWorkbenchFixtureId(draft: WorkbenchDraft): string | undefined {
+    return JSON.stringify(draft.recipeValidation.parsed) === JSON.stringify(draft.fixture.recipe)
+        ? draft.fixtureId
+        : undefined;
 }

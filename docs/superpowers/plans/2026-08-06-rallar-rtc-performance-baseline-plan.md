@@ -93,9 +93,12 @@ adjustable packaging caps 251 and 321; no workload or other limits change.
 Fresh Branch37661784882, Formation37661784487 and Medium37661784363 are terminal SUCCESS.
 Actual checkout/artifact evidence binds Branch to15eff and the other two to an equivalent
 synthetic merge, all with tree372c1f6e21ab768fbb584a03c8e5c3fbfa26fe16. Required review still
-blocks ordinary main integration. A concrete native squash proposal is prepared against
-unchanged main d5db1569d5072a714df314b2d5eceed5011407d5; fresh maintainer approval is required
-before that default-branch operation. No main commit or push is performed.
+blocks ordinary main integration. The previous exact squash proposal against main
+d5db1569d5072a714df314b2d5eceed5011407d5 is now stale: remote main has advanced to
+94e72f4828e9db5111dc06e4746f1ce09f68ead2 and PR633 is CONFLICTING. A read-only dry merge
+exits1 with two current conflicts, shared-web bundle budgets and update-room tests.
+Repair and validate the feature branch before preparing any new exact main proposal.
+No main commit, push or accepted E3 cohort is performed.
 Local Workbench now has visible run capture intent after two genuine semantic REDs:
 first the missing selector, then explicit Off failing to reach the accepted run. Final
 32 SDK/store cases, the simulated real-UI browser witness, maintained1488-test typing,
@@ -113,9 +116,19 @@ browser corpus and three final affected cases. All four choices preserve authore
 intent through Resolve/Create/Stage/Start. Fresh independent review approves all
 seven complete owners after private naming/dead-local corrections and the exact
 outgoing-serializer reviewed-boundary record.83 final focused checks and app typing
-pass; the final current-parent WORKTREE style gate passes with no new findings. The initial style failure
-is preserved. Existing authored-intent persistence paths
-follow that coherent slice.
+pass; the final current-parent WORKTREE style gate passes with no new findings.
+The coherent slice is published in PR645 at5375a5559b447c8dda5b90739f466cfeaee91a27,
+treebf747f19f9ef6cd875b771da192aef823cdd7962. Git and GitHub heads agree; committed
+coupling passes with all nine existing candidates classified. The initial style failure
+is preserved. Fresh Branch37690497028, Formation37690496468 and Medium37690496519
+attempt1 all pass on independently verified identical trees, without evidence reuse.
+The separate ALM job passes three baseline smoke cells; twelve cases are skipped and
+per-operation samples remain insufficient. This accepts hosted release evidence for
+5375, not a performance baseline. Local Load/remount now has two independently verified
+semantic REDs followed by minimum GREEN. The final maintained browser run passes three
+cases, including both observer controls. Fresh independent SPEC/QUALITY approves all
+three complete owners with no findings; final current-parent WORKTREE style passes.
+This coherent slice is ready for prompt feature publication.
 Worker, Actions and full B01–B06/E3 outcomes stay mandatory.
 B06 selection and producer configuration are published; governed E3 has zero accepted cohorts
 and remains required in Section 11. Current product and architecture are [docs/product.md](../../product.md)
@@ -188,18 +201,19 @@ views disclose omitted successful history. These are correctness gates, not B01�
 performance cohorts or full diagnostic-receipt acceptance.
 
 [PR633](https://github.com/intact-software-systems/ar-eye-hunter/pull/633) remains open with
-native review required. Fresh GitHub state is CONFLICTING against main
-`d5db1569d5072a714df314b2d5eceed5011407d5`, verified through both remote Git and GitHub refs.
-The actual dry merge exits1 with five conflicted owners: browser communication composition,
-browser message sender, shared-web bundle budgets, headless bundle budget and RTC outbound
-overlay readiness tests. Preserve both accepted capture behavior and main's current
-principal/world/fixed-audience and fallback behavior; measure the merged bundles rather
-than choosing caps from conflict markers. Guidance is unchanged between the exact heads.
-The existing clean feature integration worktree preserves the independently held work.
-The next two concrete slices are this reviewed style-publication closure and the actual
-parent conflict repair. Task65 remains prepared and required. The earlier e366-based main
-proposal is stale; prepare a new exact proposal after feature repair and validation, then
-obtain the repository's just-in-time default-branch approval. No main operation or
+native review required. Its earlier five-conflict repair is published and independently
+accepted at15eff against pinned main d5db. Remote main has since advanced to
+`94e72f4828e9db5111dc06e4746f1ce09f68ead2`; fresh GitHub state is CONFLICTING.
+The current read-only dry merge exits1 with two conflicted owners:
+`packages/shared-web/bundle-budgets.json` and
+`packages/tests/shared-web/rooms/update-room.test.ts`. The clean feature integration
+worktree remains at15eff and preserves independently held work. Preserve accepted capture
+behavior and current main consumer contracts, and measure actual combined bundles before
+choosing minimum adjustable caps. The next two concrete slices are prompt publication of
+the independently approved Local Load/remount source and this new feature conflict repair.
+Full Task65 remains active. The prior exact main proposal is stale; after repair,
+validation and review, prepare a fresh exact proposal and obtain just-in-time approval.
+No main operation or
 accepted E3 cohort is claimed. Task61 and Task62 are locally accepted in the separate
 continuation worktree, preserving the proposed integration source. The human-approved
 required-input/default-composition/client-clock correction adapts verified callers directly,
@@ -6697,21 +6711,61 @@ WORKTREE style gate passes with no new findings. No newly retained legacy, migra
 or real standards exception is added. Publish this bounded Console slice promptly;
 its approval does not accept the remaining full-goal outcomes.
 
-**Next existing-persistence witness:** A bounded post-Local source audit recovers
-one wrong attribution and one restore gap in the canonical Workbench consumer.
-Edited JSON Load always supplies the selected fixture ID, even though the store
-documents that ID as absent for hand-authored recipes. The fixture selector can stay
-a preference; it cannot identify a different accepted body. Assert complete loaded
-recipe content and absent fixture attribution after a distinguishable custom Load,
-then prove authored intent survives temporary Off/Inherit runs and a genuine remount.
-Current initialization reconstructs fixture text rather than accepting loadedRecipe;
-the existing experience route really unmounts Legacy, whereas advanced tabs only hide
-it. These are source findings, not witnessed RED or implemented corrections. Use
-the maintained UI/runtime/store and existing Copy payload; invent no recipe store,
-API, migration or parallel persistence policy. Existing SDK composition already
-proves unavailable Native capture produces typed refusal without completion under
-controlled auth/network/WS/window dependencies. A corresponding actual Local UI
-application/refusal witness remains required and is not proved by simulated UI.
+**Published Console hosted acceptance:** The coherent seven-owner Console slice is
+published at5375a5559b447c8dda5b90739f466cfeaee91a27, tree
+bf747f19f9ef6cd875b771da192aef823cdd7962. Branch37690497028 attempt1 completes
+successfully with fresh broad selection, reuse=false, publication and final gate.
+Formation37690496468 and Medium37690496519 attempt1 also pass; actual checkout
+965d31055340d3f3c5a6a9270a79ac86764f6dc9 has parents15eff and5375 and the same
+Git tree. Eight downloaded artifact hashes match their API and upload records.
+The separate ALM job passes ws/rtc/rtc-with-ws-fallback baseline smoke with38 commands
+dispatched once, completed successfully and replayed=false. Twelve ALM cases are skipped;
+every per-operation cell has only one sample. Bounded event indexes and nonblocking
+recipe observations remain disclosed. These are hosted release/smoke results, not
+B01–B06/native/E3 acceptance and not acceptance of subsequent dirty Local source.
+The earlier634c setup timeout remains preserved and its lower-level cause unresolved;
+new smoke success does not explain or replace that failure.
+
+**Existing Local Load/remount independently accepted:** A bounded source audit led to
+two separate semantic witnesses against published5375. First, genuine ws-http-smoke
+fixture Load passes, then complete custom Native-root/Off-command JSON loads unchanged
+but wrongly retains the selected fixture ID. Actual exit1 retains two passing observer
+controls. Root verifies all eight frozen input bindings before minimum attribution
+GREEN. The existing Load callback now supplies a fixture ID only when complete parsed
+content matches the selected fixture. The final adversarial case deliberately reuses
+its recipeId with different content; identity alone cannot claim fixture provenance.
+
+After first actual GREEN, the independent remount RED proves all temporary capture
+choices preserve the complete accepted recipe, then really unmounts Legacy through the
+existing experience route. Browser Back retains the accepted runtime body but resets
+the editor to default fixture text. Actual exit1 retains both observer controls; root
+verifies the distinct frozen packet before releasing minimum restoration. The existing
+Local consumer passes accepted loadedRecipe into the Workbench's lazy editor initializer.
+Remount chooses that body once; no restore Load/Run, synchronization effect, second store,
+public API, migration or parallel policy is introduced. The independently required
+unloaded fixture path remains intact.
+
+Final maintained browser exit0 passes three cases in39.4s. Controls additionally prove
+unsubmitted draft preservation after a visibly committed ordinary parent update and
+Reset/unloaded reconstruction after a second genuine remount. App typecheck, three-owner
+formatting and scoped whole-owner style/construction checks pass; untouched directory
+warnings remain outside closure. All35 packet hashes and all eight current/frozen source
+bindings are independently verified. Both original REDs remain immutable. Fresh independent
+SPEC/QUALITY review approves all three complete owners with no actionable findings and
+confirms all four proof manifests. Final current-parent WORKTREE style passes with no
+new findings. Publish the coherent tested/reviewed source promptly; full Task65 is open.
+This proves existing in-memory route restoration through simulated UI and actual runtime
+state; it does not establish browser reload durability, copied executable consumption,
+independent fresh external effects or actual UI SDK/native application/refusal.
+
+**Next authored-intent outcome:** Exercise canonical executable Copy through existing
+visible Load, followed by temporary Off/Inherit and genuine remount, against the actual
+copied body. Use only existing storage/reload paths recovered from code; invent no saved
+recipe store, API, migration or duplicate policy. The existing manual-history Copy owner
+already preserves per-command Off/Native intent in focused units; consumption through
+Local UI remains unwitnessed. Existing controlled SDK composition proves unavailable
+Native capture produces typed refusal without completion. Corresponding actual UI
+application/refusal and fresh-effect witnesses remain mandatory.
 
 Full Task65, Console, existing Load/Copy/storage/restore/repeat outcomes, workers, Actions
 and B01–B06/E3 remain required. No retry, recovery, CRDT or RTC transport behavior changes.

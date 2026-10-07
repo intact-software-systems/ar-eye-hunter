@@ -27,13 +27,26 @@ const ARTIFACT_FIXTURE_DIR = path.join(
     'packages/shared-test/black-box-runner/fixtures/schema/v1/artifact-bundle'
 );
 
-test('offers a separate local recipe run capture choice without rewriting authored intent', async ({ page }) => {
+test('preserves loaded Local recipe intent through capture choices and experience remount', async ({ page }) => {
     await page.goto('/?provider=simulated&experience=legacy&workspace=black-box-runner&tab=local-workbench');
     const panel = page.locator('#panel-local-workbench');
     await expect(panel.locator('.workbench-panel .panel-heading .pill')).toHaveText('passed');
+    await panel.getByRole('combobox', { name: 'Fixture', exact: true }).selectOption('ws-http-smoke');
+    await panel.getByRole('button', { name: 'Load', exact: true }).click();
+    await expect.poll(() =>
+        page.evaluate(async () => {
+            const modulePath = '/src/runtime-store.ts';
+            const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+            return rallarBlackBoxRuntimeStore.getSnapshot();
+        })
+    ).toMatchObject({
+        loadedFixtureId: 'ws-http-smoke',
+        state: { loadedRecipe: { schemaVersion: 1, recipeId: 'ws-http-smoke-recipe' } }
+    });
+
     const recipe = {
         schemaVersion: 1,
-        recipeId: 'authored-capture-choice',
+        recipeId: 'ws-http-smoke-recipe',
         rtcCaptureMode: 'native',
         commands: [{
             kind: 'rtc.connect',
@@ -54,6 +67,13 @@ test('offers a separate local recipe run capture choice without rewriting author
             return rallarBlackBoxRuntimeStore.getSnapshot().state.loadedRecipe;
         })
     ).toEqual(recipe);
+    expect(
+        await page.evaluate(async () => {
+            const modulePath = '/src/runtime-store.ts';
+            const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+            return rallarBlackBoxRuntimeStore.getSnapshot().loadedFixtureId;
+        })
+    ).toBeUndefined();
     await expect(editor).toHaveValue(recipeText);
 
     const capture = panel.getByRole('combobox', { name: /RTC capture/i });
@@ -85,7 +105,74 @@ test('offers a separate local recipe run capture choice without rewriting author
         expect(invocations).not.toContain(invocationId);
         invocations.push(invocationId);
         await expect(editor).toHaveValue(recipeText);
+        expect(
+            await page.evaluate(async () => {
+                const modulePath = '/src/runtime-store.ts';
+                const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                return rallarBlackBoxRuntimeStore.getSnapshot().state.loadedRecipe;
+            })
+        ).toEqual(recipe);
     }
+
+    await page.evaluate(() => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('experience', 'recipe-console');
+        window.history.pushState({}, '', url);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await expect(page.locator('.recipe-console')).toBeVisible();
+    await expect(panel).toHaveCount(0);
+
+    await page.goBack();
+    await expect(panel).toBeVisible();
+    await expect(page.locator('.recipe-console')).toHaveCount(0);
+    expect(
+        await page.evaluate(async () => {
+            const modulePath = '/src/runtime-store.ts';
+            const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+            return rallarBlackBoxRuntimeStore.getSnapshot().state.loadedRecipe;
+        })
+    ).toEqual(recipe);
+    await expect(editor).toHaveValue(recipeText);
+
+    const unsubmittedText = JSON.stringify({ ...recipe, recipeId: 'unsubmitted-local-draft' }, null, 2);
+    await editor.fill(unsubmittedText);
+    await page.locator('.run-header').getByRole('button', { name: 'Show details', exact: true }).click();
+    await page.evaluate(async () => {
+        const modulePath = '/src/runtime-store.ts';
+        const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+        rallarBlackBoxRuntimeStore.recordRuntimeEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.workbench.draft-preservation',
+            severity: 'info',
+            payload: {}
+        }, 'Unsubmitted draft preservation check');
+    });
+    await expect(page.getByText('Unsubmitted draft preservation check', { exact: true })).toBeVisible();
+    await expect(editor).toHaveValue(unsubmittedText);
+
+    await panel.getByRole('button', { name: 'Reset', exact: true }).click();
+    await expect.poll(() =>
+        page.evaluate(async () => {
+            const modulePath = '/src/runtime-store.ts';
+            const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+            return rallarBlackBoxRuntimeStore.getSnapshot().state.loadedRecipe;
+        })
+    ).toBeUndefined();
+    await page.evaluate(() => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('experience', 'recipe-console');
+        window.history.pushState({}, '', url);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await expect(page.locator('.recipe-console')).toBeVisible();
+    await expect(panel).toHaveCount(0);
+    await page.goBack();
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole('combobox', { name: 'Fixture', exact: true }))
+        .toHaveValue('rtc-messages-principal-multicast-sender');
+    expect(decodeRecord(JSON.parse(await editor.inputValue())).recipeId)
+        .toBe('rtc-messages-principal-multicast-sender');
 });
 
 test.describe('exhaustive runner workbench tabs', () => {
