@@ -3435,6 +3435,36 @@ moved or changed test.
       }
     },
     {
+      "id": "relic-web-api-signed-out-requests-nothing",
+      "domain": "Relic Hunters browser REST client",
+      "owner": "Relic Hunters maintainers",
+      "summary": "Without a browser auth session the Relic REST client answers every read and command with no result and sends no request.",
+      "semanticCoverage": "packages/tests/relic-hunters/relic-web-api.test.ts#does not call relic endpoints without a browser auth session",
+      "coverageRelation": "The test clears the session, calls the snapshot read, the command and the reset, and checks that each resolves undefined and that no request was sent.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "browser fetch to the Relic REST API",
+        "observableEffect": "A signed-out client sends no Relic request.",
+        "requiredConstraint": "The client sends a Relic request only with the credentials of a browser auth session.",
+        "failureRationale": "Every call resolves undefined whether or not a request was also sent, and an unauthenticated request would reach the server without credentials; the absent call is the only witness."
+      }
+    },
+    {
+      "id": "relic-web-api-command-sends-one-request",
+      "domain": "Relic Hunters browser REST client",
+      "owner": "Relic Hunters maintainers",
+      "summary": "A command submission is one POST to the game's encoded commands route carrying the session's credentials and the command.",
+      "semanticCoverage": "packages/tests/relic-hunters/relic-web-api.test.ts#sends command requests with encoded game id and browser auth headers",
+      "coverageRelation": "The test submits one command and checks the single request's encoded URL, method, auth headers and body.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "browser fetch to the Relic REST API",
+        "observableEffect": "One command submission sends exactly one request.",
+        "requiredConstraint": "The server applies a REST command once per request, so the client sends one request per submission.",
+        "failureRationale": "The URL, headers and body read from the first request hold whether or not a second request followed it, and a second request would apply the command twice; the count is the only witness."
+      }
+    },
+    {
       "id": "browser-storage-unavailable-refuse-admits-once",
       "domain": "Browser durable send storage cannot hold",
       "owner": "Rallar browser maintainers",
@@ -7993,6 +8023,28 @@ moved or changed test.
       "owner": "Relic Hunters maintainers",
       "rationale": "`expect(mockRallar.auth.logout).not.toHaveBeenCalled();` pins that an unauthorized auth change clears the hook without requesting a logout of its own.",
       "semanticCoverage": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts#clears relic runtime state when auth is unauthorized outside manual logout"
+    },
+    {
+      "id": "test-structure-coupling-ac3ba88485ec04d8",
+      "path": "packages/tests/relic-hunters/relic-web-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-web-api-signed-out-requests-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(fetch).not.toHaveBeenCalled();` pins that a signed-out client sends no Relic request for a snapshot read, a command or a reset.",
+      "semanticCoverage": "packages/tests/relic-hunters/relic-web-api.test.ts#does not call relic endpoints without a browser auth session"
+    },
+    {
+      "id": "test-structure-coupling-bf4f16d3c0e6e3b9",
+      "path": "packages/tests/relic-hunters/relic-web-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-web-api-command-sends-one-request",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(fetch).toHaveBeenCalledTimes(1);` pins that one command submission sends one request, the one whose URL, headers and body the test then reads.",
+      "semanticCoverage": "packages/tests/relic-hunters/relic-web-api.test.ts#sends command requests with encoded game id and browser auth headers"
     },
     {
       "id": "test-structure-coupling-0f97b8e668773ecb",
