@@ -1015,6 +1015,13 @@ export type RallarBlackBoxTestEventKind =
     | 'result'
     | 'state';
 
+export namespace RallarBlackBoxTestEvent {
+    /** Captured execution provenance; callers cannot assign ownership through recordEvent or command metadata. */
+    export interface ControlExecution extends ControlClientIdentity {
+        readonly rootCommandId: string;
+    }
+}
+
 export type RallarBlackBoxTestEvent<T = unknown> = Readonly<{
     eventId: string;
     kind: RallarBlackBoxTestEventKind;
@@ -1026,6 +1033,8 @@ export type RallarBlackBoxTestEvent<T = unknown> = Readonly<{
     transport?: RallarBlackBoxTestTransport;
     severity?: RallarBlackBoxTestSeverity;
     payload?: T;
+    /** Absent for local events; owned descendants retain the admitted control root and address. */
+    control?: RallarBlackBoxTestEvent.ControlExecution;
 }>;
 
 export type RallarBlackBoxTestRuntimeEventInput = Omit<RallarBlackBoxTestEvent, 'eventId' | 'atEpochMs'>;

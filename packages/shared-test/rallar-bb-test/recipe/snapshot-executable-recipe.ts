@@ -1,5 +1,6 @@
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestConfig,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
@@ -19,9 +20,6 @@ export function snapshotExecutableCommand(command: RallarBlackBoxTestCommand): R
     }
     switch (command.kind) {
         case 'recipe.load':
-            return snapshotOwnedOptions(command, {
-                recipe: snapshotExecutableRecipe(command.recipe)
-            });
         case 'recipe.run':
             return snapshotOwnedOptions(command, {
                 recipe: command.recipe && snapshotExecutableRecipe(command.recipe)
@@ -41,112 +39,176 @@ export function snapshotExecutableCommand(command: RallarBlackBoxTestCommand): R
                 ))
             });
         case 'configure':
-            return snapshotOwnedOptions(command, {
-                config: snapshotOwnedOptions(command.config, {
-                    rallar: command.config.rallar && snapshotConnectionOptions(command.config.rallar),
-                    browser: command.config.browser && Object.freeze({ ...command.config.browser }),
-                    control: command.config.control && Object.freeze({ ...command.config.control }),
-                    defaults: command.config.defaults && Object.freeze({ ...command.config.defaults }),
-                    fleet: command.config.fleet && snapshotOwnedOptions(command.config.fleet, {
-                        ...(Array.isArray(command.config.fleet.tags)
-                            ? { tags: Object.freeze([...command.config.fleet.tags]) }
-                            : {}),
-                        ...(isOptionRecord(command.config.fleet.location)
-                            ? { location: Object.freeze({ ...command.config.fleet.location }) }
-                            : {})
-                    }),
-                    redaction: command.config.redaction && snapshotOwnedOptions(command.config.redaction, {
-                        keys: command.config.redaction.keys && Object.freeze([...command.config.redaction.keys]),
-                        keySubstrings: command.config.redaction.keySubstrings &&
-                            Object.freeze([...command.config.redaction.keySubstrings]),
-                        secretValues: command.config.redaction.secretValues &&
-                            Object.freeze([...command.config.redaction.secretValues])
-                    })
-                })
-            });
+            return snapshotOwnedOptions(command, { config: snapshotRuntimeConfig(command.config) });
         case 'rtc.connect':
-            return snapshotOwnedOptions(command, {
-                rallar: command.rallar && snapshotConnectionOptions({ ...command.rallar }),
-                scope: command.scope && Object.freeze({ ...command.scope }),
-                roomRef: command.roomRef && Object.freeze({ ...command.roomRef }),
-                readiness: command.readiness && Object.freeze({ ...command.readiness })
-            });
         case 'rtc.send':
         case 'rtc.stream':
+        case 'crdt.open':
+            return snapshotConnectionCommand(command);
+        case 'assert':
+        case 'wait':
+        case 'crdt.wait':
+            return snapshotComparisonCommand(command);
+        case 'http.request':
+        case 'ws.open':
+            return snapshotNetworkCommand(command);
+        case 'barrier':
             return snapshotOwnedOptions(command, {
-                scope: command.scope && Object.freeze({ ...command.scope }),
-                roomRef: command.roomRef && Object.freeze({ ...command.roomRef }),
-                ...(command.kind === 'rtc.stream'
-                    ? { thresholds: command.thresholds && Object.freeze({ ...command.thresholds }) }
-                    : {})
+                participants: command.participants && Object.freeze([...command.participants])
+            });
+        case 'fault.inject': {
+            const fault = { ...command };
+            fault.match = Object.freeze({ ...command.match });
+            fault.action = typeof command.action === 'object' ? Object.freeze({ ...command.action }) : command.action;
+            return Object.freeze(fault);
+        }
+        case 'messages.observe':
+        case 'messages.send':
+            return snapshotMessageCommand(command);
+        default:
+            return Object.freeze({ ...command });
+    }
+}
+
+/** Configuration controls SDK selection, capture, defaults, fleet admission and redaction. */
+function snapshotRuntimeConfig(config: RallarBlackBoxTestConfig): RallarBlackBoxTestConfig {
+    return snapshotOwnedOptions(config, {
+        rallar: config.rallar && snapshotConnectionOptions(config.rallar),
+        browser: config.browser && Object.freeze({ ...config.browser }),
+        control: config.control && Object.freeze({ ...config.control }),
+        defaults: config.defaults && Object.freeze({ ...config.defaults }),
+        fleet: config.fleet && snapshotOwnedOptions(config.fleet, {
+            ...(Array.isArray(config.fleet.tags) ? { tags: Object.freeze([...config.fleet.tags]) } : {}),
+            ...(isOptionRecord(config.fleet.location) ? { location: Object.freeze({ ...config.fleet.location }) } : {})
+        }),
+        redaction: config.redaction && snapshotOwnedOptions(config.redaction, {
+            keys: config.redaction.keys && Object.freeze([...config.redaction.keys]),
+            keySubstrings: config.redaction.keySubstrings && Object.freeze([...config.redaction.keySubstrings]),
+            secretValues: config.redaction.secretValues && Object.freeze([...config.redaction.secretValues])
+        })
+    });
+}
+
+/** Scoped SDK command options are owned; their outgoing application data stays opaque. */
+function snapshotConnectionCommand(
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect' | 'rtc.send' | 'rtc.stream' | 'crdt.open'; }>
+): RallarBlackBoxTestCommand {
+    const scope = command.scope && Object.freeze({ ...command.scope });
+    const roomRef = command.roomRef && Object.freeze({ ...command.roomRef });
+    switch (command.kind) {
+        case 'rtc.connect':
+            return snapshotOwnedOptions(command, {
+                scope,
+                roomRef,
+                rallar: command.rallar && snapshotConnectionOptions({ ...command.rallar }),
+                readiness: command.readiness && Object.freeze({ ...command.readiness })
             });
         case 'crdt.open':
             return snapshotOwnedOptions(command, {
+                scope,
+                roomRef,
                 rallar: command.rallar && snapshotConnectionOptions({ ...command.rallar }),
-                scope: command.scope && Object.freeze({ ...command.scope }),
-                roomRef: command.roomRef && Object.freeze({ ...command.roomRef }),
                 policies: command.policies &&
                     Object.freeze(command.policies.map((policy) => Object.freeze({ ...policy }))),
                 validation: command.validation && Object.freeze({ ...command.validation }),
                 encryption: command.encryption && Object.freeze({ ...command.encryption })
             });
+        case 'rtc.stream':
+            return snapshotOwnedOptions(command, {
+                scope,
+                roomRef,
+                thresholds: command.thresholds && Object.freeze({ ...command.thresholds })
+            });
+        case 'rtc.send':
+            return snapshotOwnedOptions(command, { scope, roomRef });
+    }
+}
+
+/** Structured operands decide whether execution proceeds; this policy never visits outgoing payload fields. */
+function snapshotComparisonCommand(
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'assert' | 'wait' | 'crdt.wait'; }>
+): RallarBlackBoxTestCommand {
+    switch (command.kind) {
+        case 'assert':
+            return snapshotOwnedOptions(command, { expected: snapshotComparisonValue(command.expected) });
+        case 'wait':
+            return snapshotOwnedOptions(command, {
+                match: snapshotOwnedOptions(command.match, { equals: snapshotComparisonValue(command.match.equals) })
+            });
         case 'crdt.wait':
             return snapshotOwnedOptions(command, {
                 sync: command.sync && Object.freeze({ ...command.sync }),
-                conditions: Object.freeze(command.conditions.map((condition) => Object.freeze({ ...condition })))
+                conditions: Object.freeze(
+                    command.conditions.map((condition) =>
+                        snapshotOwnedOptions(condition, { expected: snapshotComparisonValue(condition.expected) })
+                    )
+                )
             });
-        case 'http.request':
-            return snapshotOwnedOptions(command, {
-                request: Object.freeze({
-                    ...command.request,
-                    headers: command.request.headers && Object.freeze({ ...command.request.headers })
-                }),
-                response: command.response && Object.freeze({
-                    ...command.response,
-                    acceptedStatusCodes: command.response.acceptedStatusCodes &&
-                        Object.freeze([...command.response.acceptedStatusCodes])
-                })
-            });
-        case 'ws.open':
-            return snapshotOwnedOptions(command, {
-                protocols: Array.isArray(command.protocols) ? Object.freeze([...command.protocols]) : command.protocols,
-                headers: command.headers && Object.freeze({ ...command.headers })
-            });
-        case 'wait':
-            return snapshotOwnedOptions(command, {
-                match: Object.freeze({ ...command.match })
-            });
-        case 'barrier':
-            return snapshotOwnedOptions(command, {
-                participants: command.participants && Object.freeze([...command.participants])
-            });
-        case 'fault.inject':
-            return command.carrier === 'storage'
-                ? snapshotOwnedOptions(command, {
-                    match: Object.freeze({ ...command.match }),
-                    action: typeof command.action === 'object' ? Object.freeze({ ...command.action }) : command.action
-                })
-                : snapshotOwnedOptions(command, {
-                    match: Object.freeze({ ...command.match }),
-                    action: typeof command.action === 'object' ? Object.freeze({ ...command.action }) : command.action
-                });
-        case 'messages.observe':
-            return snapshotOwnedOptions(command, {
-                state: Object.freeze([...command.state])
-            });
-        case 'messages.send':
-            return 'replayOnCarrier' in command
-                ? snapshotOwnedOptions(command, {
-                    replayOnCarrier: Object.freeze({ ...command.replayOnCarrier })
-                })
-                : snapshotOwnedOptions(command, {
-                    roomRef: command.roomRef && Object.freeze({ ...command.roomRef }),
-                    minSnapshotVersion: command.minSnapshotVersion && Object.freeze({ ...command.minSnapshotVersion }),
-                    qos: command.qos && Object.freeze({ ...command.qos, ack: Object.freeze({ ...command.qos.ack }) })
-                });
-        default:
-            return Object.freeze({ ...command });
     }
+}
+
+/** Own JSON comparison trees while retaining invalid non-JSON values for their existing validation boundary. */
+function snapshotComparisonValue<Operand>(value: Operand, copies = new WeakMap<object, object>()): Operand {
+    if (value === null || typeof value !== 'object') {
+        return value;
+    }
+    const copied = copies.get(value);
+    if (copied) {
+        return copied as Operand;
+    }
+    if (Array.isArray(value)) {
+        const array: unknown[] = [];
+        copies.set(value, array);
+        for (const item of value) {
+            array.push(snapshotComparisonValue(item, copies));
+        }
+        return Object.freeze(array) as Operand;
+    }
+    if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+        return value;
+    }
+    const record: RallarBlackBoxTestRecord = {};
+    copies.set(value, record);
+    for (const [key, item] of Object.entries(value)) {
+        Object.defineProperty(record, key, { value: snapshotComparisonValue(item, copies), enumerable: true });
+    }
+    return Object.freeze(record) as Operand;
+}
+
+/** Network policy arrays/headers are owned, while request bodies and WS sends retain payload semantics. */
+function snapshotNetworkCommand(
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'http.request' | 'ws.open'; }>
+): RallarBlackBoxTestCommand {
+    return command.kind === 'ws.open'
+        ? snapshotOwnedOptions(command, {
+            protocols: Array.isArray(command.protocols) ? Object.freeze([...command.protocols]) : command.protocols,
+            headers: command.headers && Object.freeze({ ...command.headers })
+        })
+        : snapshotOwnedOptions(command, {
+            request: snapshotOwnedOptions(command.request, {
+                headers: command.request.headers && Object.freeze({ ...command.request.headers })
+            }),
+            response: command.response && snapshotOwnedOptions(command.response, {
+                acceptedStatusCodes: command.response.acceptedStatusCodes &&
+                    Object.freeze([...command.response.acceptedStatusCodes])
+            })
+        });
+}
+
+/** Messaging control options select carrier/replay behavior; message payloads are intentionally not copied. */
+function snapshotMessageCommand(
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'messages.observe' | 'messages.send'; }>
+): RallarBlackBoxTestCommand {
+    if (command.kind === 'messages.observe') {
+        return snapshotOwnedOptions(command, { state: Object.freeze([...command.state]) });
+    }
+    return 'replayOnCarrier' in command
+        ? snapshotOwnedOptions(command, { replayOnCarrier: Object.freeze({ ...command.replayOnCarrier }) })
+        : snapshotOwnedOptions(command, {
+            roomRef: command.roomRef && Object.freeze({ ...command.roomRef }),
+            minSnapshotVersion: command.minSnapshotVersion && Object.freeze({ ...command.minSnapshotVersion }),
+            qos: command.qos && Object.freeze({ ...command.qos, ack: Object.freeze({ ...command.qos.ack }) })
+        });
 }
 
 /** Only these nested records are connection options; unknown extension values remain opaque application data. */

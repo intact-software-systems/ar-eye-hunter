@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { decodeBlackBoxRallarCrdtWaitInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts';
+import { matchesBlackBoxRallarCrdtWaitCondition } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/matches-black-box-rallar-crdt-wait-condition.ts';
 import { createDefaultRallarBlackBoxBrowserControlAgent } from '@shared-test/rallar-bb-test/browser-control-agent.ts';
+import { createDefaultRallarBlackBoxControlClient } from '@shared-test/rallar-bb-test/control-client.ts';
+import { resolveLatestWaitEvent } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
 
 import { toRallarBlackBoxCompositeResultFlatEntries } from '@shared-test/rallar-bb-test/composite-results.ts';
 import { parseControlClientMessage } from '@shared-test/rallar-bb-test/control-protocol.ts';
 
 import { toControlAgentCapabilities } from '@shared-test/rallar-bb-test/distributed/control-agent-capabilities.ts';
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 
 import * as connectionHttp from '@shared-web/browser/connection/connection-http-api.ts';
@@ -30,6 +34,112 @@ import {
 installCaptureApplicationTestEnvironment();
 
 describe('controller accepted recipe execution intent', () => {
+    it.each(
+        [
+            { kind: 'wait', mutated: false },
+            { kind: 'wait', mutated: true },
+            { kind: 'crdt.wait', mutated: false },
+            { kind: 'crdt.wait', mutated: true }
+        ] as const
+    )('retains accepted nested comparison policy for $kind; mutation=$mutated', ({ kind, mutated }) => {
+        const service = createCaptureController();
+        service.receiveClientEnvelope({
+            kind: 'register',
+            protocolVersion: 1,
+            runId: 'match-intent',
+            agentId: 'match-agent',
+            atEpochMs: 1_000,
+            identity: { sessionLabel: 'match-agent', updatedAtEpochMs: 1_000 },
+            resume: { completedCommandIds: [] }
+        });
+        const expected = { items: [{ value: 10 }] };
+        const command: RallarBlackBoxTestCommand = kind === 'wait'
+            ? { kind, timeoutMs: 50, match: { topic: 'match-observation', equals: expected } }
+            : { kind, handle: 'match-document', timeoutMs: 50, conditions: [{ source: 'value', operator: 'equals', expected }] };
+        expect(service.enqueueCommand({ runId: 'match-intent', agentId: 'match-agent', commandId: 'match-gate', command }).left).toBeUndefined();
+        if (mutated) {
+            expected.items[0].value = 5;
+        }
+        const [dispatch] = service.takeDispatchableCommands('match-intent', 'match-agent');
+        const accepted = dispatch.command;
+        let matched: boolean;
+        if (accepted.kind === 'wait') {
+            matched = resolveLatestWaitEvent([
+                { eventId: 'observed', atEpochMs: 1_000, kind: 'event', topic: 'match-observation', payload: { items: [{ value: 5 }] } }
+            ], accepted.match) !== undefined;
+        }
+        else {
+            expect(accepted.kind).toBe('crdt.wait');
+            const input = decodeBlackBoxRallarCrdtWaitInput(accepted);
+            matched = matchesBlackBoxRallarCrdtWaitCondition(input.conditions[0], { items: [{ value: 5 }] }, {
+                replicaId: 'replica',
+                pendingUpdateCount: 0,
+                failedPendingUpdateCount: 0,
+                dependencyBlockedUpdateCount: 0,
+                seenUpdateCount: 0
+            });
+        }
+        console.info('Accepted structured match witness', JSON.stringify({ kind, mutated, accepted, matched }));
+        expect(matched).toBe(false);
+    });
+
+    it.each([false, true])('preserves the accepted assertion gate before real SDK effects; caller mutation=%s', async (mutated) => {
+        const { page, runtime, events } = createCaptureApplicationRuntime();
+        const service = createCaptureController();
+        service.receiveClientEnvelope({
+            kind: 'register',
+            protocolVersion: 1,
+            runId: 'assert-intent',
+            agentId: 'assert-agent',
+            atEpochMs: 1_000,
+            identity: { sessionLabel: 'assert-agent', updatedAtEpochMs: 1_000 },
+            resume: { completedCommandIds: [] }
+        });
+        const expected = [10, 20];
+        try {
+            expect(
+                service.enqueueCommand({
+                    runId: 'assert-intent',
+                    agentId: 'assert-agent',
+                    commandId: 'assert-root',
+                    command: {
+                        kind: 'recipe.run',
+                        recipe: {
+                            schemaVersion: 1,
+                            recipeId: 'assert-body',
+                            commands: [
+                                {
+                                    kind: 'configure',
+                                    commandId: 'assert-config',
+                                    config: { defaults: { value: 5 }, rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app' } }
+                                },
+                                { kind: 'assert', commandId: 'accepted-range', source: 'config.defaults.value', operator: 'between', expected },
+                                { kind: 'rtc.connect', commandId: 'after-assert', connection: 'after-assert' }
+                            ]
+                        }
+                    }
+                }).left
+            ).toBeUndefined();
+            if (mutated) {
+                expected[0] = 0;
+                expected[1] = 10;
+            }
+            const [dispatch] = service.takeDispatchableCommands('assert-intent', 'assert-agent');
+            const { result, envelope } = await executeSerializedControllerCommand(runtime, dispatch);
+            const admitted = service.receiveClientEnvelope(envelope);
+            const effects = events.filter((event) => event.topic === 'rallar.browser.connect_completed');
+            const assertion = toRallarBlackBoxCompositeResultFlatEntries([result]).find((entry) => entry.kind === 'assert');
+            console.info('Accepted assertion gate witness', JSON.stringify({ mutated, dispatch, result, admitted, effects }));
+            expect.soft(result.ok).toBe(false);
+            expect.soft(assertion?.result.value).toMatchObject({ expected: [10, 20], actual: 5, passed: false });
+            expect.soft(effects).toEqual([]);
+            expect(admitted.accepted).toBe(true);
+        }
+        finally {
+            await page.close();
+        }
+    });
+
     it.each([false, true])('executes the acknowledged queued body before any same-ID replacement effects; replacement=%s', async (replaceLocally) => {
         const { page, facade, runtime, events } = createCaptureApplicationRuntime();
         const service = createCaptureController();
@@ -249,6 +359,93 @@ describe('controller accepted recipe execution intent', () => {
 });
 
 describe('SDK recipe execution across actual control consumers', () => {
+    it('publishes an owned RTC child result before the held control root completes', async () => {
+        const { page, runtime, events } = createCaptureApplicationRuntime();
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
+        const client = createDefaultRallarBlackBoxControlClient({ runtime, heartbeatIntervalMs: 10_000, statsIntervalMs: 0 });
+        const service = createCaptureController();
+        const rootId = 'owned-progress-root';
+        client.connect({ url: 'ws://owned-progress.test/control', runId: 'owned-progress', agentId: 'progress-agent', completedCommandIds: [] });
+        const socket = SimulatedWebSocket.instances.at(-1)!;
+        try {
+            await socket.open();
+            expect(service.receiveClientEnvelope(readSocketRegistration(socket)).accepted).toBe(true);
+            const manual = await runtime.execute({ kind: 'health', commandId: rootId });
+            expect(
+                socket.sent.map((wire) => parseControlClientMessage(wire)).some((parsed) =>
+                    parsed.ok && parsed.envelope.kind === 'event' && parsed.envelope.commandId === rootId &&
+                    decodeRecord(parsed.envelope.payload).kind === 'result'
+                )
+            ).toBe(false);
+            expect(
+                service.enqueueCommand({
+                    runId: 'owned-progress',
+                    agentId: 'progress-agent',
+                    commandId: rootId,
+                    command: {
+                        kind: 'recipe.run',
+                        recipe: {
+                            schemaVersion: 1,
+                            recipeId: 'owned-progress-body',
+                            commands: [
+                                {
+                                    kind: 'configure',
+                                    commandId: 'progress-config',
+                                    config: { rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app' } }
+                                },
+                                { kind: 'rtc.connect', commandId: 'progress-connect', connection: 'owned-child' },
+                                { kind: 'wait', commandId: 'hold-root', timeoutMs: 10_000, match: { topic: 'release-owned-root' } }
+                            ]
+                        }
+                    }
+                }).left
+            ).toBeUndefined();
+            const [dispatch] = service.takeDispatchableCommands('owned-progress', 'progress-agent');
+            await socket.receive(JSON.stringify(dispatch));
+            await vi.waitFor(() => expect(runtime.state().activeCommand?.kind).toBe('wait'));
+            const child = runtime.state().commandHistory.find((result) => result.kind === 'rtc.connect');
+            expect(child?.ok).toBe(true);
+            expect(events.filter((event) => event.topic === 'rallar.browser.connect_completed').map((event) => event.connection)).toEqual(['owned-child']);
+            expect(readSocketResult(socket, rootId)).toBeUndefined();
+            const childFrame = socket.sent.map((wire) => parseControlClientMessage(wire)).find((parsed) =>
+                parsed.ok && parsed.envelope.kind === 'event' && parsed.envelope.commandId === child?.commandId &&
+                decodeRecord(parsed.envelope.payload).kind === 'result'
+            );
+            console.info(
+                'Owned child progress witness',
+                JSON.stringify({ child, childFrame, frames: socket.sent, activeCommand: runtime.state().activeCommand })
+            );
+            expect.soft(childFrame?.ok).toBe(true);
+            if (childFrame?.ok) {
+                expect(childFrame.envelope).toMatchObject({ runId: 'owned-progress', agentId: 'progress-agent' });
+                expect(service.receiveClientEnvelope(childFrame.envelope).accepted).toBe(true);
+            }
+            runtime.recordEvent({
+                ...{ control: { runId: 'owned-progress', agentId: 'progress-agent', rootCommandId: rootId } },
+                kind: 'result',
+                topic: 'forged-manual-control-result',
+                commandId: rootId,
+                payload: manual
+            });
+            const forged = socket.sent.map((wire) => parseControlClientMessage(wire)).some((parsed) =>
+                parsed.ok && parsed.envelope.kind === 'event' && decodeRecord(parsed.envelope.payload).topic === 'forged-manual-control-result'
+            );
+            console.info('Forged manual attribution witness', JSON.stringify({ forged, local: runtime.state().events.at(-1) }));
+            expect.soft(forged).toBe(false);
+            expect(service.snapshotCommand('owned-progress', rootId)?.completedAtEpochMs).toBeUndefined();
+            runtime.recordEvent({ kind: 'event', topic: 'release-owned-root' });
+            await vi.waitFor(() => expect(readSocketResult(socket, rootId)).toBeDefined());
+            const root = readSocketResult(socket, rootId)!;
+            expect(root.result?.ok).toBe(true);
+            expect(service.receiveClientEnvelope(root).accepted).toBe(true);
+        }
+        finally {
+            runtime.recordEvent({ kind: 'event', topic: 'release-owned-root' });
+            client.dispose();
+            await page.close();
+        }
+    });
+
     it.each(['run', 'agent', 'run and agent'] as const)(
         'runs newly assigned work with a colliding command ID through the retained interactive runtime; reassigned=%s',
         async (reassigned) => {

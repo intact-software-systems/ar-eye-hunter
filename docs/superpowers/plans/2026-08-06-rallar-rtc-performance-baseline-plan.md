@@ -33,13 +33,17 @@ required-result admission has completed GREEN implementation after verified sema
 both attribution findings are now closed by the original reviewer with SPEC/QUALITY Approved; Task63 is locally accepted;
 Task64 is locally implemented after semantic RED: immutable accepted intent, a pre-effect
 acknowledged-load guard, assignment-owned completion/replay, and root/recipe capture
-propagation through reload. Final source passes129 SDK/owner tests and177 controller tests,
-package/test typechecks, app build, formatting and diff checks. The shared SDK composition
-refactor closes the file-size violations without an exception. Independent review now
-requires corrections for a late reset erasing the new assignment, dropped owned child
-result events, mutable assertion operands, and the snapshot function's size/duplication.
-Hosted CI also requires affected fixture, bundle and changed-style closure. This
-continuation is published as a draft delivery checkpoint; Task64 acceptance remains open.
+propagation through reload. The initial129 SDK/owner and177 controller passes remain
+preserved. Correction round1 now passes140 consumer and177 controller tests, package/test
+typing, app build, formatting, navigation and headless boundary checks. The original
+reviewer approves the seven corrected owners and closes all four blocking findings:
+late reset ownership, authentic child progress, accepted comparison operands, and the
+snapshot function's size/duplication. The measured320.778KiB headless boundary uses its
+existing minimum adjustable cap321; forbidden dependencies remain excluded. The existing
+large-chunk build warning is disclosed. Hosted CI still requires five fixture corrections
+and exact changed-style publication closure. This continuation is published in draft
+[PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645); Task64's complete
+CI outcome remains open.
 Publish each coherent validated slice on the feature branch; keep incomplete acceptance
 explicit in the draft pull request rather than accumulating accepted slices locally. The WS
 fixture correction is independently accepted and published at
@@ -146,8 +150,11 @@ consumers, with valid controls and unchanged production. Historical retired repl
 truthful recorded evidence; no new liveness/freshness requirement or ICE cause is proved.
 Before review fixes, covering native checks passed164 cases and five shared/browser/artifact owners passed102. The current fix passes144 focused native,86 shared and51 actual-SDK cases. Separate same-SDK producer/native-consumer checks
 pass and preserve the four original receipts across real disk and exported forms. The frozen handoff is complete;
-independent Task63 review found duplicate loop-position acceptance and valid nested loaded-body refusal. The same implementer completed semantic RED/GREEN and the original reviewer approved both corrections with no remaining findings. Task63 is locally accepted. The continuation remains uncommitted and unpublished; exact main
-integration approval and governed E3 acceptance remain open.
+independent Task63 review found duplicate loop-position acceptance and valid nested loaded-body refusal. The same implementer completed semantic RED/GREEN and the original reviewer approved both corrections with no remaining findings. Task63 is locally accepted. Tasks61–63 and initial Task64 are published at
+`b8aa39aaeee7b779a985bd9ad29906ba43a9e421` in draft PR645, followed by plan update
+`06559cc4aae1940cd6f0868b87577a898d9f3b41`. The accepted round1 correction is published as
+its next coherent slice; exact main integration approval and governed E3 acceptance
+remain open.
 
 The original [a3 Branch Release Gate37554289179](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37554289179)
 failed eleven WS observer tests with13627 passing tests and12 skips. Its original failed log,
@@ -6274,6 +6281,35 @@ This is not a change to E3 workloads, counts, limits or acceptance. Warning find
 actual cohesion/boundary judgments, not a metadata-only waiver. The next useful outcomes
 are the Task64 corrections and affected CI closure; visible/persisted controls follow
 acceptance. Neither CI nor this review is E3 evidence. No Issues were created or reused.
+
+**Correction round1 accepted locally:** The original reviewer returns SPEC compliant
+and QUALITY Approved on all seven changed owners, closing its four Important findings.
+Late reset continuation and notification now use captured admission. Authentic Event-owned
+run/agent/root provenance restores descendant progress while caller/forged provenance is
+stripped, stale ownership is suppressed, and only completed roots are advertised. The
+single accepted snapshot owns nested assertion/wait/CRDT comparison decisions while
+outgoing application payloads remain opaque. Meaningful option responsibilities replace
+the135-line function and duplicate fault arms; the dispatcher is55 lines and every named
+function is at most60. No migration, affected retained legacy, second ownership store,
+protocol fallback, source move or CRDT algorithm change was introduced.
+
+The additional match-policy RED has two failures/two unchanged controls; forged-event RED
+has missing genuine progress and wrongly published manual provenance. Final checks pass
+140 consumer tests in nine owners and177 controller tests in four owners, package/test
+typing, app build, exact formatting/diff, named-function and six compiler-navigation probes.
+Root verifies all130/132 frozen copies against current final source. The complete headless
+boundary measures320.7783203125KiB; the authorized minimum calibration changes319→321
+and its test passes with all forbidden-dependency checks intact. The existing app chunk
+warning and dependency-only test typing skip remain disclosed; this is no optimization
+or E3 acceptance claim.
+
+A current full-range changed-style observation still fails with17 findings. Each needs
+its actual whole-owner cohesion/normalization judgment and exact current publication
+closure under the existing reviewed-disposition policy; no real violation may be waived.
+The next bounded correction preserves five artifact/deduplication/disk/group/restore test
+assertions while replacing malformed or unowned fixture facts with truthful current
+contracts. Production decoder/admission behavior is authoritative. Keep all historical
+failures; neither green local tests nor skipped RTC integrity supplies E3 evidence.
 
 ### Task 65: Visible recipe controls and persisted intent (prepared next slice)
 

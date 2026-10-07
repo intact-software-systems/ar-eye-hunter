@@ -638,8 +638,9 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
                     continue;
                 }
                 if (
-                    event.kind === 'result' && !this.admittedControlCommandIds.has(event.commandId ?? '') &&
-                    !this.admittedControlCommandIds.has(state.activeCommand?.commandId ?? '')
+                    event.kind === 'result' &&
+                    (event.control?.runId !== connection.runId || event.control.agentId !== connection.agentId ||
+                        !this.admittedControlCommandIds.has(event.control.rootCommandId))
                 ) {
                     continue;
                 }
