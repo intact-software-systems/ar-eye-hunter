@@ -12,15 +12,22 @@ export function resolveWsQueueBoxServerRecipientScope(
         : { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId };
 }
 
-/** Undefined for a message that is not a unicast; `null` keeps meaning "a scope was required and none was proven". */
-export function resolveWsQueueBoxServerUnicastScope(
+/**
+ * The scope a unicast or a world broadcast reaches: its groupRef's for a unicast that names its room, else the scope
+ * its producer proved. Undefined for any other message; `null` keeps meaning "a scope was required and none was proven".
+ */
+export function resolveWsQueueBoxServerProvenScope(
     message: ALMessage,
     provenScope: StateScope | null | undefined
 ): StateScope | null | undefined {
-    if (message.targets?.mode !== 'unicast') {
+    const targets = message.targets;
+    if (targets?.mode === 'broadcast' && targets.scope === 'world') {
+        return provenScope;
+    }
+    if (targets?.mode !== 'unicast') {
         return undefined;
     }
-    const groupRef = message.targets.groupRef;
+    const groupRef = targets.groupRef;
     return groupRef === undefined
         ? provenScope
         : { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId };

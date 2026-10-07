@@ -2,7 +2,9 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { installLiveWsNoticeSubscriber } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice-subscriber.ts';
 import type { LiveWsNotice, LiveWsNoticeTransport } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
+import type { RallarServerWsRoomAuthorizer } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
+import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -10,6 +12,8 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 import { createGroupSnapshot } from '../../group-state/snapshot/group-state-snapshot-test-fixtures.ts';
+
+const SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 
 describe('Rallar server WS live cluster publication', () => {
     it('publishes once from a socketless owner and sends on the remote socket owner', async () => {
@@ -102,7 +106,11 @@ describe('Rallar server WS live cluster publication', () => {
                 {}
             );
 
-            const result = await router.publish({ message, fanout: 'live-only' });
+            const result = await router.publish({
+                message,
+                fanout: 'live-only',
+                ...(targetMode === 'world' ? { scope: { applicationId: 'app-1', workspaceId: 'workspace-1' } } : {})
+            });
 
             expect(result.status).toBe('cluster-published');
             expect(notices).toBe(1);
@@ -558,6 +566,64 @@ describe('Rallar server WS live cluster publication', () => {
         expect(notices).toMatchObject([{
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             audience: { mode: 'principal', principalRef, recipientSessionIds: ['remote-session'] }
+        }]);
+    });
+
+    it('publishes a world notice with the scope it reaches and sends it here to the live connections of that scope alone', async () => {
+        const notices: LiveWsNotice[] = [];
+        const fixture = createScopedSocketsFixture(notices);
+        const message = newALBroadcastMessage('server-a', newALRoute('app.live', 'message', 'world'), 'world', 'app.live.v1', {});
+
+        const result = await fixture.router.publish({ message, fanout: 'live-only', scope: SCOPE });
+
+        expect(result.status).toBe('cluster-published');
+        expect(notices).toMatchObject([{ scope: SCOPE, audience: { mode: 'broad', targetMode: 'world' } }]);
+        expect(fixture.sockets.get('in-scope')!.sent).toHaveLength(1);
+        expect(fixture.sockets.get('foreign')!.sent).toEqual([]);
+    });
+
+    it.each(['live-only', 'outbox', 'none'] as const)('fails a %s world publication that names no scope and publishes nothing', async (fanout) => {
+        const notices: LiveWsNotice[] = [];
+        const fixture = createScopedSocketsFixture(notices);
+        const message = newALBroadcastMessage('server-a', newALRoute('app.live', 'message', 'world'), 'world', 'app.live.v1', {});
+
+        const result = await fixture.router.publish({ message, fanout });
+
+        expect(result).toMatchObject({
+            status: 'failed',
+            reason: 'A world publication requires the application and workspace scope it reaches'
+        });
+        expect(notices).toEqual([]);
+        expect(fixture.sockets.get('in-scope')!.sent).toEqual([]);
+    });
+
+    it('publishes an admitted principal broadcast in a room as a principal notice naming the room sessions of that principal', async () => {
+        const base = createGroupSnapshot(2, ['bob-session', 'carol-1', 'carol-2']);
+        const snapshot = {
+            ...base,
+            activeSessions: base.activeSessions.map((session) => session.sessionId === 'carol-2' ? { ...session, principalId: 'principal-carol-1' } : session)
+        };
+        const groupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: snapshot.group.groupId };
+        const notices: LiveWsNotice[] = [];
+        const fixture = createScopedSocketsFixture(
+            notices,
+            createGroupRoomWsAuthorizer({
+                readGroupSnapshot: () => snapshot,
+                readPreActivationAppData: () => 'allowed',
+                nowEpochMs: () => 100
+            })
+        );
+        const roomMessage = newALBroadcastMessage('bob-session', newALRoute('room.match', groupRef.groupId, 'tick-1'), 'room', 'room.match.v1', {}, {
+            groupRef
+        });
+        const principalRef = { applicationId: 'app-1', workspaceId: 'workspace-1', principalId: 'principal-carol-1' };
+        const message = { ...roomMessage, targets: { mode: 'broadcast' as const, scope: 'principal' as const, groupRef, principalRef } };
+
+        await fixture.router.route(message, { kind: 'ws-client', peerId: 'bob-session', authenticatedScope: SCOPE });
+
+        expect(notices).toMatchObject([{
+            scope: SCOPE,
+            audience: { mode: 'principal', principalRef, recipientSessionIds: ['carol-1', 'carol-2'] }
         }]);
     });
 
@@ -1035,3 +1101,51 @@ describe('Rallar server WS live cluster publication', () => {
         });
     });
 });
+
+interface ScopedSocketsFixture {
+    readonly router: RallarServerWsRouter;
+    readonly sockets: ReadonlyMap<string, TestWebSocket>;
+}
+
+/** A router over two authenticated sockets, `in-scope` in app-1/workspace-1 and `foreign` in another application. */
+function createScopedSocketsFixture(
+    notices: LiveWsNotice[],
+    authorizeRoomMessage?: RallarServerWsRoomAuthorizer
+): ScopedSocketsFixture {
+    const socket = new JsonWebSocketServer();
+    const sockets = new Map<string, TestWebSocket>();
+    for (const sessionId of ['in-scope', 'foreign']) {
+        const native = new TestWebSocket(`ws://${sessionId}`);
+        native.open();
+        socket.addConnection(new ConnectionContext({ id: sessionId, socket: native }));
+        sockets.set(sessionId, native);
+    }
+    const service = createDefaultWsQueueBoxServerService({
+        outbox: new InMemoryQueueBox(new Map()),
+        socket,
+        name: 'server-a',
+        readAuthenticatedConnectionScope: (connection) => ({
+            scope: connection.id === 'foreign' ? { ...SCOPE, applicationId: 'app-2' } : SCOPE,
+            expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+        }),
+        targetResolver: {
+            resolveBroadcastRecipients: () => [...sockets.keys()].map((peerId) => ({ peerId, connectionId: peerId }))
+        }
+    });
+    onTestFinished(() => service.dispose());
+    const router = new RallarServerWsRouter(service, {
+        authorizeRoomMessage,
+        nowEpochMs: () => 100,
+        livePublication: {
+            transport: {
+                publish: async (notice) => {
+                    notices.push(notice);
+                },
+                subscribe: async () => {}
+            },
+            channel: 'ws-channel',
+            publisherId: 'server-a'
+        }
+    });
+    return { router, sockets };
+}

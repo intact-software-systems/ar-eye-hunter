@@ -17,7 +17,7 @@ export type RallarServerWsFanout = 'live-only' | 'outbox' | 'none';
 
 export interface RallarServerWsPublishInputDto {
     readonly message: ALMessage;
-    /** Required for a unicast that names no group; refused beside targets that name one, which scope themselves. */
+    /** Required for a unicast that names no group and for a world broadcast; refused beside targets that name a group. */
     readonly scope?: StateScope;
     readonly fanout?: RallarServerWsFanout;
 }

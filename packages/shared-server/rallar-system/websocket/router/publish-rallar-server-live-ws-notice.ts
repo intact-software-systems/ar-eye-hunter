@@ -2,7 +2,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs, type ALQosEffectivePolicy } from '@shared/al-contracts/al-policy.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { resolveWsQueueBoxServerUnicastScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
+import { resolveWsQueueBoxServerProvenScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
 import {
     encodeLiveWsNotice,
     type LiveWsAudience,
@@ -87,7 +87,7 @@ function toLiveWsPublicationInput(input: ToLiveWsPublicationInput): Either<strin
         message: input.message,
         ...(input.inbound === undefined ? {} : { inbound: input.inbound })
     };
-    if (input.audience.mode === 'broad') {
+    if (input.audience.mode === 'broad' && input.audience.targetMode === 'all') {
         return Either.ofRight({ ...common, audience: input.audience });
     }
     const scope = resolveLiveWsPublicationScope(input.message, input.inboundScope);
@@ -133,20 +133,11 @@ async function readLiveWsPublicationAudience(
     if (targets.mode === 'unicast') {
         return { mode: 'peer', recipientSessionIds: [targets.toPeerId] };
     }
-    if (targets.mode === 'multicast' || targets.scope === 'room') {
-        if (!input.audience || !targets.groupRef) {
-            return undefined;
-        }
-        return {
-            mode: 'room',
-            groupRef: targets.groupRef,
-            recipientSessionIds: resolveAuthorizedRoomSessionIds({
-                message: input.message,
-                audience: input.audience,
-                admittedPeerIds: input.admittedPeerIds,
-                nowEpochMs: input.nowEpochMs
-            })
-        };
+    if (
+        targets.mode === 'multicast' || targets.scope === 'room' ||
+        (targets.scope === 'principal' && targets.groupRef !== undefined)
+    ) {
+        return readRoomLiveWsPublicationAudience(input, targets);
     }
     if (targets.scope === 'principal') {
         if (!targets.principalRef || !input.livePublication?.readPrincipalSessionIds) {
@@ -168,6 +159,28 @@ async function readLiveWsPublicationAudience(
     return { mode: 'broad', targetMode: targets.scope };
 }
 
+/** A room send, and a principal broadcast in its room, reach the sessions the room admitted it to. */
+function readRoomLiveWsPublicationAudience(
+    input: PublishRallarServerWsMessageInput,
+    targets: Exclude<NonNullable<ALMessage['targets']>, { mode: 'unicast'; }>
+): LiveWsAudience | undefined {
+    if (!input.audience || !targets.groupRef) {
+        return undefined;
+    }
+    const recipientSessionIds = resolveAuthorizedRoomSessionIds({
+        message: input.message,
+        audience: input.audience,
+        admittedPeerIds: input.admittedPeerIds,
+        nowEpochMs: input.nowEpochMs
+    });
+    if (targets.mode === 'broadcast' && targets.scope === 'principal') {
+        return targets.principalRef
+            ? { mode: 'principal', principalRef: targets.principalRef, recipientSessionIds }
+            : undefined;
+    }
+    return { mode: 'room', groupRef: targets.groupRef, recipientSessionIds };
+}
+
 function resolveLiveWsPublicationScope(
     message: ALMessage,
     inboundScope: StateScope | null | undefined
@@ -185,9 +198,9 @@ function resolveLiveWsPublicationScope(
         const { applicationId, workspaceId } = targets.principalRef;
         return Either.ofRight({ applicationId, workspaceId });
     }
-    const unicastScope = resolveWsQueueBoxServerUnicastScope(message, inboundScope);
-    return unicastScope
-        ? Either.ofRight(unicastScope)
+    const provenScope = resolveWsQueueBoxServerProvenScope(message, inboundScope);
+    return provenScope
+        ? Either.ofRight(provenScope)
         : Either.ofLeft('Scoped live WS publication has no full recipient scope.');
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALNackPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 
@@ -41,6 +42,31 @@ describe('WS ingress scope refusal', () => {
             toPeerId: 'session-1',
             msgId: 'message-1',
             reason: 'unauthorized'
+        });
+        expect(fixture.admission.data.size).toBe(0);
+        expect(fixture.delivered).toEqual([]);
+    });
+
+    it('refuses a world broadcast on a room topic as malformed with a no-route NACK', async () => {
+        const fixture = await createServerIngressFixture();
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
+            authorize: async () => ({ authorized: true })
+        });
+        const message: ALMessage = { ...createRoomMessage(), targets: { mode: 'broadcast', scope: 'world' } };
+
+        const result = await fixture.service.acceptIncomingMessage(message, 'session-1');
+
+        expect(result.left).toEqual({
+            code: 'malformed',
+            message: 'AL message message-1 addresses the world on room topic room.notification'
+        });
+        const controls = fixture.socket.sent.map((frame) => decodePersistedALMessage(String(frame)));
+        expect(controls).toHaveLength(1);
+        expect(decodeALNackPayload(JSON.parse(controls[0]!.payload.resource))).toMatchObject({
+            toPeerId: 'session-1',
+            msgId: 'message-1',
+            reason: 'no-route'
         });
         expect(fixture.admission.data.size).toBe(0);
         expect(fixture.delivered).toEqual([]);

@@ -1,4 +1,5 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import {
     assertRallarAiAuthorized,
     type RallarAiAuthorize,
@@ -15,9 +16,8 @@ import { isRallarServerAiJsonRequest, type RallarServerAiJsonRequest } from './d
 import type { RallarServerAi } from './rallar-server-ai-contracts.ts';
 import {
     toRallarServerAiPublicationTarget,
-    toRallarServerAiResultMessage,
-    type RallarServerAiResultPublicationInput,
-    type RallarServerAiResultPublicationTarget
+    toRallarServerAiPublishInput,
+    toRallarServerAiResultMessage
 } from './rallar-server-ai-result-publication.ts';
 
 export interface RallarServerAiWebSocketPort {
@@ -44,6 +44,7 @@ export interface RallarServerAiWebSocketMessageContext {
     readonly senderId: string;
     readonly roomId?: string;
     readonly roomRef?: GroupRef;
+    readonly authenticatedScope?: StateScope;
 }
 
 export type RallarServerAiWebSocketHandler = (
@@ -121,46 +122,17 @@ export function installRallarServerAiWebSocketTopic(
                 actorId: context.senderId,
                 roomId: context.roomId
             });
-            const target = toRallarServerAiPublicationTarget(
-                input.config.resultScope,
-                context.roomRef
-            );
-            const publication = toResultPublicationInput(
-                result,
-                input.config,
+            const target = toRallarServerAiPublicationTarget(input.config.resultScope, context.roomRef);
+            const resultMessage = toRallarServerAiResultMessage({
+                publication: { result, topicId: input.config.resultTopicId, typeId: input.config.resultTypeId },
+                senderId: input.config.serverSenderId,
                 target
-            );
-            await input.websocket.publish({
-                message: toRallarServerAiResultMessage({
-                    publication,
-                    senderId: input.config.serverSenderId,
-                    target
-                }),
-                fanout: input.config.resultFanout
             });
+            await input.websocket.publish(toRallarServerAiPublishInput(
+                resultMessage,
+                input.config.resultFanout,
+                target.scope === 'world' ? context.authenticatedScope : undefined
+            ));
         }
     );
-}
-
-function toResultPublicationInput(
-    result: RallarAiJsonResult<RallarAiJsonValue>,
-    config: RallarServerAiWebSocketConfig,
-    target: RallarServerAiResultPublicationTarget
-): RallarServerAiResultPublicationInput<RallarAiJsonValue> {
-    return target.scope === 'room'
-        ? {
-            result,
-            scope: 'room',
-            roomRef: target.groupRef,
-            topicId: config.resultTopicId,
-            typeId: config.resultTypeId,
-            fanout: config.resultFanout
-        }
-        : {
-            result,
-            scope: target.scope,
-            topicId: config.resultTopicId,
-            typeId: config.resultTypeId,
-            fanout: config.resultFanout
-        };
 }

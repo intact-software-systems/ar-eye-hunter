@@ -143,10 +143,14 @@ function toRecoveredAudience(
             )
         };
     }
-    if (notice.audienceMode === 'broad') {
-        return targets?.mode === 'broadcast' && targets.scope === notice.targetMode
-            ? { mode: 'broad', targetMode: targets.scope }
-            : undefined;
+    if (notice.audienceMode !== 'broad' || targets?.mode !== 'broadcast' || targets.scope !== notice.targetMode) {
+        return undefined;
     }
-    return undefined;
+    if (notice.targetMode === 'all') {
+        return { mode: 'broad', targetMode: 'all' };
+    }
+    return source.authenticatedScope.applicationId === notice.scope.applicationId &&
+            source.authenticatedScope.workspaceId === notice.scope.workspaceId
+        ? { mode: 'broad', targetMode: 'world' }
+        : undefined;
 }

@@ -26,13 +26,21 @@ export function decodeLiveWsAudience(value: JsonWireValue, scope: GroupScope | u
     ) {
         return { mode: 'principal', principalRef: value.principalRef, recipientSessionIds: value.recipientSessionIds };
     }
-    if (
-        value.mode === 'broad' && hasKeys(value, ['mode', 'targetMode']) &&
-        scope === undefined && (value.targetMode === 'all' || value.targetMode === 'world')
-    ) {
-        return { mode: 'broad', targetMode: value.targetMode };
+    if (value.mode === 'broad' && hasKeys(value, ['mode', 'targetMode'])) {
+        return decodeBroadLiveWsAudience(value.targetMode, scope);
     }
     return undefined;
+}
+
+/** `all` crosses every scope and carries none; `world` reaches the one scope it carries. */
+export function decodeBroadLiveWsAudience(
+    targetMode: JsonWireValue | undefined,
+    scope: GroupScope | undefined
+): Extract<LiveWsAudience, { mode: 'broad'; }> | undefined {
+    if (targetMode === 'all' && scope === undefined) {
+        return { mode: 'broad', targetMode };
+    }
+    return targetMode === 'world' && scope !== undefined ? { mode: 'broad', targetMode } : undefined;
 }
 
 export function matchesLiveWsAudience(message: ALMessage, audience: LiveWsAudience): boolean {

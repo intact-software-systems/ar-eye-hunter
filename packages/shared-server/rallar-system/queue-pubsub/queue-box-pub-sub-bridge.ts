@@ -19,7 +19,6 @@ import {
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import {
     isWsQueueBoxServerDirectScopedBroadcastRow,
-    isWsQueueBoxServerDirectWorldBroadcastRow,
     validateWsQueueBoxServerRecipientAuthority
 } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
 import { resolveWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
@@ -404,11 +403,15 @@ function sendToCapturedLocalTargets(
         admittedPeerIds: captured,
         inboundScope: message.targets?.mode === 'unicast' ? recipientScope : undefined,
         recipientPrincipalId: policy?.principalTargetId,
-        recipientScope: directBroadcast || isWsQueueBoxServerDirectWorldBroadcastRow(message, entry.key) ||
-                policy?.principalTargetId !== undefined
+        recipientScope: directBroadcast || isWorldBroadcast(message) || policy?.principalTargetId !== undefined
             ? recipientScope
             : undefined
     });
+}
+
+/** A world broadcast, from a producer or a client's admitted send, reaches the scope its row captured. */
+function isWorldBroadcast(message: ALMessage): boolean {
+    return message.targets?.mode === 'broadcast' && message.targets.scope === 'world';
 }
 
 export interface ToPubSubMessageInput {

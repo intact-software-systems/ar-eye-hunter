@@ -62,14 +62,10 @@ export function filterEligibleLiveWsSessionIds(input: FilterEligibleLiveWsSessio
             continue;
         }
         const audience = input.notice.delivery === 'inline' ? input.notice.audience : undefined;
-        const isBroad = input.notice.delivery === 'inline'
-            ? input.notice.audience.mode === 'broad'
-            : input.notice.audienceMode === 'broad';
         const scope = input.notice.scope;
         if (
-            !isBroad &&
-            (!scope || facts.scope.applicationId !== scope.applicationId ||
-                facts.scope.workspaceId !== scope.workspaceId)
+            scope !== undefined &&
+            (facts.scope.applicationId !== scope.applicationId || facts.scope.workspaceId !== scope.workspaceId)
         ) {
             continue;
         }

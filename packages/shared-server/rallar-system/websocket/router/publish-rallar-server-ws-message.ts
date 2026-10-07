@@ -3,6 +3,7 @@ import { toALSequenceMintTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { hasALDeliveryDurableWork } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { resolveWsQueueBoxServerProvenScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { LiveWsInboundReference } from '../../queue-pubsub/live-ws-notice.ts';
 import { publishRallarServerLiveWsNotice } from './publish-rallar-server-live-ws-notice.ts';
@@ -132,10 +133,9 @@ async function publishRallarServerWsFanout(
         case 'outbox': {
             const result = await input.service.enqueueOutboxIfAbsent(input.message, {
                 admittedAudience: toAdmittedAudience(input),
-                recipientScope:
-                    input.message.targets?.mode === 'unicast' && input.message.targets.groupRef === undefined
-                        ? input.inboundScope ?? undefined
-                        : undefined
+                recipientScope: readALTargetGroupRef(input.message) === undefined
+                    ? resolveWsQueueBoxServerProvenScope(input.message, input.inboundScope) ?? undefined
+                    : undefined
             });
             if (hasALDeliveryDurableWork(result.verdict)) {
                 input.wakeOutbox?.();
