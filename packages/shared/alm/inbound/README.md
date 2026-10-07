@@ -461,6 +461,20 @@ message as a pending admission ([`retainPending`](./al-inbound-message-admission
 refusing it, answers the advisory NACK, and its replay re-authorizes the message every 50 ms until
 the floor is met or the deadline passes; the sender retries nothing.
 
+**Room-bounded audiences.** A principal or fixed-list send is a room send whose audience is narrowed
+to the principal's sessions or the listed sessions in the room (D156, D159). Over RTC the origin
+freezes the narrowed audience on the multicast, so a peer outside it may forward a copy but never
+delivers it locally or counts as a recipient, as for any frozen audience. The shared planner also
+reads a broadcast's `recipientPeerIds`: it reads this peer as a broadcast's logical recipient when
+`exceptPeerIds` does not name it and, if the broadcast carries `recipientPeerIds`, the list does
+([`al-policy.ts`](../../al-contracts/al-policy.ts)), and a relay owns as children only listed peers,
+by the rule a multicast's frozen list applies
+([`resolveALOwnedChildPeerIds`](../../al-contracts/resolve-al-owned-child-peer-ids.ts)). A listed
+room broadcast is therefore delivered only at listed sessions, over WS as over RTC; a WS server
+whose router owns the room fanout hands a listed broadcast that leaves it out to its router, as it
+hands a room unicast to another session. A broadcast without a list keeps the `exceptPeerIds` rule
+alone.
+
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce
 it through `commitWork()`: it asks the rotation page for a head read

@@ -415,8 +415,12 @@ session/trace identity. `membershipEpoch` is copied into ordering epoch but not 
 authoritative membership. RTC snapshot floors are enforced as described in F3.
 
 [Shared policy](../../packages/shared/al-contracts/al-policy.ts) still maps leader and
-all-recipient ACK requests to subtree behavior; generic broadcast recipient checks do not
-resolve principal/world/fixed audience semantics. WS supplies specialized audience handling.
+all-recipient ACK requests to subtree behavior. Generic broadcast recipient checks did not
+resolve principal/world/fixed audience semantics, and WS supplied specialized audience handling;
+since A1 every audience has one meaning on both carriers: principal and fixed-list sends are room
+audiences narrowed at the RTC origin and at WS admission, the shared planner honours a
+broadcast's `recipientPeerIds`, a client's `world` is bound to its authenticated scope, and a
+client's `all` is refused (D156–D159).
 Browser RTC composition supplies no live QoS provider. The complete envelope decoder is not
 exported through the broad shared barrel.
 

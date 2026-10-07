@@ -287,15 +287,31 @@ a fixed audience inside its room (`recipientPeerIds`), resolved to the room's li
 sessions; a server captures the same field for replayable authoritative work;
 neither expands authority beyond the room.
 
-**PARTIAL:** Server WS implements room routing and application-specific
-principal/state-sync and fixed-topology cases.
-
-**PLANNED — A1, general scope semantics:** The shared planner treats broadcast
-as “not excluded,” does not interpret scope/principal/fixed recipients, and the
-public builder cannot create principal or fixed-recipient broadcasts. A1 gives
-every scope one semantic with RTC and WS parity (D156–D163); world takes the WS
-route automatically when fallback is allowed and is typed carrier-unsupported over
-RTC otherwise; a client's `all` is refused.
+**CURRENT — A1, audiences with carrier parity:** each scope has the one meaning
+above on both carriers (D156). `principal` and a fixed list are room audiences:
+the browser's `principalId` and `recipientPeerIds` (on `messages.rtc`,
+`messages.ws` and the room channel) narrow the room's audience at the sender's
+snapshot, the RTC origin freezing the narrowed audience on its multicast and the
+WS server admitting it as the room audience, so `receiver` and
+`all-logical-recipients` receipts, the roster fence and repair work as for any
+room send; a list holds at most 256 sessions, and a listed session outside the
+room is dropped silently. The shared planner delivers a room broadcast that
+carries `recipientPeerIds` only at a listed session (D159, D160). RTC carries
+room, principal and list audiences and refuses `world` and `all` `unsupported`,
+so the browser sender routes a `world` send to WS at once on
+`rtc-with-ws-fallback` and `ws-then-rtc`, and on `rtc` the send ends `rejected`
+with that refusal: carrier-unsupported is the existing typed refusal, not a new
+state (D157). WS ingress binds a client's `world` broadcast to the connection's
+authenticated scope, on every instance through the scoped cluster notice,
+requires a client's `principal` broadcast to name its room, and refuses a
+client's `all` `unauthorized`; `world` keeps `ack: 'none'` (D158). The
+conformance lane's `same-principal` family, which signs the sender's principal
+in on a second agent, runs `principal-delivery`, `fixed-list-delivery` and
+`world-routing` over `ws`, `rtc` and `rtc-with-ws-fallback`; a client's `all`
+is no browser input, so its refusal is pinned at the server, the RTC origin and
+the browser validator rather than in a lane cell; manifests 18 and 22 are
+unchanged (D161). A server-originated principal publication and the
+deployment-wide principal audience are not client sends and stay carried (D163).
 
 ## Transport selection and parity
 
@@ -374,7 +390,8 @@ fixes the channel's send defaults (D52):
 | `notification` | `at-least-once` | `all-logical-recipients` | 30 s     | `volatile` |
 
 The two acks are one frozen-audience algorithm (D41). A `world` or `all`
-broadcast names no logical audience, so it keeps `ack: 'none'` until A1. The
+broadcast names no logical audience, so it keeps `ack: 'none'`; a principal or
+listed room broadcast has its narrowed room audience (D159). The
 2-second ACK timeout and three receipt retries are the at-least-once
 normalization defaults these fields select. A channel may declare `durability`,
 and a send may override each field, durability through `qos.durability`. `realtime` is refused at a typed channel and
@@ -917,12 +934,13 @@ paths; legacy exports/classes remain. The current outbound owner map is
 documented in
 [`alm/outbound/README.md`](../../packages/shared/alm/outbound/README.md).
 
-**PLANNED — A1, I1, I2a, and I2b, complete safe surface:** The delivery handle
+**PLANNED — I1, I2a, and I2b, complete safe surface:** The delivery handle
 (S1) and the channel purpose (S3a) exist. They are exported by
-`browser/rallar-messages.ts`, the narrow entry point F1 added. Four parts are
-absent:
+`browser/rallar-messages.ts`, the narrow entry point F1 added. A1 added the
+principal and fixed-recipient builders (`newALPrincipalBroadcastMessage`, and
+`recipientPeerIds` on `newALBroadcastMessage`) and the browser's `principalId`
+and `recipientPeerIds` send inputs. Three parts are absent:
 
-- principal and fixed-recipient builders (A1);
 - correlation and trace builders (I1);
 - the channel's storage-unavailable policy (I2a);
 - `local-checkpoint` with its per-store settings (I2b).
@@ -962,7 +980,13 @@ per round and no track spans a review (D150, D151). The client reads it through
 a typed room channel whose recovery owner re-reads the game over REST, and the
 UI's live round cues follow that stream in order while the snapshot stays the
 game's state (D152). A browser that joins during a round sees that round's state
-from the snapshot and its cues from the next round (D155).
+from the snapshot and its cues from the next round (D155). **CURRENT — A1, AI
+suggestions on a principal audience:** a hunter's planning suggestion, generated
+in the browser, shows in the asking browser at once and is sent as a principal
+broadcast in the room over WS (`ai.broadcastJson` with `scope: 'principal'` and
+the hunter's principal id), so the hunter's other sessions in the room receive
+it and no other hunter does; the receiver keeps its room and revision checks
+(D162). Per-player private events from the server are carried (D163).
 
 ## Current validation baseline
 
