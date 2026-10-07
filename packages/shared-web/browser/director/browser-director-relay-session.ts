@@ -14,8 +14,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
-    isCurrentDirectorEnvelope,
-    isDirectorAddressedEnvelope,
+    isAcceptedDirectorRelayEnvelope,
     isDirectorRelayEnvelope,
     recordDirectorRelayHeartbeat
 } from './browser-director-relay-observation.ts';
@@ -225,7 +224,8 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         if (!isDirectorRelayEnvelope(input.envelope, this.topicId)) {
             return;
         }
-        if (this.stopped || !this.isAcceptedEnvelope(input.envelope)) {
+        const commandTypeIds = [this.input.config.intentTypeId, this.syncRequestTypeId];
+        if (this.stopped || !isAcceptedDirectorRelayEnvelope(this.status(), input.envelope, commandTypeIds)) {
             return;
         }
         await this.route({
@@ -235,15 +235,6 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
             envelope: input.envelope,
             receivedAtEpochMs: Date.now()
         });
-    }
-
-    private isAcceptedEnvelope(envelope: RallarDirectorRelayEnvelope): boolean {
-        const current = this.status();
-        const isDirectorCommand = envelope.typeId === this.input.config.intentTypeId ||
-            envelope.typeId === this.syncRequestTypeId;
-        return isDirectorCommand
-            ? isDirectorAddressedEnvelope(current, envelope)
-            : isCurrentDirectorEnvelope(current, envelope);
     }
 
     private async route(

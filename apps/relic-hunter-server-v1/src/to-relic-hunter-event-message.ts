@@ -11,7 +11,7 @@ import {
     newALRoute,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
-import type { RelicCommandSender } from './apply-relic-ws-command.ts';
+import type { RelicCommandSender } from './relic-command-sender.ts';
 import { RELIC_SNAPSHOT_TTL_MS } from './to-relic-snapshot-message.ts';
 
 /** The action a submitted plan recorded for the round it was submitted in; undefined for every other command. */

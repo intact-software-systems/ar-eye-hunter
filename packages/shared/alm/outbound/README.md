@@ -20,35 +20,34 @@ two sources: the captured plan's next hops (`ackTracking.nextHopPeerIds`), or th
 composition declares every frame passes through (`ALOutboundMessageRuntime.Dependencies.hopPeerIds`).
 A WS client's unicast addressed to the server, and its `hop` or `subtree` room send, track the
 server as a next hop; a `receiver` or `leader` room send, or a `receiver` session unicast, has no
-client-tracked hop and stays the server's to retry. The WS client also names its server as its composition's
-hop, so an
-ordered at-least-once room send at the browser's defaults, whose effective `ack` is `none` and
-tracks no receipt, still has the server's gap NACK served along that hop; the RTC compositions
-and the WS server declare no fixed hop. Control acceptance applies the same exemption: without a
-repair planner, a room-scoped gap NACK or repair control is admitted only when its requester is
-the sender's own hop, so the server's gap NACK to its own WS client commits the repair hint that
-retransmits the missing ranges along that hop. The WS server repairs its own publications through
-its repair planner instead: a WS client's gap NACK on a track whose sequences the server minted
-pages the missing sequences from the server's ordering index and resends each to that requester
-alone, and only when the requester is in the audience the resent message was admitted to and
-still expected by the receipt of the message whose NACK revealed the gap, so a session that
-joined later is never served and a keyed server publication asks `ack: 'receiver'` (an
-`ack: 'none'` one gets no ranged repair) (D43, D153). The budget is per message: the first
-requester spends `maxRepairs` and another requester of the same sequence falls back to the
-receipt's retries. Only the `outbox` fan-out mints; a keyed publish without a sequence at
-`live-only` or `none` is refused. Relic Hunters' round transitions are that track's consumer: one
-track per round, the game's incarnation (`${gameId}:${createdAtEpochMs}`, since a reset keeps the
-game id) as ordering key and the round the transition enters as epoch, the finish entering the round
-past the last (D151). [`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one
-predicate both owners share. A hint names what is missing as inclusive `ALSeqRange` `{ from, to }`
-ranges (`missingRanges`, at most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256
-window can hold), as the `al.control.nack.v2` and `al.control.repair.v2` payloads and the planner's
-NACK plan do; [`decodeALSeqRanges`](../../al-contracts/al-seq-range.ts) is the one bounded range
-decoder for the wire and the rows. A NACK and a repair request naming the same gap are one hint:
-the gap -- requester, ordering track and ranges, the ranges joined as `from-to` with `,` -- names
-the hint's effect row ([`toALOutboundRepairHintEffectId`](./to-al-outbound-effect-id.ts)), never
-the control that reported it, so the second control is absorbed by the write-if-absent effect
-store rather than filed again. One execution of a hint retransmits at most
+client-tracked hop and stays the server's to retry. The WS client also names its server as its
+composition's hop, so an ordered at-least-once room send at the browser's defaults, whose effective
+`ack` is `none` and tracks no receipt, still has the server's gap NACK served along that hop; the
+RTC compositions and the WS server declare no fixed hop. Control acceptance applies the same
+exemption: without a repair planner, a room-scoped gap NACK or repair control is admitted only when
+its requester is the sender's own hop, so the server's gap NACK to its own WS client commits the
+repair hint that retransmits the missing ranges along that hop. The WS server repairs its own
+publications through its repair planner instead: a WS client's gap NACK on a track whose sequences
+the server minted pages the missing sequences from the server's ordering index and resends each to
+that requester alone, and only when the requester is in the audience the resent message was admitted
+to and still expected by the receipt of the message whose NACK revealed the gap, so a session that
+joined later is never served and a keyed server publication asks `ack: 'receiver'` (an `ack: 'none'`
+one gets no ranged repair) (D43, D153). The budget is per message: the first requester spends
+`maxRepairs` and another requester of the same sequence falls back to the receipt's retries. Only
+the `outbox` fan-out mints; a keyed publish without a sequence at `live-only` or `none` is refused.
+Relic Hunters' round transitions are that track's consumer: one track per round, the game's
+incarnation (`${gameId}:${createdAtEpochMs}`, since a reset keeps the game id) as ordering key and
+the round the transition enters as epoch, the finish entering the round past the last (D151).
+[`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one predicate both owners share.
+A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges (`missingRanges`, at
+most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256 window can hold), as the
+`al.control.nack.v2` and `al.control.repair.v2` payloads and the planner's NACK plan do;
+[`decodeALSeqRanges`](../../al-contracts/al-seq-range.ts) is the one bounded range decoder for the
+wire and the rows. A NACK and a repair request naming the same gap are one hint: the gap --
+requester, ordering track and ranges, the ranges joined as `from-to` with `,` -- names the hint's
+effect row ([`toALOutboundRepairHintEffectId`](./to-al-outbound-effect-id.ts)), never the control
+that reported it, so the second control is absorbed by the write-if-absent effect store rather than
+filed again. One execution of a hint retransmits at most
 `AL_MESSAGE_RESOURCE_LIMITS.repairPageMessages` (32) sequences, ascending across its ranges, and
 re-commits the remaining ranges as one follow-up hint whose identity is those ranges, so a wide gap
 costs a bounded page of indexed reads and dispatch commits per execution and no page is served
@@ -58,14 +57,14 @@ lease finds its sends committed and charges nothing more. When dispatch finds th
 answers `skipped`/`repair-exhausted`, and the retransmitter settles the message once with that
 verdict through the lane's settlement sink and writes nothing else: the handle reads `failed` with
 `failure.kind: 'skipped'` and `failure.reason: 'repair-exhausted'`.
-[`ALOutboundMessageEffects`](./al-outbound-message-effects.ts) runs the three
-message-shaped effects — `admit-message`, `dequeue-message`, and `send-prepared`.
-[`ALWorkHandler`](../work/al-work-handler.ts) registers outbound work with the
-existing [`InboxOutboxEngine`](../../services/InboxOutboxEngine.ts) through
-[`ALWorkQueuePort`](../work/al-work-queue-port.ts). QueueBox owns durable
-reservation, release, expiry, retry, and exhausted-attempt recovery. A queued native
-send retains its claimed work until transport settlement; it does not block available
-peers or complete merely because the carrier accepted local queue ownership.
+[`ALOutboundMessageEffects`](./al-outbound-message-effects.ts) runs the three message-shaped effects
+— `admit-message`, `dequeue-message`, and `send-prepared`.
+[`ALWorkHandler`](../work/al-work-handler.ts) registers outbound work with the existing
+[`InboxOutboxEngine`](../../services/InboxOutboxEngine.ts) through
+[`ALWorkQueuePort`](../work/al-work-queue-port.ts). QueueBox owns durable reservation, release,
+expiry, retry, and exhausted-attempt recovery. A queued native send retains its claimed work until
+transport settlement; it does not block available peers or complete merely because the carrier
+accepted local queue ownership.
 
 ## Construction and registration
 
@@ -533,25 +532,24 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
 
 A `receiver` or `leader` room send over WS expects nobody when it is admitted
 ([`toWsQueueBoxClientAckTrackingPlan`](../../services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts)):
-the WS server freezes the audience and answers for it. A `leader` send is the same aggregate with one expected
-recipient, the director session, so the `admitted` receipt names the director and the director's ACK completes it.
-Each recipient's ACK stays addressed to the
-origin (`toPeerId` is the message's `senderId`); the server admits it at ingress as the aggregating
-relay hop and counts it in
+the WS server freezes the audience and answers for it. A `leader` send is the same aggregate with
+one expected recipient, the director session, so the `admitted` receipt names the director and the
+director's ACK completes it. Each recipient's ACK stays addressed to the origin (`toPeerId` is the
+message's `senderId`); the server admits it at ingress as the aggregating relay hop and counts it in
 [`WsQueueBoxServerReceiptAggregation`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts),
-an in-memory map on the instance whose socket admitted the
-message. The server answers the origin with
-`al.control.receipt.v1` controls, each written as one durable `WS_OUTBOX` row that reaches the origin's
-socket on this instance or, through the cluster publisher, on another: `admitted` at once with the
-frozen audience, then `complete` when every expected recipient has acknowledged, or `timed-out` at the
-message deadline naming whom it counted. Every receipt row expires at the message deadline plus
-`AL_RECEIPT_DEADLINE_GRACE_MS`, however early the server observed it. A receipt row whose origin has no
-session on the instance that dequeues it is not settled by its first cluster publication: its send
+an in-memory map on the instance whose socket admitted the message. The server answers the origin
+with `al.control.receipt.v1` controls, each written as one durable `WS_OUTBOX` row that reaches the
+origin's socket on this instance or, through the cluster publisher, on another: `admitted` at once
+with the frozen audience, then `complete` when every expected recipient has acknowledged, or
+`timed-out` at the message deadline naming whom it counted. Every receipt row expires at the message
+deadline plus `AL_RECEIPT_DEADLINE_GRACE_MS`, however early the server observed it. A receipt row
+whose origin has no session on the instance that dequeues it is not settled by its first cluster
+publication: its send
 ([`WsQueueBoxServerClusterPublication`](../../services/ws-queue-box-server/ws-queue-box-server-cluster-publication.ts))
-publishes it again, each wait as long as the receipt has waited and the last one a second before the row
-expires, until the origin has a session there or the row expires, so an origin that reconnects on any
-instance up to a second before the row expires receives it; one that reconnects in that last second
-does not.
+publishes it again, each wait as long as the receipt has waited and the last one a second before the
+row expires, until the origin has a session there or the row expires, so an origin that reconnects
+on any instance up to a second before the row expires receives it; one that reconnects in that last
+second does not.
 
 The server's other controls (its ACKs, NACKs and repair requests) come from its inbound work, which any
 instance may claim. The claiming instance sends one to a socket it holds; when it holds none for the
@@ -984,18 +982,18 @@ in memory like a cancellation: a durable RTC message resumed after a reload is n
 
 **The declared retryable outcomes (D65)** live in
 [`resolve-al-delivery-fallback-trigger.ts`](../delivery/resolve-al-delivery-fallback-trigger.ts). At
-admission every `unroutable` reason (`no-route`, `circuit-open`, `rate-limited`) and `refused/unsupported`
-hands the send to the fallback carrier at once, while `refused/no-leader` hands nothing over (D165); an RTC room
-fanout in a carrier gap reads `no-route` there
-(D96). After admission `AL_FALLBACK_NOT_READY_ATTEMPTS` (3)
-consecutive `not-ready` RTC attempts across the message's send-prepared rows (reset by a `sent` attempt
-or an acknowledgement), `not-yet-in-sync-exhausted` and `receipt-exhausted` hand an admitted
-`rtc-with-ws-fallback` message to WS inside its unchanged deadline. The browser's
+admission every `unroutable` reason (`no-route`, `circuit-open`, `rate-limited`) and
+`refused/unsupported` hands the send to the fallback carrier at once, while `refused/no-leader`
+hands nothing over (D165); an RTC room fanout in a carrier gap reads `no-route` there (D96). After
+admission `AL_FALLBACK_NOT_READY_ATTEMPTS` (3) consecutive `not-ready` RTC attempts across the
+message's send-prepared rows (reset by a `sent` attempt or an acknowledgement),
+`not-yet-in-sync-exhausted` and `receipt-exhausted` hand an admitted `rtc-with-ws-fallback` message
+to WS inside its unchanged deadline. The browser's
 [`BrowserMessageFallbackController`](../../../shared-web/browser/messages/browser-message-fallback-controller.ts)
 takes that decision from the delivery registry's `record`; this owner only hands over.
-`resolveALDeliveryFallbackTrigger` is stateless per settlement: the controller hands over once per msgId
-and only inside the deadline, so a repeated `not-yet-in-sync-exhausted` after the first hand-over, or one
-past the deadline, hands nothing over again (C7).
+`resolveALDeliveryFallbackTrigger` is stateless per settlement: the controller hands over once per
+msgId and only inside the deadline, so a repeated `not-yet-in-sync-exhausted` after the first
+hand-over, or one past the deadline, hands nothing over again (C7).
 
 **The left carrier (C3).** Once a message has handed over, the reducer's `isLeftCarrierReceipt` guard
 keeps a settlement that still arrives from the carrier it left -- an acknowledgement, `receipt-exhausted`

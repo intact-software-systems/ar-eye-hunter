@@ -13,6 +13,10 @@ import {
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { leaderConfirms } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-confirms.ts';
+import { leaderOutsideList } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-outside-list.ts';
+import { noLeaderRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/no-leader-refused.ts';
+import { fencedRejection } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/membership-fence/fenced-rejection.ts';
 import {
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
     type RallarBlackBoxRtcMessagesMulticastRecipeOptions
@@ -67,11 +71,11 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     // A combined recipe keeps only its first prologue, so the recipient that leaves here would miss every later cell.
     { scenarioKey: 'fenced-catch-up', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },
     // The same for the sender, which leaves before it sends.
-    { scenarioKey: 'fenced-rejection', carriers: ['ws'] },
+    { scenarioKey: 'fenced-rejection', carriers: fencedRejection.carriers },
     // The leader cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
-    { scenarioKey: 'leader-confirms', carriers: ALM_CONFORMANCE_CARRIERS },
-    { scenarioKey: 'no-leader-refused', carriers: ['ws', 'rtc'] },
-    { scenarioKey: 'leader-outside-list', carriers: ['ws'] }
+    { scenarioKey: 'leader-confirms', carriers: leaderConfirms.carriers },
+    { scenarioKey: 'no-leader-refused', carriers: noLeaderRefused.carriers },
+    { scenarioKey: 'leader-outside-list', carriers: leaderOutsideList.carriers }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {

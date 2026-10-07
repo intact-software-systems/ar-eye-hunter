@@ -27,11 +27,11 @@ import {
     applyRelicWsCommand,
     toRelicWsCommandWarning,
     type RelicCommandApplication,
-    type RelicCommandSender,
     type RelicSessionIdentity
 } from './apply-relic-ws-command.ts';
 import { decodeRelicGameStateAppData } from './decode-relic-game-state-app-data.ts';
 import { encodeRelicGameStateAppData } from './encode-relic-game-state-app-data.ts';
+import type { RelicCommandSender } from './relic-command-sender.ts';
 import type { RelicInitialStateFactory } from './relic-expedition-ai.ts';
 import {
     toRelicActionRecordedEvent,
@@ -180,7 +180,7 @@ class RelicGameService implements RelicHunterGameService {
                     async (error): Promise<RelicCommandApplication> => ({
                         kind: 'refused',
                         error,
-                        publishFailure: await toPublishFailure(() =>
+                        publishFailure: await writeRelicPublication(() =>
                             this.publishHunterEvent(
                                 previous.roomId,
                                 toRelicCommandRefusedEvent(command, sender, error)
@@ -197,7 +197,7 @@ class RelicGameService implements RelicHunterGameService {
         return {
             kind: 'applied',
             snapshot: toPublicRelicSnapshot(applied.next),
-            publishFailure: await toPublishFailure(() => this.publishCommandResult(applied))
+            publishFailure: await writeRelicPublication(() => this.publishCommandResult(applied))
         };
     }
 
@@ -281,8 +281,8 @@ class RelicGameService implements RelicHunterGameService {
     }
 }
 
-/** A publication failure after the write is the command's outcome, not a reason to retry it. */
-async function toPublishFailure(publish: () => Promise<void>): Promise<Error | undefined> {
+/** A publication failure is the command's outcome, not a reason to retry it. */
+async function writeRelicPublication(publish: () => Promise<void>): Promise<Error | undefined> {
     try {
         await publish();
         return undefined;

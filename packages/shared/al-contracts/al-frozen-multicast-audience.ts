@@ -46,9 +46,13 @@ export function toALFreezeComparableMessage(original: ALMessage, candidate: ALMe
         return candidate;
     }
     if (original.targets?.mode === 'broadcast') {
-        return isALNarrowedBroadcastFrozenAs(original, candidate.targets, frozen)
-            ? { ...candidate, targets: original.targets }
-            : candidate;
+        const freeze = {
+            original: original.targets,
+            addressesLeader: isALLeaderRoomBroadcast(original),
+            frozenTargets: candidate.targets,
+            frozen
+        };
+        return isALNarrowedBroadcastFrozenAs(freeze) ? { ...candidate, targets: original.targets } : candidate;
     }
     if (
         original.targets?.mode !== 'multicast' || original.targets.recipientPeerIds !== undefined ||
@@ -90,17 +94,20 @@ export function resolveALAdmittedRoomAudience(
         );
 }
 
+/** A broadcast that names its own audience, and the multicast a candidate froze it as. */
+interface ALNarrowedBroadcastFreeze {
+    readonly original: Extract<ALTargets, { readonly mode: 'broadcast'; }>;
+    /** The original addresses its room's leader, which narrows a room broadcast as a list does. */
+    readonly addressesLeader: boolean;
+    readonly frozenTargets: Extract<ALTargets, { readonly mode: 'multicast'; }>;
+    readonly frozen: ALFrozenMulticastAudience;
+}
+
 function isALNarrowedBroadcastFrozenAs(
-    message: ALMessage,
-    frozenTargets: Extract<ALTargets, { readonly mode: 'multicast'; }>,
-    frozen: ALFrozenMulticastAudience
+    { original, addressesLeader, frozenTargets, frozen }: ALNarrowedBroadcastFreeze
 ): boolean {
-    const original = message.targets;
-    if (original?.mode !== 'broadcast') {
-        return false;
-    }
     const narrowed = (original.scope === 'principal' && original.principalRef !== undefined) ||
-        (original.scope === 'room' && original.recipientPeerIds !== undefined) || isALLeaderRoomBroadcast(message);
+        (original.scope === 'room' && original.recipientPeerIds !== undefined) || addressesLeader;
     const listed = original.recipientPeerIds;
     return narrowed && original.groupRef !== undefined &&
         isSameGroupRef(original.groupRef, frozenTargets.groupRef) &&

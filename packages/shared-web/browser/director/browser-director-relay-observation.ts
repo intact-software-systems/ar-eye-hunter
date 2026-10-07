@@ -7,7 +7,7 @@ import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-m
 import { RALLAR_DIRECTOR_RELAY_PROTOCOL } from './browser-director-relay-transport.ts';
 import type { BrowserDirectorStatusRuntime } from './browser-director-status-runtime.ts';
 
-export function isCurrentDirectorEnvelope(
+function isCurrentDirectorEnvelope(
     status: RallarDirectorStatus,
     envelope: RallarDirectorRelayEnvelope
 ): boolean {
@@ -21,9 +21,19 @@ export function isCurrentDirectorEnvelope(
 /**
  * A command its carrier admitted to the room's director at the time: the director acts on one stamped with its own
  * epoch or an earlier one, whose sender only had not yet read the succession; a later epoch is an appointment this
- * session has not read.
+ * session has not read. Any other envelope belongs to the current appointment's epoch.
  */
-export function isDirectorAddressedEnvelope(
+export function isAcceptedDirectorRelayEnvelope(
+    status: RallarDirectorStatus,
+    envelope: RallarDirectorRelayEnvelope,
+    commandTypeIds: readonly string[]
+): boolean {
+    return commandTypeIds.includes(envelope.typeId)
+        ? isDirectorAddressedEnvelope(status, envelope)
+        : isCurrentDirectorEnvelope(status, envelope);
+}
+
+function isDirectorAddressedEnvelope(
     status: RallarDirectorStatus,
     envelope: RallarDirectorRelayEnvelope
 ): boolean {

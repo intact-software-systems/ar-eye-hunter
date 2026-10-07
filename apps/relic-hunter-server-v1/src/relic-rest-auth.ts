@@ -3,7 +3,7 @@ import { canSendGroupMessage } from '@shared-server/rallar-system/group-state/po
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { RelicCommandSender } from './apply-relic-ws-command.ts';
+import type { RelicCommandSender } from './relic-command-sender.ts';
 import type { RelicRestAuthorizationMode } from './relic-hunter-server-configuration.ts';
 
 type RelicRestAuthInput = Readonly<{

@@ -1,12 +1,10 @@
 import type { RelicCommand, RelicPublicSnapshot } from '@relic-hunters/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import type { RelicCommandSender } from './relic-command-sender.ts';
 
 /** The issued session a command is applied under: its username names the hunter, its client id the principal. */
 export type RelicSessionIdentity = Pick<AuthSession, 'clientId' | 'username'>;
-
-/** The session that sent a command and the principal whose own sessions hear what became of it. */
-export type RelicCommandSender = Pick<AuthSession, 'clientId' | 'sessionId'>;
 
 export type RelicCommandApplication =
     | Readonly<{ kind: 'applied'; snapshot: RelicPublicSnapshot; publishFailure: Error | undefined; }>
