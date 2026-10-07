@@ -9,19 +9,23 @@ import { BootstrapPanel } from './BootstrapPanel.tsx';
 import { CommandQueuePanel } from './CommandQueuePanel.tsx';
 import { ConfigurationPanel } from './ConfigurationPanel.tsx';
 import { ControlPanel } from './ControlPanel.tsx';
-import { WorkbenchPanel } from './WorkbenchPanel.tsx';
+import { WorkbenchPanel } from './workbench-panel.tsx';
 
 export interface LocalWorkbenchSectionProps {
     readonly active: boolean;
     readonly state: RallarBlackBoxTestState;
     readonly bootstrap: RallarBlackBoxBootstrapConfig;
     readonly control: RallarBlackBoxControlSnapshot;
+    /** Absent before the local runtime authenticates. */
     readonly authSession?: AuthSession;
     readonly busy: boolean;
     readonly runState: string;
+    /** Absent when no named fixture is loaded. */
     readonly loadedFixtureId?: string;
+    /** Absent when the latest operation has no reported failure. */
     readonly lastError?: string;
     readonly queueRows: readonly CommandQueueRow[];
+    /** Absent when the operator has no queue selection. */
     readonly selectedCommandId?: string;
     onSelectCommand(commandId: string | undefined): void;
 }

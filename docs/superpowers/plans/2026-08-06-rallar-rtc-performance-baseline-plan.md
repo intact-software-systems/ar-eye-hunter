@@ -55,9 +55,22 @@ JavaScript modules. The same independent reviewer approves all three complete su
 owners with no findings; this coherent slice is accepted for prompt feature publication.
 Hosted d586 run 37655992935 confirms that repository style now passes and all
 selected correctness jobs succeed. Static reaches four unclassified owned I/O
-assertions; narrow interaction documentation remains required before full CI acceptance. This continuation is published in draft
+assertions. Their four narrow I/O classifications are independently reviewed and published,
+and the committed current-parent style and coupling gates pass. This continuation is published in draft
 [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645); Task64's complete
-CI outcome remains open.
+combined-source CI outcome is accepted at its published head
+1bbb2b31531e28c5eb82a113833a80eb2782bdee, tree17cd1b67064ea15b3f835e6e75f3062dbb7f0256.
+Hosted37664555375/attempt1 passes every other selected correctness/static lane, but the
+Postgres job exceeds its20-minute setup limit during Playwright's apt dependency install.
+Migrations and tests never start; the dependent result fails on release=cancelled. The
+mirror/transport stall's lower-level cause remains unproved. One targeted cancelled-job
+rerun succeeds as attempt2: Postgres reaches87 integration cases, topology,4+1 smoke
+cases and10+10 presence-expiry cases; publication and final result also succeed. Actual
+times/runners prove other successful lanes were carried forward despite renewed IDs.
+Formation37664555126 and Medium37664555149 succeed with an equivalent synthetic merge;
+all three actual tested trees equal17cd1b67064ea15b3f835e6e75f3062dbb7f0256. Root verifies
+the source, artifact and publication bindings. The failed attempt remains preserved and
+supplies no Postgres GREEN; newer Task65 working changes receive no acceptance from it.
 Publish each coherent validated slice on the feature branch; keep incomplete acceptance
 explicit in the draft pull request rather than accumulating accepted slices locally. The WS
 fixture correction is independently accepted and published at
@@ -77,10 +90,21 @@ package and 1487-test typing, both app builds and post-merge exact-main-ancestry
 style checks pass. The earlier inherited 14-prompt style failure remains preserved.
 Fresh measured facade 250.069 KiB and headless 320.244 KiB require existing
 adjustable packaging caps 251 and 321; no workload or other limits change.
-Hosted acceptance and a new exact main integration decision remain required.
-The next two useful slices are narrow I/O classification publication and visible
-recipe controls with semantic TDD. Worker, Actions and full B01–B06/E3 outcomes
-stay mandatory.
+Fresh Branch37661784882, Formation37661784487 and Medium37661784363 are terminal SUCCESS.
+Actual checkout/artifact evidence binds Branch to15eff and the other two to an equivalent
+synthetic merge, all with tree372c1f6e21ab768fbb584a03c8e5c3fbfa26fe16. Required review still
+blocks ordinary main integration. A concrete native squash proposal is prepared against
+unchanged main d5db1569d5072a714df314b2d5eceed5011407d5; fresh maintainer approval is required
+before that default-branch operation. No main commit or push is performed.
+Local Workbench now has visible run capture intent after two genuine semantic REDs:
+first the missing selector, then explicit Off failing to reach the accepted run. Final
+32 SDK/store cases, the simulated real-UI browser witness, maintained1488-test typing,
+scoped browser typing and app typecheck/build pass. The original independent reviewer
+has accepted SPEC/QUALITY and closes both private naming/import findings against the
+exact corrected source. This bounded slice is ready for prompt feature publication;
+the next useful slice is
+Recipe Console new-run intent, followed by existing authored-intent persistence paths.
+Worker, Actions and full B01–B06/E3 outcomes stay mandatory.
 B06 selection and producer configuration are published; governed E3 has zero accepted cohorts
 and remains required in Section 11. Current product and architecture are [docs/product.md](../../product.md)
 and [docs/architecture.md](../../architecture.md). The canonical executable
@@ -6441,8 +6465,8 @@ unchanged socket-count/absence and excluded ambient-fetch assertions to their
 independently observable effects. The same reviewer returns SPEC compliant and
 QUALITY Approved. Existing policy, tests, tools and prior registry objects are
 unchanged; current-file validation and formatting/whitespace pass. No constructor-time
-configuration-order claim, legacy waiver or artificial test is added. The committed-range
-GREEN remains required before publication.
+configuration-order claim, legacy waiver or artificial test is added. Classification
+checkpoint a017c10e is published and its composed committed-range GREEN passes at1bbb.
 
 **Repaired-parent composition accepted locally:** The continuation's actual conflict
 with published parent 15efff00 is confined to this plan. Preserve the continuation
@@ -6455,11 +6479,13 @@ adjustable cap 323. Its original 321-cap failure is preserved; final headless bo
 all forbidden imports and format/diff pass. Main's retired invalid-fallback contract
 and two obsolete occurrences stay removed; current audience contracts and the
 three new I/O contracts/four exact classifications survive. No workload or other
-limit changes. Current-parent style/coupling gates remain required after the feature
-merge commit and before prompt publication. Fresh hosted combined-source acceptance,
-visible UI, workers/Actions and B01–B06/E3 remain required.
+limit changes. Feature merge1bbb is published; exact current-parent style/coupling gates
+pass with all nine current candidates individually classified. Fresh hosted combined-source
+acceptance is complete at1bbb through37664555375/attempt2 and the matching Formation/Medium
+trees. Its first setup timeout remains preserved. Visible UI, workers/Actions and B01–B06/E3
+remain required.
 
-### Task 65: Visible recipe controls and persisted intent (prepared next slice)
+### Task 65: Visible recipe controls and persisted intent (active)
 
 After Task64 acceptance, use the refreshed Console/local authoring and reusable
 recipe/manifest consumers against its accepted source. A53-source audit reuses unchanged
@@ -6475,7 +6501,43 @@ and owned invocation/application evidence must distinguish fresh work from truth
 Follow current canonical owners with semantic TDD and actual consumer controls; select no
 new API/store, migration, retained legacy or duplicate policy before the witness. Generic workers, spawned/external/mixed/no-spawn recipes and GitHub
 Actions propagation remain mandatory later outcomes, together with B01–B06/E3. This
-prepared next slice is not released and does not narrow the original goal.
+slice does not narrow the original goal.
+
+**First Local Workbench witness:** The current1bbb refresh verifies50/53 unchanged
+source bindings and all14 unchanged guidance bindings; the three audience/schema deltas
+preserve capture intent. Tests-only RED uses the maintained real browser/store Load path:
+authored Native recipe and Off step load unchanged, then the visible run capture selector
+is absent. Actual exit1 has one semantic failure and two passing observer/report controls.
+Submission, SDK application and receipt/refusal assertions are not reached. Root verifies
+the complete frozen test, command, raw output and unchanged production inputs, then releases
+the minimum control implementation and further semantic RED before forwarding changes.
+The selector-only GREEN is followed by a second semantic RED: explicit Off is selected
+and Run completes, but the accepted root invocation has no run capture intent. Minimum
+forwarding then preserves the primitive run choice through the existing store and
+canonical recipe.run command. Undefined Inherit is omitted; explicit Off is retained.
+Authored Native recipe and Off step remain unchanged. Existing SDK composition tests
+observe fresh run identity, effective receipt/application origins and truthful historical
+replay; application-unavailable produces typed RALLAR_RTC_CAPTURE_UNVERIFIED refusal
+without a completion effect. These SDK tests mock network/bootstrap services and close
+their owned connections to distinguish fresh application from replay. The browser witness
+uses the real UI/store with the simulated provider, not live ICE/channel establishment;
+it does not independently prove visible real-SDK refusal or Native completeness.
+
+The five canonical source/test owners undergo complete touched-file closure. The sole
+Workbench importer follows the required kebab-case filename; the old filename and private
+effectful resolveInitialBootstrapConfig name are removed without aliases or migration.
+In-file view/action composition and its explicitly owned React draft shell retain the
+canonical shared capture parser. Maximum named/helper span is48; all seven cognitive and
+callback prompts are individually reviewed. Final correction-source checks pass32 cases
+in four SDK/store owners, one Local browser witness,1488 maintained test files with zero
+errors/debt, scoped browser typing, app typecheck/build, format and diff checks. The
+existing large-chunk build warning remains disclosed. The same independent reviewer
+returns final SPEC compliant/QUALITY Approved, closes both corrected Minor findings and
+verifies all eleven final input bindings and eight actual exit-zero check packets. The
+pre-correction maintained style result stays distinguished; exact corrected committed-range
+style and coupling gates remain required before this slice is pushed.
+Full Task65, Console, existing Load/Copy/storage/restore/repeat outcomes, workers, Actions
+and B01–B06/E3 remain required. No retry, recovery, CRDT or RTC transport behavior changes.
 
 ## 12. Baseline Completion Gate
 

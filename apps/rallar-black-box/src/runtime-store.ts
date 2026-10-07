@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from 'react';
+
 import { takeAgentResumeRecord } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import {
     readRallarBlackBoxBootstrapConfig,
@@ -51,12 +53,13 @@ import {
 } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { configureAuthSessionStorage } from '@shared/api/auth.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { useSyncExternalStore } from 'react';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import { runSimulatedProviderCommand } from './run-simulated-provider-command.ts';
 
 type StoreListener = () => void;
 
-function resolveInitialBootstrapConfig(): RallarBlackBoxBootstrapConfig {
+function initializeBootstrapConfig(): RallarBlackBoxBootstrapConfig {
     const bootstrap = readRallarBlackBoxBootstrapConfig();
     configureAuthSessionStorage(bootstrap.rallarAuthStorage);
     return bootstrap;
@@ -125,7 +128,7 @@ class RallarBlackBoxRuntimeStore {
     private bootstrapStarted = false;
     private runSequence = 1;
     private resumedCommandIds: readonly string[] = [];
-    private bootstrapConfig = resolveInitialBootstrapConfig();
+    private bootstrapConfig = initializeBootstrapConfig();
 
     constructor() {
         if (
@@ -402,7 +405,7 @@ class RallarBlackBoxRuntimeStore {
         return Either.ofRight(recipe);
     }
 
-    async runLoadedRecipe(): Promise<void> {
+    async runLoadedRecipe(rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode): Promise<void> {
         const runNumber = this.runSequence++;
         this.snapshot = {
             ...this.snapshot,
@@ -416,7 +419,8 @@ class RallarBlackBoxRuntimeStore {
         try {
             const result = await this.runtime.execute({
                 kind: 'recipe.run',
-                commandId: `recipe-run-local-${runNumber}`
+                commandId: `recipe-run-local-${runNumber}`,
+                ...(rtcCaptureMode === undefined ? {} : { rtcCaptureMode })
             });
             this.snapshot = {
                 ...this.snapshot,

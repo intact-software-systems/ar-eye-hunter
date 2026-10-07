@@ -11,7 +11,7 @@ import { parseControlClientMessage } from '@shared-test/rallar-bb-test/control-p
 
 import { toControlAgentCapabilities } from '@shared-test/rallar-bb-test/distributed/control-agent-capabilities.ts';
 import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import { decodeNonBlankText, decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 
 import * as connectionHttp from '@shared-web/browser/connection/connection-http-api.ts';
 
@@ -359,6 +359,96 @@ describe('controller accepted recipe execution intent', () => {
 });
 
 describe('SDK recipe execution across actual control consumers', () => {
+    it.each(['native', 'off'] as const)('applies temporary local run intent and restores authored %s through fresh SDK connections', async (authored) => {
+        const { page, events } = createCaptureApplicationRuntime();
+        Object.assign(window, { location: { search: '?provider=browser-rallar', hash: '' } });
+        const { rallarBlackBoxRuntimeStore: store } = await import('../../../../apps/rallar-black-box/src/runtime-store.ts');
+        const recipe: RallarBlackBoxTestRecipe = {
+            schemaVersion: 1,
+            recipeId: 'local-owned-capture',
+            rtcCaptureMode: authored,
+            commands: [
+                { kind: 'configure', config: { rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app', rtcCaptureMode: 'signaling' } } },
+                { kind: 'rtc.connect', connection: 'local-owned-capture', rallar: { rtcCaptureMode: authored } },
+                { kind: 'close' }
+            ]
+        };
+        const invocations: string[] = [];
+        try {
+            await store.runManualCommands([{ kind: 'reset' }], 'Prepare local capture');
+            expect((await store.loadRecipeFromJson(JSON.stringify(recipe))).right).toEqual(recipe);
+            for (const selected of ['off', 'signaling', 'native', undefined, undefined] as const) {
+                await store.runLoadedRecipe(selected);
+                const { state, runState } = store.getSnapshot();
+                const root = state.commandHistory.filter((result) => result.kind === 'recipe.run').at(-1)!;
+                const connect = toRallarBlackBoxCompositeResultFlatEntries([root]).find((entry) => entry.kind === 'rtc.connect');
+                expect(runState).toBe('passed');
+                expect(root.replayed).not.toBe(true);
+                expect(connect?.result.replayed).not.toBe(true);
+                const invocation = decodeRecord(decodeRecord(root.value).invocation);
+                expect(invocation).toMatchObject({ run: selected, recipe: authored, invocationId: expect.any(String) });
+                const invocationId = decodeNonBlankText(invocation.invocationId);
+                if (invocationId === undefined) {
+                    throw new Error('The local SDK recipe did not publish an invocation identity.');
+                }
+                expect(invocations).not.toContain(invocationId);
+                invocations.push(invocationId);
+                expect(connect?.result.value).toMatchObject({
+                    rtcCapture: {
+                        status: 'observed',
+                        value: {
+                            configuration: { mode: selected ?? authored, origin: selected === undefined ? 'step' : 'run' },
+                            application: { status: 'applied', mode: selected ?? authored }
+                        }
+                    }
+                });
+                expect(state.loadedRecipe).toEqual(recipe);
+                expect(events.filter((event) => event.topic === 'rallar.browser.connect_completed').map((event) => event.connection))
+                    .toEqual(invocations.map(() => 'local-owned-capture'));
+            }
+        }
+        finally {
+            await page.close();
+        }
+    });
+
+    it('publishes the actual local required-mode refusal when SDK application is unavailable', async () => {
+        const { page, events } = createCaptureApplicationRuntime();
+        Object.assign(window, { location: { search: '?provider=browser-rallar', hash: '' } });
+        const { rallarBlackBoxRuntimeStore: store } = await import('../../../../apps/rallar-black-box/src/runtime-store.ts');
+        try {
+            await store.runManualCommands([{ kind: 'reset' }], 'Prepare unavailable application');
+            expect(
+                (await store.loadRecipeFromJson(JSON.stringify({
+                    schemaVersion: 1,
+                    recipeId: 'local-unavailable-capture',
+                    commands: [
+                        { kind: 'configure', config: { rallar: { apiBaseUrl: 'https://test.invalid' } } },
+                        { kind: 'rtc.connect', connection: 'local-unavailable-capture' }
+                    ]
+                }))).left
+            ).toBeUndefined();
+            await store.runLoadedRecipe('native');
+            const { state, runState, lastError } = store.getSnapshot();
+            const root = state.commandHistory.filter((result) => result.kind === 'recipe.run').at(-1)!;
+            const connect = toRallarBlackBoxCompositeResultFlatEntries([root]).find((entry) => entry.kind === 'rtc.connect');
+            expect(runState).toBe('failed');
+            expect(lastError).toBe(root.error?.message);
+            expect(lastError).toMatch(/Recipe failed/);
+            expect(connect?.result).toMatchObject({
+                ok: false,
+                error: {
+                    code: 'RALLAR_RTC_CAPTURE_UNVERIFIED',
+                    details: { reason: 'application-unavailable', requestedConfiguration: { mode: 'native', origin: 'run' } }
+                }
+            });
+            expect(events.filter((event) => event.topic === 'rallar.browser.connect_completed')).toEqual([]);
+        }
+        finally {
+            await page.close();
+        }
+    });
+
     it('publishes an owned RTC child result before the held control root completes', async () => {
         const { page, runtime, events } = createCaptureApplicationRuntime();
         vi.stubGlobal('WebSocket', SimulatedWebSocket);

@@ -2,7 +2,11 @@ import { expect, test } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import type {
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestResult
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { decodeNonBlankText, decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 
 import { validateSchemaAuthoringText } from '../../../apps/rallar-black-box/src/schema-authoring.ts';
 
@@ -22,6 +26,67 @@ const ARTIFACT_FIXTURE_DIR = path.join(
     REPO_ROOT,
     'packages/shared-test/black-box-runner/fixtures/schema/v1/artifact-bundle'
 );
+
+test('offers a separate local recipe run capture choice without rewriting authored intent', async ({ page }) => {
+    await page.goto('/?provider=simulated&experience=legacy&workspace=black-box-runner&tab=local-workbench');
+    const panel = page.locator('#panel-local-workbench');
+    await expect(panel.locator('.workbench-panel .panel-heading .pill')).toHaveText('passed');
+    const recipe = {
+        schemaVersion: 1,
+        recipeId: 'authored-capture-choice',
+        rtcCaptureMode: 'native',
+        commands: [{
+            kind: 'rtc.connect',
+            commandId: 'authored-off-connect',
+            connection: 'local-capture-choice',
+            actor: 'local-capture-actor',
+            rallar: { rtcCaptureMode: 'off' }
+        }]
+    } satisfies RallarBlackBoxTestRecipe;
+    const recipeText = JSON.stringify(recipe, null, 2);
+    const editor = panel.getByRole('textbox', { name: 'Recipe JSON', exact: true });
+    await editor.fill(recipeText);
+    await panel.getByRole('button', { name: 'Load', exact: true }).click();
+    await expect.poll(() =>
+        page.evaluate(async () => {
+            const modulePath = '/src/runtime-store.ts';
+            const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+            return rallarBlackBoxRuntimeStore.getSnapshot().state.loadedRecipe;
+        })
+    ).toEqual(recipe);
+    await expect(editor).toHaveValue(recipeText);
+
+    const capture = panel.getByRole('combobox', { name: /RTC capture/i });
+    await expect(capture).toBeVisible();
+    await expect(capture.locator('option')).toHaveText(['Inherit', 'Off', 'Signaling', 'Full native']);
+    await expect(capture).toHaveValue('');
+    await capture.selectOption('off');
+    await expect(editor).toHaveValue(recipeText);
+    const invocations: string[] = [];
+    for (const choice of ['off', 'signaling', 'native', '']) {
+        await capture.selectOption(choice);
+        await panel.getByRole('button', { name: 'Run', exact: true }).click();
+        await expect(panel.locator('.workbench-panel .panel-heading .pill')).toHaveText('passed');
+        const latest = await page.evaluate(async () => {
+            const modulePath = '/src/runtime-store.ts';
+            const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+            return rallarBlackBoxRuntimeStore.getSnapshot().state.commandHistory
+                .filter((result: RallarBlackBoxTestResult) => result.kind === 'recipe.run').at(-1);
+        });
+        expect(latest?.ok).toBe(true);
+        expect(latest?.replayed).not.toBe(true);
+        const invocation = decodeRecord(decodeRecord(latest?.value).invocation);
+        expect(invocation.run).toBe(choice === '' ? undefined : choice);
+        expect(invocation.recipe).toBe('native');
+        const invocationId = decodeNonBlankText(invocation.invocationId);
+        if (invocationId === undefined) {
+            throw new Error('The local recipe run did not publish an invocation identity.');
+        }
+        expect(invocations).not.toContain(invocationId);
+        invocations.push(invocationId);
+        await expect(editor).toHaveValue(recipeText);
+    }
+});
 
 test.describe('exhaustive runner workbench tabs', () => {
     test.skip(!config.enabled, config.skipReason);
