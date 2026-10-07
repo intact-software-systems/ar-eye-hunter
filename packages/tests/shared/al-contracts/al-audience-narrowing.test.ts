@@ -51,7 +51,7 @@ describe('the audience a room send narrows to', () => {
         expect(toRtcAudienceNarrowing(message)).toEqual(toALAudienceNarrowing(message.targets));
         expect(computeRtcFrozenRecipients(message, snapshot)).toEqual(expected);
         expect(
-            toAuthorizedRoomAudience(snapshot, message.targets!, Date.now()).sessions
+            toAuthorizedRoomAudience(snapshot, { ...message, targets: message.targets! }, Date.now()).sessions
                 .map((session) => session.sessionId)
                 .filter((sessionId) => sessionId !== 'a')
         ).toEqual(expected);

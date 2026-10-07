@@ -200,6 +200,34 @@ describe('WS client receipt tracking for a receiver unicast that names its room 
             complete: true
         });
     });
+
+    it('tracks a group-leader room send as the leader receipt the admitted receipt names, and acknowledges it on the leader alone', async () => {
+        const fixture = await createReceiptTrackingFixture();
+        const leaderSend: ALMessage = { ...roomMessage(), delivery: { reliability: 'at-least-once', ack: 'group-leader' } };
+        const sent = await fixture.service.enqueueOutboxIfAbsent(leaderSend);
+        expect([sent.verdict.kind, sent.trackedReceiptAlgo]).toEqual(['admitted', 'leader']);
+        expect(await readReceipt(fixture)).toBeUndefined();
+
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', [], 'room-message-1', ['c']));
+        expect(await readReceipt(fixture)).toMatchObject({ mode: 'leader', expectedPeerIds: ['c'], ackedPeerIds: [] });
+        const acknowledgements = () => fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement');
+        const admittedAcknowledgements = acknowledgements().length;
+        // The server's own ACK confirms its hop, not the leader.
+        await fixture.service.acceptIncomingMessage(serverAck('room-message-1'));
+        expect(await readReceipt(fixture)).toMatchObject({ mode: 'leader', expectedPeerIds: ['c'], ackedPeerIds: [] });
+        expect(acknowledgements()).toHaveLength(admittedAcknowledgements);
+        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['c'], 'room-message-1', ['c']));
+
+        expect(acknowledgements().at(-1)).toMatchObject({
+            msgId: 'room-message-1',
+            mode: 'leader',
+            confirmedHopPeerIds: [],
+            unconfirmedHopPeerIds: [],
+            confirmedRecipientPeerIds: ['c'],
+            unconfirmedRecipientPeerIds: [],
+            complete: true
+        });
+    });
 });
 
 describe('WS client receipts the server answers itself (R-S3a-4, D57 as applied)', () => {

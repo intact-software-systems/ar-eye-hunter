@@ -18,6 +18,7 @@ import {
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
 import { isALUnicastAddressedTo } from '../../al-contracts/is-al-unicast-addressed-to.ts';
+import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import { DEFAULT_AL_EPHEMERAL_TTL_MS } from '../../alm/ALStoreRetention.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import type {
@@ -214,8 +215,9 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     /**
-     * A `receiver` room message is aggregated; a message without a deadline answers within its ACK
-     * timeout, and no aggregate outlives the server's receipt window, whatever deadline the client named.
+     * A `receiver` room message is aggregated, and a `leader` one as the receipt of its one leader; a message
+     * without a deadline answers within its ACK timeout, and no aggregate outlives the server's receipt window,
+     * whatever deadline the client named.
      * A message addressed to the server itself is answered by the server's own ACK, never aggregated.
      */
     private toAdmission(
@@ -230,7 +232,8 @@ export class WsQueueBoxServerReceiptAggregation {
             qosProvider
         );
         const effective = normalizeALQosPolicy(message, qos).effective;
-        const aggregated = effective.ack.algo === 'receiver' && !isALUnicastAddressedTo(message, serverPeerId);
+        const aggregated = isALLogicalReceiptMode(effective.ack.algo) &&
+            !isALUnicastAddressedTo(message, serverPeerId);
         return !aggregated ? undefined : {
             msgId: message.id.msgId,
             originPeerId,

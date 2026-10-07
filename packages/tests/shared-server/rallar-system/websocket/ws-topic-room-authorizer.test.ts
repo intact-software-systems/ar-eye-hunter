@@ -13,6 +13,7 @@ import { createCachedGroupStateService } from '@shared-server/rallar-system/grou
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
 import type {
     RallarServerWsRoomAuthorizationAllowed,
+    RallarServerWsRoomAuthorizationInput,
     RallarServerWsRoomAuthorizer
 } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { createGroupRoomWsAuthorizer, type GroupRoomWsAuthorizerDependencies } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
@@ -24,6 +25,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
+import { createRallarGroupDirectorAppointment, mergeRallarGroupDirectorMetadata } from '@shared/api/group-director.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type {
     AuditStamp,
@@ -174,6 +176,68 @@ describe('createGroupRoomWsAuthorizer', () => {
             authorized: true,
             audience: { targets: listed.targets, sessions: [snapshot.activeSessions[2]], snapshotVersion: 2 }
         });
+    });
+
+    it('narrows the audience of a group-leader room send to the appointed director session in the room', async () => {
+        const snapshot = withDirector(createLeaderRoomSnapshot(), 'session-c');
+        const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
+        const message = leaderRoomMessage(snapshot, 'session-a');
+
+        const decision = await Promise.resolve(authorizer(leaderAuthorizationInput(message)));
+
+        expect(decision).toEqual({
+            authorized: true,
+            audience: { targets: message.targets, sessions: [snapshot.activeSessions[2]], snapshotVersion: 2 }
+        });
+    });
+
+    it.each(
+        [
+            { situation: 'no director is appointed', director: undefined, sender: 'session-a', targets: {} },
+            { situation: 'the director has no live session in the room', director: 'session-gone', sender: 'session-a', targets: {} },
+            { situation: 'the director sent it', director: 'session-c', sender: 'session-c', targets: {} },
+            {
+                situation: 'its fixed list omits the director',
+                director: 'session-c',
+                sender: 'session-a',
+                targets: { recipientPeerIds: ['session-b'] }
+            },
+            { situation: 'it excepts the director', director: 'session-c', sender: 'session-a', targets: { exceptPeerIds: ['session-c'] } },
+            {
+                situation: 'the principal it names is not the director\'s',
+                director: 'session-c',
+                sender: 'session-a',
+                targets: { scope: 'principal', principalRef: { applicationId: 'app-1', workspaceId: 'workspace-b', principalId: 'session-b' } }
+            }
+        ] as const
+    )('refuses a group-leader room send no-leader when $situation', async ({ director, sender, targets }) => {
+        const room = createLeaderRoomSnapshot();
+        const snapshot = director === undefined ? room : withDirector(room, director);
+        const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
+        const base = leaderRoomMessage(snapshot, sender);
+        const message: ALMessage = { ...base, targets: { mode: 'broadcast', scope: 'room', groupRef: snapshot.group, ...targets } };
+
+        const decision = await Promise.resolve(authorizer({ ...leaderAuthorizationInput(message), senderId: sender }));
+
+        expect(decision).toEqual({
+            authorized: false,
+            reason: 'no-leader',
+            logMessage: 'Rejected room message for leader-room: no-leader: the room has no active leader inside the audience the send names.',
+            serverSnapshotVersion: 2
+        });
+    });
+
+    it('refuses a group-leader room send no-leader when the director\'s presence lease has expired', async () => {
+        const room = withDirector(createLeaderRoomSnapshot(), 'session-c');
+        const snapshot = {
+            ...room,
+            activeSessions: room.activeSessions.map((session) => session.sessionId === 'session-c' ? { ...session, expiresAtEpochMs: 1 } : session)
+        };
+        const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
+
+        const decision = await Promise.resolve(authorizer(leaderAuthorizationInput(leaderRoomMessage(snapshot, 'session-a'))));
+
+        expect(decision).toMatchObject({ authorized: false, reason: 'no-leader' });
     });
 
     it('hydrates a cold group snapshot cache from durable state before authorizing', async () => {
@@ -1160,4 +1224,32 @@ function authorizedDecision(
             snapshotVersion: readGroupVersion(snapshot)
         }
     };
+}
+
+function createLeaderRoomSnapshot(): GroupSnapshot {
+    return createGroupSnapshot({
+        groupId: 'leader-room',
+        applicationId: 'app-1',
+        workspaceId: 'workspace-b',
+        sessionIds: ['session-a', 'session-b', 'session-c'],
+        snapshotVersion: 2
+    });
+}
+
+/** The room with `sessionId`, of the principal of the same name, appointed its director. */
+function withDirector(snapshot: GroupSnapshot, sessionId: string): GroupSnapshot {
+    const appointment = createRallarGroupDirectorAppointment({ session: { clientId: sessionId, sessionId }, now: 1 });
+    return { ...snapshot, group: { ...snapshot.group, metadata: mergeRallarGroupDirectorMetadata(snapshot.group.metadata, appointment) } };
+}
+
+function leaderRoomMessage(snapshot: GroupSnapshot, senderId: string): ALMessage {
+    return newALBroadcastMessage(senderId, newALEventRoute('room.command', 'leader-room', 'msg-leader'), 'room', 'command.v1', {}, {
+        groupRef: snapshot.group,
+        reliability: 'at-least-once',
+        ack: 'group-leader'
+    });
+}
+
+function leaderAuthorizationInput(message: ALMessage): RallarServerWsRoomAuthorizationInput {
+    return { message, roomId: 'leader-room', senderId: message.id.senderId, topicId: 'room.command', typeId: 'command.v1' };
 }

@@ -6,6 +6,7 @@ import type { RallarServerWsRoomAuthorizer } from '@shared-server/rallar-system/
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { createRallarGroupDirectorAppointment, mergeRallarGroupDirectorMetadata } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -628,10 +629,39 @@ describe('Rallar server WS live cluster publication', () => {
         }]);
     });
 
+    it('publishes an admitted group-leader room send as a room notice naming the director session alone', async () => {
+        const base = createGroupSnapshot(2, ['bob-session', 'carol-1', 'dave-session']);
+        const appointment = createRallarGroupDirectorAppointment({ session: { clientId: 'principal-carol-1', sessionId: 'carol-1' }, now: 1 });
+        const snapshot = { ...base, group: { ...base.group, metadata: mergeRallarGroupDirectorMetadata(base.group.metadata, appointment) } };
+        const groupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: snapshot.group.groupId };
+        const notices: LiveWsNotice[] = [];
+        const fixture = createScopedSocketsFixture(
+            notices,
+            createGroupRoomWsAuthorizer({
+                readGroupSnapshot: () => snapshot,
+                readPreActivationAppData: () => 'allowed',
+                nowEpochMs: () => 100
+            })
+        );
+        const message = newALBroadcastMessage('bob-session', newALRoute('room.match', groupRef.groupId, 'intent-1'), 'room', 'room.match.v1', {}, {
+            groupRef,
+            reliability: 'at-least-once',
+            ack: 'group-leader'
+        });
+
+        await fixture.router.route(message, { kind: 'ws-client', peerId: 'bob-session', authenticatedScope: SCOPE });
+
+        expect(notices).toMatchObject([{
+            scope: SCOPE,
+            audience: { mode: 'room', groupRef, recipientSessionIds: ['carol-1'] }
+        }]);
+    });
+
     it.each(
         [
             { audience: 'room', recipients: ['carol-1', 'carol-2', 'dave-session'] },
-            { audience: 'principal', recipients: ['carol-1', 'carol-2'] }
+            { audience: 'principal', recipients: ['carol-1', 'carol-2'] },
+            { audience: 'leader', recipients: ['carol-1'] }
         ] as const
     )(
         'keys an admitted 9 KB $audience send in a room to its canonical inbound row and delivers it to that room audience here and on another server',
@@ -646,9 +676,11 @@ describe('Rallar server WS live cluster publication', () => {
                 { groupRef: fixture.groupRef }
             );
             const principalRef = { ...SCOPE, principalId: 'principal-carol-1' };
-            const message = audience === 'room'
-                ? roomMessage
-                : { ...roomMessage, targets: { mode: 'broadcast' as const, scope: 'principal' as const, groupRef: fixture.groupRef, principalRef } };
+            const message = {
+                room: roomMessage,
+                principal: { ...roomMessage, targets: { mode: 'broadcast' as const, scope: 'principal' as const, groupRef: fixture.groupRef, principalRef } },
+                leader: { ...roomMessage, delivery: { reliability: 'at-least-once' as const, ack: 'group-leader' as const } }
+            }[audience];
             fixture.canonical.set(message.id.msgId, { message, groupRecipientPeerIds: recipients });
 
             await fixture.router.route(message, {
@@ -1208,12 +1240,15 @@ interface RoomClusterFixture {
 
 /**
  * Server A holds the sockets `carol-1` and `dave-session`; server B reads the canonical inbound row a key notice
- * names. `carol-1` and `carol-2` are sessions of one principal in a room that also holds `bob-session` and `dave-session`.
+ * names. `carol-1` and `carol-2` are sessions of one principal in a room that also holds `bob-session` and `dave-session`;
+ * `carol-1` is the room's director.
  */
 async function createRoomClusterFixture(): Promise<RoomClusterFixture> {
     const base = createGroupSnapshot(2, ['bob-session', 'carol-1', 'carol-2', 'dave-session']);
+    const appointment = createRallarGroupDirectorAppointment({ session: { clientId: 'principal-carol-1', sessionId: 'carol-1' }, now: 1 });
     const snapshot = {
         ...base,
+        group: { ...base.group, metadata: mergeRallarGroupDirectorMetadata(base.group.metadata, appointment) },
         activeSessions: base.activeSessions.map((session) => session.sessionId === 'carol-2' ? { ...session, principalId: 'principal-carol-1' } : session)
     };
     const groupRef = { ...SCOPE, groupId: snapshot.group.groupId };
