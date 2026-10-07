@@ -900,45 +900,45 @@ diagnostics state the refusal. The WS server declares no owner and keeps
 NACKing `resync-required` to the sender. The once-mark lives in memory, so a
 reload invokes the owner once more for the same track.
 
-A server publication names its track and leaves the
-sequence to the server: the server application builds the message with an
-`ordering` option that states `orderingKey` and `epoch` and no `seq`, and
-publishes it with `ws.publish` at `fanout: 'outbox'`. The WS server's outbound
-admission assigns the sequence, and the publish result's message carries it. A
-keyed publication without `seq` at `fanout: 'live-only'` or `'none'` is refused: only the
-outbox admission mints. The track is the ordering key, the server peer id as sender, and the
-epoch (`0` when absent); its first message gets `seq` 1 and each later one the
-next number, assigned in the same commit that admits the message, so the
-sequence stays contiguous whichever server instance publishes and continues
-after a server restart. Publishing the same `msgId` again keeps the sequence it
-was first given, and a server publication that states its own `seq` keeps it.
+A server publication names its track and leaves the sequence to the server: the
+server application builds the message with an `ordering` option that states
+`orderingKey` and `epoch` and no `seq`, and publishes it with `ws.publish` at
+`fanout: 'outbox'`. The WS server's outbound admission assigns the sequence, and
+the publish result's message carries it. A keyed publication without `seq` at
+`fanout: 'live-only'` or `'none'` is refused: only the outbox admission mints.
+The track is the ordering key, the server peer id as sender, and the epoch (`0`
+when absent); its first message gets `seq` 1 and each later one the next number,
+assigned in the same commit that admits the message, so the sequence stays
+contiguous whichever server instance publishes and continues after a server
+restart. Publishing the same `msgId` again keeps the sequence it was first
+given, and a server publication that states its own `seq` keeps it.
 
-The server repairs its own publications from its sent copies. A WS client
-admits every server frame as the trusted server's, orders a server track like
-any other with the server peer id as its sender, and NACKs a gap in an
-at-least-once publication to the server. The server serves a requester that is
-inside the audience the message was admitted to and that the receipt of the
-message revealing the gap still expects, so a sequenced server publication asks
+The server repairs its own publications from its sent copies. A WS client admits
+every server frame as the trusted server's, orders a server track like any other
+with the server peer id as its sender, and NACKs a gap in an at-least-once
+publication to the server. The server serves a requester that is inside the
+audience the message was admitted to and that the receipt of the message
+revealing the gap still expects, so a sequenced server publication asks
 `ack: 'receiver'`; one with `ack: 'none'` gets no ranged repair, and a session
 that joined after a message was published is never sent it. The server
-retransmits the missing sequences to that requester alone,
-`repairPageMessages` (32) per round, until the message's deadline. The repair
-budget is per message and shared by every requester: the first receiver to NACK
-a sequence spends `maxRepairs` (1 by default), and another receiver missing the
-same sequence gets it from the receipt's retries instead. A report of a gap once
-the budget is spent settles the publication `skipped` with reason
-`repair-exhausted`, once. A `resync-required` NACK from a receiver settles the
-publication `relay-rejected` (`{ relay: 'peer', peerId, reason:
-'resync-required' }`) and removes its whole pending receipt, so no recipient is
-retried after it. The receiver invokes the recovery owner of the typed channel whose topic and type
-the publication names; the cursor's `senderId` is the server peer id. The
-epoch is the server application's to choose: a new epoch is a new track at
-every receiver and re-arms the owner.
+retransmits the missing sequences to that requester alone, `repairPageMessages`
+(32) per round, until the message's deadline. The repair budget is per message
+and shared by every requester: the first receiver to NACK a sequence spends
+`maxRepairs` (1 by default), and another receiver missing the same sequence gets
+it from the receipt's retries instead. A report of a gap once the budget is
+spent settles the publication `skipped` with reason `repair-exhausted`, once. A
+`resync-required` NACK from a receiver settles the publication `relay-rejected`
+(`{ relay: 'peer', peerId, reason: 'resync-required' }`) and removes its whole
+pending receipt, so no recipient is retried after it. The receiver invokes the
+recovery owner of the typed channel whose topic and type the publication names;
+the cursor's `senderId` is the server peer id. The epoch is the server
+application's to choose: a new epoch is a new track at every receiver and
+re-arms the owner.
 
-Relic Hunters publishes its round transitions this way. Each
-`relic.event.v1` on `room.relic.event` is a receipted room notification whose
-ordering key names the game's incarnation (its id and creation time, since a
-reset keeps the id) and whose epoch is the round, so every round is a new track:
+Relic Hunters publishes its round transitions this way. Each `relic.event.v1` on
+`room.relic.event` is a receipted room notification whose ordering key names the
+game's incarnation (its id and creation time, since a reset keeps the id) and
+whose epoch is the round, so every round is a new track:
 
 ```ts
 const message = newALBroadcastMessage(

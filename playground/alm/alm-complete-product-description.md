@@ -548,17 +548,18 @@ server, which retransmits the missing sequences to that requester alone, 32 per
 page, until the message's deadline and only to a requester inside the audience
 the message was admitted to that the triggering message's receipt still
 expects, so a keyed server publication asks `ack: 'receiver'` and is published
-to the `outbox` (a keyed `live-only` publish without a sequence is refused, and
-an `ack: 'none'` one gets no ranged repair). The repair budget is per message
-and shared: the first receiver to NACK a sequence spends it, the others fall
-back to receipt retries; exhausted repair settles `skipped`/`repair-exhausted`
-once (D141, D153). One receiver's `resync-required` NACK settles the
-publication `relay-rejected` and removes its whole pending receipt (D155).
-The receiver's recovery owner is the typed channel's, as for a browser sender.
-The WS server fixture, the shared-key schedule over memory, IndexedDB and pglite
-with the gated PostgreSQL two-connection case, and the api-v1 end-to-end test
-prove it; no conformance cell exercises a server-originated send, since no
-harness step makes the server publish one (D155).
+to the `outbox` (a keyed publish without a sequence at `live-only` or `none` is
+refused, and an `ack: 'none'` one gets no ranged repair). The repair budget is
+per message and shared: the first receiver to NACK a sequence spends it, the
+others fall back to receipt retries; exhausted repair settles
+`skipped`/`repair-exhausted` once (D141, D153). One receiver's `resync-required`
+NACK settles the publication `relay-rejected` and removes its whole pending
+receipt (D155). The receiver's recovery owner is the typed channel's, as for a
+browser sender. The WS server fixture, the shared-key schedule over memory,
+IndexedDB and pglite with the gated PostgreSQL two-connection case, and the
+api-v1 end-to-end test prove it; no conformance cell exercises a
+server-originated send, since no harness step makes the server publish one
+(D155).
 
 ## Deduplication and supersedence
 

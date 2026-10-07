@@ -34,10 +34,10 @@ still expected by the receipt of the message whose NACK revealed the gap, so a s
 joined later is never served and a keyed server publication asks `ack: 'receiver'` (an
 `ack: 'none'` one gets no ranged repair) (D43, D153). The budget is per message: the first
 requester spends `maxRepairs` and another requester of the same sequence falls back to the
-receipt's retries. Only the `outbox` fan-out mints; a keyed `live-only` publish without a
-sequence is refused. Relic Hunters' round transitions are that
-track's consumer: one track per round, the game's incarnation (`${gameId}:${createdAtEpochMs}`,
-since a reset keeps the game id) as ordering key and the round as epoch (D151).
+receipt's retries. Only the `outbox` fan-out mints; a keyed publish without a sequence at
+`live-only` or `none` is refused. Relic Hunters' round transitions are that track's consumer: one
+track per round, the game's incarnation (`${gameId}:${createdAtEpochMs}`, since a reset keeps the
+game id) as ordering key and the round as epoch (D151).
 [`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one predicate both owners
 share. A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges
 (`missingRanges`, at most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256 window
