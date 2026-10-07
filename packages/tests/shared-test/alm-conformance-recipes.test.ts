@@ -28,6 +28,8 @@ import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
 const CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
+/** A `room.` topic makes any send room-scoped, so the world cell publishes under `app.`. */
+const WORLD_TOPIC_ID = 'app.alm-conformance.world';
 const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
 /** Matches the lane's deadline (`hetzner-alm-manifest-entries.ts`'s `ALM_CONFORMANCE_DEADLINE_MS`). */
 const ALM_CONFORMANCE_DEADLINE_MS = 18_000;
@@ -45,6 +47,9 @@ const MEMBERSHIP_FENCE_KEYS_BY_CARRIER = {
     rtc: ['fenced-delivery', 'fenced-catch-up'],
     'rtc-with-ws-fallback': []
 } as const;
+
+/** The audiences run on every carrier, on the sender's principal twice and another principal once. */
+const AUDIENCE_KEYS = ['principal-delivery', 'fixed-list-delivery', 'world-routing'] as const;
 
 const CARRIER_CONNECT_TRANSPORTS = {
     ws: 'messages.ws',
@@ -188,7 +193,8 @@ function toAllRoleRecipes(scenarios: readonly AlmConformanceScenario[]): readonl
         scenario.sender,
         scenario.receiver,
         ...(scenario.recipientB ? [scenario.recipientB] : []),
-        ...(scenario.successor ? [scenario.successor] : [])
+        ...(scenario.successor ? [scenario.successor] : []),
+        ...(scenario.sibling ? [scenario.sibling] : [])
     ]);
 }
 
@@ -199,6 +205,7 @@ describe('alm-conformance recipe family', () => {
         for (const scenario of scenarios) {
             expect(scenario.laneFamily === 'three-agent', scenario.scenarioKey).toBe(scenario.roles.includes('recipient-b'));
             expect(scenario.laneFamily === 'same-context', scenario.scenarioKey).toBe(scenario.roles.includes('successor'));
+            expect(scenario.laneFamily === 'same-principal', scenario.scenarioKey).toBe(scenario.roles.includes('sibling'));
         }
         expect(scenarios.filter((scenario) => scenario.laneFamily === 'addressed').map(({ scenarioId }) => scenarioId))
             .toEqual(
@@ -218,6 +225,7 @@ describe('alm-conformance recipe family', () => {
                     ...[...RECEIPTED_AUDIENCE_KEYS_BY_CARRIER[carrier], ...MEMBERSHIP_FENCE_KEYS_BY_CARRIER[carrier]].flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     ),
+                    ...AUDIENCE_KEYS.flatMap((key) => ['sender', 'receiver', 'sibling'].map((role) => `alm-${carrier}-${key}-${role}`)),
                     ...['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-durable-takeover-${role}`),
                     ...(carrier === 'rtc-with-ws-fallback'
                         ? []
@@ -226,17 +234,20 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('declares recipient-b on the receipted-audience and membership fence scenarios and successor on durable-takeover and flush-on-hide only; every other scenario keeps one sender and one receiver', () => {
+    it('declares recipient-b on the receipted-audience and membership fence scenarios, successor on durable-takeover and flush-on-hide and sibling on the audiences only; every other scenario keeps one sender and one receiver', () => {
         const threeAgentIds = ['receipted-audience', 'fenced-delivery', 'fenced-catch-up', 'fenced-rejection'];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
                 const threeRoles = threeAgentIds.includes(scenario.scenarioId);
                 const twoPages = scenario.scenarioId === 'durable-takeover' || scenario.scenarioId === 'flush-on-hide';
+                const twoSessions = (AUDIENCE_KEYS as readonly string[]).includes(scenario.scenarioId);
                 expect(scenario.roles, scenario.scenarioKey).toEqual(
                     threeRoles
                         ? ['sender', 'receiver', 'recipient-b']
                         : twoPages
                         ? ['sender', 'receiver', 'successor']
+                        : twoSessions
+                        ? ['sender', 'receiver', 'sibling']
                         : ['sender', 'receiver']
                 );
                 expect(scenario.laneFamily === 'three-agent', scenario.scenarioKey).toBe(threeRoles);
@@ -246,6 +257,8 @@ describe('alm-conformance recipe family', () => {
                 expect(toAlmConformanceRoleRecipe(scenario, 'successor')).toBe(scenario.successor);
                 expect(scenario.recipientB?.recipeId).toBe(threeRoles ? `alm-${carrier}-${scenario.scenarioKey}-recipient-b` : undefined);
                 expect(scenario.successor?.recipeId).toBe(twoPages ? `alm-${carrier}-${scenario.scenarioKey}-successor` : undefined);
+                expect(toAlmConformanceRoleRecipe(scenario, 'sibling')).toBe(scenario.sibling);
+                expect(scenario.sibling?.recipeId).toBe(twoSessions ? `alm-${carrier}-${scenario.scenarioKey}-sibling` : undefined);
             }
         }
     });
@@ -328,14 +341,19 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('routes every carrier over one WS topic the product admits', () => {
+    it('routes every carrier over one room WS topic the product admits, and the world cell over its own app topic', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            const topicIds = toRecipes(createAlmConformanceRecipes(toConformanceInput(carrier)))
-                .flatMap((recipe) => recipe.commands.flatMap(toRoutedTopicIds));
+            const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
+            const topicIdsOf = (world: boolean) =>
+                toAllRoleRecipes(scenarios.filter((scenario) => (scenario.scenarioId === 'world-routing') === world))
+                    .flatMap((recipe) => recipe.commands.flatMap(toRoutedTopicIds));
 
-            expect(topicIds.length).toBeGreaterThan(0);
-            expect(new Set(topicIds)).toEqual(new Set([CONFORMANCE_TOPIC_ID]));
-            expect(validateRallarWsUserTopicId(CONFORMANCE_TOPIC_ID).errors).toEqual([]);
+            expect(topicIdsOf(false).length).toBeGreaterThan(0);
+            expect(new Set(topicIdsOf(false))).toEqual(new Set([CONFORMANCE_TOPIC_ID]));
+            expect(new Set(topicIdsOf(true))).toEqual(new Set([WORLD_TOPIC_ID]));
+        }
+        for (const topicId of [CONFORMANCE_TOPIC_ID, WORLD_TOPIC_ID]) {
+            expect(validateRallarWsUserTopicId(topicId).errors).toEqual([]);
         }
     });
 
@@ -456,6 +474,7 @@ describe('alm-conformance recipe family', () => {
             'receipted-audience',
             'receipted-audience',
             'receipted-audience',
+            ...AUDIENCE_KEYS,
             'durable-takeover'
         ]);
         expect(
@@ -467,6 +486,9 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
+            ['full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],

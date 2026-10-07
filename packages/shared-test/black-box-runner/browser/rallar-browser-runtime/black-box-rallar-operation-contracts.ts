@@ -295,7 +295,11 @@ export interface BlackBoxRallarMessageSendInput {
     readonly topicId: string | undefined;
     readonly payload: RallarMessagePayload;
     readonly roomRef: BlackBoxRallarRoomRef | undefined;
-    readonly scope: 'room' | 'world' | undefined;
+    readonly scope: 'room' | 'world' | 'principal' | undefined;
+    /** With scope `principal`: the principal whose live sessions in the room the send reaches. */
+    readonly principalId: string | undefined;
+    /** Absent, the send names no fixed audience. */
+    readonly recipientPeer: 'receiver' | undefined;
     readonly reliability: 'best-effort' | 'at-least-once' | undefined;
     readonly ack: ALAckMode | undefined;
     /** Absent, the send is volatile. */

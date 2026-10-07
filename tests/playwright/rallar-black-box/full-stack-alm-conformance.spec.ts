@@ -52,12 +52,21 @@ import { openSuccessorPage, runRecipeTrioOnSameContext } from './full-stack-same
 import {
     createThreeAgentRun,
     runRecipeTrioOnThreeAgents,
+    type ThirdAgentRole,
     type ThreeAgentRun
 } from './full-stack-three-agent-run.ts';
 import type { PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 import { toPageDiagnosticsFile, type PageDiagnosticsFile } from './to-page-diagnostics-file.ts';
 
-type TwoAgentScenarioFamily = Exclude<AlmConformanceLaneFamily, 'three-agent' | 'same-context'>;
+type TwoAgentScenarioFamily = Exclude<AlmConformanceLaneFamily, 'three-agent' | 'same-context' | 'same-principal'>;
+
+type ThreeAgentScenarioFamily = Extract<AlmConformanceLaneFamily, 'three-agent' | 'same-principal'>;
+
+/** The role of each three-agent family's third agent, the one it adds to the sender and the receiver. */
+const THIRD_AGENT_ROLES: Readonly<Record<ThreeAgentScenarioFamily, ThirdAgentRole>> = {
+    'three-agent': 'recipient-b',
+    'same-principal': 'sibling'
+};
 
 interface ObservationCell {
     readonly run: TwoAgentRun;
@@ -157,39 +166,42 @@ test.describe('ALM conformance lane', () => {
             });
         }
 
-        test(`three-agent family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
-            test.skip(
-                selectScenarios(toPlanningSelection(), carrier, 'three-agent').length === 0,
-                `no ${scope} ALM scenario over ${carrier} declares three roles`
-            );
-            test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
+        for (const family of ['three-agent', 'same-principal'] as const) {
+            test(`${family} family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
+                test.skip(
+                    selectScenarios(toPlanningSelection(), carrier, family).length === 0,
+                    `no ${scope} ALM scenario over ${carrier} declares the ${THIRD_AGENT_ROLES[family]} role`
+                );
+                test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
 
-            const run = await createThreeAgentRun({
-                browser,
-                request,
-                testInfo,
-                runId: `alm-${carrier}-three-agent-${uniqueSuffix()}`
-            });
-            let scenarioFailed = false;
-            try {
-                await runThreeAgentScenarios(run, carrier);
-            }
-            catch (scenarioError) {
-                scenarioFailed = true;
-                throw scenarioError;
-            }
-            finally {
-                await recordObservation({
-                    run,
-                    family: 'three-agent',
-                    participants: [run.sender, run.receiver, run.recipientB],
+                const run = await createThreeAgentRun({
+                    browser,
+                    request,
                     testInfo,
-                    carrier,
-                    cellOutcome: toCellOutcome(testInfo, scenarioFailed)
+                    runId: `alm-${carrier}-${family}-${uniqueSuffix()}`,
+                    thirdRole: THIRD_AGENT_ROLES[family]
                 });
-                await run.close();
-            }
-        });
+                let scenarioFailed = false;
+                try {
+                    await runThreeAgentScenarios(run, carrier, family);
+                }
+                catch (scenarioError) {
+                    scenarioFailed = true;
+                    throw scenarioError;
+                }
+                finally {
+                    await recordObservation({
+                        run,
+                        family,
+                        participants: [run.sender, run.receiver, run.third],
+                        testInfo,
+                        carrier,
+                        cellOutcome: toCellOutcome(testInfo, scenarioFailed)
+                    });
+                    await run.close();
+                }
+            });
+        }
 
         test(`same-context family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
             test.skip(
@@ -281,21 +293,29 @@ async function runAlmConformanceScenarios(
 
 async function runThreeAgentScenarios(
     run: ThreeAgentRun,
-    carrier: AlmConformanceCarrier
+    carrier: AlmConformanceCarrier,
+    family: ThreeAgentScenarioFamily
 ): Promise<void> {
-    for (const scenario of selectScenarios(toRunSelection(run), carrier, 'three-agent')) {
-        if (scenario.recipientB === undefined) {
-            throw new Error(`${scenario.scenarioKey} declares three roles without a recipient-b recipe.`);
+    const thirdRole = THIRD_AGENT_ROLES[family];
+    for (const scenario of selectScenarios(toRunSelection(run), carrier, family)) {
+        const third = toAlmConformanceRoleRecipe(scenario, thirdRole);
+        if (third === undefined) {
+            throw new Error(`${scenario.scenarioKey} declares three roles without a ${thirdRole} recipe.`);
         }
-        const outcome = await runRecipeTrioOnThreeAgents(run, { ...scenario, recipientB: scenario.recipientB });
-        for (const role of ['receiver', 'recipientB', 'sender'] as const) {
-            expect.soft(outcome[role].ok, `${scenario.scenarioKey} ${role}: ${outcome[role].summary}`).toBe(true);
+        const outcome = await runRecipeTrioOnThreeAgents(run, {
+            sender: scenario.sender,
+            receiver: scenario.receiver,
+            third
+        });
+        for (const role of ['receiver', 'third', 'sender'] as const) {
+            const name = role === 'third' ? thirdRole : role;
+            expect.soft(outcome[role].ok, `${scenario.scenarioKey} ${name}: ${outcome[role].summary}`).toBe(true);
         }
         if (hasIdentityEvidence(scenario)) {
             await assertScenarioIdentity(run, scenario, [
                 { role: 'sender', agent: run.sender, outcome: outcome.sender },
                 { role: 'receiver', agent: run.receiver, outcome: outcome.receiver },
-                { role: 'recipient-b', agent: run.recipientB, outcome: outcome.recipientB }
+                { role: thirdRole, agent: run.third, outcome: outcome.third }
             ]);
         }
     }

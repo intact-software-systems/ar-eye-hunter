@@ -29,8 +29,10 @@ type MessageSendOptions = Pick<
     'roomRef' | 'scope' | 'reliability' | 'ack' | 'durability' | 'onStorageUnavailable' | 'minSnapshotVersion' | 'qos'
 >;
 
+type MessageSendAudience = Pick<BlackBoxRallarMessageSendInput, 'toPeer' | 'principalId' | 'recipientPeer'>;
+
 const MESSAGE_CARRIERS: readonly BlackBoxRallarMessageSendInput['carrier'][] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
-const MESSAGE_SCOPES: readonly NonNullable<BlackBoxRallarMessageSendInput['scope']>[] = ['room', 'world'];
+const MESSAGE_SCOPES: readonly NonNullable<BlackBoxRallarMessageSendInput['scope']>[] = ['room', 'world', 'principal'];
 const MESSAGE_RELIABILITIES: readonly NonNullable<BlackBoxRallarMessageSendInput['reliability']>[] = [
     'best-effort',
     'at-least-once'
@@ -45,6 +47,9 @@ const MESSAGE_PEER_ROLES: readonly NonNullable<BlackBoxRallarMessageSendInput['t
     'server',
     'receiver'
 ];
+const MESSAGE_RECIPIENT_PEER_ROLES: readonly NonNullable<BlackBoxRallarMessageSendInput['recipientPeer']>[] = [
+    'receiver'
+];
 /** Every field an ordinary send names and a replay does not: the replayed envelope already fixes them all. */
 const REPLAY_REFUSED_FIELDS = [
     'carrier',
@@ -53,6 +58,8 @@ const REPLAY_REFUSED_FIELDS = [
     'payload',
     'roomRef',
     'scope',
+    'principalId',
+    'recipientPeer',
     'reliability',
     'ack',
     'durability',
@@ -106,7 +113,7 @@ function decodeOrdinarySend(
     if (!('payload' in value) || !isRallarMessagePayload(payload)) {
         return Either.ofLeft({ message: 'messages.send.payload is required.' });
     }
-    return decodeMessagePeerRole(value.toPeer).flatMap(
+    return decodeMessageAudience(value).flatMap(
         (issue) => Either.ofLeft(issue),
         (peer) =>
             decodeMessageSendIdentity(value).flatMap(
@@ -126,16 +133,19 @@ function decodeOrdinarySend(
     );
 }
 
-function decodeMessagePeerRole(
-    value: unknown
-): Either<BlackBoxRallarInputIssue, Pick<BlackBoxRallarMessageSendInput, 'toPeer'>> {
-    if (value === undefined) {
-        return Either.ofRight({ toPeer: undefined });
+/** Who the send reaches beyond its scope: one peer, the principal of a principal scope, or a fixed audience. */
+function decodeMessageAudience(
+    record: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, MessageSendAudience> {
+    const toPeer = MESSAGE_PEER_ROLES.find((role) => role === record.toPeer);
+    if (record.toPeer !== undefined && toPeer === undefined) {
+        return Either.ofLeft({ message: 'messages.send.toPeer must be server or receiver.' });
     }
-    const toPeer = MESSAGE_PEER_ROLES.find((role) => role === value);
-    return toPeer === undefined
-        ? Either.ofLeft({ message: 'messages.send.toPeer must be server or receiver.' })
-        : Either.ofRight({ toPeer });
+    const recipientPeer = MESSAGE_RECIPIENT_PEER_ROLES.find((role) => role === record.recipientPeer);
+    if (record.recipientPeer !== undefined && recipientPeer === undefined) {
+        return Either.ofLeft({ message: 'messages.send.recipientPeer must be receiver.' });
+    }
+    return Either.ofRight({ toPeer, principalId: decodeBlackBoxCommandString(record.principalId), recipientPeer });
 }
 
 function decodeMessageSendIdentity(
@@ -167,7 +177,7 @@ function decodeMessageSendIdentity(
 function decodeMessageSendOptions(
     record: BlackBoxRallarCommandRecord
 ): Either<BlackBoxRallarInputIssue, MessageSendOptions> {
-    const scope = decodeKnownSendOption(record.scope, MESSAGE_SCOPES, 'scope must be room, world, or all');
+    const scope = decodeKnownSendOption(record.scope, MESSAGE_SCOPES, 'scope must be room, world, or principal');
     const reliability = decodeKnownSendOption(
         record.reliability,
         MESSAGE_RELIABILITIES,

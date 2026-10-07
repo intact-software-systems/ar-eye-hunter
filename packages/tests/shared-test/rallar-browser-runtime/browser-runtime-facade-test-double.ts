@@ -501,7 +501,7 @@ export function openFacadeDelivery(
 /** A presence entry of room-1 whose lease runs a minute past now, unless the case states its own. */
 export function toRoomRosterSession(
     sessionId: string,
-    lease: Readonly<{ status?: 'active' | 'disconnected'; expiresAtEpochMs?: number; }> = {}
+    lease: Readonly<{ status?: 'active' | 'disconnected'; expiresAtEpochMs?: number; principalId?: string; }> = {}
 ): GroupPresenceSession {
     const nowMs = Date.now();
     const entry = {
@@ -509,8 +509,8 @@ export function toRoomRosterSession(
         workspaceId: 'workspace-1',
         groupId: 'room-1',
         sessionId,
-        // Hosted agents may all log in as one user, so the principal never tells two sessions apart.
-        principalId: 'client-1',
+        // Hosted agents may all log in as one user, so by default the principal never tells two sessions apart.
+        principalId: lease.principalId ?? 'client-1',
         generationId: `${sessionId}-generation`,
         generationVersion: 1,
         connectedAtEpochMs: nowMs - 5_000,

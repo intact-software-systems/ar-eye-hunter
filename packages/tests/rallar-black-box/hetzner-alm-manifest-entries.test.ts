@@ -186,6 +186,15 @@ describe('ALM conformance hosted lane families', () => {
 
         expect(toFamilyCells(['same-context']).filter((cell) => hosted.includes(cell))).toEqual([]);
     });
+
+    // The audience cells' lane evidence is local and the hosted full read's; manifests 18 and 22 stay as recorded.
+    it('leaves the same-principal family out of every hosted entry', () => {
+        const hosted = [createAlmConformance2AgentEntry(), createAlmConformance3AgentEntry()].flatMap(toStartedCells);
+        const samePrincipal = toFamilyCells(['same-principal']);
+
+        expect(samePrincipal).toEqual(expect.arrayContaining(['alm-ws-principal-delivery', 'alm-rtc-world-routing']));
+        expect(samePrincipal.filter((cell) => hosted.includes(cell))).toEqual([]);
+    });
 });
 
 describe('ALM combined recipient-b ACK-hold ordering', () => {

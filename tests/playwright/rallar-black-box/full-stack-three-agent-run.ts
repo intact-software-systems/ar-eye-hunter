@@ -4,6 +4,7 @@ import type {
     TestInfo
 } from '@playwright/test';
 
+import type { AlmConformanceRole } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     cleanupRallarPage,
@@ -21,17 +22,23 @@ import {
     type TwoAgentRunParticipant
 } from './full-stack-helpers.ts';
 
-/** The two-agent run plus the second, distinguishable recipient (D45). */
+/**
+ * The run's third agent: the second, distinguishable recipient (D45), user C, or a second session of the sender's
+ * principal, user A signed in again in a browser context of its own.
+ */
+export type ThirdAgentRole = Extract<AlmConformanceRole, 'recipient-b' | 'sibling'>;
+
+/** The two-agent run plus its third agent. */
 export interface ThreeAgentRun extends TwoAgentRun {
-    readonly recipientB: TwoAgentRunParticipant;
+    readonly third: TwoAgentRunParticipant;
 }
 
 export interface RecipeTrio extends RecipePair {
-    readonly recipientB: RallarBlackBoxTestRecipe;
+    readonly third: RallarBlackBoxTestRecipe;
 }
 
 export interface RecipeTrioOutcome extends RecipePairOutcome {
-    readonly recipientB: RecipeRunOutcome;
+    readonly third: RecipeRunOutcome;
 }
 
 interface CreateThreeAgentRunInput {
@@ -39,20 +46,21 @@ interface CreateThreeAgentRunInput {
     readonly request: APIRequestContext;
     readonly testInfo: TestInfo;
     readonly runId: string;
+    readonly thirdRole: ThirdAgentRole;
 }
 
 export async function createThreeAgentRun(input: CreateThreeAgentRunInput): Promise<ThreeAgentRun> {
     const run = await createTwoAgentRun(input);
     const opened: TwoAgentRunParticipant[] = [];
     try {
-        const recipientB = await openRecipientB(input, run);
-        opened.push(recipientB);
-        await waitForControlRunAgent(input.request, input.runId, recipientB.agentId);
+        const third = await openThirdAgent(input, run);
+        opened.push(third);
+        await waitForControlRunAgent(input.request, input.runId, third.agentId);
         return {
             ...run,
-            recipientB,
+            third,
             close: async () => {
-                await Promise.all([run.close(), closeParticipant(recipientB)]);
+                await Promise.all([run.close(), closeParticipant(third)]);
             }
         };
     }
@@ -63,7 +71,7 @@ export async function createThreeAgentRun(input: CreateThreeAgentRunInput): Prom
 }
 
 /**
- * Both recipients connect before the sender starts, as the receiver does in the two-agent run. recipient-b starts
+ * Both recipients connect before the sender starts, as the receiver does in the two-agent run. The third agent starts
  * only once the receiver has connected: the receiver's prologue then creates the run's group and owns it, so the
  * roles that leave the group (recipient-b, the sender) are never its only owner, whose leave is refused.
  */
@@ -72,29 +80,30 @@ export async function runRecipeTrioOnThreeAgents(
     recipes: RecipeTrio
 ): Promise<RecipeTrioOutcome> {
     const receiverRun = await startRecipientRecipeRun(run, run.receiver, recipes.receiver);
-    const recipientBRun = await startRecipientRecipeRun(run, run.recipientB, recipes.recipientB);
-    const [sender, receiver, recipientB] = await Promise.all([
+    const thirdRun = await startRecipientRecipeRun(run, run.third, recipes.third);
+    const [sender, receiver, third] = await Promise.all([
         runRecipeOnAgent(run, run.sender, recipes.sender),
         receiverRun.outcome,
-        recipientBRun.outcome
+        thirdRun.outcome
     ]);
-    return { sender, receiver, recipientB };
+    return { sender, receiver, third };
 }
 
-/** Each agent names its own connections, so the second recipient uses the receiver's connection label. */
-async function openRecipientB(input: CreateThreeAgentRunInput, run: TwoAgentRun): Promise<TwoAgentRunParticipant> {
+/** Each agent names its own connections, so the third agent uses the receiver's connection label. */
+async function openThirdAgent(input: CreateThreeAgentRunInput, run: TwoAgentRun): Promise<TwoAgentRunParticipant> {
     const config = readFullStackConfig();
-    const agentId = uniqueAgentId(input.testInfo, 'alm-recipient-b');
-    const opened = await openBrowserControlAgent(input.browser, config, config.userC, {
+    const user = input.thirdRole === 'sibling' ? config.userA : config.userC;
+    const agentId = uniqueAgentId(input.testInfo, `alm-${input.thirdRole}`);
+    const opened = await openBrowserControlAgent(input.browser, config, user, {
         runId: input.runId,
         agentId,
         groupId: run.group.groupId,
         connection: run.receiver.connection,
-        diagnosticsRole: 'recipient-b'
+        diagnosticsRole: input.thirdRole
     });
     return {
         agentId,
-        actor: config.userC.actor,
+        actor: user.actor,
         connection: run.receiver.connection,
         context: opened.context,
         page: opened.page,
