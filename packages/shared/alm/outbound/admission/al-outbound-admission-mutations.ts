@@ -125,9 +125,9 @@ export type ALOutboundCommitFenceIssue =
 /** The head a minting admission advances, expiring with the message rows it is written beside. */
 export function toALOutboundOrderingHeadMutations(
     head: ALOutboundOrderingHead | undefined,
-    expireAtTimestamp: number | undefined
+    expireAtTimestamp: number
 ): readonly ALOutboundAdmissionMutation[] {
-    return head === undefined || expireAtTimestamp === undefined
+    return head === undefined
         ? []
         : [{ kind: 'set-ordering-head', trackKey: head.trackKey, seq: head.seq, expireAtTimestamp }];
 }

@@ -195,9 +195,8 @@ function computeMessageMutations<TPrepared>(
             seq: read.msg.ordering.seq,
             msgId: read.msg.id.msgId,
             expireAtTimestamp: expiresAtMs
-        });
+        }, ...toALOutboundOrderingHeadMutations(read.orderingHead, expiresAtMs));
     }
-    mutations.push(...toALOutboundOrderingHeadMutations(read.orderingHead, expiresAtMs));
     appendSupersedenceMutations(mutations, read);
     return mutations;
 }

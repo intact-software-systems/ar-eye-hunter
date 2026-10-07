@@ -110,6 +110,25 @@ describe('outbound sequence minting', () => {
         expect(sent).toHaveLength(2);
     });
 
+    it('answers a second admission of a still-pending minting message with the request, not a sequence', async () => {
+        const stores = createDefaultOutboundTestStores();
+        const { runtime } = createMintingRuntime(stores);
+        const late = createRoundEvent('late', { orderingKey: 'game-1', epoch: 1 });
+        const early = createRoundEvent('early', { orderingKey: 'game-1', epoch: 1 });
+        interleaveAfterFirstDecisionRead(stores, async () => {
+            const bundle = await computeOutboundTestAdmission(stores.admissionStore, early, MINTING_PLANNER);
+            expect(await stores.admissionStore.commitBundle(bundle)).toBe('committed');
+        });
+        expect((await runtime.enqueueIfAbsent(late)).verdict.kind).toBe('pending');
+
+        const again = await runtime.enqueueIfAbsent(late);
+
+        expect(again.verdict.kind).toBe('pending');
+        expect(again.message.ordering?.seq).toBeUndefined();
+        expect(again.entries).toHaveLength(1);
+        expect(decodePersistedALMessage(again.entries[0]!.resource).ordering).toEqual({ orderingKey: 'game-1', epoch: 1 });
+    });
+
     it('mints nothing for a plan that does not ask for a sequence', async () => {
         const stores = createDefaultOutboundTestStores();
         const runtime = createDefaultOutboundTestRuntime({
