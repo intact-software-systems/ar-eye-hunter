@@ -219,6 +219,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         setRooms([]);
         clearSnapshot();
         setRoundTransition(undefined);
+        setLastHunterEvent(undefined);
         setError(undefined);
         setPhase('signed-out', initialRelicDiagnostics(undefined));
     }, [clearSnapshot, closeSubscriptions, runtime, setPhase]);
@@ -351,6 +352,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         }));
         if (nextRoomId !== previousRoomId) {
             setRoundTransition(undefined);
+            setLastHunterEvent(undefined);
         }
 
         if (!nextRoomId) {
@@ -375,6 +377,7 @@ export function useRelicHunters(): RelicHuntersConnection {
             roomIdRef.current = undefined;
             clearSnapshot();
             setRoundTransition(undefined);
+            setLastHunterEvent(undefined);
             setError(undefined);
             setPhase('signed-out', initialRelicDiagnostics(undefined));
             return;
@@ -652,6 +655,7 @@ export function useRelicHunters(): RelicHuntersConnection {
             const result = await work();
             if (result.roomId !== roomIdRef.current) {
                 setRoundTransition(undefined);
+                setLastHunterEvent(undefined);
             }
             setRoomId(result.roomId);
             setRooms(result.roomState.rooms);

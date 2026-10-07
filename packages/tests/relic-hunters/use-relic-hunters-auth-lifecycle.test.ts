@@ -395,6 +395,40 @@ describe('useRelicHunters auth lifecycle', () => {
         expect(current?.roundTransition).toEqual(nextRoomStarted);
     });
 
+    it('forgets the hunter event when the page signs out', async () => {
+        const channel = captureHunterEventChannel();
+        vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(20));
+        const refused = refusedHunterEvent(session.sessionId);
+        await renderHook();
+        await waitForState(() => current?.diagnostics.snapshotReady === true && channel.onEvent() !== undefined);
+        await act(async () => {
+            await channel.onEvent()?.(refused, toHunterMessage(refused));
+        });
+        expect(current?.lastHunterEvent).toEqual(refused);
+
+        await emitAuthState({ authenticated: false, reason: 'unauthorized' });
+
+        expect(current?.lastHunterEvent).toBeUndefined();
+    });
+
+    it('forgets the hunter event of the room the page left', async () => {
+        const channel = captureHunterEventChannel();
+        const rooms = captureRoomsChange();
+        vi.mocked(fetchRelicSnapshot).mockImplementation(async (roomId) => relicSnapshot(20, roomId));
+        const refused = refusedHunterEvent(session.sessionId);
+        await renderHook();
+        await waitForState(() => current?.diagnostics.snapshotReady === true && channel.onEvent() !== undefined);
+        await act(async () => {
+            await channel.onEvent()?.(refused, toHunterMessage(refused));
+        });
+        expect(current?.lastHunterEvent).toEqual(refused);
+
+        await rooms.enter('relic-room-2');
+        await waitForState(() => current?.snapshot?.roomId === 'relic-room-2');
+
+        expect(current?.lastHunterEvent).toBeUndefined();
+    });
+
     async function renderHook(): Promise<void> {
         root = createRoot(container);
         function Harness() {

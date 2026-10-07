@@ -196,7 +196,7 @@ describe('Relic Hunter server game service', () => {
         });
     });
 
-    it('ends a WebSocket command that breaks a rule as a value and tells the acting hunter\'s own sessions the rule (Q6, C12, D72)', async () => {
+    it('ends a WebSocket command that breaks a rule as a value and tells the acting hunter\'s own sessions the rule', async () => {
         const fake = createFakeRallar();
         await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
 
@@ -459,7 +459,7 @@ describe('Relic Hunter server game service', () => {
         });
     });
 
-    it('publishes the hunter\'s recorded action to the hunter\'s own sessions in the room, right after the snapshot of its submission (D168)', async () => {
+    it('publishes the hunter\'s recorded action to the hunter\'s own sessions in the room, right after the snapshot of its submission', async () => {
         const fake = createFakeRallar();
         const service = await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
         await service.applyCommand(joinCommand('room-1'), ALICE);

@@ -281,7 +281,7 @@ class RelicGameService implements RelicHunterGameService {
     }
 }
 
-/** A publication failure after the write is the command's outcome, not a reason to retry it (C12). */
+/** A publication failure after the write is the command's outcome, not a reason to retry it. */
 async function toPublishFailure(publish: () => Promise<void>): Promise<Error | undefined> {
     try {
         await publish();
