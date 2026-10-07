@@ -3,12 +3,13 @@ import {
     isRelicRoundTransitionEvent,
     RELIC_TOPICS,
     RELIC_TYPES,
+    toRelicRoomGroupRef,
     type RelicRoundTransitionEvent
 } from '@relic-hunters/mod.ts';
 import type { RallarFacade, RallarMessage, RallarUnsubscribe } from '@shared-web/browser/rallar.ts';
+import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 
 export interface RelicRoundTransitionSubscription {
     readonly onTransition: (event: RelicRoundTransitionEvent) => void;
@@ -25,11 +26,7 @@ export function subscribeRelicRoundTransitions(
     roomId: string,
     subscription: RelicRoundTransitionSubscription
 ): RallarUnsubscribe {
-    const roomRef: GroupRef = {
-        applicationId: DEFAULT_STATE_APPLICATION_ID,
-        workspaceId: DEFAULT_STATE_WORKSPACE_ID,
-        groupId: roomId
-    };
+    const roomRef = toRelicRoomGroupRef(roomId);
     const channel = facade.messages.room<RelicRoundTransitionEvent>({
         topicId: RELIC_TOPICS.event,
         typeId: RELIC_TYPES.event,
@@ -51,9 +48,6 @@ export function subscribeRelicRoundTransitions(
 }
 
 function isRoomMessage(message: RallarMessage<RelicRoundTransitionEvent>, roomRef: GroupRef): boolean {
-    const targets = message.raw.targets;
-    return targets?.mode === 'broadcast' &&
-        targets.scope === 'room' &&
-        targets.groupRef !== undefined &&
-        isSameGroupRef(targets.groupRef, roomRef);
+    const target = readALTargetGroupRef(message.raw);
+    return message.raw.targets?.mode === 'broadcast' && target !== undefined && isSameGroupRef(target, roomRef);
 }

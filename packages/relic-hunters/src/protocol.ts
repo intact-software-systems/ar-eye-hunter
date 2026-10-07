@@ -1,3 +1,6 @@
+import type { GroupRef } from '@shared/api/group-types.ts';
+import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+
 export const RELIC_PROTOCOL_VERSION = 1 as const;
 
 export const RELIC_TOPICS = {
@@ -13,3 +16,12 @@ export const RELIC_TYPES = {
     event: 'relic.event.v1',
     aiPlanningProposal: 'relic.ai.planning-proposal.v1'
 } as const;
+
+/** The group a Relic room's messages address: the room in the default application and workspace. */
+export function toRelicRoomGroupRef(roomId: string): GroupRef {
+    return {
+        applicationId: DEFAULT_STATE_APPLICATION_ID,
+        workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+        groupId: roomId
+    };
+}

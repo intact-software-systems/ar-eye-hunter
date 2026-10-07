@@ -1,5 +1,5 @@
 import {
-    isRelicSnapshot,
+    decodeRelicSnapshotPayload,
     type RelicActionInput,
     type RelicCharacterId,
     type RelicPublicSnapshot,
@@ -246,11 +246,11 @@ export function useRelicHunters(): RelicHuntersConnection {
     }, [acceptSnapshotCandidate]);
 
     const acceptWsSnapshot = useCallback((event: RelicServerEvent) => {
-        acceptSnapshotFromSource(decodeRelicSnapshotPayload(event), 'rallar-ws');
+        acceptSnapshotFromSource(decodeRelicSnapshotPayload(event).right, 'rallar-ws');
     }, [acceptSnapshotFromSource]);
 
     const acceptRtcSnapshot = useCallback((event: RelicServerEvent) => {
-        acceptSnapshotFromSource(decodeRelicSnapshotPayload(event), 'rallar-rtc');
+        acceptSnapshotFromSource(decodeRelicSnapshotPayload(event).right, 'rallar-rtc');
     }, [acceptSnapshotFromSource]);
 
     const hydrateSnapshotForRoom = useCallback(async (nextRoomId: string) => {
@@ -299,6 +299,10 @@ export function useRelicHunters(): RelicHuntersConnection {
     }, [acceptSnapshotCandidate, runtime]);
 
     const acceptRoundTransition = useCallback((event: RelicRoundTransitionEvent) => {
+        const held = snapshotRef.current;
+        if (held !== undefined && held.createdAtEpochMs !== event.createdAtEpochMs) {
+            return;
+        }
         setRoundTransition(event);
         setDiagnostics((prev) => ({
             ...prev,
@@ -831,18 +835,6 @@ export function useRelicHunters(): RelicHuntersConnection {
         setRoundLimit,
         resetExpedition
     ]);
-}
-
-/** A payload carries the snapshot itself or the server event around it; anything else is no snapshot. */
-function decodeRelicSnapshotPayload(value: unknown): RelicPublicSnapshot | undefined {
-    const next = isRelicServerEvent(value) ? value.snapshot : value;
-    return isRelicSnapshot(next) ? next : undefined;
-}
-
-function isRelicServerEvent(value: unknown): value is RelicServerEvent {
-    return typeof value === 'object' &&
-        value !== null &&
-        'snapshot' in value;
 }
 
 function commandInFlightKey(input: RelicCommandDraft): string {

@@ -25,6 +25,7 @@ const ROOM_REF = {
 const ROUND_STARTED: RelicRoundTransitionEvent = {
     protocolVersion: RELIC_PROTOCOL_VERSION,
     gameId: 'room-1',
+    createdAtEpochMs: 1,
     round: 1,
     phase: 'planning',
     transition: 'round-started',
@@ -89,6 +90,23 @@ describe('the Relic round-transition channel', () => {
         await double.deliver(ROUND_STARTED, toRoomMessage(ROUND_STARTED, 'room-2'));
         await double.deliver(otherGame, toRoomMessage(otherGame, 'room-1'));
         await double.deliver(malformed, toRoomMessage(malformed, 'room-1'));
+
+        expect(transitions).toEqual([]);
+    });
+});
+
+describe('the Relic round-transition payload', () => {
+    it('drops a transition that names no game incarnation', async () => {
+        const double = createFacadeDouble();
+        const transitions: RelicRoundTransitionEvent[] = [];
+        subscribeRelicRoundTransitions(double.facade, 'room-1', {
+            onTransition: (event) => transitions.push(event),
+            onResyncRequired: () => undefined
+        });
+        const { createdAtEpochMs: _createdAtEpochMs, ...withoutIncarnation } = ROUND_STARTED;
+        const unnamed: RelicRoundTransitionEvent = JSON.parse(JSON.stringify(withoutIncarnation));
+
+        await double.deliver(unnamed, toRoomMessage(unnamed, 'room-1'));
 
         expect(transitions).toEqual([]);
     });

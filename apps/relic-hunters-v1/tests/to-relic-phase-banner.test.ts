@@ -27,5 +27,5 @@ function toTransition(
     phase: RelicRoundTransitionEvent['phase'],
     transition: RelicRoundTransitionEvent['transition']
 ): RelicRoundTransitionEvent {
-    return { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: 'room-1', round, phase, transition, text: '' };
+    return { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: 'room-1', createdAtEpochMs: 1, round, phase, transition, text: '' };
 }

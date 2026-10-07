@@ -334,6 +334,7 @@ describe('Relic Hunter server game service', () => {
         expect(JSON.parse(published.message.payload.resource)).toEqual({
             protocolVersion: RELIC_PROTOCOL_VERSION,
             gameId: 'room-1',
+            createdAtEpochMs: 1,
             round: 1,
             phase: 'planning',
             transition: 'round-started',

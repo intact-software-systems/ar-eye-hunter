@@ -1,4 +1,5 @@
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import { RELIC_PROTOCOL_VERSION } from './protocol.ts';
 
@@ -286,6 +287,8 @@ export type RelicRoundTransition = 'round-started' | 'round-resolved' | 'review-
 export interface RelicRoundTransitionEvent {
     readonly protocolVersion: typeof RELIC_PROTOCOL_VERSION;
     readonly gameId: string;
+    /** The creation time of the game incarnation whose round the transition moved. */
+    readonly createdAtEpochMs: number;
     readonly round: number;
     /** The phase the transition entered. */
     readonly phase: RelicGamePhase;
@@ -440,10 +443,17 @@ export function isRelicSnapshot(value: unknown): value is RelicPublicSnapshot {
         (value.setup === undefined || isRelicPublicSetupMetadata(value.setup));
 }
 
+/** A payload carries the snapshot itself or the server event around it; anything else is no snapshot. */
+export function decodeRelicSnapshotPayload(value: unknown): Either<TypeError, RelicPublicSnapshot> {
+    const next = isRecord(value) && 'snapshot' in value ? value.snapshot : value;
+    return isRelicSnapshot(next) ? Either.ofRight(next) : Either.ofLeft(new TypeError('not a Relic snapshot'));
+}
+
 export function isRelicRoundTransitionEvent(value: unknown): value is RelicRoundTransitionEvent {
     return isRecord(value) &&
         value.protocolVersion === RELIC_PROTOCOL_VERSION &&
         typeof value.gameId === 'string' &&
+        isFiniteNumber(value.createdAtEpochMs) &&
         isFiniteNumber(value.round) &&
         isRelicGamePhase(value.phase) &&
         isOneOf<RelicRoundTransition>(value.transition, [

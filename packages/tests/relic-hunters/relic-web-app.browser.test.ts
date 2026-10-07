@@ -708,6 +708,7 @@ function stubSnapshotFetchSequence(
 const ROUND_STARTED: RelicRoundTransitionEvent = {
     protocolVersion: RELIC_PROTOCOL_VERSION,
     gameId: 'room-1',
+    createdAtEpochMs: 1,
     round: 1,
     phase: 'planning',
     transition: 'round-started',

@@ -253,6 +253,43 @@ describe('useRelicHunters auth lifecycle', () => {
         expect(current?.snapshot?.updatedAtEpochMs).toBe(21);
     });
 
+    it('drops a round transition of another incarnation of the game the page holds', async () => {
+        const channels = captureRoomChannels();
+        vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(1));
+        await renderHook();
+        await waitForState(() => current?.diagnostics.snapshotReady === true && channels.get('relic-room-1')?.onTransition !== undefined);
+        const onTransition = channels.get('relic-room-1')!.onTransition!;
+        const otherIncarnation = { ...ROUND_STARTED, createdAtEpochMs: 7 };
+        const heldIncarnation = { ...ROUND_STARTED, createdAtEpochMs: 1 };
+
+        await act(async () => {
+            await onTransition(otherIncarnation, toRoomMessage(otherIncarnation));
+        });
+        expect(current?.roundTransition).toBeUndefined();
+        expect(current?.diagnostics.roundTransitionCues).toEqual([]);
+
+        await act(async () => {
+            await onTransition(heldIncarnation, toRoomMessage(heldIncarnation));
+        });
+        expect(current?.roundTransition).toEqual(heldIncarnation);
+        expect(current?.diagnostics.roundTransitionCues).toEqual(['1:round-started']);
+    });
+
+    it('cues a round transition of any incarnation while the page holds no snapshot', async () => {
+        const channels = captureRoomChannels();
+        vi.mocked(fetchRelicSnapshot).mockResolvedValue(undefined);
+        await renderHook();
+        await waitForState(() => channels.get('relic-room-1')?.onTransition !== undefined);
+        const anyIncarnation = { ...ROUND_STARTED, createdAtEpochMs: 7 };
+
+        await act(async () => {
+            await channels.get('relic-room-1')!.onTransition!(anyIncarnation, toRoomMessage(anyIncarnation));
+        });
+
+        expect(current?.snapshot).toBeUndefined();
+        expect(current?.roundTransition).toEqual(anyIncarnation);
+    });
+
     it('drops a round-transition resync that lands after the page signed out', async () => {
         const channels = captureRoomChannels();
         vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(20));
@@ -442,6 +479,7 @@ function createDeferred<T>(): Deferred<T> {
 const ROUND_STARTED: RelicRoundTransitionEvent = {
     protocolVersion: RELIC_PROTOCOL_VERSION,
     gameId: 'relic-room-1',
+    createdAtEpochMs: 20,
     round: 1,
     phase: 'planning',
     transition: 'round-started',

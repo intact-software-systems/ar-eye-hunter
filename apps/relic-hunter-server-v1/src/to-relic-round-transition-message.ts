@@ -1,6 +1,7 @@
 import {
     RELIC_TOPICS,
     RELIC_TYPES,
+    toRelicRoomGroupRef,
     toRelicRoundTrackKey,
     type RelicEventType,
     type RelicGamePhase,
@@ -13,10 +14,6 @@ import {
     newALRoute,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
-import {
-    DEFAULT_STATE_APPLICATION_ID,
-    DEFAULT_STATE_WORKSPACE_ID
-} from '@shared/api/state-types.ts';
 
 /** How long a round transition stays deliverable and repairable: the default round time limit. */
 export const RELIC_EVENT_TTL_MS = 60_000;
@@ -52,6 +49,7 @@ export function toRelicRoundTransitionEvent(
     return {
         protocolVersion: next.protocolVersion,
         gameId: next.gameId,
+        createdAtEpochMs: next.createdAtEpochMs,
         round: next.round,
         phase: next.phase,
         transition: rule.transition,
@@ -76,11 +74,7 @@ export function toRelicRoundTransitionMessage(
         RELIC_TYPES.event,
         event,
         {
-            groupRef: {
-                applicationId: DEFAULT_STATE_APPLICATION_ID,
-                workspaceId: DEFAULT_STATE_WORKSPACE_ID,
-                groupId: state.roomId
-            },
+            groupRef: toRelicRoomGroupRef(state.roomId),
             reliability: 'at-least-once',
             ack: 'receiver',
             ttlMs: RELIC_EVENT_TTL_MS,
