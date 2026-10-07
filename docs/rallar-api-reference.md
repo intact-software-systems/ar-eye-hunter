@@ -860,9 +860,12 @@ sender's `world`. The input validator returns every issue at once:
 `scope: 'principal'` needs the room and `principalId`, and a `principalId` needs
 `scope: 'principal'`; `recipientPeerIds` needs room scope and holds 1 to 256
 unique session ids; a send names `principalId` or `recipientPeerIds`, never
-both; and a principal or list send that resolves no room is refused like a room
-send without one (`missing-room`). A WS scope other than the three is refused
-with "WS scope must be room, world, or principal.".
+both; a send that states room or principal scope and resolves no room is refused
+like a room send without one (`missing-room`), while a `recipientPeerIds` send
+that names no room and has no default room resolves to `world` and is refused
+`fixed-audience-requires-room-scope`; and a `world` send on a `room.` topic is
+refused `world-on-room-topic` before either carrier admits it. A WS scope other
+than the three is refused with "WS scope must be room, world, or principal.".
 
 A principal or list audience is narrowed, never widened: a `principalId` with no
 live session in the room, or a list of sessions outside it, leaves an empty
@@ -875,8 +878,11 @@ room audience its receipt aggregate expects and its repair serves (D159).
 Receivers enforce the audience on both carriers: an RTC peer delivers a narrowed
 multicast only when the frozen audience names it, and the shared planner
 delivers a room broadcast that carries `recipientPeerIds` only at a listed
-session and relays it only to listed children. A WS client trusts the server's
-resolution.
+session and relays it only to listed children. On RTC a principal or list
+multicast still travels the room's overlay, so room peers that are not
+recipients relay its bytes; only the audience delivers it. A WS client trusts
+the server's resolution. Relic Hunters sends its AI suggestions to the asking
+hunter's principal over WS.
 
 The strategy picks the carrier per audience (D157):
 
@@ -896,7 +902,9 @@ listed room broadcast it was sent as.
 The WS server binds what it resolves to the sender's scope (D100, D158): a
 client's `world` broadcast reaches only connections authenticated in the
 sender's application and workspace, on every instance, since the cluster notice
-of a live `world` send carries that scope; a client's `principal` broadcast must
+of a live `world` send carries that scope, and the topic's fanout alone
+delivers it, once to each such connection, so a topic with fanout `none` relays
+no client `world` broadcast; a client's `principal` broadcast must
 name its room's `groupRef` in the sender's scope; and a client envelope whose
 broadcast scope is `all` is refused `unauthorized` at ingress, before routing,
 and reaches no one; a client's principal broadcast that names no room, and a

@@ -478,8 +478,8 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   `snapshotVersion` (R-S2c-ii-2). Every later attempt and every stored row keeps that audience, whatever
   the room has become.
 - A principal or fixed-list send narrows that audience at the same freeze (D159, D160):
-  `computeFrozenAudience` takes an optional `RtcAudienceNarrowing`,
-  `{ kind: 'principal', principalId }` keeping the admitted sessions of that principal and
+  `computeFrozenAudience` takes a required `narrowing: ALAudienceNarrowing | undefined`, `undefined`
+  freezing the whole room, `{ kind: 'principal', principalId }` keeping the admitted sessions of that principal and
   `{ kind: 'list', recipientPeerIds }` the admitted sessions the list names, in the origin freeze
   (`toRtcOriginFrozenMessage`) and in the carrier-gap path alike, so a room-bounded audience is one
   computation on RTC. A listed session the room does not admit is dropped silently, as a multicast's
@@ -611,7 +611,16 @@ notice of the server's `all` stays unscoped. A `principal` broadcast must name i
 `groupRef`, so its row is scoped by the group like a room send; one that names no room, and a `world`
 broadcast on a `room.` topic, are refused `malformed`. A client's `all` is refused
 `unauthorized` at ingress; the router's `toAll` and the server's own state-sync, CRDT and
-client-state rows keep their paths.
+client-state rows keep their paths. Under a topic router the topic's fanout alone carries a client's
+`world` broadcast: the service's inbound forwarding relays it only in the standalone composition, a
+fanout-`none` topic such as the CRDT topics sends no raw copy, and `live-only` or `outbox` sends one
+copy to each session of the scope, the outbox row as a scoped recipient per connection. A `world` live
+send that names neither an inbound nor a recipient scope, and a `world` row that captured none, are
+refused as an unscoped unicast is. A principal broadcast that names its room is a room audience on the
+cluster's live notice too: it rides the `room` notice with its narrowed sessions, so a notice of 8 000
+bytes or more falls back to the canonical inbound key as a room send does; the `principal` notice
+stays for the server's own principal rows. One predicate,
+[`isALAudienceSession`](../../al-contracts/al-audience-narrowing.ts), narrows a room on both carriers.
 
 In the production outbox fan-out (`forwardsRoomScopedMessages: false`) the server's own outbound owner
 sends the room message and keeps a `receiver` pending row for it, keyed by the origin and message id

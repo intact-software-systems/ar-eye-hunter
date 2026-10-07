@@ -414,8 +414,9 @@ trace fields without a general request/reply or trace lifecycle. Builders do not
 session/trace identity. `membershipEpoch` is copied into ordering epoch but not checked against
 authoritative membership. RTC snapshot floors are enforced as described in F3.
 
-[Shared policy](../../packages/shared/al-contracts/al-policy.ts) still maps leader and
-all-recipient ACK requests to subtree behavior. Generic broadcast recipient checks did not
+[Shared policy](../../packages/shared/al-contracts/al-policy.ts) still maps a leader ACK request
+to subtree behavior; an all-logical-recipients request maps to `receiver`
+([`normalize-al-qos-policy.ts`](../../packages/shared/al-contracts/normalize-al-qos-policy.ts)). Generic broadcast recipient checks did not
 resolve principal/world/fixed audience semantics, and WS supplied specialized audience handling;
 since A1 every audience has one meaning on both carriers: principal and fixed-list sends are room
 audiences narrowed at the RTC origin and at WS admission, the shared planner honours a
