@@ -926,8 +926,14 @@ retransmits the missing sequences to that requester alone, `repairPageMessages`
 and shared by every requester: the first receiver to NACK a sequence spends
 `maxRepairs` (1 by default), and another receiver missing the same sequence gets
 it from the receipt's retries instead. A report of a gap once the budget is
-spent settles the publication `skipped` with reason `repair-exhausted`, once. A
-`resync-required` NACK from a receiver settles the publication `relay-rejected`
+spent settles the publication `skipped` with reason `repair-exhausted`, once.
+Sequences follow commit order, so under contention a publication fenced out by
+the server's sender version takes the next sequence when its replay commits and
+two publications of one track can commit out of publish order; and since a
+receiver's ordering-track TTL defaults to the repository TTL (60 minutes), the
+lifetime of the server's head, a track silent for over an hour restarts at `seq`
+1 on both sides. A `resync-required` NACK from a receiver settles the
+publication `relay-rejected`
 (`{ relay: 'peer', peerId, reason: 'resync-required' }`) and removes its whole
 pending receipt, so no recipient is retried after it. The receiver invokes the
 recovery owner of the typed channel whose topic and type the publication names;
@@ -938,7 +944,8 @@ re-arms the owner.
 Relic Hunters publishes its round transitions this way. Each `relic.event.v1` on
 `room.relic.event` is a receipted room notification whose ordering key names the
 game's incarnation (its id and creation time, since a reset keeps the id) and
-whose epoch is the round, so every round is a new track:
+whose epoch is the round the transition enters, the finish entering the round
+past the last, so every round is a new track and no track spans a review:
 
 ```ts
 const message = newALBroadcastMessage(
@@ -952,7 +959,10 @@ const message = newALBroadcastMessage(
         reliability: 'at-least-once',
         ack: 'receiver',
         ttlMs: RELIC_EVENT_TTL_MS,
-        ordering: { orderingKey: `${gameId}:${createdAtEpochMs}`, epoch: round }
+        ordering: {
+            orderingKey: `${gameId}:${createdAtEpochMs}`,
+            epoch: event.transition === 'finished' ? round + 1 : round
+        }
     }
 );
 await rallarServer.ws.publish({ message, fanout: 'outbox' });

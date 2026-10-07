@@ -74,17 +74,20 @@ separate sequence service.
 ### 2.b Relic's round transitions ride a track per round (D151)
 
 The Relic server publishes a round-transition event on `room.relic.event` / `relic.event.v1` beside
-its snapshot whenever a command's rules emit a round transition: the round starting (`round_started`),
-the round resolving into review, and the review continuing into the next round or the finish. The
-event carries the game id, the round, the phase entered and the transition's text, with
-`ordering: { orderingKey: <gameId>:<createdAtEpochMs>, epoch: <round> }` and no `seq`,
-`reliability: 'at-least-once'`, `ack: 'receiver'` and `RELIC_EVENT_TTL_MS = 60_000` (the default round
-time limit): one track per round, keyed by the game incarnation, sequenced by the server. The key
-names the incarnation because a reset keeps the game id and starts a new game whose rounds would
+its snapshot whenever a command's rules emit a round transition: the round starting
+(`round_started`), the round resolving into review, and the review continuing into the next round or
+the finish. The event carries the game id and creation time, the round, the phase entered and the
+transition's text, with
+`ordering: { orderingKey: <gameId>:<createdAtEpochMs>, epoch: <round entered> }` and no `seq`,
+`reliability: 'at-least-once'`, `ack: 'receiver'` and `RELIC_EVENT_TTL_MS = 60_000` (the default
+round time limit): one track per round, keyed by the game incarnation, sequenced by the server. The
+key names the incarnation because a reset keeps the game id and starts a new game whose rounds would
 otherwise continue the previous incarnation's tracks (the server's head past the sequences a joiner
-expects); both fields are in the public snapshot, so the client's owner filters on the same key. A new round is a new epoch, which closes the
-previous track at every receiver (D142) and lets a joiner start clean at the next round boundary.
-The snapshot publication is unchanged and stays latest-wins.
+expects); both fields are in the public snapshot, so the client's owner filters on the same key. The
+epoch is the round the transition enters, and the finish enters the round past the last, so every
+track is bounded by one round's time limit and no track spans a review, which has no limit. A new
+round is a new epoch, which closes the previous track at every receiver (D142) and lets a joiner
+start clean at the next round boundary. The snapshot publication is unchanged and stays latest-wins.
 
 Declined: ordering the snapshots (2.a's 5th finding); one epoch for the whole game (a joiner would
 stay behind for the rest of the game); a key per round with epoch 0 (the epoch is the round's name
@@ -138,6 +141,13 @@ reloaded mid-game picks the cues up at the next round. Hosted manifests 18 and 2
 - Relic's per-game serialization is process-local (D72); the minted sequence is contiguous whichever
   instance publishes, and concurrent command application across instances stays Relic's own hazard.
 - A server-originated send has no conformance cell.
+- Sequences follow commit order: a publication fenced out by the server's sender version keeps its
+  request and takes the next sequence when its replay commits, so under contention two transitions
+  of one track can commit out of publish order (follow-up: first-in-first-out per track).
+- A track silent for over an hour restarts at `seq` 1 on both sides: the sender's head expires with
+  its sent rows and the receiver's track with its TTL.
+- The receiver's ordering-track TTL defaults to the repository TTL (60 minutes), so a receiver
+  remembers a track as long as its sender keeps the head.
 
 ## 3. Decisions (2026-10-06)
 
@@ -145,8 +155,9 @@ reloaded mid-game picks the cues up at the next round. Hosted manifests 18 and 2
    admission from a per-track ordering-head row under the sender-version fence; D24 narrowed (D150).**
    Declined: call-site or game-state minting; a sequence service.
 2. **Relic publishes a `relic.event.v1` round-transition event on a track per round (`orderingKey`
-   the game incarnation, its id and creation time; `epoch` the round), 60 s TTL, receipted; snapshots
-   stay latest-wins (D151).** Declined: ordered snapshots; one epoch per game; the game id alone.
+   the game incarnation, its id and creation time; `epoch` the round the transition enters, the
+   finish the round past the last), 60 s TTL, receipted; snapshots stay latest-wins (D151).**
+   Declined: ordered snapshots; one epoch per game; the game id alone.
 3. **The Relic client reads the stream through a typed channel with a REST-hydrating recovery owner,
    and the UI's live round cues come from it (D152).** Declined: two cue owners.
 4. **Server-side range repair is proven at the server fixture, the three-backend schedule and the
@@ -171,3 +182,13 @@ reloaded mid-game picks the cues up at the next round. Hosted manifests 18 and 2
 - Ordering of the Relic snapshot itself.
 - A fence on server tracks.
 - Relic's cluster-safe command serialization.
+
+**Review amendments.** The review of the implementation changed three things. The finish now enters
+the round past the last instead of riding the last round's track, because that track would otherwise
+span the review before it, which has no time limit, and outlive the receiver's memory of the track.
+The receiver's ordering-track TTL default moved from 5 minutes to the repository TTL (60 minutes),
+because a receiver that forgets a track before its sender drops the head reads a legitimate silence
+as a gap the sender can no longer repair. The round transition names the creation time of its game
+incarnation, and the page drops a transition of another incarnation than the snapshot it holds, so a
+late transition of a reset game never cues a banner over the new one. The commit-order and
+hour-long-silence limits that remain are recorded with the other limits (D155).

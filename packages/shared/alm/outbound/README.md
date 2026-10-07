@@ -37,12 +37,12 @@ requester spends `maxRepairs` and another requester of the same sequence falls b
 receipt's retries. Only the `outbox` fan-out mints; a keyed publish without a sequence at
 `live-only` or `none` is refused. Relic Hunters' round transitions are that track's consumer: one
 track per round, the game's incarnation (`${gameId}:${createdAtEpochMs}`, since a reset keeps the
-game id) as ordering key and the round as epoch (D151).
-[`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one predicate both owners
-share. A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges
-(`missingRanges`, at most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256 window
-can hold), as the `al.control.nack.v2` and `al.control.repair.v2` payloads and the planner's NACK
-plan do; [`decodeALSeqRanges`](../../al-contracts/al-seq-range.ts) is the one bounded range
+game id) as ordering key and the round the transition enters as epoch, the finish entering the round
+past the last (D151). [`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one
+predicate both owners share. A hint names what is missing as inclusive `ALSeqRange` `{ from, to }`
+ranges (`missingRanges`, at most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256
+window can hold), as the `al.control.nack.v2` and `al.control.repair.v2` payloads and the planner's
+NACK plan do; [`decodeALSeqRanges`](../../al-contracts/al-seq-range.ts) is the one bounded range
 decoder for the wire and the rows. A NACK and a repair request naming the same gap are one hint:
 the gap -- requester, ordering track and ranges, the ranges joined as `from-to` with `,` -- names
 the hint's effect row ([`toALOutboundRepairHintEffectId`](./to-al-outbound-effect-id.ts)), never
@@ -634,9 +634,11 @@ asked for it (no `seq`, and the captured policy keeps `mintsSequence`), and the 
 mints again when it commits, replacing the retained request in the canonical row by the minted message (the only
 change a pending canonical row accepts). An admission of a `msgId` that already has its sent row mints nothing and
 answers with the stored message. The head row expires as the sent row does: a durable pair keeps it
-`max(deadline, sentMessageTtlMs, controlHistoryTtlMs)` past the mint, longer than a receiver's five-minute track TTL,
-so a head that expires restarts at 1 only on a track every receiver has already dropped. The browser's outbound never
-mints: no browser planner marks a plan.
+`max(deadline, sentMessageTtlMs, controlHistoryTtlMs)` past the mint, and a receiver's ordering-track TTL defaults to
+the repository TTL (60 minutes), so a receiver remembers a track as long as its sender keeps the head. Two limits
+remain: sequences follow commit order, so under contention two publications of one track can commit out of publish order
+(a first-in-first-out mint per track is a follow-up), and a track silent for over an hour restarts at 1 on both sides.
+The browser's outbound never mints: no browser planner marks a plan.
 
 Known limitations:
 

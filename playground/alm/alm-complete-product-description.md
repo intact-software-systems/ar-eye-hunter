@@ -552,14 +552,18 @@ to the `outbox` (a keyed publish without a sequence at `live-only` or `none` is
 refused, and an `ack: 'none'` one gets no ranged repair). The repair budget is
 per message and shared: the first receiver to NACK a sequence spends it, the
 others fall back to receipt retries; exhausted repair settles
-`skipped`/`repair-exhausted` once (D141, D153). One receiver's `resync-required`
-NACK settles the publication `relay-rejected` and removes its whole pending
-receipt (D155). The receiver's recovery owner is the typed channel's, as for a
-browser sender. The WS server fixture, the shared-key schedule over memory,
-IndexedDB and pglite with the gated PostgreSQL two-connection case, and the
-api-v1 end-to-end test prove it; no conformance cell exercises a
-server-originated send, since no harness step makes the server publish one
-(D155).
+`skipped`/`repair-exhausted` once (D141, D153). Sequences follow commit order,
+so under contention two publications of one track can commit out of publish
+order (a first-in-first-out mint per track is a follow-up), and since a
+receiver's ordering-track TTL defaults to the repository TTL (60 minutes), the
+lifetime of the server's head, a track silent for over an hour restarts at `seq`
+1 on both sides. One receiver's `resync-required` NACK settles the publication
+`relay-rejected` and removes its whole pending receipt (D155). The receiver's
+recovery owner is the typed channel's, as for a browser sender. The WS server
+fixture, the shared-key schedule over memory, IndexedDB and pglite with the
+gated PostgreSQL two-connection case, and the api-v1 end-to-end test prove it;
+no conformance cell exercises a server-originated send, since no harness step
+makes the server publish one (D155).
 
 ## Deduplication and supersedence
 
@@ -949,12 +953,13 @@ round transitions:** the server publishes each round transition -- the round
 starting, resolving into review, and the review continuing into the next round
 or the finish -- as a `relic.event.v1` notification on `room.relic.event` with
 the game's incarnation (`${gameId}:${createdAtEpochMs}`, since a reset keeps the
-game id) as ordering key, the round as epoch and no sequence, so the server
-mints one track per round (D150, D151). The client reads it through a typed
-room channel whose recovery owner re-reads the game over REST, and the UI's live
-round cues follow that stream in order while the snapshot stays the game's
-state (D152). A browser that joins during a round sees that round's state from
-the snapshot and its cues from the next round (D155).
+game id) as ordering key, the round the transition enters as epoch (the finish
+enters the round past the last) and no sequence, so the server mints one track
+per round and no track spans a review (D150, D151). The client reads it through
+a typed room channel whose recovery owner re-reads the game over REST, and the
+UI's live round cues follow that stream in order while the snapshot stays the
+game's state (D152). A browser that joins during a round sees that round's state
+from the snapshot and its cues from the next round (D155).
 
 ## Current validation baseline
 
