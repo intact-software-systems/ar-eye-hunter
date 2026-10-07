@@ -1,8 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
+import { DEFAULT_AL_REPOSITORY_TTL_MS } from '@shared/alm/ALStoreRetention.ts';
 import type { ALOutboundPlanner } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -19,6 +21,7 @@ import {
 import type { OutboundTestPayload } from '../outbound-test-payload.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
+const ROUND_EVENT_TTL_MS = 60_000;
 
 /** The WS server's own publication: one durable copy, and the track's next sequence for a key without one. */
 const MINTING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg, authority) => ({
@@ -40,6 +43,17 @@ describe('outbound sequence minting', () => {
         expect(await enqueueMintedSeq(runtime, createRoundEvent('a-3', { orderingKey: 'game-1', epoch: 1 }))).toBe(3);
         expect(await enqueueMintedSeq(runtime, createRoundEvent('b-1', { orderingKey: 'game-2', epoch: 1 }))).toBe(1);
         expect(await enqueueMintedSeq(runtime, createRoundEvent('c-1', { orderingKey: 'game-1', epoch: 2 }))).toBe(1);
+    });
+
+    it('mints 1 again on a track whose head expired', async () => {
+        const clock = mockClock();
+        const { runtime } = createMintingRuntime(createDefaultOutboundTestStores());
+        expect(await enqueueMintedSeq(runtime, createRoundEvent('first-1', { orderingKey: 'game-1', epoch: 1 }))).toBe(1);
+        expect(await enqueueMintedSeq(runtime, createRoundEvent('first-2', { orderingKey: 'game-1', epoch: 1 }))).toBe(2);
+
+        clock.nowMs += DEFAULT_AL_REPOSITORY_TTL_MS + ROUND_EVENT_TTL_MS + 1;
+
+        expect(await enqueueMintedSeq(runtime, createRoundEvent('after-expiry', { orderingKey: 'game-1', epoch: 1 }))).toBe(1);
     });
 
     it('keeps the sequence of an admitted message when the same message is admitted again', async () => {
@@ -153,7 +167,7 @@ function createRoundEvent(name: string, ordering: Readonly<{ orderingKey: string
         'room',
         'app.event.v1',
         { name },
-        { groupRef: ROOM, ttlMs: 60_000, ordering }
+        { groupRef: ROOM, ttlMs: ROUND_EVENT_TTL_MS, ordering }
     );
 }
 
@@ -191,6 +205,17 @@ function interleaveAfterFirstDecisionRead(stores: OutboundTestStores, interleave
         await interleaved();
         return observed;
     });
+}
+
+/** A clock that moves only when the test moves it, for every reader of the current time. */
+function mockClock(): { nowMs: number; } {
+    const clock = { nowMs: Date.now() };
+    vi.spyOn(Date, 'now').mockImplementation(() => clock.nowMs);
+    vi.spyOn(Temporal.Now, 'instant').mockImplementation(() => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
+    onTestFinished(() => {
+        vi.restoreAllMocks();
+    });
+    return clock;
 }
 
 /** The canonical row the outbound keeps for a message: a retained admission's before its replay, the admitted one after. */
