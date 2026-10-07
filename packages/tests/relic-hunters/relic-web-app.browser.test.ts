@@ -417,7 +417,7 @@ describe('Relic Hunters browser app', () => {
         expect(container.textContent).toContain('Look for relics in this room');
     });
 
-    it('asks the browser AI companion for a legal planning suggestion', async () => {
+    it('asks the browser AI companion for a legal planning suggestion and sends it to the hunter\'s own sessions in the room', async () => {
         const snapshot = snapshotWithPlayers(1, 'planning');
         writeSession(session());
         rallarMock.roomState = roomState(1);
@@ -435,7 +435,9 @@ describe('Relic Hunters browser app', () => {
             expect.objectContaining({
                 topicId: 'room.relic.ai.planning',
                 typeId: 'relic.ai.planning-proposal.v1',
-                roomId: 'room-1'
+                roomId: 'room-1',
+                scope: 'principal',
+                principalId: 'client-1'
             })
         );
     });
@@ -486,10 +488,10 @@ describe('Relic Hunters browser app', () => {
         )).toBe(true);
     });
 
-    it('renders received room AI proposals as read-only party notes', async () => {
-        const snapshot = snapshotWithPlayers(2, 'planning');
+    it('renders a proposal from another of the hunter\'s own sessions where the local suggestion renders, read-only', async () => {
+        const snapshot = snapshotWithPlayers(1, 'planning');
         writeSession(session());
-        rallarMock.roomState = roomState(2);
+        rallarMock.roomState = roomState(1);
         stubSnapshotFetch(snapshot);
 
         await renderApp();
@@ -497,24 +499,22 @@ describe('Relic Hunters browser app', () => {
         await act(async () => {
             aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         });
-        await waitFor(() => rallarMock.wsSend.mock.calls.length > 0);
+        await waitFor(() => container.querySelectorAll('.relic-ai-card.local').length === 1);
         const sent = rallarMock.wsSend.mock.calls[0]?.[0];
         await act(async () => {
             rallarMock.wsAiMessageHandler?.({
-                payload: {
-                    ...sent.payload,
-                    generationId: 'remote-generation-1',
-                    dedupeKey: 'remote-dedupe-1'
-                },
-                senderId: 'bob-session',
+                payload: { ...sent.payload, generationId: 'sibling-generation-1', dedupeKey: 'sibling-dedupe-1' },
+                senderId: 'alice-tablet-session',
                 roomId: 'room-1',
-                receivedAtEpochMs: Date.now()
+                receivedAtEpochMs: Date.now() + 1_000
             });
         });
 
-        await waitFor(() => container.textContent?.includes('Party Notes') === true);
-        expect(container.textContent).toContain('Bob');
-        expect(container.querySelectorAll('.relic-ai-prime')).toHaveLength(1);
+        await waitFor(() => container.querySelectorAll('.relic-ai-card.local').length === 0);
+        expect(container.querySelectorAll('.relic-ai-card')).toHaveLength(1);
+        expect(container.querySelector('.relic-ai-card-head')?.textContent).toContain('alice-ta');
+        expect(container.querySelectorAll('.relic-ai-prime')).toHaveLength(0);
+        expect(container.textContent).not.toContain('Party Notes');
     });
 
     it('shows an explicit locked-plan waiting state after the local plan is submitted', async () => {

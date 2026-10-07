@@ -7,6 +7,7 @@ import {
     type RallarAiJsonProvider,
     type RallarAiJsonResult
 } from '@shared/rallar-ai/mod.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type { ActionDraft, RelicGameViewModel } from '../game-view-model.ts';
 import type { Lang } from '../lang.ts';
@@ -32,6 +33,8 @@ import {
 export type UseRelicPlanningAiInput = Readonly<{
     snapshot?: RelicPublicSnapshot;
     localPlayerId?: string;
+    /** The signed-in hunter's principal: a suggestion reaches that principal's sessions in the room only. */
+    localPrincipalId?: string;
     draft: ActionDraft;
     lang: Lang;
     viewModel: RelicGameViewModel;
@@ -57,6 +60,7 @@ const BROWSER_AI_POLICY = {
 export function useRelicPlanningAi({
     snapshot,
     localPlayerId,
+    localPrincipalId,
     draft,
     lang,
     viewModel,
@@ -183,7 +187,7 @@ export function useRelicPlanningAi({
         const currentContext = contextRef.current;
         const currentRevision = revisionRef.current;
         const currentRoomId = roomIdRef.current;
-        if (!enabled || !currentContext || !currentRevision || !dedupeKey || !snapshot) {
+        if (!enabled || !currentContext || !currentRevision || !dedupeKey || !snapshot || !localPrincipalId) {
             setStatus('disabled');
             return;
         }
@@ -265,6 +269,8 @@ export function useRelicPlanningAi({
                 result: proposed,
                 transport: 'messages.ws',
                 roomId: currentRoomId,
+                scope: 'principal',
+                principalId: localPrincipalId,
                 topicId: RELIC_TOPICS.aiPlanning,
                 typeId: RELIC_TYPES.aiPlanningProposal
             });
@@ -274,7 +280,7 @@ export function useRelicPlanningAi({
                 return;
             }
             setStatus('error');
-            setError(toErrorMessage(err));
+            setError(toError(err).message);
         }
         finally {
             if (abortRef.current === abort) {
@@ -287,6 +293,7 @@ export function useRelicPlanningAi({
         diagnostics,
         enabled,
         localPlayerId,
+        localPrincipalId,
         snapshot
     ]);
 
@@ -375,8 +382,4 @@ function defaultBrowserAiProviderEnabled(): boolean {
         env?.MODE === 'test' ||
         !!env?.VITEST ||
         !!processEnv?.VITEST;
-}
-
-function toErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
 }
