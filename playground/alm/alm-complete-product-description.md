@@ -518,9 +518,10 @@ server's own room notifications carry `receiver` receipts over the room's live s
 delivery honours that audience (D58, D77). Since #566 the router freezes the audience for every server or proxy
 publish that carries a `groupRef`, and cluster delivery reads it once from the captured policy (D104).
 
-**PLANNED — A2, distinct leader ACK:** `group-leader` still maps to the subtree
-behavior; all-recipient is the frozen logical audience since S2. A2 defines the
-leader as the group's appointed director session.
+**PLANNED — A2a, distinct leader ACK:** `group-leader` still maps to the subtree
+behavior; all-recipient is the frozen logical audience since S2. A2a defines the
+leader as the group's appointed director session present at admission, resolved
+and frozen on both carriers, with `no-leader` as a typed refusal (D164–D166).
 
 ## Ordering and gap recovery
 
@@ -784,7 +785,7 @@ system is added.
 
 **PARTIAL:** Current services use `exclusive` to select one local callback.
 
-**PLANNED — A2, ownership scope:** The contract does not say whether exclusive
+**PLANNED — A2b, ownership scope:** The contract does not say whether exclusive
 is local or distributed, and no distributed exclusive-consumer claim exists. A2
 defines `exclusive` as a claim on the message's resource key backed by the
 existing ResourceInbox reservation with lease, expiry, and redelivery, surfaced
