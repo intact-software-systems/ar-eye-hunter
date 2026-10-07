@@ -4,6 +4,7 @@ import {
     RELIC_TOPICS,
     RELIC_TYPES,
     toPublicRelicSnapshot,
+    toRelicRoomGroupRef,
     type RelicCommand,
     type RelicGameState,
     type RelicPublicSnapshot
@@ -18,7 +19,7 @@ import type {
     RallarServerWsSelector,
     RallarServerWsTopicDefinition
 } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
-import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import {
     applyRelicWsCommand,
@@ -237,9 +238,6 @@ function isDefaultRelicRoomContext(
     context: Pick<RallarServerWsMessageContext, 'roomId' | 'roomRef'>,
     gameId: string
 ): boolean {
-    const roomRef = context.roomRef;
-    return context.roomId === gameId &&
-        roomRef?.groupId === gameId &&
-        roomRef.applicationId === DEFAULT_STATE_APPLICATION_ID &&
-        roomRef.workspaceId === DEFAULT_STATE_WORKSPACE_ID;
+    return context.roomId === gameId && context.roomRef !== undefined &&
+        isSameGroupRef(context.roomRef, toRelicRoomGroupRef(gameId));
 }
