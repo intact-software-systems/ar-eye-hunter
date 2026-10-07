@@ -13,15 +13,16 @@ import type {
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export const EXECUTE_ACK_TIMEOUT_MS = 15_000;
 
-export type ExecuteManifestDraft = Readonly<{
-    manifest: RallarBlackBoxDistributedRunManifest;
-    validationIssues: readonly DistributedRunManifestValidationIssue[];
-    rawJson: string;
-    fingerprint: string;
-}>;
+export interface ExecuteManifestDraft {
+    readonly manifest: RallarBlackBoxDistributedRunManifest;
+    readonly validationIssues: readonly DistributedRunManifestValidationIssue[];
+    readonly rawJson: string;
+    readonly fingerprint: string;
+}
 
 export type ExecuteTargetResolutionIssueCode =
     | 'group-mismatch'
@@ -34,31 +35,59 @@ export type ExecuteTargetResolutionIssueCode =
     | 'missing-participants'
     | 'selected-target-blocked';
 
-export type ExecuteTargetResolutionIssue = Readonly<{
-    code: ExecuteTargetResolutionIssueCode;
-    message: string;
+export interface ExecuteTargetResolutionIssue {
+    readonly code: ExecuteTargetResolutionIssueCode;
+    readonly message: string;
     /** Absent when the issue is about the whole resolution rather than one named agent. */
-    agentId?: string;
-}>;
+    readonly agentId?: string;
+}
 
-export type ExecuteTargetResolutionComparison = Readonly<{
-    ok: boolean;
-    issues: readonly ExecuteTargetResolutionIssue[];
-}>;
+export interface ExecuteTargetResolutionComparison {
+    readonly ok: boolean;
+    readonly issues: readonly ExecuteTargetResolutionIssue[];
+}
 
-export type ExecuteTargetResolutionEvidence = Readonly<{
-    manifestFingerprint: string;
-    resolution: RallarBlackBoxDistributedTargetResolution;
-    comparison: ExecuteTargetResolutionComparison;
-}>;
+export interface ExecuteTargetResolutionEvidence {
+    readonly manifestFingerprint: string;
+    readonly resolution: RallarBlackBoxDistributedTargetResolution;
+    readonly comparison: ExecuteTargetResolutionComparison;
+}
+
+export interface CreateExecuteDistributedRunIdInput {
+    readonly controlRunId: string;
+    readonly group: RallarBlackBoxDistributedGroupRef;
+    readonly recipeId: string;
+    readonly requestedAtEpochMs: number;
+}
+
+export interface CreateExecuteManifestDraftInput {
+    readonly distributedRunId: string;
+    readonly controlRunId: string;
+    readonly group: RallarBlackBoxDistributedGroupRef;
+    readonly selectedRecipe: DistributedRecipeCatalogEntryProjection;
+    readonly selectedAgentIds: readonly string[];
+    /** Absent when execution inherits the authored capture selection. */
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
+}
+
+export interface ExecuteTargetResolutionComparisonInput {
+    readonly manifest: RallarBlackBoxDistributedRunManifest;
+    readonly resolution: RallarBlackBoxDistributedTargetResolution;
+}
+
+export interface CreateExecuteTargetResolutionEvidenceInput {
+    readonly manifest: RallarBlackBoxDistributedRunManifest;
+    readonly manifestFingerprint: string;
+    readonly resolution: RallarBlackBoxDistributedTargetResolution;
+}
+
+export interface ResolveExecuteTargetResolutionEvidenceInput {
+    readonly manifestFingerprint: string;
+    readonly evidence: ExecuteTargetResolutionEvidence;
+}
 
 export function createExecuteDistributedRunId(
-    input: Readonly<{
-        controlRunId: string;
-        group: RallarBlackBoxDistributedGroupRef;
-        recipeId: string;
-        requestedAtEpochMs: number;
-    }>
+    input: CreateExecuteDistributedRunIdInput
 ): Either<string, string> {
     if (
         !Number.isSafeInteger(input.requestedAtEpochMs) ||
@@ -76,18 +105,13 @@ export function createExecuteDistributedRunId(
 }
 
 export function createExecuteManifestDraft(
-    input: Readonly<{
-        distributedRunId: string;
-        controlRunId: string;
-        group: RallarBlackBoxDistributedGroupRef;
-        selectedRecipe: DistributedRecipeCatalogEntryProjection;
-        selectedAgentIds: readonly string[];
-    }>
+    input: CreateExecuteManifestDraftInput
 ): Either<string, ExecuteManifestDraft> {
     const selectedAgentIds = toSortedUniqueIds(input.selectedAgentIds);
     return toExecuteManifestDraft(createDistributedRunManifest({
         distributedRunId: input.distributedRunId,
         controlRunId: input.controlRunId,
+        rtcCaptureMode: input.rtcCaptureMode,
         displayName: input.selectedRecipe.item.title,
         group: input.group,
         recipes: [input.selectedRecipe.item],
@@ -121,10 +145,7 @@ export function computeExecuteManifestFingerprint(
 }
 
 export function computeExecuteTargetResolutionComparison(
-    input: Readonly<{
-        manifest: RallarBlackBoxDistributedRunManifest;
-        resolution: RallarBlackBoxDistributedTargetResolution;
-    }>
+    input: ExecuteTargetResolutionComparisonInput
 ): ExecuteTargetResolutionComparison {
     const issues: ExecuteTargetResolutionIssue[] = [];
     const selected = input.manifest.targetPolicy.mode === 'selected-agents'
@@ -179,11 +200,7 @@ export function computeExecuteTargetResolutionComparison(
 }
 
 export function createExecuteTargetResolutionEvidence(
-    input: Readonly<{
-        manifest: RallarBlackBoxDistributedRunManifest;
-        manifestFingerprint: string;
-        resolution: RallarBlackBoxDistributedTargetResolution;
-    }>
+    input: CreateExecuteTargetResolutionEvidenceInput
 ): ExecuteTargetResolutionEvidence {
     return {
         manifestFingerprint: input.manifestFingerprint,
@@ -196,10 +213,7 @@ export function createExecuteTargetResolutionEvidence(
 }
 
 export function resolveExecuteTargetResolutionEvidence(
-    input: Readonly<{
-        manifestFingerprint: string;
-        evidence: ExecuteTargetResolutionEvidence;
-    }>
+    input: ResolveExecuteTargetResolutionEvidenceInput
 ): ExecuteTargetResolutionEvidence | undefined {
     return input.evidence.manifestFingerprint === input.manifestFingerprint
         ? input.evidence
@@ -207,10 +221,7 @@ export function resolveExecuteTargetResolutionEvidence(
 }
 
 function computeExecuteResolutionCountIssues(
-    input: Readonly<{
-        manifest: RallarBlackBoxDistributedRunManifest;
-        resolution: RallarBlackBoxDistributedTargetResolution;
-    }>,
+    input: ExecuteTargetResolutionComparisonInput,
     selected: ReadonlySet<string>,
     resolved: readonly string[]
 ): readonly ExecuteTargetResolutionIssue[] {

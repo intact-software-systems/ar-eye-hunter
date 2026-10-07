@@ -5,6 +5,14 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Console Execute's outgoing HTTP fixture serializer keeps its body opaque:
+    // JSON.stringify feeds route.fulfill without domain interpretation, and no
+    // unknown result escapes. Typed responses stay with their fixture owners.
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/recipe-console-execute-control-fixture.ts',
+        rule: 'boundary.unknown',
+        symbol: 'fulfillExecuteJsonResponse'
+    }),
     // Exact reviewed RTC evidence/control owners (Task62/63 and Task64 round1).
     // Each numeric cap bounds the observed coherent capability/shell magnitude;
     // no function-size, other-path or future-growth exception is implied.

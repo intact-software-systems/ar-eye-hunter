@@ -108,9 +108,14 @@ Branch37678344974 selected release lanes/publication/final gate and Formation376
 and Medium37678344447 pass on verified identical trees. Branch is terminal cancelled
 because separate ALM setup exceeds its30-minute timeout before observation starts;
 the failed attempt stays preserved and supplies no ALM or performance acceptance.
-Console selector GREEN and the next actual Resolve-request RED are
-verified; minimum canonical forwarding and complete touched-owner closure are active.
-Existing authored-intent persistence paths follow that coherent slice.
+Console canonical forwarding now passes80 focused unit cases, the full29-case
+browser corpus and three final affected cases. All four choices preserve authored
+intent through Resolve/Create/Stage/Start. Fresh independent review approves all
+seven complete owners after private naming/dead-local corrections and the exact
+outgoing-serializer reviewed-boundary record.83 final focused checks and app typing
+pass; the final current-parent WORKTREE style gate passes with no new findings. The initial style failure
+is preserved. Existing authored-intent persistence paths
+follow that coherent slice.
 Worker, Actions and full B01–B06/E3 outcomes stay mandatory.
 B06 selection and producer configuration are published; governed E3 has zero accepted cohorts
 and remains required in Section 11. Current product and architecture are [docs/product.md](../../product.md)
@@ -120,7 +125,7 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 ## Global Constraints
 
 - Do not retain affected legacy. Remove predecessor implementations, compatibility aliases/fallbacks, parallel old/new paths and obsolete tests when no independently required public contract or verified consumer requires them. No newly retained legacy is authorized by this task; surface a real compatibility conflict before retaining it.
-- Do not migrate code. Do not add migration bridges, dual readers/writers, relocation-only work, or transfer old implementations into a new owner. Correct the canonical current owner in place; preserve independently required public/wire/persistence contracts unless the human explicitly authorizes a breaking decision.
+- Do not add migration code: migration bridges, dual readers/writers, relocation-only work or unchanged predecessor implementations transferred into a new owner. Correct canonical current owners and preserve independently required public/wire/persistence contracts unless the human explicitly authorizes a breaking decision. A genuine consolidation may establish one current owner only when it removes duplicate implementations and exposes an actual responsibility boundary; Task65 specifies its bounded Execute fixture consolidation below.
 - Avoid code duplication. Reuse the canonical RTC and evidence owners; benchmark code measures production without reimplementing it, and apps remain consumers.
 - Prefer functional over stateful: pure data-in/data-out policy, calculation, translation, and validation; stateful shells only for explicit lifecycle/resource ownership with injected effects.
 - Keep the repo consistent. Follow current AGENTS.md, repo-local skills and authoritative standards. Apply full-file closure recursively to remediation support files; independent untouched code stays outside closure.
@@ -6585,6 +6590,28 @@ minimum forwarding GREEN through the existing canonical manifest builder. Inheri
 must remain omitted; selected capture participates in the existing manifest fingerprint
 and accepted run truth, and recipe/step content must remain unchanged. The initial
 selector setup/type-placement error is retained separately from semantic GREEN.
+The first forwarding GREEN then passes all three maintained browser cases: selected
+Off reaches the owned Resolve and Create requests, whose recipe bodies equal the
+original. Root verifies the twelve immutable GREEN input copies, raw actual exit0 and
+minimal canonical builder/workflow diff. This accepts that scoped request witness;
+all-mode, omission, locked lifecycle and full touched-owner closure remain required.
+The plan-only checkpoint ed8ba5848 is published without including incomplete source.
+The next browser pass covers all four choices and the fresh-run control: five cases
+reach Resolve/Create/Stage/Start, explicitly omit Inherit, invalidate old resolution
+after a mode change, restore valid evidence for the identical intent, and lock the
+accepted selector. Twelve initial manifest cases pass authored Native/Off root selection
+and capture fingerprint assertions; their step fixture contract is corrected below.
+Root reads the actual checks, independent assertions and immutable input copies. These
+checks pass before refactoring; full touched-owner closure and final validation/review
+still gate Console publication. The mistyped Vitest configuration startup failure
+is preserved separately from the corrected exit-zero manifest check.
+Subsequent scoped typing catches an invalid authored fixture: its added steps field
+does not belong to the recipe contract, which uses commands. The earlier step identity
+claim is withdrawn until a canonical-command fixture passes independent preservation
+and validation assertions. Browser fixtures also omit three mandatory group assertion
+counters. Preserve both owned failures, correct their actual contracts, then rerun
+affected checks. Third-party declaration diagnostics retain the existing maintained
+typecheck policy; no new suppression or skipLibCheck is authorized.
 
 Fresh hosted release acceptance at634c is independently bound to Branch run37678344974
 attempt1: all selected core lanes, publication and the final broad gate pass without
@@ -6602,9 +6629,90 @@ The touched browser owner has genuine closure work: adjusted1650 exceeds the1500
 backstop, cognitive149 requires separation review, installLifecycleControl spans328lines,
 and distributedRun has four inputs. Apply current structure/adaptive/code/testing guidance
 before choosing the smallest truthful in-place remediation. No relocation of predecessor
-implementations, parallel harness, metric compression or unapproved persistent exception
-is authorized. Remediate the complete touched owner and recursively changed support before
+implementations unchanged, parallel harness, metric compression or unapproved persistent
+exception is authorized. Remediate the complete touched owner and recursively changed support before
 publication; independent untouched source remains outside closure.
+
+**Code-fact ownership refresh:** In-place refactoring passes all29 maintained Execute
+browser cases and12 manifest cases, removes every named function/method over60lines
+and the four-positional fixture builder, and reduces cognitive magnitude to121. The
+browser still has1646 adjusted lines against its1500 backstop. Independent complete-owner
+review finds repeated snapshot/detail HTTP handling in the lifecycle fixture, live-read
+installer and untrusted-control scenario, plus a duplicate250-run/240-target pressure
+generator and an unused import. No independent adversarial assertion may be removed.
+Reuse the existing createExecuteScaleSnapshot while preserving scenario freshness;
+Monitor, Tune and scale HTTP owners do not implement Execute's lifecycle and should
+not absorb it.
+
+Replace the parallel HTTP fixture implementations with one maintained Execute fixture
+owner in the existing browser test directory. It owns route registration, snapshot/detail
+serialization, broker/agent-token observations, distributed-run transitions and deferred
+request state. Remove the embedded predecessor fixture and redundant live-read installer;
+do not copy/export the unchanged class or retain compatibility wrappers. Keep visible
+actions, expected payloads, adversarial assertions and abort-ignoring browser fetch
+observation in the spec. Untrusted-endpoint construction stays explicit and initializes
+no credentials or broker effects. This concrete consolidation narrows the plan's prior
+blanket no-transfer interpretation; it adds no migration, legacy retention or duplicated
+policy. Validate one lifecycle scenario and one credential-trust scenario from fixture
+construction through route/captured request/response/state to the visible assertion,
+including deferred release and context teardown. Fully close both owners and recursively
+changed support, then rerun affected29 browser and corrected manifest cases, typing/build,
+canonical size/structure/navigation checks and independent SPEC then QUALITY review before
+the coherent source slice is published.
+
+**Final Console review input:** The actual canonical-command matrix now validates
+all manifest choices and independently preserves authored Native/Off commands.80
+focused unit cases, app typing and1488 maintained test files pass. The corrected
+consolidated browser corpus passes29cases; after moving response calculation outside
+the abort-only fulfillment catch, the three affected Stage/deferred/abort cases pass.
+The earlier27-pass/two-failure draft and missing-name diagnostics remain preserved;
+its Stage timeout attribution is source-plus-trace inference rather than a logged
+ReferenceError. Scoped raw browser typing remains exit1 solely for third-party Temporal
+declarations under the unchanged maintained policy. Existing color/chunk warnings stay
+disclosed. The final spec has1277 physical/1157 adjusted lines and the fixture596;
+no named function/method/assigned helper exceeds60. Fresh independent review confirms
+coherent50–55-line decisions, fixture cohesion72, the three framework callback prompts
+and genuine predecessor/parallel-path removal. Its two Minor workflow findings require
+canonical compute names and removal of two unused locals. The actual current-parent
+WORKTREE style gate fails only on the new fixture's opaque outgoing JSON serializer;
+completed independent boundary review justifies its exact path/rule/symbol disposition,
+with no global policy or real standards exception. Coupling over all three touched
+test owners passes with zero candidates. Apply these bounded corrections, review the
+complete newly touched support owner, obtain SAME-reviewer closure and actual final
+publication gates, then publish promptly. This is scoped UI/request/lifecycle proof
+through a mocked controller, not actual SDK/native application or E3 acceptance.
+
+The SAME reviewer closes both Minor findings and approves bounded SPEC/QUALITY on
+all seven complete source/support owners. The correction changes only two pure
+compute names, their direct calls and two unused locals, plus one exact serializer
+path/rule/symbol disposition with a concrete rationale. Removing that entry restores
+the prior registry byte for byte; global policy, caps and matcher stay unchanged.
+The seventh owner's complete review accepts its declarative417 adjusted lines and
+10/11-line matching helpers. All15 final frozen/current bindings match independently.
+Final83 manifest/workflow/disposition-checker cases, app typing and seven-owner
+formatting pass. A correction draft's TS18004 is preserved and corrected by restoring
+the still-required draft group. No unchanged browser/build suite is rerun; its evidence
+is reused only with the mechanical workflow delta qualified. Root's final current-parent
+WORKTREE style gate passes with no new findings. No newly retained legacy, migration
+or real standards exception is added. Publish this bounded Console slice promptly;
+its approval does not accept the remaining full-goal outcomes.
+
+**Next existing-persistence witness:** A bounded post-Local source audit recovers
+one wrong attribution and one restore gap in the canonical Workbench consumer.
+Edited JSON Load always supplies the selected fixture ID, even though the store
+documents that ID as absent for hand-authored recipes. The fixture selector can stay
+a preference; it cannot identify a different accepted body. Assert complete loaded
+recipe content and absent fixture attribution after a distinguishable custom Load,
+then prove authored intent survives temporary Off/Inherit runs and a genuine remount.
+Current initialization reconstructs fixture text rather than accepting loadedRecipe;
+the existing experience route really unmounts Legacy, whereas advanced tabs only hide
+it. These are source findings, not witnessed RED or implemented corrections. Use
+the maintained UI/runtime/store and existing Copy payload; invent no recipe store,
+API, migration or parallel persistence policy. Existing SDK composition already
+proves unavailable Native capture produces typed refusal without completion under
+controlled auth/network/WS/window dependencies. A corresponding actual Local UI
+application/refusal witness remains required and is not proved by simulated UI.
+
 Full Task65, Console, existing Load/Copy/storage/restore/repeat outcomes, workers, Actions
 and B01–B06/E3 remain required. No retry, recovery, CRDT or RTC transport behavior changes.
 

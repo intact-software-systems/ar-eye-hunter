@@ -1,587 +1,39 @@
-import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
-import type {
-    ControlAgentSnapshot,
-    ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
-    ControlServerSnapshot
-} from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import {
+    expect,
+    test,
+    type BrowserContext,
+    type Page
+} from '@playwright/test';
+
+import type { ControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import { DISTRIBUTED_RECIPE_CATALOG } from '../../../packages/shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
 import type {
-    RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedRunState,
-    RallarBlackBoxDistributedTargetResolution
+    RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 
-const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
-const API_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):8080\/.*/;
-const GROUP = {
-    applicationId: 'rallar-server',
-    workspaceId: 'default',
-    groupId: 'execute-live-group'
-} as const;
+import {
+    createExecuteAgent,
+    createExecuteLiveSnapshot,
+    createExecutePressureSnapshot,
+    createExecuteRunSnapshot,
+    EXECUTE_API_ROUTE,
+    EXECUTE_CONTROL_GROUP,
+    EXECUTE_CONTROL_ROUTE,
+    fulfillExecuteJsonResponse,
+    installExecuteControlFixture
+} from './recipe-console-execute-control-fixture.ts';
+
 const EXECUTE_ROUTE = '/?provider=simulated&v=1&experience=recipe-console&view=execute' +
     '&applicationId=rallar-server&workspaceId=default&roomId=execute-live-group';
 
-function agent(
-    runId: string,
-    agentId: string,
-    options: Readonly<{ connected?: boolean; groupId?: string; }> = {}
-): ControlAgentSnapshot {
-    const now = Date.now();
-    return {
-        runId,
-        agentId,
-        connected: options.connected ?? true,
-        registeredAtEpochMs: now - 2_000,
-        lastSeenAtEpochMs: now - 500,
-        lastHeartbeatAtEpochMs: now - 500,
-        status: options.connected === false ? 'offline' : 'connected',
-        identity: {
-            principalId: `${agentId}-principal`,
-            sessionId: `${agentId}-session`,
-            ...GROUP,
-            groupId: options.groupId ?? GROUP.groupId,
-            providerMode: 'browser-rallar',
-            browserName: 'chromium',
-            region: 'eu-north',
-            sessionLabel: `${agentId}-principal:${agentId}-session`,
-            updatedAtEpochMs: now - 500
-        },
-        connectionSequence: 1,
-        reconnectCount: 0,
-        receivedResultCount: 0,
-        receivedEventCount: 0,
-        completedCommandIds: [],
-        resumeCompletedCommandIds: []
-    };
+interface ExecuteFetchGate {
+    pathname: string;
+    started: boolean;
+    release(): void;
 }
 
-function liveSnapshot(): ControlServerSnapshot {
-    const runId = 'execute-control-a';
-    const now = Date.now();
-    const run: ControlRunSnapshot = {
-        runId,
-        createdAtEpochMs: now - 10_000,
-        updatedAtEpochMs: now - 500,
-        agents: [
-            agent(runId, 'execute-agent-a'),
-            agent(runId, 'execute-agent-b')
-        ],
-        commands: [],
-        results: [],
-        events: [],
-        stats: [],
-        reports: [],
-        heartbeats: []
-    };
-    return { runs: [run], distributedRuns: [] };
-}
-
-function pressureSnapshot(): ControlServerSnapshot {
-    const now = Date.now();
-    const runs = Array.from({ length: 250 }, (_, index): ControlRunSnapshot => {
-        const runId = `execute-pressure-${String(index).padStart(4, '0')}`;
-        const agentCount = index === 249 ? 240 : 1;
-        return {
-            runId,
-            createdAtEpochMs: now - (250 - index) * 1_000,
-            updatedAtEpochMs: now - 500,
-            agents: Array.from(
-                { length: agentCount },
-                (_unused, agentIndex) => agent(runId, `pressure-agent-${String(agentIndex).padStart(4, '0')}`)
-            ),
-            commands: [],
-            results: [],
-            events: [],
-            stats: [],
-            reports: [],
-            heartbeats: []
-        };
-    });
-    return { runs, distributedRuns: [] };
-}
-
-async function fulfillJson(
-    route: Route,
-    body: unknown,
-    status = 200
-): Promise<void> {
-    await route.fulfill({
-        status,
-        contentType: 'application/json',
-        headers: { 'access-control-allow-origin': '*' },
-        body: JSON.stringify(body)
-    });
-}
-
-function distributedRun(
-    manifest: RallarBlackBoxDistributedRunManifest,
-    state: RallarBlackBoxDistributedRunState,
-    updatedAtEpochMs: number,
-    options: Readonly<{
-        error?: ControlDistributedRunSnapshot['error'];
-    }> = {}
-): ControlDistributedRunSnapshot {
-    const targetAgentIds = [...selectedAgentIds(manifest)];
-    const ready = ['ready', 'running', 'passed'].includes(state)
-        ? targetAgentIds.length
-        : 0;
-    return {
-        distributedRunId: manifest.distributedRunId,
-        controlRunId: manifest.controlRunId ?? '',
-        manifest,
-        state,
-        createdAtEpochMs: updatedAtEpochMs - 1_000,
-        updatedAtEpochMs,
-        targetAgentIds,
-        commandLinks: [],
-        rollup: {
-            state,
-            ok: state === 'passed',
-            summary: {
-                participants: targetAgentIds.length,
-                readyParticipants: ready,
-                passedParticipants: state === 'passed' ? targetAgentIds.length : 0,
-                failedParticipants: state === 'failed' ? targetAgentIds.length : 0,
-                recipes: manifest.recipes.length,
-                passedRecipes: state === 'passed' ? manifest.recipes.length : 0,
-                failedRecipes: state === 'failed' ? manifest.recipes.length : 0,
-                blockingFailures: state === 'failed' ? 1 : 0
-            },
-            failures: []
-        },
-        error: options.error
-    };
-}
-
-function selectedAgentIds(manifest: RallarBlackBoxDistributedRunManifest): readonly string[] {
-    return manifest.targetPolicy.mode === 'selected-agents' ? manifest.targetPolicy.agentIds : [];
-}
-
-function targetResolution(
-    manifest: RallarBlackBoxDistributedRunManifest,
-    targetAgentIds = selectedAgentIds(manifest)
-): RallarBlackBoxDistributedTargetResolution {
-    return {
-        group: manifest.group,
-        resolvedAtEpochMs: Date.now(),
-        staleAfterMs: 30_000,
-        targetPolicyMode: manifest.targetPolicy.mode,
-        targetAgentIds,
-        roleAssignments: targetAgentIds.map((agentId) => ({
-            agentId,
-            role: 'all-agents',
-            recipeIds: manifest.recipes
-                .map(
-                    (recipe) => recipe.recipeId ?? recipe.recipe?.recipeId ?? ''
-                )
-                .filter(Boolean),
-            variables: {}
-        })),
-        blockers: [],
-        summary: {
-            agents: targetAgentIds.length,
-            targetable: targetAgentIds.length,
-            selected: targetAgentIds.length,
-            expectedParticipantCount: manifest.targetPolicy.expectedParticipantCount,
-            missingExpectedParticipants: 0,
-            staleAgents: 0,
-            offlineAgents: 0,
-            wrongGroupAgents: 0,
-            assertionCapabilityBlockedAgents: 0,
-            agentsWithoutIdentity: 0,
-            roleCounts: { 'all-agents': targetAgentIds.length },
-            regions: { 'eu-north': targetAgentIds.length },
-            providers: { 'browser-rallar': targetAgentIds.length }
-        }
-    };
-}
-
-type LifecycleControl = Readonly<{
-    successfulWrites: Array<
-        Readonly<{
-            path: string;
-            authorization?: string;
-            manifest?: RallarBlackBoxDistributedRunManifest;
-        }>
-    >;
-    brokerAuthorizations: string[];
-    tokenRequests: Array<Readonly<{ runId: string; agentId: string; }>>;
-    runRequestCount(): number;
-    waitForDeferredResolution(): Promise<void>;
-    releaseDeferredResolution(): void;
-    deferNextRunRead(): void;
-    waitForDeferredRunRead(): Promise<void>;
-    releaseDeferredRunRead(): void;
-    setRunState(
-        state: RallarBlackBoxDistributedRunState,
-        error?: ControlDistributedRunSnapshot['error']
-    ): void;
-}>;
-
-type LifecycleOptions = Readonly<{
-    snapshot?: ControlServerSnapshot;
-    enableAgentLaunch?: boolean;
-    refreshAgentEvidence?: boolean;
-    resolutionTargetIds?(
-        call: number,
-        manifest: RallarBlackBoxDistributedRunManifest
-    ): readonly string[];
-    failure?: Readonly<{
-        path: string;
-        status: number;
-        message: string;
-    }>;
-    createResponseDistributedRunId?: string;
-    deferResolution?: boolean;
-}>;
-
-async function installLifecycleControl(
-    context: BrowserContext,
-    options: LifecycleOptions = {}
-): Promise<LifecycleControl> {
-    let base = options.snapshot ?? liveSnapshot();
-    let latestResponseBase = base;
-    const successfulWrites: LifecycleControl['successfulWrites'] = [];
-    const brokerAuthorizations: string[] = [];
-    const tokenRequests: LifecycleControl['tokenRequests'] = [];
-    let run: ControlDistributedRunSnapshot | undefined;
-    let version = Date.now();
-    let waitingReads = 0;
-    let runningReads = 0;
-    let runReads = 0;
-    let resolutionCalls = 0;
-    const createdRunIds = new Set<string>();
-    let shouldDeferNextRunRead = false;
-    let releaseRunRead = (): void => {};
-    let markRunReadStarted = (): void => {};
-    const runReadStarted = new Promise<void>((resolve) => {
-        markRunReadStarted = resolve;
-    });
-    const runReadGate = new Promise<void>((resolve) => {
-        releaseRunRead = resolve;
-    });
-    let releaseResolution = (): void => {};
-    let markResolutionStarted = (): void => {};
-    const resolutionStarted = new Promise<void>((resolve) => {
-        markResolutionStarted = resolve;
-    });
-    const resolutionGate = new Promise<void>((resolve) => {
-        releaseResolution = resolve;
-    });
-
-    await context.addInitScript(() => {
-        localStorage.setItem(
-            'auth.session',
-            JSON.stringify({
-                clientId: 'execute-client',
-                sessionId: 'execute-session',
-                username: 'execute-operator',
-                accessToken: 'execute-primary-session-token',
-                expiresAtEpochMs: 4_000_000_000_000
-            })
-        );
-    });
-    await context.route(API_ROUTE, async (route) => {
-        if (route.request().method() === 'OPTIONS') {
-            await fulfillCorsPreflight(route);
-            return;
-        }
-        brokerAuthorizations.push(
-            route.request().headers().authorization ?? 'missing'
-        );
-        await fulfillJson(route, {
-            tokenType: 'Bearer',
-            token: 'execute-brokered-operator-token',
-            issuedAtEpochMs: Date.now(),
-            expiresAtEpochMs: Date.now() + 3_600_000,
-            ttlMs: 3_600_000
-        });
-    });
-    await context.route(CONTROL_ROUTE, async (route) => {
-        const request = route.request();
-        const url = new URL(request.url());
-        if (request.method() === 'OPTIONS') {
-            await fulfillCorsPreflight(route);
-            return;
-        }
-        const tokenMatch = url.pathname.match(
-            /^\/runs\/([^/]+)\/agents\/([^/]+)\/tokens$/
-        );
-        if (options.enableAgentLaunch && request.method() === 'POST' && tokenMatch) {
-            const runId = decodeURIComponent(tokenMatch[1]);
-            const agentId = decodeURIComponent(tokenMatch[2]);
-            tokenRequests.push({ runId, agentId });
-            const now = Date.now();
-            const current = base.runs.find((candidate) => candidate.runId === runId);
-            const launchedAgent = agent(runId, agentId);
-            const launchedRun: ControlRunSnapshot = current
-                ? {
-                    ...current,
-                    agents: [
-                        ...current.agents.filter((candidate) => candidate.agentId !== agentId),
-                        launchedAgent
-                    ],
-                    updatedAtEpochMs: now
-                }
-                : {
-                    runId,
-                    createdAtEpochMs: now,
-                    updatedAtEpochMs: now,
-                    agents: [launchedAgent],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                };
-            base = {
-                ...base,
-                runs: [
-                    ...base.runs.filter((candidate) => candidate.runId !== runId),
-                    launchedRun
-                ]
-            };
-            await fulfillJson(route, {
-                runId,
-                agentId,
-                token: `control-agent-${agentId}`,
-                issuedAtEpochMs: now,
-                expiresAtEpochMs: now + 60_000
-            }, 201);
-            return;
-        }
-        if (request.method() === 'GET' && url.pathname === '/runs') {
-            runReads += 1;
-            const snapshotRun = run;
-            const responseBase = options.refreshAgentEvidence
-                ? refreshControlAgentEvidence(base)
-                : base;
-            latestResponseBase = responseBase;
-            if (shouldDeferNextRunRead) {
-                shouldDeferNextRunRead = false;
-                markRunReadStarted();
-                await runReadGate;
-                await fulfillJson(route, {
-                    ...responseBase,
-                    distributedRuns: snapshotRun ? [snapshotRun] : []
-                });
-                return;
-            }
-            if (run?.state === 'waiting-for-ack' && waitingReads++ > 0) {
-                run = distributedRun(run.manifest, 'ready', ++version);
-            }
-            else if (run?.state === 'running' && runningReads++ > 0) {
-                run = distributedRun(run.manifest, 'passed', ++version);
-            }
-            await fulfillJson(route, {
-                ...responseBase,
-                distributedRuns: run ? [run] : []
-            });
-            return;
-        }
-        const runDetailMatch = url.pathname.match(/^\/runs\/([^/]+)$/);
-        if (request.method() === 'GET' && runDetailMatch) {
-            const runId = decodeURIComponent(runDetailMatch[1]);
-            const detail = latestResponseBase.runs.find(
-                (candidate) => candidate.runId === runId
-            );
-            await fulfillJson(
-                route,
-                detail ?? { error: 'Control run not found.' },
-                detail ? 200 : 404
-            );
-            return;
-        }
-
-        const protectedRequest = request.method() === 'POST' || url.pathname.endsWith('/artifacts');
-        const authorization = request.headers().authorization;
-        if (
-            protectedRequest &&
-            authorization !== 'Bearer execute-brokered-operator-token'
-        ) {
-            await fulfillJson(
-                route,
-                { error: 'Operator token required.' },
-                401
-            );
-            return;
-        }
-        const body = request.postDataJSON() as
-            | { manifest?: RallarBlackBoxDistributedRunManifest; }
-            | undefined;
-        if (
-            options.failure &&
-            request.method() === 'POST' &&
-            (url.pathname === options.failure.path ||
-                url.pathname.endsWith(options.failure.path))
-        ) {
-            await fulfillJson(
-                route,
-                { error: options.failure.message },
-                options.failure.status
-            );
-            return;
-        }
-        if (
-            request.method() === 'POST' &&
-            url.pathname === '/distributed-runs/resolve-targets' &&
-            body?.manifest
-        ) {
-            resolutionCalls += 1;
-            if (options.deferResolution && resolutionCalls === 1) {
-                markResolutionStarted();
-                await resolutionGate;
-            }
-            successfulWrites.push({
-                path: url.pathname,
-                authorization,
-                manifest: body.manifest
-            });
-            try {
-                await fulfillJson(
-                    route,
-                    targetResolution(
-                        body.manifest,
-                        options.resolutionTargetIds?.(
-                            resolutionCalls,
-                            body.manifest
-                        ) ??
-                            selectedAgentIds(body.manifest)
-                    )
-                );
-            }
-            catch {
-                // A configuration change may abort the request before the mock releases it.
-            }
-            return;
-        }
-        if (
-            request.method() === 'POST' &&
-            url.pathname === '/distributed-runs' &&
-            body?.manifest
-        ) {
-            if (createdRunIds.has(body.manifest.distributedRunId)) {
-                await fulfillJson(route, {
-                    error: `Distributed run ${body.manifest.distributedRunId} already exists.`
-                }, 409);
-                return;
-            }
-            createdRunIds.add(body.manifest.distributedRunId);
-            run = distributedRun(body.manifest, 'draft', ++version);
-            successfulWrites.push({
-                path: url.pathname,
-                authorization,
-                manifest: body.manifest
-            });
-            await fulfillJson(
-                route,
-                options.createResponseDistributedRunId
-                    ? {
-                        ...run,
-                        distributedRunId: options.createResponseDistributedRunId
-                    }
-                    : run
-            );
-            return;
-        }
-        if (
-            request.method() === 'POST' &&
-            run &&
-            url.pathname.endsWith('/stage')
-        ) {
-            run = distributedRun(run.manifest, 'waiting-for-ack', ++version);
-            waitingReads = 0;
-            successfulWrites.push({ path: url.pathname, authorization });
-            await fulfillJson(route, run);
-            return;
-        }
-        if (
-            request.method() === 'POST' &&
-            run &&
-            url.pathname.endsWith('/start')
-        ) {
-            run = distributedRun(run.manifest, 'running', ++version);
-            runningReads = 0;
-            successfulWrites.push({ path: url.pathname, authorization });
-            await fulfillJson(route, run);
-            return;
-        }
-        if (
-            request.method() === 'POST' &&
-            run &&
-            url.pathname.endsWith('/cancel')
-        ) {
-            run = distributedRun(run.manifest, 'cancelled', ++version);
-            successfulWrites.push({ path: url.pathname, authorization });
-            await fulfillJson(route, run);
-            return;
-        }
-        if (
-            request.method() === 'GET' &&
-            run &&
-            url.pathname.endsWith('/artifacts')
-        ) {
-            successfulWrites.push({ path: url.pathname, authorization });
-            await fulfillJson(route, {
-                artifactSchemaVersion: 2,
-                distributedRunId: run.distributedRunId,
-                generatedAtEpochMs: 2_000_000_000_000,
-                files: {
-                    'distributed-run.json': JSON.stringify(run),
-                    'manifest.json': JSON.stringify(run.manifest),
-                    'control-run.json': JSON.stringify(base.runs[0])
-                }
-            });
-            return;
-        }
-        await fulfillJson(
-            route,
-            {
-                error: `Unhandled ${request.method()} ${url.pathname}`
-            },
-            404
-        );
-    });
-    return {
-        successfulWrites,
-        brokerAuthorizations,
-        tokenRequests,
-        runRequestCount: () => runReads,
-        waitForDeferredResolution: () => resolutionStarted,
-        releaseDeferredResolution: () => releaseResolution(),
-        deferNextRunRead: () => {
-            shouldDeferNextRunRead = true;
-        },
-        waitForDeferredRunRead: () => runReadStarted,
-        releaseDeferredRunRead: () => releaseRunRead(),
-        setRunState: (state, error) => {
-            if (!run) {
-                throw new Error('A distributed run must exist before its state can change.');
-            }
-            run = distributedRun(run.manifest, state, ++version, { error });
-        }
-    };
-}
-
-function refreshControlAgentEvidence(
-    snapshot: ControlServerSnapshot
-): ControlServerSnapshot {
-    const now = Date.now();
-    return {
-        ...snapshot,
-        runs: snapshot.runs.map((run) => ({
-            ...run,
-            updatedAtEpochMs: now,
-            agents: run.agents.map((agentSnapshot) => ({
-                ...agentSnapshot,
-                lastSeenAtEpochMs: now,
-                lastHeartbeatAtEpochMs: now
-            }))
-        }))
-    };
+interface ExecuteFetchWindow extends Window {
+    readonly __executeFetchGate?: ExecuteFetchGate;
 }
 
 async function installAbortIgnoringFetchGate(
@@ -624,18 +76,14 @@ async function installAbortIgnoringFetchGate(
 async function waitForAbortIgnoringFetch(page: Page): Promise<void> {
     await page.waitForFunction(() =>
         Boolean(
-            (window as unknown as {
-                __executeFetchGate?: { started: boolean; };
-            }).__executeFetchGate?.started
+            (window as ExecuteFetchWindow).__executeFetchGate?.started
         )
     );
 }
 
 async function releaseAbortIgnoringFetch(page: Page): Promise<void> {
     await page.evaluate(() => {
-        (window as unknown as {
-            __executeFetchGate?: { release(): void; };
-        }).__executeFetchGate?.release();
+        (window as ExecuteFetchWindow).__executeFetchGate?.release();
     });
 }
 
@@ -667,50 +115,7 @@ async function visibleExecuteManifest(
     return JSON.parse(raw) as RallarBlackBoxDistributedRunManifest;
 }
 
-async function fulfillCorsPreflight(route: Route): Promise<void> {
-    await route.fulfill({
-        status: 204,
-        headers: {
-            'access-control-allow-origin': '*',
-            'access-control-allow-methods': 'GET, POST, OPTIONS',
-            'access-control-allow-headers': 'authorization, content-type, x-client-id'
-        }
-    });
-}
-
-async function installLiveControl(
-    context: BrowserContext,
-    snapshot: ControlServerSnapshot = liveSnapshot()
-): Promise<void> {
-    await context.route(CONTROL_ROUTE, async (route) => {
-        const request = route.request();
-        const url = new URL(request.url());
-        if (request.method() === 'GET' && url.pathname === '/runs') {
-            await fulfillJson(route, snapshot);
-            return;
-        }
-        const runDetailMatch = url.pathname.match(/^\/runs\/([^/]+)$/);
-        if (request.method() === 'GET' && runDetailMatch) {
-            const runId = decodeURIComponent(runDetailMatch[1]);
-            const run = snapshot.runs.find((candidate) => candidate.runId === runId);
-            await fulfillJson(
-                route,
-                run ?? { error: 'Control run not found.' },
-                run ? 200 : 404
-            );
-            return;
-        }
-        await route.fulfill({
-            status: 404,
-            contentType: 'application/json',
-            body: JSON.stringify({
-                error: `Unhandled ${request.method()} ${url.pathname}`
-            })
-        });
-    });
-}
-
-async function createDraftThroughVisibleControls(page: Page): Promise<void> {
+async function openCompositeExecuteSelection(page: Page): Promise<void> {
     await page.goto(`${EXECUTE_ROUTE}&controlRunId=execute-control-a`);
     const selectedRecipe = page.locator(
         '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]'
@@ -718,6 +123,10 @@ async function createDraftThroughVisibleControls(page: Page): Promise<void> {
     await selectedRecipe.evaluate((element) => element.scrollIntoView({ block: 'start' }));
     await selectedRecipe.focus();
     await page.keyboard.press('Enter');
+}
+
+async function createDraftThroughVisibleControls(page: Page): Promise<void> {
+    await openCompositeExecuteSelection(page);
     const actions = page.locator('[data-execute-action-runway]');
     await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
     await actions
@@ -729,8 +138,69 @@ async function createDraftThroughVisibleControls(page: Page): Promise<void> {
     );
 }
 
+for (
+    const mode of [
+        { label: 'Inherit', value: '', expected: undefined },
+        { label: 'Off', value: 'off', expected: 'off' },
+        { label: 'Signaling', value: 'signaling', expected: 'signaling' },
+        { label: 'Full native', value: 'native', expected: 'native' }
+    ] as const
+) {
+    test(`offers a separate capture choice for a new Console run without rewriting its recipe (${mode.label})`, async ({ context, page }) => {
+        const control = await installExecuteControlFixture(context, { operatorSession: true });
+        await page.goto(`${EXECUTE_ROUTE}&controlRunId=execute-control-a`);
+        const selectedRecipe = page.locator(
+            '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]'
+        );
+        await selectedRecipe.click();
+        await expect(selectedRecipe).toHaveAttribute('aria-selected', 'true');
+        await expect(page.locator('[data-execute-targets]').getByRole('checkbox')).toHaveCount(2);
+        const original = await visibleExecuteManifest(page);
+        expect(original.recipes[0]?.recipe?.recipeId).toBe('composite-evidence-recipe');
+        expect(original.rtcCaptureMode).toBeUndefined();
+
+        const capture = page.locator('[data-execute-workspace]').getByRole('combobox', { name: /RTC capture/i });
+        await expect(capture).toBeVisible();
+        await expect(capture.locator('option')).toHaveText(['Inherit', 'Off', 'Signaling', 'Full native']);
+        await expect(capture).toHaveValue('');
+        await capture.selectOption(mode.value);
+        expect((await visibleExecuteManifest(page)).recipes).toEqual(original.recipes);
+        const actions = page.locator('[data-execute-action-runway]');
+        await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
+        await expect(actions.getByRole('button', { name: 'Create draft', exact: true })).toBeEnabled();
+        const resolution = control.successfulWrites.find((request) =>
+            request.path === '/distributed-runs/resolve-targets'
+        );
+        expect(resolution?.manifest?.rtcCaptureMode).toBe(mode.expected);
+        expect(resolution?.manifest?.recipes).toEqual(original.recipes);
+        expect(Object.hasOwn(resolution?.manifest ?? {}, 'rtcCaptureMode')).toBe(mode.expected !== undefined);
+        await capture.selectOption(mode.value === 'signaling' ? 'off' : 'signaling');
+        await expect(actions.getByRole('button', { name: 'Create draft', exact: true })).toHaveCount(0);
+        await capture.selectOption(mode.value);
+        await expect(actions.getByRole('button', { name: 'Create draft', exact: true })).toBeEnabled();
+
+        await actions.getByRole('button', { name: 'Create draft', exact: true }).click();
+        await expect(page.locator('[data-execute-run-status]')).toHaveAttribute('data-run-state', 'draft');
+        const create = control.successfulWrites.find((request) => request.path === '/distributed-runs');
+        expect(create?.manifest?.rtcCaptureMode).toBe(mode.expected);
+        expect(create?.manifest?.recipes).toEqual(original.recipes);
+        expect(Object.hasOwn(create?.manifest ?? {}, 'rtcCaptureMode')).toBe(mode.expected !== undefined);
+        await expect(capture).toBeDisabled();
+        await expect(capture).toHaveValue(mode.value);
+        await actions.getByRole('button', { name: /Stage \d+ agents/ }).click();
+        await expect(page.locator('[data-execute-run-status]')).toHaveAttribute('data-run-state', 'ready');
+        await actions.getByRole('button', { name: 'Review and start', exact: true }).click();
+        await page.getByRole('dialog', { name: 'Start distributed run?' })
+            .getByRole('button', { name: 'Start distributed run', exact: true }).click();
+        await expect(page.locator('[data-execute-run-status]')).toHaveAttribute('data-run-state', 'running');
+        expect((await visibleExecuteManifest(page)).rtcCaptureMode).toBe(mode.expected);
+        expect((await visibleExecuteManifest(page)).recipes).toEqual(original.recipes);
+    });
+}
+
 test('launches agents and runs a simulated distributed ACK recipe through visible controls', async ({ context, page }) => {
-    const mock = await installLifecycleControl(context, {
+    const mock = await installExecuteControlFixture(context, {
+        operatorSession: true,
         snapshot: { runs: [], distributedRuns: [] },
         enableAgentLaunch: true
     });
@@ -854,7 +324,7 @@ test('launches agents and runs a simulated distributed ACK recipe through visibl
 });
 
 test('generates a fresh run ID when the same recipe starts another run', async ({ context, page }) => {
-    const mock = await installLifecycleControl(context);
+    const mock = await installExecuteControlFixture(context, { operatorSession: true });
     await createDraftThroughVisibleControls(page);
     const firstRunId = new URL(page.url()).searchParams.get('distributedRunId');
     expect(firstRunId).toMatch(/^dist-/);
@@ -890,13 +360,8 @@ test('generates a fresh run ID when the same recipe starts another run', async (
 });
 
 test('advances after Resolve while root reconciliation waits for an earlier read', async ({ context, page }) => {
-    const mock = await installLifecycleControl(context);
-    await page.goto(`${EXECUTE_ROUTE}&controlRunId=execute-control-a`);
-    await page
-        .locator(
-            '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]'
-        )
-        .click();
+    const mock = await installExecuteControlFixture(context, { operatorSession: true });
+    await openCompositeExecuteSelection(page);
     const actions = page.locator('[data-execute-action-runway]');
 
     mock.deferNextRunRead();
@@ -923,13 +388,8 @@ test('advances after Resolve while root reconciliation waits for an earlier read
 });
 
 test('queues a post-mutation read behind a preexisting control refresh', async ({ context, page }) => {
-    const mock = await installLifecycleControl(context);
-    await page.goto(`${EXECUTE_ROUTE}&controlRunId=execute-control-a`);
-    await page
-        .locator(
-            '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]'
-        )
-        .click();
+    const mock = await installExecuteControlFixture(context, { operatorSession: true });
+    await openCompositeExecuteSelection(page);
     const actions = page.locator('[data-execute-action-runway]');
     await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
 
@@ -967,9 +427,9 @@ test('diagnoses non-targetable agents before staging', async ({ context, page })
         createdAtEpochMs: now - 10_000,
         updatedAtEpochMs: now,
         agents: [
-            agent(controlRunId, 'agent-safe'),
-            agent(controlRunId, 'agent-offline', { connected: false }),
-            agent(controlRunId, 'agent-other-group', {
+            createExecuteAgent(controlRunId, 'agent-safe'),
+            createExecuteAgent(controlRunId, 'agent-offline', { connected: false }),
+            createExecuteAgent(controlRunId, 'agent-other-group', {
                 groupId: 'other-group'
             })
         ],
@@ -980,7 +440,7 @@ test('diagnoses non-targetable agents before staging', async ({ context, page })
         reports: [],
         heartbeats: []
     };
-    await installLiveControl(context, { runs: [run], distributedRuns: [] });
+    await installExecuteControlFixture(context, { snapshot: { runs: [run], distributedRuns: [] } });
     await page.goto(`${EXECUTE_ROUTE}&controlRunId=${controlRunId}`);
 
     const targets = page.locator('[data-execute-targets]');
@@ -1011,7 +471,7 @@ test('diagnoses non-targetable agents before staging', async ({ context, page })
 });
 
 test('restores an existing Execute run from a copied v1 URL', async ({ context, page }) => {
-    const control = liveSnapshot();
+    const control = createExecuteLiveSnapshot();
     const catalogItem = DISTRIBUTED_RECIPE_CATALOG.find(
         (item) => item.itemId === 'composite-evidence'
     );
@@ -1023,7 +483,7 @@ test('restores an existing Execute run from a copied v1 URL', async ({ context, 
         distributedRunId: 'dist-restored-composite',
         controlRunId: control.runs[0].runId,
         displayName: 'Restored Composite Evidence',
-        group: GROUP,
+        group: EXECUTE_CONTROL_GROUP,
         recipes: [
             {
                 recipeId: catalogItem.recipe.recipeId,
@@ -1044,10 +504,12 @@ test('restores an existing Execute run from a copied v1 URL', async ({ context, 
         groupAssertions: [],
         metadata: {}
     };
-    const restored = distributedRun(manifest, 'ready', Date.now());
-    await installLiveControl(context, {
-        ...control,
-        distributedRuns: [restored]
+    const restored = createExecuteRunSnapshot({ manifest: manifest, state: 'ready', updatedAtEpochMs: Date.now() });
+    await installExecuteControlFixture(context, {
+        snapshot: {
+            ...control,
+            distributedRuns: [restored]
+        }
     });
     await page.goto(
         `${EXECUTE_ROUTE}&controlRunId=${control.runs[0].runId}` +
@@ -1075,10 +537,10 @@ test('restores an existing Execute run from a copied v1 URL', async ({ context, 
 });
 
 test('refuses Stage when fresh target resolution drifts', async ({ context, page }) => {
-    const mock = await installLifecycleControl(context, {
-        resolutionTargetIds(call, manifest) {
-            const selected = selectedAgentIds(manifest);
-            return call === 3 ? selected.slice(0, 1) : selected;
+    const mock = await installExecuteControlFixture(context, {
+        operatorSession: true,
+        resolutionTargetIds(call) {
+            return call === 3 ? ['execute-agent-a'] : ['execute-agent-a', 'execute-agent-b'];
         }
     });
     await createDraftThroughVisibleControls(page);
@@ -1107,7 +569,8 @@ test('refuses Stage when fresh target resolution drifts', async ({ context, page
 });
 
 test('keeps structured control provenance after a failed mutation refresh', async ({ context, page }) => {
-    const mock = await installLifecycleControl(context, {
+    const mock = await installExecuteControlFixture(context, {
+        operatorSession: true,
         failure: {
             path: '/distributed-runs/resolve-targets',
             status: 409,
@@ -1133,7 +596,6 @@ test('keeps structured control provenance after a failed mutation refresh', asyn
 });
 
 test('renders credential-trust truth when a URL-selected control rejects Resolve', async ({ context, page }) => {
-    const controlAuthorizations: Array<string | null> = [];
     const brokerRequests: string[] = [];
     await context.addInitScript(() => {
         localStorage.setItem(
@@ -1147,42 +609,13 @@ test('renders credential-trust truth when a URL-selected control rejects Resolve
             })
         );
     });
-    await context.route(API_ROUTE, async (route) => {
+    await context.route(EXECUTE_API_ROUTE, async (route) => {
         brokerRequests.push(route.request().url());
-        await fulfillJson(route, { error: 'Broker must not be called.' }, 500);
+        await fulfillExecuteJsonResponse(route, { error: 'Broker must not be called.' }, 500);
     });
-    await context.route('https://untrusted-control.test/**', async (route) => {
-        const request = route.request();
-        if (request.method() === 'OPTIONS') {
-            await fulfillCorsPreflight(route);
-            return;
-        }
-        controlAuthorizations.push(request.headers().authorization ?? null);
-        const pathname = new URL(request.url()).pathname;
-        const snapshot = liveSnapshot();
-        if (request.method() === 'GET' && pathname === '/runs') {
-            await fulfillJson(route, snapshot);
-            return;
-        }
-        const runDetailMatch = pathname.match(/^\/runs\/([^/]+)$/);
-        if (request.method() === 'GET' && runDetailMatch) {
-            const runId = decodeURIComponent(runDetailMatch[1]);
-            const run = snapshot.runs.find((candidate) => candidate.runId === runId);
-            await fulfillJson(
-                route,
-                run ?? { error: 'Control run not found.' },
-                run ? 200 : 404
-            );
-            return;
-        }
-        if (
-            request.method() === 'POST' &&
-            pathname === '/distributed-runs/resolve-targets'
-        ) {
-            await fulfillJson(route, { error: 'Operator token required.' }, 401);
-            return;
-        }
-        await fulfillJson(route, { error: 'Unhandled control request.' }, 404);
+    const control = await installExecuteControlFixture(context, {
+        controlRoute: 'https://untrusted-control.test/**',
+        snapshot: createExecuteLiveSnapshot()
     });
 
     await page.goto(
@@ -1202,14 +635,15 @@ test('renders credential-trust truth when a URL-selected control rejects Resolve
     await expect(error).toContainText(
         'Automatic stored credentials are blocked for a URL-configured control endpoint.'
     );
-    expect(controlAuthorizations.length).toBeGreaterThanOrEqual(2);
-    expect(controlAuthorizations.every((authorization) => authorization === null))
+    expect(control.controlAuthorizations.length).toBeGreaterThanOrEqual(2);
+    expect(control.controlAuthorizations.every((authorization) => authorization === null))
         .toBe(true);
     expect(brokerRequests).toEqual([]);
 });
 
 test('clears a completed operation error when Execute context changes', async ({ context, page }) => {
-    await installLifecycleControl(context, {
+    await installExecuteControlFixture(context, {
+        operatorSession: true,
         failure: {
             path: '/distributed-runs/resolve-targets',
             status: 409,
@@ -1240,15 +674,11 @@ test('clears a completed operation error when Execute context changes', async ({
 });
 
 test('rejects a mutation response for a different run identity', async ({ context, page }) => {
-    await installLifecycleControl(context, {
+    await installExecuteControlFixture(context, {
+        operatorSession: true,
         createResponseDistributedRunId: 'dist-wrong-response'
     });
-    await page.goto(`${EXECUTE_ROUTE}&controlRunId=execute-control-a`);
-    await page
-        .locator(
-            '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]'
-        )
-        .click();
+    await openCompositeExecuteSelection(page);
     const actions = page.locator('[data-execute-action-runway]');
     await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
     await actions
@@ -1268,15 +698,11 @@ test('rejects a mutation response for a different run identity', async ({ contex
 });
 
 test('aborts an in-flight action when Execute configuration changes', async ({ context, page }) => {
-    const mock = await installLifecycleControl(context, {
+    const mock = await installExecuteControlFixture(context, {
+        operatorSession: true,
         deferResolution: true
     });
-    await page.goto(`${EXECUTE_ROUTE}&controlRunId=execute-control-a`);
-    await page
-        .locator(
-            '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]'
-        )
-        .click();
+    await openCompositeExecuteSelection(page);
     const actions = page.locator('[data-execute-action-runway]');
     const targets = page.locator('[data-execute-targets]');
     const runTrigger = targets.locator('[data-searchable-listbox-trigger]');
@@ -1319,13 +745,8 @@ test('aborts an in-flight action when Execute configuration changes', async ({ c
 
 test('rejects an abort-ignoring stale Create response after context changes', async ({ context, page }) => {
     await installAbortIgnoringFetchGate(context, '/distributed-runs');
-    await installLifecycleControl(context);
-    await page.goto(`${EXECUTE_ROUTE}&controlRunId=execute-control-a`);
-    await page
-        .locator(
-            '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]'
-        )
-        .click();
+    await installExecuteControlFixture(context, { operatorSession: true });
+    await openCompositeExecuteSelection(page);
     const actions = page.locator('[data-execute-action-runway]');
     await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
     await actions
@@ -1357,7 +778,7 @@ test('rejects an abort-ignoring stale Export response after context changes', as
         context,
         '/distributed-runs/deferred/artifacts'
     );
-    await installLifecycleControl(context);
+    await installExecuteControlFixture(context, { operatorSession: true });
     await createDraftThroughVisibleControls(page);
     const runId = new URL(page.url()).searchParams.get('distributedRunId');
     if (!runId) {
@@ -1365,9 +786,7 @@ test('rejects an abort-ignoring stale Export response after context changes', as
     }
     const gatePath = `/distributed-runs/${encodeURIComponent(runId)}/artifacts`;
     await page.evaluate((pathname) => {
-        const gate = (window as unknown as {
-            __executeFetchGate?: { pathname?: string; };
-        }).__executeFetchGate;
+        const gate = (window as ExecuteFetchWindow).__executeFetchGate;
         if (gate) {
             gate.pathname = pathname;
         }
@@ -1392,7 +811,7 @@ test('rejects an abort-ignoring stale Export response after context changes', as
 });
 
 test('cancels a known non-terminal run through an accessible confirmation', async ({ context, page }) => {
-    const mock = await installLifecycleControl(context);
+    const mock = await installExecuteControlFixture(context, { operatorSession: true });
     await createDraftThroughVisibleControls(page);
     const actions = page.locator('[data-execute-action-runway]');
 
@@ -1427,7 +846,8 @@ test('cancels a known non-terminal run through an accessible confirmation', asyn
 
 test('keeps failed Cancel focus trapped and disables dialog motion when requested', async ({ context, page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await installLifecycleControl(context, {
+    await installExecuteControlFixture(context, {
+        operatorSession: true,
         failure: {
             path: '/cancel',
             status: 409,
@@ -1484,7 +904,7 @@ test('keeps failed Cancel focus trapped and disables dialog motion when requeste
 });
 
 test('does not reopen Cancel when URL context leaves and restores a run', async ({ context, page }) => {
-    await installLifecycleControl(context);
+    await installExecuteControlFixture(context, { operatorSession: true });
     await createDraftThroughVisibleControls(page);
     const actions = page.locator('[data-execute-action-runway]');
     await actions
@@ -1506,7 +926,7 @@ test('does not reopen Cancel when URL context leaves and restores a run', async 
 });
 
 test('renders waiting-for-barrier truth with bounded Start Cancel and Export policy', async ({ context, page }) => {
-    const mock = await installLifecycleControl(context);
+    const mock = await installExecuteControlFixture(context, { operatorSession: true });
     await createDraftThroughVisibleControls(page);
     mock.setRunState('waiting-for-barrier');
     await page.getByRole('button', { name: 'Refresh control data' }).click();
@@ -1529,7 +949,7 @@ test('renders waiting-for-barrier truth with bounded Start Cancel and Export pol
 });
 
 test('closes Cancel on terminal failed truth and announces the authoritative error', async ({ context, page }) => {
-    const mock = await installLifecycleControl(context);
+    const mock = await installExecuteControlFixture(context, { operatorSession: true });
     await createDraftThroughVisibleControls(page);
     const actions = page.locator('[data-execute-action-runway]');
     await actions
@@ -1571,16 +991,18 @@ test('closes Cancel on terminal failed truth and announces the authoritative err
 });
 
 test('selects an explicit control run inside the single target plane', async ({ context, page }) => {
-    const first = liveSnapshot().runs[0];
+    const first = createExecuteLiveSnapshot().runs[0];
     const secondRunId = 'execute-control-b';
     const second: ControlRunSnapshot = {
         ...first,
         runId: secondRunId,
-        agents: [agent(secondRunId, 'execute-agent-c')]
+        agents: [createExecuteAgent(secondRunId, 'execute-agent-c')]
     };
-    await installLiveControl(context, {
-        runs: [first, second],
-        distributedRuns: []
+    await installExecuteControlFixture(context, {
+        snapshot: {
+            runs: [first, second],
+            distributedRuns: []
+        }
     });
     await page.goto(EXECUTE_ROUTE);
 
@@ -1600,7 +1022,7 @@ test('selects an explicit control run inside the single target plane', async ({ 
 });
 
 test('restores safe targets when an explicit control run becomes live', async ({ context, page }) => {
-    await installLiveControl(context);
+    await installExecuteControlFixture(context);
     await page.goto(`${EXECUTE_ROUTE}&controlRunId=execute-control-a`);
 
     const targets = page.locator('[data-execute-targets]');
@@ -1620,8 +1042,9 @@ test('keeps late Execute pressure evidence operable without changing lifecycle a
         viewport: { width: 430, height: 932 }
     });
     try {
-        const snapshot = pressureSnapshot();
-        const mock = await installLifecycleControl(context, {
+        const snapshot = createExecutePressureSnapshot();
+        const mock = await installExecuteControlFixture(context, {
+            operatorSession: true,
             refreshAgentEvidence: true,
             snapshot
         });
@@ -1756,8 +1179,9 @@ test('keeps late Execute pressure evidence operable without changing lifecycle a
 
 test('preserves the complete 240-target manifest through pressure lifecycle mutations', async ({ context, page }) => {
     test.setTimeout(60_000);
-    const snapshot = pressureSnapshot();
-    const mock = await installLifecycleControl(context, {
+    const snapshot = createExecutePressureSnapshot();
+    const mock = await installExecuteControlFixture(context, {
+        operatorSession: true,
         refreshAgentEvidence: true,
         snapshot
     });
@@ -1797,7 +1221,7 @@ test('preserves the complete 240-target manifest through pressure lifecycle muta
 });
 
 test('renders one live recipe-aware target plane without seeded fallback', async ({ context, page }) => {
-    await installLiveControl(context);
+    await installExecuteControlFixture(context);
     await page.goto(EXECUTE_ROUTE);
 
     await expect(page.locator('[data-execute-workspace]')).toBeVisible();
@@ -1827,7 +1251,7 @@ test('renders one live recipe-aware target plane without seeded fallback', async
 });
 
 test('keeps catalog and preflight available while offline actions remain blocked', async ({ context, page }) => {
-    await context.route(CONTROL_ROUTE, (route) => route.abort('connectionfailed'));
+    await context.route(EXECUTE_CONTROL_ROUTE, (route) => route.abort('connectionfailed'));
     await page.goto(EXECUTE_ROUTE);
 
     await expect(page.locator('[data-execute-catalog]')).toBeVisible();
