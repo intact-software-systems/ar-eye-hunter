@@ -35,8 +35,11 @@ Task64 is locally implemented after semantic RED: immutable accepted intent, a p
 acknowledged-load guard, assignment-owned completion/replay, and root/recipe capture
 propagation through reload. Final source passes129 SDK/owner tests and177 controller tests,
 package/test typechecks, app build, formatting and diff checks. The shared SDK composition
-refactor closes the file-size violations without an exception; human standards and
-independent acceptance remain pending. This continuation is a draft delivery checkpoint.
+refactor closes the file-size violations without an exception. Independent review now
+requires corrections for a late reset erasing the new assignment, dropped owned child
+result events, mutable assertion operands, and the snapshot function's size/duplication.
+Hosted CI also requires affected fixture, bundle and changed-style closure. This
+continuation is published as a draft delivery checkpoint; Task64 acceptance remains open.
 Publish each coherent validated slice on the feature branch; keep incomplete acceptance
 explicit in the draft pull request rather than accumulating accepted slices locally. The WS
 fixture correction is independently accepted and published at
@@ -6017,11 +6020,13 @@ legacy retention, new store or Task64 implementation is authorized by the audit.
 
 ### Task 64: Accepted recipe intent and execution after reassignment or reload
 
-**Status:** Local GREEN implementation is complete. Final-source129 SDK/owner tests,
-177 controller tests, types, app build and mechanics checks pass. The approved shared
-composition refactor closes size violations; human standards judgments and independent
-acceptance remain pending. Task63 is independently accepted locally. The full RTC baseline
-and governed E3 remain incomplete; this work is a draft feature-branch checkpoint.
+**Status:** The initial implementation passes129 focused SDK/owner tests and177 controller
+tests, types, app build and mechanics checks. Independent SPEC/QUALITY review requires
+three behavioral fixes and snapshot standards closure; tests-first fix round1 is released.
+The approved shared composition refactor closes file-size violations, while a named
+snapshot function remains above its function backstop. Task63 is independently accepted
+locally. The full RTC baseline and governed E3 remain incomplete; this work is published
+as a draft feature-branch checkpoint.
 
 The first actual SDK/controller witness now fails semantically: genuine queued load A and
 its serialized acknowledgment succeed, then local replacement B with the same recipe ID
@@ -6218,6 +6223,57 @@ repo guidance rather than guessed in advance. Use focused surface checks selecte
 unchanged broad suites. Preserve raw failures and existing source limitations. Root owns
 this plan; the task implementer owns tests and released product/support work. No commits,
 publication, main operation, E3 measurement, retry/watchdog or CRDT redesign in this release.
+
+**Independent review and hosted CI correction:** The same reviewer read all17 Task64
+owners against the accepted Task63 source preimages and requires four corrections:
+
+- An asynchronous reset admitted to A must not clear B's configuration, loaded body,
+  cache or state after B starts. Fence the reset's continuation and notifications with
+  its captured owner, not only its eventual result commit.
+- Preserve owned child-result progress before a root settles. The current root-only
+  event filter drops a receiver's successful connect event; the verified ALM barrier
+  therefore starts its sender only after the receiver root completes. The preserved WS
+  artifact corroborates that ordering in all six pairs. Keep root completion/report
+  ownership separate from legitimate descendant diagnostics.
+- Own nested assertion operands at acceptance. A caller changing `between` bounds after
+  enqueue currently changes whether an actual value passes and a following connect
+  executes. Audit analogous executable match/condition values in the same snapshot
+  owner; outgoing application payloads remain opaque.
+- Refactor the snapshot's135-line named function into coherent option responsibilities
+  in place and remove its identical fault-carrier arms. No function exception, second
+  copier, migration or retained predecessor is authorized.
+
+Witness the three semantic failures first, then implement the minimum corrections and
+return to the same writer/reviewer. Every changed human-authored file is reviewed and
+remediated in full; support files modified by that work enter closure recursively;
+independent untouched code remains outside closure. Validate actual consumer behavior
+and the affected package/application separately. Publish each coherent validated fix.
+
+The three independent semantic tests now fail against unchanged production, with two
+unchanged controls passing and no setup failure. Root verified the tested source copies
+and released minimum GREEN. Descendant progress needs authentic execution attribution:
+an optional local event field carries the admitted run, agent and root command identity.
+The canonical runtime stamps it from captured admission/child execution; caller metadata
+or a public event input cannot forge it. The client matches its current address and
+admitted root while retaining the child command ID. Root completion, result/wire shapes
+and the protocol version remain unchanged; no parallel ownership store is added.
+
+Hosted browser/app and both Recipe Console checks, API standard/cluster recipes,
+Postgres integration and both scale checks pass. The release remains failed: three unit
+and three Deno failures, changed-style findings and ALM observation. Five unit/Deno
+fixtures contain malformed, unowned or inconsistent-address facts and must be corrected
+to current finite contracts while preserving their artifact/deduplication/restore
+assertions. Do not reopen permissive admission or add a past-format reader. The headless
+bundle measures320.620KiB against its319KiB budget. A bounded before/current comparison
+measures319.268KiB before Task64 and320.620KiB now; compressed attribution is not additive
+per file. Check meaningful snapshot/ownership consolidation first and retain the budget
+until the corrected complete boundary is measured. The existing adjustable packaging
+policy in Section11 retains `floor(measurement)+1` with explicit PR disclosure: apply
+only that minimum cap if still exceeded, preserving every forbidden-dependency assertion.
+This is not a change to E3 workloads, counts, limits or acceptance. Warning findings require their
+actual cohesion/boundary judgments, not a metadata-only waiver. The next useful outcomes
+are the Task64 corrections and affected CI closure; visible/persisted controls follow
+acceptance. Neither CI nor this review is E3 evidence. No Issues were created or reused.
 
 ### Task 65: Visible recipe controls and persisted intent (prepared next slice)
 
