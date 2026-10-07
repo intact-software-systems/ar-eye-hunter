@@ -190,7 +190,7 @@ export function createOriginPrincipalSnapshot(): GroupSnapshot {
     };
 }
 
-/** The snapshot with the session `directorSessionId` appointed its room's director, the room's leader (D164). */
+/** The snapshot with the session `directorSessionId` appointed its room's director, the room's leader. */
 export function toOriginDirectedSnapshot(snapshot: GroupSnapshot, directorSessionId: string): GroupSnapshot {
     const principalId = snapshot.activeSessions.find((session) => session.sessionId === directorSessionId)?.principalId ??
         directorSessionId;

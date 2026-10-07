@@ -78,6 +78,7 @@ describe('the RTC leg of a group-leader room send', () => {
     it.each<{ label: string; snapshot: GroupSnapshot; audience: LeaderAudience; }>([
         { label: 'the room appoints no director', snapshot: createOriginPrincipalSnapshot(), audience: 'room multicast' },
         { label: 'the appointed director is not present', snapshot: toDirectedSnapshot('z'), audience: 'room multicast' },
+        { label: 'the director\'s session lease has expired', snapshot: toLeaseExpired(toDirectedSnapshot('d'), 'd'), audience: 'room multicast' },
         { label: 'the sender is the director', snapshot: toDirectedSnapshot('a'), audience: 'room broadcast' },
         { label: 'the list leaves the director out', snapshot: toDirectedSnapshot('c'), audience: 'list' },
         { label: 'the principal is not the director\'s', snapshot: toDirectedSnapshot('c'), audience: 'principal' },
@@ -125,6 +126,13 @@ function createLeaderFixture(snapshot: GroupSnapshot): RtcOriginOverlayFixture {
 /** The room of `a`, `b`, `c` and `d` (`a`, `b` and `d` sessions of one principal) with its director appointed. */
 function toDirectedSnapshot(directorSessionId: string): GroupSnapshot {
     return toOriginDirectedSnapshot(createOriginPrincipalSnapshot(), directorSessionId);
+}
+
+function toLeaseExpired(snapshot: GroupSnapshot, sessionId: string): GroupSnapshot {
+    return {
+        ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) => session.sessionId === sessionId ? { ...session, expiresAtEpochMs: 1 } : session)
+    };
 }
 
 function toLeaderFrozenTargets(recipientPeerIds: readonly string[]): ALTargets {

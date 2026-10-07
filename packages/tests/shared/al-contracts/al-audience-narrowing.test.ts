@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { toAuthorizedRoomAudience } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
-import { isALAudienceSession, toALAudienceNarrowing } from '@shared/al-contracts/al-audience-narrowing.ts';
+import { isALAudienceSession, isALLeaderRoomBroadcast, toALAudienceNarrowing } from '@shared/al-contracts/al-audience-narrowing.ts';
 import {
     newALBroadcastMessage,
+    newALMulticastMessage,
     newALPrincipalBroadcastMessage,
     newALRoute,
     type ALMessage
@@ -36,6 +37,26 @@ describe('the audience a room send narrows to', () => {
         expect(isALAudienceSession({ sessionId: 's1', principalId: 'principal-1' }, narrowing)).toBe(expected);
     });
 
+    it.each([
+        { label: 'a group-leader room broadcast that names its room', message: createLeaderSend({ groupRef: ORIGIN_ROOM }), expected: true },
+        { label: 'a group-leader room broadcast that names no room', message: createLeaderSend({}), expected: false },
+        { label: 'a receiver room broadcast', message: createListedSend(), expected: false },
+        {
+            label: 'a group-leader principal broadcast',
+            message: newALPrincipalBroadcastMessage('a', ROUTE, { groupRef: ORIGIN_ROOM, principalRef: ORIGIN_PRINCIPAL_REF }, 'chat.message.v1', {}, {
+                ack: 'group-leader'
+            }),
+            expected: false
+        },
+        {
+            label: 'a group-leader room multicast',
+            message: newALMulticastMessage('a', ROUTE, ORIGIN_ROOM, 'chat.message.v1', {}, { ack: 'group-leader' }),
+            expected: false
+        }
+    ])('reads $label as addressing its room\'s leader: $expected', ({ message, expected }) => {
+        expect(isALLeaderRoomBroadcast(message)).toBe(expected);
+    });
+
     it('names no session for a principal broadcast that names no principal', () => {
         const narrowing = toALAudienceNarrowing({ mode: 'broadcast', scope: 'principal', groupRef: ORIGIN_ROOM });
 
@@ -60,6 +81,10 @@ describe('the audience a room send narrows to', () => {
 
 function createPrincipalSend(): ALMessage {
     return newALPrincipalBroadcastMessage('a', ROUTE, { groupRef: ORIGIN_ROOM, principalRef: ORIGIN_PRINCIPAL_REF }, 'chat.message.v1', {});
+}
+
+function createLeaderSend(options: Readonly<{ groupRef?: typeof ORIGIN_ROOM; }>): ALMessage {
+    return newALBroadcastMessage('a', ROUTE, 'room', 'chat.message.v1', {}, { ...options, ack: 'group-leader' });
 }
 
 function createListedSend(): ALMessage {

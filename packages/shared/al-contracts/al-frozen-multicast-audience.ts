@@ -1,5 +1,6 @@
 import { isSameGroupRef } from '../api/api-type-utils.ts';
 import { jsonEquals } from '../repository/state-utils.ts';
+import { isALLeaderRoomBroadcast } from './al-audience-narrowing.ts';
 import type { ALMessage, ALTargets } from './al-contract.ts';
 
 export interface ALFrozenMulticastAudience {
@@ -99,8 +100,7 @@ function isALNarrowedBroadcastFrozenAs(
         return false;
     }
     const narrowed = (original.scope === 'principal' && original.principalRef !== undefined) ||
-        (original.scope === 'room' &&
-            (original.recipientPeerIds !== undefined || message.delivery?.ack === 'group-leader'));
+        (original.scope === 'room' && original.recipientPeerIds !== undefined) || isALLeaderRoomBroadcast(message);
     const listed = original.recipientPeerIds;
     return narrowed && original.groupRef !== undefined &&
         isSameGroupRef(original.groupRef, frozenTargets.groupRef) &&

@@ -1,5 +1,6 @@
 import {
     isALAudienceSession,
+    isALLeaderRoomBroadcast,
     toALLeaderNarrowing,
     type ALAudienceNarrowing
 } from '../al-contracts/al-audience-narrowing.ts';
@@ -102,9 +103,7 @@ export function toRtcOriginFrozenMessage(
 /** A room broadcast that names its own audience, or addresses its room's leader, is frozen as a multicast. */
 export function isRtcUnfrozenRoomMessage(message: ALMessage): boolean {
     const targets = message.targets;
-    return toRtcAudienceNarrowing(message) !== undefined ||
-        (targets?.mode === 'broadcast' && targets.scope === 'room' && targets.groupRef !== undefined &&
-            message.delivery?.ack === 'group-leader') ||
+    return toRtcAudienceNarrowing(message) !== undefined || isALLeaderRoomBroadcast(message) ||
         (targets?.mode === 'multicast' && resolveALFrozenMulticastAudience(targets) === undefined);
 }
 

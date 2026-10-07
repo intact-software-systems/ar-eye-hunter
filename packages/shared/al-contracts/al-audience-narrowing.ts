@@ -38,6 +38,13 @@ export function isALAudienceSession(session: ALAudienceSession, narrowing: ALAud
     }
 }
 
+/** A room broadcast that addresses its room's leader, whose carrier narrows it to the leader at admission. */
+export function isALLeaderRoomBroadcast(message: Pick<ALMessage, 'targets' | 'delivery'>): boolean {
+    const targets = message.targets;
+    return targets?.mode === 'broadcast' && targets.scope === 'room' && targets.groupRef !== undefined &&
+        message.delivery?.ack === 'group-leader';
+}
+
 /**
  * A `group-leader` room send narrows the audience its sender names to the room's leader, the session its carrier
  * resolves from the room snapshot it admits with (D164). A room without one narrows to no session.
