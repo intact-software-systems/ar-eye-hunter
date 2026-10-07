@@ -532,13 +532,17 @@ audience that leaves the director out are refused `no-leader` on both carriers:
 a typed refusal that ends the handle `rejected` (on RTC `refused` before any
 attempt, on WS a trusted-server `relay-rejected` after the frame left) and is no
 fallback trigger. A unicast, `world` or `all` send asking for it is refused
-`unsupported` (D165, D166). AR Eye Hunter's director relay sends intents and
-sync requests by role with `group-leader` and reads a `no-leader` refusal as
-`no-director`, while the director's own outputs stay all-recipient (D167). The
-conformance lane's `leader-ack` family proves the director's confirmation over
-`ws`, `rtc` and `rtc-with-ws-fallback`, the `no-leader` refusal after the
-director resigns over `ws` and `rtc`, and the refusal of a list that omits the
-director over `ws`; manifests 18 and 22 are unchanged (D169).
+`unsupported` (D165, D166), as is a send that asks for the `leader` receipt
+through `qos.ack` without the `group-leader` ack. AR Eye Hunter's director relay
+sends intents and sync requests by role with `group-leader` and reads a
+`no-leader` refusal as `no-director`, while the director's own outputs stay
+all-recipient (D167); the director acts on an intent or sync request stamped
+with its appointment's epoch or an earlier one, whose sender had not yet read a
+succession. The conformance lane's `leader-ack` family proves the director's
+confirmation over `ws`, `rtc` and `rtc-with-ws-fallback`, the `no-leader`
+refusal after the director resigns over `ws` and `rtc`, and the refusal of a
+list that omits the director over `ws`; manifests 18 and 22 are unchanged
+(D169).
 
 ## Ordering and gap recovery
 
@@ -1010,10 +1014,12 @@ hunter's sessions in the room (`newALPrincipalBroadcastMessage` with the room's
 `groupRef`, `receiver` receipts, the outbox, a 15 s TTL): `action-recorded`
 with the round and the action after a command that records the hunter's action,
 and `command-refused` with the command and the rule's text after a command the
-rules refuse. The browser reads it through a typed room channel and shows a
-refusal's text where the command's error shows and, on the hunter's other
-session, the recorded action where its own submission shows; no other hunter
-receives it. This closes D72's lost rule text for the hunter's own sessions
+rules refuse. Relic keys its players by session, so each event names the session
+that sent the command (`playerId`): the browser reads it through a typed room
+channel, and only that session shows a refusal's text where the command's
+error shows; the hunter's other sessions are other players and drop it, and the
+locked-plan card stays the display of the plan a session submitted. No other
+hunter receives it. This closes D72's lost rule text for the acting session
 without a correlated reply (D168).
 
 ## Current validation baseline

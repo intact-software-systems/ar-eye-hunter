@@ -515,11 +515,17 @@ within 30 s; a send the carrier refuses `no-leader` returns
 appointed director is not fresh, and `not-director` when the local session is
 the director. The director's own outputs go to the whole room: with
 `ack: 'all-logical-recipients'` when the output states it, best effort
-otherwise.
+otherwise. While the local session is the director, its relay acts on an intent
+or sync request stamped with its own appointment epoch or an earlier one, since
+the carrier addressed the director at admission and an earlier epoch only means
+the sender had not yet read the succession; it drops one stamped with a later
+epoch, and an output or snapshot that is not the current director's.
 
-`director.resign(room?, options?)` clears this session's appointment through
-`rooms.updateMetadata(...)`, with a `null` patch value that removes the
-appointment key, so it is subject to the same owner/admin policy;
+`director.resign(room?, options?)` reads the room as the server holds it and,
+while the appointment there still names this session, removes the appointment
+key with the metadata write `rooms.updateMetadata(...)` makes for a `null`
+patch value, so it is subject to the same owner/admin policy; an appointment the
+server has since given a successor stays, whatever this session's cache shows.
 `director.onStatus(listener)` subscribes to director status changes.
 
 ```ts
@@ -901,7 +907,8 @@ multicast still travels the room's overlay, so room peers that are not
 recipients relay its bytes; only the audience delivers it. A WS client trusts
 the server's resolution. Relic Hunters sends its AI suggestions to the asking
 hunter's principal over WS, and its server publishes each hunter's recorded
-action and refused-command text to that hunter's principal in the room (D168).
+action and refused-command text to that hunter's principal in the room, where
+only the session that sent the command uses it (D168).
 
 The strategy picks the carrier per audience (D157):
 
@@ -1011,7 +1018,9 @@ a second leg.
 `group-leader` needs a room (D166): a carrier refuses it `unsupported` on a
 unicast, a `world` send or the server's `all`, and the browser validator
 refuses a `group-leader` send that names a `peerId` or `scope: 'world'` before
-either carrier admits it.
+either carrier admits it. A send that asks for the `leader` receipt through
+`qos.ack` alone, without `ack: 'group-leader'`, is refused `unsupported` on
+both carriers: only the `group-leader` ack narrows its audience to the director.
 
 ```ts
 interface MoveIntent {
