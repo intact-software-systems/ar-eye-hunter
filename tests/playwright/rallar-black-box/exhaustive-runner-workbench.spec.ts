@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type {
+    RallarBlackBoxTestEvent,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -331,6 +332,147 @@ test('preserves copied Manual history through Local Load, run choices, and exper
 test.describe('exhaustive runner workbench tabs', () => {
     test.skip(!config.enabled, config.skipReason);
 
+    test('refuses Local Full native run when actual SDK capture has no application sink', async ({
+        page,
+        request
+    }, testInfo) => {
+        await expectFullStackApiReady(request, config);
+        const groupId = uniqueGroupId(testInfo);
+        const connection = `${groupId}-native-refusal`;
+        const connectCommandId = `${groupId}-connect`;
+
+        try {
+            const session = await loginUser(page, config, config.userA, {
+                groupId,
+                sessionId: `${groupId}-native-refusal-session`,
+                tab: 'local-workbench',
+                workspace: 'black-box-runner'
+            });
+            const panel = page.locator('#panel-local-workbench');
+            const recipe = {
+                schemaVersion: 1,
+                recipeId: `${groupId}-native-refusal-recipe`,
+                rtcCaptureMode: 'off',
+                commands: [
+                    {
+                        kind: 'configure',
+                        commandId: `${groupId}-configure`,
+                        config: { rallar: { apiBaseUrl: config.apiBaseUrl, restoreSession: true } }
+                    },
+                    { kind: 'rtc.connect', commandId: connectCommandId, connection }
+                ]
+            } satisfies RallarBlackBoxTestRecipe;
+            const recipeText = JSON.stringify(recipe, null, 2);
+            const editor = panel.getByRole('textbox', { name: 'Recipe JSON', exact: true });
+            await editor.fill(recipeText);
+            await panel.getByRole('button', { name: 'Load', exact: true }).click();
+            await expect.poll(() =>
+                page.evaluate(async () => {
+                    const modulePath = '/src/runtime-store.ts';
+                    const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                    return rallarBlackBoxRuntimeStore.getSnapshot().state.loadedRecipe;
+                })
+            ).toEqual(recipe);
+            await expect(editor).toHaveValue(recipeText);
+            const before = await page.evaluate(async () => {
+                const modulePath = '/src/runtime-store.ts';
+                const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                const state = rallarBlackBoxRuntimeStore.getSnapshot().state;
+                return {
+                    runs: state.commandHistory.filter((result: RallarBlackBoxTestResult) =>
+                        result.kind === 'recipe.run'
+                    ),
+                    eventIds: state.events.map((event: RallarBlackBoxTestEvent) => event.eventId)
+                };
+            });
+
+            await panel.getByRole('combobox', { name: 'Run RTC capture', exact: true })
+                .selectOption({ label: 'Full native' });
+            const ticketResponsePromise = page.waitForResponse((response) => {
+                const url = new URL(response.url());
+                return response.request().method() === 'POST' &&
+                    url.origin === config.apiBaseUrl &&
+                    url.pathname.startsWith('/api/auth/ws-ticket/requests/');
+            });
+            await panel.getByRole('button', { name: 'Run', exact: true }).click();
+            const ticketResponse = await ticketResponsePromise;
+            expect(ticketResponse.ok()).toBe(true);
+            const ticketSessionId = decodeRecord(await ticketResponse.json()).sessionId;
+            expect(ticketSessionId).toBe(session.sessionId);
+            await expect(panel.locator('.workbench-panel .panel-heading .pill')).toHaveText('failed');
+            await expect(editor).toHaveValue(recipeText);
+            const connectRow = panel.locator('.queue-row').filter({ hasText: connectCommandId });
+            await expect(connectRow).toHaveCount(1);
+            await expect(connectRow.locator('.pill')).toHaveText('failed');
+            await connectRow.click();
+            await openTab(page, 'event-stream');
+            const resultJson = page.locator('#panel-event-stream .focus-panel .json-block');
+            await expect.poll(async () => decodeRecord(JSON.parse(await resultJson.textContent() ?? 'null')))
+                .toMatchObject({
+                    commandId: connectCommandId,
+                    kind: 'rtc.connect',
+                    ok: false,
+                    status: 'failed',
+                    error: {
+                        code: 'RALLAR_RTC_CAPTURE_UNVERIFIED',
+                        details: {
+                            reason: 'application-unavailable',
+                            requestedConfiguration: { mode: 'native', origin: 'run' },
+                            rtcCapture: {
+                                status: 'observed',
+                                value: {
+                                    configuration: { mode: 'native', origin: 'run' },
+                                    application: { status: 'unavailable', reason: 'sink-unavailable' },
+                                    connectionId: { status: 'observed', value: expect.stringMatching(/\S/) }
+                                }
+                            }
+                        }
+                    }
+                });
+            const observed = await page.evaluate(async ({ connection, eventIds }) => {
+                const modulePath = '/src/runtime-store.ts';
+                const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                const state = rallarBlackBoxRuntimeStore.getSnapshot().state;
+                return {
+                    loadedRecipe: state.loadedRecipe,
+                    latestRun: state.commandHistory.filter((result: RallarBlackBoxTestResult) =>
+                        result.kind === 'recipe.run'
+                    ).at(-1),
+                    topics: state.events.filter((event: RallarBlackBoxTestEvent) =>
+                        event.connection === connection && !eventIds.includes(event.eventId)
+                    ).map((event: RallarBlackBoxTestEvent) => event.topic)
+                };
+            }, { connection, eventIds: before.eventIds });
+            expect(observed.loadedRecipe).toEqual(recipe);
+            expect(observed.latestRun).toMatchObject({
+                kind: 'recipe.run',
+                ok: false,
+                status: 'failed',
+                value: {
+                    recipeId: recipe.recipeId,
+                    invocation: { invocationId: expect.stringMatching(/\S/), run: 'native', recipe: 'off' },
+                    results: [
+                        { kind: 'configure', ok: true },
+                        { commandId: connectCommandId, kind: 'rtc.connect', ok: false, status: 'failed' }
+                    ]
+                }
+            });
+            expect(observed.latestRun?.replayed).not.toBe(true);
+            const invocationId = decodeRecord(decodeRecord(observed.latestRun?.value).invocation).invocationId;
+            expect(
+                before.runs.map((result: RallarBlackBoxTestResult) =>
+                    decodeRecord(decodeRecord(result.value).invocation).invocationId
+                )
+            )
+                .not.toContain(invocationId);
+            expect(observed.topics).toContain('rallar.browser.connect_failed');
+            expect(observed.topics).not.toContain('rallar.browser.connect_completed');
+        }
+        finally {
+            await cleanupRallarPage(page);
+        }
+    });
+
     test('runs Manual Rallar actions, history, matrix exports, and cleanup', async ({
         page,
         request
@@ -538,37 +680,6 @@ test.describe('exhaustive runner workbench tabs', () => {
                 return decodeRecord(stored.values).rtcCaptureMode;
             }).toBeUndefined();
             await expectNoSecrets(panel, [config.userA.password]);
-        }
-        finally {
-            await cleanupRallarPage(page);
-        }
-    });
-
-    test('loads and runs Local Workbench recipes with queue report and reset evidence', async ({
-        page,
-        request
-    }, testInfo) => {
-        await expectFullStackApiReady(request, config);
-        const groupId = uniqueGroupId(testInfo);
-
-        try {
-            await loginUser(page, config, config.userA, {
-                groupId,
-                sessionId: `${groupId}-workbench-session`,
-                tab: 'local-workbench',
-                workspace: 'black-box-runner'
-            });
-            const panel = page.locator('#panel-local-workbench');
-
-            await panel.getByRole('button', { name: 'Load' }).click();
-            await expect(panel).toContainText(/loaded|Recipe JSON|valid/i, { timeout: 30_000 });
-            await panel.getByRole('button', { name: 'Run' }).click();
-            await expect(panel).toContainText(/completed|Command Queue|Completed Commands|Report/i, {
-                timeout: 60_000
-            });
-            await panel.getByRole('button', { name: 'Cancel' }).click();
-            await panel.getByRole('button', { name: 'Reset' }).click();
-            await expect(panel).toContainText(/idle|pending|No commands/i, { timeout: 30_000 });
         }
         finally {
             await cleanupRallarPage(page);

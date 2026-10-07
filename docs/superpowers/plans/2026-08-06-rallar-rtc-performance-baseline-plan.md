@@ -95,10 +95,15 @@ Actual checkout/artifact evidence binds Branch to15eff and the other two to an e
 synthetic merge, all with tree372c1f6e21ab768fbb584a03c8e5c3fbfa26fe16. Required review still
 blocks ordinary main integration. The previous exact squash proposal against main
 d5db1569d5072a714df314b2d5eceed5011407d5 is now stale: remote main has advanced to
-94e72f4828e9db5111dc06e4746f1ce09f68ead2 and PR633 is CONFLICTING. A read-only dry merge
-exits1 with two current conflicts, shared-web bundle budgets and update-room tests.
-Repair and validate the feature branch before preparing any new exact main proposal.
-No main commit, push or accepted E3 cohort is performed.
+94e72f4828e9db5111dc06e4746f1ce09f68ead2. The two real shared-web budget and
+update-room test conflicts are now repaired and published in feature merge979edba8,
+treef5c9cf3805051f8392306cb5eef34537cf9000ff. Fresh complete-owner review, local checks
+and original-attempt Branch37698502492, Formation37698502271, Medium37698502189
+and CodeQL37698497321 pass. Root verifies eight original artifact digests,20 checkout
+proofs, the published validation receipt and equivalent synthetic merge tree/parents.
+PR633 is MERGEABLE; native review is still required. A new exact administrator squash
+proposal against main94e72/head979/treef5c9 is prepared and fresh explicit permission
+is pending. No main commit, push or accepted E3 cohort is performed.
 Local Workbench now has visible run capture intent after two genuine semantic REDs:
 first the missing selector, then explicit Off failing to reach the accepted run. Final
 32 SDK/store cases, the simulated real-UI browser witness, maintained1488-test typing,
@@ -128,7 +133,16 @@ per-operation samples remain insufficient. This accepts hosted release evidence 
 semantic REDs followed by minimum GREEN. The final maintained browser run passes three
 cases, including both observer controls. Fresh independent SPEC/QUALITY approves all
 three complete owners with no findings; final current-parent WORKTREE style passes.
-This coherent slice is ready for prompt feature publication.
+Local Load/remount is published at379f8aff, followed by the independently reviewed
+Copy-to-Local body/lifecycle witness at6a01de7d. Fresh original-attempt Branch,
+Formation and Medium correctness for both heads passes on independently verified trees,
+without reuse. Actual Local Native refusal passes1/1 in7.4s; the unchanged actual
+Manual Native/export/reload/reset case passes1/1 in13.2s. Initial setup failures and
+shared-database service errors remain retained; these passes do not establish delivery
+or performance acceptance. Full-owner review accepts the new witness. The SAME author removes the redundant
+static-heading smoke, proves retained Load/Run/Reset1/1 in16.7s at corrected source,
+and the SAME reviewer closes SPEC/QUALITY with no remaining findings. This coherent
+tests-only slice is accepted for prompt feature publication.
 Worker, Actions and full B01–B06/E3 outcomes stay mandatory.
 B06 selection and producer configuration are published; governed E3 has zero accepted cohorts
 and remains required in Section 11. Current product and architecture are [docs/product.md](../../product.md)
@@ -3684,28 +3698,28 @@ No new performance producer is dispatched by this task.
 - Lifecycle-history gains the specification's mandatory bounded-partial/unavailable
   nativeObservation summary in the same existing output budget and recorder path.
 
-- [ ] **Step 1 — Witness ownership/budget REDs.** Use real scope/native/service
+- [x] **Step 1 — Witness ownership/budget REDs.** Use real scope/native/service
       owners with controlled native edges. Assert first generic/typed summaries survive
       original teardown and ordinary exhaustion, original timeout/deletion issuer survives
       callback replacement, detached channel cannot gain a later typed error, one nonce
       call completes before graph setup, and diagnostic denial does not deny native work.
       Run the named native/scope/service files; record independent failure assertions.
-- [ ] **Step 2 — Implement native/service capture and safe publication.** Keep state
+- [x] **Step 2 — Implement native/service capture and safe publication.** Keep state
       only at explicit lifecycle owners and pure finite translation at boundaries. Preserve
       original exceptions, callbacks, FIFO/counts and continuation. Add disposal at each
       existing initializer handoff/failure and shutdown after disconnect-peer captures.
-- [ ] **Step 3 — Witness serialized artifact/privacy REDs, then implement projection.**
+- [x] **Step 3 — Witness serialized artifact/privacy REDs, then implement projection.**
       Translate through actual browser/control JSONL and existing lifecycle-history reader.
       Assert maximum-shape native variants fit source/control bounds; missing/null/invalid
       nested error coverage is malformed, never none-observed. Inject forbidden raw SDP,
       fragment/address/credential/error text at each nested boundary. Exhaust the shared
       suffix/output budget and assert explicit partial/unavailable/malformed/limit flags.
       Run `npx vitest run packages/tests/rallar-black-box/live-rtc-agent-diagnostics.test.ts`.
-- [ ] **Step 4 — Witness delayed-stats RED, then fence exact objects.** Delay one real
+- [x] **Step 4 — Witness delayed-stats RED, then fence exact objects.** Delay one real
       reader call; replace native PC, entire peer, service and middleware/runtime in separate
       cases, including late rejection. Assert captured pre-await identity, retired-during-read,
       no replacement pair and one existing read only. Run the named stats test file.
-- [ ] **Step 5 — GREEN, public consumers and closure.** Run covering tests, then
+- [x] **Step 5 — GREEN, public consumers and closure.** Run covering tests, then
       affected shared/shared-web/shared-test tests/typechecks and live diagnostic consumer
       compilation. Exercise all fixed admission caps, 204 setup/PC + 816 channel stress
       allowance and 5,891 ceiling without resetting a persistent scope. Include native
@@ -3716,11 +3730,17 @@ No new performance producer is dispatched by this task.
       prove independent replacement capture. Public snapshots, browser bundle-boundary
       checks and affected game app builds follow focused checks.
       Every changed/support file enters full recursive standards closure.
-- [ ] **Step 6 — Independent review and publish the coherent capability.** Complete
+- [x] **Step 6 — Independent review and publish the coherent capability.** Complete
       specification/quality review before choosing the next horizon. Do not label source
       support as deployed availability, complete first-stall capture or acceptable overhead.
       Next required outcomes remain recipe/UI/agent/Actions/B06 configuration propagation;
       a later unchanged diagnostic/perturbation exercise needs its separate selection.
+
+**Current Task53 status:** All six source steps are completed at the published
+checkpoint described below, including explicit human acceptance of the two historical
+TDD sequence deviations. Marking these steps complete does not erase those deviations
+or certify present native availability, performance overhead or B01–B06/E3 acceptance.
+Current end-to-end acceptance remains tracked in Tasks60–65 and the completion gate.
 
 **Task53 corrected source checkpoint (2026-10-05):** The initial independent review
 reproduced publication blocked by a retired operation, invalid retained-error coverage
@@ -6784,16 +6804,65 @@ actual SDK/native RTC application, reload durability or fresh external effects.
 
 **Parent delivery refresh:** Main advanced to94e72f4828e9db5111dc06e4746f1ce09f68ead2,
 creating two real PR633 conflicts. The earlier exact main-merge proposal is stale and has
-no approval. A feature-only pending merge reconciles the actual null-delete room test
+no approval. The feature-only merge979edba8 reconciles the actual null-delete room test
 and measured bundle budget, preserving current main semantics and the RTC capture work.
 Fresh review accepts both complete owners; focused checks pass332cases and the actual
 browser entry measures256666B Brotli within the unchanged251KiB cap. Broader checks pass
 480 benchmark-package cases, shared/shared-test typing,1490 test-file typing and the
-headless boundary case. Two canonical game builds stop at a missing local React plugin;
-pinned dependency isolation succeeds without changing the lock, and those two builds are
-being retried. An exact reviewed raw-HTTP observation disposition receives same-reviewer
-closure and final style before publication. No default-branch operation or E3 follows
-from this pending feature reconciliation.
+headless boundary case. Both canonical game builds pass after pinned dependency isolation;
+the original missing-plugin setup failures are retained and the lock remains unchanged.
+The exact raw-HTTP observation disposition receives SAME-reviewer closure; final current-main
+style and classified coupling gates pass. Fresh original-attempt Branch37698502492,
+Formation37698502271, Medium37698502189 and CodeQL37698497321 all succeed. Root verifies
+all eight artifact digests,20 checkout proofs and the synthetic merge d62c8d2a with
+parents94e72/979 and treef5c9cf38. Actual broad execution/reusefalse telemetry is verified;
+13920 unit tests pass/12skip, app browser46pass/68skip, then memory full stack7pass.
+The actual Manual Native case is skipped in hosted app browser; ALM smoke limits,
+nonblocking recipes and skipped RTC integrity remain disclosed. PR633 is MERGEABLE with
+native review required; a fresh exact main proposal is prepared and permission pending.
+No default-branch operation or E3 follows from this feature reconciliation.
+
+**Published Local/Copy hosted provenance:** Local379f8aff and Copy6a01de7d each have
+original-attempt terminal-success Branch, Formation and Medium workflows. Root independently
+verifies all sixteen archive digests,36 checkout proofs, published validation receipts and
+actual synthetic commit trees/parents. Local Formation/Medium test603137c0 with parents
+15eff/379 and tree5121b406; Copy tests a7811ec8 with parents15eff/6a and tree28f68874.
+Branch checkout is the respective literal head. This scope does not inherit to the newer
+parent979 reconciliation or dirty Native-refusal test. Actual selection/execution telemetry
+is separately checked before claiming fresh broad acceptance. The retained Copy Branch
+app-browser log actually passes48/skips68 cases, then passes7 memory full-stack cases.
+Its actual Manual Native/export/reload/reset case is skipped at line616; passing that
+job does not accept this unexecuted actual-provider scenario. Nonblocking recipe observations,
+ALM smoke limits and skipped RTC observation integrity remain disclosed; no B01–B06/E3
+acceptance follows. Original failed attempts remain preserved.
+
+**Actual UI source refresh:** The maintained exhaustive owner already contains an
+actual browser-rallar/Postgres Manual Native application and Signaling draft reload case.
+That source coverage is distinct from its runtime acceptance and does not prove Local
+run override, unavailable Native refusal or fresh external delivery. Local accepted
+recipes live in the runtime store; inspected owners expose route remount restoration,
+with no dedicated custom recipe reload store. Do not invent one to satisfy a hypothetical
+persistence path. The new Local Native refusal witness uses actual unscoped SDK
+construction and the existing typed application-unavailable boundary. Its first exact
+maintained run stops before browser execution because DATABASE_URL is absent; an additional
+wrapper prerequisite check stops before launch. Both are setup evidence, not semantic RED.
+After read-only canonical Postgres verification and process-only prerequisite supply, the
+actual second test execution passes1/1 in7.4s. It proves fresh real UI/SDK Native/run refusal,
+exact accepted authored Off body, typed sink-unavailable failure and no connect completion.
+It does not prove successful Native channel delivery or repeat freshness. Three formatting
+hunks follow that refusal pass; no runtime equivalence is claimed from the failed legacy
+TypeScript scanner attempt. The unchanged actual Manual Native/export/reload/reset case
+then passes1/1 in13.2s at final source. Root verifies all22 frozen bindings. Both passing
+logs retain unrelated topology corruption, open outbox circuits and resource/lifecycle
+errors from the shared database; no service-health or performance acceptance follows.
+Independent review finds no defect in the new refusal. Under complete-owner closure,
+the SAME author removes only the redundant static-heading Local smoke; meaningful retained
+Load/Run/Reset passes1/1 in16.7s at corrected source, scoped typing/format pass, and
+the SAME reviewer closes SPEC/QUALITY with no findings. Root verifies22 frozen/current
+bindings, unchanged retained witness bodies and21 unchanged non-spec owners. No production
+correction, migration, duplicate policy or artificial RED is released. The separate real
+PR645 conflict against parent979 is confined to this plan; source auto-composes. Reconcile
+that feature parent before broad combined-source final validation.
 
 **Next authored-intent outcomes:** Finish concrete actual UI SDK application/refusal and
 fresh external-effect witnesses. Recover only existing storage/reload paths from code;
