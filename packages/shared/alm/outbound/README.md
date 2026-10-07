@@ -19,8 +19,9 @@ to the same hop and never widens a room audience. A peer is the sender's own hop
 two sources: the captured plan's next hops (`ackTracking.nextHopPeerIds`), or the hops the
 composition declares every frame passes through (`ALOutboundMessageRuntime.Dependencies.hopPeerIds`).
 A WS client's unicast addressed to the server, and its `hop` or `subtree` room send, track the
-server as a next hop; a `receiver` room send or session unicast has no client-tracked hop and
-stays the server's to retry. The WS client also names its server as its composition's hop, so an
+server as a next hop; a `receiver` or `leader` room send, or a `receiver` session unicast, has no
+client-tracked hop and stays the server's to retry. The WS client also names its server as its composition's
+hop, so an
 ordered at-least-once room send at the browser's defaults, whose effective `ack` is `none` and
 tracks no receipt, still has the server's gap NACK served along that hop; the RTC compositions
 and the WS server declare no fixed hop. Control acceptance applies the same exemption: without a
@@ -405,15 +406,16 @@ A receipt row is keyed by its origin and message id
 (`toALOutboundPendingAckKey({ namespace, originPeerId, msgId })`), so origins that share one
 store namespace never collide on a message id. Its `mode` is the send's resolved ack algorithm
 and types its peer lists: next hops under `hop` and `subtree`, logical recipients under
-`receiver`. An ACK confirms the peer that mode names -- its `logicalRecipientPeerId` under
-`receiver`, its sender under `hop`, and under `subtree` its sender only on that hop's own
+`receiver` and `leader`. An ACK confirms the peer that mode names -- its `logicalRecipientPeerId` under
+`receiver` and `leader`, its sender under `hop`, and under `subtree` its sender only on that hop's own
 completion ACK (a leaf's `delivered`, a relay's terminal `subtree-complete`), never on a
 `forwarded` ACK the hop relays for a recipient below it -- so a hop ACK never stands in for a
 logical recipient. A control
 is a duplicate only when its sender, logical recipient and status all repeat; an ACK for a peer
 the receipt already counted is refused with its own reason, so an ACK that moves no receipt costs
 no write and no version bump. The `acknowledgement`
-settlement carries the `mode`, so `complete` under `receiver` is logical completion. A
+settlement carries the `mode`, so `complete` under `receiver` is logical completion, and under
+`leader` it is the confirmation of the one director session the carrier froze at admission (D164). A
 `receiver` room send frozen to an empty audience (an origin alone in its room) is admitted and
 states a complete `acknowledgement` settlement at its commit, with no receipt row, as the WS
 server answers an empty audience.
@@ -479,14 +481,27 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   the room has become.
 - A principal or fixed-list send narrows that audience at the same freeze (D159, D160):
   `computeFrozenAudience` takes a required `narrowing: ALAudienceNarrowing | undefined`, `undefined`
-  freezing the whole room, `{ kind: 'principal', principalId }` keeping the admitted sessions of that principal and
-  `{ kind: 'list', recipientPeerIds }` the admitted sessions the list names, in the origin freeze
+  freezing the whole room, `{ kind: 'principal', principalId }` keeping the admitted sessions of that principal,
+  `{ kind: 'list', recipientPeerIds }` the admitted sessions the list names and `{ kind: 'leader', sessionId }`
+  the director session alone, in the origin freeze
   (`toRtcOriginFrozenMessage`) and in the carrier-gap path alike, so a room-bounded audience is one
   computation on RTC. A listed session the room does not admit is dropped silently, as a multicast's
   audience narrows, and an empty result is an empty frozen audience, as for an origin alone in its
   room. RTC carries no `world` or `all` audience, nor a principal broadcast that names no room: such a broadcast is refused at admission as
   `refused/unsupported` (D157), and the browser sender routes a `world` send to WS first whenever
   the strategy allows it.
+- A `group-leader` room send narrows that audience to the room's leader (D164, D165, D166). The narrowing
+  comes from the message, its `delivery.ack` on a room-bounded target, never from a side input, and its
+  `sessionId` is resolved at admission from the room snapshot the carrier holds by
+  `resolveRallarGroupLeaderSessionId` ([`group-director.ts`](../../api/group-director.ts)): the appointed
+  director session when `isRallarGroupDirectorSessionActive` holds, so `isALAudienceSession` stays a session
+  comparison. The RTC origin refuses the admission `refused/no-leader` when it resolves no director, when the
+  director is the origin itself, and when the director is outside the audience the send names after its
+  exclusions (a fixed list or a principal without it, or `exceptPeerIds` naming it); otherwise it freezes
+  `[director]`, and its receipt row, under mode `leader`, expects that session alone. A send held for a carrier
+  gap resolves its director when it freezes. The leader stays frozen through a succession: the receipt expects
+  the session it froze, and a resend re-admits against the current appointment.
+  `refused/no-leader` is no fallback trigger, since WS reads the same appointment.
 - **The RTC room limit (R-S2c-ii-13).** The RTC frozen audience rides on the wire, where one
   collection holds at most `AL_MESSAGE_RESOURCE_LIMITS.collectionEntries` (256) ids, so an RTC room
   multicast reaches rooms of at most 257 sessions, the origin included. A larger audience is refused as
@@ -496,8 +511,10 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   with the typed reason, never `failed`.
 - The WS server freezes a room message at its admission stamp from the sessions it authorizes,
   narrowed for a principal broadcast that names its room to that principal's sessions (the group
-  snapshot's `activeSessions[].principalId`) and for a room broadcast that carries
-  `recipientPeerIds` to the listed sessions; that narrowed set is the room audience its receipt
+  snapshot's `activeSessions[].principalId`), for a room broadcast that carries
+  `recipientPeerIds` to the listed sessions, and for a `group-leader` send to the director session the room
+  authorizer resolves from the snapshot it reads, the leader alone in the narrowed `sessions`; that narrowed set
+  is the room audience its receipt
   aggregate expects and its repair serves, and the send is fenced on the room's roster as any room
   send (D143, D159). A multicast an RTC origin froze that falls back to WS keeps its frozen set
   narrowed to the sessions the server authorizes: a frozen audience narrows what the admitting
@@ -514,9 +531,11 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
 
 ### Server receipts on WS
 
-A `receiver` room send over WS expects nobody when it is admitted
+A `receiver` or `leader` room send over WS expects nobody when it is admitted
 ([`toWsQueueBoxClientAckTrackingPlan`](../../services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts)):
-the WS server freezes the audience and answers for it. Each recipient's ACK stays addressed to the
+the WS server freezes the audience and answers for it. A `leader` send is the same aggregate with one expected
+recipient, the director session, so the `admitted` receipt names the director and the director's ACK completes it.
+Each recipient's ACK stays addressed to the
 origin (`toPeerId` is the message's `senderId`); the server admits it at ingress as the aggregating
 relay hop and counts it in
 [`WsQueueBoxServerReceiptAggregation`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts),
@@ -591,7 +610,11 @@ the room's admitted audience
 a room unicast whose `route.contextId` names another room than its `groupRef`, a message whose room or principal names another application or workspace than its connection authenticated (D100, [`toWsQueueBoxServerScopeAuthorization`](../../services/ws-queue-box-server/scope/to-ws-queue-box-server-scope-authorization.ts)), a client's `all` broadcast (D158), and any room send the room
 authorizer ([`ws-topic-room-authorizer.ts`](../../../shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts))
 refuses — a halted transport, a scope mismatch, data before activation; a sender without a live session or
-an active member is `membership-fenced` instead. A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
+an active member is `membership-fenced` instead. A `group-leader` room send is refused at ingress with a
+`no-leader` NACK when the snapshot the room authorizer reads appoints no director present in the room, when the
+sender is the director, or when the send's exclusions, fixed list or principal leave the director out; the
+origin states it as a trusted-server `relay-rejected` with that reason and the handle reads `rejected` (D165).
+A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
 aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
 audience verbatim, so a session that left since reads unconfirmed (D73).
 
@@ -701,8 +724,8 @@ bound is refused. A receipt writes no work and no `ack-timeout` schedule; the se
 
 Every receipt row states its `acknowledgement` settlement through `toALOutboundAcknowledgementFact`.
 Under `hop` and `subtree` the row counts next hops, so its peers are both the hop lists and the
-expected, confirmed and unconfirmed recipient lists. Under `receiver` the row counts the frozen logical
-audience, the handle reads `acknowledged` only once every expected recipient is confirmed, and the hop
+expected, confirmed and unconfirmed recipient lists. Under `receiver` and `leader` the row counts the frozen
+logical audience, the handle reads `acknowledged` only once every expected recipient is confirmed, and the hop
 lists are the local hop view (`OverlayTree`): the next hops the captured ack plan names
 (`nextHopPeerIds`), of which those whose own completion ACK is in the ACK history are confirmed. A relay
 in front of a recipient is therefore a confirmed hop while the recipient is a confirmed recipient. A WS
@@ -923,7 +946,7 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
   (`attempts >= maxAttempts`), [`ALOutboundRepairAdmission`](./al-outbound-repair-admission.ts) deletes
   the pending-ACK and repair-attempt rows in one commit and, once it lands, states `receipt-exhausted`
   with the row's confirmed and unconfirmed peers (next hops under `hop`/`subtree`, logical recipients
-  under `receiver`). The handle reads `failed` and keeps who confirmed. The row is gone, so the fact is
+  under `receiver` and `leader`). The handle reads `failed` and keeps who confirmed. The row is gone, so the fact is
   stated once across replays and reloads and a late ACK completes nothing. With the defaults (a 2 000 ms
   ACK timeout, three receipt retries) the budget ends about 8 s after admission.
 - **A hop that refuses for good.** An admitted `expired`, `unauthorized`, `membership-fenced` or `stale` NACK
@@ -962,7 +985,8 @@ in memory like a cancellation: a durable RTC message resumed after a reload is n
 **The declared retryable outcomes (D65)** live in
 [`resolve-al-delivery-fallback-trigger.ts`](../delivery/resolve-al-delivery-fallback-trigger.ts). At
 admission every `unroutable` reason (`no-route`, `circuit-open`, `rate-limited`) and `refused/unsupported`
-hands the send to the fallback carrier at once; an RTC room fanout in a carrier gap reads `no-route` there
+hands the send to the fallback carrier at once, while `refused/no-leader` hands nothing over (D165); an RTC room
+fanout in a carrier gap reads `no-route` there
 (D96). After admission `AL_FALLBACK_NOT_READY_ATTEMPTS` (3)
 consecutive `not-ready` RTC attempts across the message's send-prepared rows (reset by a `sent` attempt
 or an acknowledgement), `not-yet-in-sync-exhausted` and `receipt-exhausted` hand an admitted
