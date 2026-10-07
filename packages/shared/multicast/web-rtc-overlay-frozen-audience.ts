@@ -1,4 +1,8 @@
-import { isALAudienceSession, type ALAudienceNarrowing } from '../al-contracts/al-audience-narrowing.ts';
+import {
+    isALAudienceSession,
+    toALLeaderNarrowing,
+    type ALAudienceNarrowing
+} from '../al-contracts/al-audience-narrowing.ts';
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import {
     resolveALFrozenMulticastAudience,
@@ -7,6 +11,7 @@ import {
 } from '../al-contracts/al-frozen-multicast-audience.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import { resolveALOutboundStoreDurability, type ALQosEffectivePolicy } from '../al-contracts/al-policy.ts';
+import { isALLogicalReceiptMode } from '../al-contracts/validate-al-ack-support.ts';
 import type { ALOutboundDispatchPlan } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '../alm/outbound/al-outbound-transport-message.ts';
 import { Either } from '../resilience/Either.ts';
@@ -19,13 +24,18 @@ export interface ComputeFrozenAudienceInput {
     readonly selfPeerId: string;
     /** `undefined` freezes every authorized session of the room. */
     readonly narrowing: ALAudienceNarrowing | undefined;
+    /** The room's leader inside that audience, for a `group-leader` send; `undefined` for any other. */
+    readonly leader: ALAudienceNarrowing | undefined;
 }
 
 export function computeFrozenAudience(input: ComputeFrozenAudienceInput): ALFrozenMulticastAudience {
-    const { admission, selfPeerId, narrowing } = input;
+    const { admission, selfPeerId, narrowing, leader } = input;
     return {
         recipientPeerIds: admission.memberSessions
-            .filter((session) => session.sessionId !== selfPeerId && isALAudienceSession(session, narrowing))
+            .filter((session) =>
+                session.sessionId !== selfPeerId && isALAudienceSession(session, narrowing) &&
+                isALAudienceSession(session, leader)
+            )
             .map((session) => session.sessionId),
         snapshotVersion: admission.snapshotVersion
     };
@@ -89,9 +99,13 @@ export function toRtcOriginFrozenMessage(
     return admission.kind === 'authorized' ? toRtcFrozenRoomMessage(message, admission, selfPeerId) : message;
 }
 
+/** A room broadcast that names its own audience, or addresses its room's leader, is frozen as a multicast. */
 export function isRtcUnfrozenRoomMessage(message: ALMessage): boolean {
+    const targets = message.targets;
     return toRtcAudienceNarrowing(message) !== undefined ||
-        (message.targets?.mode === 'multicast' && resolveALFrozenMulticastAudience(message.targets) === undefined);
+        (targets?.mode === 'broadcast' && targets.scope === 'room' && targets.groupRef !== undefined &&
+            message.delivery?.ack === 'group-leader') ||
+        (targets?.mode === 'multicast' && resolveALFrozenMulticastAudience(targets) === undefined);
 }
 
 export function toRtcFrozenRoomMessage(
@@ -99,16 +113,17 @@ export function toRtcFrozenRoomMessage(
     admission: Extract<RtcRoomSnapshotAdmission, { readonly kind: 'authorized'; }>,
     selfPeerId: string
 ): ALMessage {
-    const narrowing = toRtcAudienceNarrowing(message);
+    const frozen = computeFrozenAudience({
+        admission,
+        selfPeerId,
+        narrowing: toRtcAudienceNarrowing(message),
+        leader: toALLeaderNarrowing(message, admission.leaderSessionId)
+    });
     const targets = message.targets;
-    if (narrowing === undefined || targets?.mode !== 'broadcast' || targets.groupRef === undefined) {
-        return toALFrozenMulticastMessage(
-            message,
-            computeFrozenAudience({ admission, selfPeerId, narrowing: undefined })
-        );
+    if (targets?.mode !== 'broadcast' || targets.groupRef === undefined) {
+        return toALFrozenMulticastMessage(message, frozen);
     }
     const { groupRef, minSnapshotVersion, rosterVersion, exceptPeerIds = [] } = targets;
-    const frozen = computeFrozenAudience({ admission, selfPeerId, narrowing });
     return {
         ...message,
         targets: {
@@ -138,15 +153,40 @@ export function computeRtcFrozenAudienceRefusal(
     return recipientCount <= limit
         ? Either.ofRight(msg)
         : Either.ofLeft({
-            msg: original.targets?.mode === 'broadcast'
-                ? { ...msg, targets: original.targets }
-                : toUnfrozenMulticastMessage(msg),
+            msg: toUnfrozenRoomMessage(msg, original),
             dropReason:
                 `RTC room multicast audience of ${recipientCount} recipients exceeds the RTC room limit of ${limit}`,
             dropReasonCode: 'unsupported',
             lane: 'volatile',
             preparedMessages: []
         });
+}
+
+/**
+ * A `group-leader` room send frozen to no session has no leader to confirm it: the room appoints no director present
+ * at admission, the sender is the director, or the audience its sender names leaves the director out (D165). It is
+ * refused, never handed to another carrier, which reads the same room.
+ */
+export function computeRtcLeaderRefusal(
+    msg: ALMessage,
+    original: ALMessage
+): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
+    const frozen = resolveALFrozenMulticastAudience(msg.targets);
+    return msg.delivery?.ack !== 'group-leader' || frozen?.recipientPeerIds.length !== 0
+        ? Either.ofRight(msg)
+        : Either.ofLeft({
+            msg: toUnfrozenRoomMessage(msg, original),
+            dropReason: 'no-leader: the room has no active leader inside the audience the send names',
+            dropReasonCode: 'no-leader',
+            lane: 'volatile',
+            preparedMessages: []
+        });
+}
+
+function toUnfrozenRoomMessage(msg: ALMessage, original: ALMessage): ALMessage {
+    return original.targets?.mode === 'broadcast'
+        ? { ...msg, targets: original.targets }
+        : toUnfrozenMulticastMessage(msg);
 }
 
 function toUnfrozenMulticastMessage(msg: ALMessage): ALMessage {
@@ -158,7 +198,7 @@ function toUnfrozenMulticastMessage(msg: ALMessage): ALMessage {
 }
 
 /**
- * Under `receiver` the origin's receipt counts the frozen logical recipients, not the next hops a plan
+ * Under `receiver` and `leader` the origin's receipt counts the frozen logical recipients, not the next hops a plan
  * reaches, so every plan of its own frozen multicast expects exactly that audience.
  */
 export function toRtcFrozenAudienceDispatchPlan(
@@ -166,7 +206,10 @@ export function toRtcFrozenAudienceDispatchPlan(
     selfPeerId: string
 ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
     const frozen = resolveALFrozenMulticastAudience(plan.msg.targets);
-    if (plan.ackTracking?.mode !== 'receiver' || frozen === undefined || plan.msg.id.senderId !== selfPeerId) {
+    if (
+        plan.ackTracking === undefined || !isALLogicalReceiptMode(plan.ackTracking.mode) || frozen === undefined ||
+        plan.msg.id.senderId !== selfPeerId
+    ) {
         return plan;
     }
     return { ...plan, ackTracking: { ...plan.ackTracking, expectedPeerIds: frozen.recipientPeerIds } };

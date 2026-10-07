@@ -177,7 +177,8 @@ describe('WS server receipts for addressed sends', () => {
         const roomSend: ALMessage = {
             ...roomUnicast({ msgId: 'subtree-room', toPeerId: 'b', ack: 'none' }),
             targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
-            delivery: { reliability: 'at-least-once', ack: 'group-leader' }
+            delivery: { reliability: 'at-least-once', ack: 'none' },
+            qos: { ack: { algo: 'subtree' } }
         };
 
         await fixture.service.acceptIncomingMessage(roomSend, 'a');

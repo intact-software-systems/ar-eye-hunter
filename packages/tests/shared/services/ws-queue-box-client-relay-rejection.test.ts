@@ -204,6 +204,34 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         });
     });
 
+    it('states the room authorizer refusing a send for no leader before admission; the receipted handle reads rejected', async () => {
+        const fixture = await createRelayFixture(async () => ({
+            authorized: false,
+            reason: 'no-leader',
+            rejectionCode: 'unauthorized',
+            logMessage: 'Rejected room message for room-1: no active leader inside the audience the send names.',
+            sendNack: true
+        }));
+        const origin = await createOriginClient();
+        const broadcast: ALMessage = {
+            ...roomUnicast('broadcast-leaderless', 'b'),
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM }
+        };
+        expect((await origin.service.enqueueOutboxIfAbsent(broadcast)).verdict.kind).toBe('admitted');
+
+        await fixture.server.acceptIncomingMessage(broadcast, 'a');
+        await relayFrames(fixture.sockets.a, origin);
+
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'broadcast-leaderless')
+            .reduce(computeALDeliveryLifecycle, toInitialLifecycle('broadcast-leaderless', 'receiver'));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.failure).toEqual({
+            kind: 'relay-rejected',
+            rejection: { relay: 'trusted-server', reason: 'no-leader' }
+        });
+    });
+
     // R-S3c-i-28: the origin tracks the server as the hop of a `hop` room unicast (R-S3a-4), and a NACK from a peer the
     // receipt expects is admitted, so the server's refusal ends that receipt as it ends a server-addressed one (R-S3c-i-21).
     it('ends the server hop receipt of a hop room unicast to a non-member on the server refusal; the handle reads failed', async () => {

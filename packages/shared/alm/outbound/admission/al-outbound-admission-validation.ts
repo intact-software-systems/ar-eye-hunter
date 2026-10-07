@@ -6,6 +6,7 @@ import {
     requirePersistedALSafeInteger,
     type PersistedALValue
 } from '../../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
+import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {
@@ -101,7 +102,7 @@ export function applyALOutboundCapturedPolicy<TPrepared>(
             ? {
                 ...policy.ackTracking,
                 expectedPeerIds: plan.ackTracking?.expectedPeerIds ??
-                    (policy.ackTracking.mode === 'receiver'
+                    (isALLogicalReceiptMode(policy.ackTracking.mode)
                         ? policy.ackTracking.expectedPeerIds
                         : plan.receiptNextHopPeerIds ?? []),
                 expectedPeerIdsUpdate: plan.ackTracking?.expectedPeerIdsUpdate,
@@ -282,7 +283,7 @@ export function decodeALOutboundNotYetInSyncRetry(
 }
 
 function requirePersistedALReceiptMode(value: PersistedALValue | undefined, label: string): void {
-    if (value !== 'hop' && value !== 'subtree' && value !== 'receiver') {
+    if (value !== 'hop' && value !== 'subtree' && value !== 'receiver' && value !== 'leader') {
         throw new TypeError(`Persisted AL ${label} is invalid`);
     }
 }

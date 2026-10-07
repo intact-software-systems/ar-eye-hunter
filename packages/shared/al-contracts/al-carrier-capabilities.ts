@@ -9,7 +9,7 @@ export interface ALCarrierCapabilities {
 
 const AL_RECEIVER_TRACKING_QOS_CAPABILITIES: ALQosCapabilities = {
     ...DEFAULT_AL_QOS_CAPABILITIES,
-    supportedAck: ['none', 'hop', 'subtree', 'receiver']
+    supportedAck: ['none', 'hop', 'subtree', 'receiver', 'leader']
 };
 
 export const AL_WS_CLIENT_CAPABILITIES: ALCarrierCapabilities = {

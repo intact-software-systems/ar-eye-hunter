@@ -21,6 +21,7 @@ import {
     createDefaultALOutboundRuntimeResources
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
+import { createRallarGroupDirectorAppointment, mergeRallarGroupDirectorMetadata } from '@shared/api/group-director.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
@@ -186,6 +187,20 @@ export function createOriginPrincipalSnapshot(): GroupSnapshot {
             ['a', 'b', 'd'].includes(session.sessionId) ? { ...session, principalId: ORIGIN_PRINCIPAL_REF.principalId } : session
         ),
         members: [...snapshot.members, { ...snapshot.members[0]!, principalId: ORIGIN_PRINCIPAL_REF.principalId }]
+    };
+}
+
+/** The snapshot with the session `directorSessionId` appointed its room's director, the room's leader (D164). */
+export function toOriginDirectedSnapshot(snapshot: GroupSnapshot, directorSessionId: string): GroupSnapshot {
+    const principalId = snapshot.activeSessions.find((session) => session.sessionId === directorSessionId)?.principalId ??
+        directorSessionId;
+    const appointment = createRallarGroupDirectorAppointment({
+        session: { clientId: principalId, sessionId: directorSessionId },
+        now: Date.now()
+    });
+    return {
+        ...snapshot,
+        group: { ...snapshot.group, metadata: mergeRallarGroupDirectorMetadata(snapshot.group.metadata, appointment) }
     };
 }
 

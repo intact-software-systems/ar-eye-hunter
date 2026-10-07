@@ -621,8 +621,9 @@ describe('ALM browser adapter execution', () => {
 
     it.each([
         { relay: 'trusted-server', reason: 'membership-fenced' } as const,
-        { relay: 'peer', peerId: 'relay-session', reason: 'membership-fenced' } as const
-    ])('reads a $relay membership-fenced refusal from a delivery observation, on its failure and its evidence', async (rejection) => {
+        { relay: 'peer', peerId: 'relay-session', reason: 'membership-fenced' } as const,
+        { relay: 'trusted-server', reason: 'no-leader' } as const
+    ])('reads a $relay $reason refusal from a delivery observation, on its failure and its evidence', async (rejection) => {
         const failure = { kind: 'relay-rejected', rejection } as const;
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {

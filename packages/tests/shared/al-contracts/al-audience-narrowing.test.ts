@@ -28,7 +28,9 @@ describe('the audience a room send narrows to', () => {
             { label: 'its principal', narrowing: { kind: 'principal', principalId: 'principal-1' }, expected: true },
             { label: 'another principal', narrowing: { kind: 'principal', principalId: 'principal-2' }, expected: false },
             { label: 'a list that names it', narrowing: { kind: 'list', recipientPeerIds: ['s1'] }, expected: true },
-            { label: 'a list that leaves it out', narrowing: { kind: 'list', recipientPeerIds: ['s2'] }, expected: false }
+            { label: 'a list that leaves it out', narrowing: { kind: 'list', recipientPeerIds: ['s2'] }, expected: false },
+            { label: 'its leader session', narrowing: { kind: 'leader', sessionId: 's1' }, expected: true },
+            { label: 'another leader session', narrowing: { kind: 'leader', sessionId: 's2' }, expected: false }
         ] as const
     )('holds a session under $label: $expected', ({ narrowing, expected }) => {
         expect(isALAudienceSession({ sessionId: 's1', principalId: 'principal-1' }, narrowing)).toBe(expected);
@@ -77,5 +79,6 @@ function computeRtcFrozenRecipients(message: ALMessage, snapshot: GroupSnapshot)
     if (admission.kind !== 'authorized') {
         throw new Error('The origin must be authorized in its own room');
     }
-    return computeFrozenAudience({ admission, selfPeerId: 'a', narrowing: toRtcAudienceNarrowing(message) }).recipientPeerIds;
+    return computeFrozenAudience({ admission, selfPeerId: 'a', narrowing: toRtcAudienceNarrowing(message), leader: undefined })
+        .recipientPeerIds;
 }

@@ -320,7 +320,7 @@ describe('computeFrozenAudience', () => {
             throw new Error('The origin must be authorized in its own room');
         }
 
-        expect(computeFrozenAudience({ admission, selfPeerId: 'a', narrowing: undefined }))
+        expect(computeFrozenAudience({ admission, selfPeerId: 'a', narrowing: undefined, leader: undefined }))
             .toEqual({ recipientPeerIds: ['b', 'c'], snapshotVersion: admission.snapshotVersion });
         expect(admission.snapshotVersion).toBe(4);
     });
@@ -342,7 +342,7 @@ describe('computeFrozenAudience', () => {
             throw new Error('The origin must be authorized in its own room');
         }
 
-        expect(computeFrozenAudience({ admission, selfPeerId: 'a', narrowing }))
+        expect(computeFrozenAudience({ admission, selfPeerId: 'a', narrowing, leader: undefined }))
             .toEqual({ recipientPeerIds, snapshotVersion: 4 });
     });
 });

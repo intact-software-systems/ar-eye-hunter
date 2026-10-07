@@ -140,6 +140,12 @@ export function isRallarGroupDirectorSessionActive(
     );
 }
 
+/** The room's leader: the appointed director session while the snapshot holds it present, else none (D164). */
+export function resolveRallarGroupLeaderSessionId(snapshot: GroupSnapshot): string | undefined {
+    const appointment = readRallarGroupDirectorFromSnapshot(snapshot);
+    return isRallarGroupDirectorSessionActive(snapshot, appointment) ? appointment?.sessionId : undefined;
+}
+
 export function resolveRallarGroupDirectorAppointmentEligibility(
     input: Readonly<{
         snapshot: GroupSnapshot | undefined;

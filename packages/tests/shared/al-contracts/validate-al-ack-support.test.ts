@@ -28,14 +28,14 @@ const roomBroadcastTargets: ALTargets = { mode: 'broadcast', scope: 'room', grou
 const roomMulticastTargets: ALTargets = { mode: 'multicast', groupRef: room };
 
 describe('validateALAckSupport', () => {
-    it('maps each request name onto its ack algorithm: receiver and all-logical-recipients are one logical algorithm', () => {
+    it('maps each request name onto its ack algorithm: receiver and all-logical-recipients are one logical algorithm, group-leader is leader', () => {
         const requested = (ack: ALAckMode) =>
             normalizeALQosPolicy(newALMulticastMessage('sender', route, room, 'chat.v1', {}, { reliability: 'at-least-once', ack }))
                 .requested.ack?.algo;
 
         expect(requested('receiver')).toBe('receiver');
         expect(requested('all-logical-recipients')).toBe('receiver');
-        expect(requested('group-leader')).toBe('subtree');
+        expect(requested('group-leader')).toBe('leader');
         expect(requested('none')).toBe('none');
     });
 
@@ -119,6 +119,42 @@ describe('validateALAckSupport', () => {
             .toEqual([{ aspect: 'ack', detail: 'ack receiver is unsupported for ws untargeted targets' }]);
     });
 
+    it('admits leader on a room multicast, a room broadcast, a principal broadcast in its room and a listed room broadcast, over both carriers', () => {
+        const principalRef = { applicationId: 'app', workspaceId: 'workspace', principalId: 'principal-1' };
+        const principalInRoom: ALTargets = { mode: 'broadcast', scope: 'principal', groupRef: room, principalRef };
+        const listedRoom: ALTargets = { ...roomBroadcastTargets, recipientPeerIds: ['b'] };
+
+        for (const targets of [roomMulticastTargets, roomBroadcastTargets, principalInRoom, listedRoom]) {
+            expect(validateALAckSupport({ algo: 'leader', carrier: 'ws', targets, capabilities: wsCapabilities })).toEqual([]);
+            expect(validateALAckSupport({ algo: 'leader', carrier: 'rtc', targets, capabilities: rtcCapabilities })).toEqual([]);
+        }
+    });
+
+    it.each<{ name: string; targets: ALTargets; }>([
+        { name: 'unicast', targets: { mode: 'unicast', toPeerId: 'peer', groupRef: room } },
+        { name: 'world', targets: worldTargets },
+        { name: 'all', targets: { mode: 'broadcast', scope: 'all' } }
+    ])('refuses leader on a $name target, which has no room leader, with one issue per carrier', ({ name, targets }) => {
+        expect(validateALAckSupport({ algo: 'leader', carrier: 'ws', targets, capabilities: wsCapabilities }))
+            .toEqual([{ aspect: 'ack', detail: `ack leader is unsupported for ws ${name} targets` }]);
+        expect(validateALAckSupport({ algo: 'leader', carrier: 'rtc', targets, capabilities: rtcCapabilities }))
+            .toEqual([{ aspect: 'ack', detail: `ack leader is unsupported for rtc ${name} targets` }]);
+    });
+
+    it('keeps an unsupported leader request as requested instead of downgrading it', () => {
+        const message = newALMulticastMessage('sender', route, room, 'chat.v1', {}, { reliability: 'at-least-once', ack: 'group-leader' });
+        const normalized = normalizeALQosPolicy(message, { capabilities: { supportedAck: ['none', 'hop'] } });
+
+        expect(normalized.effective.ack.algo).toBe('leader');
+        expect(normalized.notes.filter((note) => note.aspect === 'ack')).toEqual([]);
+        expect(validateALAckSupport({
+            algo: normalized.effective.ack.algo,
+            carrier: 'rtc',
+            targets: message.targets,
+            capabilities: normalized.capabilities
+        })).toEqual([{ aspect: 'ack', detail: 'ack leader is unsupported for rtc multicast targets' }]);
+    });
+
     it('leaves the hop, subtree and none algorithms to the capabilities alone', () => {
         for (const algo of ['none', 'hop', 'subtree'] as const) {
             expect(validateALAckSupport({ algo, carrier: 'rtc', targets: worldTargets, capabilities: DEFAULT_AL_QOS_CAPABILITIES })).toEqual([]);
@@ -176,7 +212,7 @@ describe('validateALAckSupport', () => {
     it('prefers receiver as the fallback only where the capabilities support it', () => {
         const message = newALMulticastMessage('sender', route, room, 'chat.v1', {}, {
             reliability: 'at-least-once',
-            ack: 'group-leader'
+            qos: { ack: { algo: 'subtree' } }
         });
         const withReceiver = normalizeALQosPolicy(message, {
             capabilities: { supportedAck: ['none', 'receiver'] }

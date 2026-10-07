@@ -35,8 +35,9 @@ export function toALFrozenMulticastMessage(message: ALMessage, audience: ALFroze
 /**
  * The candidate as the original would compare to it. Freezing an unfrozen multicast's audience is the one
  * change a planned or stored copy may add to its original, so that change alone is removed; a copy that drops
- * or changes a frozen audience still differs. A principal or listed room broadcast is frozen as the multicast of
- * its room, floors and narrowed audience: a frozen copy of that room within the list compares as its original.
+ * or changes a frozen audience still differs. A principal or listed room broadcast, or a room broadcast to its
+ * leader, is frozen as the multicast of its room, floors and narrowed audience: a frozen copy of that room within the
+ * list compares as its original.
  */
 export function toALFreezeComparableMessage(original: ALMessage, candidate: ALMessage): ALMessage {
     const frozen = resolveALFrozenMulticastAudience(candidate.targets);
@@ -44,7 +45,7 @@ export function toALFreezeComparableMessage(original: ALMessage, candidate: ALMe
         return candidate;
     }
     if (original.targets?.mode === 'broadcast') {
-        return isALNarrowedBroadcastFrozenAs(original.targets, candidate.targets, frozen)
+        return isALNarrowedBroadcastFrozenAs(original, candidate.targets, frozen)
             ? { ...candidate, targets: original.targets }
             : candidate;
     }
@@ -89,12 +90,17 @@ export function resolveALAdmittedRoomAudience(
 }
 
 function isALNarrowedBroadcastFrozenAs(
-    original: Extract<ALTargets, { readonly mode: 'broadcast'; }>,
+    message: ALMessage,
     frozenTargets: Extract<ALTargets, { readonly mode: 'multicast'; }>,
     frozen: ALFrozenMulticastAudience
 ): boolean {
+    const original = message.targets;
+    if (original?.mode !== 'broadcast') {
+        return false;
+    }
     const narrowed = (original.scope === 'principal' && original.principalRef !== undefined) ||
-        (original.scope === 'room' && original.recipientPeerIds !== undefined);
+        (original.scope === 'room' &&
+            (original.recipientPeerIds !== undefined || message.delivery?.ack === 'group-leader'));
     const listed = original.recipientPeerIds;
     return narrowed && original.groupRef !== undefined &&
         isSameGroupRef(original.groupRef, frozenTargets.groupRef) &&

@@ -47,9 +47,9 @@ describe('the receipt a WS send tracks reaches its handle (R-S3a-4)', () => {
             requested: 'hop' as const
         },
         {
-            ackLabel: 'ack group-leader',
-            ack: 'group-leader' as const,
-            qos: undefined,
+            ackLabel: 'qos.ack subtree',
+            ack: 'none' as const,
+            qos: { ack: { algo: 'subtree' as const } },
             requested: 'subtree' as const
         }
     ])(
@@ -78,9 +78,9 @@ describe('the receipt a WS send tracks reaches its handle (R-S3a-4)', () => {
             requested: 'hop' as const
         },
         {
-            ackLabel: 'ack group-leader',
-            ack: 'group-leader' as const,
-            qos: undefined,
+            ackLabel: 'qos.ack subtree',
+            ack: 'none' as const,
+            qos: { ack: { algo: 'subtree' as const } },
             requested: 'subtree' as const
         }
     ])(

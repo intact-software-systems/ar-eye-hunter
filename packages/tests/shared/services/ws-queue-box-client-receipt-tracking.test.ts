@@ -241,7 +241,8 @@ describe('WS client receipts the server answers itself (R-S3a-4, D57 as applied)
         const fixture = await createReceiptTrackingFixture();
         await fixture.service.enqueueOutboxIfAbsent({
             ...roomMessage(),
-            delivery: { reliability: 'at-least-once', ack: 'group-leader' }
+            delivery: { reliability: 'at-least-once', ack: 'none' },
+            qos: { ack: { algo: 'subtree' } }
         });
         expect(await readReceipt(fixture)).toMatchObject({
             mode: 'subtree',

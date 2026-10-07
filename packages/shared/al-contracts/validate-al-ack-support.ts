@@ -26,24 +26,35 @@ export interface ALAckSupportInput {
  * only a unicast addressee or a room has: a multicast, a room broadcast with or without its fixed list, or a
  * principal broadcast that names its room; a world or all broadcast has none. A WS unicast has its
  * addressee as its audience only when it names its room: the room's router delivers it and the server aggregates
- * the addressee's ACK (D53). One that names no room has no aggregate on the server and is refused.
+ * the addressee's ACK (D53). One that names no room has no aggregate on the server and is refused. `leader` needs
+ * a room audience its leader may be inside, so a unicast has none either (D166).
  */
 export function validateALAckSupport(input: ALAckSupportInput): readonly ALQosIssue[] {
     const { algo, carrier, targets, capabilities } = input;
     const supported = capabilities.supportedAck.includes(algo) &&
-        (algo !== 'receiver' || hasLogicalReceiverAudience(targets, carrier));
+        (algo !== 'receiver' || hasLogicalReceiverAudience(targets, carrier)) &&
+        (algo !== 'leader' || hasRoomAudience(targets));
     return supported
         ? []
         : [{ aspect: 'ack', detail: `ack ${algo} is unsupported for ${carrier} ${toTargetsName(targets)} targets` }];
 }
 
-/** A requested or defaulted `receiver` is kept: its support is admission's refusal, never a downgrade (D42). */
+/** `receiver` and `leader` count logical recipients; `hop` and `subtree` count next hops, and `none` counts nothing. */
+export function isALLogicalReceiptMode(algo: ALAckAlgo): boolean {
+    return algo === 'receiver' || algo === 'leader';
+}
+
+/**
+ * A requested or defaulted `receiver` or `leader` is kept: its support is admission's refusal, never a downgrade
+ * (D42).
+ */
 export function toALNormalizableAckAlgos(
     supported: readonly ALAckAlgo[],
     requested: ALRequestedAlgorithm<ALAckAlgo, ALAckOptions> | undefined,
     fallback: ALEffectiveAlgorithm<ALAckAlgo, ALAckOptions>
 ): readonly ALAckAlgo[] {
-    return (requested ?? fallback).algo === 'receiver' ? [...supported, 'receiver'] : supported;
+    const algo = (requested ?? fallback).algo;
+    return isALLogicalReceiptMode(algo) ? [...supported, algo] : supported;
 }
 
 function hasLogicalReceiverAudience(
@@ -53,7 +64,11 @@ function hasLogicalReceiverAudience(
     if (targets?.mode === 'unicast') {
         return carrier !== 'ws' || targets.groupRef !== undefined;
     }
-    return targets !== undefined && (
+    return hasRoomAudience(targets);
+}
+
+function hasRoomAudience(targets: ALTargets | undefined): boolean {
+    return targets !== undefined && targets.mode !== 'unicast' && (
         targets.mode !== 'broadcast' ||
         targets.scope === 'room' ||
         (targets.scope === 'principal' && targets.groupRef !== undefined)
