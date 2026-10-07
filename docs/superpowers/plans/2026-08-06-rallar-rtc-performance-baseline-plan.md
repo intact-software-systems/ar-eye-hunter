@@ -101,9 +101,16 @@ first the missing selector, then explicit Off failing to reach the accepted run.
 32 SDK/store cases, the simulated real-UI browser witness, maintained1488-test typing,
 scoped browser typing and app typecheck/build pass. The original independent reviewer
 has accepted SPEC/QUALITY and closes both private naming/import findings against the
-exact corrected source. This bounded slice is ready for prompt feature publication;
-the next useful slice is
-Recipe Console new-run intent, followed by existing authored-intent persistence paths.
+exact corrected source. The bounded Local slice is published in PR645 at
+634c47fef4fe229c3d1382031cca41a8cf55b13e, tree279a83f9a53e82f2438c037850194fa9eb92a0ec;
+Git and GitHub heads agree and final current-parent style/coupling gates pass. Fresh
+Branch37678344974 selected release lanes/publication/final gate and Formation37678344373
+and Medium37678344447 pass on verified identical trees. Branch is terminal cancelled
+because separate ALM setup exceeds its30-minute timeout before observation starts;
+the failed attempt stays preserved and supplies no ALM or performance acceptance.
+Console selector GREEN and the next actual Resolve-request RED are
+verified; minimum canonical forwarding and complete touched-owner closure are active.
+Existing authored-intent persistence paths follow that coherent slice.
 Worker, Actions and full B01–B06/E3 outcomes stay mandatory.
 B06 selection and producer configuration are published; governed E3 has zero accepted cohorts
 and remains required in Section 11. Current product and architecture are [docs/product.md](../../product.md)
@@ -6542,7 +6549,62 @@ exact bounded51 disposition and its concrete cohesion comment now have independe
 SPEC/QUALITY approval under the current human style guide. All other inventory/matcher
 bytes and runtime behavior remain unchanged;88 focused checker cases pass and the complete
 support-file scan has zero findings. Global thresholds remain unchanged. The failed result
-is retained; final committed style/coupling gates remain required before this slice is pushed.
+is retained. Final committed style/coupling gates pass at634c47fe against current parent15eff,
+with all nine coupling candidates individually classified. Commits e69f1318b and634c47fef
+are pushed together; the PR body and exact remote head are verified. The Local legacy scan
+resolves the two active consumer paths and three canonical event-translation imports/call;
+the old Workbench filename is removed. No newly retained legacy is approved or added.
+Delivery ready returns STOP_WRONG_BASE for the intentional stack; no main operation is done.
+
+**Console next-run RED released:** At clean published634c, revalidate the existing
+Console workflow/manifest/browser consumers and unchanged guidance. Release tests only
+for the earliest real visible capture-choice/submission gap; freeze production until root
+verifies actual semantic RED and its source/output bindings. Stage/Start must retain the
+accepted run and authored recipe/step intent. Do not add a new store, protocol, migration,
+copied policy or manufactured future-API failure. Required actual application/refusal and
+the existing persistence/repeat paths stay explicit, together with all remaining full-goal
+outcomes below. No Console GREEN or hosted acceptance is claimed by this release.
+
+Root verifies the Console tests-only RED at634c: the maintained real SPA reaches the
+Composite Evidence recipe, two safe targets and an unchanged recipe manifest with omitted
+run capture, then fails because the visible capture selector is absent. Actual exit1 has
+one intended failure and two unchanged passing controls. All twelve immutable preimages
+and current input copies agree; the test changes only21lines. Resolve/Create/Stage/Start,
+selected-mode submission, SDK application and typed refusal are unreached. Existing HTTP
+interception proves SPA/request-boundary behavior rather than actual controller or worker
+execution. Root releases minimum selector GREEN and a further genuine forwarding RED
+before changing manifest forwarding.
+
+The selector-only GREEN passes the maintained browser witness. The next semantic
+RED selects Off and clicks the actual Resolve control, then finds omitted run capture
+at the owned HTTP request rather than the expected off value. Actual exit1 retains
+two passing lifecycle/target controls. Create and downstream application assertions
+are unreached. Root reads both raw results, the complete changed diff and generated
+manifest flow, and verifies all twelve frozen input/copy bindings before releasing
+minimum forwarding GREEN through the existing canonical manifest builder. Inherit
+must remain omitted; selected capture participates in the existing manifest fingerprint
+and accepted run truth, and recipe/step content must remain unchanged. The initial
+selector setup/type-placement error is retained separately from semantic GREEN.
+
+Fresh hosted release acceptance at634c is independently bound to Branch run37678344974
+attempt1: all selected core lanes, publication and the final broad gate pass without
+evidence reuse. Fifteen completed job logs record the exact634c checkout; topology
+records tree279a83f9a53e82f2438c037850194fa9eb92a0ec. Formation37678344373 and
+Medium37678344447 pass on synthetic db54efba33a99020296b522c56ae4771034f0a2b,
+whose parents are15eff and634c and whose tree is identical. Branch is terminal cancelled
+at20:28:54Z solely because the separate nonblocking ALM job exceeds its30-minute
+setup timeout. npm installation completes before Playwright system dependency setup stalls
+on Ubuntu mirrors; observation never starts. The lower-level mirror/transport cause
+remains unproved. Preserve the failed attempt; no rerun, ALM or Native transport
+acceptance, or E3 completion is implied by the selected release acceptance.
+
+The touched browser owner has genuine closure work: adjusted1650 exceeds the1500 test
+backstop, cognitive149 requires separation review, installLifecycleControl spans328lines,
+and distributedRun has four inputs. Apply current structure/adaptive/code/testing guidance
+before choosing the smallest truthful in-place remediation. No relocation of predecessor
+implementations, parallel harness, metric compression or unapproved persistent exception
+is authorized. Remediate the complete touched owner and recursively changed support before
+publication; independent untouched source remains outside closure.
 Full Task65, Console, existing Load/Copy/storage/restore/repeat outcomes, workers, Actions
 and B01–B06/E3 remain required. No retry, recovery, CRDT or RTC transport behavior changes.
 
