@@ -9,6 +9,7 @@ import { NonRetryableException } from '../../queuebox/resource-inbox/create-defa
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
+import { decodeALAdmissionValue } from '../al-admission-decoder.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import { toALOutboundCommitLockName, type ALBrowserLocks } from '../storage/al-browser-locks.ts';
@@ -545,7 +546,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         // A replay that minted replaces the request its retained canonical row holds; a plan that froze a held
         // row's audience replaces the row.
         const entry = read.orderingHead === undefined && read.canonicalEntry &&
-                !isALCanonicalRowFrozenBy(read.canonicalEntry, read.msg)
+                !isALOutboundCanonicalRowFrozenBy(read.canonicalEntry, read.msg)
             ? read.canonicalEntry
             : this.dependencies.toOutboxEntry(read.msg);
         return {
@@ -699,9 +700,16 @@ function toALOutboundVerdictComputed<TPrepared>(
     return { ...fields, verdict, trackedReceiptAlgo: 'none' };
 }
 
-function isALCanonicalRowFrozenBy(canonicalEntry: ResourceEntry, msg: ALMessage): boolean {
-    return resolveALFrozenMulticastAudience(msg.targets) !== undefined &&
-        isALFreezeOfMessage(decodePersistedALMessage(canonicalEntry.resource), msg);
+export function isALOutboundCanonicalRowFrozenBy(canonicalEntry: ResourceEntry, msg: ALMessage): boolean {
+    if (resolveALFrozenMulticastAudience(msg.targets) === undefined) {
+        return false;
+    }
+    const canonical = decodeALAdmissionValue(
+        canonicalEntry.resource,
+        JSON.stringify(canonicalEntry.key),
+        () => decodePersistedALMessage(canonicalEntry.resource)
+    );
+    return isALFreezeOfMessage(canonical, msg);
 }
 
 /** The message as its sender asked for it: a sequence this read minted is not part of it until a commit lands. */

@@ -4,6 +4,7 @@ import { newALMulticastMessage, newALRoute, type ALMessage } from '@shared/al-co
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { isALOutboundCanonicalReplacement } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import { isALOutboundCanonicalRowFrozenBy } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
@@ -29,6 +30,16 @@ describe('the replacement of a canonical row', () => {
 
     it('answers no replacement, reading no retained row, for a candidate that neither freezes nor mints', () => {
         expect(isALOutboundCanonicalReplacement(false, toMalformedEntry(), toEntry(HELD))).toBe(false);
+    });
+});
+
+describe('a canonical row frozen by a plan', () => {
+    it('is the held row whose audience the plan froze', () => {
+        expect(isALOutboundCanonicalRowFrozenBy(toEntry(HELD), FROZEN)).toBe(true);
+    });
+
+    it('refuses a malformed canonical row as corruption when the plan freezes an audience', () => {
+        expect(() => isALOutboundCanonicalRowFrozenBy(toMalformedEntry(), FROZEN)).toThrow(ALAdmissionCorruptionError);
     });
 });
 
