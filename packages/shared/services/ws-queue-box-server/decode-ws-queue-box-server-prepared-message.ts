@@ -76,7 +76,7 @@ function isConnectionCheckedRow(message: ALMessage, referenceKey: Key): boolean 
     return requiresWsQueueBoxServerRecipientScope(message) ||
         (message.targets?.mode === 'unicast' && message.targets.groupRef !== undefined) ||
         isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey) ||
-        isWsQueueBoxServerDirectWorldBroadcastRow(message, referenceKey);
+        isALWorldBroadcast(message);
 }
 
 function decodeRoomRecipientPrepared(

@@ -1,4 +1,4 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { isALWorldBroadcast, type ALMessage } from '../../al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { validateALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import { validateALSessionInvalidationMessage } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
@@ -262,6 +262,9 @@ function validateLiveSendAuthority(input: WsServerLiveSendInputDto): readonly st
     }
     else if (requiresWsQueueBoxServerRecipientScope(input.message)) {
         issues.push(...validateALOutboundRecipientScope(input.inboundScope));
+    }
+    else if (isALWorldBroadcast(input.message)) {
+        issues.push(...validateALOutboundRecipientScope(input.recipientScope ?? input.inboundScope));
     }
     if (input.recipientPrincipalId !== undefined && input.recipientScope === undefined) {
         issues.push('Principal audience requires its scope');

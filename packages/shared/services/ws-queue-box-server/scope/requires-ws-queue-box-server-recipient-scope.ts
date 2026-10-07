@@ -1,4 +1,4 @@
-import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import { isALWorldBroadcast, type ALMessage } from '../../../al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '../../../al-contracts/al-control.ts';
 import type { ALOutboundCapturedPolicy } from '../../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
@@ -85,8 +85,8 @@ export function validateWsQueueBoxServerRecipientAuthority(
         case 'none':
             return requiresWsQueueBoxServerRecipientScope(message) ||
                     isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey) ||
-                    isWsQueueBoxServerDirectWorldBroadcastRow(message, referenceKey)
-                ? ['Public WS unicast requires explicit application and workspace scope']
+                    isALWorldBroadcast(message)
+                ? ['Public WS unicast and world broadcast require explicit application and workspace scope']
                 : [];
     }
 }
