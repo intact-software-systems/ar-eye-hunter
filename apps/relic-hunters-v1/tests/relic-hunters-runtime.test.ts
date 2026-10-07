@@ -214,8 +214,8 @@ describe('RelicHuntersRuntime', () => {
         expect(subscribed[0].subscription.onTransition).toBe(onTransition);
         expect(fetchedRoomIds).toEqual(['room-1', 'room-1']);
         expect(hydrations).toEqual([
-            { kind: 'hydrated', snapshot },
-            { kind: 'failed', error: 'snapshot unavailable' }
+            { kind: 'hydrated', roomId: 'room-1', snapshot },
+            { kind: 'failed', roomId: 'room-1', error: 'snapshot unavailable' }
         ]);
     });
 

@@ -128,8 +128,8 @@ export type RelicJoinedRoom = Readonly<{
 
 /** The game read again after its round-transition track could no longer be ordered. */
 export type RelicResyncHydration =
-    | Readonly<{ kind: 'hydrated'; snapshot: RelicPublicSnapshot | undefined; }>
-    | Readonly<{ kind: 'failed'; error: string; }>;
+    | Readonly<{ kind: 'hydrated'; roomId: string; snapshot: RelicPublicSnapshot | undefined; }>
+    | Readonly<{ kind: 'failed'; roomId: string; error: string; }>;
 
 export interface RelicRoundTransitionListeners {
     readonly onTransition: (event: RelicRoundTransitionEvent) => void;
@@ -349,10 +349,10 @@ export class RelicHuntersRuntime {
 
     private async readResyncHydration(roomId: string): Promise<RelicResyncHydration> {
         try {
-            return { kind: 'hydrated', snapshot: await this.deps.fetchSnapshot(roomId) };
+            return { kind: 'hydrated', roomId, snapshot: await this.deps.fetchSnapshot(roomId) };
         }
         catch (error) {
-            return { kind: 'failed', error: toError(error).message };
+            return { kind: 'failed', roomId, error: toError(error).message };
         }
     }
 

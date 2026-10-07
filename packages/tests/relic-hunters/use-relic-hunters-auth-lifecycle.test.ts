@@ -14,6 +14,7 @@ import type {
     RallarAuthState,
     RallarMessage,
     RallarRoomMessageChannelDefinition,
+    RallarRoomState,
     RallarTypedPayloadHandler
 } from '@shared-web/browser/rallar.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
@@ -252,6 +253,76 @@ describe('useRelicHunters auth lifecycle', () => {
         expect(current?.snapshot?.updatedAtEpochMs).toBe(21);
     });
 
+    it('drops a round-transition resync that lands after the page signed out', async () => {
+        const channels = captureRoomChannels();
+        vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(20));
+        await renderHook();
+        await waitForState(() => current?.diagnostics.snapshotReady === true && channels.has('relic-room-1'));
+        const late = createDeferred<RelicPublicSnapshot | undefined>();
+        vi.mocked(fetchRelicSnapshot).mockReturnValueOnce(late.promise);
+        await act(async () => requireResync(channels.get('relic-room-1')!));
+
+        await emitAuthState({ authenticated: false, reason: 'unauthorized' });
+        await act(async () => late.resolve(relicSnapshot(21)));
+
+        expect(current?.snapshot).toBeUndefined();
+        expect(current?.diagnostics.lastError).toBeUndefined();
+    });
+
+    it('drops a failed round-transition resync of the room the page left', async () => {
+        const channels = captureRoomChannels();
+        const rooms = captureRoomsChange();
+        vi.mocked(fetchRelicSnapshot).mockImplementation(async (roomId) => relicSnapshot(20, roomId));
+        await renderHook();
+        await waitForState(() => current?.diagnostics.snapshotReady === true && channels.has('relic-room-1'));
+        const late = createDeferred<RelicPublicSnapshot | undefined>();
+        vi.mocked(fetchRelicSnapshot).mockReturnValueOnce(late.promise);
+        await act(async () => requireResync(channels.get('relic-room-1')!));
+
+        await rooms.enter('relic-room-2');
+        await waitForState(() => current?.snapshot?.roomId === 'relic-room-2');
+        await act(async () => late.reject(new Error('Relic snapshot read failed')));
+
+        expect(current?.diagnostics.lastError).toBeUndefined();
+        expect(current?.snapshot?.roomId).toBe('relic-room-2');
+    });
+
+    it('forgets the round transition when the page signs out', async () => {
+        const channels = captureRoomChannels();
+        vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(20));
+        await renderHook();
+        await waitForState(() => channels.get('relic-room-1')?.onTransition !== undefined);
+        await act(async () => {
+            await channels.get('relic-room-1')!.onTransition!(ROUND_STARTED, toRoomMessage(ROUND_STARTED));
+        });
+        expect(current?.roundTransition).toEqual(ROUND_STARTED);
+
+        await emitAuthState({ authenticated: false, reason: 'unauthorized' });
+
+        expect(current?.roundTransition).toBeUndefined();
+    });
+
+    it('forgets the round transition of the room the page left until the next room cues its own', async () => {
+        const channels = captureRoomChannels();
+        const rooms = captureRoomsChange();
+        vi.mocked(fetchRelicSnapshot).mockImplementation(async (roomId) => relicSnapshot(20, roomId));
+        await renderHook();
+        await waitForState(() => channels.get('relic-room-1')?.onTransition !== undefined);
+        await act(async () => {
+            await channels.get('relic-room-1')!.onTransition!(ROUND_STARTED, toRoomMessage(ROUND_STARTED));
+        });
+
+        await rooms.enter('relic-room-2');
+        await waitForState(() => channels.get('relic-room-2')?.onTransition !== undefined);
+
+        expect(current?.roundTransition).toBeUndefined();
+        const nextRoomStarted = { ...ROUND_STARTED, gameId: 'relic-room-2' };
+        await act(async () => {
+            await channels.get('relic-room-2')!.onTransition!(nextRoomStarted, toRoomMessage(nextRoomStarted));
+        });
+        expect(current?.roundTransition).toEqual(nextRoomStarted);
+    });
+
     async function renderHook(): Promise<void> {
         root = createRoot(container);
         function Harness() {
@@ -295,6 +366,79 @@ describe('useRelicHunters auth lifecycle', () => {
     }
 });
 
+interface CapturedRoomChannel {
+    readonly definition: RallarRoomMessageChannelDefinition;
+    onTransition: RallarTypedPayloadHandler<RelicRoundTransitionEvent> | undefined;
+}
+
+interface CapturedRoomsChange {
+    enter(roomId: string): Promise<void>;
+}
+
+interface Deferred<T> {
+    readonly promise: Promise<T>;
+    resolve(value: T): void;
+    reject(error: Error): void;
+}
+
+/** Every room the hook subscribes to round transitions for, by the room's group id. */
+function captureRoomChannels(): ReadonlyMap<string, CapturedRoomChannel> {
+    const channels = new Map<string, CapturedRoomChannel>();
+    mockRallar.messages.room.mockImplementation((definition: RallarRoomMessageChannelDefinition) => {
+        const channel: CapturedRoomChannel = { definition, onTransition: undefined };
+        channels.set(definition.roomRef.groupId, channel);
+        return {
+            onWs: vi.fn((handler: RallarTypedPayloadHandler<RelicRoundTransitionEvent>) => {
+                channel.onTransition = handler;
+                return vi.fn();
+            })
+        };
+    });
+    return channels;
+}
+
+/** Moves the page to another room the way the room state reports it. */
+function captureRoomsChange(): CapturedRoomsChange {
+    let listener: ((state: RallarRoomState) => void) | undefined;
+    mockRallar.rooms.onChange.mockImplementation((handler: (state: RallarRoomState) => void) => {
+        listener = handler;
+        return vi.fn();
+    });
+    return {
+        enter: async (roomId) => {
+            await act(async () => {
+                listener?.({
+                    rooms: [{ roomId, groupId: roomId, name: 'Relic Hunters Expedition' }],
+                    currentRoomId: roomId
+                } as RallarRoomState);
+            });
+        }
+    };
+}
+
+function requireResync(channel: CapturedRoomChannel): void {
+    const gameId = channel.definition.roomRef.groupId;
+    channel.definition.recovery?.onResyncRequired({
+        orderingKey: toRelicRoundTrackKey({ gameId, createdAtEpochMs: 20 }),
+        senderId: 'default-qbox-server',
+        epoch: 1,
+        lastContiguousSeq: 0,
+        expectedSeq: 1,
+        observedSeq: 300,
+        carrier: 'ws'
+    });
+}
+
+function createDeferred<T>(): Deferred<T> {
+    let resolve: (value: T) => void = () => undefined;
+    let reject: (error: Error) => void = () => undefined;
+    const promise = new Promise<T>((onResolve, onReject) => {
+        resolve = onResolve;
+        reject = onReject;
+    });
+    return { promise, resolve, reject };
+}
+
 const ROUND_STARTED: RelicRoundTransitionEvent = {
     protocolVersion: RELIC_PROTOCOL_VERSION,
     gameId: 'relic-room-1',
@@ -333,10 +477,8 @@ function toRoomMessage(event: RelicRoundTransitionEvent): RallarMessage<RelicRou
     };
 }
 
-function relicSnapshot(updatedAtEpochMs: number): RelicPublicSnapshot {
-    return toPublicRelicSnapshot(
-        createRelicGame('relic-room-1', 'relic-room-1', updatedAtEpochMs)
-    );
+function relicSnapshot(updatedAtEpochMs: number, roomId = 'relic-room-1'): RelicPublicSnapshot {
+    return toPublicRelicSnapshot(createRelicGame(roomId, roomId, updatedAtEpochMs));
 }
 
 function memoryStorage(): Storage {

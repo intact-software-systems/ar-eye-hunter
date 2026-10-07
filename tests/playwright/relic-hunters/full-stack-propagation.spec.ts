@@ -385,9 +385,9 @@ async function expectRoundTransitionCues(pageA: Page, pageB: Page, expected: rea
  */
 async function expectCuesResumedAfterReload(stayed: Page, reloaded: Page): Promise<void> {
     const roundTwoAndThree = ['2:review-continued', '2:round-resolved', '3:review-continued'];
-    await expect.poll(async () => (await readRuntime(stayed))?.diagnostics.roundTransitionCues.slice(-3) ?? [], {
+    await expect.poll(async () => (await readRuntime(stayed))?.diagnostics.roundTransitionCues ?? [], {
         timeout: 30_000
-    }).toEqual(roundTwoAndThree);
+    }).toEqual(['1:round-started', '1:round-resolved', ...roundTwoAndThree]);
     await expect.poll(async () => (await readRuntime(reloaded))?.diagnostics.roundTransitionCues.at(-1), {
         timeout: 30_000
     }).toBe('3:review-continued');

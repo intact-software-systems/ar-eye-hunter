@@ -215,6 +215,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         runtime.clearRoomId();
         setRooms([]);
         clearSnapshot();
+        setRoundTransition(undefined);
         setError(undefined);
         setPhase('signed-out', initialRelicDiagnostics(undefined));
     }, [clearSnapshot, closeSubscriptions, runtime, setPhase]);
@@ -307,6 +308,9 @@ export function useRelicHunters(): RelicHuntersConnection {
     }, []);
 
     const acceptResyncHydration = useCallback((hydration: RelicResyncHydration) => {
+        if (roomIdRef.current !== hydration.roomId) {
+            return;
+        }
         if (hydration.kind === 'failed') {
             setDiagnostics((prev) => ({
                 ...prev,
@@ -315,7 +319,7 @@ export function useRelicHunters(): RelicHuntersConnection {
             return;
         }
         if (hydration.snapshot) {
-            acceptSnapshotCandidate(hydration.snapshot, 'resync-recovery');
+            acceptSnapshotCandidate(hydration.snapshot, 'resync-recovery', hydration.roomId);
         }
     }, [acceptSnapshotCandidate]);
 
@@ -331,6 +335,9 @@ export function useRelicHunters(): RelicHuntersConnection {
             roomId: nextRoomId,
             rtcReady: prev.middlewareConnected && !!nextRoomId
         }));
+        if (nextRoomId !== previousRoomId) {
+            setRoundTransition(undefined);
+        }
 
         if (!nextRoomId) {
             clearSnapshot();
@@ -353,6 +360,7 @@ export function useRelicHunters(): RelicHuntersConnection {
             setRoomId(undefined);
             roomIdRef.current = undefined;
             clearSnapshot();
+            setRoundTransition(undefined);
             setError(undefined);
             setPhase('signed-out', initialRelicDiagnostics(undefined));
             return;
@@ -615,6 +623,9 @@ export function useRelicHunters(): RelicHuntersConnection {
         });
         try {
             const result = await work();
+            if (result.roomId !== roomIdRef.current) {
+                setRoundTransition(undefined);
+            }
             setRoomId(result.roomId);
             setRooms(result.roomState.rooms);
             roomIdRef.current = result.roomId;
