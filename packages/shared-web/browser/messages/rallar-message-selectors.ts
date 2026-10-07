@@ -50,5 +50,7 @@ export function readRallarMessageRoomId(
         return message.route.contextId;
     }
 
-    return undefined;
+    return message.targets?.mode === 'broadcast' && message.targets.scope === 'principal'
+        ? message.targets.groupRef?.groupId
+        : undefined;
 }

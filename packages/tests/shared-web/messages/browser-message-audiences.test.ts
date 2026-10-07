@@ -14,6 +14,7 @@ import {
 
 const ROOM_REF = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 const PRINCIPAL_REF = { applicationId: 'app-1', workspaceId: 'workspace-1', principalId: 'principal-1' };
+const WORLD_TOPIC_ID = 'app.chat';
 const UNSUPPORTED_VERDICT: ALDeliveryAdmissionVerdict = {
     kind: 'refused',
     reason: 'unsupported',
@@ -38,7 +39,7 @@ describe('the routed carrier of a world send', () => {
     it.each<RallarTypedMessageSendStrategy>(['rtc-with-ws-fallback', 'ws-then-rtc'])(
         'admits a world send on %s over WS at once, with no RTC leg and no fallback evidence',
         async (strategy) => {
-            const handle = await createRoomChannel().send({ text: 'world' }, { strategy, scope: 'world' });
+            const handle = await createRoomChannel(createRallarTestFacade(), WORLD_TOPIC_ID).send({ text: 'world' }, { strategy, scope: 'world' });
 
             const { lifecycle } = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
 
@@ -55,7 +56,7 @@ describe('the routed carrier of a world send', () => {
     it('admits a world send on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal', async () => {
         rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementationOnce(async (message) => toAdmission(message, UNSUPPORTED_VERDICT));
 
-        const handle = await createRoomChannel().send({ text: 'world' }, { strategy: 'rtc', scope: 'world' });
+        const handle = await createRoomChannel(createRallarTestFacade(), WORLD_TOPIC_ID).send({ text: 'world' }, { strategy: 'rtc', scope: 'world' });
         const { lifecycle } = await handle.wait();
 
         expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0]![0].targets).toEqual({ mode: 'broadcast', scope: 'world' });
@@ -63,6 +64,16 @@ describe('the routed carrier of a world send', () => {
         expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
         expect(lifecycle).toMatchObject({ state: 'rejected', evidence: { failure: { kind: 'refused', reason: 'unsupported' } } });
     });
+
+    it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc', 'rtc-with-ws-fallback', 'ws-then-rtc'])(
+        'refuses a world send on a room topic on %s before either carrier admits it',
+        async (strategy) => {
+            await expect(createRoomChannel().send({ text: 'world' }, { strategy, scope: 'world' }))
+                .rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.topicId', code: 'world-on-room-topic' })] });
+            expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+            expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        }
+    );
 
     it('defaults a WS send that names neither a room nor a scope to the sender\'s world', async () => {
         setRallarFacadeRoomSnapshots([]);
@@ -266,9 +277,9 @@ describe('the audience inputs of a send', () => {
     });
 });
 
-function createRoomChannel(facade = createRallarTestFacade()) {
+function createRoomChannel(facade = createRallarTestFacade(), topicId = 'room.chat') {
     return facade.messages.room<{ text: string; }>({
-        topicId: 'room.chat',
+        topicId,
         typeId: 'chat.message.v1',
         roomRef: ROOM_REF,
         purpose: 'notification'

@@ -229,12 +229,20 @@ export class BrowserMessageInputValidator {
         issues.push(...validateQosRequest(input.qos));
     }
 
+    /** A `room.` topic is room-scoped by its name, so the server refuses a world send on it as malformed. */
     private pushWsScopeIssues<T>(
         resolved: ResolvedWsMessageInput<T>,
         issues: RallarValidationIssue[]
     ): void {
         this.pushScopeIssue(resolved.scope, 'WS', issues);
         this.pushRoomIdentityIssue(resolved.input, issues);
+        if (resolved.scope === 'world' && (resolved.input.topicId ?? resolved.input.typeId).startsWith('room.')) {
+            issues.push({
+                path: '$.topicId',
+                code: 'world-on-room-topic',
+                message: 'A world-scoped send takes a topic outside room.'
+            });
+        }
     }
 
     private pushScopeIssue(scope: RallarMessageScope, carrier: 'RTC' | 'WS', issues: RallarValidationIssue[]): void {

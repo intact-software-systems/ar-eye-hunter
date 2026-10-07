@@ -1,6 +1,11 @@
 import { readRallarMessageRoomId, toRallarMessageSelectorKey } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import { matchesRallarMessageSelector, normalizeRallarMessageSelector } from '@shared-web/browser/rallar.ts';
-import { newALBroadcastMessage, newALMulticastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    newALPrincipalBroadcastMessage,
+    newALRoute
+} from '@shared/al-contracts/al-contract.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('Rallar message selectors', () => {
@@ -66,7 +71,7 @@ describe('Rallar message selectors', () => {
         ).toBe('*/chat.message.v1');
     });
 
-    it('reads room ids from multicast and room broadcast messages only', () => {
+    it('reads room ids from multicast, room broadcast and principal broadcast messages only', () => {
         const groupRef = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -97,6 +102,18 @@ describe('Rallar message selectors', () => {
 
         expect(readRallarMessageRoomId(multicast)).toBe('room-1');
         expect(readRallarMessageRoomId(roomBroadcast)).toBe('room-2');
+        const principalBroadcast = newALPrincipalBroadcastMessage(
+            'session-1',
+            newALRoute('room.chat', 'context-4', 'message-4'),
+            {
+                groupRef: { ...groupRef, groupId: 'room-4' },
+                principalRef: { applicationId: 'app-1', workspaceId: 'workspace-1', principalId: 'principal-1' }
+            },
+            'chat.message.v1',
+            { text: 'hello' }
+        );
+
+        expect(readRallarMessageRoomId(principalBroadcast)).toBe('room-4');
         expect(readRallarMessageRoomId(worldBroadcast)).toBeUndefined();
     });
 });

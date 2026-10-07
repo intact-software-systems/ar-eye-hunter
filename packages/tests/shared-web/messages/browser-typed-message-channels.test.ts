@@ -325,7 +325,7 @@ describe('Rallar typed message channel', () => {
     it('uses WS only for typed channel send when strategy is ws', async () => {
         const facade = createFacade();
         const channel = facade.messages.channel<ChatMessage>({
-            topicId: 'room.chat',
+            topicId: 'app.chat',
             typeId: 'chat.message.v1',
             purpose: 'notification'
         });
@@ -345,7 +345,7 @@ describe('Rallar typed message channel', () => {
         expect(result.lifecycle()).toMatchObject({ state: 'queued', evidence: { admittedDurable: true } });
         expect(webSocketQueueBox.enqueueOutboxIfAbsent).toHaveBeenCalledWith(expect.objectContaining({
             id: expect.objectContaining({ msgId: result.msgId }),
-            route: { topicId: 'room.chat', contextId: 'world', resourceId: 'ws-only-1' },
+            route: { topicId: 'app.chat', contextId: 'world', resourceId: 'ws-only-1' },
             payload: expect.objectContaining({ typeId: 'chat.message.v1', resource: '{"text":"ws only"}' }),
             targets: expect.objectContaining({ mode: 'broadcast', scope: 'world' })
         }));
@@ -503,7 +503,7 @@ describe('Rallar typed message channel', () => {
 
     it('keeps no receipt on a world broadcast, whose audience A1 owns', async () => {
         const channel = createFacade().messages.channel<ChatMessage>({
-            topicId: 'room.chat',
+            topicId: 'app.chat',
             typeId: 'chat.message.v1',
             purpose: 'notification'
         });
