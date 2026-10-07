@@ -18,6 +18,22 @@ export function isCurrentDirectorEnvelope(
     );
 }
 
+/**
+ * A command its carrier admitted to the room's director at the time: the director acts on one stamped with its own
+ * epoch or an earlier one, whose sender only had not yet read the succession; a later epoch is an appointment this
+ * session has not read.
+ */
+export function isDirectorAddressedEnvelope(
+    status: RallarDirectorStatus,
+    envelope: RallarDirectorRelayEnvelope
+): boolean {
+    return Boolean(
+        status.isDirector && status.appointment && status.roomId &&
+            envelope.roomId === status.roomId &&
+            envelope.epoch <= status.appointment.epoch
+    );
+}
+
 export function isDirectorRelayEnvelope(
     value: object | null,
     topicId: string
