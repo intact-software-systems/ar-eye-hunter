@@ -270,6 +270,10 @@ the accepted layout only.
 `rooms.update(input)` updates owner/admin-controlled room fields, including
 display metadata, `joinMode`, and capacity limits.
 
+`rooms.updateMetadata(room, patch, options?)` merges `patch` into the room's
+current metadata, owner/admin-only: a key whose patch value is `null` is
+removed, and any other value replaces the key's value.
+
 `rooms.archive(room, options?)` marks a room archived through the group update
 policy. Archived groups reject joins, presence, room messaging, invites, and
 member governance mutations.
@@ -501,7 +505,8 @@ running authoritative work. `director.createRelay(...)` builds the
 intent/output/snapshot relay around that appointment.
 
 `director.resign(room?, options?)` clears this session's appointment through
-`rooms.updateMetadata(...)`, so it is subject to the same owner/admin policy;
+`rooms.updateMetadata(...)`, with a `null` patch value that removes the
+appointment key, so it is subject to the same owner/admin policy;
 `director.onStatus(listener)` subscribes to director status changes.
 
 ```ts

@@ -13,7 +13,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { toStateScope } from '@shared/api/api-type-utils.ts';
 import {
     isRallarGroupDirectorForSession,
-    mergeRallarGroupDirectorMetadata,
+    RALLAR_GROUP_DIRECTOR_METADATA_KEY,
     readRallarGroupDirectorFromSnapshot
 } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -99,13 +99,9 @@ export class BrowserDirectorAppointmentRuntime {
         if (!isRallarGroupDirectorForSession(appointment, this.input.requireSession())) {
             return this.input.status.read(roomRef);
         }
-        const metadata = mergeRallarGroupDirectorMetadata(
-            snapshot?.group.metadata,
-            undefined
-        );
         const updated = await this.input.rooms.updateMetadata(
             roomRef,
-            metadata,
+            { [RALLAR_GROUP_DIRECTOR_METADATA_KEY]: null },
             options
         );
         this.input.status.removeHeartbeat(roomRef);
