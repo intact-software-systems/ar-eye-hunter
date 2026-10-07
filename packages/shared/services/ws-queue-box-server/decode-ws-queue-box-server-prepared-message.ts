@@ -1,4 +1,4 @@
-import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
+import { isALWorldBroadcast, readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     decodeALAdmissionRecord,
     decodeALAdmissionString
@@ -173,6 +173,11 @@ function validateScopedRecipientTarget(input: ScopedRecipientTargetInput): reado
         return message.route.contextId !== scope.applicationId || !addressesItsConnection ||
                 principalTargetId !== undefined
             ? ['Persisted scoped recipient differs from direct world target']
+            : [];
+    }
+    if (isALWorldBroadcast(message)) {
+        return !addressesItsConnection || principalTargetId !== undefined
+            ? ['Persisted scoped recipient differs from world target']
             : [];
     }
     const targets = message.targets;

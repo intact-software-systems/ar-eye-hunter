@@ -599,7 +599,7 @@ Deno.test('a room broadcast with a fixed list reaches the listed sessions in the
     }
 });
 
-Deno.test('a world broadcast reaches the live connections of the authenticated scope of its sender alone', async () => {
+Deno.test('a world broadcast reaches each live connection of the authenticated scope of its sender once, and no one else', async () => {
     for (const fanout of ['live-only', 'outbox'] as const) {
         const harness = createRoomDeliveryHarness();
         try {
@@ -617,9 +617,10 @@ Deno.test('a world broadcast reaches the live connections of the authenticated s
             const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
             assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
             await waitForRoomFrames(() => readTopicIds(frames['bob']!, 'app.news').length >= 1);
+            // Settles every path that could still deliver, so a second copy or a stray one would have arrived.
+            await waitForRoomFrames(() => false);
 
-            // The service's inbound forwarding and the router's fanout each send a non-room broadcast; the client keeps one by its id.
-            assert.deepEqual([...new Set(readTopicIds(frames['bob']!, 'app.news'))], [message.id.msgId], fanout);
+            assert.deepEqual(readTopicIds(frames['bob']!, 'app.news'), [message.id.msgId], fanout);
             assert.deepEqual(readTopicIds(frames['foreign']!, 'app.news'), [], fanout);
             assert.deepEqual(readTopicIds(frames['alice']!, 'app.news'), [], fanout);
             if (fanout === 'outbox') {

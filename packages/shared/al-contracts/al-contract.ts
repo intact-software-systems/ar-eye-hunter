@@ -394,6 +394,10 @@ export function isRoomScopedALMessage(message: ALMessage): boolean {
             (targets.scope === 'room' || (targets.scope === 'principal' && targets.groupRef !== undefined)));
 }
 
+export function isALWorldBroadcast(message: ALMessage): boolean {
+    return message.targets?.mode === 'broadcast' && message.targets.scope === 'world';
+}
+
 export function readALTargetGroupRef(message: ALMessage): GroupRef | undefined {
     const targets = message.targets;
     if (targets?.mode === 'unicast') {
