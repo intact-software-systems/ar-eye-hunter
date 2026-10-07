@@ -19,8 +19,11 @@ import type {
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
-import { toALOutboundCanonicalKey } from './al-outbound-canonical-message.ts';
-import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
+import {
+    toALOutboundCanonicalKey,
+    toALOutboundMessageReference,
+    toALSequenceMintComparableMessage
+} from './al-outbound-canonical-message.ts';
 import { ALOutboundCommitPhases } from './al-outbound-commit-phases.ts';
 import type {
     ALOutboundCommitOrigin,
@@ -45,7 +48,6 @@ import {
     type ALOutboundComputeIntent,
     type ComputeALOutboundDispatchInput
 } from './compute-al-outbound-dispatch.ts';
-import { toALSequenceMintComparableMessage } from './to-al-sequence-mint-comparable-message.ts';
 import { validateALOutboundDispatch } from './validate-al-outbound-dispatch.ts';
 
 export namespace ALOutboundDispatchAdmission {

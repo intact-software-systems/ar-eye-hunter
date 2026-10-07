@@ -18,9 +18,9 @@ import {
     toALOutboundCanonicalKey,
     toALOutboundIdentityEntry,
     toALOutboundIdentityKey,
-    toALOutboundMessageReference
+    toALOutboundMessageReference,
+    toALSequenceMintComparableMessage
 } from './al-outbound-canonical-message.ts';
-import { toALSequenceMintComparableMessage } from './to-al-sequence-mint-comparable-message.ts';
 
 export interface ALOutboundCanonicalReadInput {
     readonly nowMs: () => number;

@@ -3,6 +3,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
+import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../al-contracts/al-runtime.ts';
 import { fnv1a64 } from '../../queuebox/AppQueueIdentity.ts';
 import {
     EntityStatus,
@@ -19,7 +20,6 @@ import {
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
 import { decodeALAdmissionResourceEntryKey } from '../decode-al-admission-resource-entry-key.ts';
-import { toALSequenceMintComparableMessage } from './to-al-sequence-mint-comparable-message.ts';
 
 export interface ALOutboundMessageReference {
     readonly key: Key;
@@ -193,6 +193,22 @@ export function isALOutboundMintOfPendingRequest(
     const minted = decodePersistedALMessage(entry.resource);
     return minted.ordering?.seq !== undefined &&
         jsonEquals(requested, toALSequenceMintComparableMessage(requested, minted));
+}
+
+/**
+ * The candidate as the original would compare to it: a sequence minted on the track its original named
+ * without one is removed, so a minted copy matches its request while a copy that changes the key, the epoch
+ * or a stated sequence still differs.
+ */
+export function toALSequenceMintComparableMessage(original: ALMessage, candidate: ALMessage): ALMessage {
+    if (
+        toALSequenceMintTrackKey(original) === undefined || candidate.ordering?.seq === undefined ||
+        toALOrderingTrackKey(candidate) !== toALSequenceMintTrackKey(original)
+    ) {
+        return candidate;
+    }
+    const { seq: _seq, ...ordering } = candidate.ordering;
+    return { ...candidate, ordering };
 }
 
 function outboundMessageIdentity(message: ALMessage): string {

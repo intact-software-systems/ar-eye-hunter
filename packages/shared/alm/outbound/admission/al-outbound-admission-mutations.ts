@@ -32,9 +32,9 @@ import type { ALOutboundOrderingHead } from './al-outbound-admission-store.ts';
 import {
     decodeALOutboundSentMessage,
     type ALOutboundCapturedPolicy,
-    type ALOutboundOrderingHeadRow,
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
+import type { ALOutboundOrderingHeadRow } from './decode-al-outbound-ordering-head.ts';
 
 export type ALOutboundAdmissionMutation =
     | Readonly<

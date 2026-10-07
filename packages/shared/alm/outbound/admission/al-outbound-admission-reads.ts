@@ -66,7 +66,6 @@ import type {
 } from './al-outbound-admission-store.ts';
 import {
     applyALOutboundCapturedPolicy,
-    decodeALOutboundOrderingHead,
     decodeALOutboundPendingAck,
     decodeALOutboundRepairAttempt,
     decodeALOutboundSentMessage,
@@ -74,6 +73,7 @@ import {
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
+import { decodeALOutboundOrderingHead } from './decode-al-outbound-ordering-head.ts';
 
 export type ALOutboundControlHistoryKind = 'acks' | 'nacks' | 'repairs';
 

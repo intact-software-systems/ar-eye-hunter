@@ -7,11 +7,7 @@ import {
     type PersistedALValue
 } from '../../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import type { StateScope } from '../../../api/state-types.ts';
-import {
-    decodeALAdmissionNumber,
-    decodeALAdmissionRecord,
-    decodeALAdmissionString
-} from '../../al-admission-value-validation.ts';
+import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {
     ALOutboundNotYetInSyncRetrySnapshot,
     ALOutboundPendingAckSnapshot,
@@ -120,18 +116,6 @@ export function applyALOutboundCapturedPolicy<TPrepared>(
         principalTargetId: policy.principalTargetId,
         sessionInvalidation: policy.sessionInvalidation
     };
-}
-
-export interface ALOutboundOrderingHeadRow {
-    readonly seq: number;
-}
-
-export function decodeALOutboundOrderingHead(value: unknown): ALOutboundOrderingHeadRow {
-    const seq = decodeALAdmissionNumber(decodeALAdmissionRecord(value, ['seq']).seq);
-    if (seq < 1) {
-        throw new TypeError('Stored outbound ordering head is invalid');
-    }
-    return { seq };
 }
 
 export function decodeALOutboundSentMessage(value: unknown, expectedMsgId: string): ALStoredOutboundMessage {
