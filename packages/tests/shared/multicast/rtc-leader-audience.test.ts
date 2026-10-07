@@ -75,6 +75,32 @@ describe('the RTC leg of a group-leader room send', () => {
         });
     });
 
+    it('keeps a leader send frozen to the director it was admitted to after the room appoints another', async () => {
+        const fixture = createLeaderFixture(toDirectedSnapshot('d'));
+        const message = createLeaderSend('room multicast', []);
+        await enqueueLegAndDrain(fixture, message);
+
+        fixture.groups.accept('room', toDirectedSnapshot('c'));
+        await vi.advanceTimersByTimeAsync(3_000);
+
+        expect(readSentTargets(fixture.channels.b!)).toEqual([toLeaderFrozenTargets(['d']), toLeaderFrozenTargets(['d'])]);
+        expect(readSentTargets(fixture.channels.c!)).toEqual([toLeaderFrozenTargets(['d']), toLeaderFrozenTargets(['d'])]);
+        expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toMatchObject({ mode: 'leader', expectedPeerIds: ['d'] });
+    });
+
+    it('retries a leader send its director has not confirmed toward the director, frozen to it and expected alone', async () => {
+        const fixture = createRtcOriginOverlayFixture({ snapshot: toDirectedSnapshot('d'), nextHopPeerIds: ['b', 'c', 'd'] });
+        const message = createLeaderSend('room multicast', []);
+        await enqueueLegAndDrain(fixture, message);
+
+        await vi.advanceTimersByTimeAsync(3_000);
+
+        expect(readSentTargets(fixture.channels.d!)).toEqual([toLeaderFrozenTargets(['d']), toLeaderFrozenTargets(['d'])]);
+        expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toMatchObject({ mode: 'leader', expectedPeerIds: ['d'], attempts: 1 });
+    });
+
     it.each<{ label: string; snapshot: GroupSnapshot; audience: LeaderAudience; }>([
         { label: 'the room appoints no director', snapshot: createOriginPrincipalSnapshot(), audience: 'room multicast' },
         { label: 'the appointed director is not present', snapshot: toDirectedSnapshot('z'), audience: 'room multicast' },

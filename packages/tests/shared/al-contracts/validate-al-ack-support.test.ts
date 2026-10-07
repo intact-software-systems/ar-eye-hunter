@@ -224,4 +224,15 @@ describe('validateALAckSupport', () => {
         expect(withReceiver.effective.ack.algo).toBe('receiver');
         expect(withoutReceiver.effective.ack.algo).toBe('none');
     });
+
+    it('never falls back to leader, which only a group-leader request asks for, and declares no leader by default', () => {
+        const message = newALMulticastMessage('sender', route, room, 'chat.v1', {}, {
+            reliability: 'at-least-once',
+            qos: { ack: { algo: 'subtree' } }
+        });
+        const withLeader = normalizeALQosPolicy(message, { capabilities: { supportedAck: ['none', 'leader'] } });
+
+        expect(withLeader.effective.ack.algo).toBe('none');
+        expect(DEFAULT_AL_QOS_CAPABILITIES.supportedAck).not.toContain('leader');
+    });
 });

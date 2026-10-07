@@ -1240,12 +1240,16 @@ interface RoomClusterFixture {
 
 /**
  * Server A holds the sockets `carol-1` and `dave-session`; server B reads the canonical inbound row a key notice
- * names. `carol-1` and `carol-2` are sessions of one principal in a room that also holds `bob-session` and `dave-session`;
- * `carol-1` is the room's director.
+ * names. `carol-1` and `carol-2` are sessions of one principal in a room that also holds `bob-session` and `dave-session`.
+ * `dave-session` is the room's director, so a leader send the canonical row names `carol-1` reaches it through that row
+ * alone, as a send admitted before a succession does.
  */
 async function createRoomClusterFixture(): Promise<RoomClusterFixture> {
     const base = createGroupSnapshot(2, ['bob-session', 'carol-1', 'carol-2', 'dave-session']);
-    const appointment = createRallarGroupDirectorAppointment({ session: { clientId: 'principal-carol-1', sessionId: 'carol-1' }, now: 1 });
+    const appointment = createRallarGroupDirectorAppointment({
+        session: { clientId: 'principal-dave-session', sessionId: 'dave-session' },
+        now: 1
+    });
     const snapshot = {
         ...base,
         group: { ...base.group, metadata: mergeRallarGroupDirectorMetadata(base.group.metadata, appointment) },

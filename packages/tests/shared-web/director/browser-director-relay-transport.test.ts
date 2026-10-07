@@ -8,6 +8,12 @@ import type { RallarMessagesOperations } from '@shared-web/browser/messages/rall
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { RallarValidationError } from '@shared/api/rallar-validation.ts';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import {
+    createOriginPrincipalSnapshot,
+    createRtcOriginOverlayFixture,
+    ORIGIN_ROOM
+} from '../../shared/multicast/rtc-origin-overlay-fixture.ts';
+import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import {
     createRallarTestFacade,
@@ -345,6 +351,33 @@ describe('director notification fence', () => {
             minSnapshotVersion: 9,
             rosterVersion: 4
         });
+    });
+});
+
+describe('director command over a real RTC origin', () => {
+    beforeEach(() => resetRallarFacadeTestRuntime());
+
+    it('reports the command the RTC origin refuses for a room with no leader as no-director', async () => {
+        const snapshot = createOriginPrincipalSnapshot();
+        const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b', 'c'] });
+        mocks.apiMiddleware = createDefaultApiMiddlewareTestDouble({
+            session: { sessionId: 'a' },
+            middleware: { rtcRxStreamer: { enqueueOutboxIfAbsent: (message) => origin.manager.enqueueIfAbsent(message) } }
+        });
+        setRallarFacadeRoomSnapshots([snapshot]);
+        const transport = new BrowserDirectorRelayTransport({
+            messages: createRallarTestFacade().messages,
+            readSession: () => mocks.apiMiddleware.session
+        });
+
+        const result = await transport.sendCommand({ ...commandInput, current: { ...clientStatus, roomRef: ORIGIN_ROOM } });
+
+        expect(result).toMatchObject({
+            status: 'no-director',
+            reason: 'no-leader: the room has no active leader inside the audience the send names'
+        });
+        expect(result.receipt?.lifecycle().evidence.failure).toEqual({ kind: 'refused', reason: 'no-leader' });
+        expect(result.receipt?.lifecycle().evidence.carrierFallback).toBeUndefined();
     });
 });
 

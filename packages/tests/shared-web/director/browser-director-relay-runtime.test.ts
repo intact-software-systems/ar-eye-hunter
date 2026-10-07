@@ -288,7 +288,7 @@ describe('Rallar director relay', () => {
             { command: 'sync request', typeId: 'game.sync-request' }
         ] as const
     )(
-        'sends a director $command as one command to the room\'s leader whose WS fallback keeps its msgId (D60)',
+        'sends a director $command as one command to the room\'s leader whose WS fallback keeps its msgId',
         async ({ command, typeId }) => {
             vi.useFakeTimers();
             vi.setSystemTime(Date.now());
