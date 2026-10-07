@@ -69,6 +69,7 @@ import type {
     RtcDataChannelSendOptions,
     RtcDataChannelSendResult
 } from '../webrtc/qrtc-data-channel.ts';
+import { computeRtcExclusiveRefusal } from './compute-rtc-exclusive-refusal.ts';
 import {
     computeRtcOutboundCarrierAvailability,
     isRtcCarrierGapHandedOver,
@@ -534,6 +535,10 @@ export class WebRtcOverlayMulticastManager {
         const policy = this.readOutgoingQosPolicy(frozen, context);
         const msg = toALOutboundMessage(frozen, policy.effective);
         const plan = computeRtcBroadcastScopeRefusal(msg)
+            .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
+                (refusal) => Either.ofLeft(refusal),
+                (carried) => computeRtcExclusiveRefusal(carried, original, policy.effective)
+            )
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
                 (carried) =>
