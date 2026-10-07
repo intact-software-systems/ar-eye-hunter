@@ -52,7 +52,7 @@ describe('the routed carrier of a world send', () => {
         }
     );
 
-    it('admits a world send on rtc over RTC alone, which refuses it unsupported, and the handle ends rejected', async () => {
+    it('admits a world send on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal', async () => {
         rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementationOnce(async (message) => toAdmission(message, UNSUPPORTED_VERDICT));
 
         const handle = await createRoomChannel().send({ text: 'world' }, { strategy: 'rtc', scope: 'world' });
@@ -244,6 +244,20 @@ describe('the audience inputs of a send', () => {
         expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
     });
 
+    it.each<RallarTypedMessageSendStrategy>(['rtc-with-ws-fallback', 'ws-then-rtc'])(
+        'a %s send with an invalid scope produces no admission on either carrier and stays disconnected',
+        async (strategy) => {
+            setRallarFacadeRoomSnapshots([createGroupSnapshotFixture({ ...ROOM_REF, sessionIds: ['session-1', 'peer-1'] })]);
+            const facade = createRallarTestFacade();
+
+            await expect(createRoomChannel(facade).send({ text: 'all' }, { strategy, scope: JSON.parse('"all"') }))
+                .rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.scope', code: 'invalid-scope' })] });
+            expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+            expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+            expect(facade.isConnected()).toBe(false);
+        }
+    );
+
     it('refuses an rtc send whose exceptPeerIds names an invalid session id', async () => {
         setRallarFacadeRoomSnapshots([createGroupSnapshotFixture({ ...ROOM_REF, sessionIds: ['session-1', 'peer-1'] })]);
 
@@ -252,8 +266,8 @@ describe('the audience inputs of a send', () => {
     });
 });
 
-function createRoomChannel() {
-    return createRallarTestFacade().messages.room<{ text: string; }>({
+function createRoomChannel(facade = createRallarTestFacade()) {
+    return facade.messages.room<{ text: string; }>({
         topicId: 'room.chat',
         typeId: 'chat.message.v1',
         roomRef: ROOM_REF,

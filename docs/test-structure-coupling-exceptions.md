@@ -3317,8 +3317,8 @@ moved or changed test.
       "domain": "Typed message audience routing",
       "owner": "Rallar browser maintainers",
       "summary": "A world send on the rtc strategy reaches only the RTC carrier, as the world broadcast it holds, and WS admits nothing.",
-      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone, which refuses it unsupported, and the handle ends rejected",
-      "coverageRelation": "The RTC carrier admission port receives the world broadcast with the hold gap admission, the WS port is never called, and the handle ends rejected.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal",
+      "coverageRelation": "The RTC carrier admission port receives the world broadcast with the hold gap admission and the WS port is never called. The RTC port double injects the unsupported refusal, so the pinned outcome is the ledger projection of that refusal: the handle ends rejected.",
       "interactionRequirement": {
         "interactionKind": "absence",
         "ownedPort": "WebRtcRxStreamerService and WebSocketQueueBox enqueueOutboxIfAbsent carrier admission ports",
@@ -7836,7 +7836,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
       "rationale": "The RTC admission port's first call carries the world broadcast, the envelope the RTC carrier refuses as unsupported.",
-      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone, which refuses it unsupported, and the handle ends rejected"
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal"
     },
     {
       "id": "test-structure-coupling-8342e0b1c624e7b8",
@@ -7847,7 +7847,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
       "rationale": "The RTC admission port's first call names the hold gap admission: a world send on rtc has no fallback carrier.",
-      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone, which refuses it unsupported, and the handle ends rejected"
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal"
     },
     {
       "id": "test-structure-coupling-c0a128e08129b94a",

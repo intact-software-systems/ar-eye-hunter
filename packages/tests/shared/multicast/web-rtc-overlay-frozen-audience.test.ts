@@ -11,7 +11,8 @@ import {
     newALBroadcastMessage,
     newALMulticastMessage,
     newALPrincipalBroadcastMessage,
-    type ALMessage
+    type ALMessage,
+    type ALTargets
 } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
@@ -362,9 +363,9 @@ describe('the RTC leg of a principal or listed room send', () => {
         const admitted = await enqueueLegAndDrain(fixture, message);
 
         expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
-        expect(admitted.message.targets).toEqual(toOriginFrozenTargets(['b', 'd'], 4));
-        expect(readSentTargets(fixture.channels.b!)).toEqual([toOriginFrozenTargets(['b', 'd'], 4)]);
-        expect(readSentTargets(fixture.channels.c!)).toEqual([toOriginFrozenTargets(['b', 'd'], 4)]);
+        expect(admitted.message.targets).toEqual(toAudienceFrozenTargets(['b', 'd']));
+        expect(readSentTargets(fixture.channels.b!)).toEqual([toAudienceFrozenTargets(['b', 'd'])]);
+        expect(readSentTargets(fixture.channels.c!)).toEqual([toAudienceFrozenTargets(['b', 'd'])]);
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b', 'd'] });
     });
@@ -376,7 +377,7 @@ describe('the RTC leg of a principal or listed room send', () => {
         const admitted = await enqueueLegAndDrain(fixture, message);
 
         expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
-        expect(admitted.message.targets).toEqual(toOriginFrozenTargets(['c'], 4));
+        expect(admitted.message.targets).toEqual(toAudienceFrozenTargets(['c']));
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['c'] });
     });
@@ -403,7 +404,7 @@ describe('the RTC leg of a principal or listed room send', () => {
             fixture.groups.accept('room', createPrincipalSnapshot());
             await vi.advanceTimersByTimeAsync(200);
 
-            expect(readSentTargets(fixture.channels.b!)).toEqual([toOriginFrozenTargets(recipientPeerIds, 4)]);
+            expect(readSentTargets(fixture.channels.b!)).toEqual([toAudienceFrozenTargets(recipientPeerIds)]);
             expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
                 .toMatchObject({ mode: 'receiver', expectedPeerIds: recipientPeerIds });
         }
@@ -421,7 +422,7 @@ describe('the RTC leg of a principal or listed room send', () => {
         const replayed = await enqueueLegAndDrain(fixture, JSON.parse(held!.resource));
 
         expect(replayed.verdict.kind).toBe('duplicate');
-        expect(replayed.message.targets).toEqual(toOriginFrozenTargets(['c'], 4));
+        expect(replayed.message.targets).toEqual(toAudienceFrozenTargets(['c']));
         expect(replayed.entries).toEqual([canonical]);
     });
 
@@ -445,6 +446,29 @@ describe('the RTC leg of a principal or listed room send', () => {
         }
     );
 
+    it('refuses a principal broadcast whose principal holds 258 sessions in the room as unsupported, handing back the targets its sender gave', async () => {
+        const snapshot = createOriginSnapshot(toRoomSessionIds(258), 4);
+        const fixture = createFixture({
+            snapshot: {
+                ...snapshot,
+                activeSessions: snapshot.activeSessions.map((session) => ({ ...session, principalId: PRINCIPAL_REF.principalId })),
+                members: [...snapshot.members, { ...snapshot.members[0]!, principalId: PRINCIPAL_REF.principalId }]
+            },
+            nextHopPeerIds: ['b', 'c']
+        });
+        const message = createAudienceBroadcast('principal');
+
+        const admitted = await enqueueLegAndDrain(fixture, message);
+
+        expect(admitted.verdict).toEqual({
+            kind: 'refused',
+            reason: 'unsupported',
+            detail: 'RTC room multicast audience of 257 recipients exceeds the RTC room limit of 256'
+        });
+        expect(admitted.message.targets).toEqual(message.targets);
+        expect(fixture.channels.b!.sent).toEqual([]);
+    });
+
     it.each(['world', 'all', 'principal'] as const)(
         'refuses a %s broadcast that names no room as unsupported, sending nothing',
         async (scope) => {
@@ -464,6 +488,12 @@ describe('the RTC leg of a principal or listed room send', () => {
 });
 
 const PRINCIPAL_REF = { applicationId: 'app', workspaceId: 'workspace', principalId: 'principal-1' };
+const AUDIENCE_FLOORS = { minSnapshotVersion: 4, rosterVersion: 4 } as const;
+
+/** The frozen multicast of an audience send keeps the roster fence its sender stamped. */
+function toAudienceFrozenTargets(recipientPeerIds: readonly string[]): ALTargets {
+    return { ...toOriginFrozenTargets(recipientPeerIds, 4), ...AUDIENCE_FLOORS };
+}
 
 function createAudienceBroadcast(
     audience: 'room' | 'principal' | 'list',
@@ -475,7 +505,8 @@ function createAudienceBroadcast(
         ack: 'all-logical-recipients',
         reliability: 'at-least-once',
         ttlMs: 30_000,
-        qos: { durability: { algo: durability } }
+        qos: { durability: { algo: durability } },
+        ...AUDIENCE_FLOORS
     } as const;
     if (audience === 'room') {
         return newALMulticastMessage('a', route, groupRef, 'chat.message.v1', {}, options);
