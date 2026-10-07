@@ -287,10 +287,8 @@ export type RelicRoundTransition = 'round-started' | 'round-resolved' | 'review-
 export interface RelicRoundTransitionEvent {
     readonly protocolVersion: typeof RELIC_PROTOCOL_VERSION;
     readonly gameId: string;
-    /** The creation time of the game incarnation whose round the transition moved. */
     readonly createdAtEpochMs: number;
     readonly round: number;
-    /** The phase the transition entered. */
     readonly phase: RelicGamePhase;
     readonly transition: RelicRoundTransition;
     /** The message of the event the rules append for the transition. */
@@ -312,9 +310,6 @@ export function isRelicRoundTrackOfGame(orderingKey: string, gameId: string): bo
 }
 
 export function toPublicRelicSnapshot(state: RelicGameState): RelicPublicSnapshot {
-    const maybeLegacy = state as RelicGameState & {
-        roomInvestigations?: readonly RelicRoomInvestigation[];
-    };
     return {
         protocolVersion: state.protocolVersion,
         gameId: state.gameId,
@@ -331,7 +326,7 @@ export function toPublicRelicSnapshot(state: RelicGameState): RelicPublicSnapsho
         relics: toPublicRelics(state.relics),
         // A relic-found investigation is created only after the relic is marked
         // found/carried above, so its relic and clue references are public state.
-        roomInvestigations: maybeLegacy.roomInvestigations ?? [],
+        roomInvestigations: state.roomInvestigations,
         players: state.players,
         submittedPlayerIds: state.pendingActions.map((action) => action.playerId),
         events: state.events.slice(-48),
@@ -443,7 +438,6 @@ export function isRelicSnapshot(value: unknown): value is RelicPublicSnapshot {
         (value.setup === undefined || isRelicPublicSetupMetadata(value.setup));
 }
 
-/** A payload carries the snapshot itself or the server event around it; anything else is no snapshot. */
 export function decodeRelicSnapshotPayload(value: unknown): Either<TypeError, RelicPublicSnapshot> {
     const next = isRecord(value) && 'snapshot' in value ? value.snapshot : value;
     return isRelicSnapshot(next) ? Either.ofRight(next) : Either.ofLeft(new TypeError('not a Relic snapshot'));
@@ -657,5 +651,5 @@ function isOneOf<T extends string>(value: unknown, options: readonly T[]): value
 }
 
 function isRecord(value: unknown): value is ApiJsonObject {
-    return typeof value === 'object' && value !== null;
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

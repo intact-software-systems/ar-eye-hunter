@@ -3,7 +3,6 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
-import { toALSequenceMintComparableMessage } from '../../al-contracts/al-runtime.ts';
 import { fnv1a64 } from '../../queuebox/AppQueueIdentity.ts';
 import {
     EntityStatus,
@@ -20,6 +19,7 @@ import {
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
 import { decodeALAdmissionResourceEntryKey } from '../decode-al-admission-resource-entry-key.ts';
+import { toALSequenceMintComparableMessage } from './to-al-sequence-mint-comparable-message.ts';
 
 export interface ALOutboundMessageReference {
     readonly key: Key;

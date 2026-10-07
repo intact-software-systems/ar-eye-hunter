@@ -19,8 +19,6 @@ import { ALAdmissionCorruptionError, type ALAdmissionDecoder } from '../../al-ad
 import {
     decodeALAdmissionClientRecord,
     decodeALAdmissionControlValue,
-    decodeALAdmissionNumber,
-    decodeALAdmissionRecord,
     decodeALAdmissionString,
     decodeALAdmissionSupersedenceValue
 } from '../../al-admission-value-validation.ts';
@@ -68,11 +66,11 @@ import type {
 } from './al-outbound-admission-store.ts';
 import {
     applyALOutboundCapturedPolicy,
+    decodeALOutboundOrderingHead,
     decodeALOutboundPendingAck,
     decodeALOutboundRepairAttempt,
     decodeALOutboundSentMessage,
     type ALOutboundCapturedPolicy,
-    type ALOutboundOrderingHeadRow,
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
@@ -587,14 +585,6 @@ export class ALOutboundAdmissionReads<TPrepared> {
             }
             : undefined;
     }
-}
-
-function decodeALOutboundOrderingHead(value: unknown): ALOutboundOrderingHeadRow {
-    const seq = decodeALAdmissionNumber(decodeALAdmissionRecord(value, ['seq']).seq);
-    if (seq < 1) {
-        throw new TypeError('Stored outbound ordering head is invalid');
-    }
-    return { seq };
 }
 
 function requireALOutboundPlannedMessage(source: ALMessage, planned: ALMessage): void {

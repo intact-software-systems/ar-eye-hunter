@@ -1,7 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toALFreezeComparableMessage } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
-import { toALSequenceMintComparableMessage } from '../../al-contracts/al-runtime.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { hasSameResourceEntryValue } from '../../queuebox/resource-entry-observations.ts';
 import { EntityStatus, isKeysEqual, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -21,6 +20,7 @@ import {
     toALOutboundIdentityKey,
     toALOutboundMessageReference
 } from './al-outbound-canonical-message.ts';
+import { toALSequenceMintComparableMessage } from './to-al-sequence-mint-comparable-message.ts';
 
 export interface ALOutboundCanonicalReadInput {
     readonly nowMs: () => number;

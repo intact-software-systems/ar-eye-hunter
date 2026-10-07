@@ -6,12 +6,12 @@ import {
     type ALMessageRejection
 } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
-import { toALSequenceMintComparableMessage } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ALOutboundCommitBundle, ALOutboundMessageReadDto } from './admission/al-outbound-admission-store.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
+import { toALSequenceMintComparableMessage } from './to-al-sequence-mint-comparable-message.ts';
 
 /** Checks the candidate against its captured read; never repairs or rewrites it. */
 export function validateALOutboundDispatch<TPrepared>(

@@ -122,7 +122,6 @@ export type ALOutboundCommitFenceIssue =
     | Readonly<{ kind: 'conflict'; message: string; }>
     | Readonly<{ kind: 'corruption'; key: string; message: string; }>;
 
-/** The head a minting admission advances, expiring with the message rows it is written beside. */
 export function toALOutboundOrderingHeadMutations(
     head: ALOutboundOrderingHead | undefined,
     expireAtTimestamp: number

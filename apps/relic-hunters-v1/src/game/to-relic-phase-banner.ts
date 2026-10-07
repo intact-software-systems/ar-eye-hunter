@@ -4,7 +4,6 @@ import { UI, type Lang } from './lang.ts';
 
 export interface RelicPhaseBanner {
     readonly text: string;
-    /** The expedition's start: its own style, held longer. */
     readonly start: boolean;
     readonly durationMs: number;
 }

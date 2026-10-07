@@ -1,6 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
-import { toALSequenceMintComparableMessage } from '../../al-contracts/al-runtime.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
@@ -46,6 +45,7 @@ import {
     type ALOutboundComputeIntent,
     type ComputeALOutboundDispatchInput
 } from './compute-al-outbound-dispatch.ts';
+import { toALSequenceMintComparableMessage } from './to-al-sequence-mint-comparable-message.ts';
 import { validateALOutboundDispatch } from './validate-al-outbound-dispatch.ts';
 
 export namespace ALOutboundDispatchAdmission {

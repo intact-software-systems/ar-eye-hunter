@@ -17,7 +17,6 @@ export const RELIC_TYPES = {
     aiPlanningProposal: 'relic.ai.planning-proposal.v1'
 } as const;
 
-/** The group a Relic room's messages address: the room in the default application and workspace. */
 export function toRelicRoomGroupRef(roomId: string): GroupRef {
     return {
         applicationId: DEFAULT_STATE_APPLICATION_ID,

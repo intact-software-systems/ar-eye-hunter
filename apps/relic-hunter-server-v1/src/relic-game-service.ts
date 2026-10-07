@@ -122,7 +122,6 @@ class RelicGameService implements RelicHunterGameService {
         });
     }
 
-    /** The snapshot first, then the round transition the command made, if it made one. */
     private async publishCommandResult(previous: RelicGameState, next: RelicGameState): Promise<void> {
         await this.publishSnapshot(next);
         const transition = toRelicRoundTransitionEvent(previous, next);

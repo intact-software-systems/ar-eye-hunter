@@ -33,7 +33,6 @@ export type RelicHuntersConnection = Readonly<{
     roomId?: string;
     rooms: readonly RallarRoomSummary[];
     snapshot?: RelicPublicSnapshot;
-    /** The latest round transition the room's ordered track delivered; undefined until one arrives. */
     roundTransition?: RelicRoundTransitionEvent;
     login(username: string, password: string): Promise<void>;
     register(username: string, password: string, displayName?: string): Promise<void>;
