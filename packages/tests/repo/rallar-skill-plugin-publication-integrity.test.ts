@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -36,6 +36,20 @@ describe('Rallar skill plugin and publication integrity', () => {
         expect(existsSync(path.join(repoRoot, 'skills'))).toBe(false);
     });
 
+    it('exposes each canonical skill to Claude Code as a directory symlink', () => {
+        const claudeSkillsRoot = path.join(repoRoot, '.claude/skills');
+        const linkNames = readdirSync(claudeSkillsRoot).sort();
+
+        expect(linkNames).toEqual([...expectedSkills].sort());
+        expect(readCopiedSkillMarkdown(path.join(repoRoot, '.claude'))).toEqual([]);
+        for (const skillName of expectedSkills) {
+            const linkPath = path.join(claudeSkillsRoot, skillName);
+            expect(lstatSync(linkPath).isSymbolicLink(), skillName).toBe(true);
+            expect(readlinkSync(linkPath), skillName).toBe(`../../.agents/skills/${skillName}`);
+            expect(existsSync(path.join(linkPath, 'SKILL.md')), skillName).toBe(true);
+        }
+    });
+
     it('keeps skill frontmatter and local references valid', () => {
         for (const skillName of expectedSkills) {
             const skillPath = path.join(skillsRoot, skillName, 'SKILL.md');
@@ -44,7 +58,12 @@ describe('Rallar skill plugin and publication integrity', () => {
 
             expect(frontmatter.name, skillPath).toBe(skillName);
             expect(frontmatter.description.length, skillPath).toBeGreaterThan(20);
-            expect(frontmatter.description, skillPath).toMatch(/^Use when\b/);
+            expect(frontmatter.description.length, skillPath).toBeLessThanOrEqual(1024);
+            const capabilityEnd = frontmatter.description.indexOf('Use when');
+            expect(capabilityEnd, skillPath).toBeGreaterThan(0);
+            expect(frontmatter.description.slice(0, capabilityEnd).trim().endsWith('.'), skillPath).toBe(
+                true
+            );
 
             for (const reference of source.matchAll(/`(references\/[a-z0-9./-]+\.md)`/g)) {
                 expect(
@@ -207,6 +226,23 @@ describe('Rallar skill plugin and publication integrity', () => {
         ]);
     });
 });
+
+function readCopiedSkillMarkdown(directory: string): readonly string[] {
+    const copied: string[] = [];
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const child = path.join(directory, entry.name);
+        if (entry.isSymbolicLink()) {
+            continue;
+        }
+        if (entry.isDirectory()) {
+            copied.push(...readCopiedSkillMarkdown(child));
+        }
+        else if (entry.name === 'SKILL.md') {
+            copied.push(child);
+        }
+    }
+    return copied;
+}
 
 function readRepo(filePath: string): string {
     return readAbsolute(path.join(repoRoot, filePath));

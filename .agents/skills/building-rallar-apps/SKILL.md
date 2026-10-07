@@ -1,6 +1,6 @@
 ---
 name: building-rallar-apps
-description: Use when creating, bootstrapping, scaffolding, or architecting a new Rallar browser application, React/Vite SPA, or Three.js, React Three Fiber, or Babylon game, including authority, runtime, room, renderer, lifecycle, and test boundaries.
+description: Scaffolds a new Rallar browser app and its authority, runtime, room, and renderer boundaries. Use when creating a React or Vite SPA, or a Three.js, React Three Fiber, or Babylon game. Existing game behavior belongs to rallar-games.
 ---
 
 # Building Rallar Apps

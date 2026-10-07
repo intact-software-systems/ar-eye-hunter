@@ -25,7 +25,9 @@ Detailed workflows live in `.agents/skills/**` (a repo-local skill tree, also pa
 | `rallar-ai`                                                      | RallarAI providers, schemas, deterministic helpers.                                                                                   |
 | `rallar-hetzner-ops`                                             | Hetzner distributed recipes, headless agents, fleet artifacts.                                                                        |
 | `performance-analysis`                                           | Profiling and optimization work.                                                                                                      |
-| `publishing-plan-progress`                                       | Executing a written plan from `plans/`.                                                                                               |
+| `adaptive-plan-execution`                                        | Executing a written or multi-slice repository plan, and adapting it when evidence changes ownership, scope, or the current horizon.   |
+| `organizing-repository-structure`                                | Adding, moving, splitting, consolidating, or reviewing repository files and folders.                                                  |
+| `publishing-plan-progress`                                       | Publishing a branch, draft pull request, milestone, or final remote evidence. Plan execution belongs to `adaptive-plan-execution`.    |
 
 ## Runtime split
 

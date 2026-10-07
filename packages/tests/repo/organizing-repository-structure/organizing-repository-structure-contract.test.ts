@@ -16,7 +16,10 @@ describe('organizing repository structure skill contract', () => {
         };
 
         expect(frontmatter.name).toBe('organizing-repository-structure');
-        expect(frontmatter.description).toMatch(/^Use when\b/u);
+        const capabilityEnd = frontmatter.description.indexOf('Use when');
+        expect(capabilityEnd).toBeGreaterThan(0);
+        expect(frontmatter.description.slice(0, capabilityEnd).trim().endsWith('.')).toBe(true);
+        expect(frontmatter.description.length).toBeLessThanOrEqual(1024);
         expect(frontmatter.description).not.toMatch(/\b(I|my|we|our)\b/iu);
         expect(agentMetadata.interface?.display_name).toBe('Organizing Repository Structure');
         expect(agentMetadata.interface?.short_description?.length).toBeGreaterThanOrEqual(25);
