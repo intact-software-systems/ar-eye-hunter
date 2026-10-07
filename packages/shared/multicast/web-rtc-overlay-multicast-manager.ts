@@ -992,6 +992,7 @@ function toALOutboundDropReasonCodeFromHandlingPlan(
         case 'unmet-requirements':
         case 'ordering-rejected':
         case 'resync-required':
+        case 'held-by-other':
         case undefined:
             return 'planner-drop';
     }

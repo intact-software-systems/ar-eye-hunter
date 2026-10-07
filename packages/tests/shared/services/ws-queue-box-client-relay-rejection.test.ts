@@ -234,6 +234,33 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         });
     });
 
+    it('states the server dropping an exclusive send on a resource another session holds; the receipted handle reads rejected', async () => {
+        const fixture = await createRelayFixture();
+        const origin = await createOriginClient();
+        const held = await fixture.server.acceptIncomingMessage(exclusiveRoomBroadcast('claim-held', 'b'), 'b');
+        expect(held.right).toEqual({ kind: 'admitted' });
+        const contested = exclusiveRoomBroadcast('claim-contested', 'a');
+        expect((await origin.service.enqueueOutboxIfAbsent(contested)).verdict.kind).toBe('admitted');
+
+        const dropped = await fixture.server.acceptIncomingMessage(contested, 'a');
+
+        expect(dropped.right).toEqual({ kind: 'not-admitted', reason: 'Exclusive resource is held by another session' });
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return readSentNacks(fixture.sockets.a).length;
+        }).toBe(1);
+        await relayFrames(fixture.sockets.a, origin);
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'claim-contested')
+            .reduce(computeALDeliveryLifecycle, toInitialLifecycle('claim-contested', 'receiver'));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.attempts).toHaveLength(1);
+        expect(lifecycle.evidence.failure).toEqual({
+            kind: 'relay-rejected',
+            rejection: { relay: 'trusted-server', reason: 'held-by-other' }
+        });
+    });
+
     // R-S3c-i-28: the origin tracks the server as the hop of a `hop` room unicast (R-S3a-4), and a NACK from a peer the
     // receipt expects is admitted, so the server's refusal ends that receipt as it ends a server-addressed one (R-S3c-i-21).
     it('ends the server hop receipt of a hop room unicast to a non-member on the server refusal; the handle reads failed', async () => {
@@ -375,6 +402,18 @@ function roomUnicast(msgId: string, toPeerId: string): ALMessage {
         constraints: { expiresAtMs: Date.now() + 30_000 },
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
         payload: { typeId: 'command.v1', contentType: 'application/json', resource: '{}' }
+    };
+}
+
+/** A receipted exclusive room broadcast on the one resource every message this helper builds names. */
+function exclusiveRoomBroadcast(msgId: string, senderId: string): ALMessage {
+    return {
+        id: { v: 3, msgId, ts: Date.now(), senderId },
+        route: { topicId: 'room.pickup', resourceId: 'pickup-1', contextId: ROOM.groupId },
+        targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
+        constraints: { expiresAtMs: Date.now() + 30_000 },
+        delivery: { reliability: 'at-least-once', ack: 'receiver', ownership: 'exclusive' },
+        payload: { typeId: 'pickup.v1', contentType: 'application/json', resource: '{}' }
     };
 }
 

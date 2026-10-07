@@ -5,8 +5,8 @@ import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admi
 
 /**
  * A NACK that refuses the whole send rather than one receipt: a relay's `resync-required` whatever the receipt,
- * and before any receipt row exists a `membership-fenced` refusal or the trusted server's `unauthorized` or
- * `no-leader` one.
+ * and before any receipt row exists a `membership-fenced` refusal or the trusted server's `unauthorized`,
+ * `no-leader` or `held-by-other` one.
  * Only the trusted server speaks without being a peer the send owes, so only its rejection waives that check.
  */
 export function resolveALOutboundRelayRejection(read: ALControlAdmissionRead): ALDeliveryRelayRejection | undefined {
@@ -28,8 +28,9 @@ export function resolveALOutboundRelayRejection(read: ALControlAdmissionRead): A
 
 function isTrustedServerAdmissionRefusal(
     reason: ALNackReason
-): reason is 'unauthorized' | 'membership-fenced' | 'no-leader' {
-    return reason === 'unauthorized' || reason === 'membership-fenced' || reason === 'no-leader';
+): reason is 'unauthorized' | 'membership-fenced' | 'no-leader' | 'held-by-other' {
+    return reason === 'unauthorized' || reason === 'membership-fenced' || reason === 'no-leader' ||
+        reason === 'held-by-other';
 }
 
 export function toALOutboundRelayRejectedFact(

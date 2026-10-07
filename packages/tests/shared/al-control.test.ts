@@ -144,12 +144,12 @@ describe('AL control message codec', () => {
             .toEqual({ type: 'repair', payload: repair });
     });
 
-    it('round-trips a membership-fenced NACK and refuses a reason outside the vocabulary', () => {
+    it.each(['membership-fenced', 'held-by-other'] as const)('round-trips a %s NACK and refuses a reason outside the vocabulary', (reason) => {
         const fenced: ALNackPayload = {
             msgId: 'msg-1',
             fromPeerId: 'sender',
             toPeerId: 'receiver',
-            reason: 'membership-fenced',
+            reason,
             observedAtEpochMs: 13
         };
         const message = newALNackControlMessage(controlId, fenced);
