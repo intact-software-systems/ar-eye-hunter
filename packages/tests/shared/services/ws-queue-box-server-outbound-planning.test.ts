@@ -177,6 +177,31 @@ describe('WS server outbound planning', () => {
             .toEqual([1, 2, undefined]);
     });
 
+    it('mints no sequence for its own keyed, unsequenced message planned at dequeue', () => {
+        const planning = new WsQueueBoxServerOutboundPlanning({
+            serverPeerId: 'server',
+            qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
+            targetResolution: new WsQueueBoxServerTargetResolution({
+                socket: new JsonWebSocketServer(),
+                targetResolver: { resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
+            }),
+            deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
+        });
+        const message = newALMulticastMessage(
+            'server',
+            { topicId: 'room.app.event', contextId: ROOM.groupId, resourceId: 'dequeued-keyed' },
+            ROOM,
+            'app.event.v1',
+            {},
+            { ttlMs: 30_000, orderingKey: 'game-1' }
+        );
+        const planAt = (phase: 'immediate' | 'dequeue') =>
+            planning.planOutboundMessage({ message, phase, clusterPublisherRegistered: false, admittedAudience: ['b'] });
+
+        expect(planAt('dequeue').mintsSequence).toBeUndefined();
+        expect(planAt('immediate').mintsSequence).toBe(true);
+    });
+
     it('keeps a volatile at-least-once room broadcast waiting to resolve its recipients at dequeue', () => {
         const server = new JsonWebSocketServer();
         const planning = new WsQueueBoxServerOutboundPlanning({

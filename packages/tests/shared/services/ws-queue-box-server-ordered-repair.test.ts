@@ -94,7 +94,10 @@ describe('the WS server repairs its own ordered publication', () => {
 
         await receiveNack(server, { fromPeerId: 'b', msgId: 'event-35', reason: 'gap', missingRanges: [{ from: 1, to: 34 }] });
 
-        // Thirty-five receipts still wait on `b`; the retransmits are sent once their first window has passed.
+        // The readiness probe and the claim read `AL_OUTBOUND_WORK_PAGE_SIZE` (16) rows per status in key order. The
+        // thirty-five receipts still waiting on `b` sit ahead of the repair rows, and a page of receipts not yet due
+        // hides every row behind it, so the clock moves in the poll: each step lets a page of receipts fall due past
+        // its ACK timeout, and more than one pass goes through them before the repair rows are reached.
         await expect.poll(async () => {
             server.clock.nowMs += CLOCK_STEP_MS;
             return await runEngine(server, () => readRepairPages(server).flatMap((page) => page.seqs).length);
@@ -105,6 +108,41 @@ describe('the WS server repairs its own ordered publication', () => {
         ]);
         expect(readSeqs(server.sockets.b).slice(35, 35 + 34)).toEqual(toSeqs(1, 34));
         expect(readSeqs(server.sockets.a)).toEqual(toSeqs(1, 35));
+    });
+
+    it('serves the second requester of a spent sequence from the receipt retry, not from ranged repair', async () => {
+        const server = await createOrderedServer();
+        await publishEvents(server, 3, ['a', 'b', 'c']);
+        for (const msgId of ['event-1', 'event-2', 'event-3']) {
+            await receiveAck(server, msgId, 'a');
+        }
+        await receiveAck(server, 'event-1', 'b');
+        await receiveAck(server, 'event-1', 'c');
+
+        await receiveNack(server, { fromPeerId: 'b', msgId: 'event-3', reason: 'gap', missingRanges: [{ from: 2, to: 2 }] });
+        await expect.poll(() => runEngine(server, () => readSeqs(server.sockets.b))).toEqual([1, 2, 3, 2]);
+        await receiveAck(server, 'event-2', 'b');
+        await receiveAck(server, 'event-3', 'b');
+        await receiveNack(server, { fromPeerId: 'c', msgId: 'event-3', reason: 'gap', missingRanges: [{ from: 2, to: 2 }] });
+
+        await expect.poll(() => runEngine(server, () => readRepairExhaustedMsgIds(server))).toEqual(['event-2']);
+        await receiveAck(server, 'event-3', 'c');
+        await settle(server);
+        expect(readSeqs(server.sockets.c)).toEqual([1, 2, 3]);
+
+        server.clock.nowMs += ACK_TIMEOUT_MS + CLOCK_STEP_MS;
+        await expect.poll(() => runEngine(server, () => readMsgIds(server.sockets.c))).toEqual([
+            'event-1',
+            'event-2',
+            'event-3',
+            'event-2'
+        ]);
+        await settle(server);
+        expect(readSeqs(server.sockets.c)).toEqual([1, 2, 3, 2]);
+        expect(readSeqs(server.sockets.b)).toEqual([1, 2, 3, 2]);
+        expect(readSeqs(server.sockets.a)).toEqual([1, 2, 3]);
+        expect(readRepairExhaustedMsgIds(server)).toEqual(['event-2']);
+        expect(readRepairPages(server)).toEqual([{ hint: '2-2', seqs: [2] }]);
     });
 
     it('retransmits nothing for a gap NACK that arrives after the message deadline', async () => {
@@ -205,17 +243,20 @@ async function createOrderedServer(): Promise<OrderedServer> {
 }
 
 /** Publishes `event-1` .. `event-<count>` on one track and returns the ordering each was admitted with. */
-async function publishEvents(server: OrderedServer, count: number): Promise<readonly ALMessage['ordering'][]> {
+async function publishEvents(
+    server: OrderedServer,
+    count: number,
+    audience: readonly string[] = ADMITTED_AUDIENCE
+): Promise<readonly ALMessage['ordering'][]> {
     const minted: ALMessage['ordering'][] = [];
     for (let index = 1; index <= count; index += 1) {
         const result = await server.service.enqueueOutboxIfAbsent(
             roundEvent(`event-${index}`),
-            { admittedAudience: ADMITTED_AUDIENCE, recipientScope: undefined }
+            { admittedAudience: audience, recipientScope: undefined }
         );
         minted.push(result.message.ordering);
     }
-    await expect.poll(() => runEngine(server, () => [readSeqs(server.sockets.a).length, readSeqs(server.sockets.b).length]))
-        .toEqual([count, count]);
+    await expect.poll(() => runEngine(server, () => audience.map((peerId) => readSeqs(server.sockets[peerId]!).length))).toEqual(audience.map(() => count));
     return minted;
 }
 
@@ -284,6 +325,22 @@ function readSeqs(socket: SimulatedWebSocket): readonly (number | undefined)[] {
     return socket.sent.map((frame) => decodePersistedALMessage(frame))
         .filter((message) => message.ordering?.orderingKey === ORDERING.orderingKey)
         .map((message) => message.ordering?.seq);
+}
+
+function readMsgIds(socket: SimulatedWebSocket): readonly string[] {
+    return socket.sent.map((frame) => decodePersistedALMessage(frame))
+        .filter((message) => message.ordering?.orderingKey === ORDERING.orderingKey)
+        .map((message) => message.id.msgId);
+}
+
+/** The messages whose repair budget a requester found spent; each is stated once. */
+function readRepairExhaustedMsgIds(server: OrderedServer): readonly string[] {
+    return server.settlements
+        .filter((settlement) =>
+            settlement.kind === 'admission' && settlement.verdict.kind === 'skipped' &&
+            settlement.verdict.reason === 'repair-exhausted'
+        )
+        .map((settlement) => settlement.msgId);
 }
 
 /** The sent retransmits grouped by the repair hint that asked for them, in the order they were sent. */
