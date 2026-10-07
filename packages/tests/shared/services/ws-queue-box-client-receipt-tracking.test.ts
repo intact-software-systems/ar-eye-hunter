@@ -331,6 +331,19 @@ describe('WS client receipts the server answers itself (R-S3a-4, D57 as applied)
 
         expect(await readReceipt(fixture)).toBeUndefined();
     });
+
+    it('tracks a group-leader room send from the admitted receipt while the server named no peer id', async () => {
+        const fixture = await createReceiptTrackingFixture({ serverPeerId: undefined });
+
+        const sent = await fixture.service.enqueueOutboxIfAbsent({
+            ...roomMessage(),
+            delivery: { reliability: 'at-least-once', ack: 'group-leader' }
+        });
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', [], 'room-message-1', ['c']));
+
+        expect(sent.trackedReceiptAlgo).toBe('leader');
+        expect(await readReceipt(fixture)).toMatchObject({ mode: 'leader', expectedPeerIds: ['c'], ackedPeerIds: [] });
+    });
 });
 
 describe('WS client receipt admission edges', () => {

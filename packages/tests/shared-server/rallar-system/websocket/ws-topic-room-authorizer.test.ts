@@ -193,21 +193,41 @@ describe('createGroupRoomWsAuthorizer', () => {
 
     it.each(
         [
-            { situation: 'no director is appointed', director: undefined, sender: 'session-a', targets: {} },
-            { situation: 'the director has no live session in the room', director: 'session-gone', sender: 'session-a', targets: {} },
-            { situation: 'the director sent it', director: 'session-c', sender: 'session-c', targets: {} },
+            { situation: 'no director is appointed', director: undefined, sender: 'session-a', targets: { mode: 'broadcast', scope: 'room' } },
+            {
+                situation: 'the director has no live session in the room',
+                director: 'session-gone',
+                sender: 'session-a',
+                targets: { mode: 'broadcast', scope: 'room' }
+            },
+            { situation: 'the director sent it', director: 'session-c', sender: 'session-c', targets: { mode: 'broadcast', scope: 'room' } },
             {
                 situation: 'its fixed list omits the director',
                 director: 'session-c',
                 sender: 'session-a',
-                targets: { recipientPeerIds: ['session-b'] }
+                targets: { mode: 'broadcast', scope: 'room', recipientPeerIds: ['session-b'] }
             },
-            { situation: 'it excepts the director', director: 'session-c', sender: 'session-a', targets: { exceptPeerIds: ['session-c'] } },
+            {
+                situation: 'it excepts the director',
+                director: 'session-c',
+                sender: 'session-a',
+                targets: { mode: 'broadcast', scope: 'room', exceptPeerIds: ['session-c'] }
+            },
             {
                 situation: 'the principal it names is not the director\'s',
                 director: 'session-c',
                 sender: 'session-a',
-                targets: { scope: 'principal', principalRef: { applicationId: 'app-1', workspaceId: 'workspace-b', principalId: 'session-b' } }
+                targets: {
+                    mode: 'broadcast',
+                    scope: 'principal',
+                    principalRef: { applicationId: 'app-1', workspaceId: 'workspace-b', principalId: 'session-b' }
+                }
+            },
+            {
+                situation: 'its frozen multicast audience omits the director',
+                director: 'session-c',
+                sender: 'session-a',
+                targets: { mode: 'multicast', recipientPeerIds: ['session-a', 'session-b'], snapshotVersion: 2 }
             }
         ] as const
     )('refuses a group-leader room send no-leader when $situation', async ({ director, sender, targets }) => {
@@ -215,7 +235,7 @@ describe('createGroupRoomWsAuthorizer', () => {
         const snapshot = director === undefined ? room : withDirector(room, director);
         const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
         const base = leaderRoomMessage(snapshot, sender);
-        const message: ALMessage = { ...base, targets: { mode: 'broadcast', scope: 'room', groupRef: snapshot.group, ...targets } };
+        const message: ALMessage = { ...base, targets: { ...targets, groupRef: snapshot.group } };
 
         const decision = await Promise.resolve(authorizer({ ...leaderAuthorizationInput(message), senderId: sender }));
 

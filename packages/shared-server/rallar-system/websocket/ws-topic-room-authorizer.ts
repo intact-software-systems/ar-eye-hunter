@@ -41,7 +41,6 @@ type ReadRoomAuthorizationSnapshotResult =
     | {
         readonly kind: 'ready';
         readonly snapshot: GroupSnapshot;
-        readonly serverSnapshotVersion: number;
     }
     | {
         readonly kind: 'denied';
@@ -94,8 +93,20 @@ async function authorizeGroupRoomMessage(
     if (snapshotRead.kind === 'denied') {
         return snapshotRead.decision;
     }
+    const { snapshot } = snapshotRead;
+    const policyDenial = await readRoomPolicyDenial(dependencies, input, snapshot);
+    if (policyDenial) {
+        return policyDenial;
+    }
+    return toRoomAuthorizationDecision({ input, targets, snapshot, nowEpochMs: dependencies.nowEpochMs() });
+}
 
-    const { snapshot, serverSnapshotVersion } = snapshotRead;
+async function readRoomPolicyDenial(
+    dependencies: GroupRoomWsAuthorizerDependencies,
+    input: RallarServerWsRoomAuthorizationInput,
+    snapshot: GroupSnapshot
+): Promise<RallarServerWsRoomAuthorizationDenied | undefined> {
+    const serverSnapshotVersion = readGroupVersion(snapshot);
     const isCrdtTopic = input.topicId === RALLAR_CRDT_ROOM_TOPIC_ID ||
         input.topicId === RALLAR_CRDT_APP_TOPIC_ID;
     const preActivationAppData = await readRoomMessagePreActivationAppData(
@@ -126,15 +137,27 @@ async function authorizeGroupRoomMessage(
             serverSnapshotVersion
         );
     }
+    return undefined;
+}
 
-    const audience = toAuthorizedRoomAudience(snapshot, { ...input.message, targets }, dependencies.nowEpochMs());
+interface ToRoomAuthorizationDecisionInput {
+    readonly input: RallarServerWsRoomAuthorizationInput;
+    readonly targets: ALTargets;
+    readonly snapshot: GroupSnapshot;
+    readonly nowEpochMs: number;
+}
+
+function toRoomAuthorizationDecision(
+    { input, targets, snapshot, nowEpochMs }: ToRoomAuthorizationDecisionInput
+): RallarServerWsRoomAuthorizationDecision {
+    const audience = toAuthorizedRoomAudience(snapshot, { ...input.message, targets }, nowEpochMs);
     if (isLeaderlessRoomAudience(input.message, audience)) {
         return {
             authorized: false,
             reason: 'no-leader',
             logMessage:
                 `Rejected room message for ${input.roomId}: no-leader: the room has no active leader inside the audience the send names.`,
-            serverSnapshotVersion
+            serverSnapshotVersion: audience.snapshotVersion
         };
     }
     return { authorized: true, audience };
@@ -201,7 +224,7 @@ async function readRoomAuthorizationSnapshot(
     if (floorDenial) {
         return { kind: 'denied', decision: floorDenial };
     }
-    return { kind: 'ready', snapshot, serverSnapshotVersion: readGroupVersion(snapshot) };
+    return { kind: 'ready', snapshot };
 }
 
 function toMissingRoomCacheDecision(
