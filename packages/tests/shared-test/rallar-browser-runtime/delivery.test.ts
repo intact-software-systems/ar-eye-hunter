@@ -619,7 +619,7 @@ it('fails a fixed audience or a scope the page cannot send with its own failure,
     expect(facade.records.typedSends).toEqual([]);
 });
 
-it('projects a world send on rtc as rejected, refused unsupported at admission with no carrier attempt', async () => {
+it('projects a world send on rtc, refused unsupported by the injected middleware double, as rejected with no carrier attempt', async () => {
     const runtime = await loadRuntime();
     await runtime.connect(connection);
     const fixture = createBrowserMessageSenderFixture(64, facade.deliveries);

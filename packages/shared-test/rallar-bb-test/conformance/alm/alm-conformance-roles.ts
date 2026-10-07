@@ -1,7 +1,8 @@
 /**
  * `recipient-b` is the second, distinguishable recipient of a three-agent scenario. `successor` is a second page
  * in the sender's own browser context: the same storage and auth session under an agent of its own. `sibling` is a
- * second session of the sender's principal: a browser context and sign-in of its own as the sender's user.
+ * second session of the sender's principal: a browser context and sign-in of its own as the sender's user. Room
+ * membership is per principal, so a sibling shares the sender's membership; no same-principal scenario leaves the room.
  */
 export const ALM_CONFORMANCE_ROLES = ['sender', 'receiver', 'recipient-b', 'successor', 'sibling'] as const;
 

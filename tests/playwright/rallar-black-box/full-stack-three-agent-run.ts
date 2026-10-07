@@ -23,7 +23,7 @@ import {
 } from './full-stack-helpers.ts';
 
 /**
- * The run's third agent: the second, distinguishable recipient (D45), user C, or a second session of the sender's
+ * The run's third agent: the second, distinguishable recipient, user C, or a second session of the sender's
  * principal, user A signed in again in a browser context of its own.
  */
 export type ThirdAgentRole = Extract<AlmConformanceRole, 'recipient-b' | 'sibling'>;

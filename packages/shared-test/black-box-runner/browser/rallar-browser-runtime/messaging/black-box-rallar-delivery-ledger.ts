@@ -101,8 +101,7 @@ export class BlackBoxRallarDeliveryLedger {
         this.#input.resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
         const roomRef = blackBoxRallarRoomRefOf(config, { roomRef: send.roomRef });
         const snapshotFloorOption = this.#resolveSnapshotFloor(send, roomRef);
-        const peerId = this.#resolvePeer(send, roomRef);
-        const recipientPeerIds = this.#resolveRecipientPeerIds(send, roomRef);
+        const audience = this.#resolveAudience(send, roomRef);
         const channel = this.#input.typedChannels.open(config, {
             typeId: send.typeId,
             topicId: send.topicId,
@@ -112,16 +111,9 @@ export class BlackBoxRallarDeliveryLedger {
             purpose: send.toPeer === undefined ? 'notification' : 'command',
             recovery: undefined
         });
-        this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.send_started', {
-            handleId: send.handleId,
-            carrier: send.carrier,
-            typeId: send.typeId,
-            topicId: send.topicId,
-            roomId: config.roomId,
-            roomRef
-        });
+        this.#emitSendStarted(config, send, roomRef);
         const handle = await channel.send(send.payload, {
-            ...toTypedSendOptions(send, { peerId, recipientPeerIds }),
+            ...toTypedSendOptions(send, audience),
             ...snapshotFloorOption
         });
         this.#deliveryMsgIds.set(send.handleId, handle.msgId);
@@ -137,6 +129,21 @@ export class BlackBoxRallarDeliveryLedger {
         };
         this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.send_completed', diagnostics);
         return diagnostics;
+    }
+
+    #emitSendStarted(
+        config: BlackBoxRallarConnectionConfig,
+        send: BlackBoxRallarMessageSendInput,
+        roomRef: GroupRef | undefined
+    ): void {
+        this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.send_started', {
+            handleId: send.handleId,
+            carrier: send.carrier,
+            typeId: send.typeId,
+            topicId: send.topicId,
+            roomId: config.roomId,
+            roomRef
+        });
     }
 
     /** Re-admits the envelope an earlier send captured; the replay opens no handle of its own. */
@@ -197,53 +204,33 @@ export class BlackBoxRallarDeliveryLedger {
         return { minSnapshotVersion: current + floor.aboveCurrentBy };
     }
 
-    /** Resolved at send time, where the session ids live; a role no one peer answers fails the send. */
-    #resolvePeer(send: BlackBoxRallarMessageSendInput, roomRef: GroupRef | undefined): string | undefined {
-        if (send.toPeer === undefined) {
-            return undefined;
-        }
-        const { peers } = this.#input;
-        return resolveBlackBoxRallarMessagePeer({
-            toPeer: send.toPeer,
-            serverPeerId: peers.serverPeerId(),
-            ownSessionId: peers.session()?.sessionId,
-            roomSessions: roomRef === undefined ? undefined : peers.getRoomSessions(roomRef),
-            nowMs: this.#input.now()
-        }).fold(
-            (detail) => {
-                throw new Error(
-                    `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.peerUnresolved}: messages.send.toPeer ` +
-                        `${send.toPeer} names no peer: ${detail}.`
-                );
-            },
-            (peerId) => peerId
-        );
-    }
-
-    /** Resolved at send time like a peer role; a list whose role no one session answers fails the send. */
-    #resolveRecipientPeerIds(
-        send: BlackBoxRallarMessageSendInput,
-        roomRef: GroupRef | undefined
-    ): readonly string[] | undefined {
-        if (send.recipientPeer === undefined) {
-            return undefined;
+    /** Resolved at send time, where the session ids live; a role no one session answers fails the send. */
+    #resolveAudience(send: BlackBoxRallarMessageSendInput, roomRef: GroupRef | undefined): BlackBoxRallarSendAudience {
+        if (send.toPeer === undefined && send.recipientPeer === undefined) {
+            return { peerId: undefined, recipientPeerIds: undefined };
         }
         const { peers } = this.#input;
         const session = peers.session();
-        return resolveBlackBoxRallarRecipientPeer({
+        const roomSessions = roomRef === undefined ? undefined : peers.getRoomSessions(roomRef);
+        const nowMs = this.#input.now();
+        const peerId = send.toPeer === undefined ? undefined : resolveBlackBoxRallarMessagePeer({
+            toPeer: send.toPeer,
+            serverPeerId: peers.serverPeerId(),
+            ownSessionId: session?.sessionId,
+            roomSessions,
+            nowMs
+        }).fold((detail) => {
+            throw toPeerUnresolvedError('toPeer', send.toPeer, detail);
+        }, (resolved) => resolved);
+        const recipientPeerIds = send.recipientPeer === undefined ? undefined : resolveBlackBoxRallarRecipientPeer({
             ownSessionId: session?.sessionId,
             ownPrincipalId: session?.clientId,
-            roomSessions: roomRef === undefined ? undefined : peers.getRoomSessions(roomRef),
-            nowMs: this.#input.now()
-        }).fold(
-            (detail) => {
-                throw new Error(
-                    `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.peerUnresolved}: messages.send.recipientPeer ` +
-                        `${send.recipientPeer} names no peer: ${detail}.`
-                );
-            },
-            (peerId) => [peerId]
-        );
+            roomSessions,
+            nowMs
+        }).fold((detail) => {
+            throw toPeerUnresolvedError('recipientPeer', send.recipientPeer, detail);
+        }, (resolved) => [resolved]);
+        return { peerId, recipientPeerIds };
     }
 
     readReceipts = async (
@@ -293,11 +280,23 @@ export class BlackBoxRallarDeliveryLedger {
     }
 }
 
+interface BlackBoxRallarSendAudience {
+    readonly peerId: string | undefined;
+    readonly recipientPeerIds: readonly string[] | undefined;
+}
+
+function toPeerUnresolvedError(field: 'toPeer' | 'recipientPeer', role: string | undefined, detail: string): Error {
+    return new Error(
+        `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.peerUnresolved}: messages.send.${field} ` +
+            `${role} names no peer: ${detail}.`
+    );
+}
+
 function toTypedSendOptions(
     send: BlackBoxRallarMessageSendInput,
-    peers: Readonly<{ peerId: string | undefined; recipientPeerIds: readonly string[] | undefined; }>
+    audience: BlackBoxRallarSendAudience
 ): RallarTypedMessageSendOptions<RallarMessagePayload> {
-    const { peerId, recipientPeerIds } = peers;
+    const { peerId, recipientPeerIds } = audience;
     return {
         strategy: send.carrier,
         ...(peerId === undefined ? {} : { peerId }),
