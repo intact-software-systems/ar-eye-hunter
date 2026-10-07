@@ -26,6 +26,7 @@ import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-re
  * The fallback family (D56) needs the fallback cell.
  * The addressed family runs on two agents: server-command over ws only, unicast-fallback on the fallback cell.
  * The membership fence runs where one hop judges the roster, its rejection only where the WS server does.
+ * The leader refusal runs where one carrier judges the leader, its list refusal only where the WS server does.
  */
 const CARRIER_SCENARIO_IDS = {
     ws: [
@@ -52,6 +53,9 @@ const CARRIER_SCENARIO_IDS = {
         'principal-delivery',
         'fixed-list-delivery',
         'world-routing',
+        'leader-confirms',
+        'no-leader-refused',
+        'leader-outside-list',
         'durable-takeover',
         'flush-on-hide'
     ],
@@ -78,6 +82,8 @@ const CARRIER_SCENARIO_IDS = {
         'principal-delivery',
         'fixed-list-delivery',
         'world-routing',
+        'leader-confirms',
+        'no-leader-refused',
         'durable-takeover',
         'flush-on-hide'
     ],
@@ -107,6 +113,7 @@ const CARRIER_SCENARIO_IDS = {
         'principal-delivery',
         'fixed-list-delivery',
         'world-routing',
+        'leader-confirms',
         'durable-takeover'
     ]
 } as const;

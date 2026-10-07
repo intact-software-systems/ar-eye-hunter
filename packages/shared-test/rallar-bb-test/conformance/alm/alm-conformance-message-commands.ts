@@ -27,7 +27,7 @@ interface AlmConformanceSendDelivery {
     readonly ttlMs?: number;
     /** Command budget when it must stay independent of `ttlMs`. */
     readonly commandTimeoutMs?: number;
-    readonly ack?: 'receiver' | 'all-logical-recipients';
+    readonly ack?: 'receiver' | 'all-logical-recipients' | 'group-leader';
     readonly reliability?: 'at-least-once';
     readonly durability?: Exclude<ALDurabilityAlgo, 'volatile'>;
     /** Absent, the channel refuses a durable send its storage cannot take. */
@@ -63,6 +63,14 @@ interface AlmConformanceResultAssertionInput {
     readonly operator: 'equals' | 'matches' | 'gt' | 'contains' | 'exists';
     readonly expected: string | number | boolean;
 }
+
+/** One fact a scenario reads from the observation of its first send: the assertion name, the field, how and what. */
+export type AlmConformanceVerdictFact = readonly [
+    name: string,
+    field: string,
+    operator: 'exists' | 'equals',
+    expected: string | number | boolean
+];
 
 const STORAGE_COUNTERS_TIMEOUT_MS = 3_000;
 const OBSERVE_TIMEOUT_BASE_MS = 2_000;
@@ -189,6 +197,27 @@ export function toResultAssertion(
         expected,
         timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, step.input.deadlineMs)
     };
+}
+
+/** The first send's handle reaches `state`, and each fact holds on that observation. */
+export function toVerdictCommands(
+    sender: AlmConformanceStepInput,
+    state: ALDeliveryState,
+    facts: readonly AlmConformanceVerdictFact[]
+): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toObserveCommand({ ...sender, index: 1, state }),
+        ...facts.map(([name, field, operator, expected]) =>
+            toResultAssertion({
+                step: sender,
+                name: `assert-${name}-1`,
+                resultName: `observe-${state}-1`,
+                field,
+                operator,
+                expected
+            })
+        )
+    ];
 }
 
 /**

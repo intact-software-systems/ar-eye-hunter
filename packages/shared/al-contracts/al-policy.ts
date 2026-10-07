@@ -29,11 +29,11 @@ export type ALForwardingAlgo = 'target';
 
 export type ALRepairAlgo = 'none' | 'retransmit';
 
-export type ALAckAlgo = 'none' | 'hop' | 'subtree' | 'receiver';
+export type ALAckAlgo = 'none' | 'hop' | 'subtree' | 'receiver' | 'leader';
 
 /**
  * What a tracked receipt counts: next hops under `hop` and `subtree`, logical recipients under
- * `receiver`. `none` tracks no receipt.
+ * `receiver`, and the room's leader alone under `leader`. `none` tracks no receipt.
  */
 export type ALReceiptMode = Exclude<ALAckAlgo, 'none'>;
 

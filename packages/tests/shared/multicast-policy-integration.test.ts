@@ -356,7 +356,7 @@ describe('multicast QoS integration', () => {
             },
             {
                 reliability: 'at-least-once',
-                ack: 'group-leader'
+                qos: { ack: { algo: 'subtree' } }
             }
         );
 
@@ -413,7 +413,7 @@ describe('multicast QoS integration', () => {
             },
             {
                 reliability: 'at-least-once',
-                ack: 'group-leader'
+                qos: { ack: { algo: 'subtree' } }
             }
         );
 
@@ -560,8 +560,8 @@ describe('multicast QoS integration', () => {
             },
             {
                 reliability: 'at-least-once',
-                ack: 'group-leader',
                 qos: {
+                    ack: { algo: 'subtree' },
                     durability: {
                         algo: 'volatile'
                     }

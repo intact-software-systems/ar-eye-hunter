@@ -12,6 +12,7 @@ import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contra
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { createRallarGroupDirectorAppointment, mergeRallarGroupDirectorMetadata } from '@shared/api/group-director.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -701,6 +702,98 @@ Deno.test('an all broadcast from a client is refused unauthorized and reaches no
     }
 });
 
+Deno.test('a group-leader room send reaches the appointed director alone, and its receipt expects the director and completes on its ACK', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        try {
+            harness.state.current = withDirector(createRoomSnapshot(['alice', 'bob', 'carol']), 'carol');
+            // The local cache predates the appointment: the audience admitted from current authority decides delivery.
+            harness.state.cached = createRoomSnapshot(['alice', 'bob', 'carol']);
+            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.install();
+            const frames = Object.fromEntries(['alice', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)]));
+            const message = leaderMessage('alice', { mode: 'broadcast', scope: 'room', groupRef: ROOM });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+            assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
+            await waitForRoomFrames(() => readChatIds(frames['carol']!).length >= 1);
+            await harness.service.acceptIncomingMessage(receiverAck(message, 'carol'), 'carol');
+            await waitForRoomFrames(() => readReceipts(frames['alice']!).length >= 2);
+
+            assert.deepEqual(readChatIds(frames['carol']!), [message.id.msgId], fanout);
+            assert.deepEqual(readChatIds(frames['bob']!), [], fanout);
+            assert.deepEqual(readChatIds(frames['alice']!), [], fanout);
+            assert.deepEqual(
+                readReceipts(frames['alice']!).map((receipt) => [receipt.phase, receipt.expectedRecipientPeerIds, receipt.confirmedRecipientPeerIds]),
+                [
+                    ['admitted', ['carol'], []],
+                    ['complete', ['carol'], ['carol']]
+                ],
+                fanout
+            );
+            if (fanout === 'outbox') {
+                assert.deepEqual((await readCapturedOutboxPolicy(harness, message))?.admittedAudience, ['carol']);
+            }
+        }
+        finally {
+            harness.service.dispose();
+        }
+    }
+});
+
+for (
+    const { situation, director, sender, targets } of [
+        { situation: 'no director is appointed', director: undefined, sender: 'alice', targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM } },
+        { situation: 'the director sent it', director: 'carol', sender: 'carol', targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM } },
+        {
+            situation: 'its fixed list omits the director',
+            director: 'carol',
+            sender: 'alice',
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM, recipientPeerIds: ['bob'] }
+        },
+        {
+            situation: 'it excepts the director',
+            director: 'carol',
+            sender: 'alice',
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM, exceptPeerIds: ['carol'] }
+        },
+        {
+            situation: 'the principal it names is not the director\'s',
+            director: 'carol',
+            sender: 'alice',
+            targets: { mode: 'broadcast', scope: 'principal', groupRef: ROOM, principalRef: { ...ROOM_SCOPE, principalId: 'bob' } }
+        }
+    ] as const
+) {
+    Deno.test(`a group-leader room send is refused no-leader with its typed NACK and reaches no one when ${situation}`, async () => {
+        const harness = createRoomDeliveryHarness();
+        try {
+            const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
+            harness.state.current = director === undefined ? snapshot : withDirector(snapshot, director);
+            harness.router.install();
+            const frames = Object.fromEntries(['alice', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)]));
+            const message = leaderMessage(sender, targets);
+
+            const accepted = await harness.service.acceptIncomingMessage(message, sender);
+            await waitForRoomFrames(() => false);
+
+            assert.equal(accepted.left?.code, 'unauthorized');
+            assert.deepEqual(
+                frames[sender]!.map((frame) => decodeALNackPayload(JSON.parse(decodePersistedALMessage(frame).payload.resource)).reason),
+                ['no-leader']
+            );
+            for (const sessionId of ['alice', 'bob', 'carol']) {
+                assert.deepEqual(readChatIds(frames[sessionId]!), [], sessionId);
+                assert.deepEqual(readReceipts(frames[sessionId]!), [], sessionId);
+            }
+            assert.deepEqual(await harness.outbox.getAllKeys(), []);
+        }
+        finally {
+            harness.service.dispose();
+        }
+    });
+}
+
 function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarness {
     const state: RoomDeliveryState = {
         current: createRoomSnapshot(),
@@ -782,6 +875,17 @@ function audienceMessage(senderId: string, targets: NonNullable<ALMessage['targe
         ttlMs: 30_000
     });
     return { ...message, targets };
+}
+
+/** A director-acknowledged command in the room from `senderId`, addressed by `targets`. */
+function leaderMessage(senderId: string, targets: NonNullable<ALMessage['targets']>): ALMessage {
+    return { ...audienceMessage(senderId, targets), delivery: { reliability: 'at-least-once', ack: 'group-leader' } };
+}
+
+/** The room with `sessionId`, of the principal of the same name, appointed its director. */
+function withDirector(snapshot: GroupSnapshot, sessionId: string): GroupSnapshot {
+    const appointment = createRallarGroupDirectorAppointment({ session: { clientId: sessionId, sessionId }, now: 1 });
+    return { ...snapshot, group: { ...snapshot.group, metadata: mergeRallarGroupDirectorMetadata(snapshot.group.metadata, appointment) } };
 }
 
 /** The policy the outbox captured for the row that relays `message`. */

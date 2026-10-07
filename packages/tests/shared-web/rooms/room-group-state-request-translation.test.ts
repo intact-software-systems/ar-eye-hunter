@@ -342,6 +342,19 @@ describe('room request translation', () => {
         });
     });
 
+    it('removes a metadata key whose patch value is null and replaces one whose patch value is present', () => {
+        expect(
+            toRoomMetadataGroupStateRequest({
+                currentMetadata: { keep: true, replace: 'old', remove: { stale: true } },
+                patch: { replace: 'new', remove: null, absent: null },
+                ...actor
+            })
+        ).toEqual({
+            metadata: { keep: true, replace: 'new' },
+            ...actor
+        });
+    });
+
     it('translates every invite and member-governance request', () => {
         const requests = {
             remove: { reason: 'remove', traceId: 'remove-trace' },

@@ -15,6 +15,14 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 13
     }),
+    // This anonymous room-update test captures decoded HTTP request bodies only
+    // for independent assertions. Its response uses a hand-derived fixture;
+    // no captured unknown value supplies domain state or response construction.
+    Object.freeze({
+        path: 'packages/tests/shared-web/rooms/update-room.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // These SDK ingress boundaries validate untrusted selections or narrow
     // arbitrary framework rejection reasons through instanceof before policy.
     // Retry classification deliberately preserves its public no-coercion rule.

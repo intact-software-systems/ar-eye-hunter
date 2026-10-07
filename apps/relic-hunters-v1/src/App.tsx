@@ -2931,31 +2931,12 @@ function LockedPlanCard({
     const submitted = active.filter((p) => snapshot.submittedPlayerIds.includes(p.playerId));
     const waiting = active.filter((p) => !snapshot.submittedPlayerIds.includes(p.playerId));
 
-    const actionLabel = (): string => {
-        if (!action) {
-            return 'Plan submitted';
-        }
-
-        switch (action.kind) {
-            case 'move': {
-                const target = snapshot.map.find((r) => r.id === action.targetRoomId);
-                return `Move → ${target?.name ?? action.targetRoomId}`;
-            }
-            case 'search':
-                return 'Search this room';
-            case 'steal': {
-                const target = snapshot.players.find((p) => p.playerId === action.targetPlayerId);
-                return `Steal from ${target?.username ?? '—'}`;
-            }
-            case 'escape':
-                return 'Escape the ruin';
-        }
-    };
-
     return (
         <div className="locked-plan-card">
             <span className="panel-label">Plan Locked</span>
-            <strong className="locked-action-label">{actionLabel()}</strong>
+            <strong className="locked-action-label">
+                {action ? toRelicActionLabel(action, snapshot) : 'Plan submitted'}
+            </strong>
             <div className="locked-waiting-list">
                 {submitted.map((p) => (
                     <span
@@ -2976,6 +2957,23 @@ function LockedPlanCard({
                 : <small>All plans locked. The castle is about to answer.</small>}
         </div>
     );
+}
+
+function toRelicActionLabel(action: RelicActionInput, snapshot: RelicPublicSnapshot): string {
+    switch (action.kind) {
+        case 'move': {
+            const target = snapshot.map.find((r) => r.id === action.targetRoomId);
+            return `Move → ${target?.name ?? action.targetRoomId}`;
+        }
+        case 'search':
+            return 'Search this room';
+        case 'steal': {
+            const target = snapshot.players.find((p) => p.playerId === action.targetPlayerId);
+            return `Steal from ${target?.username ?? '—'}`;
+        }
+        case 'escape':
+            return 'Escape the ruin';
+    }
 }
 
 function EscapeDecisionPanel({

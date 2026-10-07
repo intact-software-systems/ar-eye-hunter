@@ -7,14 +7,16 @@ export const RELIC_TOPICS = {
     command: 'room.relic.command',
     snapshot: 'room.relic.snapshot',
     event: 'room.relic.event',
-    aiPlanning: 'room.relic.ai.planning'
+    aiPlanning: 'room.relic.ai.planning',
+    hunter: 'room.relic.hunter'
 } as const;
 
 export const RELIC_TYPES = {
     command: 'relic.command.v1',
     snapshot: 'relic.snapshot.v1',
     event: 'relic.event.v1',
-    aiPlanningProposal: 'relic.ai.planning-proposal.v1'
+    aiPlanningProposal: 'relic.ai.planning-proposal.v1',
+    hunter: 'relic.hunter.v1'
 } as const;
 
 export function toRelicRoomGroupRef(roomId: string): GroupRef {

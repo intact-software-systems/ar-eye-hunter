@@ -43,6 +43,9 @@ import { deliveryReload } from './scenarios/delivery-reload.ts';
 import { durableOptIn } from './scenarios/durable-opt-in.ts';
 import { durableTakeover } from './scenarios/durable-takeover.ts';
 import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts';
+import { leaderConfirms } from './scenarios/leader-ack/leader-confirms.ts';
+import { leaderOutsideList } from './scenarios/leader-ack/leader-outside-list.ts';
+import { noLeaderRefused } from './scenarios/leader-ack/no-leader-refused.ts';
 import { checkpointLag } from './scenarios/local-checkpoint/checkpoint-lag.ts';
 import { checkpointRecovery } from './scenarios/local-checkpoint/checkpoint-recovery.ts';
 import { flushOnHide } from './scenarios/local-checkpoint/flush-on-hide.ts';
@@ -129,6 +132,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     principalDelivery,
     fixedListDelivery,
     worldRouting,
+    leaderConfirms,
+    noLeaderRefused,
+    leaderOutsideList,
     durableTakeover,
     flushOnHide
 ];

@@ -8,6 +8,7 @@ import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
+import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
 import {
     AL_DELIVERY_ADMITTED_STATES,
     isALDeliveryAdmitted,
@@ -58,8 +59,8 @@ export class BrowserDirectorRelayTransport {
         if (rejection) {
             return rejection;
         }
-        const { appointment, roomRef } = input.current;
-        if (!appointment || !roomRef) {
+        const roomRef = input.current.roomRef;
+        if (!roomRef) {
             throw new Error('Validated director command target is missing.');
         }
         try {
@@ -71,7 +72,7 @@ export class BrowserDirectorRelayTransport {
                     purpose: 'command'
                 })
                 .send(createEnvelope(input), {
-                    peerId: appointment.sessionId,
+                    ack: 'group-leader',
                     strategy: 'rtc-with-ws-fallback'
                 });
             return await readDirectorReceipt(receipt);
@@ -198,18 +199,32 @@ export class BrowserDirectorRelayTransport {
     }
 }
 
+/** The room's leader confirms a command; a room without one refuses it `no-leader` on either carrier (D167). */
 async function readDirectorReceipt(receipt: RallarMessageHandle): Promise<RallarDirectorRelaySendResult> {
     const outcome = await receipt.wait({
         until: ['acknowledged'],
         timeoutMs: AL_CHANNEL_SEND_DEFAULTS.command.ttlMs
     });
-    return outcome.lifecycle.state === 'acknowledged'
-        ? { status: 'sent', receipt }
-        : {
-            status: 'failed',
-            receipt,
-            reason: outcome.lifecycle.evidence.reason ?? DIRECTOR_COMMAND_UNCONFIRMED_REASON
-        };
+    const lifecycle = outcome.lifecycle;
+    if (lifecycle.state === 'acknowledged') {
+        return { status: 'sent', receipt };
+    }
+    return {
+        status: isNoLeaderFailure(lifecycle.evidence.failure) ? 'no-director' : 'failed',
+        receipt,
+        reason: lifecycle.evidence.reason ?? DIRECTOR_COMMAND_UNCONFIRMED_REASON
+    };
+}
+
+function isNoLeaderFailure(failure: ALDeliveryFailure | undefined): boolean {
+    switch (failure?.kind) {
+        case 'refused':
+            return failure.reason === 'no-leader';
+        case 'relay-rejected':
+            return failure.rejection.reason === 'no-leader';
+        default:
+            return false;
+    }
 }
 
 function createEnvelope<T>(

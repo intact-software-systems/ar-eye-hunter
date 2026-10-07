@@ -204,6 +204,36 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         });
     });
 
+    it('states the room authorizer refusing a group-leader send for no leader; the handle reads rejected on its one sent attempt', async () => {
+        const fixture = await createRelayFixture(async () => ({
+            authorized: false,
+            reason: 'no-leader',
+            rejectionCode: 'unauthorized',
+            logMessage: 'Rejected room message for room-1: no active leader inside the audience the send names.',
+            sendNack: true
+        }));
+        const origin = await createOriginClient();
+        const broadcast: ALMessage = {
+            ...roomUnicast('broadcast-leaderless', 'b'),
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
+            delivery: { reliability: 'at-least-once', ack: 'group-leader' }
+        };
+        expect((await origin.service.enqueueOutboxIfAbsent(broadcast)).verdict.kind).toBe('admitted');
+
+        await fixture.server.acceptIncomingMessage(broadcast, 'a');
+        await relayFrames(fixture.sockets.a, origin);
+
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'broadcast-leaderless')
+            .reduce(computeALDeliveryLifecycle, toInitialLifecycle('broadcast-leaderless', 'group-leader'));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.attempts).toHaveLength(1);
+        expect(lifecycle.evidence.failure).toEqual({
+            kind: 'relay-rejected',
+            rejection: { relay: 'trusted-server', reason: 'no-leader' }
+        });
+    });
+
     // R-S3c-i-28: the origin tracks the server as the hop of a `hop` room unicast (R-S3a-4), and a NACK from a peer the
     // receipt expects is admitted, so the server's refusal ends that receipt as it ends a server-addressed one (R-S3c-i-21).
     it('ends the server hop receipt of a hop room unicast to a non-member on the server refusal; the handle reads failed', async () => {
@@ -348,12 +378,12 @@ function roomUnicast(msgId: string, toPeerId: string): ALMessage {
     };
 }
 
-function toInitialLifecycle(msgId: string, ackMode: 'none' | 'receiver') {
+function toInitialLifecycle(msgId: string, ackMode: 'none' | 'receiver' | 'group-leader') {
     return createInitialALDeliveryLifecycle({
         msgId,
         typeId: 'ordered.v1',
         ackMode,
-        receiptAlgo: ackMode,
+        receiptAlgo: ackMode === 'group-leader' ? 'leader' : ackMode,
         expiresAtMs: undefined,
         submittedAtMs: 0
     });

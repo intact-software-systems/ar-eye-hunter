@@ -347,6 +347,34 @@ The hosted manifest 22 withholds the three cells, so it stays as recorded: its c
 recipe keeps one prologue for every scenario, so a member that left would miss every
 later cell.
 
+The `leader-ack` conformance scenarios (`scenarios/leader-ack/`) run on the same three
+agents, in the full scope, and prove a room send that asks `ack: 'group-leader'`. The
+receiver owns the run's group, so its own page may appoint itself the room's director
+with `director.appoint`, and it ends an appointment of its own with `director.resign`.
+The RTC origin resolves the leader from the room snapshot its own page holds, so before
+it sends the sender polls `director.status` with `refresh: true` until
+`directorStatus.active` reads what the cell needs.
+
+- `leader-confirms` (`ws`, `rtc`, `rtc-with-ws-fallback`): the receiver appoints itself;
+  once the sender reads the director active, its room send asks for the leader. The
+  receiver receives it once and confirms it, `recipient-b` never receives it, and the
+  receipt reads `acknowledged` in the `leader` mode with the receiver alone expected.
+  The receiver resigns after its window.
+- `no-leader-refused` (`ws`, `rtc`): the receiver resigns any appointment of its own;
+  once the sender reads no active director, the send ends `rejected`. Over `rtc` the
+  origin refuses it from its own snapshot: `failure.kind: 'refused'`,
+  `failure.reason: 'no-leader'`, no carrier attempt. Over `ws` the server NACKs the one
+  attempt: `failure.kind: 'relay-rejected'`, `failure.rejection.relay:
+  'trusted-server'`, `failure.rejection.reason: 'no-leader'`. Neither recipient
+  receives it.
+- `leader-outside-list` (`ws` only): the receiver appoints itself and the sender lists
+  `recipientPeer: 'recipient-b'` alone, a list that leaves the leader out; the server
+  NACKs the send `no-leader` as above, and neither recipient receives it. The page
+  resolves `recipient-b` to the one other live session of another principal that is
+  not the room's leader.
+
+The hosted manifest 22 withholds the leader cells too, so it stays as recorded.
+
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
 `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that
 refuses the second copy as `not-handled`/`duplicate`. Both orders prove that

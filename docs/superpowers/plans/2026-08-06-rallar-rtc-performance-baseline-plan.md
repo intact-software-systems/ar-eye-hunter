@@ -5170,6 +5170,42 @@ this B06 path. Held Task58 public typing and the remaining Recipe Console/distri
 remain independent required goal work. E3 still has zero accepted cohorts; the initial
 post-ICE stall remains unresolved.
 
+**Current parent reconciliation:** Main advanced to
+94e72f4828e9db5111dc06e4746f1ce09f68ead2 and PR633 acquired two real conflicts.
+The earlier exact administrator-merge proposal is stale; no default-branch commit,
+push or merge is authorized by that proposal. A feature-only merge preserves current
+main semantics and the reviewed capture/acquisition work. Reconciliation retains the
+real null-delete HTTP test with independently specified request/response expectations,
+and the unchanged251KiB bundle cap. Actual browser entry is256666B Brotli
+(250.650390625KiB), leaving358B under that cap.
+
+Fresh SPEC/QUALITY review accepts both conflict owners. The SAME author then records
+one exact path/rule/undefined-owner disposition for the test's raw HTTP observations;
+the SAME reviewer verifies both captures feed independent assertions, all451 prior
+entries/order and matcher/caps are preserved, and unrelated/named owners remain blocking.
+This is a reviewed untrusted observation boundary, with no production legacy exception,
+new decoder, migration or broad checker suppression. Focused checker suites pass88cases.
+
+The reconciled focused consumer suite passes332cases; shared-web typing and browser
+bundle reporting/checks pass. Broader validation passes480 benchmark-package cases,
+shared/shared-test typing,1490 maintained test-file typing with zero debt, and the
+headless boundary case. Initial game builds stop on a missing local React plugin.
+Installing pinned dependencies solely in this repair worktree leaves the lock and
+protected original checkout untouched; both canonical game builds then pass. Existing
+large-chunk warnings remain disclosed. A concurrent verification wrapper briefly
+contends on Git's index lock before starting the Relic build; no source changes result,
+and only that unstarted child is subsequently executed. Original failed setup evidence
+is retained. Final prospective style passes with no new findings against the actual pre-merge
+merge-base d5db1569. Committed current-main range gates remain publication prerequisites. These are correctness/build results, not native cohort acceptance.
+
+Full diagnostics configuration through UI, recipes, workers and Actions remains required.
+The separate continuation PR645 publishes bounded source/test slices promptly; its
+simulated UI/clipboard proofs do not replace actual SDK/native application/refusal,
+fresh external effects, existing reload semantics or B01–B06/E3 acceptance. The confirmed
+observer overhead and connection-expiry mechanism remain established; the initial
+post-ICE trigger remains unresolved. E3 has zero accepted cohorts, and B07/retry work is
+held. No Issues were created or reused.
+
 ## 12. Baseline Completion Gate
 
 This plan is complete only when required B01-B06 evidence is finalized,

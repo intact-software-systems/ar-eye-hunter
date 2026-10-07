@@ -332,10 +332,11 @@ export type RallarBlackBoxTestMessagesSendCommand =
         /** With scope `principal`: the principal whose live sessions in the room the send addresses. */
         principalId?: string;
         /**
-         * A fixed audience of one inside the room, by lane role: `receiver` is the one other live session of the room
-         * whose principal is not the sender's, resolved by the page at send time. Absent, the send names no list.
+         * A fixed audience of one inside the room, by lane role, resolved by the page at send time among the room's other
+         * live sessions whose principal is not the sender's: `receiver` is the one such session, `recipient-b` the one
+         * that is not the room's leader. Absent, the send names no list.
          */
-        recipientPeer?: 'receiver';
+        recipientPeer?: 'receiver' | 'recipient-b';
         reliability?: 'best-effort' | 'at-least-once';
         ack?: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
         durability?: ALDurabilityAlgo;

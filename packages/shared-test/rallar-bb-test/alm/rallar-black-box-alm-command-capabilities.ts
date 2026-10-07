@@ -19,9 +19,10 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'toPeer (server or receiver) addresses one peer by its lane role, which the page resolves at send time to ' +
             'the WS server\'s peer id or to the one other live session of the room; a role it cannot resolve fails ' +
             'the send and opens no handle. scope (room, world, principal) names the audience; with principal, ' +
-            'principalId names the principal whose live sessions in the room it reaches. recipientPeer (receiver) names ' +
-            'a fixed audience of one inside the room by lane role, which the page resolves at send time to the one other ' +
-            'live session of the room whose principal is not the sender\'s; a role it cannot resolve fails the send ' +
+            'principalId names the principal whose live sessions in the room it reaches. recipientPeer (receiver, ' +
+            'recipient-b) names a fixed audience of one inside the room by lane role, which the page resolves at send ' +
+            'time among the room\'s other live sessions whose principal is not the sender\'s: receiver to the one such ' +
+            'session, recipient-b to the one that is not the room\'s leader; a role it cannot resolve fails the send ' +
             'and opens no handle. ' +
             'A replay names only replayOnCarrier (and connection): a ' +
             'harness capability the product never exercises, it re-admits the envelope an earlier handle\'s first ' +

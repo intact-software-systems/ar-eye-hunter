@@ -143,6 +143,7 @@ export type ALOutboundDropReasonCode =
     | 'unauthorized'
     | 'unsupported'
     | 'capacity'
+    | 'no-leader'
     | 'not-yet-in-sync'
     | 'no-route'
     | 'superseded'

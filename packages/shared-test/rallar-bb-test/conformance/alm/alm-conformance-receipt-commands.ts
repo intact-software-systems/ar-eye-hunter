@@ -1,4 +1,5 @@
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import type { ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type {
@@ -34,6 +35,14 @@ export interface AlmConformanceReceiptRoles {
 /** The state the handle has reached when the origin reads its receipt: complete, or past its deadline. */
 export type AlmConformanceReceiptEnding = Extract<ALDeliveryState, 'acknowledged' | 'expired'>;
 
+/** What the origin's receipt reads after the scenario window: who confirmed, the state it ended in, and its mode. */
+export interface AlmConformanceReceiptWindow {
+    readonly roles: AlmConformanceReceiptRoles;
+    readonly ending: AlmConformanceReceiptEnding;
+    /** `receiver` for a send that asks for its logical recipients, `leader` for one that asks for the room's leader. */
+    readonly mode: Extract<ALReceiptMode, 'receiver' | 'leader'>;
+}
+
 /** Who a room send reaches inside its room: its principal's other sessions, or the one session a lane role names. */
 export type AlmConformanceSendAudience =
     | Readonly<{ scope: 'principal'; principalId: string; }>
@@ -42,6 +51,8 @@ export type AlmConformanceSendAudience =
 interface AlmConformanceAudienceSendInput {
     readonly sender: AlmConformanceStepInput;
     readonly ttlMs: number;
+    /** `all-logical-recipients` asks every session of the frozen audience, `group-leader` the room's leader alone. */
+    readonly ack: Extract<RallarBlackBoxTestMessagesSendCommand['ack'], 'all-logical-recipients' | 'group-leader'>;
     /** Absent, every live session of the room. */
     readonly audience?: AlmConformanceSendAudience;
 }
@@ -68,28 +79,30 @@ export function toAddressedSendCommands(
     ];
 }
 
+/** The first send of an audience scenario: one room send, its audience frozen at its admission. */
+export function toAudienceSendCommand(
+    { sender, ttlMs, ack, audience }: AlmConformanceAudienceSendInput
+): RallarBlackBoxTestCommand {
+    return toSendCommand({
+        ...sender,
+        index: 1,
+        payload: toAudiencePayload(sender),
+        delivery: {
+            ack,
+            reliability: 'at-least-once',
+            ttlMs,
+            commandTimeoutMs: Math.min(ttlMs, NON_EXPIRING_SEND_TIMEOUT_MS),
+            ...audience
+        }
+    });
+}
+
 /**
- * One room send that asks for every logical recipient of the audience frozen at its admission (D41): the request
- * name maps to `receiver`, so the receipt of the origin expects that audience minus itself.
+ * The audience send, admitted. Asking for every logical recipient of the audience frozen at its admission (D41) maps
+ * to `receiver`, so the receipt of the origin expects that audience minus itself.
  */
-export function toAudienceSendCommands(
-    { sender, ttlMs, audience }: AlmConformanceAudienceSendInput
-): readonly RallarBlackBoxTestCommand[] {
-    return [
-        toSendCommand({
-            ...sender,
-            index: 1,
-            payload: toAudiencePayload(sender),
-            delivery: {
-                ack: 'all-logical-recipients',
-                reliability: 'at-least-once',
-                ttlMs,
-                commandTimeoutMs: Math.min(ttlMs, NON_EXPIRING_SEND_TIMEOUT_MS),
-                ...audience
-            }
-        }),
-        ...toAdmissionCommands({ ...sender, index: 1 })
-    ];
+export function toAudienceSendCommands(input: AlmConformanceAudienceSendInput): readonly RallarBlackBoxTestCommand[] {
+    return [toAudienceSendCommand(input), ...toAdmissionCommands({ ...input.sender, index: 1 })];
 }
 
 /**
@@ -116,8 +129,7 @@ export function toServerReceiptCommands(sender: AlmConformanceStepInput): readon
  */
 export function toReceiptWindowCommands(
     sender: AlmConformanceStepInput,
-    roles: AlmConformanceReceiptRoles,
-    ending: AlmConformanceReceiptEnding
+    { roles, ending, mode }: AlmConformanceReceiptWindow
 ): readonly RallarBlackBoxTestCommand[] {
     const lists = [
         ['expectedRecipientPeerIds', roles.confirmed.length + roles.unconfirmed.length],
@@ -128,7 +140,7 @@ export function toReceiptWindowCommands(
         toSelfAbsenceCommand(sender),
         toReceiptsCommand({ ...sender, index: 1 }),
         toReceiptAssertion(sender, 'state', ending),
-        toReceiptAssertion(sender, 'receiptMode', 'receiver'),
+        toReceiptAssertion(sender, 'receiptMode', mode),
         ...lists.map(([field, expected]) => toReceiptAssertion(sender, `${field}.length`, expected))
     ];
 }

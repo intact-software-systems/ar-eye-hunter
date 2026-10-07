@@ -26,9 +26,14 @@ export const fixedListDelivery: AlmConformanceScenarioDefinition = {
     laneFamily: 'same-principal',
     toReceiptRoles: () => RECEIVER_CONFIRMED,
     toSenderCommands: (sender) => [
-        ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS, audience: { recipientPeer: 'receiver' } }),
+        ...toAudienceSendCommands({
+            sender,
+            ttlMs: NON_EXPIRING_TTL_MS,
+            ack: 'all-logical-recipients',
+            audience: { recipientPeer: 'receiver' }
+        }),
         ...toServerReceiptCommands(sender),
-        ...toReceiptWindowCommands(sender, RECEIVER_CONFIRMED, 'acknowledged')
+        ...toReceiptWindowCommands(sender, { roles: RECEIVER_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
     ],
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver'

@@ -180,6 +180,16 @@ describe('RelicHuntersRuntime', () => {
         );
     });
 
+    it('subscribes the signed-in hunter\'s own events in the room through its dependency', () => {
+        const unsubscribe = () => undefined;
+        const onHunterEventMessage = vi.fn(() => unsubscribe);
+        const runtime = new RelicHuntersRuntime(runtimeDeps({ onHunterEventMessage }));
+        const subscription = { principalId: 'client-1', playerId: 'session-1', onEvent: () => undefined };
+
+        expect(runtime.subscribeHunterEvents('room-1', subscription)).toBe(unsubscribe);
+        expect(onHunterEventMessage).toHaveBeenCalledWith('room-1', subscription);
+    });
+
     it('re-reads the room\'s game over REST each time its round-transition track needs resynchronizing', async () => {
         const snapshot = toPublicRelicSnapshot(createRelicGame('room-1', 'room-1', 1_700_000_000_000));
         const subscribed: Readonly<{ roomId: string; subscription: RelicRoundTransitionSubscription; }>[] = [];
@@ -258,6 +268,7 @@ function runtimeDeps(
         onRtcSnapshotMessage: vi.fn(() => () => undefined),
         onAuthoritySnapshotMessage: vi.fn(() => () => undefined),
         onRoundTransitionMessage: vi.fn(() => () => undefined),
+        onHunterEventMessage: vi.fn(() => () => undefined),
         authorityStatus: vi.fn(() => ({
             phase: 'ready',
             protocol: 'relic-hunters.authority.v1',
