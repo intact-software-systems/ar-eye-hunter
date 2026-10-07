@@ -144,13 +144,13 @@ describe('director command', () => {
     afterEach(() => vi.useRealTimers());
 
     it.each(['room.director.intent.v1', 'room.director.sync-request.v1'])(
-        'sends %s on its own command channel to the director and reports sent on the director\'s receipt',
+        'sends %s on its own command channel to the room\'s leader and reports sent on the leader\'s receipt',
         async (typeId) => {
             const command = createMessageDelivery('rtc', {
                 kind: 'admitted',
                 durable: false,
                 queuedAttempts: 1
-            }, 'receiver');
+            }, 'group-leader');
             const sentEnvelopes: RallarDirectorRelayEnvelope<OutputPayload>[] = [];
             const room = createRoomChannel(async (envelope) => {
                 sentEnvelopes.push(envelope);
@@ -184,8 +184,30 @@ describe('director command', () => {
                     epoch: 1,
                     payload: { revision: 7 }
                 }),
-                { peerId: 'director', strategy: 'rtc-with-ws-fallback' }
+                { ack: 'group-leader', strategy: 'rtc-with-ws-fallback' }
             );
+        }
+    );
+
+    it.each(['rtc', 'ws'] as const)(
+        'reports a command refused for no leader on %s as no-director, with its receipt and reason',
+        async (carrier) => {
+            const command = toNoLeaderCommand(carrier);
+            const transport = createTransport(
+                createMessageDelivery('rtc', undefined),
+                rejectCarrierSend,
+                {
+                    room: toRoomOperation(createRoomChannel(async () => command.handle)),
+                    rtcSend: rejectCarrierSend
+                }
+            );
+
+            expect(await transport.sendCommand(commandInput)).toEqual({
+                status: 'no-director',
+                receipt: command.handle,
+                reason: command.handle.lifecycle().evidence.reason
+            });
+            expect(command.handle.lifecycle().state).toBe('rejected');
         }
     );
 
@@ -337,13 +359,34 @@ function toDirectorRoomSnapshot(versions: Readonly<{ snapshotVersion: number; ro
     return { ...snapshot, group: { ...snapshot.group, ...versions } };
 }
 
+/** The RTC origin refuses the command at its admission; the server refuses it at WS ingress, after the client admitted it. */
+function toNoLeaderCommand(carrier: 'rtc' | 'ws'): MessageDeliveryFixture {
+    if (carrier === 'rtc') {
+        return createMessageDelivery('rtc', {
+            kind: 'refused',
+            reason: 'no-leader',
+            detail: 'no-leader: the room has no active leader inside the audience the send names'
+        }, 'group-leader');
+    }
+    const command = createMessageDelivery('ws', { kind: 'admitted', durable: false, queuedAttempts: 1 }, 'group-leader');
+    command.registry.record({
+        kind: 'relay-rejected',
+        msgId: command.handle.msgId,
+        carrier: 'ws',
+        atMs: Date.now(),
+        relayRejection: { relay: 'trusted-server', reason: 'no-leader' },
+        detail: 'The server relay refused the message: no-leader.'
+    });
+    return command;
+}
+
 function recordDirectorReceipt(command: MessageDeliveryFixture): void {
     command.registry.record({
         kind: 'acknowledgement',
         carrier: 'rtc',
         msgId: command.handle.msgId,
         atMs: Date.now(),
-        mode: 'receiver',
+        mode: 'leader',
         confirmedHopPeerIds: [],
         unconfirmedHopPeerIds: [],
         expectedRecipientPeerIds: ['director'],

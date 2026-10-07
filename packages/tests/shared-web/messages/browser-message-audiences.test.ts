@@ -277,6 +277,49 @@ describe('the audience inputs of a send', () => {
     });
 });
 
+describe('a group-leader send', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        resetRallarFacadeTestRuntime();
+        rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
+        webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
+        setRallarFacadeRoomSnapshots([createGroupSnapshotFixture({ ...ROOM_REF, sessionIds: ['session-1', 'peer-1'] })]);
+    });
+
+    it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc', 'rtc-with-ws-fallback', 'ws-then-rtc'])(
+        'passes a group-leader room send through to its carrier with the ack unchanged on %s',
+        async (strategy) => {
+            await createRoomChannel().send({ text: 'lead' }, { strategy, ack: 'group-leader' });
+
+            const [first] = [...rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls, ...webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls];
+            expect(first![0].targets).toMatchObject({ groupRef: ROOM_REF });
+            expect(first![0].targets?.mode).not.toBe('unicast');
+            expect(first![0].delivery).toMatchObject({ ack: 'group-leader' });
+        }
+    );
+
+    it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc', 'rtc-with-ws-fallback', 'ws-then-rtc'])(
+        'refuses a group-leader world send on %s before either carrier admits it',
+        async (strategy) => {
+            await expect(
+                createRoomChannel(createRallarTestFacade(), WORLD_TOPIC_ID).send({ text: 'lead' }, { strategy, scope: 'world', ack: 'group-leader' })
+            ).rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.ack', code: 'leader-requires-room-audience' })] });
+            expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+            expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc', 'rtc-with-ws-fallback'])(
+        'refuses a group-leader send addressed to one peer on %s before either carrier admits it',
+        async (strategy) => {
+            await expect(createRoomChannel().send({ text: 'lead' }, { strategy, peerId: 'peer-1', ack: 'group-leader' }))
+                .rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.ack', code: 'leader-requires-room-audience' })] });
+            expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+            expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        }
+    );
+});
+
 function createRoomChannel(facade = createRallarTestFacade(), topicId = 'room.chat') {
     return facade.messages.room<{ text: string; }>({
         topicId,

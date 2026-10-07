@@ -8,6 +8,7 @@ import type {
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { validateRallarTypedChannelPolicy } from '@shared-web/browser/messages/validate-rallar-typed-channel-policy.ts';
+import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import { assertPersistedALQos } from '@shared/al-contracts/al-message-persistence/assert-persisted-al-qos.ts';
 import { decodePersistedALRecord } from '@shared/al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
@@ -82,6 +83,7 @@ export class BrowserMessageInputValidator {
         this.pushRoomIdentityIssue(input, issues);
         this.pushScopeIssue(input.scope ?? 'room', 'RTC', issues);
         this.pushAudienceIssues(input, input.scope ?? 'room', issues);
+        issues.push(...validateLeaderAudience(input.ack, input.scope ?? 'room'));
         if (roomId !== undefined) {
             this.pushOptionalRouteId({
                 value: roomId,
@@ -110,6 +112,7 @@ export class BrowserMessageInputValidator {
             this.pushWsRoomIssues(roomId, roomRef, issues);
         }
         this.pushAudienceIssues(input, scope, issues);
+        issues.push(...validateLeaderAudience(input.ack, scope));
         return issues;
     }
 
@@ -402,4 +405,18 @@ function validateQosRequest(qos: ALQosPolicyRequest | undefined): readonly Ralla
     catch (error) {
         return [{ path: '$.qos', code: 'invalid-qos', message: toError(error).message }];
     }
+}
+
+/** A `group-leader` send addresses its room's leader, so it names a room audience: never the world (D166). */
+function validateLeaderAudience(
+    ack: ALAckMode | undefined,
+    scope: RallarMessageScope
+): readonly RallarValidationIssue[] {
+    return ack === 'group-leader' && scope === 'world'
+        ? [{
+            path: '$.ack',
+            code: 'leader-requires-room-audience',
+            message: 'A group-leader send addresses its room\'s leader: it names a room audience, never the world.'
+        }]
+        : [];
 }

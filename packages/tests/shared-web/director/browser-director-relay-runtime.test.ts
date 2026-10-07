@@ -288,7 +288,7 @@ describe('Rallar director relay', () => {
             { command: 'sync request', typeId: 'game.sync-request' }
         ] as const
     )(
-        'sends a director $command as one room-naming command unicast whose WS fallback keeps its msgId (D60)',
+        'sends a director $command as one command to the room\'s leader whose WS fallback keeps its msgId (D60)',
         async ({ command, typeId }) => {
             vi.useFakeTimers();
             vi.setSystemTime(Date.now());
@@ -330,11 +330,10 @@ describe('Rallar director relay', () => {
                 id: { msgId: result.receipt?.msgId },
                 route: { topicId: 'app.game.director', contextId: 'room-1' },
                 targets: {
-                    mode: 'unicast',
-                    toPeerId: 'director-session',
+                    mode: 'multicast',
                     groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
                 },
-                delivery: { reliability: 'at-least-once', ack: 'receiver' }
+                delivery: { reliability: 'at-least-once', ack: 'group-leader' }
             });
             // The mocked carriers deliver no receipt, so the command must not read as sent (correction 11).
             expect(result).toMatchObject({
