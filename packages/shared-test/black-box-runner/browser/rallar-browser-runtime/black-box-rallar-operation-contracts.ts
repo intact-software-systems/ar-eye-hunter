@@ -299,7 +299,7 @@ export interface BlackBoxRallarMessageSendInput {
     /** With scope `principal`: the principal whose live sessions in the room the send reaches. */
     readonly principalId: string | undefined;
     /** Absent, the send names no fixed audience. */
-    readonly recipientPeer: 'receiver' | undefined;
+    readonly recipientPeer: 'receiver' | 'recipient-b' | undefined;
     readonly reliability: 'best-effort' | 'at-least-once' | undefined;
     readonly ack: ALAckMode | undefined;
     /** Absent, the send is volatile. */

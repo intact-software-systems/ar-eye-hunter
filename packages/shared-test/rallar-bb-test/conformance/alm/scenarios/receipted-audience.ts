@@ -53,7 +53,7 @@ const aggregatedReceipt: AlmConformanceScenarioDefinition = {
     toSenderCommands: (sender) => [
         ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS }),
         ...toServerReceiptCommands(sender),
-        ...toReceiptWindowCommands(sender, BOTH_CONFIRMED, 'acknowledged')
+        ...toReceiptWindowCommands(sender, { roles: BOTH_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
     ],
     toRecipientCommands: toSingleArrivalReceiverCommands
 };
@@ -77,11 +77,11 @@ const missingRecipientRetry: AlmConformanceScenarioDefinition = {
             sender,
             ttlMs: sender.input.carrier === 'ws' ? EXPIRY_TTL_MS : NON_EXPIRING_TTL_MS
         }),
-        ...toReceiptWindowCommands(
-            sender,
-            toRetryReceiptRoles(sender.input.carrier),
-            sender.input.carrier === 'ws' ? 'expired' : 'acknowledged'
-        )
+        ...toReceiptWindowCommands(sender, {
+            roles: toRetryReceiptRoles(sender.input.carrier),
+            ending: sender.input.carrier === 'ws' ? 'expired' : 'acknowledged',
+            mode: 'receiver'
+        })
     ],
     toRecipientCommands: toRetryRecipientCommands
 };
@@ -101,7 +101,7 @@ const frozenAudienceMembership: AlmConformanceScenarioDefinition = {
     toReceiptRoles: () => RECIPIENT_B_UNCONFIRMED,
     toSenderCommands: (sender) => [
         ...toAudienceSendCommands({ sender, ttlMs: EXPIRY_TTL_MS }),
-        ...toReceiptWindowCommands(sender, RECIPIENT_B_UNCONFIRMED, 'expired')
+        ...toReceiptWindowCommands(sender, { roles: RECIPIENT_B_UNCONFIRMED, ending: 'expired', mode: 'receiver' })
     ],
     toRecipientCommands: toMembershipRecipientCommands
 };
@@ -129,7 +129,7 @@ const unknownAckVersion: AlmConformanceScenarioDefinition = {
             contains: '"carrier":"rtc","outcome":"rejected","reason":"unsupported"',
             timeoutMs: sender.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
         }),
-        ...toReceiptWindowCommands(sender, BOTH_CONFIRMED, 'acknowledged')
+        ...toReceiptWindowCommands(sender, { roles: BOTH_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
     ],
     toRecipientCommands: toUnknownAckVersionRecipientCommands
 };

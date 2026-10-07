@@ -48,6 +48,13 @@ const MEMBERSHIP_FENCE_KEYS_BY_CARRIER = {
     'rtc-with-ws-fallback': []
 } as const;
 
+/** The leader cells run on the three agents, the receiver appointed the room's director; the list refusal only over ws. */
+const LEADER_ACK_KEYS_BY_CARRIER = {
+    ws: ['leader-confirms', 'no-leader-refused', 'leader-outside-list'],
+    rtc: ['leader-confirms', 'no-leader-refused'],
+    'rtc-with-ws-fallback': ['leader-confirms']
+} as const;
+
 /** The audiences run on every carrier, on the sender's principal twice and another principal once. */
 const AUDIENCE_KEYS = ['principal-delivery', 'fixed-list-delivery', 'world-routing'] as const;
 
@@ -226,6 +233,9 @@ describe('alm-conformance recipe family', () => {
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     ),
                     ...AUDIENCE_KEYS.flatMap((key) => ['sender', 'receiver', 'sibling'].map((role) => `alm-${carrier}-${key}-${role}`)),
+                    ...LEADER_ACK_KEYS_BY_CARRIER[carrier].flatMap((key) =>
+                        ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
+                    ),
                     ...['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-durable-takeover-${role}`),
                     ...(carrier === 'rtc-with-ws-fallback'
                         ? []
@@ -234,8 +244,16 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('declares recipient-b on the receipted-audience and membership fence scenarios, successor on durable-takeover and flush-on-hide and sibling on the audiences only; every other scenario keeps one sender and one receiver', () => {
-        const threeAgentIds = ['receipted-audience', 'fenced-delivery', 'fenced-catch-up', 'fenced-rejection'];
+    it('declares recipient-b on the receipted-audience, membership fence and leader scenarios, successor on durable-takeover and flush-on-hide and sibling on the audiences only; every other scenario keeps one sender and one receiver', () => {
+        const threeAgentIds = [
+            'receipted-audience',
+            'fenced-delivery',
+            'fenced-catch-up',
+            'fenced-rejection',
+            'leader-confirms',
+            'no-leader-refused',
+            'leader-outside-list'
+        ];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
                 const threeRoles = threeAgentIds.includes(scenario.scenarioId);
@@ -475,6 +493,7 @@ describe('alm-conformance recipe family', () => {
             'receipted-audience',
             'receipted-audience',
             ...AUDIENCE_KEYS,
+            ...LEADER_ACK_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
             'durable-takeover'
         ]);
         expect(
@@ -486,6 +505,8 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],

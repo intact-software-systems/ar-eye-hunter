@@ -311,6 +311,7 @@ describe('ALM recipe commands', () => {
         const accepted = [
             { ...send, scope: 'principal', principalId: '{auth.clientId}' },
             { ...send, recipientPeer: 'receiver' },
+            { ...send, recipientPeer: 'recipient-b' },
             { ...send, scope: 'world' }
         ];
         for (const command of accepted) {
@@ -321,7 +322,7 @@ describe('ALM recipe commands', () => {
 
         const refused = validateJsonSchema(
             RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-            recipeWithCommand('send-all', { ...send, scope: 'all', recipientPeer: 'recipient-b' })
+            recipeWithCommand('send-all', { ...send, scope: 'all', recipientPeer: 'sibling' })
         );
         expect(refused.ok).toBe(false);
         if (!refused.ok) {
@@ -329,15 +330,15 @@ describe('ALM recipe commands', () => {
                 'scope: Expected one of "room", "world", "principal".'
             );
             expect(formatJsonSchemaValidationErrors(refused.errors)).toContain(
-                'recipientPeer: Expected one of "receiver".'
+                'recipientPeer: Expected one of "receiver", "recipient-b".'
             );
         }
-        const control = validateRallarBlackBoxTestCommand({ ...send, scope: 'all', recipientPeer: 'recipient-b' });
+        const control = validateRallarBlackBoxTestCommand({ ...send, scope: 'all', recipientPeer: 'sibling' });
         expect(control.ok).toBe(false);
         if (!control.ok) {
             expect(control.messages).toEqual([
                 'messages.send.scope must be one of room, world, principal.',
-                'messages.send.recipientPeer must be one of receiver.'
+                'messages.send.recipientPeer must be one of receiver, recipient-b.'
             ]);
         }
     });

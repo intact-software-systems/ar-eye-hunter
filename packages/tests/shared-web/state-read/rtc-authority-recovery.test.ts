@@ -757,6 +757,9 @@ function createGeneratedSendLedger(sender: NativeAuthorityEndpoint): BlackBoxRal
             session: () => undefined,
             getRoomSessions: () => {
                 throw new Error('This fixture never addresses a peer.');
+            },
+            getRoomLeaderSessionId: () => {
+                throw new Error('This fixture never addresses a peer.');
             }
         },
         now: Date.now,

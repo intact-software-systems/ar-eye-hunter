@@ -28,7 +28,7 @@ export const fixedListDelivery: AlmConformanceScenarioDefinition = {
     toSenderCommands: (sender) => [
         ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS, audience: { recipientPeer: 'receiver' } }),
         ...toServerReceiptCommands(sender),
-        ...toReceiptWindowCommands(sender, RECEIVER_CONFIRMED, 'acknowledged')
+        ...toReceiptWindowCommands(sender, { roles: RECEIVER_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
     ],
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver'
