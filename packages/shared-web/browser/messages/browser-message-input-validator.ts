@@ -81,9 +81,10 @@ export class BrowserMessageInputValidator {
         this.pushRtcRouteIssues(input, issues);
         this.pushRtcSequenceIssues(input, issues);
         this.pushRoomIdentityIssue(input, issues);
-        this.pushScopeIssue(input.scope ?? 'room', 'RTC', issues);
-        this.pushAudienceIssues(input, input.scope ?? 'room', issues);
-        issues.push(...validateLeaderAudience(input.ack, input.scope ?? 'room'));
+        const scope = input.scope ?? 'room';
+        this.pushScopeIssue(scope, 'RTC', issues);
+        this.pushAudienceIssues(input, scope, issues);
+        issues.push(...validateLeaderAudience(input.ack, scope));
         if (roomId !== undefined) {
             this.pushOptionalRouteId({
                 value: roomId,

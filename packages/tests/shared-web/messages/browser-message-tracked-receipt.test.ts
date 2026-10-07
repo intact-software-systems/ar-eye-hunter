@@ -327,7 +327,10 @@ async function createLeaderRtcLeg(
     return { fixture, harness, wsAdmissions };
 }
 
-/** The RTC origin's complete receipt reaches the handle as the session's delivery feed relays it. */
+/**
+ * The harness opens its delivery feed with a no-op relay, so the test relays the RTC origin's complete settlement to
+ * the handle registry itself.
+ */
 async function recordCompleteAcknowledgement(leg: LeaderRtcLeg): Promise<void> {
     const isComplete = (settlement: ALDeliverySettlement) => settlement.kind === 'acknowledgement' && settlement.complete;
     await expect.poll(() => leg.fixture.settlements.some(isComplete)).toBe(true);
