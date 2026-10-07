@@ -213,6 +213,7 @@ describe('Relic Hunter server game service', () => {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             gameId: 'room-1',
             principalId: 'alice-client',
+            playerId: 'alice-session',
             kind: 'command-refused',
             command: 'continue-review',
             text: 'The expedition has not started.'
@@ -244,6 +245,7 @@ describe('Relic Hunter server game service', () => {
         expect(fake.published.map(toPublishedTopicId)).toEqual([RELIC_TOPICS.hunter]);
         expect(JSON.parse(fake.published[0].message.payload.resource)).toMatchObject({
             principalId: 'bob-client',
+            playerId: 'bob-session',
             kind: 'command-refused'
         });
     });
@@ -497,6 +499,7 @@ describe('Relic Hunter server game service', () => {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             gameId: 'room-1',
             principalId: 'alice-client',
+            playerId: 'alice-session',
             kind: 'action-recorded',
             round: 1,
             action: { kind: 'search' }

@@ -11,13 +11,14 @@ import {
     newALRoute,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import type { RelicCommandSender } from './apply-relic-ws-command.ts';
 import { RELIC_SNAPSHOT_TTL_MS } from './to-relic-snapshot-message.ts';
 
 /** The action a submitted plan recorded for the round it was submitted in; undefined for every other command. */
 export function toRelicActionRecordedEvent(
     previous: RelicGameState,
     command: RelicCommand,
-    principalId: string
+    sender: RelicCommandSender
 ): RelicHunterEvent | undefined {
     if (command.kind !== 'submit-action') {
         return undefined;
@@ -25,7 +26,8 @@ export function toRelicActionRecordedEvent(
     return {
         protocolVersion: previous.protocolVersion,
         gameId: previous.gameId,
-        principalId,
+        principalId: sender.clientId,
+        playerId: sender.sessionId,
         kind: 'action-recorded',
         round: previous.round,
         action: command.action
@@ -35,13 +37,14 @@ export function toRelicActionRecordedEvent(
 /** The text of the rule that refused the command, which the server's acknowledgement of a WS command never carried. */
 export function toRelicCommandRefusedEvent(
     command: RelicCommand,
-    principalId: string,
+    sender: RelicCommandSender,
     error: Error
 ): RelicHunterEvent {
     return {
         protocolVersion: command.protocolVersion,
         gameId: command.gameId,
-        principalId,
+        principalId: sender.clientId,
+        playerId: sender.sessionId,
         kind: 'command-refused',
         command: command.kind,
         text: error.message
@@ -49,8 +52,8 @@ export function toRelicCommandRefusedEvent(
 }
 
 /**
- * A hunter event reaches the acting hunter's own live sessions in the game's room and no one else's (D168); it stays
- * deliverable as long as a snapshot does.
+ * A hunter event reaches the acting hunter's own live sessions in the game's room and no one else's, and only the
+ * session that sent the command uses it (D168); it stays deliverable as long as a snapshot does.
  */
 export function toRelicHunterEventMessage(roomId: string, event: RelicHunterEvent, serverPeerId: string): ALMessage {
     const groupRef = toRelicRoomGroupRef(roomId);

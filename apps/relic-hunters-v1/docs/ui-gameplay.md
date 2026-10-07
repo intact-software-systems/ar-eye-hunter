@@ -75,9 +75,10 @@ The intended playable loop is:
   `Submit Plan`; themed copy should stay in supporting text.
 - After a plan is locked, the locked-plan card remains visible and the action
   picker can still be used for inspection, but submission stays disabled.
-- A plan the hunter's other session submitted for this round shows under the
-  round status as "Recorded on another device" until this device submits its
-  own. A command the rules refuse shows the rule's text in the error panel.
+- A command the rules refuse shows the rule's text in the error panel of the
+  session that sent it. The hunter's other sessions are other players and show
+  nothing of it; the locked-plan card stays the one display of the plan this
+  session submitted.
 - The AI Companion is disabled once the local hunter has locked a plan, is down,
   has escaped, or the snapshot is outside planning. Stale suggestions remain
   visible as stale until the player asks again on the current turn.

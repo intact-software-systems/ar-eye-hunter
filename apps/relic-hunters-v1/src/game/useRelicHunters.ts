@@ -35,7 +35,7 @@ export type RelicHuntersConnection = Readonly<{
     rooms: readonly RallarRoomSummary[];
     snapshot?: RelicPublicSnapshot;
     roundTransition?: RelicRoundTransitionEvent;
-    /** What the server last told the signed-in hunter alone; a refusal's text is also the command error. */
+    /** What the server last told this session's hunter alone; a refusal's text is also the command error. */
     lastHunterEvent?: RelicHunterEvent;
     login(username: string, password: string): Promise<void>;
     register(username: string, password: string, displayName?: string): Promise<void>;
@@ -570,12 +570,17 @@ export function useRelicHunters(): RelicHuntersConnection {
     ]);
 
     const localPrincipalId = session?.clientId;
+    const localPlayerId = session?.sessionId;
     useEffect(() => {
-        if (!roomId || !localPrincipalId || !diagnostics.middlewareConnected) {
+        if (!roomId || !localPrincipalId || !localPlayerId || !diagnostics.middlewareConnected) {
             return;
         }
-        return runtime.subscribeHunterEvents(roomId, { principalId: localPrincipalId, onEvent: acceptHunterEvent });
-    }, [acceptHunterEvent, diagnostics.middlewareConnected, localPrincipalId, roomId, runtime]);
+        return runtime.subscribeHunterEvents(roomId, {
+            principalId: localPrincipalId,
+            playerId: localPlayerId,
+            onEvent: acceptHunterEvent
+        });
+    }, [acceptHunterEvent, diagnostics.middlewareConnected, localPlayerId, localPrincipalId, roomId, runtime]);
 
     const refreshRooms = useCallback(async () => {
         const state = await runtime.refreshRooms();

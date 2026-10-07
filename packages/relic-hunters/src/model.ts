@@ -297,13 +297,15 @@ export interface RelicRoundTransitionEvent {
 
 /**
  * What the server tells the acting hunter's own sessions in the room alone: the action it recorded for the round,
- * or the text of the rule that refused a command.
+ * or the text of the rule that refused a command. A hunter plays as a session, so `playerId` names the session that
+ * sent the command; the hunter's other sessions are other players of the game.
  */
 export type RelicHunterEvent =
     | Readonly<{
         protocolVersion: typeof RELIC_PROTOCOL_VERSION;
         gameId: string;
         principalId: string;
+        playerId: string;
         kind: 'action-recorded';
         round: number;
         action: RelicActionInput;
@@ -312,6 +314,7 @@ export type RelicHunterEvent =
         protocolVersion: typeof RELIC_PROTOCOL_VERSION;
         gameId: string;
         principalId: string;
+        playerId: string;
         kind: 'command-refused';
         command: RelicCommand['kind'];
         text: string;
@@ -484,7 +487,7 @@ export function isRelicRoundTransitionEvent(value: unknown): value is RelicRound
 export function isRelicHunterEvent(value: unknown): value is RelicHunterEvent {
     if (
         !isRecord(value) || value.protocolVersion !== RELIC_PROTOCOL_VERSION || typeof value.gameId !== 'string' ||
-        typeof value.principalId !== 'string'
+        typeof value.principalId !== 'string' || typeof value.playerId !== 'string'
     ) {
         return false;
     }

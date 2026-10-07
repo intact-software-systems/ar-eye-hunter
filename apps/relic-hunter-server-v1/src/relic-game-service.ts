@@ -107,12 +107,12 @@ namespace RelicGameService {
         readonly options: RelicHunterGameServiceOptions;
     }
 
-    /** A command the rules applied: the state before and after it, and the principal whose sessions hear of it. */
+    /** A command the rules applied: the state before and after it, and the session that sent it. */
     export interface AppliedCommand {
         readonly previous: RelicGameState;
         readonly next: RelicGameState;
         readonly command: RelicCommand;
-        readonly principalId: string;
+        readonly sender: RelicCommandSender;
     }
 }
 
@@ -150,9 +150,9 @@ class RelicGameService implements RelicHunterGameService {
 
     /** The snapshot, then the hunter's recorded action, then the round transition the command made. */
     private async publishCommandResult(applied: RelicGameService.AppliedCommand): Promise<void> {
-        const { previous, next, command, principalId } = applied;
+        const { previous, next, command, sender } = applied;
         await this.publishSnapshot(next);
-        const recorded = toRelicActionRecordedEvent(previous, command, principalId);
+        const recorded = toRelicActionRecordedEvent(previous, command, sender);
         if (recorded !== undefined) {
             await this.publishHunterEvent(next.roomId, recorded);
         }
@@ -183,12 +183,11 @@ class RelicGameService implements RelicHunterGameService {
                         publishFailure: await toPublishFailure(() =>
                             this.publishHunterEvent(
                                 previous.roomId,
-                                toRelicCommandRefusedEvent(command, sender.clientId, error)
+                                toRelicCommandRefusedEvent(command, sender, error)
                             )
                         )
                     }),
-                    async (next) =>
-                        await this.writeAndPublishCommand({ previous, next, command, principalId: sender.clientId })
+                    async (next) => await this.writeAndPublishCommand({ previous, next, command, sender })
                 );
         });
     }

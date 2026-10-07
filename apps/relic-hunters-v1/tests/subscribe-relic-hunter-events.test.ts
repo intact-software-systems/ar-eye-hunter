@@ -25,6 +25,7 @@ const RECORDED: RelicHunterEvent = {
     protocolVersion: RELIC_PROTOCOL_VERSION,
     gameId: 'room-1',
     principalId: 'client-1',
+    playerId: 'session-1',
     kind: 'action-recorded',
     round: 2,
     action: { kind: 'move', targetRoomId: 'hall' }
@@ -34,6 +35,7 @@ const REFUSED: RelicHunterEvent = {
     protocolVersion: RELIC_PROTOCOL_VERSION,
     gameId: 'room-1',
     principalId: 'client-1',
+    playerId: 'session-1',
     kind: 'command-refused',
     command: 'force-resolve-round',
     text: 'Round timer has not expired.'
@@ -47,6 +49,7 @@ describe('the Relic hunter channel', () => {
 
         const unsubscribe = subscribeRelicHunterEvents(double.facade, 'room-1', {
             principalId: 'client-1',
+            playerId: 'session-1',
             onEvent: () => undefined
         });
 
@@ -64,7 +67,7 @@ describe('the Relic hunter channel', () => {
     it('hands on both kinds of event the server addressed to the hunter\'s principal in the room', async () => {
         const double = createFacadeDouble();
         const events: RelicHunterEvent[] = [];
-        subscribeRelicHunterEvents(double.facade, 'room-1', { principalId: 'client-1', onEvent: (event) => events.push(event) });
+        subscribeRelicHunterEvents(double.facade, 'room-1', { principalId: 'client-1', playerId: 'session-1', onEvent: (event) => events.push(event) });
 
         await double.deliver(RECORDED, toPrincipalMessage(RECORDED, 'room-1'));
         await double.deliver(REFUSED, toPrincipalMessage(REFUSED, 'room-1'));
@@ -75,7 +78,7 @@ describe('the Relic hunter channel', () => {
     it('drops an event of another room, another game or another principal, a room broadcast and a malformed payload', async () => {
         const double = createFacadeDouble();
         const events: RelicHunterEvent[] = [];
-        subscribeRelicHunterEvents(double.facade, 'room-1', { principalId: 'client-1', onEvent: (event) => events.push(event) });
+        subscribeRelicHunterEvents(double.facade, 'room-1', { principalId: 'client-1', playerId: 'session-1', onEvent: (event) => events.push(event) });
         const otherGame = { ...RECORDED, gameId: 'room-2' };
         const otherPrincipal = { ...RECORDED, principalId: 'client-2' };
         const malformed: RelicHunterEvent = JSON.parse(JSON.stringify({ ...REFUSED, command: 'cheat' }));
@@ -87,6 +90,18 @@ describe('the Relic hunter channel', () => {
         await double.deliver(malformed, toPrincipalMessage(malformed, 'room-1'));
 
         expect(events).toEqual([]);
+    });
+
+    it('drops an event of another session of the same hunter, which is another player of the game', async () => {
+        const double = createFacadeDouble();
+        const events: RelicHunterEvent[] = [];
+        subscribeRelicHunterEvents(double.facade, 'room-1', { principalId: 'client-1', playerId: 'session-1', onEvent: (event) => events.push(event) });
+        const otherSession = { ...REFUSED, playerId: 'session-2' };
+
+        await double.deliver(otherSession, toPrincipalMessage(otherSession, 'room-1'));
+        await double.deliver(REFUSED, toPrincipalMessage(REFUSED, 'room-1'));
+
+        expect(events).toEqual([REFUSED]);
     });
 });
 

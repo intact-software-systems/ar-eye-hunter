@@ -71,9 +71,12 @@ arrival.
 
 The server also tells the acting hunter what became of a command, on `room.relic.hunter` / `relic.hunter.v1`: a
 principal broadcast in the room, receipted, that only the acting hunter's own live sessions in the room receive.
-After a submitted plan it carries the recorded action for the round (`action-recorded`); after a command a rule
-refused it carries the rule's text (`command-refused`), which the page shows as the command error. A storage or
-session failure on the WS path is still only logged until a reply channel exists.
+Relic keys its players by session, so the event names the session that sent the command (`playerId`) and only that
+session uses it; the hunter's other sessions are other players and drop it. After a submitted plan it carries the
+recorded action for the round (`action-recorded`), which the page does not render because the locked-plan card
+already shows the plan it submitted; after a command a rule refused it carries the rule's text (`command-refused`),
+which the page shows as the command error. A storage or session failure on the WS path is still only logged until a
+reply channel exists.
 
 ```text
 submit-action -> applyCommand -> outbox snapshot (room) -> outbox hunter event (the hunter's principal in the room)

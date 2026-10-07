@@ -214,39 +214,34 @@ describe('useRelicHunters auth lifecycle', () => {
     });
 
     it('hears the signed-in hunter\'s own events in the room, and makes a refused command\'s rule text the command error', async () => {
-        let definition: RallarRoomMessageChannelDefinition | undefined;
-        let onEvent: RallarTypedPayloadHandler<RelicHunterEvent> | undefined;
+        const channel = captureHunterEventChannel();
         vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(20));
-        mockRallar.messages.room.mockImplementation((roomDefinition: RallarRoomMessageChannelDefinition) => {
-            if (roomDefinition.topicId !== RELIC_TOPICS.hunter) {
-                return { onWs: vi.fn(() => vi.fn()) };
-            }
-            definition = roomDefinition;
-            return {
-                onWs: vi.fn((handler: RallarTypedPayloadHandler<RelicHunterEvent>) => {
-                    onEvent = handler;
-                    return vi.fn();
-                })
-            };
-        });
-        const refused: RelicHunterEvent = {
-            protocolVersion: RELIC_PROTOCOL_VERSION,
-            gameId: 'relic-room-1',
-            principalId: session.clientId,
-            kind: 'command-refused',
-            command: 'continue-review',
-            text: 'There is no review to continue.'
-        };
+        const refused = refusedHunterEvent(session.sessionId);
 
         await renderHook();
-        await waitForState(() => current?.diagnostics.snapshotReady === true && onEvent !== undefined);
+        await waitForState(() => current?.diagnostics.snapshotReady === true && channel.onEvent() !== undefined);
         await act(async () => {
-            await onEvent?.(refused, toHunterMessage(refused));
+            await channel.onEvent()?.(refused, toHunterMessage(refused));
         });
 
-        expect(definition).toMatchObject({ topicId: RELIC_TOPICS.hunter, typeId: RELIC_TYPES.hunter, purpose: 'notification' });
+        expect(channel.definition()).toMatchObject({ topicId: RELIC_TOPICS.hunter, typeId: RELIC_TYPES.hunter, purpose: 'notification' });
         expect(current?.lastHunterEvent).toEqual(refused);
         expect(current?.error).toBe('There is no review to continue.');
+    });
+
+    it('drops an event of the signed-in hunter\'s other session, which is another player of the game', async () => {
+        const channel = captureHunterEventChannel();
+        vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(20));
+        const otherSession = refusedHunterEvent('session-2');
+
+        await renderHook();
+        await waitForState(() => current?.diagnostics.snapshotReady === true && channel.onEvent() !== undefined);
+        await act(async () => {
+            await channel.onEvent()?.(otherSession, toHunterMessage(otherSession));
+        });
+
+        expect(current?.lastHunterEvent).toBeUndefined();
+        expect(current?.error).toBeUndefined();
     });
 
     it('cues the room\'s ordered round transitions and re-reads the game over REST when a track of any of its incarnations needs resynchronizing', async () => {
@@ -529,6 +524,42 @@ const ROUND_STARTED: RelicRoundTransitionEvent = {
     transition: 'round-started',
     text: 'relic started the expedition.'
 };
+
+/** The room's hunter channel the hook subscribes; other room channels stay silent. */
+function captureHunterEventChannel(): Readonly<{
+    definition: () => RallarRoomMessageChannelDefinition | undefined;
+    onEvent: () => RallarTypedPayloadHandler<RelicHunterEvent> | undefined;
+}> {
+    let definition: RallarRoomMessageChannelDefinition | undefined;
+    let onEvent: RallarTypedPayloadHandler<RelicHunterEvent> | undefined;
+    mockRallar.messages.room.mockImplementation((roomDefinition: RallarRoomMessageChannelDefinition) => {
+        if (roomDefinition.topicId !== RELIC_TOPICS.hunter) {
+            return { onWs: vi.fn(() => vi.fn()) };
+        }
+        definition = roomDefinition;
+        return {
+            onWs: vi.fn((handler: RallarTypedPayloadHandler<RelicHunterEvent>) => {
+                onEvent = handler;
+                return vi.fn(() => {
+                    onEvent = undefined;
+                });
+            })
+        };
+    });
+    return { definition: () => definition, onEvent: () => onEvent };
+}
+
+function refusedHunterEvent(playerId: string): RelicHunterEvent {
+    return {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        gameId: 'relic-room-1',
+        principalId: session.clientId,
+        playerId,
+        kind: 'command-refused',
+        command: 'continue-review',
+        text: 'There is no review to continue.'
+    };
+}
 
 function toHunterMessage(event: RelicHunterEvent): RallarMessage<RelicHunterEvent> {
     const groupRef = { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: event.gameId };

@@ -184,7 +184,7 @@ describe('RelicHuntersRuntime', () => {
         const unsubscribe = () => undefined;
         const onHunterEventMessage = vi.fn(() => unsubscribe);
         const runtime = new RelicHuntersRuntime(runtimeDeps({ onHunterEventMessage }));
-        const subscription = { principalId: 'client-1', onEvent: () => undefined };
+        const subscription = { principalId: 'client-1', playerId: 'session-1', onEvent: () => undefined };
 
         expect(runtime.subscribeHunterEvents('room-1', subscription)).toBe(unsubscribe);
         expect(onHunterEventMessage).toHaveBeenCalledWith('room-1', subscription);

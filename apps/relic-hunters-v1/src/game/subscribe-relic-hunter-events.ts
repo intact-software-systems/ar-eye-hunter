@@ -14,12 +14,14 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 export interface RelicHunterEventSubscription {
     /** The signed-in hunter's principal, whose own sessions in the room the server addresses. */
     readonly principalId: string;
+    /** This session, the player the game knows; an event of the principal's other session is another player's. */
+    readonly playerId: string;
     readonly onEvent: (event: RelicHunterEvent) => void;
 }
 
 /**
- * What the server told the signed-in hunter alone: the action it recorded, or the rule that refused a command. An
- * event of another room, another game or another principal is not this hunter's.
+ * What the server told this session's hunter alone: the action it recorded, or the rule that refused a command. An
+ * event of another room, another game, another principal or another session is not this player's.
  */
 export function subscribeRelicHunterEvents(
     facade: Pick<RallarFacade, 'messages'>,
@@ -35,7 +37,7 @@ export function subscribeRelicHunterEvents(
     });
     return channel.onWs((payload, message) => {
         if (
-            isRelicHunterEvent(payload) && payload.gameId === roomId &&
+            isRelicHunterEvent(payload) && payload.gameId === roomId && payload.playerId === subscription.playerId &&
             isHunterMessage(message, roomRef, subscription.principalId)
         ) {
             subscription.onEvent(payload);
