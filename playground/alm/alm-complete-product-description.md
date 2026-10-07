@@ -275,14 +275,17 @@ its cache holds the move.
 Broadcast scopes have distinct semantics:
 
 - `room`: live sessions in one scoped room/group;
-- `principal`: the principal's own live sessions plus the explicitly defined
-  co-group audience;
-- `world`: one product world/application audience;
-- `all`: every authorized live connection in the relevant deployment scope.
+- `principal`: the principal's live sessions in the addressed room (the server's
+  state-sync fan-out to a principal's co-group sessions is not a client audience);
+- `world`: every authenticated live connection in the sender's authenticated scope
+  (application and workspace);
+- `all`: every authenticated connection the server holds, across scopes: a server
+  and proxy audience, refused from a client.
 
-Exclusions are applied after authoritative audience resolution. A server may
-capture immutable `recipientPeerIds` for replayable authoritative work; clients
-cannot use that field to expand authority.
+Exclusions are applied after authoritative audience resolution. A sender may name
+a fixed audience inside its room (`recipientPeerIds`), resolved to the room's live
+sessions; a server captures the same field for replayable authoritative work;
+neither expands authority beyond the room.
 
 **PARTIAL:** Server WS implements room routing and application-specific
 principal/state-sync and fixed-topology cases.
@@ -290,9 +293,9 @@ principal/state-sync and fixed-topology cases.
 **PLANNED — A1, general scope semantics:** The shared planner treats broadcast
 as “not excluded,” does not interpret scope/principal/fixed recipients, and the
 public builder cannot create principal or fixed-recipient broadcasts. A1 gives
-every scope one semantic with RTC and WS parity; world and all take the WS route
-automatically when fallback is allowed and are typed carrier-unsupported over
-RTC otherwise.
+every scope one semantic with RTC and WS parity (D156–D163); world takes the WS
+route automatically when fallback is allowed and is typed carrier-unsupported over
+RTC otherwise; a client's `all` is refused.
 
 ## Transport selection and parity
 
