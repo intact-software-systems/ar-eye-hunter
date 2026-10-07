@@ -39,6 +39,7 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 import { computeOutboundTestAdmission } from '../alm/outbound-runtime-test-fixture.ts';
 import { installNativeRtcRuntime, type NativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
+import { toOriginFrozenTargets } from './rtc-origin-overlay-fixture.ts';
 
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const overlayId = toScopedOverlayId(roomRef);
@@ -380,13 +381,18 @@ describe('RTC durable accepted-overlay readiness', () => {
         }
     );
 
-    it('preserves fixed-audience broadcast dispatch on exact active topology', async () => {
+    it('sends a listed room broadcast on exact active topology as the room multicast frozen to its list', async () => {
         const fixture = await createFixture();
         fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
-        const result = await fixture.manager.enqueueIfAbsent(toIneligibleMessage(createMessage('broadcast'), 'fixed-audience'));
+        const original = createMessage('broadcast');
+        const listed = original.targets?.mode === 'broadcast'
+            ? { ...original, targets: { ...original.targets, recipientPeerIds: ['peer-1'] } }
+            : original;
+        const result = await fixture.manager.enqueueIfAbsent(listed);
         expect(result.verdict.kind).toBe('admitted');
         await vi.advanceTimersByTimeAsync(0);
-        expect(native.createdConnections[0].channels[0].sent).toHaveLength(1);
+        const sent = native.createdConnections[0].channels[0].sent.map((value) => JSON.parse(String(value)));
+        expect(sent.map((message) => message.targets)).toEqual([toOriginFrozenTargets(['peer-1'], 1)]);
     });
 
     it('holds a durable send while transport authority is halted and sends it after resume', async () => {
@@ -664,8 +670,6 @@ function toIneligibleMessage(message: ALMessage, denial: string): ALMessage {
                 qos: { delivery: { algo: 'best-effort' }, durability: { algo: 'volatile' } },
                 delivery: { reliability: 'best-effort', ack: 'none' }
             };
-        case 'fixed-audience':
-            return { ...message, targets: { ...message.targets, recipientPeerIds: ['peer-1'] } };
         case 'nonlocal':
             return { ...message, id: { ...message.id, senderId: 'peer-1' } };
         case 'excluded':

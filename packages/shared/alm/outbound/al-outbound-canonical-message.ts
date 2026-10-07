@@ -1,7 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { isALFreezeOfMessage } from '../../al-contracts/al-frozen-multicast-audience.ts';
+import {
+    isALFreezeOfMessage,
+    resolveALFrozenMulticastAudience
+} from '../../al-contracts/al-frozen-multicast-audience.ts';
 import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../al-contracts/al-runtime.ts';
@@ -191,12 +194,25 @@ export function isALOutboundCanonicalReplacement(
     if (expected === undefined || expected.resource === entry.resource) {
         return false;
     }
-    const requested = decodePersistedALMessage(expected.resource);
     const candidate = decodePersistedALMessage(entry.resource);
-    return isALFreezeOfMessage(requested, candidate) || (
-        activatesPendingRow && expected.status === EntityStatus.COMPLETED && candidate.ordering?.seq !== undefined &&
-        jsonEquals(requested, toALSequenceMintComparableMessage(requested, candidate))
-    );
+    const freezes = resolveALFrozenMulticastAudience(candidate.targets) !== undefined;
+    const mints = activatesPendingRow && expected.status === EntityStatus.COMPLETED &&
+        candidate.ordering?.seq !== undefined;
+    if (!freezes && !mints) {
+        return false;
+    }
+    const requested = decodeALOutboundRetainedMessage(expected);
+    return (freezes && isALFreezeOfMessage(requested, candidate)) ||
+        (mints && jsonEquals(requested, toALSequenceMintComparableMessage(requested, candidate)));
+}
+
+function decodeALOutboundRetainedMessage(retained: ResourceEntry): ALMessage {
+    try {
+        return decodePersistedALMessage(retained.resource);
+    }
+    catch (cause) {
+        throw new ALAdmissionCorruptionError(JSON.stringify(retained.key), toError(cause));
+    }
 }
 
 /**

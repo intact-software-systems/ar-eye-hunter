@@ -1,6 +1,10 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
-import { isALFreezeOfMessage } from '../../al-contracts/al-frozen-multicast-audience.ts';
+import {
+    isALFreezeOfMessage,
+    resolveALFrozenMulticastAudience
+} from '../../al-contracts/al-frozen-multicast-audience.ts';
+import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
@@ -541,7 +545,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         // A replay that minted replaces the request its retained canonical row holds; a plan that froze a held
         // row's audience replaces the row.
         const entry = read.orderingHead === undefined && read.canonicalEntry &&
-                !isALFreezeOfMessage(read.originalMsg, read.msg)
+                !isALCanonicalRowFrozenBy(read.canonicalEntry, read.msg)
             ? read.canonicalEntry
             : this.dependencies.toOutboxEntry(read.msg);
         return {
@@ -693,6 +697,11 @@ function toALOutboundVerdictComputed<TPrepared>(
     fields: Readonly<{ msg?: ALMessage; reason?: string; entries: readonly ResourceEntry[]; }>
 ): ALOutboundComputedDto<TPrepared> {
     return { ...fields, verdict, trackedReceiptAlgo: 'none' };
+}
+
+function isALCanonicalRowFrozenBy(canonicalEntry: ResourceEntry, msg: ALMessage): boolean {
+    return resolveALFrozenMulticastAudience(msg.targets) !== undefined &&
+        isALFreezeOfMessage(decodePersistedALMessage(canonicalEntry.resource), msg);
 }
 
 /** The message as its sender asked for it: a sequence this read minted is not part of it until a commit lands. */

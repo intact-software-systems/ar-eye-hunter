@@ -14,10 +14,15 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { resolveALChannelSendDefaults } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
-import { computeFrozenAudience, type RtcAudienceNarrowing } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
+import {
+    computeFrozenAudience,
+    computeRtcFrozenAudienceRefusal,
+    type RtcAudienceNarrowing
+} from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 
 import {
     createOriginOverlay,
@@ -401,6 +406,42 @@ describe('the RTC leg of a principal or listed room send', () => {
             expect(readSentTargets(fixture.channels.b!)).toEqual([toOriginFrozenTargets(recipientPeerIds, 4)]);
             expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
                 .toMatchObject({ mode: 'receiver', expectedPeerIds: recipientPeerIds });
+        }
+    );
+
+    it('answers a replay of the held row after its freeze as the duplicate of the frozen row that replaced it', async () => {
+        const fixture = createFixture({ snapshot: createPrincipalSnapshot(), nextHopPeerIds: ['b', 'c'] });
+        fixture.groups.delete('room');
+        const admitted = await enqueueLegAndDrain(fixture, createAudienceBroadcast('list', ORIGIN_ROOM, 'local-outbox'));
+        const held = await fixture.resources.workQueue.getItem(admitted.entries[0]!.key);
+        fixture.groups.accept('room', createPrincipalSnapshot());
+        await vi.advanceTimersByTimeAsync(200);
+        const canonical = await fixture.resources.workQueue.getItem(admitted.entries[0]!.key);
+
+        const replayed = await enqueueLegAndDrain(fixture, JSON.parse(held!.resource));
+
+        expect(replayed.verdict.kind).toBe('duplicate');
+        expect(replayed.message.targets).toEqual(toOriginFrozenTargets(['c'], 4));
+        expect(replayed.entries).toEqual([canonical]);
+    });
+
+    it.each(['principal', 'list'] as const)(
+        'hands a frozen %s broadcast past the RTC room limit over with the targets its sender gave',
+        (audience) => {
+            const original = createAudienceBroadcast(audience);
+            const recipientPeerIds = Array.from(
+                { length: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries + 1 },
+                (_, index) => `s${index}`
+            );
+            const frozen: ALMessage = {
+                ...original,
+                targets: { mode: 'multicast', groupRef: ORIGIN_ROOM, recipientPeerIds, snapshotVersion: 4 }
+            };
+
+            const refusal = computeRtcFrozenAudienceRefusal(frozen, original);
+
+            expect(refusal.left?.dropReasonCode).toBe('unsupported');
+            expect(refusal.left?.msg.targets).toEqual(original.targets);
         }
     );
 
