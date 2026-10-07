@@ -7,9 +7,9 @@ import type {
 import type {
     RallarBlackBoxDistributedGroupAssertion
 } from '@shared-test/rallar-bb-test/distributed/group-assertions.ts';
-import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestRecord, RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
-import { assert } from '@std/assert';
+import { assert, assertThrows } from '@std/assert';
 
 import { createRallarBlackBoxControlService } from '../src/control-service.ts';
 import { assertJsonEquals, toControlServiceInput } from './support/control-service-test-fixtures.ts';
@@ -39,6 +39,16 @@ function registerEnvelope(agentId: string): ControlClientEnvelope {
     };
 }
 
+const PROBE_READ_RESULT = {
+    commandId: 'probe-read',
+    kind: 'http.request',
+    status: 'ok',
+    ok: true,
+    startedAtEpochMs: 2_010,
+    endedAtEpochMs: 2_020,
+    durationMs: 10
+} satisfies RallarBlackBoxTestResult;
+
 function recipeResultEnvelope(
     agentId: string,
     commandId: string,
@@ -63,13 +73,7 @@ function recipeResultEnvelope(
                 recipeId: 'probe-recipe',
                 results: probeValue === undefined ? [] : [
                     {
-                        commandId: 'probe-read',
-                        kind: 'http.request',
-                        status: 'ok',
-                        ok: true,
-                        startedAtEpochMs: 2_010,
-                        endedAtEpochMs: 2_020,
-                        durationMs: 10,
+                        ...PROBE_READ_RESULT,
                         value: probeValue
                     }
                 ]
@@ -257,7 +261,22 @@ Deno.test('persistence snapshots preserve group evidence through JSON restore wi
         'agent-1': { body: { memberCount: 2 } },
         'agent-2': { body: { memberCount: 2 } }
     });
-    service.receiveClientEnvelope(recipeResultEnvelope('agent-1', 'ordinary-result', { body: { memberCount: 99 } }));
+    const ordinaryRecipe = groupAssertionManifest([]).recipes[0].recipe;
+    assert(ordinaryRecipe);
+    const ordinaryCommand = service.enqueueCommand({
+        runId: 'run-1',
+        agentId: 'agent-1',
+        commandId: 'ordinary-result',
+        command: { kind: 'recipe.run', recipe: ordinaryRecipe }
+    });
+    assert(ordinaryCommand.right);
+    assertJsonEquals(service.takeDispatchableCommands('run-1', 'agent-1').map((command) => command.commandId), ['ordinary-result']);
+    assertJsonEquals(
+        service.receiveClientEnvelope(
+            recipeResultEnvelope('agent-1', 'ordinary-result', { body: { memberCount: 99 } })
+        ).accepted,
+        true
+    );
     const persisted = service.snapshotForPersistence();
     assertJsonEquals(persisted.fleetReports, []);
     const restored = createRallarBlackBoxControlService(toControlServiceInput());
@@ -269,10 +288,13 @@ Deno.test('persistence snapshots preserve group evidence through JSON restore wi
     assert(evidence && typeof evidence === 'object' && 'results' in evidence);
     assert(Array.isArray(evidence.results));
     assertJsonEquals(evidence.results.length, 1);
+    assertJsonEquals(evidence.results[0], { ...PROBE_READ_RESULT, value: { body: { memberCount: 2 } } });
     const ordinary = run.results.find((result) => result.commandId === 'ordinary-result')?.result?.value;
-    assert(ordinary && typeof ordinary === 'object' && 'resultsOmitted' in ordinary);
-    assertJsonEquals(ordinary.resultsOmitted, true);
-    assert(!('results' in ordinary));
+    assert(isJsonRecordValue(ordinary));
+    assertJsonEquals(ordinary.resultEvidence, { status: 'finite', payloadsOmitted: true });
+    assertJsonEquals(ordinary.results, [PROBE_READ_RESULT]);
+    assert(!JSON.stringify(ordinary).includes('"body"'));
+    assert(!JSON.stringify(ordinary).includes('"memberCount":99'));
     const evaluated = restored.snapshotDistributedRun('dist-ga-1');
     assertJsonEquals(evaluated?.rollup.summary.passedGroupAssertions, 1);
     assertJsonEquals(restored.snapshotForPersistence().fleetReports, []);
@@ -291,18 +313,69 @@ Deno.test('restore keeps group evidence isolated from concatenation-ambiguous ru
     const result = run.results.find((item) => item.commandId.includes('-start-agent-1-'));
     assert(result);
     const restored = createRallarBlackBoxControlService(toControlServiceInput());
-    restored.restoreSnapshot({
-        runs: [
-            { ...run, runId: 'a', results: [{ ...result, runId: 'a', commandId: 'bc' }] },
-            { ...run, runId: 'ab', results: [{ ...result, runId: 'ab', commandId: 'c' }] }
-        ],
-        distributedRuns: [{ ...group, controlRunId: 'a', commandLinks: [{ phase: 'start', agentId: 'agent-1', commandId: 'bc', queuedAtEpochMs: 2000 }] }],
+    const originalResult = result.result;
+    assert(originalResult);
+    const runs = [{ runId: 'a', commandId: 'bc' }, { runId: 'ab', commandId: 'c' }].map(({ runId, commandId }) => ({
+        ...run,
+        runId,
+        agents: run.agents.map((agent) => ({
+            ...agent,
+            runId,
+            completedCommandIds: agent.completedCommandIds.map((id) => id === result.commandId ? commandId : id),
+            resumeCompletedCommandIds: agent.resumeCompletedCommandIds.map((id) => id === result.commandId ? commandId : id)
+        })),
+        commands: run.commands.map((queued) => ({
+            ...queued,
+            envelope: {
+                ...queued.envelope,
+                runId,
+                commandId: queued.envelope.commandId === result.commandId ? commandId : queued.envelope.commandId,
+                command: queued.envelope.commandId === result.commandId
+                    ? { ...queued.envelope.command, commandId }
+                    : queued.envelope.command
+            }
+        })),
+        results: [{ ...result, runId, commandId, result: { ...originalResult, commandId } }],
+        events: run.events.map((event) => ({ ...event, runId })),
+        stats: run.stats.map((event) => ({ ...event, runId })),
+        reports: run.reports.map((event) => ({ ...event, runId })),
+        heartbeats: run.heartbeats.map((heartbeat) => ({ ...heartbeat, runId }))
+    }));
+    const snapshot = {
+        runs,
+        distributedRuns: [{
+            ...group,
+            controlRunId: 'a',
+            manifest: { ...group.manifest, controlRunId: 'a' },
+            commandLinks: [{ phase: 'start' as const, agentId: 'agent-1', commandId: 'bc', queuedAtEpochMs: 2000 }]
+        }],
         fleetReports: []
-    });
+    };
+    restored.restoreSnapshot(snapshot);
     const groupValue = restored.snapshotRun('a')?.results[0].result?.value;
     const ordinaryValue = restored.snapshotRun('ab')?.results[0].result?.value;
     assert(groupValue && typeof groupValue === 'object' && 'results' in groupValue);
     assert(Array.isArray(groupValue.results));
-    assert(ordinaryValue && typeof ordinaryValue === 'object' && 'resultsOmitted' in ordinaryValue);
-    assertJsonEquals(ordinaryValue.resultsOmitted, true);
+    assertJsonEquals(groupValue.results, [{ ...PROBE_READ_RESULT, value: { body: { memberCount: 2 } } }]);
+    assert(isJsonRecordValue(ordinaryValue));
+    assertJsonEquals(ordinaryValue.resultEvidence, { status: 'finite', payloadsOmitted: true });
+    assertJsonEquals(ordinaryValue.results, [PROBE_READ_RESULT]);
+    assert(!JSON.stringify(ordinaryValue).includes('"body"'));
+    assert(!JSON.stringify(ordinaryValue).includes('"memberCount":2'));
+    assertThrows(
+        () =>
+            restored.restoreSnapshot({
+                ...snapshot,
+                runs: [{
+                    ...runs[0],
+                    commands: runs[0].commands.map((queued, index) =>
+                        index === 0
+                            ? { ...queued, envelope: { ...queued.envelope, runId: 'run-1' } }
+                            : queued
+                    )
+                }]
+            }),
+        Error,
+        'Control command runId does not match this agent.'
+    );
 });

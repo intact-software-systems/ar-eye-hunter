@@ -40,8 +40,13 @@ reviewer approves the seven corrected owners and closes all four blocking findin
 late reset ownership, authentic child progress, accepted comparison operands, and the
 snapshot function's size/duplication. The measured320.778KiB headless boundary uses its
 existing minimum adjustable cap321; forbidden dependencies remain excluded. The existing
-large-chunk build warning is disclosed. Hosted CI still requires five fixture corrections
-and exact changed-style publication closure. This continuation is published in draft
+large-chunk build warning is disclosed. Five fixture corrections now have independent
+local acceptance:17 artifact cases, eight unchanged tuning cases and14 native cases pass,
+with final typing/format/navigation and whole-file closure. Fresh hosted ce6 ALM passes
+three smoke transport cases with nine intentional skips; its headless check passes.
+That unit run also exposes a reference-run callback regression, now reproduced as one
+failure/two controls. Runtime correction and exact changed-style publication closure
+remain required. This continuation is published in draft
 [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645); Task64's complete
 CI outcome remains open.
 Publish each coherent validated slice on the feature branch; keep incomplete acceptance
@@ -6311,14 +6316,49 @@ assertions while replacing malformed or unowned fixture facts with truthful curr
 contracts. Production decoder/admission behavior is authoritative. Keep all historical
 failures; neither green local tests nor skipped RTC integrity supplies E3 evidence.
 
+**Five CI fixtures accepted locally:** Current finite lifecycle/error, actual queued
+socket dispatch, ordinary-result admission and coherent restore identities now reach their
+intended artifact boundaries. The same reviewer approves all four complete test owners.
+The later two ordinary-compaction failures were obsolete test coupling: current assertions
+keep exact finite child lifecycle and explicit payload omission while full group payloads,
+rollup, zero stored fleet reports and collision isolation remain strict. The167-line named
+fixture factory is removed in favor of immutable serialized data in the same owner;
+every literal and assertion is preserved, with no new helper/file or exception. Final
+17 artifact tests, eight unchanged tuning tests and14 native API/group tests pass;
+affected typing/format/whitespace and compiler navigation pass. Production, protocol,
+compaction, decoder/admission, timeout values and registry are unchanged.
+
+**Fresh hosted correctness and remaining callback regression:** Release
+[37643157331](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37643157331)
+checks out exactce6f81a98185940985650738c1d77f4246e80892. Its actual ALM run passes the
+baseline WS, RTC and RTC-with-WS-fallback smoke cases; nine other families are intentionally
+skipped. Headless passes. Unit output has13747 passes/three failures/12 skips and the
+controller has357 passes/three failures/one ignored. The five fixture failures are now
+locally corrected; the remaining unit failure is a genuine runtime ordering regression.
+The new top-level command-ID callback runs before loaded-body admission, so a reentrant
+load substitutes replacement/Native for accepted first/Off. The unchanged original matrix
+reproduces one failure with running/invocation-ID controls passing. Its later effect
+assertions were not reached on the failed case and are not extra witnessed failures.
+Capture command admission before external effects; test analogous cache-owner/address
+and capture-default reads before changing them. No new API/store, callback-wide repair,
+retry/watchdog, CRDT change or E3 claim follows from this evidence. Preserve all failed
+source-bound records and return to the same implementer/reviewer for minimum correction.
+
 ### Task 65: Visible recipe controls and persisted intent (prepared next slice)
 
-After Task64 acceptance, refresh the audited Console/local authoring and reusable
-recipe/manifest consumers against its accepted source. Follow current canonical intent
-owners to visible selection, omitted inheritance, explicit Off, immutable submitted
-configuration, and saved/imported/exported/rerun intent. Use semantic TDD and actual
-consumer/application controls. Select no API, extra store, migration, retained legacy or
-duplicated policy now. Generic workers, spawned/external/mixed/no-spawn recipes and GitHub
+After Task64 acceptance, use the refreshed Console/local authoring and reusable
+recipe/manifest consumers against its accepted source. A53-source audit reuses unchanged
+UI owners and confirms missing visible run-override forwarding in Console new-run and
+local recipe Run. Authored JSON and stored Console manifests already retain recipe intent.
+Existing Save persists endpoint/scope/timeout preferences, and Analyze import/Execute
+export handle run evidence; a dedicated custom saved-recipe store was not recovered in
+the bounded owners. Do not invent one or treat evidence import as executable recipe import.
+The next two semantic outcomes are visible Inherit/Off/Signaling/Native choice reaching
+actual submission/application or visible refusal, and authored intent surviving existing
+Load/Copy/storage/restore/repeat paths without a run override rewriting it. New effects
+and owned invocation/application evidence must distinguish fresh work from truthful replay.
+Follow current canonical owners with semantic TDD and actual consumer controls; select no
+new API/store, migration, retained legacy or duplicate policy before the witness. Generic workers, spawned/external/mixed/no-spawn recipes and GitHub
 Actions propagation remain mandatory later outcomes, together with B01–B06/E3. This
 prepared next slice is not released and does not narrow the original goal.
 
