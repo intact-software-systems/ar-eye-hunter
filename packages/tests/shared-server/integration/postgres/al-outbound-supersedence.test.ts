@@ -8,12 +8,20 @@ import {
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import {
+    createALOutboundAdmissionStore,
+    type ALOutboundAdmissionStore,
+    type ALOutboundPlanner
+} from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch, type ALOutboundComputedDto } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 
-import { createOutboundCanonicalEntry, createOutboundMessage } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
+import {
+    computeOutboundTestAdmission,
+    createOutboundCanonicalEntry,
+    createOutboundMessage
+} from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../../../shared/alm/outbound-test-payload.ts';
 import {
     createRuntimeStatePostgresSql,
@@ -39,6 +47,36 @@ describe('Postgres outbound shared supersedence', () => {
         expect((await readSupersedingDecision(first, older)).verdict.kind).toBe('superseded');
     });
 });
+
+describe('Postgres outbound sequence minting', () => {
+    postgresIt('mints the next sequence again when another connection committed the one it read', async () => {
+        const [first, second] = await createStores();
+        const loser = createMintRequest('mint-loser');
+        const winner = createMintRequest('mint-winner');
+        const losingBundle = await computeOutboundTestAdmission(first, loser, MINTING_PLANNER);
+        const winningBundle = await computeOutboundTestAdmission(second, winner, MINTING_PLANNER);
+
+        expect(await second.commitBundle(winningBundle)).toBe('committed');
+        expect(await first.commitBundle(losingBundle)).toBe('conflict');
+        expect(await first.commitBundle(await computeOutboundTestAdmission(first, loser, MINTING_PLANNER))).toBe('committed');
+
+        expect((await first.readSentMessage(winner.id.msgId))?.msg.ordering?.seq).toBe(1);
+        expect((await second.readSentMessage(loser.id.msgId))?.msg.ordering?.seq).toBe(2);
+    });
+});
+
+/** One durable copy per message, the sender asking its own outbound for the track's next sequence. */
+const MINTING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
+    msg,
+    dropReasonCode: undefined,
+    lane: 'durable',
+    preparedMessages: [{ text: msg.id.msgId }],
+    mintsSequence: true
+});
+
+function createMintRequest(resourceId: string): ALMessage {
+    return { ...createOutboundMessage(resourceId), ordering: { orderingKey: 'round', epoch: 1 } };
+}
 
 async function createStores(): Promise<readonly [ALOutboundAdmissionStore<OutboundTestPayload>, ALOutboundAdmissionStore<OutboundTestPayload>]> {
     const namespace = `outbound-supersedence-${crypto.randomUUID()}`;

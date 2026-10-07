@@ -3,6 +3,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
+import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../al-contracts/al-runtime.ts';
 import { fnv1a64 } from '../../queuebox/AppQueueIdentity.ts';
 import {
     EntityStatus,
@@ -174,6 +175,40 @@ export function decodeALOutboundCanonicalMessage(
     catch (cause) {
         throw new ALAdmissionCorruptionError(key, toError(cause));
     }
+}
+
+/**
+ * Whether a replay that minted its sequence may replace the retained request: activating a pending row that
+ * still holds the message as its sender asked for it, the candidate differing from it by the minted sequence alone.
+ */
+export function isALOutboundMintOfPendingRequest(
+    activatesPendingRow: boolean,
+    expected: ResourceEntry | undefined,
+    entry: ResourceEntry
+): boolean {
+    if (!activatesPendingRow || expected?.status !== EntityStatus.COMPLETED || expected.resource === entry.resource) {
+        return false;
+    }
+    const requested = decodePersistedALMessage(expected.resource);
+    const minted = decodePersistedALMessage(entry.resource);
+    return minted.ordering?.seq !== undefined &&
+        jsonEquals(requested, toALSequenceMintComparableMessage(requested, minted));
+}
+
+/**
+ * The candidate as the original would compare to it: a sequence minted on the track its original named
+ * without one is removed, so a minted copy matches its request while a copy that changes the key, the epoch
+ * or a stated sequence still differs.
+ */
+export function toALSequenceMintComparableMessage(original: ALMessage, candidate: ALMessage): ALMessage {
+    if (
+        toALSequenceMintTrackKey(original) === undefined || candidate.ordering?.seq === undefined ||
+        toALOrderingTrackKey(candidate) !== toALSequenceMintTrackKey(original)
+    ) {
+        return candidate;
+    }
+    const { seq: _seq, ...ordering } = candidate.ordering;
+    return { ...candidate, ordering };
 }
 
 function outboundMessageIdentity(message: ALMessage): string {

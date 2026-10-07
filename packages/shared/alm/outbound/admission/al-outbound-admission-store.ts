@@ -160,6 +160,12 @@ export interface ALOutboundSupersedenceReadState {
     readonly replacesReplacement?: ALReplacementSupersedenceValue;
 }
 
+/** The sequence one admission minted on its track: the head its commit writes under the sender fence. */
+export interface ALOutboundOrderingHead {
+    readonly trackKey: string;
+    readonly seq: number;
+}
+
 export interface ALOutboundMessageReadDto<TPrepared> {
     readonly kind: 'outgoing';
     readonly storedMessage: ALStoredOutboundMessage | undefined;
@@ -171,6 +177,8 @@ export interface ALOutboundMessageReadDto<TPrepared> {
     readonly nowMs: number;
     readonly clientRecord?: ALOutboundVersionedClientRecord;
     readonly plan: ALOutboundDispatchPlan<TPrepared>;
+    /** The sequence `msg` was minted on this read; undefined when the read minted none. */
+    readonly orderingHead: ALOutboundOrderingHead | undefined;
     readonly sentSnapshot?: ALOutboundSentMessageSnapshot;
     readonly pendingAck?: ALOutboundPendingAckSnapshot;
     readonly repairAttempt?: ALOutboundRepairAttemptSnapshot;

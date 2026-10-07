@@ -379,11 +379,12 @@ scoped-delivery bump resets browsers only. On the server:
 **The range-repair window.** PostgreSQL rows carry no schema identity here either, so the
 range-repair bump resets browsers only. On the server, a buffered-slot row, a retained
 `repair-hint` and a `nacks`/`repairs` control history row written by the old build fail strict
-decoding until they expire: the ordering track TTL (`orderingTrackTtlMs`, 5 minutes by default)
-bounds the buffered slots of a track, and the message deadlines bound the retained work and the
-control history, so the window closes without a migration. A NACK or repair a page still running
-the old build sends is refused `unsupported` (`al.control.nack.v1`, `al.control.repair.v1`) until
-that page reloads, symmetrically with the acknowledgement cutover above.
+decoding until they expire: the ordering track TTL (`orderingTrackTtlMs`, by default the repository
+TTL of 60 minutes) bounds the buffered slots of a track, and the message deadlines bound the
+retained work and the control history, so the window closes without a migration. A NACK or repair a
+page still running the old build sends is refused `unsupported` (`al.control.nack.v1`,
+`al.control.repair.v1`) until that page reloads, symmetrically with the acknowledgement cutover
+above.
 
 **The roster-fence window.** PostgreSQL rows carry no schema identity, so the roster-fence bump
 resets browsers only. On the server, a row an older build wrote holds a `v: 2` envelope and fails
@@ -424,7 +425,17 @@ cursor ([`ALInboundResyncCursor`](./al-inbound-resync-required.ts)) is where the
 `orderingKey`, `senderId`, `epoch`, `lastContiguousSeq`, `expectedSeq`, `observedSeq` and
 `carrier`. The runtime resets no track after a resynchronization; the sender's new epoch is a new
 track. Without the sink -- the WS server's case -- the message is dropped as before and the
-diagnostics state the refusal.
+diagnostics state the refusal. A WS client admits every server frame as `trusted-server`, so a
+server publication that carries a sequence is ordered on the track
+`<orderingKey>:<serverPeerId>:<epoch>` (the server peer id is `default-qbox-server` in api-v1 and
+the Relic server), and the NACK and repair request for its gap go to the server, since a
+`trusted-server` source's `fromPeerId` is the message's `senderId`; the server repairs its own
+publication (D153). The recovery owner of a server track is the typed channel the publication's
+topic and type name, found as for any sender (D142); Relic Hunters' round-transition channel is one
+(D152). A receiver remembers a server track for its ordering-track TTL, by default the repository
+TTL (60 minutes) that also bounds the server's head, so a track silent for over an hour restarts at
+`seq` 1 on both sides, and since the server's sequences follow commit order, two publications of one
+track can commit out of publish order under contention.
 
 **Room authority and the membership fence.** An RTC receiver judges a room send against the room
 snapshot it holds before planning it

@@ -38,6 +38,7 @@ import {
     startAmbientSound,
     stopAmbientSound
 } from './game/sound.ts';
+import { toRelicPhaseBanner, type RelicPhaseBanner } from './game/to-relic-phase-banner.ts';
 import {
     deriveCurrentTurnSummaryModel,
     isPersonalEvent,
@@ -94,10 +95,9 @@ export default function App() {
     const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
     const [timeRemainingMs, setTimeRemainingMs] = useState<number | null>(null);
     const autoSubmittedForRoundRef = useRef<number | undefined>(undefined);
-    const [phaseBanner, setPhaseBanner] = useState<string | null>(null);
+    const [phaseBanner, setPhaseBanner] = useState<RelicPhaseBanner | null>(null);
     const [roomEntryFlash, setRoomEntryFlash] = useState<{ room: string; key: number; } | null>(null);
     const roomEntryKeyRef = useRef(0);
-    const prevPhaseRef = useRef<RelicPublicSnapshot['phase'] | undefined>(undefined);
     const prevRoomIdRef = useRef<string | undefined>(undefined);
     const tensionTimerRef = useRef<number | null>(null);
     const revealQueueRef = useRef<RelicEvent[]>([]);
@@ -111,7 +111,7 @@ export default function App() {
             return;
         }
 
-        (window as unknown as {
+        (window as Window & {
             __relicHuntersRuntime?: ReturnType<typeof summarizeRelicHuntersRuntime>;
         }).__relicHuntersRuntime = summarizeRelicHuntersRuntime(
             game.roomId,
@@ -372,28 +372,14 @@ export default function App() {
     }, [currentPlayer?.roomId, game.snapshot?.phase, game.snapshot?.round]);
 
     useEffect(() => {
-        const phase = game.snapshot?.phase;
-        if (!phase) {
-            prevPhaseRef.current = undefined;
+        if (!game.roundTransition) {
             return;
         }
-        if (prevPhaseRef.current && prevPhaseRef.current !== phase) {
-            const isGameStart = prevPhaseRef.current === 'lobby' && phase === 'planning';
-            const msg = phase === 'planning'
-                ? UI[lang].phaseBannerPlanning
-                : phase === 'review'
-                ? 'Plans are revealed.'
-                : phase === 'finished'
-                ? 'The ruin falls silent.'
-                : null;
-            if (msg) {
-                setPhaseBanner(isGameStart ? `game-start:${msg}` : msg);
-                const t = window.setTimeout(() => setPhaseBanner(null), isGameStart ? 4000 : 2400);
-                return () => clearTimeout(t);
-            }
-        }
-        prevPhaseRef.current = phase;
-    }, [game.snapshot?.phase]);
+        const banner = toRelicPhaseBanner(game.roundTransition, lang);
+        setPhaseBanner(banner);
+        const timeoutId = window.setTimeout(() => setPhaseBanner(null), banner.durationMs);
+        return () => clearTimeout(timeoutId);
+    }, [game.roundTransition]);
 
     useEffect(() => {
         const roomId = currentPlayer?.roomId;
@@ -1295,16 +1281,12 @@ export default function App() {
 
                     {phaseBanner && (
                         <div
-                            className={`phase-banner${
-                                phaseBanner.startsWith('game-start:') ? ' phase-banner-start' : ''
-                            }`}
+                            className={`phase-banner${phaseBanner.start ? ' phase-banner-start' : ''}`}
                             role="status"
                             aria-live="assertive"
                             aria-atomic="true"
                         >
-                            {phaseBanner.startsWith('game-start:')
-                                ? phaseBanner.slice('game-start:'.length)
-                                : phaseBanner}
+                            {phaseBanner.text}
                         </div>
                     )}
 

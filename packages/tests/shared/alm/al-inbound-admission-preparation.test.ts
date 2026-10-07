@@ -95,6 +95,23 @@ describe('inbound admission preparation boundary', () => {
         }
     });
 
+    it('remembers an ordering track the default stores wrote for the hour its sender keeps the head', async () => {
+        const clock = { nowMs: Date.now() };
+        const startedAtMs = clock.nowMs;
+        const stores = createDefaultInMemoryALInboundRuntimeStores({ nowMs: () => clock.nowMs });
+        const prepared = await readAdmission({ store: stores.admissionStore, message: createMessage(1), nowMs: startedAtMs });
+        const bundle = computeALInboundAdmission({ ...prepared, canForward: false, recordedParentPresent: true });
+        expect(await stores.admissionStore.commitBundle(bundle)).toBe('committed');
+        const readTrackAfter = async (elapsedMs: number) => {
+            clock.nowMs = startedAtMs + elapsedMs;
+            const next = await readAdmission({ store: stores.admissionStore, message: createMessage(2), nowMs: clock.nowMs });
+            return next.read.orderingSnapshot;
+        };
+
+        expect(await readTrackAfter(5 * 60_000 + 1)).toMatchObject({ lastContiguousSeq: 1 });
+        expect(await readTrackAfter(60 * 60_000 + 1)).toBeUndefined();
+    });
+
     it('computes one repeatable final bundle from captured read, policy, and effect facts', async () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const prepared = await readAdmission({ store: stores.admissionStore, message: createMessage(1) });

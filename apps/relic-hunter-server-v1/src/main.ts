@@ -5,11 +5,11 @@ import { cors } from 'hono/cors';
 import { createDefaultRallarServer } from '@api-v1/src/composition/create-default-rallar-server.ts';
 import { createApiV1DatabaseLifecycle } from '@api-v1/src/db/api-v1-database-lifecycle.ts';
 import { requireApiAuthSession, toAuthErrorResponse } from '@api-v1/src/services/request-auth-service.ts';
-import { isRelicCommand } from '@relic-hunters/mod.ts';
+import { isRelicCommand, toRelicRoomGroupRef } from '@relic-hunters/mod.ts';
 import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { createRelicExpeditionInitialStateFactory } from './relic-expedition-ai.ts';
 import { installRelicHunterGame } from './relic-game-service.ts';
 import { readRelicHunterServerConfiguration } from './relic-hunter-server-configuration.ts';
@@ -125,7 +125,7 @@ app.get('/api/relic/games/:gameId', async (c) => {
         return c.json(await relicGame.ensureSnapshot(gameId));
     }
     catch (error) {
-        return relicRestErrorResponse(c, error);
+        return relicRestErrorResponse(c, toError(error));
     }
 });
 
@@ -153,7 +153,7 @@ app.post('/api/relic/games/:gameId/commands', async (c) => {
         return c.json(await relicGame.applyCommand(command, session.sessionId));
     }
     catch (error) {
-        return relicRestErrorResponse(c, error);
+        return relicRestErrorResponse(c, toError(error));
     }
 });
 
@@ -171,7 +171,7 @@ app.post('/api/relic/games/:gameId/reset', async (c) => {
         return c.json(snapshot);
     }
     catch (error) {
-        return relicRestErrorResponse(c, error);
+        return relicRestErrorResponse(c, toError(error));
     }
 });
 
@@ -208,14 +208,10 @@ async function readRelicGroupSnapshotForPolicy(
         return undefined;
     }
 
-    return await rallar.runtime.groupStateService.readSnapshot({
-        applicationId: DEFAULT_STATE_APPLICATION_ID,
-        workspaceId: DEFAULT_STATE_WORKSPACE_ID,
-        groupId: gameId
-    });
+    return await rallar.runtime.groupStateService.readSnapshot(toRelicRoomGroupRef(gameId));
 }
 
-function relicRestErrorResponse(c: Context, error: unknown): Response {
+function relicRestErrorResponse(c: Context, error: Error): Response {
     if (error instanceof RelicRestGroupNotFoundError) {
         return c.json({ error: error.message }, error.status);
     }

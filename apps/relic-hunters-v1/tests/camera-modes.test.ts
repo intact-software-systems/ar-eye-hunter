@@ -200,6 +200,7 @@ function snapshot(
         phase,
         round: 1,
         maxRounds: 10,
+        createdAtEpochMs: 1,
         updatedAtEpochMs: Date.now(),
         roundTimeLimitMs: 180_000,
         map: rooms,

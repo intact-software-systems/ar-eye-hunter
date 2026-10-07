@@ -26,12 +26,23 @@ tracks no receipt, still has the server's gap NACK served along that hop; the RT
 and the WS server declare no fixed hop. Control acceptance applies the same exemption: without a
 repair planner, a room-scoped gap NACK or repair control is admitted only when its requester is
 the sender's own hop, so the server's gap NACK to its own WS client commits the repair hint that
-retransmits the missing ranges along that hop.
-[`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one predicate both owners
-share. A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges
-(`missingRanges`, at most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256 window
-can hold), as the `al.control.nack.v2` and `al.control.repair.v2` payloads and the planner's NACK
-plan do; [`decodeALSeqRanges`](../../al-contracts/al-seq-range.ts) is the one bounded range
+retransmits the missing ranges along that hop. The WS server repairs its own publications through
+its repair planner instead: a WS client's gap NACK on a track whose sequences the server minted
+pages the missing sequences from the server's ordering index and resends each to that requester
+alone, and only when the requester is in the audience the resent message was admitted to and
+still expected by the receipt of the message whose NACK revealed the gap, so a session that
+joined later is never served and a keyed server publication asks `ack: 'receiver'` (an
+`ack: 'none'` one gets no ranged repair) (D43, D153). The budget is per message: the first
+requester spends `maxRepairs` and another requester of the same sequence falls back to the
+receipt's retries. Only the `outbox` fan-out mints; a keyed publish without a sequence at
+`live-only` or `none` is refused. Relic Hunters' round transitions are that track's consumer: one
+track per round, the game's incarnation (`${gameId}:${createdAtEpochMs}`, since a reset keeps the
+game id) as ordering key and the round the transition enters as epoch, the finish entering the round
+past the last (D151). [`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one
+predicate both owners share. A hint names what is missing as inclusive `ALSeqRange` `{ from, to }`
+ranges (`missingRanges`, at most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256
+window can hold), as the `al.control.nack.v2` and `al.control.repair.v2` payloads and the planner's
+NACK plan do; [`decodeALSeqRanges`](../../al-contracts/al-seq-range.ts) is the one bounded range
 decoder for the wire and the rows. A NACK and a repair request naming the same gap are one hint:
 the gap -- requester, ordering track and ranges, the ranges joined as `from-to` with `,` -- names
 the hint's effect row ([`toALOutboundRepairHintEffectId`](./to-al-outbound-effect-id.ts)), never
@@ -606,6 +617,28 @@ server's outbound owner feeds one bounded in-memory recorder per process
 ([`createRallarAlmReceiptDiagnosticsRecorder`](../../../shared-server/rallar-system/observability/alm-receipt-diagnostics.ts),
 256 messages), read as `almReceipts` on `/api/admin/operations/realtime`: per message the confirmed and unconfirmed
 sessions, the last settlement kind and whether the receipt ran out (D61, D73).
+
+**Server-minted sequences.** A message the WS server publishes itself that names `ordering.orderingKey` (and
+an `epoch`) without a `seq` asks the server's outbound for the sequence (D150). The server's planner marks the plan
+`mintsSequence` only at admission (`phase: 'immediate'`) and only when the message's `senderId` is the server's own
+peer id; a relayed browser send that carries a key and no `seq` (an RTC room multicast and its WS fallback carry the
+group key) passes through unsequenced, as it came, and so does a row a producer wrote straight to the outbox. An
+admission of a marked plan that finds no sent row for the `msgId` reads the track's ordering-head row
+(`toALOutboundOrderingHeadKey(namespace, trackKey)`, the track named by `toALSequenceMintTrackKey`: key, sender and
+epoch, as `toALOrderingTrackKey` names it once the `seq` exists) in the session that reads the sender version, and
+stamps `head + 1` on the message; the commit writes the head `{ seq }` beside the canonical row, the sent row and the
+ordering index, fenced by the sender version every commit of the sender bumps, so two instances or two runtimes over
+one store cannot mint one sequence twice and a restart continues where the store stands. The sequence belongs to the
+attempt that commits: a commit that loses the fence retains its pending admission with the message as its sender
+asked for it (no `seq`, and the captured policy keeps `mintsSequence`), and the work queue's replay of that admission
+mints again when it commits, replacing the retained request in the canonical row by the minted message (the only
+change a pending canonical row accepts). An admission of a `msgId` that already has its sent row mints nothing and
+answers with the stored message. The head row expires as the sent row does: a durable pair keeps it
+`max(deadline, sentMessageTtlMs, controlHistoryTtlMs)` past the mint, and a receiver's ordering-track TTL defaults to
+the repository TTL (60 minutes), so a receiver remembers a track as long as its sender keeps the head. Two limits
+remain: sequences follow commit order, so under contention two publications of one track can commit out of publish order
+(a first-in-first-out mint per track is a follow-up), and a track silent for over an hour restarts at 1 on both sides.
+The browser's outbound never mints: no browser planner marks a plan.
 
 Known limitations:
 

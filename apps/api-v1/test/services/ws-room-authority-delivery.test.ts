@@ -420,6 +420,31 @@ Deno.test('a WS-carried receiver room multicast queues durable delivery to the o
     }
 });
 
+Deno.test('a server publication that names an ordering key is published with the sequence its outbound minted, and delivered with it', async () => {
+    const harness = createRoomDeliveryHarness();
+    try {
+        const aliceFrames = addRecordingConnection(harness.server, 'alice');
+        const bobFrames = addRecordingConnection(harness.server, 'bob');
+
+        const published = [
+            await harness.router.publish({ message: serverTrackNotice(harness.router.serverPeerId, 'notice-1'), fanout: 'outbox' }),
+            await harness.router.publish({ message: serverTrackNotice(harness.router.serverPeerId, 'notice-2'), fanout: 'outbox' })
+        ];
+        await waitForRoomFrames(() => readNoticeOrderings(aliceFrames).length + readNoticeOrderings(bobFrames).length >= 4);
+
+        const minted = [1, 2].map((seq) => ({ orderingKey: 'notice-track', epoch: 1, seq }));
+        assert.deepEqual(published.map((result) => [result.status, result.message.ordering]), [
+            ['queued-outbox', minted[0]],
+            ['queued-outbox', minted[1]]
+        ]);
+        assert.deepEqual(readNoticeOrderings(aliceFrames), minted);
+        assert.deepEqual(readNoticeOrderings(bobFrames), minted);
+    }
+    finally {
+        harness.service.dispose();
+    }
+});
+
 function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarness {
     const state: RoomDeliveryState = {
         current: createRoomSnapshot(),
@@ -469,6 +494,26 @@ function readReceipts(frames: readonly string[]): readonly ALReceiptPayload[] {
         .map((frame) => decodePersistedALMessage(frame))
         .filter((frame) => frame.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
         .map((frame) => decodeALReceiptPayload(JSON.parse(frame.payload.resource)));
+}
+
+/** A notice the server publishes itself on epoch 1 of one track, naming no sequence. */
+function serverTrackNotice(serverPeerId: string, noticeId: string): ALMessage {
+    return newALBroadcastMessage(serverPeerId, newALEventRoute('room.notice', ROOM.groupId, noticeId), 'room', 'notice.v1', {
+        noticeId
+    }, {
+        groupRef: ROOM,
+        reliability: 'at-least-once',
+        ack: 'receiver',
+        ttlMs: 60_000,
+        ordering: { orderingKey: 'notice-track', epoch: 1 }
+    });
+}
+
+function readNoticeOrderings(frames: readonly string[]): readonly (ALMessage['ordering'])[] {
+    return frames
+        .map((frame) => decodePersistedALMessage(frame))
+        .filter((frame) => frame.route.topicId === 'room.notice')
+        .map((frame) => frame.ordering);
 }
 
 function addRecordingConnection(server: JsonWebSocketServer, sessionId: string): string[] {

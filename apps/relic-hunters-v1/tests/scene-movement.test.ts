@@ -60,6 +60,7 @@ function snapshot(
         phase: 'planning',
         round: 1,
         maxRounds: 10,
+        createdAtEpochMs: 1,
         updatedAtEpochMs: 1,
         roundTimeLimitMs: 60_000,
         map: rooms,

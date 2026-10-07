@@ -44,6 +44,8 @@ const QOS_CASES = [
 
 type QosCase = (typeof QOS_CASES)[number];
 
+const UNMINTED_SEQUENCE_REASON = 'A server publication that names an ordering key without a sequence needs the outbox fanout, which mints it.';
+
 interface CarrierFixture {
     readonly router: RallarServerWsRouter;
     readonly receiver: TestWebSocket;
@@ -238,6 +240,52 @@ describe('Rallar server WS fanout carriers', () => {
     );
 });
 
+describe('a keyed server publication without a sequence', () => {
+    it.each(
+        [
+            { fanout: 'live-only', cluster: false },
+            { fanout: 'live-only', cluster: true },
+            { fanout: 'none', cluster: false }
+        ] as const
+    )('is refused on a $fanout fanout (cluster $cluster) and sends nothing', async ({ fanout, cluster }) => {
+        const fixture = createCarrierFixture(cluster);
+        const message = createRoomBroadcast('server-1', `keyed-${fanout}`, QOS_CASES[1], { orderingKey: 'track-1', epoch: 1 });
+
+        const result = await fixture.router.publish({ message, fanout });
+
+        expect(result).toMatchObject({ fanout, status: 'failed', message, entries: [] });
+        expect(result.reason).toBe(UNMINTED_SEQUENCE_REASON);
+        expect(fixture.notices).toEqual([]);
+        expect(readReceivedMsgIds(fixture.receiver)).toEqual([]);
+    });
+
+    it('is admitted on the outbox fanout with the sequence the server minted', async () => {
+        const fixture = createCarrierFixture(false);
+        const message = createRoomBroadcast('server-1', 'keyed-outbox', QOS_CASES[1], { orderingKey: 'track-1', epoch: 1 });
+
+        const result = await fixture.router.publish({ message, fanout: 'outbox' });
+
+        expect(result).toMatchObject({ fanout: 'outbox', status: 'queued-outbox' });
+        expect(result.message.ordering).toEqual({ orderingKey: 'track-1', epoch: 1, seq: 1 });
+        expect((await fixture.outboundStores.admissionStore.readSentMessage(message.id.msgId))?.msg.ordering)
+            .toEqual({ orderingKey: 'track-1', epoch: 1, seq: 1 });
+    });
+
+    it.each([
+        { sender: 'server-1', ordering: { orderingKey: 'track-1', epoch: 1, seq: 4 } },
+        { sender: 'alice', ordering: { orderingKey: 'track-1', epoch: 1 } },
+        { sender: 'server-1', ordering: undefined }
+    ])('leaves a live-only publish from $sender with ordering $ordering as it came', async ({ sender, ordering }) => {
+        const fixture = createCarrierFixture(false);
+        const message = createRoomBroadcast(sender, `live-${sender}-${ordering?.seq ?? 'none'}`, QOS_CASES[1], ordering);
+
+        const result = await fixture.router.publish({ message, fanout: 'live-only' });
+
+        expect(result).toMatchObject({ fanout: 'live-only', status: 'sent-live', sentCount: 1 });
+        expect(fixture.receiver.sent.map((sent) => decodePersistedALMessage(sent).ordering)).toEqual([message.ordering]);
+    });
+});
+
 function createCarrierFixture(
     cluster: boolean,
     defaultFanout?: RallarServerWsFanout
@@ -285,14 +333,19 @@ function createCarrierService(
     return service;
 }
 
-function createRoomBroadcast(senderId: string, resourceId: string, qosCase: QosCase): ALMessage {
+function createRoomBroadcast(
+    senderId: string,
+    resourceId: string,
+    qosCase: QosCase,
+    ordering?: Readonly<{ orderingKey: string; epoch: number; seq?: number; }>
+): ALMessage {
     return newALBroadcastMessage(
         senderId,
         newALRoute('room.carrier', ROOM.groupId, resourceId),
         'room',
         'room.carrier.v1',
         { resourceId },
-        { groupRef: ROOM, reliability: qosCase.reliability, ack: qosCase.ack, ttlMs: 30_000 }
+        { groupRef: ROOM, reliability: qosCase.reliability, ack: qosCase.ack, ttlMs: 30_000, ordering }
     );
 }
 

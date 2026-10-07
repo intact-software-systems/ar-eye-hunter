@@ -6,6 +6,7 @@ import {
     type RelicCharacterId,
     type RelicCommand,
     type RelicPublicSnapshot,
+    type RelicRoundTransitionEvent,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
 import {
@@ -21,10 +22,15 @@ import {
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
 import type { RallarGameAuthorityClientStatus } from '@shared/rallar-game/mod.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { fetchRelicSnapshot, resetRelicGame, sendRelicCommand } from './api.ts';
 import { createRelicAuthorityClientBridge, type RelicAuthorityClientBridge } from './rallar-game-authority-adapter.ts';
 import type { RelicSnapshotRejectionReason, RelicSnapshotSource } from './relic-snapshot-ordering.ts';
 import { sendRelicWsCommand, type RelicWsCommandDelivery } from './send-relic-ws-command.ts';
+import {
+    subscribeRelicRoundTransitions,
+    type RelicRoundTransitionSubscription
+} from './subscribe-relic-round-transitions.ts';
 
 export const RELIC_ROOM_NAME = 'Relic Hunters Expedition';
 export const RELIC_SNAPSHOT_TRANSPORT = 'rallar-ws+rtc' as const;
@@ -80,6 +86,8 @@ export type RelicRuntimeDiagnostics = Readonly<{
     lastIgnoredSnapshotReason?: RelicSnapshotRejectionReason;
     lastIgnoredSnapshot?: RelicRuntimeSnapshotSummary;
     lastHydratedAtEpochMs?: number;
+    /** The latest round transitions this runtime cued, as `round:transition`, oldest first. */
+    roundTransitionCues: readonly string[];
     lastError?: string;
 }>;
 
@@ -118,6 +126,16 @@ export type RelicJoinedRoom = Readonly<{
     roomId: string;
 }>;
 
+/** The game read again after its round-transition track could no longer be ordered. */
+export type RelicResyncHydration =
+    | Readonly<{ kind: 'hydrated'; roomId: string; snapshot: RelicPublicSnapshot | undefined; }>
+    | Readonly<{ kind: 'failed'; roomId: string; error: string; }>;
+
+export interface RelicRoundTransitionListeners {
+    readonly onTransition: (event: RelicRoundTransitionEvent) => void;
+    readonly onResyncHydration: (hydration: RelicResyncHydration) => void;
+}
+
 type RelicCreateRoomOptions = Readonly<Pick<RallarCreateRoomInput, 'joinMode'>>;
 
 export type RelicRuntimeStartResult = Pick<RallarStartResult, 'session' | 'connected' | 'roomState'>;
@@ -138,6 +156,7 @@ export type RelicHuntersRuntimeDeps = Readonly<{
     onSnapshotMessage(handler: (event: RelicServerEvent) => void): () => void;
     onRtcSnapshotMessage(handler: (event: RelicServerEvent) => void): () => void;
     onAuthoritySnapshotMessage(handler: (event: RelicServerEvent) => void): () => void;
+    onRoundTransitionMessage(roomId: string, subscription: RelicRoundTransitionSubscription): () => void;
     authorityStatus(): RallarGameAuthorityClientStatus | undefined;
     publishRtcSnapshot(snapshot: RelicPublicSnapshot): Promise<boolean>;
     createRoom(
@@ -256,13 +275,23 @@ export class RelicHuntersRuntime {
                 rtcSnapshotListenerReady: true,
                 roomListenerReady: true,
                 authorityListenerReady: true,
-                degradedError: toErrorMessage(error)
+                degradedError: toError(error).message
             };
         }
     }
 
     async refreshRooms(): Promise<RallarRoomState> {
         return this.deps.refreshRooms();
+    }
+
+    /** The recovery owner of the room's round transitions reads the game over the same REST read as a room's hydration. */
+    subscribeRoundTransitions(roomId: string, listeners: RelicRoundTransitionListeners): () => void {
+        return this.deps.onRoundTransitionMessage(roomId, {
+            onTransition: listeners.onTransition,
+            onResyncRequired: () => {
+                void this.readResyncHydration(roomId).then(listeners.onResyncHydration);
+            }
+        });
     }
 
     async fetchSnapshot(roomId: string): Promise<RelicPublicSnapshot | undefined> {
@@ -318,6 +347,15 @@ export class RelicHuntersRuntime {
         return this.deps.authorityStatus();
     }
 
+    private async readResyncHydration(roomId: string): Promise<RelicResyncHydration> {
+        try {
+            return { kind: 'hydrated', roomId, snapshot: await this.deps.fetchSnapshot(roomId) };
+        }
+        catch (error) {
+            return { kind: 'failed', roomId, error: toError(error).message };
+        }
+    }
+
     private async hydrateRoom(roomId: string): Promise<RelicRoomHydration> {
         const snapshot = await this.deps.fetchSnapshot(roomId);
         const roomState = await this.deps.refreshRooms();
@@ -356,6 +394,7 @@ export function initialRelicDiagnostics(
         lastIgnoredSnapshotReason: undefined,
         lastIgnoredSnapshot: undefined,
         lastHydratedAtEpochMs: undefined,
+        roundTransitionCues: [],
         lastError: undefined
     };
 }
@@ -400,6 +439,8 @@ function browserRelicRuntimeDeps(): RelicHuntersRuntimeDeps {
                 (message) => handler(message.payload)
             ),
         onAuthoritySnapshotMessage: (handler) => authority.start(handler),
+        onRoundTransitionMessage: (roomId, subscription) =>
+            subscribeRelicRoundTransitions(rallar, roomId, subscription),
         authorityStatus: () => authority.status(),
         publishRtcSnapshot: async (snapshot) => {
             return authority.publishSnapshotRepair(snapshot);
@@ -411,8 +452,4 @@ function browserRelicRuntimeDeps(): RelicHuntersRuntimeDeps {
         sendRestCommand: (roomId, command) => sendRelicCommand(roomId, command),
         resetGame: (roomId) => resetRelicGame(roomId)
     };
-}
-
-export function toErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
 }
