@@ -613,6 +613,8 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         payload: anySchema,
         roomRef: recordSchema,
         scope: messagesScopeSchema,
+        principalId: stringSchema,
+        recipientPeer: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesRecipientPeer },
         reliability: messagesReliabilitySchema,
         ack: messagesAckSchema,
         durability: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesDurability },

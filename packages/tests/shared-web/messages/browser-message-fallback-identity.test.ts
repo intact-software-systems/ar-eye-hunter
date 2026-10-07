@@ -1,6 +1,11 @@
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import type { RallarTypedMessageChannel } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    newALPrincipalBroadcastMessage,
+    newALUnicastMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { computeRtcFrozenAudienceRefusal } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 import {
@@ -115,7 +120,7 @@ describe('typed message fallback identity', () => {
         const fixture = createChannel({
             firstVerdict: ADMITTED_VERDICT,
             firstPlanner: (msg) =>
-                computeRtcFrozenAudienceRefusal(toALFrozenMulticastMessage(msg, audience)).fold(
+                computeRtcFrozenAudienceRefusal(toALFrozenMulticastMessage(msg, audience), msg).fold(
                     (refusal) => ({ ...refusal, preparedMessages: [] }),
                     () => {
                         throw new Error('A room of 300 sessions must exceed the RTC room limit');
@@ -323,13 +328,6 @@ describe('typed message fallback identity', () => {
         });
         expect(fixture.attempts.map((attempt) => attempt.message.targets)).toEqual([roomBroadcast, roomBroadcast]);
     });
-
-    it('rejects a fallback strategy that would change a global audience into a room audience', async () => {
-        const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT });
-        await expect(fixture.channel.send({ action: 'ready' }, { strategy: 'ws-then-rtc', scope: 'all' }))
-            .rejects.toThrow('$.scope');
-        expect(fixture.attempts).toEqual([]);
-    });
 });
 
 interface ChannelInput {
@@ -375,6 +373,7 @@ function createChannel(input: ChannelInput): ChannelFixture {
             createUnicast: newALUnicastMessage,
             createMulticast: newALMulticastMessage,
             createBroadcast: newALBroadcastMessage,
+            createPrincipalBroadcast: newALPrincipalBroadcastMessage,
             newResourceId: crypto.randomUUID.bind(crypto)
         },
         deliveries,

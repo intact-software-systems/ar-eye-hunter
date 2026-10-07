@@ -121,7 +121,7 @@ describe('BrowserCallSignalRuntime', () => {
         const result = await runtime.invite({ peerIds: ['session-1', 'peer'], media: { audio: false, video: true } });
         expect(result.callId).toBe('generated-call');
         expect(sent).toMatchObject([{
-            scope: 'all',
+            scope: 'world',
             peerId: 'peer',
             topicId: 'app.rallar.calls',
             typeId: 'app.rallar.calls.invite.v1',

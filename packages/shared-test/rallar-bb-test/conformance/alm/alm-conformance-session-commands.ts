@@ -17,10 +17,10 @@ import type { AlmConformanceCarrier } from './alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import {
-    ALM_CONFORMANCE_TOPIC_ID,
     toCommandId,
     toConnectionName,
     toRoomRef,
+    toScenarioTopicId,
     toScenarioTypeId
 } from './alm-conformance-step-identities.ts';
 
@@ -135,7 +135,7 @@ export function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxT
         transport: input.carrier === 'ws' ? 'messages.ws' : 'messages.rtc',
         rallar: {
             typeId,
-            topicId: ALM_CONFORMANCE_TOPIC_ID,
+            topicId: toScenarioTopicId(step),
             ...(step.role === 'successor' ? RESTORED_SESSION_RALLAR : {}),
             ...(installsRecoveryOwner(step) ? { recoveryOwner: 'record' } : {})
         },

@@ -1,6 +1,7 @@
 import type { ClientPrincipalRef } from '../api/client-types.ts';
 import type { GroupRef } from '../api/group-types.ts';
 import type { ALQosPolicyRequest } from './al-policy.ts';
+import { toALPrincipalBroadcastTargets } from './read-al-principal-broadcast-target.ts';
 
 // -------------------------------------------------------
 // 1) Message identity
@@ -56,12 +57,16 @@ export type ALTargets =
         mode: 'broadcast';
         scope: 'room' | 'world' | 'all' | 'principal';
         groupRef?: GroupRef;
-        principalRef?: ClientPrincipalRef; // scope 'principal': own + co-group live sessions only
+        /** Scope 'principal': the principal's live sessions in the room `groupRef` names. */
+        principalRef?: ClientPrincipalRef;
         exceptPeerIds?: readonly string[];
         minSnapshotVersion?: number;
         /** The sender's cached room roster; absent when it held no room snapshot, and a receiver applies no roster floor. */
         rosterVersion?: number;
-        /** Immutable logical audience captured by authoritative server work. */
+        /**
+         * The sender's fixed audience inside the room, or the audience a server captured for replayable work;
+         * never wider than the room.
+         */
         recipientPeerIds?: readonly string[];
     }>;
 
@@ -172,6 +177,20 @@ export type ALMessage = Readonly<{
 type ALMessageBuilderOptions = Readonly<{
     qos?: ALQosPolicyRequest;
     ttlMs?: number;
+}>;
+
+export type ALBroadcastMessageBuilderOptions = Readonly<{
+    exceptPeerIds?: readonly string[];
+    minSnapshotVersion?: number;
+    rosterVersion?: number;
+    ttlHops?: number;
+    ttlMs?: number;
+    reliability?: 'best-effort' | 'at-least-once';
+    ack?: ALAckMode;
+    ownership?: 'shared' | 'exclusive';
+    qos?: ALQosPolicyRequest;
+    /** A sequence left out is minted by the WS server's outbound for its own publication. */
+    ordering?: Readonly<{ orderingKey: string; epoch?: number; seq?: number; }>;
 }>;
 
 type ALUnicastMessageBuilderOptions =
@@ -363,16 +382,17 @@ export function toALGroupTargetKey(group: string | GroupRef): string {
 
 /**
  * Whether a message addresses a room audience by its own shape — a `room.`
- * topic, a multicast, a unicast that names its room, or a room-scoped broadcast. Room-scoped delivery is
+ * topic, a multicast, a unicast that names its room, or a room or principal broadcast that names its room. Room-scoped delivery is
  * owned by the topic router behind its room authorizer; transports must not
  * relay these on their own, or the authorization is bypassed.
  */
 export function isRoomScopedALMessage(message: ALMessage): boolean {
+    const targets = message.targets;
     return message.route.topicId.startsWith('room.') ||
-        message.targets?.mode === 'multicast' ||
-        (message.targets?.mode === 'unicast' && message.targets.groupRef !== undefined) ||
-        (message.targets?.mode === 'broadcast' &&
-            message.targets.scope === 'room');
+        targets?.mode === 'multicast' ||
+        (targets?.mode === 'unicast' && targets.groupRef !== undefined) ||
+        (targets?.mode === 'broadcast' &&
+            (targets.scope === 'room' || (targets.scope === 'principal' && targets.groupRef !== undefined)));
 }
 
 export function readALTargetGroupRef(message: ALMessage): GroupRef | undefined {
@@ -386,7 +406,7 @@ export function readALTargetGroupRef(message: ALMessage): GroupRef | undefined {
 
     if (
         targets?.mode === 'broadcast' &&
-        targets.scope === 'room' &&
+        (targets.scope === 'room' || targets.scope === 'principal') &&
         targets.groupRef !== undefined
     ) {
         return toALGroupRef(targets.groupRef);
@@ -401,20 +421,13 @@ export function newALBroadcastMessage<T>(
     scope: 'room' | 'world' | 'all',
     typeId: string,
     resource: T,
-    options?: Readonly<{
-        groupRef?: GroupRef;
-        exceptPeerIds?: readonly string[];
-        minSnapshotVersion?: number;
-        rosterVersion?: number;
-        ttlHops?: number;
-        ttlMs?: number;
-        reliability?: 'best-effort' | 'at-least-once';
-        ack?: ALAckMode;
-        ownership?: 'shared' | 'exclusive';
-        qos?: ALQosPolicyRequest;
-        /** A sequence left out is minted by the WS server's outbound for its own publication. */
-        ordering?: Readonly<{ orderingKey: string; epoch?: number; seq?: number; }>;
-    }>
+    options?:
+        & ALBroadcastMessageBuilderOptions
+        & Readonly<{
+            groupRef?: GroupRef;
+            /** Room scope only: the canonical decoder refuses a list with another scope as malformed. */
+            recipientPeerIds?: readonly string[];
+        }>
 ): ALMessage {
     const groupRef = scope === 'room' && options?.groupRef !== undefined
         ? toALGroupRef(options.groupRef)
@@ -433,7 +446,8 @@ export function newALBroadcastMessage<T>(
             groupRef,
             exceptPeerIds: options?.exceptPeerIds,
             minSnapshotVersion: options?.minSnapshotVersion,
-            rosterVersion: options?.rosterVersion
+            rosterVersion: options?.rosterVersion,
+            recipientPeerIds: options?.recipientPeerIds
         },
         constraints: options?.ttlHops !== undefined || expiresAtMs !== undefined
             ? {
@@ -454,4 +468,19 @@ export function newALBroadcastMessage<T>(
             ack: options?.ack ?? 'none'
         }
     };
+}
+
+export type ALPrincipalBroadcastTarget = Readonly<{ groupRef: GroupRef; principalRef: ClientPrincipalRef; }>;
+
+/** A broadcast to the principal's live sessions in one room: room-bounded, so both carriers resolve it from the room. */
+export function newALPrincipalBroadcastMessage<T>(
+    senderId: string,
+    route: ALRoute,
+    target: ALPrincipalBroadcastTarget,
+    typeId: string,
+    resource: T,
+    options?: ALBroadcastMessageBuilderOptions
+): ALMessage {
+    const roomBroadcast = newALBroadcastMessage(senderId, route, 'room', typeId, resource, options);
+    return { ...roomBroadcast, targets: toALPrincipalBroadcastTargets(target, options) };
 }

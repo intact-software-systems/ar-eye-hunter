@@ -67,7 +67,7 @@ roadmap's [release map](alm-improvement-plan.md#release-map).
 | F13     | Resolved for ceilings; aggregate budgets remain.                                                                                    | S3, V1             |
 | F14     | Mechanism present in both directions; cross-backend proof remains.                                                                  | R1                 |
 | F15     | Resolved for the first release's scope; roadmap decision D8 governs the series.                                                     | every PR           |
-| F16     | Open. Audiences, leader ACK, fencing, correlation, ownership.                                                                       | R2, A1, A2, I1     |
+| F16     | Partly closed: fencing (R2) and audiences (A1) delivered; leader ACK, correlation, ownership open.                                  | R2, A1, A2, I1     |
 | F17     | Partial. Settlement truthful; handle and disposal outcomes remain.                                                                  | S1, I2             |
 
 ## Scope and evidence
@@ -414,9 +414,14 @@ trace fields without a general request/reply or trace lifecycle. Builders do not
 session/trace identity. `membershipEpoch` is copied into ordering epoch but not checked against
 authoritative membership. RTC snapshot floors are enforced as described in F3.
 
-[Shared policy](../../packages/shared/al-contracts/al-policy.ts) still maps leader and
-all-recipient ACK requests to subtree behavior; generic broadcast recipient checks do not
-resolve principal/world/fixed audience semantics. WS supplies specialized audience handling.
+[Shared policy](../../packages/shared/al-contracts/al-policy.ts) still maps a leader ACK request
+to subtree behavior; an all-logical-recipients request maps to `receiver`
+([`normalize-al-qos-policy.ts`](../../packages/shared/al-contracts/normalize-al-qos-policy.ts)). Generic broadcast recipient checks did not
+resolve principal/world/fixed audience semantics, and WS supplied specialized audience handling;
+since A1 every audience has one meaning on both carriers: principal and fixed-list sends are room
+audiences narrowed at the RTC origin and at WS admission, the shared planner honours a
+broadcast's `recipientPeerIds`, a client's `world` is bound to its authenticated scope, and a
+client's `all` is refused (D156–D159).
 Browser RTC composition supplies no live QoS provider. The complete envelope decoder is not
 exported through the broad shared barrel.
 

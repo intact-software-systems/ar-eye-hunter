@@ -108,6 +108,74 @@ describe('createGroupRoomWsAuthorizer', () => {
         expect(decision).toEqual(authorizedDecision(workspaceB, message));
     });
 
+    it('narrows the audience of a principal broadcast to the live sessions of that principal in the room', async () => {
+        const base = createGroupSnapshot({
+            groupId: 'principal-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            sessionIds: ['session-a', 'session-b', 'session-c'],
+            snapshotVersion: 2
+        });
+        const secondSession = { ...base.activeSessions[0]!, sessionId: 'session-a-2', generationId: 'generation-session-a-2' };
+        const snapshot = { ...base, activeSessions: [...base.activeSessions, secondSession] };
+        const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
+        const message: ALMessage = {
+            ...newALBroadcastMessage('session-b', newALEventRoute('room.chat', 'principal-room', 'msg-principal'), 'room', 'chat.message.v1', {}, {
+                groupRef: snapshot.group
+            }),
+            targets: {
+                mode: 'broadcast',
+                scope: 'principal',
+                groupRef: snapshot.group,
+                principalRef: { applicationId: 'app-1', workspaceId: 'workspace-b', principalId: 'session-a' }
+            }
+        };
+
+        const decision = await Promise.resolve(authorizer({
+            message,
+            roomId: 'principal-room',
+            senderId: 'session-b',
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1'
+        }));
+
+        expect(decision).toEqual({
+            authorized: true,
+            audience: { targets: message.targets, sessions: [snapshot.activeSessions[0], secondSession], snapshotVersion: 2 }
+        });
+    });
+
+    it('narrows the audience of a room broadcast with a fixed list to the listed live sessions in the room', async () => {
+        const snapshot = createGroupSnapshot({
+            groupId: 'listed-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            sessionIds: ['session-a', 'session-b', 'session-c'],
+            snapshotVersion: 2
+        });
+        const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
+        const message = newALBroadcastMessage('session-a', newALEventRoute('room.chat', 'listed-room', 'msg-listed'), 'room', 'chat.message.v1', {}, {
+            groupRef: snapshot.group
+        });
+        const listed: ALMessage = {
+            ...message,
+            targets: { mode: 'broadcast', scope: 'room', groupRef: snapshot.group, recipientPeerIds: ['session-c', 'outsider'] }
+        };
+
+        const decision = await Promise.resolve(authorizer({
+            message: listed,
+            roomId: 'listed-room',
+            senderId: 'session-a',
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1'
+        }));
+
+        expect(decision).toEqual({
+            authorized: true,
+            audience: { targets: listed.targets, sessions: [snapshot.activeSessions[2]], snapshotVersion: 2 }
+        });
+    });
+
     it('hydrates a cold group snapshot cache from durable state before authorizing', async () => {
         configureTestCacheRepositories();
 

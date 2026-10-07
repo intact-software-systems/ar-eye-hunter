@@ -1,6 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import {
+    isALFreezeOfMessage,
+    resolveALFrozenMulticastAudience
+} from '../../al-contracts/al-frozen-multicast-audience.ts';
 import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../al-contracts/al-runtime.ts';
@@ -178,21 +182,37 @@ export function decodeALOutboundCanonicalMessage(
 }
 
 /**
- * Whether a replay that minted its sequence may replace the retained request: activating a pending row that
- * still holds the message as its sender asked for it, the candidate differing from it by the minted sequence alone.
+ * Whether a candidate may replace the canonical row it differs from: a replay that minted its sequence, activating
+ * a pending row that still holds the message as its sender asked for it and differing from it by the minted
+ * sequence alone; or a plan that froze the audience of a room send the row holds without one.
  */
-export function isALOutboundMintOfPendingRequest(
+export function isALOutboundCanonicalReplacement(
     activatesPendingRow: boolean,
     expected: ResourceEntry | undefined,
     entry: ResourceEntry
 ): boolean {
-    if (!activatesPendingRow || expected?.status !== EntityStatus.COMPLETED || expected.resource === entry.resource) {
+    if (expected === undefined || expected.resource === entry.resource) {
         return false;
     }
-    const requested = decodePersistedALMessage(expected.resource);
-    const minted = decodePersistedALMessage(entry.resource);
-    return minted.ordering?.seq !== undefined &&
-        jsonEquals(requested, toALSequenceMintComparableMessage(requested, minted));
+    const candidate = decodePersistedALMessage(entry.resource);
+    const freezes = resolveALFrozenMulticastAudience(candidate.targets) !== undefined;
+    const mints = activatesPendingRow && expected.status === EntityStatus.COMPLETED &&
+        candidate.ordering?.seq !== undefined;
+    if (!freezes && !mints) {
+        return false;
+    }
+    const requested = decodeALOutboundRetainedMessage(expected);
+    return (freezes && isALFreezeOfMessage(requested, candidate)) ||
+        (mints && jsonEquals(requested, toALSequenceMintComparableMessage(requested, candidate)));
+}
+
+function decodeALOutboundRetainedMessage(retained: ResourceEntry): ALMessage {
+    try {
+        return decodePersistedALMessage(retained.resource);
+    }
+    catch (cause) {
+        throw new ALAdmissionCorruptionError(JSON.stringify(retained.key), toError(cause));
+    }
 }
 
 /**

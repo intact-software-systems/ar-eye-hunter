@@ -1,5 +1,3 @@
-import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
-
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
 import {
@@ -12,13 +10,13 @@ import {
     toBudgetMs
 } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
-import { toControlAdmissionWait } from '../alm-conformance-diagnostic-waits.ts';
 import { toResultAssertion } from '../alm-conformance-message-commands.ts';
 import {
     toAckHoldFaultCommand,
     toAudiencePayload,
     toAudienceSendCommands,
     toReceiptWindowCommands,
+    toServerReceiptCommands,
     type AlmConformanceReceiptRoles
 } from '../alm-conformance-receipt-commands.ts';
 import {
@@ -153,22 +151,6 @@ function toRetiredAckMsgId(step: AlmConformanceStepInput, ackedMsgId: string): s
 
 function toRetryReceiptRoles(carrier: AlmConformanceCarrier): AlmConformanceReceiptRoles {
     return carrier === 'ws' ? RECIPIENT_B_UNCONFIRMED : BOTH_CONFIRMED;
-}
-
-/**
- * Over ws the receipt is a control of the trusted server, so the origin states its own admission of it. The wait
- * matches the first receipt frame committed for the send, the `admitted` one; the frame carries no phase in its
- * diagnostic, so completion is proven by the receipt read after the window, which must read `acknowledged`.
- */
-function toServerReceiptCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return sender.input.carrier !== 'ws' ? [] : [
-        toControlAdmissionWait({
-            step: { ...sender, index: 1 },
-            name: 'receipt-admitted-1',
-            controlTypeId: AL_CONTROL_RECEIPT_TYPE_ID,
-            outcome: 'committed'
-        })
-    ];
 }
 
 /**

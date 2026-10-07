@@ -10,10 +10,12 @@ import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type
 import { decodeALNackPayload, decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     createDefaultWsQueueBoxServerService,
@@ -34,6 +36,7 @@ interface RoomDeliveryState {
 
 interface RoomDeliveryHarness {
     readonly state: RoomDeliveryState;
+    readonly connectionScopes: Map<string, StateScope>;
     readonly server: JsonWebSocketServer;
     readonly service: WsQueueBoxServerService;
     readonly router: RallarServerWsRouter;
@@ -41,6 +44,7 @@ interface RoomDeliveryHarness {
 }
 
 const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+const ROOM_SCOPE: StateScope = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId };
 
 for (const cacheState of ['absent', 'before-presence', 'wrong-scope'] as const) {
     Deno.test(`room live delivery uses current authority with ${cacheState} local cache`, async () => {
@@ -445,6 +449,258 @@ Deno.test('a server publication that names an ordering key is published with the
     }
 });
 
+Deno.test('a principal broadcast in a room reaches the live sessions of that principal in the room alone, and its receipt and outbox row expect them', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        try {
+            harness.state.current = createSecondSessionSnapshot();
+            harness.state.cached = createSecondSessionSnapshot();
+            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.install();
+            const frames = Object.fromEntries(
+                ['alice', 'alice-2', 'alice-elsewhere', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
+            );
+            const message = audienceMessage('bob', {
+                mode: 'broadcast',
+                scope: 'principal',
+                groupRef: ROOM,
+                principalRef: { ...ROOM_SCOPE, principalId: 'alice' }
+            });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'bob');
+            assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
+            await waitForRoomFrames(() => readChatIds(frames['alice']!).length + readChatIds(frames['alice-2']!).length >= 2);
+
+            assert.deepEqual(readChatIds(frames['alice']!), [message.id.msgId], fanout);
+            assert.deepEqual(readChatIds(frames['alice-2']!), [message.id.msgId], fanout);
+            for (const outside of ['alice-elsewhere', 'bob', 'carol']) {
+                assert.deepEqual(readChatIds(frames[outside]!), [], `${fanout} ${outside}`);
+            }
+            assert.deepEqual(readReceipts(frames['bob']!)[0]?.expectedRecipientPeerIds, ['alice', 'alice-2'], fanout);
+            if (fanout === 'outbox') {
+                assert.deepEqual((await readCapturedOutboxPolicy(harness, message))?.admittedAudience, ['alice', 'alice-2']);
+            }
+        }
+        finally {
+            harness.service.dispose();
+        }
+    }
+});
+
+Deno.test('a principal broadcast to the sender\'s own principal reaches that principal\'s other session in the room alone, and its receipt expects it', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        try {
+            harness.state.current = createSecondSessionSnapshot();
+            harness.state.cached = createSecondSessionSnapshot();
+            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.install();
+            const frames = Object.fromEntries(
+                ['alice', 'alice-2', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
+            );
+            const message = audienceMessage('alice', {
+                mode: 'broadcast',
+                scope: 'principal',
+                groupRef: ROOM,
+                principalRef: { ...ROOM_SCOPE, principalId: 'alice' }
+            });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+            assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
+            await waitForRoomFrames(() => readChatIds(frames['alice-2']!).length >= 1);
+            await waitForRoomFrames(() => false);
+
+            assert.deepEqual(readChatIds(frames['alice-2']!), [message.id.msgId], fanout);
+            for (const outside of ['alice', 'bob', 'carol']) {
+                assert.deepEqual(readChatIds(frames[outside]!), [], `${fanout} ${outside}`);
+            }
+            assert.deepEqual(readReceipts(frames['alice']!)[0]?.expectedRecipientPeerIds, ['alice-2'], fanout);
+        }
+        finally {
+            harness.service.dispose();
+        }
+    }
+});
+
+Deno.test('a principal broadcast whose principal has no live session in the room reaches no one and is answered with one empty admitted receipt', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        try {
+            const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
+            harness.state.current = { ...snapshot, activeSessions: snapshot.activeSessions.filter((session) => session.principalId !== 'carol') };
+            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.install();
+            const frames = Object.fromEntries(['alice', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)]));
+            const message = audienceMessage('bob', {
+                mode: 'broadcast',
+                scope: 'principal',
+                groupRef: ROOM,
+                principalRef: { ...ROOM_SCOPE, principalId: 'carol' }
+            });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'bob');
+            await waitForRoomFrames(() => false);
+
+            assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
+            for (const sessionId of ['alice', 'bob', 'carol']) {
+                assert.deepEqual(readChatIds(frames[sessionId]!), [], `${fanout} ${sessionId}`);
+            }
+            assert.deepEqual(readReceipts(frames['bob']!).map((receipt) => [receipt.phase, receipt.expectedRecipientPeerIds]), [['admitted', []]], fanout);
+        }
+        finally {
+            harness.service.dispose();
+        }
+    }
+});
+
+Deno.test('a principal broadcast stamped beyond the server roster is retained at ingress and delivered to that principal once the roster advances', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        try {
+            harness.state.current = createSecondSessionSnapshot();
+            harness.state.cached = createSecondSessionSnapshot();
+            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.install();
+            const frames = Object.fromEntries(
+                ['alice', 'alice-2', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
+            );
+            const message = audienceMessage('bob', {
+                mode: 'broadcast',
+                scope: 'principal',
+                groupRef: ROOM,
+                principalRef: { ...ROOM_SCOPE, principalId: 'alice' },
+                rosterVersion: 2
+            });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'bob');
+
+            assert.deepEqual(accepted.right, { kind: 'pending-admission' }, fanout);
+            assert.equal(decodeALNackPayload(JSON.parse(decodePersistedALMessage(frames['bob']![0]!).payload.resource)).reason, 'not-yet-in-sync');
+            const current = createSecondSessionSnapshot();
+            harness.state.current = { ...current, group: { ...current.group, rosterVersion: 2 } };
+            await waitForRoomFrames(() => readChatIds(frames['alice']!).length + readChatIds(frames['alice-2']!).length >= 2);
+
+            assert.deepEqual(readChatIds(frames['alice']!), [message.id.msgId], fanout);
+            assert.deepEqual(readChatIds(frames['alice-2']!), [message.id.msgId], fanout);
+            assert.deepEqual(readChatIds(frames['carol']!), [], fanout);
+        }
+        finally {
+            harness.service.dispose();
+        }
+    }
+});
+
+Deno.test('a room broadcast from a client reaches the other live sessions in the room and never its sender', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        try {
+            harness.state.current = createRoomSnapshot(['alice', 'bob', 'carol']);
+            harness.state.cached = createRoomSnapshot(['alice', 'bob', 'carol']);
+            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.install();
+            const frames = Object.fromEntries(['alice', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)]));
+            const message = audienceMessage('alice', { mode: 'broadcast', scope: 'room', groupRef: ROOM });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+            assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
+            await waitForRoomFrames(() => readChatIds(frames['bob']!).length + readChatIds(frames['carol']!).length >= 2);
+
+            assert.deepEqual(readChatIds(frames['bob']!), [message.id.msgId], fanout);
+            assert.deepEqual(readChatIds(frames['carol']!), [message.id.msgId], fanout);
+            assert.deepEqual(readChatIds(frames['alice']!), [], fanout);
+            assert.deepEqual(readReceipts(frames['alice']!)[0]?.expectedRecipientPeerIds, ['bob', 'carol'], fanout);
+        }
+        finally {
+            harness.service.dispose();
+        }
+    }
+});
+
+Deno.test('a room broadcast with a fixed list reaches the listed sessions in the room alone, and its receipt expects them', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        try {
+            harness.state.current = createRoomSnapshot(['alice', 'bob', 'carol']);
+            harness.state.cached = createRoomSnapshot(['alice', 'bob', 'carol']);
+            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.install();
+            const frames = Object.fromEntries(
+                ['alice', 'bob', 'carol', 'outsider'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
+            );
+            const message = audienceMessage('alice', { mode: 'broadcast', scope: 'room', groupRef: ROOM, recipientPeerIds: ['carol', 'outsider'] });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+            assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
+            await waitForRoomFrames(() => readChatIds(frames['carol']!).length >= 1);
+
+            assert.deepEqual(readChatIds(frames['carol']!), [message.id.msgId], fanout);
+            for (const outside of ['alice', 'bob', 'outsider']) {
+                assert.deepEqual(readChatIds(frames[outside]!), [], `${fanout} ${outside}`);
+            }
+            assert.deepEqual(readReceipts(frames['alice']!).map((receipt) => receipt.expectedRecipientPeerIds), [['carol']], fanout);
+        }
+        finally {
+            harness.service.dispose();
+        }
+    }
+});
+
+Deno.test('a world broadcast reaches each live connection of the authenticated scope of its sender once, and no one else', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        try {
+            harness.router.defineTopic({ topicId: 'app.news', fanout });
+            harness.router.install();
+            harness.connectionScopes.set('foreign', { applicationId: 'app-2', workspaceId: ROOM.workspaceId });
+            const frames = Object.fromEntries(
+                ['alice', 'bob', 'foreign'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
+            );
+            const message = newALBroadcastMessage('alice', newALEventRoute('app.news', 'world', 'world-news'), 'world', 'news.v1', { text: 'hello' }, {
+                reliability: 'at-least-once',
+                ack: 'none'
+            });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+            assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
+            await waitForRoomFrames(() => readTopicIds(frames['bob']!, 'app.news').length >= 1);
+            // Settles every path that could still deliver, so a second copy or a stray one would have arrived.
+            await waitForRoomFrames(() => false);
+
+            assert.deepEqual(readTopicIds(frames['bob']!, 'app.news'), [message.id.msgId], fanout);
+            assert.deepEqual(readTopicIds(frames['foreign']!, 'app.news'), [], fanout);
+            assert.deepEqual(readTopicIds(frames['alice']!, 'app.news'), [], fanout);
+            if (fanout === 'outbox') {
+                assert.deepEqual((await readCapturedOutboxPolicy(harness, message))?.recipientScope, ROOM_SCOPE);
+            }
+        }
+        finally {
+            harness.service.dispose();
+        }
+    }
+});
+
+Deno.test('an all broadcast from a client is refused unauthorized and reaches no one', async () => {
+    const harness = createRoomDeliveryHarness();
+    try {
+        harness.router.install();
+        const senderFrames = addRecordingConnection(harness.server, 'alice');
+        const bobFrames = addRecordingConnection(harness.server, 'bob');
+        const message = newALBroadcastMessage('alice', newALEventRoute('app.news', 'all', 'all-news'), 'all', 'news.v1', { text: 'hello' });
+
+        const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+        await waitForRoomFrames(() => false);
+
+        assert.equal(accepted.left?.code, 'unauthorized');
+        assert.deepEqual(senderFrames.map((frame) => decodeALNackPayload(JSON.parse(decodePersistedALMessage(frame).payload.resource)).reason), [
+            'unauthorized'
+        ]);
+        assert.deepEqual(bobFrames, []);
+    }
+    finally {
+        harness.service.dispose();
+    }
+});
+
 function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarness {
     const state: RoomDeliveryState = {
         current: createRoomSnapshot(),
@@ -454,12 +710,13 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarne
     };
     const server = new JsonWebSocketServer();
     const outbox = new InMemoryQueueBox();
+    const connectionScopes = new Map<string, StateScope>();
     const service = createDefaultWsQueueBoxServerService({
         outbox,
         socket: server,
         readAuthenticatedConnectionScope: (connection) =>
             server.connections.get(connection.id) === connection
-                ? { scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                ? { scope: connectionScopes.get(connection.id) ?? ROOM_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         name: 'room-authority-delivery',
         forwardsRoomScopedMessages: false,
@@ -473,7 +730,7 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarne
         }
     }, { readLifecyclePolicy: () => Promise.resolve(state.policy) });
     const router = new RallarServerWsRouter(service, { authorizeRoomMessage, nowEpochMs });
-    return { state, server, service, router, outbox };
+    return { state, connectionScopes, server, service, router, outbox };
 }
 
 function receiverAck(message: ALMessage, recipient: string): ALMessage {
@@ -514,6 +771,50 @@ function readNoticeOrderings(frames: readonly string[]): readonly (ALMessage['or
         .map((frame) => decodePersistedALMessage(frame))
         .filter((frame) => frame.route.topicId === 'room.notice')
         .map((frame) => frame.ordering);
+}
+
+/** A receiver-acknowledged chat message in the room from `senderId`, addressed by `targets`. */
+function audienceMessage(senderId: string, targets: NonNullable<ALMessage['targets']>): ALMessage {
+    const message = newALBroadcastMessage(senderId, newALEventRoute('room.chat', ROOM.groupId, 'audience'), 'room', 'chat.message.v1', { text: 'hello' }, {
+        groupRef: ROOM,
+        reliability: 'at-least-once',
+        ack: 'receiver',
+        ttlMs: 30_000
+    });
+    return { ...message, targets };
+}
+
+/** The policy the outbox captured for the row that relays `message`. */
+async function readCapturedOutboxPolicy(harness: RoomDeliveryHarness, message: ALMessage): Promise<ALOutboundCapturedPolicy | undefined> {
+    for (const key of (await harness.outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')) {
+        const entry = await harness.outbox.getItem(key);
+        const relayed = entry === undefined ? undefined : decodePersistedALMessage(entry.resource);
+        if (entry !== undefined && relayed?.id.msgId === message.id.msgId) {
+            return await harness.service.readCapturedPolicy(relayed, entry);
+        }
+    }
+    return undefined;
+}
+
+function readChatIds(frames: readonly string[]): readonly string[] {
+    return readTopicIds(frames, 'room.chat');
+}
+
+function readTopicIds(frames: readonly string[], topicId: string): readonly string[] {
+    return frames
+        .map((frame) => decodePersistedALMessage(frame))
+        .filter((frame) => frame.route.topicId === topicId)
+        .map((frame) => frame.id.msgId);
+}
+
+/** Alice, Bob and Carol in the room, Alice with a second live session `alice-2`. */
+function createSecondSessionSnapshot(): GroupSnapshot {
+    const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
+    const alice = snapshot.activeSessions[0]!;
+    return {
+        ...snapshot,
+        activeSessions: [...snapshot.activeSessions, { ...alice, sessionId: 'alice-2', generationId: 'generation-alice-2' }]
+    };
 }
 
 function addRecordingConnection(server: JsonWebSocketServer, sessionId: string): string[] {

@@ -167,7 +167,7 @@ export class BlackBoxRallarWsSendController {
 
 function toWsSendRequest(input: BlackBoxRallarWsSendInput, config: BlackBoxRallarConnectionConfig): PreparedWsSend {
     const roomId = input.roomId ?? input.groupId ?? config.roomId;
-    const scope = input.scope ?? (roomId ? 'room' : 'all');
+    const scope = input.scope ?? (roomId ? 'room' : 'world');
     const scopedInput: BlackBoxRallarSendInput = { ...input, scope: undefined, roomId };
     const typeId = input.typeId ?? input.topic ?? input.kind ?? DEFAULT_WS_TYPE_ID;
     const defaults = config.rallar;

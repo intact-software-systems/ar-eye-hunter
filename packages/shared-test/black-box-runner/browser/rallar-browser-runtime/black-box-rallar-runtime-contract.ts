@@ -38,7 +38,7 @@ export interface BlackBoxRallarRoomWaitOptions {
 /** The payload is resolved while decoding: the named payload or data, otherwise the whole send. */
 export interface BlackBoxRallarWsSendInput {
     readonly payload: RallarMessagePayload;
-    readonly scope?: 'room' | 'world' | 'all';
+    readonly scope?: 'room' | 'world';
     readonly roomId?: string;
     readonly groupId?: string;
     readonly roomRef?: BlackBoxRallarSendInput['roomRef'];

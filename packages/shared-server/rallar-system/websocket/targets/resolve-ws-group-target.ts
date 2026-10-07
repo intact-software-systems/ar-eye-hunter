@@ -1,3 +1,4 @@
+import { isALAudienceSession, toALAudienceNarrowing } from '@shared/al-contracts/al-audience-narrowing.ts';
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
@@ -7,6 +8,7 @@ import type { WsServerResolvedRecipient } from '@shared/services/ws-queue-box-se
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { isGroupSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
+import { filterLiveWsRoomRecipientSessionIds } from '../../queue-pubsub/live-ws-audience.ts';
 import { decodeStateSyncMessage } from '../../state-sync/state-sync-payload.ts';
 import { resolveWsClientTargetRecipients } from './resolve-ws-client-target.ts';
 import type { WsServerTargetResolutionOptions } from './ws-server-target-resolution-options.ts';
@@ -90,16 +92,19 @@ function resolveLiveGroupSessions(
     input: ResolveWsGroupTargetInput,
     snapshot: GroupSnapshot
 ): readonly WsServerResolvedRecipient[] {
+    const { message } = input;
+    const targets = message.targets;
     const nowEpochMs = input.options.now?.() ?? Date.now();
-    const originSessionId = input.message.targets?.mode === 'multicast' ? input.message.id.senderId : undefined;
-    return snapshot.activeSessions
+    const narrowing = toALAudienceNarrowing(targets);
+    const liveSessionIds = snapshot.activeSessions
         .filter((session) =>
-            session.sessionId !== originSessionId &&
+            isALAudienceSession(session, narrowing) &&
             isGroupSnapshotSessionLive(session, nowEpochMs) &&
             input.webSocketServer.connections.get(session.sessionId)?.isOpen
         )
-        .map((session) => ({
-            peerId: session.sessionId,
-            connectionId: session.sessionId
-        }));
+        .map((session) => session.sessionId);
+    return (targets === undefined
+        ? liveSessionIds
+        : filterLiveWsRoomRecipientSessionIds(targets, message.id.senderId, liveSessionIds))
+        .map((sessionId) => ({ peerId: sessionId, connectionId: sessionId }));
 }

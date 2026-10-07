@@ -204,7 +204,7 @@ export class RallarServerWsRouter {
             await this.publishToFanout({
                 message,
                 fanout: ingress.definition?.fanout ?? this.defaultFanout,
-                audience: { current: audience, admittedPeerIds },
+                audience: { current: audience, admittedPeerIds: toClientDeliveryPeerIds(message, admittedPeerIds) },
                 inboundScope,
                 origin: 'admitted',
                 inbound: source?.kind === 'ws-client'
@@ -506,4 +506,12 @@ export class RallarServerWsRouter {
             );
         }
     }
+}
+
+/** A client's room send reaches the audience it was admitted to, never its own origin session. */
+function toClientDeliveryPeerIds(
+    message: ALMessage,
+    admittedPeerIds: readonly string[] | undefined
+): readonly string[] | undefined {
+    return admittedPeerIds?.filter((peerId) => peerId !== message.id.senderId);
 }

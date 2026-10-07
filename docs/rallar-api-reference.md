@@ -671,9 +671,11 @@ with `failure: { kind: 'storage-unavailable', cause }`; a channel defined with
 instead, and its evidence names `durabilityDowngrade: { requested, cause }`
 beside `admittedDurable: false`. A downgraded `local-inbox` send also loses the
 receiver's inbox persistence, and a fallback carrier receives the downgraded
-message. A lane send names no channel, so it always refuses. A WS send with
-scope `world` or `all`, and a `best-effort` send, ask for no receipt unless
-the send states `ack`. `recovery` names the channel's owner of
+message. A lane send names no channel, so it always refuses. A `world` send
+and a `best-effort` send ask for no receipt unless the send states `ack`; a
+`world` send that states `receiver` or `all-logical-recipients` is refused
+`unsupported`, since `world` names no logical audience (see Message Audiences
+below). `recovery` names the channel's owner of
 resynchronization (see Ordering, Repair And Resynchronization below).
 
 `durability: 'local-checkpoint'` sits between `volatile` and `local-outbox`. The
@@ -835,6 +837,110 @@ then reports whether the resolved state is `accepted`, `queued`,
 `transport-accepted`, or `acknowledged`. Surface every other outcome to the
 product as degraded or failed delivery.
 
+### Message Audiences
+
+A send addresses one audience. `room`, `principal` and a fixed list are room
+audiences: each names its room (`roomId` or `roomRef`) and resolves to that
+room's live sessions at the sender's room snapshot, minus `exceptPeerIds`, on
+both carriers. `world` and `all` name no room (D156).
+
+| Audience   | Who receives it                                                               | Send input                                                       | RTC                                                                 | WS                                                               | Receipts                                                         |
+| ---------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------- |
+| room       | The room's live sessions                                                      | the room; `scope: 'room'`, the default for a send that names one | multicast, its audience frozen at the origin                        | `broadcast/room`                                                 | `receiver` and `all-logical-recipients` over the frozen audience |
+| principal  | The principal's live sessions in the room                                     | the room and `principalId`, with `scope: 'principal'`            | multicast, its frozen audience narrowed to the principal's sessions | `broadcast/principal` naming the room's `groupRef`               | as `room`, over the narrowed audience                            |
+| fixed list | The listed sessions that are live in the room                                 | the room and `recipientPeerIds`, with room scope                 | multicast, its frozen audience narrowed to the list                 | `broadcast/room` with `recipientPeerIds`                         | as `room`, over the narrowed audience                            |
+| world      | Every authenticated live connection in the sender's application and workspace | `scope: 'world'`                                                 | refused `unsupported`                                               | `broadcast/world`, bound to the connection's authenticated scope | none                                                             |
+| all        | Every authenticated connection the server holds, across scopes                | none: the server's `toAll` and its own publications              | refused `unsupported`                                               | a client's `all` is refused `unauthorized`                       | none                                                             |
+
+`messages.rtc.send`, `messages.ws.send` and a room channel's options take
+`principalId` and `recipientPeerIds`; a send's `scope` is `'room'`, `'world'` or
+`'principal'`. A WS send that names a room, or resolves the default room, takes
+room scope unless it states another, and one that names neither reaches the
+sender's `world`. The input validator returns every issue at once:
+`scope: 'principal'` needs the room and `principalId`, and a `principalId` needs
+`scope: 'principal'`; `recipientPeerIds` needs room scope and holds 1 to 256
+unique session ids; a send names `principalId` or `recipientPeerIds`, never
+both; a send that states room or principal scope and resolves no room is refused
+like a room send without one (`missing-room`), while a `recipientPeerIds` send
+that names no room and has no default room resolves to `world` and is refused
+`fixed-audience-requires-room-scope`; and a `world` send on a `room.` topic is
+refused `world-on-room-topic` before either carrier admits it. A WS scope other
+than the three is refused with "WS scope must be room, world, or principal.".
+
+A principal or list audience is narrowed, never widened: a `principalId` with no
+live session in the room, or a list of sessions outside it, leaves an empty
+audience, which settles as an empty room audience does, and a listed session
+that is not in the room is dropped silently. Both are room sends: they carry the
+room's `minSnapshotVersion` and `rosterVersion` and are fenced as any room send
+(see Membership Fencing below), the RTC origin freezes the narrowed audience at
+its `snapshotVersion`, and the WS server admits the narrowed audience as the
+room audience its receipt aggregate expects and its repair serves (D159).
+Receivers enforce the audience on both carriers: an RTC peer delivers a narrowed
+multicast only when the frozen audience names it, and the shared planner
+delivers a room broadcast that carries `recipientPeerIds` only at a listed
+session and relays it only to listed children. On RTC a principal or list
+multicast still travels the room's overlay, so room peers that are not
+recipients relay its bytes; only the audience delivers it. A WS client trusts
+the server's resolution. Relic Hunters sends its AI suggestions to the asking
+hunter's principal over WS.
+
+The strategy picks the carrier per audience (D157):
+
+| Audience                    | `ws` | `rtc`                                              | `rtc-with-ws-fallback`                                   | `ws-then-rtc`                                 |
+| --------------------------- | ---- | -------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------- |
+| room, principal, fixed list | WS   | RTC                                                | RTC, then WS on a fallback trigger                       | WS, then RTC on an admission fallback trigger |
+| world                       | WS   | admitted on RTC, refused `unsupported`, `rejected` | WS at once: no RTC leg and no `carrierFallback` evidence | WS at once, as on the left                    |
+
+"Carrier-unsupported" is the existing refusal `unsupported` on the carrier that
+cannot carry the audience: no new state or value. A `world` send on `rtc` is
+admitted on RTC, refused there, and its handle ends `rejected` with refusal
+`unsupported`. An RTC leg handed to WS keeps its audience (D80): once the RTC
+origin has frozen it, WS carries the frozen multicast verbatim; handed over
+before its freeze, it goes as the principal broadcast naming its room or the
+listed room broadcast it was sent as.
+
+The WS server binds what it resolves to the sender's scope (D100, D158): a
+client's `world` broadcast reaches only connections authenticated in the
+sender's application and workspace, on every instance, since the cluster notice
+of a live `world` send carries that scope, and the topic's fanout alone
+delivers it, once to each such connection, so a topic with fanout `none` relays
+no client `world` broadcast; a client's `principal` broadcast must
+name its room's `groupRef` in the sender's scope; and a client envelope whose
+broadcast scope is `all` is refused `unauthorized` at ingress, before routing,
+and reaches no one; a client's principal broadcast that names no room, and a
+`world` broadcast on a `room.` topic, are refused `malformed`. No client room,
+principal, list or `world` send returns to the session that sent it. `all` is not a browser send input; the
+server router's `toAll` and its own publications keep it.
+
+```ts
+interface PartyNote {
+    readonly text: string;
+}
+
+const notes = rallar.messages.room<PartyNote>({
+    topicId: 'room.party.note',
+    typeId: 'party.note.v1',
+    purpose: 'notification'
+});
+
+await notes.send({ text: 'for my other devices' }, {
+    scope: 'principal',
+    principalId: myPrincipalId
+});
+await notes.send({ text: 'for two hunters' }, { recipientPeerIds: [aliceSessionId, bobSessionId] });
+await rallar.messages.ws.send({
+    topicId: 'app.news',
+    typeId: 'news.v1',
+    payload: { text: 'server maintenance at noon' },
+    scope: 'world'
+});
+```
+
+`ai.broadcastJson(...)` (see [RallarAI recipes](rallar-ai-recipes.md)) takes
+`scope: 'room' | 'principal'`, `'room'` by default, and `principalId`, which
+`scope: 'principal'` requires: the generated result then reaches the
+principal's sessions in the room instead of the whole room.
+
 ### Ordering, Repair And Resynchronization
 
 A browser send states its position with `orderingKey` and `seq` together, or
@@ -976,13 +1082,14 @@ the next round.
 
 ### Membership Fencing
 
-Every room send -- an RTC multicast, a WS room broadcast, and the room
-broadcast a fallback send becomes -- carries two stamps read from the sender's
-cached room snapshot: `targets.minSnapshotVersion`, the snapshot version (or a
-higher floor the send states), and `targets.rosterVersion`, the group's roster
-version. No caller sets the roster. Both are absent when the sender holds no
-snapshot of the room, unless the send states a floor, which then travels alone;
-a receiver applies only the floors a send carries.
+Every room send -- an RTC multicast, a WS room or principal broadcast that names
+its room, and the broadcast a fallback send becomes -- carries two stamps read
+from the sender's cached room snapshot: `targets.minSnapshotVersion`, the
+snapshot version (or a higher floor the send states), and
+`targets.rosterVersion`, the group's roster version. No caller sets the roster.
+Both are absent when the sender holds no snapshot of the room, unless the send
+states a floor, which then travels alone; a receiver applies only the floors a
+send carries.
 
 A receiver judges a room send against the room snapshot it holds:
 
@@ -1877,7 +1984,7 @@ It supports:
 
 - Direct peer routing by open websocket connection ID.
 - Group routing through scoped group snapshots and active group presence sessions.
-- Broadcast routing to room, state-sync recipients, or all open sockets depending on AL message scope.
+- Broadcast routing to the room, narrowed to the principal's sessions for a principal broadcast that names its room and to the listed sessions for a room broadcast with `recipientPeerIds`; to state-sync recipients; or to all open sockets, from which a client's `world` broadcast reaches only the sender's authenticated scope.
 - CRDT principal routing through the principal's live client sessions.
 - Overlay topology broadcasts to the open sockets of their recorded `recipientPeerIds`.
 

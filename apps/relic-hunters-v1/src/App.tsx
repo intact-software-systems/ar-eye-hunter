@@ -143,6 +143,7 @@ export default function App() {
     const planningAi = useRelicPlanningAi({
         snapshot: game.snapshot,
         localPlayerId: game.session?.sessionId,
+        localPrincipalId: game.session?.clientId,
         draft,
         lang,
         viewModel,
@@ -2094,9 +2095,9 @@ function RelicAiCompanionPanel({
     onAsk(): Promise<void>;
     onPrime(action: RelicActionInput): void;
 }>) {
-    const localSuggestion = state.localProposal?.result.value;
-    const remoteProposals = state.proposals.filter((proposal) => !proposal.local);
-    const canPrime = state.status === 'ready' && !!localSuggestion?.action;
+    const proposal = state.proposals[0] ?? state.localProposal;
+    const suggestion = proposal?.result.value;
+    const canPrime = state.status === 'ready' && proposal?.local === true && !!suggestion?.action;
 
     return (
         <div id="hud-ai" className={`panel stack relic-ai-panel relic-ai-${state.status}`}>
@@ -2117,11 +2118,11 @@ function RelicAiCompanionPanel({
 
             {state.error && <small className="relic-ai-error">{state.error}</small>}
 
-            {localSuggestion
+            {suggestion
                 ? (
                     <RelicAiSuggestionCard
-                        proposal={state.localProposal}
-                        suggestion={localSuggestion}
+                        proposal={proposal}
+                        suggestion={suggestion}
                         snapshot={snapshot}
                         localPlayerId={localPlayerId}
                         showPrime={canPrime}
@@ -2129,23 +2130,6 @@ function RelicAiCompanionPanel({
                     />
                 )
                 : <small className="relic-ai-empty">{relicAiStatusDetail(state.status)}</small>}
-
-            {remoteProposals.length > 0 && (
-                <div className="relic-ai-party-notes">
-                    <span className="panel-label">Party Notes</span>
-                    {remoteProposals.map((proposal) => (
-                        <RelicAiSuggestionCard
-                            key={proposal.result.generationId}
-                            proposal={proposal}
-                            suggestion={proposal.result.value}
-                            snapshot={snapshot}
-                            localPlayerId={localPlayerId}
-                            showPrime={false}
-                            onPrime={onPrime}
-                        />
-                    ))}
-                </div>
-            )}
         </div>
     );
 }

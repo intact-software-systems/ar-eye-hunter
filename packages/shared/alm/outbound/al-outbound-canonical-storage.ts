@@ -14,7 +14,7 @@ import {
     captureALOutboundCreationExpiry,
     decodeALOutboundCanonicalMessage,
     decodeALOutboundIdentityFact,
-    isALOutboundMintOfPendingRequest,
+    isALOutboundCanonicalReplacement,
     toALOutboundCanonicalKey,
     toALOutboundIdentityEntry,
     toALOutboundIdentityKey,
@@ -130,7 +130,7 @@ export async function readALOutboundCanonicalWrites(
     const reference = toALOutboundMessageReference(scope, entry, decodePersistedALMessage(entry.resource));
     const identity = toALOutboundIdentityEntry(reference, entry, creationExpiry);
     const expectedIdentity = await queue.getItem(identity.key);
-    const minting = isALOutboundMintOfPendingRequest(activatePendingCanonical, expected, entry);
+    const replacing = isALOutboundCanonicalReplacement(activatePendingCanonical, expected, entry);
     // R = D: an awaited getter may already have evicted the other fact at expiry.
     if (reference.expiresAtMs > input.nowMs()) {
         if (expectedIdentity) {
@@ -148,7 +148,7 @@ export async function readALOutboundCanonicalWrites(
                 new TypeError('Live canonical identity fact is missing')
             );
         }
-        if (expected && expected.resource !== entry.resource && !minting) {
+        if (expected && expected.resource !== entry.resource && !replacing) {
             throw new ALAdmissionCorruptionError(
                 JSON.stringify(expected.key),
                 new TypeError('Canonical identity has conflicting content')
@@ -158,8 +158,9 @@ export async function readALOutboundCanonicalWrites(
     return [{
         entry,
         expected,
-        replaceExisting: minting || (activatePendingCanonical && expected?.status === EntityStatus.COMPLETED &&
-            entry.status === EntityStatus.NEW)
+        replaceExisting: replacing ||
+            (activatePendingCanonical && expected?.status === EntityStatus.COMPLETED &&
+                entry.status === EntityStatus.NEW)
     }, { entry: identity, expected: expectedIdentity, replaceExisting: false }];
 }
 

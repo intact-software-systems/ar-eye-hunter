@@ -1,8 +1,9 @@
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import { isALWorldBroadcast } from '@shared/al-contracts/is-al-world-broadcast.ts';
 import { validateALOutboundRecipientScope } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import type { PublishRallarServerWsMessageInput } from './publish-rallar-server-ws-message.ts';
 
-/** A message that names a group is scoped by it; any other unicast needs the scope its caller proved. */
+/** A message that names a group is scoped by it; any other unicast, and a world broadcast, needs the scope its caller proved. */
 export function validateRallarServerWsPublishScope(
     input: Pick<PublishRallarServerWsMessageInput, 'message' | 'inboundScope' | 'origin'>
 ): readonly string[] {
@@ -11,7 +12,13 @@ export function validateRallarServerWsPublishScope(
             ? ['A group-addressed publication takes its scope from targets.groupRef']
             : [];
     }
-    return input.message.targets?.mode === 'unicast'
+    if (isALWorldBroadcast(input.message)) {
+        return validateALOutboundRecipientScope(input.inboundScope).length === 0
+            ? []
+            : ['A world publication requires the application and workspace scope it reaches'];
+    }
+    const targets = input.message.targets;
+    return targets?.mode === 'unicast'
         ? validateALOutboundRecipientScope(input.inboundScope)
         : [];
 }

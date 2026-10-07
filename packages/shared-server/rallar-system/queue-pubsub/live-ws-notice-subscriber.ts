@@ -3,7 +3,12 @@ import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import { filterLiveWsRoomRecipientSessionIds, matchesLiveWsAudience } from './live-ws-audience.ts';
+import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
+import {
+    filterLiveWsRoomRecipientSessionIds,
+    matchesLiveWsAudience,
+    resolveLiveWsRoomGroupRef
+} from './live-ws-audience.ts';
 import {
     decodeLiveWsNotice,
     type LiveWsAudience,
@@ -116,26 +121,23 @@ function toRecoveredAudience(
         if (
             message.route.topicId !== AppTopics.rtcSignaling ||
             message.payload.typeId !== AppTopics.rtcSignaling ||
-            targets?.mode !== 'unicast' ||
-            source.authenticatedScope.applicationId !== notice.scope.applicationId ||
-            source.authenticatedScope.workspaceId !== notice.scope.workspaceId
+            targets?.mode !== 'unicast' || !isSameGroupScope(source.authenticatedScope, notice.scope)
         ) {
             return undefined;
         }
         return { mode: 'peer', recipientSessionIds: [targets.toPeerId] };
     }
     if (notice.audienceMode === 'room') {
+        const groupRef = resolveLiveWsRoomGroupRef(message);
         if (
-            !targets || (targets.mode !== 'multicast' && (targets.mode !== 'broadcast' || targets.scope !== 'room')) ||
-            !targets.groupRef || source.groupRecipientPeerIds === undefined ||
-            targets.groupRef.applicationId !== notice.scope.applicationId ||
-            targets.groupRef.workspaceId !== notice.scope.workspaceId
+            !targets || !groupRef || source.groupRecipientPeerIds === undefined ||
+            !isSameGroupScope(groupRef, notice.scope)
         ) {
             return undefined;
         }
         return {
             mode: 'room',
-            groupRef: targets.groupRef,
+            groupRef,
             recipientSessionIds: filterLiveWsRoomRecipientSessionIds(
                 targets,
                 message.id.senderId,
@@ -143,10 +145,13 @@ function toRecoveredAudience(
             )
         };
     }
-    if (notice.audienceMode === 'broad') {
-        return targets?.mode === 'broadcast' && targets.scope === notice.targetMode
-            ? { mode: 'broad', targetMode: targets.scope }
-            : undefined;
+    if (notice.audienceMode !== 'broad' || targets?.mode !== 'broadcast' || targets.scope !== notice.targetMode) {
+        return undefined;
     }
-    return undefined;
+    if (notice.targetMode === 'all') {
+        return { mode: 'broad', targetMode: 'all' };
+    }
+    return isSameGroupScope(source.authenticatedScope, notice.scope)
+        ? { mode: 'broad', targetMode: 'world' }
+        : undefined;
 }

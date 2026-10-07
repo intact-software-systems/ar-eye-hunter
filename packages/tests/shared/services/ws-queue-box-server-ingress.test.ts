@@ -65,6 +65,7 @@ describe('WS server bounded and authorized admission', () => {
             targets: {
                 mode: 'broadcast',
                 scope: 'principal',
+                groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
                 principalRef: { applicationId: 'other', workspaceId: 'workspace', principalId: 'alice' }
             }
         };
@@ -72,6 +73,64 @@ describe('WS server bounded and authorized admission', () => {
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).left?.code)
             .toBe('unauthorized');
         expect(fixture.admission.data.size).toBe(0);
+    });
+
+    it.each(
+        [
+            ['an all broadcast', { mode: 'broadcast', scope: 'all' }, 'unauthorized'],
+            [
+                'a principal broadcast that names no room',
+                {
+                    mode: 'broadcast',
+                    scope: 'principal',
+                    principalRef: { applicationId: 'app', workspaceId: 'workspace', principalId: 'alice' }
+                },
+                'malformed'
+            ]
+        ] as const
+    )('refuses %s from a client as %s and admits nothing', async (_name, targets, code) => {
+        const fixture = await createServerIngressFixture();
+
+        expect((await fixture.service.acceptIncomingMessage({ ...createIncomingMessage(), targets }, 'session-1')).left?.code)
+            .toBe(code);
+        expect(fixture.admission.data.size).toBe(0);
+        expect(fixture.delivered).toEqual([]);
+    });
+
+    it('never sends a world broadcast back to the session that sent it', async () => {
+        const fixture = await createServerIngressFixture();
+        const peer = new SimulatedWebSocket('ws://peer');
+        await peer.open();
+        fixture.server.addConnection(new ConnectionContext({ id: 'session-2', socket: peer }));
+        const message: ALMessage = { ...createIncomingMessage(), targets: { mode: 'broadcast', scope: 'world' } };
+
+        const result = fixture.service.sendToTargetsWithResult({
+            message,
+            inboundScope: { applicationId: 'app', workspaceId: 'workspace' }
+        });
+
+        expect(result.recipients.map((recipient) => recipient.peerId)).toEqual(['session-2']);
+        expect(peer.sent).toHaveLength(1);
+        expect(fixture.socket.sent).toEqual([]);
+    });
+
+    it('never sends a client\'s room broadcast back to its sender', async () => {
+        const fixture = await createServerIngressFixture();
+        const peer = new SimulatedWebSocket('ws://peer');
+        await peer.open();
+        fixture.server.addConnection(new ConnectionContext({ id: 'session-2', socket: peer }));
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
+            authorize: async () => ({ authorized: true, roomAudience: { recipientPeerIds: ['session-1', 'session-2'], snapshotVersion: 1 } })
+        });
+        const message = createRoomMessage();
+
+        expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
+        await expect.poll(() => peer.sent.length).toBe(1);
+
+        const isRoomFrame = (frame: string) => decodePersistedALMessage(frame).route.topicId === message.route.topicId;
+        expect(peer.sent.filter(isRoomFrame)).toHaveLength(1);
+        expect(fixture.socket.sent.filter(isRoomFrame)).toEqual([]);
     });
 
     it('admits a scoped client unicast even when its recipient is not connected locally', async () => {

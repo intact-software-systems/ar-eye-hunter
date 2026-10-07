@@ -7,7 +7,7 @@ import { resolveALAdmittedRoomAudience } from '../al-contracts/al-frozen-multica
 import type { ALMessageDropReasonCode, ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
 import type { OverlayInfo } from '../api/api-config.ts';
 import { isSameGroupRef } from '../api/api-type-utils.ts';
-import type { GroupRef, GroupSnapshot } from '../api/group-types.ts';
+import type { GroupPresenceSession, GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import { isRoomLayoutOverlay } from '../repository/is-accepted-room-layout-overlay.ts';
 import {
     resolveRtcRoomPeerDenial,
@@ -34,6 +34,8 @@ export type RtcRoomSnapshotAdmission =
         readonly kind: 'authorized';
         /** The authorized sessions now: the tree a relay forwards over, a late joiner included. */
         readonly memberPeerIds: readonly string[];
+        /** The same sessions with their principals, from which an origin narrows a principal audience. */
+        readonly memberSessions: readonly GroupPresenceSession[];
         readonly forwardingPeerIds: readonly string[];
         readonly snapshotVersion: number;
         /** Only a session of the frozen audience delivers locally and counts as a logical recipient. */
@@ -178,9 +180,10 @@ function toAuthorizedRoomAdmission(
     authority: RtcRoomSessionObservation,
     snapshot: GroupSnapshot
 ): RtcRoomSnapshotAdmission {
-    const authorizedPeerIds = snapshot.activeSessions.filter((session) =>
+    const authorizedSessions = snapshot.activeSessions.filter((session) =>
         resolveRtcRoomPeerDenial(authority, session.sessionId) === undefined
-    ).map((session) => session.sessionId);
+    );
+    const authorizedPeerIds = authorizedSessions.map((session) => session.sessionId);
     const memberPeerIdSet = new Set(authorizedPeerIds);
     const forwardingPeerIds = isRoomLayoutOverlay(input.overlay, authority.roomRef)
         ? input.overlay.nextHopSessionIds.filter((peerId) => memberPeerIdSet.has(peerId))
@@ -188,6 +191,7 @@ function toAuthorizedRoomAdmission(
     return {
         kind: 'authorized',
         memberPeerIds: authorizedPeerIds,
+        memberSessions: authorizedSessions,
         forwardingPeerIds,
         snapshotVersion: snapshot.group.snapshotVersion,
         deliversLocally: resolveALAdmittedRoomAudience(input.message, authorizedPeerIds).includes(input.selfPeerId)

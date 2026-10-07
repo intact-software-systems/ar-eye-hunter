@@ -13,6 +13,7 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import {
     newALBroadcastMessage,
     newALMulticastMessage,
+    newALPrincipalBroadcastMessage,
     newALUnicastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
@@ -265,7 +266,7 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
                 ...INTENT,
                 roomId: 'room',
                 peerId: DIRECTOR,
-                scope: 'all',
+                scope: 'world',
                 strategy: 'rtc'
             }, COMMAND_CHANNEL)
         )
@@ -432,6 +433,7 @@ function createPeerFallbackFixture(rtcVerdict: ALDeliveryAdmissionVerdict): Peer
             createUnicast: newALUnicastMessage,
             createMulticast: newALMulticastMessage,
             createBroadcast: newALBroadcastMessage,
+            createPrincipalBroadcast: newALPrincipalBroadcastMessage,
             newResourceId: crypto.randomUUID.bind(crypto)
         },
         deliveries,

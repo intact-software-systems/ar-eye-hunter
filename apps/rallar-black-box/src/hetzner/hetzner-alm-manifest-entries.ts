@@ -152,7 +152,9 @@ type AlmConformanceFamily = 'two-agent' | 'three-agent';
 
 /**
  * The lane families each hosted entry carries. The addressed sends ride the 2-agent entry; a same-context scenario
- * needs two pages of one browser context, which no hosted agent has, so no entry carries it.
+ * needs two pages of one browser context, which no hosted agent has, so no entry carries it. The same-principal
+ * audience cells are withheld as the membership fence cells are: their lane evidence is local and the hosted full
+ * read's, so manifests 18 and 22 stay as recorded.
  */
 const HOSTED_ALM_LANE_FAMILIES: Readonly<Record<AlmConformanceFamily, readonly AlmConformanceLaneFamily[]>> = {
     'two-agent': ['two-agent', 'addressed'],

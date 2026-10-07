@@ -338,7 +338,8 @@ function message(
             envelope.document.applicationId,
             envelope.updateId
         ),
-        'all',
+        // A browser sends an app document's live update to its own world; a client's all is refused at ingress.
+        'world',
         RALLAR_CRDT_UPDATE_TYPE_ID,
         envelope
     );

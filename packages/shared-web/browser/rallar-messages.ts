@@ -9,6 +9,7 @@ export type {
     RallarMessageHandler,
     RallarMessageLane,
     RallarMessagePayload,
+    RallarMessageScope,
     RallarMessageSendBase,
     RallarMessageTransport,
     RallarMessageWaitOptions,

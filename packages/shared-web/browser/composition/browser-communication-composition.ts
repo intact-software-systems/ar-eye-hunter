@@ -22,7 +22,12 @@ import {
     type RallarWsController
 } from '@shared-web/browser/websocket/browser-rallar-ws-controller.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
-import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    newALPrincipalBroadcastMessage,
+    newALUnicastMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES } from '@shared/api/rallar-validation.ts';
@@ -107,6 +112,7 @@ export function createBrowserMessagingComposition(
             createUnicast: newALUnicastMessage,
             createMulticast: newALMulticastMessage,
             createBroadcast: newALBroadcastMessage,
+            createPrincipalBroadcast: newALPrincipalBroadcastMessage,
             newResourceId: crypto.randomUUID.bind(crypto)
         },
         wsInbox: input.wsInbox,

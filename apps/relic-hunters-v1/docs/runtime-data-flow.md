@@ -242,12 +242,14 @@ facade with a browser-only policy, a stable `baseStateRevision`, stale-result
 rejection, and a deterministic mock provider in development/tests. Production
 builds stay unavailable unless an app-supplied browser provider is injected.
 
-Accepted local suggestions become RallarAI `proposed` envelopes and are
-broadcast over Rallar WS on `room.relic.ai.planning` /
-`relic.ai.planning-proposal.v1`. Peers keep recent compatible proposals as
-read-only party notes. Only the local browser can prime its own suggestion into
-the existing draft controls, and the normal Submit Plan REST command remains
-the only authoritative gameplay submission.
+Accepted local suggestions become RallarAI `proposed` envelopes and are sent
+over Rallar WS on `room.relic.ai.planning` / `relic.ai.planning-proposal.v1` as
+a principal broadcast in the room: only the asking hunter's own sessions in the
+room receive it, and other hunters never do. The panel's one suggestion card
+shows the hunter's newest proposal, whichever of the hunter's sessions asked for
+it. Only the local browser can prime its own suggestion into the existing draft
+controls, and the normal Submit Plan REST command remains the only authoritative
+gameplay submission.
 
 ## Known Data-Flow Gaps
 
