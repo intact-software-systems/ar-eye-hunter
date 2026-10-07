@@ -27,14 +27,19 @@ GitHub Actions, ignored evidence under `tmp/perf/`, and immutable observation ZI
 The accepted measurement contract is retained in Sections 5, 6, and 8 of this
 plan. The approved diagnostics amendment is specified in
 [RTC establishment diagnostics](../../../plans/active/rtc-establishment-diagnostics.md).
-Its current implementation horizon is corrected-source publication and hosted/main acceptance.
-The fifteen-owner history-fixture and three-owner policy corrections have independent
-specification and full-file quality acceptance. Current-main reconciliation and final corrective
-code/architecture review are independently accepted locally. The final review's sole finding is
-current-status prose clarity; scoped prose acceptance precedes publication. The HTTP
-credential destination, startup capture-context and B06 emitted-schema corrections are independently approved locally. B06 selected
-capture and producer configuration are published; governed E3 acceptance remains required
-in Section 11. Current product and architecture are [docs/product.md](../../product.md)
+Its current implementation horizon is the evidenced WS fixture correction, reviewed publication
+and fresh hosted/main acceptance. The fifteen-owner history-fixture, three-owner policy,
+current-main reconciliation, final corrective code/architecture and scoped prose reviews are
+accepted; the composed correction is published at `a3b1662df1184ff2cf9a56e9ded12b7356897604`.
+A fresh local Native correctness preflight passes with six correlated applied receipts and
+partial coverage. Formation and medium-scale gates pass, while the original Release Gate
+fails eleven WS observer tests because their common positive fixture still sends the previous
+envelope version. Immediate admission assertions witness eleven semantic failures; the
+canonical typed current-version fixture passes all eleven cases plus eighty adjacent controls.
+Independent full-file correction review returns SPEC PASS and QUALITY PASS; reviewed publication
+and fresh corrected-source hosted acceptance remain required.
+B06 selection and producer configuration are published; governed E3 has zero accepted cohorts
+and remains required in Section 11. Current product and architecture are [docs/product.md](../../product.md)
 and [docs/architecture.md](../../architecture.md). The canonical executable
 navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
@@ -85,15 +90,40 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
 ## 1. Current Outcome And Evidence
 
-The latest published checkpoint is `7c3e2478cd0dd7b8e999dfd92fe957fb04f6594e`, tree
-`dc0cd28058e604c7f57043e6ec8480acbf648d54`. Its bounded support correction has independent
-SPEC PASS and QUALITY PASS. Fresh Release Gate37518135000, formation37518134506 and
-medium-scale37518134819 are terminal SUCCESS on that exact head. Release's RTC observation
-integrity job is SKIPPED; no E3 cohort follows from these correctness gates. The earlier
-bef74 failures remain retained with their original outcomes.
+The published corrective checkpoint is `a3b1662df1184ff2cf9a56e9ded12b7356897604`, tree
+`92e4313f19ab0bf72b7ce550112fdc3da1842596`. Final corrective code SPEC, architecture and
+scoped prose review are approved; all eighteen structural observations have explicit human
+dispositions. The original [Branch Release Gate37554289179](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37554289179)
+fails only main unit tests:11 failed /13627 passed /12 skipped, all in the WS inbox consumer
+observation suite. Other selected correctness checks and CodeQL pass; RTC observation integrity
+and validation-evidence publication are skipped. [Formation37554288812](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37554288812)
+and [medium37554288682](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37554288682)
+pass, with actual checkout trees independently matched to this source. Their29 recipe reports
+have zero blocking failures;56 formation failures are explicitly nonblocking and bounded
+result views remain disclosed. These are correctness gates, not B01–B06 performance cohorts.
 
-Whole-PR current-body and diff coverage is complete across257 changed paths:77 product,
-127 invocation/UI and53 measurement/support. Terminal cross-domain review returns SPEC and
+In the original a3 hosted source, the common observer-test packet has `id.v:2`, while the canonical envelope is
+version3. Public WS ingress returns `unsupported` before admission or callback dispatch;
+all eleven downstream empty-event/time-out failures share that early return. Strengthened
+public admission assertions reproduce11 semantic failures immediately with the old fixture.
+A typed `ALMessage` stamped with the canonical current-version constant then passes11 cases;
+80 resource-limit, WS ingress and owned dispatch-observation controls also pass. This is a
+bounded test-fixture correction, with no production, CRDT, retry, timeout or protocol fallback
+change indicated. Independent full-file SPEC and QUALITY review passes; reviewed publication
+and fresh hosted correctness remain the next prerequisites.
+The original failed job log and earlier adverse checkpoints remain preserved.
+
+Fresh local Native correctness at a3 passes1 case/zero retries in48.04 seconds. Independent
+correlation verifies all six explicit Native requests, applied receipts and matching scope
+initialization before Connect completion; coverage is partial. macOS/Node26 differs from the
+hosted performance environment. Twelve original channel-error observations follow deliberate
+peer retirement, with temporal rather than causal association; the summary/raw92-versus102
+result difference is unresolved. This proves neither full retention nor the initial post-ICE
+trigger. E3 remains zero accepted cohorts.
+
+At the earlier frozen7c3 checkpoint, whole-PR current-body and diff coverage is complete
+across257 changed paths:77 product,127 invocation/UI and53 measurement/support. Its terminal
+cross-domain review returns SPEC and
 QUALITY CHANGES REQUIRED, affected legacy/duplication closure incomplete and ready-for-main
 NO at frozen7c3. The six confirmed findings below still block that candidate; the HTTP,
 startup and B06 findings are separately closed only at their independently accepted local correction bytes.
@@ -160,8 +190,10 @@ review observations; the default full scan reports3441 nonblocking observations.
 exits do not replace human closure or approve E3. Checker algorithms and unrelated
 consumers remain outside the correction. The affected policy findings are closed, and final
 corrective code review confirms SPEC PASS and architecture APPROVED. All18 structure observations
-have concrete human keep/navigation judgments. The sole remaining review finding is the current-status
-prose correction; corrected-source publication and hosted/main acceptance remain required.
+have concrete human keep/navigation judgments. Scoped prose review passes and the batch is
+published at a3b1662df. Its new WS fixture failure is diagnosed above; the bounded correction
+passes independent SPEC/QUALITY review. Reviewed publication and fresh hosted/main acceptance
+remain required.
 None authorizes speculative changes or the independently held CRDT
 acquired-send/encrypted-output successor. The original post-ICE trigger stays UNKNOWN.
 At the earlier current-main conflict checkpoint, delivery status required REPAIR_CONFLICT.
@@ -2132,15 +2164,15 @@ The review's unreachable live/tab resources finding is corrected and independent
 quality remains unaccepted for the separate public encrypted-output typing decision.
 The next two useful implementation actions are:
 
-1. **Corrected-source publication:** HTTP, startup, B06 schema, current-main reconciliation,
-   fixture and policy corrections have independent local acceptance. Final corrective code
-   SPEC passes and architecture is approved; all18 structural observations have explicit
-   human dispositions. After scoped review of the sole current-status prose finding, publish
-   one reviewed corrective batch to PR633. The published7c3 conflict is already repaired locally.
-2. **Hosted acceptance and main integration:** Inspect fresh required hosted evidence for the
-   exact published correction source. Obtain the repository-required exact main integration
-   approval and select its accepted immutable source for the governed E3 primary. Source
-   acceptance does not complete E3 or the broader UI/recipe scope.
+1. **WS fixture correction and publication:** The original a3 Release Gate exposes a stale
+   version2 positive fixture against current version3-only ingress. Immediate admission
+   assertions witness11 failures, and the canonical typed current-version fixture passes11
+   cases plus80 adjacent controls. Independent full-file SPEC/QUALITY review passes. Publish the
+   bounded test correction and factual plan refresh to PR633. Preserve original failed evidence.
+2. **Fresh hosted acceptance and main integration:** Inspect original-attempt required hosted
+   evidence for the exact reviewed correction source. After correctness acceptance, obtain the
+   repository-required exact main integration approval and select its immutable main source
+   for the governed E3 primary. Source acceptance does not complete E3 or broader UI/recipe work.
 
 Immutable7c3 full-body/diff coverage is complete across all257 paths; its adverse review
 remains retained. HTTP credential routing, startup context forwarding and B06 emitted-schema
@@ -2149,7 +2181,8 @@ current-main e366 reconciliation is independently accepted in local merge12197c3
 tree617062ab, preserving membership fencing and reviewed RTC capture/admission. The
 fixture and current policy corrections are independently accepted. Correct-e366 delivery
 checks pass; final corrective code/architecture review and all18 structural dispositions are
-accepted. Close the bounded prose finding and publish the corrective batch. No source concern
+accepted. Scoped prose review passes and that corrective batch is published at a3. The fresh
+WS fixture failure requires only the bounded test correction described above. No source concern
 alone authorizes a CRDT, retry, timeout
 or immutable-context redesign; held original successors remain excluded.
 
@@ -4757,16 +4790,19 @@ remain required later work, alongside the full Task58 and baseline acceptance ga
 
 ### Task 60: B06 selected capture and actual application preflight
 
-**Current checkpoint:** B06 selection/application and producer/cohort configuration are
-published at7c3e2478. Its combined affected checks pass533 cases/43 files, actual Native preflight
-passes1 case/zero retries, and all three normal hosted workflows succeed at that source.
-The later HTTP destination, startup-context, B06 emitted-schema, current-main, fixture and
-policy corrections are independently accepted locally. Final corrective code SPEC passes,
-architecture is approved and all18 structural observations have explicit human dispositions.
-The only remaining review finding is current-status prose clarity; publication and fresh hosted/main
-acceptance of the corrected source follow scoped prose review. Configured-API CRDT admission
-remains an unreproduced source concern and the held successor is excluded. E3 has zero accepted
-cohorts. The earlier checkpoints below preserve their own evidence and limits.
+**Current checkpoint:** B06 selection/application and producer/cohort configuration were
+published at7c3 with533 affected cases/43 files and passing normal hosted gates. The composed
+HTTP, startup-context, emitted-schema, current-main, history-fixture and policy corrections
+have independent final SPEC/architecture and scoped prose acceptance and are now published
+at a3b1662df/tree92e4313f. A fresh local Native case passes with zero retries and six correlated
+applied receipts before Connect completion, with partial coverage. Formation and medium-scale
+gates pass on a source-matched tree, but the original Release Gate fails11 WS observer cases
+using a stale version2 packet. The current canonical version3 fixture follows11 immediate
+admission RED failures with11 GREEN and80 adjacent passes. Independent full-file SPEC/QUALITY
+review passes; reviewed publication and fresh hosted acceptance remain the next prerequisites. No runtime,
+CRDT, retry, timeout or legacy acceptance change is indicated. Configured-API CRDT admission
+remains an unreproduced source concern and the held successor stays excluded. E3 has zero
+accepted cohorts. The earlier checkpoints below preserve their exact evidence and limits.
 
 **Earlier checkpoint:** The concrete204-case checkpoint receives one required SPEC finding:
 consume all canonical nested capture locations. Actual regression RED exposes an absent
@@ -5099,8 +5135,12 @@ hot-path sink, invented capability claim or changed retry/deadline/workload to b
       fixture/policy closure is independently accepted, and final corrective code SPEC and
       architecture review approve the composed source. Correct-e366 changed-style validation
       passes and all18 structural observations have human dispositions; the original composed
-      style failure remains preserved as resolved historical evidence. Close the sole current-status
-      prose finding, publish the reviewed correction batch and inspect its fresh hosted acceptance.
+      style failure remains preserved as resolved historical evidence. The sole current-status
+      prose finding was accepted and the composed correction published at a3b1662df. Its original
+      Release Gate fails11 WS observer tests because a common version2 positive fixture is
+      rejected before dispatch by current version3-only ingress. Immediate admission RED11,
+      canonical typed-fixture GREEN11 and80 adjacent passes are retained. Independent full test-file
+      SPEC/QUALITY review passes; publish that correction and inspect original-attempt hosted acceptance.
       Select the reviewed exact main snapshot required by the governed producer after those gates
       support integration and the repository's explicit main-commit approval is obtained.
       Neither historical nor current failure authorizes a production RTC recovery, retention,

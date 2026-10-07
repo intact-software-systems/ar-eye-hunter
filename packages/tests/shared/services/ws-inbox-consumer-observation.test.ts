@@ -6,8 +6,9 @@ import {
     vi
 } from 'vitest';
 
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { ALInboundAdmittedDelivery } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
-import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import type { ALInboundConsumerInvocation, ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
@@ -26,8 +27,8 @@ interface ConsumerFixtureInput {
     readonly sinkThrows: boolean;
 }
 
-const signal = {
-    id: { v: 2, msgId: 'signal', ts: 1, senderId: 'sender' },
+const signal: ALMessage = {
+    id: { v: AL_MESSAGE_ENVELOPE_VERSION, msgId: 'signal', ts: 1, senderId: 'sender' },
     route: { topicId: 'topic', resourceId: 'signal', contextId: 'context' },
     targets: { mode: 'unicast', toPeerId: 'receiver' },
     payload: { typeId: 'rtc-signaling', contentType: 'application/json', resource: '{}' }
@@ -52,7 +53,7 @@ function createConsumerFixture(input: ConsumerFixtureInput): ConsumerFixture {
     return { service, events };
 }
 
-function consumerEvents(events: readonly ALInboundRuntimeDiagnosticsEvent[]) {
+function toConsumerInvocations(events: readonly ALInboundRuntimeDiagnosticsEvent[]): readonly ALInboundConsumerInvocation[] {
     return events.filter((event) => event.kind === 'consumer-invocation');
 }
 
@@ -80,10 +81,10 @@ it.each(['returned', 'retry', 'threw'] as const)('names an actual exact-type cal
             calls.push('any');
         }
     });
-    await fixture.service.acceptIncomingMessage(signal);
-    await expect.poll(() => consumerEvents(fixture.events).length).toBe(1);
+    expect(await fixture.service.acceptIncomingMessage(signal)).toMatchObject({ left: undefined, right: { kind: 'admitted' } });
+    await expect.poll(() => toConsumerInvocations(fixture.events).length).toBe(1);
     expect(calls).toEqual(outcome === 'returned' ? ['exact', 'any'] : ['exact']);
-    expect(consumerEvents(fixture.events)).toEqual([{
+    expect(toConsumerInvocations(fixture.events)).toEqual([{
         kind: 'consumer-invocation',
         msgId: 'signal',
         typeId: 'rtc-signaling',
@@ -93,7 +94,7 @@ it.each(['returned', 'retry', 'threw'] as const)('names an actual exact-type cal
         beganAtMs: 100,
         settledAtMs: 100
     }]);
-    expect(JSON.stringify(consumerEvents(fixture.events))).not.toContain('private');
+    expect(JSON.stringify(toConsumerInvocations(fixture.events))).not.toContain('private');
 });
 
 it.each(['all-in', 'on-any'] as const)('does not label %s-only delivery as exact-type consumer invocation', async (selection) => {
@@ -110,9 +111,9 @@ it.each(['all-in', 'on-any'] as const)('does not label %s-only delivery as exact
     else {
         fixture.service.onAnyInboxMessageDo('observer', callback);
     }
-    await fixture.service.acceptIncomingMessage(signal);
+    expect(await fixture.service.acceptIncomingMessage(signal)).toMatchObject({ left: undefined, right: { kind: 'admitted' } });
     await expect.poll(() => calls).toEqual([selection]);
-    expect(consumerEvents(fixture.events)).toMatchObject([{ selection: 'absent', outcome: 'not-invoked' }]);
+    expect(toConsumerInvocations(fixture.events)).toMatchObject([{ selection: 'absent', outcome: 'not-invoked' }]);
 });
 
 it('does not report a deferred exact-type callback returned until it settles', async () => {
@@ -128,12 +129,12 @@ it('does not report a deferred exact-type callback returned until it settles', a
             await release.promise;
         }
     });
-    await fixture.service.acceptIncomingMessage(signal);
+    expect(await fixture.service.acceptIncomingMessage(signal)).toMatchObject({ left: undefined, right: { kind: 'admitted' } });
     await entered.promise;
     expect(calls).toBe(1);
-    expect(consumerEvents(fixture.events)).toEqual([]);
+    expect(toConsumerInvocations(fixture.events)).toEqual([]);
     release.resolve();
-    await expect.poll(() => consumerEvents(fixture.events)).toMatchObject([{ selection: 'exact-type', outcome: 'returned' }]);
+    await expect.poll(() => toConsumerInvocations(fixture.events)).toMatchObject([{ selection: 'exact-type', outcome: 'returned' }]);
 });
 
 it('reports returned invocation while closing prevents later wildcard and any callbacks', async () => {
@@ -159,11 +160,11 @@ it('reports returned invocation while closing prevents later wildcard and any ca
             calls.push('any');
         }
     });
-    await fixture.service.acceptIncomingMessage(signal);
+    expect(await fixture.service.acceptIncomingMessage(signal)).toMatchObject({ left: undefined, right: { kind: 'admitted' } });
     await entered.promise;
     fixture.service.close();
     release.resolve();
-    await expect.poll(() => consumerEvents(fixture.events)).toMatchObject([{ outcome: 'returned' }]);
+    await expect.poll(() => toConsumerInvocations(fixture.events)).toMatchObject([{ outcome: 'returned' }]);
     expect(calls).toEqual(['exact']);
     expect(fixture.events).toContainEqual(expect.objectContaining({ kind: 'dispatch-decision', disposition: 'port-retry' }));
 });
@@ -184,8 +185,11 @@ it('keeps an exact callback return when expiry prevents subsequent consumers', a
             calls.push('wildcard');
         }
     });
-    await fixture.service.acceptIncomingMessage({ ...signal, constraints: { expiresAtMs: 200 } });
-    await expect.poll(() => consumerEvents(fixture.events)).toMatchObject([{ outcome: 'returned', beganAtMs: 100, settledAtMs: 200 }]);
+    expect(await fixture.service.acceptIncomingMessage({ ...signal, constraints: { expiresAtMs: 200 } })).toMatchObject({
+        left: undefined,
+        right: { kind: 'admitted' }
+    });
+    await expect.poll(() => toConsumerInvocations(fixture.events)).toMatchObject([{ outcome: 'returned', beganAtMs: 100, settledAtMs: 200 }]);
     expect(calls).toEqual(['exact']);
     expect(fixture.events).toContainEqual(expect.objectContaining({ kind: 'dispatch-decision', disposition: 'port-threw' }));
 });
@@ -203,15 +207,24 @@ it('does not leak message identity between simultaneous clients and later callba
         }
     });
     second.service.onInboxMessageDo('rtc-signaling', { onMessage: async () => 'retry' });
-    await first.service.acceptIncomingMessage(signal);
+    expect(await first.service.acceptIncomingMessage(signal)).toMatchObject({ left: undefined, right: { kind: 'admitted' } });
     await entered.promise;
-    await second.service.acceptIncomingMessage({ ...signal, id: { ...signal.id, msgId: 'parallel' } });
-    await expect.poll(() => consumerEvents(second.events)).toMatchObject([{ msgId: 'parallel', outcome: 'retry' }]);
-    expect(consumerEvents(first.events)).toEqual([]);
+    expect(await second.service.acceptIncomingMessage({ ...signal, id: { ...signal.id, msgId: 'parallel' } })).toMatchObject({
+        left: undefined,
+        right: { kind: 'admitted' }
+    });
+    await expect.poll(() => toConsumerInvocations(second.events)).toMatchObject([{ msgId: 'parallel', outcome: 'retry' }]);
+    expect(toConsumerInvocations(first.events)).toEqual([]);
     release.resolve();
-    await expect.poll(() => consumerEvents(first.events)).toMatchObject([{ msgId: 'signal', outcome: 'returned' }]);
-    await first.service.acceptIncomingMessage({ ...signal, id: { ...signal.id, msgId: 'later' } });
-    await expect.poll(() => consumerEvents(first.events)).toMatchObject([{ msgId: 'signal', outcome: 'returned' }, { msgId: 'later', outcome: 'returned' }]);
+    await expect.poll(() => toConsumerInvocations(first.events)).toMatchObject([{ msgId: 'signal', outcome: 'returned' }]);
+    expect(await first.service.acceptIncomingMessage({ ...signal, id: { ...signal.id, msgId: 'later' } })).toMatchObject({
+        left: undefined,
+        right: { kind: 'admitted' }
+    });
+    await expect.poll(() => toConsumerInvocations(first.events)).toMatchObject([{ msgId: 'signal', outcome: 'returned' }, {
+        msgId: 'later',
+        outcome: 'returned'
+    }]);
 });
 
 it('observes a returned RTC receiver when that receiver catches its native callback error', async () => {
@@ -241,11 +254,11 @@ it('observes a returned RTC receiver when that receiver catches its native callb
     }
     socket.open();
     await connected;
-    await fixture.service.acceptIncomingMessage(signal);
-    await expect.poll(() => consumerEvents(fixture.events)).toMatchObject([{ outcome: 'returned' }]);
+    expect(await fixture.service.acceptIncomingMessage(signal)).toMatchObject({ left: undefined, right: { kind: 'admitted' } });
+    await expect.poll(() => toConsumerInvocations(fixture.events)).toMatchObject([{ outcome: 'returned' }]);
     expect(calls).toBe(1);
     expect(errorLog).toHaveBeenCalledWith('Error in onMessage handler', original);
-    expect(JSON.stringify(consumerEvents(fixture.events))).not.toContain('private');
+    expect(JSON.stringify(toConsumerInvocations(fixture.events))).not.toContain('private');
 });
 
 it('preserves the exact callback error through admitted delivery when the consumer diagnostic sink fails', async () => {
@@ -273,9 +286,9 @@ it('preserves the exact callback error through admitted delivery when the consum
             throw original;
         }
     });
-    await fixture.service.acceptIncomingMessage(signal);
+    expect(await fixture.service.acceptIncomingMessage(signal)).toMatchObject({ left: undefined, right: { kind: 'admitted' } });
     await expect.poll(() => errorCount).toBe(1);
     expect(calls).toBe(1);
     expect(observedError).toBe(original);
-    expect(consumerEvents(fixture.events)).toMatchObject([{ selection: 'exact-type', outcome: 'threw' }]);
+    expect(toConsumerInvocations(fixture.events)).toMatchObject([{ selection: 'exact-type', outcome: 'threw' }]);
 });
