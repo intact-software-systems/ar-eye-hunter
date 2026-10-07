@@ -3820,6 +3820,51 @@ moved or changed test.
         "requiredConstraint": "An acquired browser is closed exactly once when evaluation throws, with the original exception propagated and no raw output written.",
         "failureRationale": "Exception propagation and absent raw output can coexist with a leaked browser if the acquired resource is not released."
       }
+    },
+    {
+      "id": "control-bootstrap-optional-single-socket",
+      "domain": "Black-box optional control connection",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A successful bootstrap creates no control socket when autoConnect is false and exactly one at the configured control URL when true.",
+      "semanticCoverage": "packages/tests/rallar-black-box/runtime-store.test.ts#publishes bootstrap setup and accepted configuration before optional control connection",
+      "coverageRelation": "The test runs both autoConnect selections through the runtime store and observes the global WebSocket construction port alongside accepted runtime configuration and the public control snapshot.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Global WebSocket constructor used by the runtime store control client",
+        "observableEffect": "Zero external control connections for manual connection mode and one connection to ws://bootstrap.test/control for autoConnect.",
+        "requiredConstraint": "A successful bootstrap creates zero sockets when autoConnect is false and exactly one socket at its configured URL when true.",
+        "failureRationale": "Accepted configuration and a final connecting snapshot do not exclude an unwanted manual-mode connection or multiple external connections hidden behind the last socket snapshot."
+      }
+    },
+    {
+      "id": "control-bootstrap-refusal-no-socket",
+      "domain": "Black-box refused control bootstrap",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "An invalid launch or rejected browser provider configuration creates no control WebSocket.",
+      "semanticCoverage": "packages/tests/rallar-black-box/runtime-store.test.ts#contains launch and provider refusal before creating a control socket",
+      "coverageRelation": "The test supplies a malformed launch and then an unusable browser provider to the real runtime store, checking failed state, runtime evidence and the untouched global WebSocket port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Global WebSocket constructor used by the runtime store control client",
+        "observableEffect": "Neither refused bootstrap starts an external control connection.",
+        "requiredConstraint": "Launch and provider admission failures must not construct a control socket.",
+        "failureRationale": "A failed snapshot and provider diagnostic can be published after a connection was already created; those return and state assertions alone cannot exclude the forbidden network effect."
+      }
+    },
+    {
+      "id": "explicit-unavailable-fetch-no-ambient-request",
+      "domain": "Black-box explicit HTTP dependency availability",
+      "owner": "Shared Test maintainers",
+      "summary": "An HTTP command given an explicitly unavailable fetch capability fails without invoking an ambient global fetch implementation.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-runtime/capabilities.test.ts#capture dependency fix1 keeps explicit unavailable fetch unavailable despite an ambient implementation",
+      "coverageRelation": "The explicit browser runtime factory receives fetch undefined while an ambient fetch spy throws if invoked; the command failure and untouched ambient HTTP port are asserted independently.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Ambient global fetch HTTP port excluded by createRallarBlackBoxBrowserTestRuntime explicit input",
+        "observableEffect": "The refused HTTP request emits no ambient network request.",
+        "requiredConstraint": "Explicitly unavailable fetch remains unavailable even when global fetch exists.",
+        "failureRationale": "An implementation could invoke ambient HTTP and then return a failed result; only the absence assertion rules out that unintended external request independently of the reported fetch-unavailable error."
+      }
     }
   ],
   "entries": [
@@ -8607,6 +8652,50 @@ moved or changed test.
       "owner": "Rallar RTC benchmark maintainers",
       "rationale": "The release count is the owned browser cleanup effect and does not pin evaluation helper decomposition or internal call ordering.",
       "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#closes the browser and leaves no raw file when native execution throws"
+    },
+    {
+      "id": "test-structure-coupling-0597f02793c1ce20",
+      "path": "packages/tests/rallar-black-box/runtime-store.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "control-bootstrap-optional-single-socket",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The false autoConnect branch must leave the WebSocket constructor untouched; accepted runtime configuration would not reveal a mistakenly opened external control connection.",
+      "semanticCoverage": "packages/tests/rallar-black-box/runtime-store.test.ts#publishes bootstrap setup and accepted configuration before optional control connection"
+    },
+    {
+      "id": "test-structure-coupling-a8184383962107b2",
+      "path": "packages/tests/rallar-black-box/runtime-store.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "control-bootstrap-optional-single-socket",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The true autoConnect branch protects exactly one external socket at the configured URL; the final control snapshot cannot expose a duplicate connection or prove its destination by itself.",
+      "semanticCoverage": "packages/tests/rallar-black-box/runtime-store.test.ts#publishes bootstrap setup and accepted configuration before optional control connection"
+    },
+    {
+      "id": "test-structure-coupling-e379689e54928796",
+      "path": "packages/tests/rallar-black-box/runtime-store.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "control-bootstrap-refusal-no-socket",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "Zero socket construction across launch and provider refusal is the required network suppression; failure state and recorded diagnostics do not exclude a preceding external connection.",
+      "semanticCoverage": "packages/tests/rallar-black-box/runtime-store.test.ts#contains launch and provider refusal before creating a control socket"
+    },
+    {
+      "id": "test-structure-coupling-591ac9c577d77951",
+      "path": "packages/tests/shared-test/rallar-bb-runtime/capabilities.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "explicit-unavailable-fetch-no-ambient-request",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "The ambient fetch spy must remain untouched when the explicit HTTP capability is unavailable; a failed result could otherwise conceal a forbidden ambient network invocation.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-runtime/capabilities.test.ts#capture dependency fix1 keeps explicit unavailable fetch unavailable despite an ambient implementation"
     }
   ]
 }

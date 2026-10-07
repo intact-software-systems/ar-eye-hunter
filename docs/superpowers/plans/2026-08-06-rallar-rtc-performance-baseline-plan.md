@@ -53,7 +53,9 @@ the19 reviewed findings. Local publication closure now passes168 tooling tests a
 full changed-style gate after correcting the existing literal-discount applicability to
 JavaScript modules. The same independent reviewer approves all three complete support
 owners with no findings; this coherent slice is accepted for prompt feature publication.
-Fresh hosted validation of the style checkpoint remains required. This continuation is published in draft
+Hosted d586 run 37655992935 confirms that repository style now passes and all
+selected correctness jobs succeed. Static reaches four unclassified owned I/O
+assertions; narrow interaction documentation remains required before full CI acceptance. This continuation is published in draft
 [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645); Task64's complete
 CI outcome remains open.
 Publish each coherent validated slice on the feature branch; keep incomplete acceptance
@@ -63,10 +65,22 @@ fixture correction is independently accepted and published at
 Its original eleven failed observer cases and their semantic RED/GREEN correction remain
 retained. The local Native correctness preflight has six correlated applied receipts with
 partial coverage; this is separate from homogeneous performance acceptance. PR633 now has
-five actual conflicts against main d5db1569d5072a714df314b2d5eceed5011407d5; the earlier
-main integration proposal is stale. Repair that feature branch before preparing a new
-exact main integration proposal. Remaining hosted style validation, visible recipe controls,
-runner and Actions outcomes stay mandatory.
+its five conflicts against pinned main d5db1569d5072a714df314b2d5eceed5011407d5
+repaired and published in feature merge 15efff0055e78bd03f06aed243af0aa3a061278f
+(tree 372c1f6e21ab768fbb584a03c8e5c3fbfa26fe16). Semantic RED witnessed the
+obsolete room-only refusal of valid world fallback; the integrated sender preserves
+main audience/fallback behavior and one capture/acquisition with original receipts.
+Its mocked initializer witness proves policy/admission, not native ICE establishment.
+Independent SPEC/QUALITY review approves six complete owners and removal of the
+unused private validation argument. Final 228 behavior and 18 API/bundle cases,
+package and 1487-test typing, both app builds and post-merge exact-main-ancestry
+style checks pass. The earlier inherited 14-prompt style failure remains preserved.
+Fresh measured facade 250.069 KiB and headless 320.244 KiB require existing
+adjustable packaging caps 251 and 321; no workload or other limits change.
+Hosted acceptance and a new exact main integration decision remain required.
+The next two useful slices are narrow I/O classification publication and visible
+recipe controls with semantic TDD. Worker, Actions and full B01–B06/E3 outcomes
+stay mandatory.
 B06 selection and producer configuration are published; governed E3 has zero accepted cohorts
 and remains required in Section 11. Current product and architecture are [docs/product.md](../../product.md)
 and [docs/architecture.md](../../architecture.md). The canonical executable
@@ -6416,7 +6430,19 @@ thresholds and matchers remain unchanged. Final five-owner tooling corpus passes
 the full changed-style gate has no new findings, and formatting/diff/navigation checks pass.
 The same independent reviewer approves the complete three-owner slice with no findings;
 no new exception, helper, migration or legacy path is introduced. Hosted confirmation of
-this style checkpoint remains required. Preserve both actual REDs and all earlier adverse evidence.
+this style checkpoint is complete in d586: run 37655992935 passes repository style
+and all selected correctness jobs. The next static stage refuses four individually
+unclassified owned-network assertions. Preserve both actual REDs and all earlier
+adverse evidence.
+
+**Network-interaction classification accepted:** The exact committed 9d→d586 checker
+reproduces four missing classifications. Three domain contracts now link the four
+unchanged socket-count/absence and excluded ambient-fetch assertions to their
+independently observable effects. The same reviewer returns SPEC compliant and
+QUALITY Approved. Existing policy, tests, tools and prior registry objects are
+unchanged; current-file validation and formatting/whitespace pass. No constructor-time
+configuration-order claim, legacy waiver or artificial test is added. The committed-range
+GREEN remains required before publication.
 
 ### Task 65: Visible recipe controls and persisted intent (prepared next slice)
 
