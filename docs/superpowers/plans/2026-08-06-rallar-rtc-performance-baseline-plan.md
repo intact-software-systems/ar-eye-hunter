@@ -47,8 +47,13 @@ confirms the fixture slice:13750 unit passes with one callback failure/12 skips,
 controller passes/zero failures/one ignored. Headless and ALM checks pass. The original
 reference-run callback RED and three related admission/event failures remain preserved.
 Their minimum correction is independently accepted:227 affected cases, typing, navigation,
-formatting and the headless boundary pass without increasing its321KiB cap. Fresh hosted
-validation of this correction and exact changed-style publication closure remain required. This continuation is published in draft
+formatting and the headless boundary pass without increasing its321KiB cap. Hosted b0
+confirms13758 unit passes/12 skips and all selected correctness jobs; static alone retains
+the19 reviewed findings. Local publication closure now passes168 tooling tests and the
+full changed-style gate after correcting the existing literal-discount applicability to
+JavaScript modules. The same independent reviewer approves all three complete support
+owners with no findings; this coherent slice is accepted for prompt feature publication.
+Fresh hosted validation of the style checkpoint remains required. This continuation is published in draft
 [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645); Task64's complete
 CI outcome remains open.
 Publish each coherent validated slice on the feature branch; keep incomplete acceptance
@@ -57,8 +62,10 @@ fixture correction is independently accepted and published at
 `9d683b3ba00cc0a450a8a940ecdd2eab4c55bbed`, with fresh normal hosted correctness accepted.
 Its original eleven failed observer cases and their semantic RED/GREEN correction remain
 retained. The local Native correctness preflight has six correlated applied receipts with
-partial coverage; this is separate from homogeneous performance acceptance. PR633's exact
-main integration approval remains pending. Remaining style publication, visible recipe controls,
+partial coverage; this is separate from homogeneous performance acceptance. PR633 now has
+five actual conflicts against main d5db1569d5072a714df314b2d5eceed5011407d5; the earlier
+main integration proposal is stale. Repair that feature branch before preparing a new
+exact main integration proposal. Remaining hosted style validation, visible recipe controls,
 runner and Actions outcomes stay mandatory.
 B06 selection and producer configuration are published; governed E3 has zero accepted cohorts
 and remains required in Section 11. Current product and architecture are [docs/product.md](../../product.md)
@@ -130,9 +137,19 @@ Wait/Set/Parallel rows overlap and are not136 independent incidents. Bounded res
 views disclose omitted successful history. These are correctness gates, not B01–B06
 performance cohorts or full diagnostic-receipt acceptance.
 
-[PR633](https://github.com/intact-software-systems/ar-eye-hunter/pull/633) remains open and
-mergeable with native review required. The exact main merge proposal is prepared; the
-repository's just-in-time default-branch approval remains pending. No main operation or
+[PR633](https://github.com/intact-software-systems/ar-eye-hunter/pull/633) remains open with
+native review required. Fresh GitHub state is CONFLICTING against main
+`d5db1569d5072a714df314b2d5eceed5011407d5`, verified through both remote Git and GitHub refs.
+The actual dry merge exits1 with five conflicted owners: browser communication composition,
+browser message sender, shared-web bundle budgets, headless bundle budget and RTC outbound
+overlay readiness tests. Preserve both accepted capture behavior and main's current
+principal/world/fixed-audience and fallback behavior; measure the merged bundles rather
+than choosing caps from conflict markers. Guidance is unchanged between the exact heads.
+The existing clean feature integration worktree preserves the independently held work.
+The next two concrete slices are this reviewed style-publication closure and the actual
+parent conflict repair. Task65 remains prepared and required. The earlier e366-based main
+proposal is stale; prepare a new exact proposal after feature repair and validation, then
+obtain the repository's just-in-time default-branch approval. No main operation or
 accepted E3 cohort is claimed. Task61 and Task62 are locally accepted in the separate
 continuation worktree, preserving the proposed integration source. The human-approved
 required-input/default-composition/client-clock correction adapts verified callers directly,
@@ -6036,10 +6053,12 @@ legacy retention, new store or Task64 implementation is authorized by the audit.
 
 **Status:** The implementation, correction round1, five CI fixtures and callback-admission
 correction are independently accepted locally. Latest affected runtime corpus is227/227;
-typing, navigation, formatting and headless checks pass. Exacte088 hosted CI confirms the
-fixture fixes and leaves the now-locally-corrected callback case as its sole unit failure.
-Fresh hosted validation of the callback correction and exact changed-style publication
-closure remain open. Tasks61–63 retain their local acceptance. Draft PR645 publishes each
+typing, navigation, formatting and headless checks pass. Exactb0 hosted CI confirms the
+callback fix with13758 unit passes/12 skips; every selected correctness job succeeds.
+Static retains the19 reviewed findings. The final local style publication/checker correction
+passes168 tooling cases and the full changed-style gate. Independent SPEC/QUALITY review
+approves the complete three-owner slice with no findings; hosted style validation remains
+required after prompt feature publication. Tasks61–63 retain their local acceptance. Draft PR645 publishes each
 coherent accepted slice; visible controls, workers/Actions, B01–B06 and governed E3 remain
 mandatory. The following retained records describe earlier evidence and corrections;
 the final accepted observations and remaining gates appear below.
@@ -6379,8 +6398,25 @@ expanded class/callback spans and five compiler-definition probes pass. The cohe
 Headless measures320.94921875KiB and passes the unchanged321KiB cap. Root verifies all141
 frozen source copies in every final packet. Only runtime and its existing test owner change;
 there is no new public contract, support file, store, migration or affected retained legacy.
-Fresh remote CI and exact reviewed-finding publication closure remain open; no E3 acceptance
-or generic callback-safety claim follows.
+Hosted [37651904166](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37651904166)
+checks out exactb0ecf928171f6f5246f96662f6952b5664eb1c8c and confirms13758 unit passes/12 skips.
+Browser/app, both Console shards, native controller, tooling, API recipes, Postgres and ALM
+checks succeed. Static alone reports the19 reviewed findings. RTC integrity is skipped;
+no E3 acceptance or generic callback-safety claim follows.
+
+**Style publication and tooling correction:** Publish only the19 exact previously reviewed
+entries: nine current cognitive caps and ten actual untrusted-boundary keys. The original
+full-range gate fails on those19; after applying the entries, it exposes one genuine checker
+defect. The universal behavior-free data-table discount is incorrectly gated by TypeScript
+cognitive eligibility, so the declarative JavaScript registry is measured at1318 physical
+lines rather than409 adjusted lines. A maintained real-CLI test fails for JavaScript while
+eleven controls pass. Remove only that eligibility condition from navigation measurement;
+TypeScript cognitive/export metrics,1200/1500 backstops, behavior-containing literal refusal,
+thresholds and matchers remain unchanged. Final five-owner tooling corpus passes168/168,
+the full changed-style gate has no new findings, and formatting/diff/navigation checks pass.
+The same independent reviewer approves the complete three-owner slice with no findings;
+no new exception, helper, migration or legacy path is introduced. Hosted confirmation of
+this style checkpoint remains required. Preserve both actual REDs and all earlier adverse evidence.
 
 ### Task 65: Visible recipe controls and persisted intent (prepared next slice)
 

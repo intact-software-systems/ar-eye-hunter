@@ -139,17 +139,20 @@ describe('cognitive metric rules', () => {
         expect(computeDataLiteralLineCount('pair.ts', twoLineLiteral)).toBe(0);
     });
 
-    it('applies the navigation backstop after the data-literal discount', () => {
+    it.each(['ts', 'mjs'])('applies the navigation backstop after the data-literal discount for %s', (extension) => {
+        const table = dataLiteralSource(1400);
+        expect(computeDataLiteralLineCount(`giant-table.${extension}`, table)).toBe(1401);
         const fixtureRoot = createFixture({
-            'giant-table.ts': dataLiteralSource(1400),
-            'giant-code.ts': plainStatementsSource(1250)
+            [`giant-table.${extension}`]: table,
+            [`giant-code.${extension}`]: plainStatementsSource(1250)
         });
 
         const output = runChecker(fixtureRoot);
 
-        expect(output).not.toContain('giant-table.ts');
+        expect(output).toContain(`giant-code.${extension}`);
         expect(output).toContain('[file.length]');
         expect(output).toContain('File length 1250 > 1200 navigation backstop');
+        expect(output).not.toContain(`giant-table.${extension}`);
     });
 
     it('measures TypeScript production sources only, not .mjs or declaration files', () => {

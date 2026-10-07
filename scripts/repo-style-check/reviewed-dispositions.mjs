@@ -5,6 +5,125 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Exact reviewed RTC evidence/control owners (Task62/63 and Task64 round1).
+    // Each numeric cap bounds the observed coherent capability/shell magnitude;
+    // no function-size, other-path or future-growth exception is implied.
+    // Task64 callback review accepted the current runtime at magnitude106.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/control-evidence-compaction.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 79
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/src/runtime-store.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 50
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/composite-results.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 73
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control-client.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 62
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control-protocol.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 54
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control/control-rtc-capture-evidence.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 89
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/recipe/recipe-capture-requirements.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 76
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/recipe/snapshot-executable-recipe.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 71
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 106
+    }),
+    // Workbench JSON.parse remains raw until its selected schema validates it.
+    Object.freeze({
+        path: 'apps/rallar-black-box/src/runtime-store.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Only the two changed CRDT transport ingress owners: raw selection fields
+    // and parseCrdtTransport normalize to one finite transport before execution.
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'parseCrdtTransport'
+    }),
+    // Snapshot traversal owns structured decision operands only; unknown stays
+    // local before validation, and outgoing application payloads remain opaque.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/recipe/snapshot-executable-recipe.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Opaque wire payload and three actual finite decoding ingress owners.
+    // Raw messages are narrowed before result/command domain admission.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control-protocol.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control-protocol.ts',
+        rule: 'boundary.unknown',
+        symbol: 'parseControlServerMessage'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control-protocol.ts',
+        rule: 'boundary.unknown',
+        symbol: 'parseControlClientMessage'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control-protocol.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeControlEnvelopeRecord'
+    }),
+    // Accepted malformed-fixture owners construct raw trees or join decoder
+    // issues/limitations only for assertions; neither is trusted execution input.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/distributed-recipe-tuning-hardening.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'nested'
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/distributed-recipe-tuning-hardening.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // Independent Task61 review: these anonymous native-test JSON boundaries
     // are exact module owners (symbol undefined), not named-function waivers.
     // HTTP records/files/strings are guarded before local assertions; snapshots
