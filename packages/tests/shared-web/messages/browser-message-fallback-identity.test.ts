@@ -115,7 +115,7 @@ describe('typed message fallback identity', () => {
         const fixture = createChannel({
             firstVerdict: ADMITTED_VERDICT,
             firstPlanner: (msg) =>
-                computeRtcFrozenAudienceRefusal(toALFrozenMulticastMessage(msg, audience)).fold(
+                computeRtcFrozenAudienceRefusal(toALFrozenMulticastMessage(msg, audience), msg).fold(
                     (refusal) => ({ ...refusal, preparedMessages: [] }),
                     () => {
                         throw new Error('A room of 300 sessions must exceed the RTC room limit');

@@ -7,12 +7,17 @@ import {
     vi
 } from 'vitest';
 
-import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    newALPrincipalBroadcastMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { resolveALChannelSendDefaults } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
-import { computeFrozenAudience } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
+import { computeFrozenAudience, type RtcAudienceNarrowing } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 
 import {
     createOriginOverlay,
@@ -307,11 +312,168 @@ describe('computeFrozenAudience', () => {
             throw new Error('The origin must be authorized in its own room');
         }
 
-        expect(computeFrozenAudience({ admission, selfPeerId: 'a' }))
+        expect(computeFrozenAudience({ admission, selfPeerId: 'a', narrowing: undefined }))
             .toEqual({ recipientPeerIds: ['b', 'c'], snapshotVersion: admission.snapshotVersion });
         expect(admission.snapshotVersion).toBe(4);
     });
+
+    it.each<{ label: string; narrowing: RtcAudienceNarrowing; recipientPeerIds: readonly string[]; }>([
+        { label: 'a principal', narrowing: { kind: 'principal', principalId: 'principal-1' }, recipientPeerIds: ['b', 'd'] },
+        { label: 'a list', narrowing: { kind: 'list', recipientPeerIds: ['a', 'c', 'z'] }, recipientPeerIds: ['c'] }
+    ])('narrows the authorized sessions except the origin to $label', ({ narrowing, recipientPeerIds }) => {
+        const admission = computeRtcRoomSnapshotAdmission({
+            message: createOriginReceiverMulticast('narrowed'),
+            snapshot: createPrincipalSnapshot(),
+            overlay: createOriginOverlay(['b', 'c']),
+            selfPeerId: 'a',
+            fromPeerId: undefined,
+            recipientPeerId: undefined,
+            nowMs: Date.now()
+        });
+        if (admission.kind !== 'authorized') {
+            throw new Error('The origin must be authorized in its own room');
+        }
+
+        expect(computeFrozenAudience({ admission, selfPeerId: 'a', narrowing }))
+            .toEqual({ recipientPeerIds, snapshotVersion: 4 });
+    });
 });
+
+describe('the RTC leg of a principal or listed room send', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('freezes a principal broadcast in its room as the principal\'s other sessions, the multicast every copy and the receipt carry', async () => {
+        const fixture = createFixture({ snapshot: createPrincipalSnapshot(), nextHopPeerIds: ['b', 'c'] });
+        const message = createAudienceBroadcast('principal');
+
+        const admitted = await enqueueLegAndDrain(fixture, message);
+
+        expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+        expect(admitted.message.targets).toEqual(toOriginFrozenTargets(['b', 'd'], 4));
+        expect(readSentTargets(fixture.channels.b!)).toEqual([toOriginFrozenTargets(['b', 'd'], 4)]);
+        expect(readSentTargets(fixture.channels.c!)).toEqual([toOriginFrozenTargets(['b', 'd'], 4)]);
+        expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b', 'd'] });
+    });
+
+    it('freezes a listed room broadcast as the listed sessions the room holds, less the excepted ones', async () => {
+        const fixture = createFixture({ snapshot: createOriginSnapshot(['a', 'b', 'c', 'd'], 4), nextHopPeerIds: ['b', 'c'] });
+        const message = createAudienceBroadcast('list');
+
+        const admitted = await enqueueLegAndDrain(fixture, message);
+
+        expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+        expect(admitted.message.targets).toEqual(toOriginFrozenTargets(['c'], 4));
+        expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toMatchObject({ mode: 'receiver', expectedPeerIds: ['c'] });
+    });
+
+    it.each(
+        [
+            { audience: 'room', recipientPeerIds: ['b', 'c', 'd'] },
+            { audience: 'principal', recipientPeerIds: ['b', 'd'] },
+            { audience: 'list', recipientPeerIds: ['c'] }
+        ] as const
+    )(
+        'holds a durable $audience send admitted before its room snapshot and freezes it to $recipientPeerIds when the snapshot arrives',
+        async ({ audience, recipientPeerIds }) => {
+            const fixture = createFixture({ snapshot: createPrincipalSnapshot(), nextHopPeerIds: ['b', 'c'] });
+            fixture.groups.delete('room');
+            const message = createAudienceBroadcast(audience, ORIGIN_ROOM, 'local-outbox');
+
+            const admitted = await enqueueLegAndDrain(fixture, message);
+            await vi.advanceTimersByTimeAsync(200);
+
+            expect(admitted.verdict).toEqual({ kind: 'admitted', durable: true, queuedAttempts: 0 });
+            expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
+
+            fixture.groups.accept('room', createPrincipalSnapshot());
+            await vi.advanceTimersByTimeAsync(200);
+
+            expect(readSentTargets(fixture.channels.b!)).toEqual([toOriginFrozenTargets(recipientPeerIds, 4)]);
+            expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+                .toMatchObject({ mode: 'receiver', expectedPeerIds: recipientPeerIds });
+        }
+    );
+
+    it.each(['world', 'all', 'principal'] as const)(
+        'refuses a %s broadcast that names no room as unsupported, sending nothing',
+        async (scope) => {
+            const fixture = createFixture();
+            const message = createRoomlessBroadcast(scope);
+
+            const admitted = await enqueueLegAndDrain(fixture, message);
+
+            expect(admitted.verdict).toEqual({
+                kind: 'refused',
+                reason: 'unsupported',
+                detail: `RTC carries room audiences only: a ${scope} broadcast is unsupported`
+            });
+            expect(fixture.channels.b!.sent).toEqual([]);
+        }
+    );
+});
+
+const PRINCIPAL_REF = { applicationId: 'app', workspaceId: 'workspace', principalId: 'principal-1' };
+
+function createAudienceBroadcast(
+    audience: 'room' | 'principal' | 'list',
+    groupRef = ORIGIN_ROOM,
+    durability: 'volatile' | 'local-outbox' = 'volatile'
+): ALMessage {
+    const route = { topicId: 'chat', resourceId: `narrowed-${audience}`, contextId: groupRef.groupId };
+    const options = {
+        ack: 'all-logical-recipients',
+        reliability: 'at-least-once',
+        ttlMs: 30_000,
+        qos: { durability: { algo: durability } }
+    } as const;
+    if (audience === 'room') {
+        return newALMulticastMessage('a', route, groupRef, 'chat.message.v1', {}, options);
+    }
+    return audience === 'principal'
+        ? newALPrincipalBroadcastMessage('a', route, { groupRef, principalRef: PRINCIPAL_REF }, 'chat.message.v1', {}, options)
+        : newALBroadcastMessage('a', route, 'room', 'chat.message.v1', {}, {
+            ...options,
+            groupRef,
+            recipientPeerIds: ['c', 'd', 'z'],
+            exceptPeerIds: ['d']
+        });
+}
+
+function createRoomlessBroadcast(scope: 'world' | 'all' | 'principal'): ALMessage {
+    const route = { topicId: 'chat', resourceId: `roomless-${scope}`, contextId: 'app' };
+    const message = newALBroadcastMessage('a', route, 'world', 'chat.message.v1', {}, { ttlMs: 30_000 });
+    return scope === 'principal'
+        ? { ...message, targets: { mode: 'broadcast', scope, principalRef: PRINCIPAL_REF } }
+        : { ...message, targets: { mode: 'broadcast', scope } };
+}
+
+async function enqueueLegAndDrain(fixture: RtcOriginOverlayFixture, message: ALMessage) {
+    const result = await fixture.manager.enqueueLegIfAbsent(message, 'hold');
+    await vi.advanceTimersByTimeAsync(0);
+    return result;
+}
+
+/** The room of `a`, `b`, `c` and `d`, where `a`, `b` and `d` are sessions of one principal. */
+function createPrincipalSnapshot(): GroupSnapshot {
+    const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
+    return {
+        ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) =>
+            ['a', 'b', 'd'].includes(session.sessionId) ? { ...session, principalId: PRINCIPAL_REF.principalId } : session
+        ),
+        members: [...snapshot.members, { ...snapshot.members[0]!, principalId: PRINCIPAL_REF.principalId }]
+    };
+}
 
 /** Sessions a snapshot still lists but the room authority refuses: `x` has an expired lease, `y` was removed. */
 function createSnapshotWithRefusedSessions(): GroupSnapshot {

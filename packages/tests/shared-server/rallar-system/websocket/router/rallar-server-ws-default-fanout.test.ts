@@ -89,6 +89,23 @@ it('ends the receipt of a live-only at-least-once room send timed out, naming th
         .toBeUndefined();
 });
 
+it('sends a room send with a fixed list live to the listed receiver alone and expects it alone', async () => {
+    const fixture = createLiveRoomFixture(['receiver-a', 'receiver-b']);
+    const message: ALMessage = {
+        ...createReceiverRoomSend('listed-live', Date.now(), undefined),
+        targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM, exceptPeerIds: ['origin'], recipientPeerIds: ['receiver-a'] }
+    };
+
+    fixture.origin.receive(JSON.stringify(message));
+
+    await expect.poll(() => readDeliveredCount(fixture.receivers['receiver-a']!, message.id.msgId))
+        .toBe(1);
+    await expect.poll(() => readOriginReceipts(fixture.origin)).toEqual([
+        { phase: 'admitted', expected: ['receiver-a'], confirmed: [] }
+    ]);
+    expect(readDeliveredCount(fixture.receivers['receiver-b']!, message.id.msgId)).toBe(0);
+});
+
 function createLiveRoomFixture(receiverIds: readonly string[]): LiveRoomFixture {
     const socketServer = new JsonWebSocketServer();
     const origin = new TestWebSocket('ws://origin');

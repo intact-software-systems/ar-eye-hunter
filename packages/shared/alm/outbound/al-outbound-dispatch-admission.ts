@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
+import { isALFreezeOfMessage } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
@@ -537,8 +538,10 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         read: ALOutboundMessageReadDto<TPrepared>,
         dispatchAtMs: number
     ): ComputeALOutboundDispatchInput<TPrepared> {
-        // A replay that minted replaces the request its retained canonical row holds.
-        const entry = read.orderingHead === undefined && read.canonicalEntry
+        // A replay that minted replaces the request its retained canonical row holds; a plan that froze a held
+        // row's audience replaces the row.
+        const entry = read.orderingHead === undefined && read.canonicalEntry &&
+                !isALFreezeOfMessage(read.originalMsg, read.msg)
             ? read.canonicalEntry
             : this.dependencies.toOutboxEntry(read.msg);
         return {

@@ -4,6 +4,7 @@ import type {
     ALNackPayload,
     ALRepairPayload
 } from '../../../al-contracts/al-control.ts';
+import { isALFreezeOfMessage } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import type { ALSupersedenceInput } from '../../../al-contracts/al-runtime.ts';
 import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../../al-contracts/al-runtime.ts';
@@ -417,7 +418,9 @@ export class ALOutboundAdmissionReads<TPrepared> {
             }
         );
         requireALOutboundPlannedMessage(canonical ?? msg, selected.msg);
-        const planned = canonical ? { ...selected, msg: canonical } : selected;
+        const planned = canonical && !isALFreezeOfMessage(canonical, selected.msg)
+            ? { ...selected, msg: canonical }
+            : selected;
         const plan = stored && intent !== 'repair' ? applyALOutboundCapturedPolicy(planned, stored.policy) : planned;
         requireALOutboundPlannedMessage(msg, plan.msg);
         return plan;

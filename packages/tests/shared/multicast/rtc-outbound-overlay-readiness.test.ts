@@ -293,7 +293,7 @@ describe('RTC durable accepted-overlay readiness', () => {
         expect(native.createdConnections[1].channels[0].sent).toHaveLength(1);
     });
 
-    it.each(['volatile', 'best-effort', 'fixed-audience', 'nonlocal', 'excluded', 'visited', 'hinted-away'] as const)(
+    it.each(['volatile', 'best-effort', 'nonlocal', 'excluded', 'visited', 'hinted-away'] as const)(
         'does not acquire durable absent-cache work for %s',
         async (denial) => {
             const fixture = await createFixture();

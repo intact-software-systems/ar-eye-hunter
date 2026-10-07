@@ -737,7 +737,8 @@ function isLogicalRecipient(
         case 'multicast':
             return groupMemberPeerIds.size === 0 || groupMemberPeerIds.has(selfPeerId);
         case 'broadcast':
-            return !targets.exceptPeerIds?.includes(selfPeerId);
+            return !targets.exceptPeerIds?.includes(selfPeerId) &&
+                (targets.recipientPeerIds === undefined || targets.recipientPeerIds.includes(selfPeerId));
     }
 }
 
