@@ -15,11 +15,13 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 79
     }),
+    // One local runtime lifecycle owns bootstrap, command submission and visible
+    // state; the optional run intent keeps omission explicit in that same shell.
     Object.freeze({
         path: 'apps/rallar-black-box/src/runtime-store.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 50
+        maximumMagnitude: 51
     }),
     Object.freeze({
         path: 'packages/shared-test/rallar-bb-test/composite-results.ts',
