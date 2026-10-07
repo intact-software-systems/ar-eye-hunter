@@ -66,7 +66,6 @@ export interface CreateBrowserCallsCompositionInput {
 export interface CreateBrowserDirectorCompositionInput {
     readonly state: BrowserStateComposition;
     readonly messaging: BrowserMessagingComposition;
-    readonly rooms: BrowserRoomsComposition;
     readonly session: RallarSessionController;
 }
 
@@ -162,7 +161,6 @@ export function createBrowserDirectorComposition(
     });
     const directorAppointments = new BrowserDirectorAppointmentRuntime({
         roomStateStore: input.state.roomStateStore,
-        rooms: input.rooms.rooms,
         status: directorStatus,
         requireSession: input.session.requireSession,
         connect: async (options) => await input.session.connect(options),

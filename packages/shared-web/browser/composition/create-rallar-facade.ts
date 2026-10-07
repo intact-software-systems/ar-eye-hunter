@@ -111,7 +111,6 @@ function createBrowserFacadeCompositions(
     const director = createBrowserDirectorComposition({
         state,
         messaging,
-        rooms,
         session: sessionPort
     });
     return {

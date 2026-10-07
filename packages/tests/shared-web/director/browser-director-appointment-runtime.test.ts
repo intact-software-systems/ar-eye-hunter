@@ -3,8 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { BrowserDirectorAppointmentRuntime } from '@shared-web/browser/director/browser-director-appointment-runtime.ts';
 import { BrowserDirectorStatusRuntime } from '@shared-web/browser/director/browser-director-status-runtime.ts';
-import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
-import { updateStateGroupMetadata } from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { RallarStateCacheReadPort } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -66,14 +65,23 @@ describe('director resignation', () => {
         vi.restoreAllMocks();
     });
 
-    it('sends room metadata without the appointment, keeping every other key, through the metadata update workflow', async () => {
-        const appointed = createAppointmentSnapshot();
+    it('sends room metadata without the appointment, keeping every other key the server holds', async () => {
+        const appointed = createAppointmentSnapshot('hunter');
         stubGroupState(appointed);
         const runtime = createAppointmentRuntime(appointed);
 
         await runtime.resign(roomRef);
 
         expect(sentBodies).toEqual([expect.objectContaining({ metadata: { keep: true } })]);
+    });
+
+    it('leaves a successor\'s appointment as the server holds it when this session\'s cache still shows its own', async () => {
+        stubGroupState(createAppointmentSnapshot('successor'));
+        const runtime = createAppointmentRuntime(createAppointmentSnapshot('hunter'));
+
+        await runtime.resign(roomRef);
+
+        expect(sentBodies).toEqual([]);
     });
 
     function stubGroupState(stored: GroupSnapshot): void {
@@ -103,19 +111,8 @@ function createAppointmentRuntime(snapshot: GroupSnapshot): BrowserDirectorAppoi
         readSession: () => session,
         stateCache: new AppointedRoomCache(snapshot)
     });
-    const rooms: Pick<BrowserRallarRooms, 'updateMetadata'> = {
-        updateMetadata: async (room, patch) =>
-            await updateStateGroupMetadata({
-                groupId: typeof room === 'string' ? room : room.groupId,
-                patch,
-                principalId: session.clientId,
-                sessionId: session.sessionId,
-                scope
-            })
-    };
     return new BrowserDirectorAppointmentRuntime({
         roomStateStore,
-        rooms: rooms as BrowserRallarRooms,
         status: new BrowserDirectorStatusRuntime({
             roomStateStore,
             nowMs: () => 1_234,
@@ -123,9 +120,7 @@ function createAppointmentRuntime(snapshot: GroupSnapshot): BrowserDirectorAppoi
             resolveDefaultRoom: () => undefined
         }),
         requireSession: () => session,
-        connect: async () => {
-            throw new Error('A resignation never connects.');
-        },
+        connect: async () => ({}) as ApiMiddleware,
         resolveOperationOptions: (options) => options,
         resolveDefaultRoom: () => undefined,
         runAuthAwareOperation: async (operation) => await operation(),
@@ -133,8 +128,9 @@ function createAppointmentRuntime(snapshot: GroupSnapshot): BrowserDirectorAppoi
     });
 }
 
-function createAppointmentSnapshot(): GroupSnapshot {
-    const snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: ['hunter'] });
+/** The room with `directorSessionId`, a session of its own principal, appointed its director. */
+function createAppointmentSnapshot(directorSessionId: string): GroupSnapshot {
+    const snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: ['hunter', 'successor'] });
     return {
         ...snapshot,
         group: {
@@ -144,9 +140,9 @@ function createAppointmentSnapshot(): GroupSnapshot {
                 rallarDirector: {
                     version: 1,
                     mode: 'appointed-spa',
-                    sessionId: 'hunter',
-                    principalId: 'hunter',
-                    epoch: 1,
+                    sessionId: directorSessionId,
+                    principalId: directorSessionId,
+                    epoch: directorSessionId === 'hunter' ? 1 : 2,
                     appointedAtEpochMs: 1_000,
                     heartbeatTtlMs: 5_000
                 }

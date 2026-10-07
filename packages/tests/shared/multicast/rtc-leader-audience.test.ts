@@ -96,6 +96,28 @@ describe('the RTC leg of a group-leader room send', () => {
             .toBeUndefined();
     });
 
+    it('refuses a room send that asks for a leader receipt by quality of service alone as unsupported, sending nothing', async () => {
+        const fixture = createLeaderFixture(toDirectedSnapshot('d'));
+        const message = newALMulticastMessage(
+            'a',
+            { topicId: 'chat', resourceId: 'qos-leader', contextId: ORIGIN_ROOM.groupId },
+            ORIGIN_ROOM,
+            'chat.message.v1',
+            {},
+            {
+                ack: 'receiver',
+                reliability: 'at-least-once',
+                ttlMs: 30_000,
+                qos: { ack: { algo: 'leader' } }
+            }
+        );
+
+        const admitted = await enqueueLegAndDrain(fixture, message);
+
+        expect(admitted.verdict).toMatchObject({ kind: 'refused', reason: 'unsupported' });
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
+    });
+
     it('holds a durable group-leader send admitted before its room snapshot and freezes it to the director when the snapshot arrives', async () => {
         const fixture = createLeaderFixture(toDirectedSnapshot('d'));
         fixture.groups.delete('room');

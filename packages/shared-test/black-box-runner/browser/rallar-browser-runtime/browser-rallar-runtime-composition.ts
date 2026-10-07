@@ -206,7 +206,6 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
     const director = createBrowserDirectorComposition({
         state,
         messaging,
-        rooms,
         session: session.session
     });
     registerBlackBoxBrowserRallarLifecycle({

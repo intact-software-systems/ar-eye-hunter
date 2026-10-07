@@ -201,6 +201,19 @@ describe('WS client receipt tracking for a receiver unicast that names its room 
         });
     });
 
+    it('refuses a room send that asks for a leader receipt by quality of service alone as unsupported', async () => {
+        const fixture = await createReceiptTrackingFixture();
+
+        const sent = await fixture.service.enqueueOutboxIfAbsent({
+            ...roomMessage(),
+            delivery: { reliability: 'at-least-once', ack: 'receiver' },
+            qos: { ack: { algo: 'leader' } }
+        });
+
+        expect(sent.verdict).toMatchObject({ kind: 'refused', reason: 'unsupported' });
+        expect(await readReceipt(fixture)).toBeUndefined();
+    });
+
     it('tracks a group-leader room send as the leader receipt the admitted receipt names, and acknowledges it on the leader alone', async () => {
         const fixture = await createReceiptTrackingFixture();
         const leaderSend: ALMessage = { ...roomMessage(), delivery: { reliability: 'at-least-once', ack: 'group-leader' } };
