@@ -379,11 +379,12 @@ scoped-delivery bump resets browsers only. On the server:
 **The range-repair window.** PostgreSQL rows carry no schema identity here either, so the
 range-repair bump resets browsers only. On the server, a buffered-slot row, a retained
 `repair-hint` and a `nacks`/`repairs` control history row written by the old build fail strict
-decoding until they expire: the ordering track TTL (`orderingTrackTtlMs`, 5 minutes by default)
-bounds the buffered slots of a track, and the message deadlines bound the retained work and the
-control history, so the window closes without a migration. A NACK or repair a page still running
-the old build sends is refused `unsupported` (`al.control.nack.v1`, `al.control.repair.v1`) until
-that page reloads, symmetrically with the acknowledgement cutover above.
+decoding until they expire: the ordering track TTL (`orderingTrackTtlMs`, by default the repository
+TTL of 60 minutes) bounds the buffered slots of a track, and the message deadlines bound the
+retained work and the control history, so the window closes without a migration. A NACK or repair a
+page still running the old build sends is refused `unsupported` (`al.control.nack.v1`,
+`al.control.repair.v1`) until that page reloads, symmetrically with the acknowledgement cutover
+above.
 
 **The roster-fence window.** PostgreSQL rows carry no schema identity, so the roster-fence bump
 resets browsers only. On the server, a row an older build wrote holds a `v: 2` envelope and fails
@@ -424,7 +425,17 @@ cursor ([`ALInboundResyncCursor`](./al-inbound-resync-required.ts)) is where the
 `orderingKey`, `senderId`, `epoch`, `lastContiguousSeq`, `expectedSeq`, `observedSeq` and
 `carrier`. The runtime resets no track after a resynchronization; the sender's new epoch is a new
 track. Without the sink -- the WS server's case -- the message is dropped as before and the
-diagnostics state the refusal.
+diagnostics state the refusal. A WS client admits every server frame as `trusted-server`, so a
+server publication that carries a sequence is ordered on the track
+`<orderingKey>:<serverPeerId>:<epoch>` (the server peer id is `default-qbox-server` in api-v1 and
+the Relic server), and the NACK and repair request for its gap go to the server, since a
+`trusted-server` source's `fromPeerId` is the message's `senderId`; the server repairs its own
+publication (D153). The recovery owner of a server track is the typed channel the publication's
+topic and type name, found as for any sender (D142); Relic Hunters' round-transition channel is one
+(D152). A receiver remembers a server track for its ordering-track TTL, by default the repository
+TTL (60 minutes) that also bounds the server's head, so a track silent for over an hour restarts at
+`seq` 1 on both sides, and since the server's sequences follow commit order, two publications of one
+track can commit out of publish order under contention.
 
 **Room authority and the membership fence.** An RTC receiver judges a room send against the room
 snapshot it holds before planning it
@@ -449,6 +460,20 @@ receiving WS client trusts it. Behind either floor at its admission the WS serve
 message as a pending admission ([`retainPending`](./al-inbound-message-admission.ts)) instead of
 refusing it, answers the advisory NACK, and its replay re-authorizes the message every 50 ms until
 the floor is met or the deadline passes; the sender retries nothing.
+
+**Room-bounded audiences.** A principal or fixed-list send is a room send whose audience is narrowed
+to the principal's sessions or the listed sessions in the room (D156, D159). Over RTC the origin
+freezes the narrowed audience on the multicast, so a peer outside it may forward a copy but never
+delivers it locally or counts as a recipient, as for any frozen audience. The shared planner also
+reads a broadcast's `recipientPeerIds`: it reads this peer as a broadcast's logical recipient when
+`exceptPeerIds` does not name it and, if the broadcast carries `recipientPeerIds`, the list does
+([`al-policy.ts`](../../al-contracts/al-policy.ts)), and a relay owns as children only listed peers,
+by the rule a multicast's frozen list applies
+([`resolveALOwnedChildPeerIds`](../../al-contracts/resolve-al-owned-child-peer-ids.ts)). A listed
+room broadcast is therefore delivered only at listed sessions, over WS as over RTC; a WS server
+whose router owns the room fanout hands a listed broadcast that leaves it out to its router, as it
+hands a room unicast to another session. A broadcast without a list keeps the `exceptPeerIds` rule
+alone.
 
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce

@@ -100,7 +100,7 @@ describe('implicit message acquisition of the owned capture connection', () => {
                 strategy: carrier,
                 rtcCaptureMode: ownership === 'ordinary-replaced' ? undefined : 'off',
                 roomRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-                scope: 'all',
+                scope: 'room',
                 ack: 'none'
             });
             if (storageResult === 'unavailable') {
@@ -169,7 +169,7 @@ describe('implicit message acquisition of the owned capture connection', () => {
             onStorageUnavailable: 'volatile'
         });
         try {
-            const send = channel.sendWs({}, { rtcCaptureMode: 'off', scope: 'all', ack: 'none' });
+            const send = channel.sendWs({}, { rtcCaptureMode: 'off', scope: 'world', ack: 'none' });
             await entered.promise;
             const handle = await send;
             await facade.disconnect();
@@ -263,6 +263,55 @@ describe('implicit message acquisition of the owned capture connection', () => {
             if (expected.mode === 'off') {
                 expect(recorded).toEqual([]);
             }
+        }
+        finally {
+            await facade.disconnect();
+        }
+    });
+
+    it.each(
+        [
+            { scope: 'room', strategy: 'ws' },
+            { scope: 'world', strategy: 'ws' },
+            { scope: 'world', strategy: 'rtc-with-ws-fallback' }
+        ] as const
+    )('preserves run Off on scoped $scope/$strategy WS acquisition', async ({ scope, strategy }) => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const facade = createRallarFacade();
+        const recorded: RtcSignalingDiagnostics.Event[] = [];
+        facade.setDefaults({
+            applicationId: 'app',
+            rtc: { captureMode: 'native' },
+            diagnosticsPorts: { signalingDiagnostics: (event) => recorded.push(event) }
+        });
+        const channel = facade.messages.channel({ typeId: 'test', topicId: 'app.capture', purpose: 'notification' });
+        try {
+            const handle = await channel.send({ text: 'scoped' }, {
+                scope,
+                strategy,
+                ...(scope === 'room' ? { roomRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } } : {}),
+                rtcCaptureMode: 'native',
+                rtcCaptureContext: { run: 'off', recipe: 'native' }
+            });
+            expect(await handle.wait({ until: ['queued'] })).toMatchObject({ lifecycle: { state: 'queued' } });
+            expect(mocks.webSocketQueueBox.enqueueOutboxIfAbsent).toHaveBeenCalledTimes(1);
+            expect(mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0]![0]).toMatchObject({
+                payload: { contentType: 'application/json', resource: JSON.stringify({ text: 'scoped' }), typeId: 'test' },
+                targets: { mode: 'broadcast', scope }
+            });
+            expect(mocks.rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+            expect(mocks.initialiseMiddleware).toHaveBeenCalledTimes(1);
+            expect(mocks.initialiseMiddleware.mock.calls[0]![2]).toMatchObject({ rtcCaptureConfiguration: { mode: 'off', origin: 'run' } });
+            expect(handle.rtcCapture()).toEqual({ status: 'observed', value: facade.rtcCapture() });
+            expect(JSON.parse(JSON.stringify(handle.rtcCapture()))).toMatchObject({
+                status: 'observed',
+                value: {
+                    configuration: { mode: 'off', origin: 'run' },
+                    application: { status: 'applied', mode: 'off' },
+                    connectionId: { status: 'observed', value: 'constructed-1' }
+                }
+            });
+            expect(recorded).toEqual([]);
         }
         finally {
             await facade.disconnect();

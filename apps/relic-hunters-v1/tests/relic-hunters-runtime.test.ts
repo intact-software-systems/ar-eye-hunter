@@ -1,8 +1,18 @@
-import { createRelicGame, RELIC_PROTOCOL_VERSION, toPublicRelicSnapshot } from '@ar-eye-hunter/relic-hunters/mod.ts';
 import type { RallarRoomState } from '@ar-eye-hunter/shared-web/browser/rallar.ts';
+import {
+    createRelicGame,
+    RELIC_PROTOCOL_VERSION,
+    toPublicRelicSnapshot,
+    type RelicRoundTransitionEvent
+} from '@relic-hunters/mod.ts';
 import type { AuthSession } from 'api/api-config.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { RelicHuntersRuntime, type RelicHuntersRuntimeDeps } from '../src/game/relic-hunters-runtime.ts';
+import {
+    RelicHuntersRuntime,
+    type RelicHuntersRuntimeDeps,
+    type RelicResyncHydration
+} from '../src/game/relic-hunters-runtime.ts';
+import type { RelicRoundTransitionSubscription } from '../src/game/subscribe-relic-round-transitions.ts';
 
 describe('RelicHuntersRuntime', () => {
     it('starts, installs scoped listeners, and fetches the current snapshot', async () => {
@@ -170,6 +180,45 @@ describe('RelicHuntersRuntime', () => {
         );
     });
 
+    it('re-reads the room\'s game over REST each time its round-transition track needs resynchronizing', async () => {
+        const snapshot = toPublicRelicSnapshot(createRelicGame('room-1', 'room-1', 1_700_000_000_000));
+        const subscribed: Readonly<{ roomId: string; subscription: RelicRoundTransitionSubscription; }>[] = [];
+        const fetchedRoomIds: string[] = [];
+        const hydrations: RelicResyncHydration[] = [];
+        const unsubscribe = () => undefined;
+        const runtime = new RelicHuntersRuntime(runtimeDeps({
+            onRoundTransitionMessage: (roomId, subscription) => {
+                subscribed.push({ roomId, subscription });
+                return unsubscribe;
+            },
+            fetchSnapshot: async (roomId) => {
+                fetchedRoomIds.push(roomId);
+                if (fetchedRoomIds.length > 1) {
+                    throw new Error('snapshot unavailable');
+                }
+                return snapshot;
+            }
+        }));
+        const onTransition = (_event: RelicRoundTransitionEvent) => undefined;
+
+        expect(runtime.subscribeRoundTransitions('room-1', {
+            onTransition,
+            onResyncHydration: (hydration) => hydrations.push(hydration)
+        })).toBe(unsubscribe);
+        subscribed[0].subscription.onResyncRequired();
+        await vi.waitFor(() => expect(hydrations).toHaveLength(1));
+        subscribed[0].subscription.onResyncRequired();
+        await vi.waitFor(() => expect(hydrations).toHaveLength(2));
+
+        expect(subscribed.map((entry) => entry.roomId)).toEqual(['room-1']);
+        expect(subscribed[0].subscription.onTransition).toBe(onTransition);
+        expect(fetchedRoomIds).toEqual(['room-1', 'room-1']);
+        expect(hydrations).toEqual([
+            { kind: 'hydrated', roomId: 'room-1', snapshot },
+            { kind: 'failed', roomId: 'room-1', error: 'snapshot unavailable' }
+        ]);
+    });
+
     it('hydrates a joined room and delegates resets to the game reset transport', async () => {
         const deps = runtimeDeps({
             joinRoom: vi.fn(async () => ({ roomId: 'joined-room' }))
@@ -208,6 +257,7 @@ function runtimeDeps(
         onSnapshotMessage: vi.fn(() => () => undefined),
         onRtcSnapshotMessage: vi.fn(() => () => undefined),
         onAuthoritySnapshotMessage: vi.fn(() => () => undefined),
+        onRoundTransitionMessage: vi.fn(() => () => undefined),
         authorityStatus: vi.fn(() => ({
             phase: 'ready',
             protocol: 'relic-hunters.authority.v1',

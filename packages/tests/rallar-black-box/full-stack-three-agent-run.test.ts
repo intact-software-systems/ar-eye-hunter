@@ -83,13 +83,23 @@ describe('three-agent ALM run', () => {
         }
     });
 
+    it('selects exactly the audience scenarios for the same-principal family on every carrier, each with a sibling', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const samePrincipal = toScenarios(carrier).filter((scenario) => scenario.laneFamily === 'same-principal');
+            expect(samePrincipal.map((scenario) => scenario.scenarioKey), carrier)
+                .toEqual(['principal-delivery', 'fixed-list-delivery', 'world-routing']);
+            expect(samePrincipal.every((scenario) => scenario.sibling !== undefined && scenario.recipientB === undefined), carrier)
+                .toBe(true);
+        }
+    });
+
     // The receiver's prologue creates the run's group, so it owns it; an only owner's leave is refused.
-    it('starts recipient-b only after the receiver\'s connect barrier, and the sender only after both', async () => {
+    it('starts the third agent only after the receiver\'s connect barrier, and the sender only after both', async () => {
         const baseline = toScenarios('ws').find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
-        const recipientB = { ...baseline.receiver, recipeId: `${baseline.receiver.recipeId}-b` };
+        const third = { ...baseline.receiver, recipeId: `${baseline.receiver.recipeId}-b` };
         const runIds = {
             receiver: `${baseline.receiver.recipeId}-run`,
-            recipientB: `${recipientB.recipeId}-run`,
+            third: `${third.recipeId}-run`,
             sender: `${baseline.sender.recipeId}-run`
         };
         const posted: string[] = [];
@@ -109,7 +119,7 @@ describe('three-agent ALM run', () => {
             group,
             sender: toParticipant('sender-agent'),
             receiver: toParticipant('receiver-agent'),
-            recipientB: toParticipant('recipient-b-agent'),
+            third: toParticipant('recipient-b-agent'),
             readSnapshot: async () => {
                 await receiverConnected.promise;
                 return { results: posted.map((commandId) => ({ commandId, ok: true })) };
@@ -122,7 +132,7 @@ describe('three-agent ALM run', () => {
             const running = runRecipeTrioOnThreeAgents(run, {
                 sender: baseline.sender,
                 receiver: baseline.receiver,
-                recipientB
+                third
             });
             await vi.waitFor(() => expect(posted).toContain(runIds.receiver));
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -131,11 +141,11 @@ describe('three-agent ALM run', () => {
             receiverConnected.resolve();
             const outcome = await running;
 
-            expect(posted).toEqual([runIds.receiver, runIds.recipientB, runIds.sender]);
+            expect(posted).toEqual([runIds.receiver, runIds.third, runIds.sender]);
             expect(outcome).toEqual({
                 sender: { commandId: runIds.sender, ok: true, summary: 'ok' },
                 receiver: { commandId: runIds.receiver, ok: true, summary: 'ok' },
-                recipientB: { commandId: runIds.recipientB, ok: true, summary: 'ok' }
+                third: { commandId: runIds.third, ok: true, summary: 'ok' }
             });
         }
         finally {

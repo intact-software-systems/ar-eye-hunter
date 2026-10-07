@@ -159,39 +159,38 @@ describe('live WS notice subscriber', () => {
         expect(receiver.sent).toEqual([{ message, ids: ['remote-session'] }]);
     });
 
-    it('resolves a broad canonical key against the local audience at receipt', async () => {
+    it('resolves a world canonical key against the local audience at receipt, for a sender in the scope it names', async () => {
         const receiver = createReceiver();
         const message: ALMessage = { ...roomMessage(), targets: { mode: 'broadcast', scope: 'world' } };
-        receiver.readDeliverySurface.mockResolvedValue({
-            msg: message,
-            source: { kind: 'ws-client', peerId: 'sender', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
+        const surface = (authenticatedScope: { applicationId: string; workspaceId: string; }, msg = message) => ({
+            msg,
+            source: { kind: 'ws-client' as const, peerId: 'sender', authenticatedScope },
             nowMs: 1,
             supersedenceKey: null,
             supersedence: {},
             supersedenceTrackTtlMs: 1000
         });
+        receiver.readDeliverySurface.mockResolvedValue(surface({ applicationId: 'app', workspaceId: 'workspace' }));
         const encoded = encodeLiveWsNotice({
             channel: 'ws-channel',
             publisherId: 'publisher-a',
+            scope: { applicationId: 'app', workspaceId: 'workspace' },
             expiresAtMs: deadline,
             audience: { mode: 'broad', targetMode: 'world' },
             message: { ...message, payload: { ...message.payload, resource: JSON.stringify('x'.repeat(8_000)) } },
             inbound: { namespace: 'ws', reference: { senderId: 'sender', msgId: 'message-1' } }
         });
         if (encoded.kind !== 'inbound-key') {
-            throw new Error('Expected broad key fixture');
+            throw new Error('Expected world key fixture');
         }
         await receiver.receive(encoded.notice);
 
         expect(receiver.sent).toEqual([{ message, ids: ['remote-session'] }]);
-        receiver.readDeliverySurface.mockResolvedValue({
-            msg: { ...message, targets: { mode: 'broadcast', scope: 'all' } },
-            source: { kind: 'ws-client', peerId: 'sender', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
-            nowMs: 1,
-            supersedenceKey: null,
-            supersedence: {},
-            supersedenceTrackTtlMs: 1000
-        });
+        receiver.readDeliverySurface.mockResolvedValue(
+            surface({ applicationId: 'app', workspaceId: 'workspace' }, { ...message, targets: { mode: 'broadcast', scope: 'all' } })
+        );
+        await receiver.receive(encoded.notice);
+        receiver.readDeliverySurface.mockResolvedValue(surface({ applicationId: 'other', workspaceId: 'workspace' }));
         await receiver.receive(encoded.notice);
         expect(receiver.sent).toHaveLength(1);
     });

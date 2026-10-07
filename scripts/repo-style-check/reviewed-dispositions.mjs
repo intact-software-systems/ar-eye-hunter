@@ -222,6 +222,12 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
+    // Pre-existing JSON-shaped harness contract; the typed closure is a separate slice.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     Object.freeze({
         path: 'packages/tests/shared-test/api-v1-websocket-scope-recipes.test.ts',
         rule: 'boundary.unknown',

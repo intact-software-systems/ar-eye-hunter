@@ -103,9 +103,9 @@ describe('WebSocket command-center controller actions', () => {
             payload: JSON.parse(websocket.values.payloadText)
         }).toEqual({
             payloadPresetId: 'ping',
-            wsScope: 'all',
+            wsScope: 'world',
             typeId: 'app.black-box.ws.ping',
-            contextId: 'all',
+            contextId: 'world',
             payload: { seq: 1, text: 'ping from rallar-black-box' }
         });
     });

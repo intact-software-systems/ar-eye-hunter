@@ -144,6 +144,7 @@ function snapshot(): RelicPublicSnapshot {
         phase: 'planning',
         round: 1,
         maxRounds: 10,
+        createdAtEpochMs: 1,
         updatedAtEpochMs: 1_700_000_000_000,
         roundTimeLimitMs: 180_000,
         map,

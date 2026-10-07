@@ -25,6 +25,7 @@ import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browse
 import {
     newALBroadcastMessage,
     newALMulticastMessage,
+    newALPrincipalBroadcastMessage,
     newALUnicastMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { readSession } from '@shared/api/auth.ts';
@@ -111,6 +112,7 @@ export function createBrowserMessagingComposition(
             createUnicast: newALUnicastMessage,
             createMulticast: newALMulticastMessage,
             createBroadcast: newALBroadcastMessage,
+            createPrincipalBroadcast: newALPrincipalBroadcastMessage,
             newResourceId: crypto.randomUUID.bind(crypto)
         },
         wsInbox: input.wsInbox,

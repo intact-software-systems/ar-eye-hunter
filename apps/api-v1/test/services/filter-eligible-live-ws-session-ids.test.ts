@@ -36,7 +36,7 @@ function notice(
             : { mode: 'multicast', groupRef },
         payload: { typeId: 'room.match', resource: '{}' }
     };
-    return audience.mode === 'broad'
+    return audience.mode === 'broad' && audience.targetMode === 'all'
         ? { ...common, audience, message }
         : { ...common, scope, audience, message };
 }
@@ -263,5 +263,24 @@ Deno.test('principal and broad notices use current authenticated eligibility', (
             nowMs: 1
         }),
         ['just-opened']
+    );
+});
+
+Deno.test('a world notice keeps the authenticated sockets of the scope it names alone', () => {
+    const server = new JsonWebSocketServer();
+    addConnection(server, 'in-scope', { scope });
+    addConnection(server, 'other-app', { scope: { ...scope, applicationId: 'other' } });
+    addConnection(server, 'other-workspace', { scope: { ...scope, workspaceId: 'other' } });
+    const world = notice({ mode: 'broad', targetMode: 'world' });
+
+    assert.deepEqual(world.scope, scope);
+    assert.deepEqual(
+        filterEligibleLiveWsSessionIds({
+            socketServer: server,
+            candidateSessionIds: ['in-scope', 'other-app', 'other-workspace'],
+            notice: world,
+            nowMs: 1
+        }),
+        ['in-scope']
     );
 });

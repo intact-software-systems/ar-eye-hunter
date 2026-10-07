@@ -105,6 +105,8 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
             'topicId',
             'roomRef',
             'scope',
+            'principalId',
+            'recipientPeer',
             'reliability',
             'ack',
             'durability',
@@ -294,7 +296,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     formationCommand: ['plan', 'connect', 'activate', 'reconfigure', 'pause', 'resume', 'reset', 'start'],
     httpResponseBody: ['none', 'text', 'json'],
     messagesCarrier: ['ws', 'rtc', 'rtc-with-ws-fallback'],
-    messagesScope: ['room', 'world', 'all'],
+    messagesScope: ['room', 'world', 'principal'],
     messagesReliability: ['best-effort', 'at-least-once'],
     messagesAck: ['none', 'receiver', 'all-logical-recipients', 'group-leader'],
     messagesDurability: AL_DURABILITY_ALGOS,
@@ -302,6 +304,8 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     messagesQosAckAlgo: ['none', 'hop', 'subtree', 'receiver'],
     /** Roles, not session ids: no session exists when a recipe is written. */
     messagesToPeer: ['server', 'receiver'],
+    /** A role, as `messagesToPeer`: the page resolves it to the one session of a fixed audience. */
+    messagesRecipientPeer: ['receiver'],
     /** One carrier leg: the carrier a replay or a raw control is admitted on. */
     messagesCarrierLeg: ['ws', 'rtc'],
     faultCarrier: ['ws', 'rtc', 'storage'],

@@ -1,9 +1,15 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
+import {
+    isALFreezeOfMessage,
+    resolveALFrozenMulticastAudience
+} from '../../al-contracts/al-frozen-multicast-audience.ts';
+import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
+import { decodeALAdmissionValue } from '../al-admission-decoder.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import { toALOutboundCommitLockName, type ALBrowserLocks } from '../storage/al-browser-locks.ts';
@@ -19,8 +25,11 @@ import type {
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
-import { toALOutboundCanonicalKey } from './al-outbound-canonical-message.ts';
-import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
+import {
+    toALOutboundCanonicalKey,
+    toALOutboundMessageReference,
+    toALSequenceMintComparableMessage
+} from './al-outbound-canonical-message.ts';
 import { ALOutboundCommitPhases } from './al-outbound-commit-phases.ts';
 import type {
     ALOutboundCommitOrigin,
@@ -344,7 +353,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         const pending = await this.readPendingDispatch(input);
         if (pending) {
             return toALOutboundSettledDecision(pending.verdict, {
-                msg: input.read.msg,
+                msg: toALOutboundRequestedMessage(input.read),
                 entries: pending.entries,
                 reason: pending.reason
             });
@@ -410,10 +419,14 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         computed: ALOutboundComputedDto<TPrepared>,
         phases: ALOutboundCommitPhases
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
-        const canonicalEntry = computed.bundle?.canonicalEntry;
-        if (!canonicalEntry) {
+        const candidate = computed.bundle?.canonicalEntry;
+        if (!candidate) {
             throw new NonRetryableException('Pending admission requires its validated canonical candidate');
         }
+        // The sequence belongs to the attempt that commits: a retained admission keeps the request, and its
+        // replay mints when it commits.
+        const requested = toALOutboundRequestedMessage(input.read);
+        const canonicalEntry = { ...candidate, resource: this.dependencies.toOutboxEntry(requested).resource };
         const status = await phases.withCommitPhase(async () => {
             const retained = await this.admissionStore.retainPendingAdmission({
                 canonicalEntry,
@@ -423,7 +436,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
                     message: toALOutboundMessageReference(
                         this.admissionStore.canonicalScope,
                         canonicalEntry,
-                        input.read.msg
+                        requested
                     ),
                     policy: captureALOutboundPolicy(input.read.plan),
                     preparedMessages: input.read.plan.preparedMessages
@@ -432,12 +445,12 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             return retained === 'pending' ? 'committed' : retained;
         });
         if (status !== 'committed') {
-            return this.toCommitResult(status, { computed, msg: input.read.msg, intent: 'enqueue' });
+            return this.toCommitResult(status, { computed, msg: requested, intent: 'enqueue' });
         }
         return {
             computed: toALOutboundVerdictComputed(
                 { kind: 'pending' },
-                { msg: input.read.msg, entries: [canonicalEntry] }
+                { msg: requested, entries: [canonicalEntry] }
             ),
             committed: false
         };
@@ -530,7 +543,12 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         read: ALOutboundMessageReadDto<TPrepared>,
         dispatchAtMs: number
     ): ComputeALOutboundDispatchInput<TPrepared> {
-        const entry = read.canonicalEntry ?? this.dependencies.toOutboxEntry(read.msg);
+        // A replay that minted replaces the request its retained canonical row holds; a plan that froze a held
+        // row's audience replaces the row.
+        const entry = read.orderingHead === undefined && read.canonicalEntry &&
+                !isALOutboundCanonicalRowFrozenBy(read.canonicalEntry, read.msg)
+            ? read.canonicalEntry
+            : this.dependencies.toOutboxEntry(read.msg);
         return {
             read,
             outboxEntry: {
@@ -680,6 +698,23 @@ function toALOutboundVerdictComputed<TPrepared>(
     fields: Readonly<{ msg?: ALMessage; reason?: string; entries: readonly ResourceEntry[]; }>
 ): ALOutboundComputedDto<TPrepared> {
     return { ...fields, verdict, trackedReceiptAlgo: 'none' };
+}
+
+export function isALOutboundCanonicalRowFrozenBy(canonicalEntry: ResourceEntry, msg: ALMessage): boolean {
+    if (resolveALFrozenMulticastAudience(msg.targets) === undefined) {
+        return false;
+    }
+    const canonical = decodeALAdmissionValue(
+        canonicalEntry.resource,
+        JSON.stringify(canonicalEntry.key),
+        () => decodePersistedALMessage(canonicalEntry.resource)
+    );
+    return isALFreezeOfMessage(canonical, msg);
+}
+
+/** The message as its sender asked for it: a sequence this read minted is not part of it until a commit lands. */
+function toALOutboundRequestedMessage<TPrepared>(read: ALOutboundMessageReadDto<TPrepared>): ALMessage {
+    return read.orderingHead === undefined ? read.msg : toALSequenceMintComparableMessage(read.originalMsg, read.msg);
 }
 
 /** Members read the version of the sender one after another, so a version that moved between them splits the group. */

@@ -49,6 +49,9 @@ const CARRIER_SCENARIO_IDS = {
         'fenced-delivery',
         'fenced-catch-up',
         'fenced-rejection',
+        'principal-delivery',
+        'fixed-list-delivery',
+        'world-routing',
         'durable-takeover',
         'flush-on-hide'
     ],
@@ -72,6 +75,9 @@ const CARRIER_SCENARIO_IDS = {
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const),
         'fenced-delivery',
         'fenced-catch-up',
+        'principal-delivery',
+        'fixed-list-delivery',
+        'world-routing',
         'durable-takeover',
         'flush-on-hide'
     ],
@@ -98,6 +104,9 @@ const CARRIER_SCENARIO_IDS = {
         'unicast-fallback',
         'capacity',
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const),
+        'principal-delivery',
+        'fixed-list-delivery',
+        'world-routing',
         'durable-takeover'
     ]
 } as const;
@@ -117,7 +126,7 @@ function toConformanceInput(
 
 function toRecipes(scenarios: readonly AlmConformanceScenario[]): readonly RallarBlackBoxTestRecipe[] {
     return scenarios.flatMap((scenario) =>
-        [scenario.sender, scenario.receiver, scenario.recipientB, scenario.successor]
+        [scenario.sender, scenario.receiver, scenario.recipientB, scenario.successor, scenario.sibling]
             .filter((recipe): recipe is RallarBlackBoxTestRecipe => recipe !== undefined)
     );
 }

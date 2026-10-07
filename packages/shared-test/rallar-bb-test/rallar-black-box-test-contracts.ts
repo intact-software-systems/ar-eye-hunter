@@ -332,7 +332,14 @@ export type RallarBlackBoxTestMessagesSendCommand =
         topicId?: string;
         payload: RallarBlackBoxTestJsonValue;
         roomRef?: RallarBlackBoxTestRecord;
-        scope?: 'room' | 'world' | 'all';
+        scope?: 'room' | 'world' | 'principal';
+        /** With scope `principal`: the principal whose live sessions in the room the send addresses. */
+        principalId?: string;
+        /**
+         * A fixed audience of one inside the room, by lane role: `receiver` is the one other live session of the room
+         * whose principal is not the sender's, resolved by the page at send time. Absent, the send names no list.
+         */
+        recipientPeer?: 'receiver';
         reliability?: 'best-effort' | 'at-least-once';
         ack?: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
         durability?: ALDurabilityAlgo;

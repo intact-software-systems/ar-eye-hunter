@@ -1,8 +1,10 @@
+import { decodeALControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
     createDefaultInMemoryALInboundRuntimeStores,
     createVolatileALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
+import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import * as shared from '@shared/mod.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
@@ -692,6 +694,67 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         await expect.poll(() => deliveredTexts).toEqual([seq1.payload.resource, seq2.payload.resource]);
     });
 
+    it('buffers a gap on a server track, NACKs the server for it and delivers the track in order', async () => {
+        const socket = createFakeWsSocket();
+        const service = shared.createDefaultWsQueueBoxClientService({
+            outbox: new shared.InMemoryQueueBox(new Map()),
+            socket: socket.client,
+            sessionId: 'self',
+            serverPeerId: 'server'
+        }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
+        const deliveredSeqs: (number | undefined)[] = [];
+        service.onInboxMessageDo('round.event.v1', {
+            onMessage: async (message) => {
+                deliveredSeqs.push(message.ordering?.seq);
+            }
+        });
+
+        await socket.receive(serverRoundEvent(2));
+
+        await expect.poll(() => readSentNacks(socket.sentJsonStrings)).toEqual([expect.objectContaining({
+            msgId: 'round-event-2',
+            fromPeerId: 'self',
+            toPeerId: 'server',
+            reason: 'gap',
+            orderingKey: 'game-1:server:1',
+            missingRanges: [{ from: 1, to: 1 }]
+        })]);
+        expect(deliveredSeqs).toEqual([]);
+
+        await socket.receive(serverRoundEvent(1));
+
+        await expect.poll(() => deliveredSeqs).toEqual([1, 2]);
+    });
+
+    it('hands a server track that needs resynchronization to the recovery owner with the server as its sender', async () => {
+        const socket = createFakeWsSocket();
+        const resyncs: ALInboundResyncRequired[] = [];
+        const service = shared.createDefaultWsQueueBoxClientService({
+            outbox: new shared.InMemoryQueueBox(new Map()),
+            socket: socket.client,
+            sessionId: 'self',
+            serverPeerId: 'server',
+            onResyncRequired: (resync) => resyncs.push(resync)
+        }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
+
+        await socket.receive(serverRoundEvent(258));
+
+        await expect.poll(() => resyncs.map((resync) => resync.cursor)).toEqual([{
+            orderingKey: 'game-1',
+            senderId: 'server',
+            epoch: 1,
+            lastContiguousSeq: 0,
+            expectedSeq: 1,
+            observedSeq: 258,
+            carrier: 'ws'
+        }]);
+        await expect.poll(() => readSentNacks(socket.sentJsonStrings)).toEqual([
+            expect.objectContaining({ msgId: 'round-event-258', toPeerId: 'server', reason: 'resync-required' })
+        ]);
+    });
+
     it('admits an at-least-once send that requests no durability as volatile, even while the socket is closed', async () => {
         const socket = createFakeWsSocket();
         const service = shared.createDefaultWsQueueBoxClientService({
@@ -813,6 +876,32 @@ async function readQueueEntries(queue: shared.InMemoryQueueBox): Promise<shared.
         }
     }
     return entries;
+}
+
+/** A round event the server published on its own track: key `game-1`, epoch 1, the server's sequence. */
+function serverRoundEvent(seq: number): shared.ALMessage {
+    const message = shared.newALBroadcastMessage(
+        'server',
+        { topicId: 'room.round.event', resourceId: `round-event-${seq}`, contextId: 'group-1' },
+        'room',
+        'round.event.v1',
+        { seq },
+        {
+            groupRef: groupRef('group-1'),
+            reliability: 'at-least-once',
+            ack: 'receiver',
+            ttlMs: 60_000,
+            ordering: { orderingKey: 'game-1', epoch: 1, seq }
+        }
+    );
+    return { ...message, id: { ...message.id, msgId: `round-event-${seq}` } };
+}
+
+function readSentNacks(sentJsonStrings: readonly string[]): readonly ALNackPayload[] {
+    return sentJsonStrings.flatMap((serialized) => {
+        const control = decodeALControlMessage(decodePersistedALMessage(serialized)).right;
+        return control?.type === 'nack' ? [control.payload] : [];
+    });
 }
 
 function groupRef(groupId: string) {

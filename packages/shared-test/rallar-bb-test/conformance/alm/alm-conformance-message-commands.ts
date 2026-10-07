@@ -16,9 +16,9 @@ import {
 } from './alm-conformance-budgets.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import {
-    ALM_CONFORMANCE_TOPIC_ID,
     toCommandId,
     toRoomRef,
+    toScenarioTopicId,
     toScenarioTypeId,
     toSendHandleId
 } from './alm-conformance-step-identities.ts';
@@ -37,6 +37,11 @@ interface AlmConformanceSendDelivery {
     readonly minSnapshotVersion?: RallarBlackBoxTestMessagesSendCommand['minSnapshotVersion'];
     /** Absent, the send addresses its room. */
     readonly toPeer?: RallarBlackBoxTestMessagesSendCommand['toPeer'];
+    /** Absent, the room. */
+    readonly scope?: RallarBlackBoxTestMessagesSendCommand['scope'];
+    readonly principalId?: string;
+    /** Absent, the send names no fixed audience. */
+    readonly recipientPeer?: RallarBlackBoxTestMessagesSendCommand['recipientPeer'];
 }
 
 interface AlmConformanceSendInput extends AlmConformanceMessageStepInput {
@@ -72,7 +77,7 @@ export function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTest
         connection: input.senderConnection,
         carrier: input.carrier,
         typeId,
-        topicId: ALM_CONFORMANCE_TOPIC_ID,
+        topicId: toScenarioTopicId(send),
         payload: send.payload,
         handleId: toSendHandleId(send),
         timeoutMs: toBudgetMs(

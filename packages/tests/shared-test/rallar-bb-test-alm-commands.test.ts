@@ -300,6 +300,48 @@ describe('ALM recipe commands', () => {
         }
     });
 
+    it('accepts a principal audience and a fixed audience by lane role on messages.send, and refuses a client all', () => {
+        const send = {
+            kind: 'messages.send',
+            commandId: 'send-audience',
+            carrier: 'ws',
+            typeId: 'alm.conformance',
+            payload: { n: 1 }
+        };
+        const accepted = [
+            { ...send, scope: 'principal', principalId: '{auth.clientId}' },
+            { ...send, recipientPeer: 'receiver' },
+            { ...send, scope: 'world' }
+        ];
+        for (const command of accepted) {
+            expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send', command)).ok)
+                .toBe(true);
+            expect(validateRallarBlackBoxTestCommand(command).ok).toBe(true);
+        }
+
+        const refused = validateJsonSchema(
+            RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
+            recipeWithCommand('send-all', { ...send, scope: 'all', recipientPeer: 'recipient-b' })
+        );
+        expect(refused.ok).toBe(false);
+        if (!refused.ok) {
+            expect(formatJsonSchemaValidationErrors(refused.errors)).toContain(
+                'scope: Expected one of "room", "world", "principal".'
+            );
+            expect(formatJsonSchemaValidationErrors(refused.errors)).toContain(
+                'recipientPeer: Expected one of "receiver".'
+            );
+        }
+        const control = validateRallarBlackBoxTestCommand({ ...send, scope: 'all', recipientPeer: 'recipient-b' });
+        expect(control.ok).toBe(false);
+        if (!control.ok) {
+            expect(control.messages).toEqual([
+                'messages.send.scope must be one of room, world, principal.',
+                'messages.send.recipientPeer must be one of receiver.'
+            ]);
+        }
+    });
+
     it('accepts a messages.send replay onto one carrier and refuses an unknown replay carrier', () => {
         const replay = (carrier: string) => ({
             kind: 'messages.send',

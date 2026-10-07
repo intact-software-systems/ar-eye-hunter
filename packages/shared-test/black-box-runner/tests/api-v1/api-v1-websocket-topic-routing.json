@@ -33,6 +33,15 @@
       "default": "secret",
       "secret": true
     },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
     "runId": {
       "env": "RALLAR_BB_RUN_ID",
       "default": "local"
@@ -54,6 +63,10 @@
       "timeoutMs": 10000
     },
     "rallarWs": {
+      "type": "ws",
+      "timeoutMs": 10000
+    },
+    "bobWs": {
       "type": "ws",
       "timeoutMs": 10000
     }
@@ -271,6 +284,174 @@
       }
     },
     {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-login-bob-002-{runId}-websocket-topic-routing",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "bobSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "username": "{bobUsername}",
+          "sessionId": "string",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "joinBobToGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/join-bob-ws-scope-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectBobPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/presence-bob-ws-scope-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "createBobWebSocketTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/bb-create-web-socket-ticket-bob-005-{runId}-websocket-topic-routing",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ticket": "string",
+          "sessionId": "{bobSessionId}",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveBobWebSocketUrl",
+      "type": "set",
+      "output": "bobWsUrl",
+      "secret": true,
+      "redactAs": "bobWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.bobSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.bobWsTicket"
+            }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.joinAliceToGroup.0.actual.body.group.applicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.joinAliceToGroup.0.actual.body.group.workspaceId"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openBobWebSocket",
+      "type": "ws.open",
+      "connection": "bobWs",
+      "request": {
+        "url": "{bobWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
       "name": "sendApplicationMessage",
       "type": "ws.send",
       "connection": "rallarWs",
@@ -309,12 +490,12 @@
           }
         },
         "outputs": {
-          "echoMessageId": "matchedMessage.data.id.msgId",
-          "echoTopic": "matchedMessage.data.route.topicId"
+          "deliveredMessageId": "matchedMessage.data.id.msgId",
+          "deliveredTopic": "matchedMessage.data.route.topicId"
         }
       },
       "expect": {
-        "connection": "rallarWs",
+        "connection": "bobWs",
         "withinMs": 10000,
         "message": {
           "id": {
@@ -330,6 +511,87 @@
             "resource": "{\"text\":\"hello over api-v1 ws\",\"groupId\":\"{groupId}\",\"runId\":\"{runId}\"}"
           }
         }
+      }
+    },
+    {
+      "name": "bobRepliesToTheRoom",
+      "type": "ws.send",
+      "connection": "bobWs",
+      "request": {
+        "send": {
+          "id": {
+            "v": 3,
+            "msgId": "api-v1-bb-ws-bob-{runId}",
+            "ts": 0,
+            "senderId": "{bobSessionId}",
+            "sessionId": "{bobSessionId}",
+            "traceId": "api-v1-bb-ws-bob-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.chat",
+            "resourceId": "api-v1-bb-ws-resource-{runId}",
+            "contextId": "{applicationId}:{workspaceId}"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
+          },
+          "delivery": {
+            "reliability": "best-effort",
+            "ack": "none"
+          },
+          "payload": {
+            "typeId": "chat.message.v1",
+            "contentType": "application/json",
+            "resource": "{\"text\":\"bob replies over api-v1 ws\",\"groupId\":\"{groupId}\",\"runId\":\"{runId}\"}"
+          }
+        }
+      },
+      "expect": {
+        "connection": "rallarWs",
+        "withinMs": 10000,
+        "message": {
+          "id": {
+            "msgId": "api-v1-bb-ws-bob-{runId}",
+            "traceId": "api-v1-bb-ws-bob-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.chat",
+            "resourceId": "api-v1-bb-ws-resource-{runId}"
+          },
+          "payload": {
+            "typeId": "chat.message.v1",
+            "resource": "{\"text\":\"bob replies over api-v1 ws\",\"groupId\":\"{groupId}\",\"runId\":\"{runId}\"}"
+          }
+        }
+      }
+    },
+    {
+      "name": "aliceNeverReceivesHerOwnRoomBroadcast",
+      "type": "ws.wait",
+      "connection": "rallarWs",
+      "expect": {
+        "connection": "rallarWs",
+        "withinMs": 2000,
+        "absent": {
+          "id": {
+            "msgId": "api-v1-bb-ws-{runId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "closeBobWebSocket",
+      "type": "ws.close",
+      "connection": "bobWs",
+      "request": {
+        "code": 1000,
+        "reason": "api-v1 black-box recipe done"
       }
     },
     {
@@ -376,6 +638,50 @@
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "loggedOut": true
+        }
+      }
+    },
+    {
+      "name": "disconnectBobPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/disconnect/requests/disconnect-bob-ws-scope-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "logoutBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout/requests/bb-logout-bob-008-{runId}-websocket-topic-routing",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
         }
       },
       "expect": {

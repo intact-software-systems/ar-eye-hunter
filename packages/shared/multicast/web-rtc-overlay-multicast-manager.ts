@@ -99,6 +99,7 @@ import {
 } from './rtc-room-snapshot-admission.ts';
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 import {
+    computeRtcBroadcastScopeRefusal,
     computeRtcFrozenAudienceRefusal,
     toRtcEmptyAudienceDispatchPlan,
     toRtcFrozenAudienceDispatchPlan,
@@ -531,12 +532,20 @@ export class WebRtcOverlayMulticastManager {
             toRtcOriginFrozenMessage(original, context, selfPeerId);
         const policy = this.readOutgoingQosPolicy(frozen, context);
         const msg = toALOutboundMessage(frozen, policy.effective);
-        const plan = computeALOutboundAckRefusal<ALOutboundTransportMessage>({ msg, carrier: 'rtc', policy })
+        const plan = computeRtcBroadcastScopeRefusal(msg)
+            .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
+                (refusal) => Either.ofLeft(refusal),
+                (carried) =>
+                    computeALOutboundAckRefusal<ALOutboundTransportMessage>({ msg: carried, carrier: 'rtc', policy })
+            )
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
                 (admissible) => computeALOutboundOrderingRefusal({ msg: admissible, policy })
             )
-            .flatMap((refusal) => Either.ofLeft(refusal), computeRtcFrozenAudienceRefusal)
+            .flatMap(
+                (refusal) => Either.ofLeft(refusal),
+                (carried) => computeRtcFrozenAudienceRefusal(carried, original)
+            )
             .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, availability, alreadyOwned));
         return toRtcFrozenAudienceDispatchPlan(toRtcEmptyAudienceDispatchPlan(plan, policy.effective), selfPeerId);
     }

@@ -275,24 +275,43 @@ its cache holds the move.
 Broadcast scopes have distinct semantics:
 
 - `room`: live sessions in one scoped room/group;
-- `principal`: the principal's own live sessions plus the explicitly defined
-  co-group audience;
-- `world`: one product world/application audience;
-- `all`: every authorized live connection in the relevant deployment scope.
+- `principal`: the principal's live sessions in the addressed room (the server's
+  state-sync fan-out to a principal's co-group sessions is not a client audience);
+- `world`: every authenticated live connection in the sender's authenticated scope
+  (application and workspace);
+- `all`: every authenticated connection the server holds, across scopes: a server
+  and proxy audience, refused from a client.
 
-Exclusions are applied after authoritative audience resolution. A server may
-capture immutable `recipientPeerIds` for replayable authoritative work; clients
-cannot use that field to expand authority.
+Exclusions are applied after authoritative audience resolution. A sender may name
+a fixed audience inside its room (`recipientPeerIds`), resolved to the room's live
+sessions; a server captures the same field for replayable authoritative work;
+neither expands authority beyond the room.
 
-**PARTIAL:** Server WS implements room routing and application-specific
-principal/state-sync and fixed-topology cases.
-
-**PLANNED — A1, general scope semantics:** The shared planner treats broadcast
-as “not excluded,” does not interpret scope/principal/fixed recipients, and the
-public builder cannot create principal or fixed-recipient broadcasts. A1 gives
-every scope one semantic with RTC and WS parity; world and all take the WS route
-automatically when fallback is allowed and are typed carrier-unsupported over
-RTC otherwise.
+**CURRENT — A1, audiences with carrier parity:** each scope has the one meaning
+above on both carriers (D156). `principal` and a fixed list are room audiences:
+the browser's `principalId` and `recipientPeerIds` (on `messages.rtc`,
+`messages.ws` and the room channel) narrow the room's audience at the sender's
+snapshot, the RTC origin freezing the narrowed audience on its multicast and the
+WS server admitting it as the room audience, so `receiver` and
+`all-logical-recipients` receipts, the roster fence and repair work as for any
+room send; a list holds at most 256 sessions, and a listed session outside the
+room is dropped silently. The shared planner delivers a room broadcast that
+carries `recipientPeerIds` only at a listed session (D159, D160). RTC carries
+room, principal and list audiences and refuses `world` and `all` `unsupported`,
+so the browser sender routes a `world` send to WS at once on
+`rtc-with-ws-fallback` and `ws-then-rtc`, and on `rtc` the send ends `rejected`
+with that refusal: carrier-unsupported is the existing typed refusal, not a new
+state (D157). WS ingress binds a client's `world` broadcast to the connection's
+authenticated scope, on every instance through the scoped cluster notice,
+requires a client's `principal` broadcast to name its room, and refuses a
+client's `all` `unauthorized`; `world` keeps `ack: 'none'` (D158). The
+conformance lane's `same-principal` family, which signs the sender's principal
+in on a second agent, runs `principal-delivery`, `fixed-list-delivery` and
+`world-routing` over `ws`, `rtc` and `rtc-with-ws-fallback`; a client's `all`
+is no browser input, so its refusal is pinned at the server, the RTC origin and
+the browser validator rather than in a lane cell; manifests 18 and 22 are
+unchanged (D161). A server-originated principal publication and the
+deployment-wide principal audience are not client sends and stay carried (D163).
 
 ## Transport selection and parity
 
@@ -371,7 +390,8 @@ fixes the channel's send defaults (D52):
 | `notification` | `at-least-once` | `all-logical-recipients` | 30 s     | `volatile` |
 
 The two acks are one frozen-audience algorithm (D41). A `world` or `all`
-broadcast names no logical audience, so it keeps `ack: 'none'` until A1. The
+broadcast names no logical audience, so it keeps `ack: 'none'`; a principal or
+listed room broadcast has its narrowed room audience (D159). The
 2-second ACK timeout and three receipt retries are the at-least-once
 normalization defaults these fields select. A channel may declare `durability`,
 and a send may override each field, durability through `qos.durability`. `realtime` is refused at a typed channel and
@@ -534,6 +554,36 @@ one follow-up hint (D140); exhausted repair settles the sender's message
 declared recovery owner is invoked with a bounded cursor (D142, under "Repair
 and resynchronization"). The lane's `ordering-gap-repair` and `repair-exhausted`
 cells prove the repair and its end.
+
+**CURRENT — R2b, server-sequenced tracks:** A browser's sequence is
+client-assigned; a server publication's is minted by the server (D24 narrowed,
+D150). A server publication that names an ordering key and no sequence is
+sequenced by the WS server's outbound admission from one ordering-head row per
+track (ordering key, server peer id, epoch), advanced in the same commit that
+admits the message under the server's sender-version fence, so the sequence is
+contiguous whichever server instance publishes, continues after a restart, and
+is not reassigned when the same `msgId` is admitted again. The server repairs
+its own tracks from its sent copies: a receiving WS client NACKs a gap to the
+server, which retransmits the missing sequences to that requester alone, 32 per
+page, until the message's deadline and only to a requester inside the audience
+the message was admitted to that the triggering message's receipt still
+expects, so a keyed server publication asks `ack: 'receiver'` and is published
+to the `outbox` (a keyed publish without a sequence at `live-only` or `none` is
+refused, and an `ack: 'none'` one gets no ranged repair). The repair budget is
+per message and shared: the first receiver to NACK a sequence spends it, the
+others fall back to receipt retries; exhausted repair settles
+`skipped`/`repair-exhausted` once (D141, D153). Sequences follow commit order,
+so under contention two publications of one track can commit out of publish
+order (a first-in-first-out mint per track is a follow-up), and since a
+receiver's ordering-track TTL defaults to the repository TTL (60 minutes), the
+lifetime of the server's head, a track silent for over an hour restarts at `seq`
+1 on both sides. One receiver's `resync-required` NACK settles the publication
+`relay-rejected` and removes its whole pending receipt (D155). The receiver's
+recovery owner is the typed channel's, as for a browser sender. The WS server
+fixture, the shared-key schedule over memory, IndexedDB and pglite with the
+gated PostgreSQL two-connection case, and the api-v1 end-to-end test prove it;
+no conformance cell exercises a server-originated send, since no harness step
+makes the server publish one (D155).
 
 ## Deduplication and supersedence
 
@@ -884,12 +934,13 @@ paths; legacy exports/classes remain. The current outbound owner map is
 documented in
 [`alm/outbound/README.md`](../../packages/shared/alm/outbound/README.md).
 
-**PLANNED — A1, I1, I2a, and I2b, complete safe surface:** The delivery handle
+**PLANNED — I1, I2a, and I2b, complete safe surface:** The delivery handle
 (S1) and the channel purpose (S3a) exist. They are exported by
-`browser/rallar-messages.ts`, the narrow entry point F1 added. Four parts are
-absent:
+`browser/rallar-messages.ts`, the narrow entry point F1 added. A1 added the
+principal and fixed-recipient builders (`newALPrincipalBroadcastMessage`, and
+`recipientPeerIds` on `newALBroadcastMessage`) and the browser's `principalId`
+and `recipientPeerIds` send inputs. Three parts are absent:
 
-- principal and fixed-recipient builders (A1);
 - correlation and trace builders (I1);
 - the channel's storage-unavailable policy (I2a);
 - `local-checkpoint` with its per-store settings (I2b).
@@ -909,6 +960,33 @@ this document is in scope (decision D5); the roadmap's release map owns the
 order, and the two games are changed wherever that proves a capability in a
 real UI (decision D4). #566 ships two such cutovers as one web and API deploy:
 RTC signaling's required `offerId` (D97) and the admission schema bump (D101).
+
+Relic Hunters is the server-authoritative consumer. Its commands travel over WS
+as a unicast to the server peer id on `room.relic.command`, receipted at the
+server's admission (D79), on a `local-checkpoint` channel that refuses when
+storage is unavailable (D134): the server's `msgId` dedup absorbs a command
+resumed after a reload, and a command admitted inside the last checkpoint
+interval is lost with the page and reads `unobservable`. Every applied command
+publishes the whole game snapshot as a latest-wins room notification from the
+server, with `receiver` receipts over the audience frozen at publish and a 15 s
+TTL (D77); the client keeps the newest by its own comparator. **CURRENT — R2b,
+round transitions:** the server publishes each round transition -- the round
+starting, resolving into review, and the review continuing into the next round
+or the finish -- as a `relic.event.v1` notification on `room.relic.event` with
+the game's incarnation (`${gameId}:${createdAtEpochMs}`, since a reset keeps the
+game id) as ordering key, the round the transition enters as epoch (the finish
+enters the round past the last) and no sequence, so the server mints one track
+per round and no track spans a review (D150, D151). The client reads it through
+a typed room channel whose recovery owner re-reads the game over REST, and the
+UI's live round cues follow that stream in order while the snapshot stays the
+game's state (D152). A browser that joins during a round sees that round's state
+from the snapshot and its cues from the next round (D155). **CURRENT — A1, AI
+suggestions on a principal audience:** a hunter's planning suggestion, generated
+in the browser, shows in the asking browser at once and is sent as a principal
+broadcast in the room over WS (`ai.broadcastJson` with `scope: 'principal'` and
+the hunter's principal id), so the hunter's other sessions in the room receive
+it and no other hunter does; the receiver keeps its room and revision checks
+(D162). Per-player private events from the server are carried (D163).
 
 ## Current validation baseline
 

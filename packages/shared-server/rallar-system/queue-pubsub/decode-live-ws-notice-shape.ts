@@ -2,7 +2,7 @@ import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistenc
 import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import type { GroupScope } from '@shared/api/group-types.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
-import { decodeLiveWsAudience, matchesLiveWsAudience } from './live-ws-audience.ts';
+import { decodeBroadLiveWsAudience, decodeLiveWsAudience, matchesLiveWsAudience } from './live-ws-audience.ts';
 import type { LiveWsAudience, LiveWsInboundReference, LiveWsNotice } from './live-ws-notice.ts';
 
 const BASE_NOTICE_KEYS = [
@@ -52,11 +52,11 @@ function decodeInlineLiveWsNotice(wire: JsonWireObject, base: LiveWsNoticeBase):
     if (!isRecord(wire.audience)) {
         return undefined;
     }
-    const broad = wire.audience.mode === 'broad';
-    if (!hasKeys(wire, [...BASE_NOTICE_KEYS, ...(broad ? [] : ['scope']), 'audience', 'message'])) {
+    const unscoped = wire.audience.mode === 'broad' && wire.audience.targetMode === 'all';
+    if (!hasKeys(wire, [...BASE_NOTICE_KEYS, ...(unscoped ? [] : ['scope']), 'audience', 'message'])) {
         return undefined;
     }
-    const scope = broad ? undefined : (isScope(wire.scope) ? wire.scope : undefined);
+    const scope = unscoped ? undefined : (isScope(wire.scope) ? wire.scope : undefined);
     const audience = decodeLiveWsAudience(wire.audience, scope);
     if (!audience) {
         return undefined;
@@ -73,8 +73,8 @@ function decodeInlineLiveWsNotice(wire: JsonWireObject, base: LiveWsNoticeBase):
     ) {
         return undefined;
     }
-    const common = { ...base, audience, delivery: 'inline' as const, message };
-    if (audience.mode === 'broad') {
+    const common = { ...base, delivery: 'inline' as const, message };
+    if (audience.mode === 'broad' && audience.targetMode === 'all') {
         return { ...common, audience };
     }
     if (!scope) {
@@ -88,10 +88,12 @@ function decodeKeyLiveWsNotice(wire: JsonWireObject, base: LiveWsNoticeBase): Li
         return undefined;
     }
     const broad = wire.audienceMode === 'broad';
+    const scoped = !broad || wire.targetMode === 'world';
     if (
         !hasKeys(wire, [
             ...BASE_NOTICE_KEYS,
-            ...(broad ? ['targetMode'] : ['scope']),
+            ...(broad ? ['targetMode'] : []),
+            ...(scoped ? ['scope'] : []),
             'audienceMode',
             'inbound'
         ])
@@ -99,16 +101,15 @@ function decodeKeyLiveWsNotice(wire: JsonWireObject, base: LiveWsNoticeBase): Li
         return undefined;
     }
     const common = { ...base, delivery: 'inbound-key' as const, inbound: wire.inbound };
+    const scope = isScope(wire.scope) ? wire.scope : undefined;
     if (wire.audienceMode === 'broad') {
-        if (wire.targetMode !== 'all' && wire.targetMode !== 'world') {
-            return undefined;
+        const audience = decodeBroadLiveWsAudience(wire.targetMode, scope);
+        if (audience?.targetMode === 'all') {
+            return { ...common, audienceMode: 'broad', targetMode: 'all' };
         }
-        return { ...common, audienceMode: 'broad', targetMode: wire.targetMode };
+        return audience && scope ? { ...common, scope, audienceMode: 'broad', targetMode: 'world' } : undefined;
     }
-    if (!isScope(wire.scope)) {
-        return undefined;
-    }
-    return { ...common, scope: wire.scope, audienceMode: wire.audienceMode };
+    return scope ? { ...common, scope, audienceMode: wire.audienceMode } : undefined;
 }
 
 function isInboundReference(value: JsonWireValue): value is JsonWireObject & LiveWsInboundReference {

@@ -26,12 +26,23 @@ tracks no receipt, still has the server's gap NACK served along that hop; the RT
 and the WS server declare no fixed hop. Control acceptance applies the same exemption: without a
 repair planner, a room-scoped gap NACK or repair control is admitted only when its requester is
 the sender's own hop, so the server's gap NACK to its own WS client commits the repair hint that
-retransmits the missing ranges along that hop.
-[`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one predicate both owners
-share. A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges
-(`missingRanges`, at most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256 window
-can hold), as the `al.control.nack.v2` and `al.control.repair.v2` payloads and the planner's NACK
-plan do; [`decodeALSeqRanges`](../../al-contracts/al-seq-range.ts) is the one bounded range
+retransmits the missing ranges along that hop. The WS server repairs its own publications through
+its repair planner instead: a WS client's gap NACK on a track whose sequences the server minted
+pages the missing sequences from the server's ordering index and resends each to that requester
+alone, and only when the requester is in the audience the resent message was admitted to and
+still expected by the receipt of the message whose NACK revealed the gap, so a session that
+joined later is never served and a keyed server publication asks `ack: 'receiver'` (an
+`ack: 'none'` one gets no ranged repair) (D43, D153). The budget is per message: the first
+requester spends `maxRepairs` and another requester of the same sequence falls back to the
+receipt's retries. Only the `outbox` fan-out mints; a keyed publish without a sequence at
+`live-only` or `none` is refused. Relic Hunters' round transitions are that track's consumer: one
+track per round, the game's incarnation (`${gameId}:${createdAtEpochMs}`, since a reset keeps the
+game id) as ordering key and the round the transition enters as epoch, the finish entering the round
+past the last (D151). [`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one
+predicate both owners share. A hint names what is missing as inclusive `ALSeqRange` `{ from, to }`
+ranges (`missingRanges`, at most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256
+window can hold), as the `al.control.nack.v2` and `al.control.repair.v2` payloads and the planner's
+NACK plan do; [`decodeALSeqRanges`](../../al-contracts/al-seq-range.ts) is the one bounded range
 decoder for the wire and the rows. A NACK and a repair request naming the same gap are one hint:
 the gap -- requester, ordering track and ranges, the ranges joined as `from-to` with `,` -- names
 the hint's effect row ([`toALOutboundRepairHintEffectId`](./to-al-outbound-effect-id.ts)), never
@@ -466,6 +477,16 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   sessions that authority admits (active members with live leases) minus itself, at the admission's
   `snapshotVersion` (R-S2c-ii-2). Every later attempt and every stored row keeps that audience, whatever
   the room has become.
+- A principal or fixed-list send narrows that audience at the same freeze (D159, D160):
+  `computeFrozenAudience` takes a required `narrowing: ALAudienceNarrowing | undefined`, `undefined`
+  freezing the whole room, `{ kind: 'principal', principalId }` keeping the admitted sessions of that principal and
+  `{ kind: 'list', recipientPeerIds }` the admitted sessions the list names, in the origin freeze
+  (`toRtcOriginFrozenMessage`) and in the carrier-gap path alike, so a room-bounded audience is one
+  computation on RTC. A listed session the room does not admit is dropped silently, as a multicast's
+  audience narrows, and an empty result is an empty frozen audience, as for an origin alone in its
+  room. RTC carries no `world` or `all` audience, nor a principal broadcast that names no room: such a broadcast is refused at admission as
+  `refused/unsupported` (D157), and the browser sender routes a `world` send to WS first whenever
+  the strategy allows it.
 - **The RTC room limit (R-S2c-ii-13).** The RTC frozen audience rides on the wire, where one
   collection holds at most `AL_MESSAGE_RESOURCE_LIMITS.collectionEntries` (256) ids, so an RTC room
   multicast reaches rooms of at most 257 sessions, the origin included. A larger audience is refused as
@@ -473,10 +494,14 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   (`computeRtcFrozenAudienceRefusal`). That is the refusal a fallback takes over: `rtc-with-ws-fallback`
   delivers over WS, whose audience travels off the wire (below), and `rtc` alone settles `rejected`
   with the typed reason, never `failed`.
-- The WS server freezes a room message at its admission stamp from the sessions it authorizes. A
-  multicast an RTC origin froze that falls back to WS keeps its frozen set narrowed to the sessions the
-  server authorizes: a frozen audience narrows what the admitting authority allows and never widens it,
-  and an empty intersection means nobody, never "no filter".
+- The WS server freezes a room message at its admission stamp from the sessions it authorizes,
+  narrowed for a principal broadcast that names its room to that principal's sessions (the group
+  snapshot's `activeSessions[].principalId`) and for a room broadcast that carries
+  `recipientPeerIds` to the listed sessions; that narrowed set is the room audience its receipt
+  aggregate expects and its repair serves, and the send is fenced on the room's roster as any room
+  send (D143, D159). A multicast an RTC origin froze that falls back to WS keeps its frozen set
+  narrowed to the sessions the server authorizes: a frozen audience narrows what the admitting
+  authority allows and never widens it, and an empty intersection means nobody, never "no filter".
 - The outbound authority checks (`validateALOutboundPlannedMessage`, canonical reuse) accept exactly one
   difference between an original and its planned or stored copy: unfrozen to frozen. A copy that drops
   or changes a frozen audience still differs.
@@ -563,7 +588,7 @@ no hop, so its sender hears a peer's fence only through a tracked receipt (`rece
 a room send with `ack: 'none'` never hears it. The `unauthorized` refusals are a unicast to a session outside
 the room's admitted audience
 ([`toWsQueueBoxServerAddresseeAuthorization`](../../services/ws-queue-box-server/to-ws-queue-box-server-addressee-authorization.ts)),
-a room unicast whose `route.contextId` names another room than its `groupRef` (R-S3c-i-33), a message whose room or principal names another application or workspace than its connection authenticated (D100, [`toWsQueueBoxServerScopeAuthorization`](../../services/ws-queue-box-server/scope/to-ws-queue-box-server-scope-authorization.ts)), and any room send the room
+a room unicast whose `route.contextId` names another room than its `groupRef`, a message whose room or principal names another application or workspace than its connection authenticated (D100, [`toWsQueueBoxServerScopeAuthorization`](../../services/ws-queue-box-server/scope/to-ws-queue-box-server-scope-authorization.ts)), a client's `all` broadcast (D158), and any room send the room
 authorizer ([`ws-topic-room-authorizer.ts`](../../../shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts))
 refuses — a halted transport, a scope mismatch, data before activation; a sender without a live session or
 an active member is `membership-fenced` instead. A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
@@ -577,6 +602,25 @@ and a room unicast's or a direct room row's send checks the recipient's connecti
 stored recipient scope remains only on rows that name no group: a unicast whose producer proved a scope, a principal
 target, a principal or world broadcast. A raw `WS_OUTBOX` row without producer provenance fails closed, and a
 unicast `router.publish` that names no group and carries no scope returns `failed` (D103).
+
+A client's broadcast audience is bound to the scope its connection authenticated (D158). A `world`
+broadcast names no group, so its row keeps that scope as `recipientScope` and the send-time
+recipient selection delivers it only to connections in that scope; the cluster's live notice of a
+`world` send carries the scope, and every other instance filters it by that scope, while the `broad`
+notice of the server's `all` stays unscoped. A `principal` broadcast must name its room's
+`groupRef`, so its row is scoped by the group like a room send; one that names no room, and a `world`
+broadcast on a `room.` topic, are refused `malformed`. A client's `all` is refused
+`unauthorized` at ingress; the router's `toAll` and the server's own state-sync, CRDT and
+client-state rows keep their paths. Under a topic router the topic's fanout alone carries a client's
+`world` broadcast: the service's inbound forwarding relays it only in the standalone composition, a
+fanout-`none` topic such as the CRDT topics sends no raw copy, and `live-only` or `outbox` sends one
+copy to each session of the scope, the outbox row as a scoped recipient per connection. A `world` live
+send that names neither an inbound nor a recipient scope, and a `world` row that captured none, are
+refused as an unscoped unicast is. A principal broadcast that names its room is a room audience on the
+cluster's live notice too: it rides the `room` notice with its narrowed sessions, so a notice of 8 000
+bytes or more falls back to the canonical inbound key as a room send does; the `principal` notice
+stays for the server's own principal rows. One predicate,
+[`isALAudienceSession`](../../al-contracts/al-audience-narrowing.ts), narrows a room on both carriers.
 
 In the production outbox fan-out (`forwardsRoomScopedMessages: false`) the server's own outbound owner
 sends the room message and keeps a `receiver` pending row for it, keyed by the origin and message id
@@ -606,6 +650,28 @@ server's outbound owner feeds one bounded in-memory recorder per process
 ([`createRallarAlmReceiptDiagnosticsRecorder`](../../../shared-server/rallar-system/observability/alm-receipt-diagnostics.ts),
 256 messages), read as `almReceipts` on `/api/admin/operations/realtime`: per message the confirmed and unconfirmed
 sessions, the last settlement kind and whether the receipt ran out (D61, D73).
+
+**Server-minted sequences.** A message the WS server publishes itself that names `ordering.orderingKey` (and
+an `epoch`) without a `seq` asks the server's outbound for the sequence (D150). The server's planner marks the plan
+`mintsSequence` only at admission (`phase: 'immediate'`) and only when the message's `senderId` is the server's own
+peer id; a relayed browser send that carries a key and no `seq` (an RTC room multicast and its WS fallback carry the
+group key) passes through unsequenced, as it came, and so does a row a producer wrote straight to the outbox. An
+admission of a marked plan that finds no sent row for the `msgId` reads the track's ordering-head row
+(`toALOutboundOrderingHeadKey(namespace, trackKey)`, the track named by `toALSequenceMintTrackKey`: key, sender and
+epoch, as `toALOrderingTrackKey` names it once the `seq` exists) in the session that reads the sender version, and
+stamps `head + 1` on the message; the commit writes the head `{ seq }` beside the canonical row, the sent row and the
+ordering index, fenced by the sender version every commit of the sender bumps, so two instances or two runtimes over
+one store cannot mint one sequence twice and a restart continues where the store stands. The sequence belongs to the
+attempt that commits: a commit that loses the fence retains its pending admission with the message as its sender
+asked for it (no `seq`, and the captured policy keeps `mintsSequence`), and the work queue's replay of that admission
+mints again when it commits, replacing the retained request in the canonical row by the minted message (the only
+change a pending canonical row accepts). An admission of a `msgId` that already has its sent row mints nothing and
+answers with the stored message. The head row expires as the sent row does: a durable pair keeps it
+`max(deadline, sentMessageTtlMs, controlHistoryTtlMs)` past the mint, and a receiver's ordering-track TTL defaults to
+the repository TTL (60 minutes), so a receiver remembers a track as long as its sender keeps the head. Two limits
+remain: sequences follow commit order, so under contention two publications of one track can commit out of publish order
+(a first-in-first-out mint per track is a follow-up), and a track silent for over an hour restarts at 1 on both sides.
+The browser's outbound never mints: no browser planner marks a plan.
 
 Known limitations:
 

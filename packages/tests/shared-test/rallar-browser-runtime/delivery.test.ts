@@ -570,6 +570,81 @@ it('fails a lane role the page cannot resolve with its own failure, before any h
         .toBe(false);
 });
 
+it('passes a principal audience as given and a fixed audience by its role, resolved by principal through the page', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect(connection);
+    facade.behavior.getRoomSessions.mockReturnValue([
+        toRoomRosterSession(facade.session.sessionId, { principalId: facade.session.clientId }),
+        toRoomRosterSession('sibling-session', { principalId: facade.session.clientId }),
+        toRoomRosterSession('bob-session', { principalId: 'bob' })
+    ]);
+
+    await runtime.sendMessage({ ...send, handleId: 'h-principal', scope: 'principal', principalId: 'client-1' });
+    await runtime.sendMessage({ ...send, carrier: 'rtc', handleId: 'h-list', recipientPeer: 'receiver' });
+    await runtime.sendMessage({ ...send, handleId: 'h-world', scope: 'world' });
+
+    expect(facade.records.typedSends.map(([, options]) => [options?.scope, options?.principalId, options?.recipientPeerIds]))
+        .toEqual([
+            ['principal', 'client-1', undefined],
+            [undefined, undefined, ['bob-session']],
+            ['world', undefined, undefined]
+        ]);
+    expect(facade.records.typedChannelOpens.slice(-3).map((definition) => definition.purpose))
+        .toEqual(['notification', 'notification', 'notification']);
+});
+
+it('fails a fixed audience or a scope the page cannot send with its own failure, before any handle opens', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect(connection);
+    facade.behavior.getRoomSessions.mockReturnValue([
+        toRoomRosterSession('bob-session', { principalId: 'bob' }),
+        toRoomRosterSession('carol-session', { principalId: 'carol' })
+    ]);
+    const prefix = BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.peerUnresolved;
+
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-list', recipientPeer: 'receiver' }))
+        .rejects.toThrow(
+            `${prefix}: messages.send.recipientPeer receiver names no peer: the room holds 2 other live sessions of ` +
+                'another principal, not exactly one.'
+        );
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-role', recipientPeer: 'recipient-b' }))
+        .rejects.toThrow('messages.send.recipientPeer must be receiver.');
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-all', scope: 'all' }))
+        .rejects.toThrow('messages.send.scope must be room, world, or principal.');
+    const replay = { connection: 'aliceAlm', timeoutMs: 100, replayOnCarrier: { handleId: 'h-list', carrier: 'ws' } };
+    await expect(runtime.sendMessage({ ...replay, principalId: 'client-1' }))
+        .rejects.toThrow(
+            'messages.send names principalId beside replayOnCarrier; a replay names only the handle and its carrier.'
+        );
+    expect(facade.records.typedSends).toEqual([]);
+});
+
+it('projects a world send on rtc, refused unsupported by the injected middleware double, as rejected with no carrier attempt', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect(connection);
+    const fixture = createBrowserMessageSenderFixture(64, facade.deliveries);
+    vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockImplementation(async (message) => ({
+        message,
+        entries: [],
+        trackedReceiptAlgo: 'none',
+        verdict: { kind: 'refused', reason: 'unsupported', detail: 'RTC carries room audiences only.' }
+    }));
+    facade.behavior.typedSend.mockImplementation(async (payload, options) =>
+        await fixture.sender.sendTyped({ ...options, typeId: 'alm.conformance', topicId: 'app.alm-conformance.world', payload }, undefined)
+    );
+
+    await runtime.sendMessage({ ...send, carrier: 'rtc', handleId: 'h-world', scope: 'world' });
+
+    expect(await runtime.observeDelivery({ connection: 'aliceAlm', handleId: 'h-world', state: ['rejected'], timeoutMs: 100 }))
+        .toMatchObject({
+            state: 'rejected',
+            failure: { kind: 'refused', reason: 'unsupported' },
+            attempts: 0,
+            attemptCarriers: [],
+            carrierFallback: undefined
+        });
+});
+
 it('projects the hand-over to the fallback carrier on every ledger view (D56)', async () => {
     const runtime = await loadRuntime();
     await runtime.connect(connection);

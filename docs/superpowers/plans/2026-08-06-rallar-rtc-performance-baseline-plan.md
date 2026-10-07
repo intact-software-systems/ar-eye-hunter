@@ -6444,6 +6444,21 @@ unchanged; current-file validation and formatting/whitespace pass. No constructo
 configuration-order claim, legacy waiver or artificial test is added. The committed-range
 GREEN remains required before publication.
 
+**Repaired-parent composition accepted locally:** The continuation's actual conflict
+with published parent 15efff00 is confined to this plan. Preserve the continuation
+status and complete parent facts; the six code/test/policy owners compose without
+a hand repair. The same reviewer approves their audience/schema/validator/snapshot
+alignment and preserved capture intent. Actual SDK capture, ALM, delivery and schema
+pass 183 cases; package typing and 1488-test typing pass with zero debt/errors.
+The combined headless bundle measures 322.617 KiB and needs the existing minimum
+adjustable cap 323. Its original 321-cap failure is preserved; final headless boundary,
+all forbidden imports and format/diff pass. Main's retired invalid-fallback contract
+and two obsolete occurrences stay removed; current audience contracts and the
+three new I/O contracts/four exact classifications survive. No workload or other
+limit changes. Current-parent style/coupling gates remain required after the feature
+merge commit and before prompt publication. Fresh hosted combined-source acceptance,
+visible UI, workers/Actions and B01–B06/E3 remain required.
+
 ### Task 65: Visible recipe controls and persisted intent (prepared next slice)
 
 After Task64 acceptance, use the refreshed Console/local authoring and reusable
