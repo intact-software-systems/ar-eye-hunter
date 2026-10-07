@@ -3,7 +3,12 @@ import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import { filterLiveWsRoomRecipientSessionIds, matchesLiveWsAudience } from './live-ws-audience.ts';
+import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
+import {
+    filterLiveWsRoomRecipientSessionIds,
+    matchesLiveWsAudience,
+    resolveLiveWsRoomGroupRef
+} from './live-ws-audience.ts';
 import {
     decodeLiveWsNotice,
     type LiveWsAudience,
@@ -125,17 +130,16 @@ function toRecoveredAudience(
         return { mode: 'peer', recipientSessionIds: [targets.toPeerId] };
     }
     if (notice.audienceMode === 'room') {
+        const groupRef = resolveLiveWsRoomGroupRef(message);
         if (
-            !targets || (targets.mode !== 'multicast' && (targets.mode !== 'broadcast' || targets.scope !== 'room')) ||
-            !targets.groupRef || source.groupRecipientPeerIds === undefined ||
-            targets.groupRef.applicationId !== notice.scope.applicationId ||
-            targets.groupRef.workspaceId !== notice.scope.workspaceId
+            !targets || !groupRef || source.groupRecipientPeerIds === undefined ||
+            !isSameGroupScope(groupRef, notice.scope)
         ) {
             return undefined;
         }
         return {
             mode: 'room',
-            groupRef: targets.groupRef,
+            groupRef,
             recipientSessionIds: filterLiveWsRoomRecipientSessionIds(
                 targets,
                 message.id.senderId,

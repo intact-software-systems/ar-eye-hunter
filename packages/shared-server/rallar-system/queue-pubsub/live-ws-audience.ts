@@ -1,4 +1,5 @@
-import type { ALMessage, ALTargets } from '@shared/al-contracts/al-contract.ts';
+import { readALTargetGroupRef, type ALMessage, type ALTargets } from '@shared/al-contracts/al-contract.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupScope } from '@shared/api/group-types.ts';
 import type { JsonWireObject, JsonWireValue } from '../protocol/json-wire-identity.ts';
@@ -43,14 +44,15 @@ export function decodeBroadLiveWsAudience(
     return targetMode === 'world' && scope !== undefined ? { mode: 'broad', targetMode } : undefined;
 }
 
+/** A multicast, a room broadcast and a principal broadcast that names its room all reach a room audience. */
+export function resolveLiveWsRoomGroupRef(message: ALMessage): GroupRef | undefined {
+    return message.targets?.mode === 'unicast' ? undefined : readALTargetGroupRef(message);
+}
+
 export function matchesLiveWsAudience(message: ALMessage, audience: LiveWsAudience): boolean {
     if (audience.mode === 'room') {
-        const target = message.targets;
-        return target !== undefined &&
-            (target.mode === 'multicast' || (target.mode === 'broadcast' && target.scope === 'room')) &&
-            target.groupRef?.applicationId === audience.groupRef.applicationId &&
-            target.groupRef.workspaceId === audience.groupRef.workspaceId &&
-            target.groupRef.groupId === audience.groupRef.groupId;
+        const groupRef = resolveLiveWsRoomGroupRef(message);
+        return groupRef !== undefined && isSameGroupRef(groupRef, audience.groupRef);
     }
     if (audience.mode === 'peer') {
         return message.targets?.mode === 'unicast' &&

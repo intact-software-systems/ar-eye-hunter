@@ -3,6 +3,7 @@ import { resolveALMessageExpireAtMs, type ALQosEffectivePolicy } from '@shared/a
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { resolveWsQueueBoxServerProvenScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
+import { resolveLiveWsRoomGroupRef } from '../../queue-pubsub/live-ws-audience.ts';
 import {
     encodeLiveWsNotice,
     type LiveWsAudience,
@@ -90,7 +91,7 @@ function toLiveWsPublicationInput(input: ToLiveWsPublicationInput): Either<strin
     if (input.audience.mode === 'broad' && input.audience.targetMode === 'all') {
         return Either.ofRight({ ...common, audience: input.audience });
     }
-    const scope = resolveLiveWsPublicationScope(input.message, input.inboundScope);
+    const scope = resolveLiveWsPublicationScope(input.message, input.audience, input.inboundScope);
     if (scope.left !== undefined) {
         return Either.ofLeft(scope.left);
     }
@@ -137,7 +138,7 @@ async function readLiveWsPublicationAudience(
         targets.mode === 'multicast' || targets.scope === 'room' ||
         (targets.scope === 'principal' && targets.groupRef !== undefined)
     ) {
-        return readRoomLiveWsPublicationAudience(input, targets);
+        return readRoomLiveWsPublicationAudience(input);
     }
     if (targets.scope === 'principal') {
         if (!targets.principalRef || !input.livePublication?.readPrincipalSessionIds) {
@@ -159,12 +160,10 @@ async function readLiveWsPublicationAudience(
     return { mode: 'broad', targetMode: targets.scope };
 }
 
-/** A room send, and a principal broadcast in its room, reach the sessions the room admitted it to. */
-function readRoomLiveWsPublicationAudience(
-    input: PublishRallarServerWsMessageInput,
-    targets: Exclude<NonNullable<ALMessage['targets']>, { mode: 'unicast'; }>
-): LiveWsAudience | undefined {
-    if (!input.audience || !targets.groupRef) {
+/** A principal broadcast that names its room is a room audience, so it takes the room notice and its inbound key. */
+function readRoomLiveWsPublicationAudience(input: PublishRallarServerWsMessageInput): LiveWsAudience | undefined {
+    const groupRef = resolveLiveWsRoomGroupRef(input.message);
+    if (!input.audience || !groupRef) {
         return undefined;
     }
     const recipientSessionIds = resolveAuthorizedRoomSessionIds({
@@ -173,27 +172,19 @@ function readRoomLiveWsPublicationAudience(
         admittedPeerIds: input.admittedPeerIds,
         nowEpochMs: input.nowEpochMs
     });
-    if (targets.mode === 'broadcast' && targets.scope === 'principal') {
-        return targets.principalRef
-            ? { mode: 'principal', principalRef: targets.principalRef, recipientSessionIds }
-            : undefined;
-    }
-    return { mode: 'room', groupRef: targets.groupRef, recipientSessionIds };
+    return { mode: 'room', groupRef, recipientSessionIds };
 }
 
 function resolveLiveWsPublicationScope(
     message: ALMessage,
+    audience: LiveWsAudience,
     inboundScope: StateScope | null | undefined
 ): Either<string, StateScope> {
-    const targets = message.targets;
-    if (targets?.mode === 'multicast' || (targets?.mode === 'broadcast' && targets.scope === 'room')) {
-        return targets.groupRef
-            ? Either.ofRight({
-                applicationId: targets.groupRef.applicationId,
-                workspaceId: targets.groupRef.workspaceId
-            })
-            : Either.ofLeft('Room live WS publication requires a full group reference.');
+    if (audience.mode === 'room') {
+        const { applicationId, workspaceId } = audience.groupRef;
+        return Either.ofRight({ applicationId, workspaceId });
     }
+    const targets = message.targets;
     if (targets?.mode === 'broadcast' && targets.scope === 'principal' && targets.principalRef) {
         const { applicationId, workspaceId } = targets.principalRef;
         return Either.ofRight({ applicationId, workspaceId });

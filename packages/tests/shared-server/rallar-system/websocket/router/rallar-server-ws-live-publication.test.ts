@@ -5,7 +5,8 @@ import type { LiveWsNotice, LiveWsNoticeTransport } from '@shared-server/rallar-
 import type { RallarServerWsRoomAuthorizer } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
-import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -597,7 +598,7 @@ describe('Rallar server WS live cluster publication', () => {
         expect(fixture.sockets.get('in-scope')!.sent).toEqual([]);
     });
 
-    it('publishes an admitted principal broadcast in a room as a principal notice naming the room sessions of that principal', async () => {
+    it('publishes an admitted principal broadcast in a room as a room notice naming the room sessions of that principal', async () => {
         const base = createGroupSnapshot(2, ['bob-session', 'carol-1', 'carol-2']);
         const snapshot = {
             ...base,
@@ -623,9 +624,50 @@ describe('Rallar server WS live cluster publication', () => {
 
         expect(notices).toMatchObject([{
             scope: SCOPE,
-            audience: { mode: 'principal', principalRef, recipientSessionIds: ['carol-1', 'carol-2'] }
+            audience: { mode: 'room', groupRef, recipientSessionIds: ['carol-1', 'carol-2'] }
         }]);
     });
+
+    it.each(
+        [
+            { audience: 'room', recipients: ['carol-1', 'carol-2', 'dave-session'] },
+            { audience: 'principal', recipients: ['carol-1', 'carol-2'] }
+        ] as const
+    )(
+        'keys an admitted 9 KB $audience send in a room to its canonical inbound row and delivers it to that room audience here and on another server',
+        async ({ audience, recipients }) => {
+            const fixture = await createRoomClusterFixture();
+            const roomMessage = newALBroadcastMessage(
+                'bob-session',
+                newALRoute('room.match', fixture.groupRef.groupId, 'tick-1'),
+                'room',
+                'room.match.v1',
+                { resource: 'x'.repeat(9_000) },
+                { groupRef: fixture.groupRef }
+            );
+            const principalRef = { ...SCOPE, principalId: 'principal-carol-1' };
+            const message = audience === 'room'
+                ? roomMessage
+                : { ...roomMessage, targets: { mode: 'broadcast' as const, scope: 'principal' as const, groupRef: fixture.groupRef, principalRef } };
+            fixture.canonical.set(message.id.msgId, { message, groupRecipientPeerIds: recipients });
+
+            await fixture.router.route(message, {
+                kind: 'ws-client',
+                peerId: 'bob-session',
+                authenticatedScope: SCOPE,
+                groupRecipientPeerIds: [...recipients]
+            });
+
+            expect(fixture.notices).toMatchObject([{
+                delivery: 'inbound-key',
+                audienceMode: 'room',
+                inbound: { reference: { senderId: 'bob-session', msgId: message.id.msgId } }
+            }]);
+            expect(fixture.sockets.get('carol-1')!.sent).toHaveLength(1);
+            expect(fixture.sockets.get('dave-session')!.sent).toHaveLength(audience === 'room' ? 1 : 0);
+            expect(fixture.remoteSent).toEqual([recipients]);
+        }
+    );
 
     it('freezes a trusted server room audience before remote publication', async () => {
         const snapshot = createGroupSnapshot(2, ['remote-session']);
@@ -1148,4 +1190,96 @@ function createScopedSocketsFixture(
         }
     });
     return { router, sockets };
+}
+
+interface CanonicalRoomRow {
+    readonly message: ALMessage;
+    readonly groupRecipientPeerIds: readonly string[];
+}
+
+interface RoomClusterFixture {
+    readonly router: RallarServerWsRouter;
+    readonly groupRef: GroupRef;
+    readonly sockets: ReadonlyMap<string, TestWebSocket>;
+    readonly notices: readonly LiveWsNotice[];
+    readonly canonical: Map<string, CanonicalRoomRow>;
+    readonly remoteSent: ReadonlyArray<readonly string[]>;
+}
+
+/**
+ * Server A holds the sockets `carol-1` and `dave-session`; server B reads the canonical inbound row a key notice
+ * names. `carol-1` and `carol-2` are sessions of one principal in a room that also holds `bob-session` and `dave-session`.
+ */
+async function createRoomClusterFixture(): Promise<RoomClusterFixture> {
+    const base = createGroupSnapshot(2, ['bob-session', 'carol-1', 'carol-2', 'dave-session']);
+    const snapshot = {
+        ...base,
+        activeSessions: base.activeSessions.map((session) => session.sessionId === 'carol-2' ? { ...session, principalId: 'principal-carol-1' } : session)
+    };
+    const groupRef = { ...SCOPE, groupId: snapshot.group.groupId };
+    const notices: LiveWsNotice[] = [];
+    const canonical = new Map<string, CanonicalRoomRow>();
+    const remoteSent: Array<readonly string[]> = [];
+    const subscribers: Array<(notice: LiveWsNotice) => Promise<void> | void> = [];
+    const transport: LiveWsNoticeTransport = {
+        publish: async (notice) => {
+            notices.push(notice);
+            for (const subscriber of subscribers) {
+                await subscriber(notice);
+            }
+        },
+        subscribe: async (_channel, onNotice) => {
+            subscribers.push(onNotice);
+        }
+    };
+    const socket = new JsonWebSocketServer();
+    const sockets = new Map<string, TestWebSocket>();
+    for (const sessionId of ['carol-1', 'dave-session']) {
+        const native = new TestWebSocket(`ws://${sessionId}`);
+        native.open();
+        socket.addConnection(new ConnectionContext({ id: sessionId, socket: native }));
+        sockets.set(sessionId, native);
+    }
+    const service = createDefaultWsQueueBoxServerService({
+        outbox: new InMemoryQueueBox(new Map()),
+        socket,
+        name: 'server-a',
+        readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER })
+    });
+    onTestFinished(() => service.dispose());
+    await installLiveWsNoticeSubscriber({
+        transport,
+        channel: 'ws-channel',
+        publisherId: 'server-b',
+        nowMs: () => 100,
+        inboundStores: [{
+            namespace: service.getInboundNamespace(),
+            readDeliverySurface: async (reference) => {
+                const row = canonical.get(reference.msgId);
+                return row && {
+                    msg: row.message,
+                    source: { kind: 'ws-client', peerId: row.message.id.senderId, authenticatedScope: SCOPE, groupRecipientPeerIds: row.groupRecipientPeerIds },
+                    nowMs: 100,
+                    supersedenceKey: null,
+                    supersedence: {},
+                    supersedenceTrackTtlMs: 1000
+                };
+            }
+        }],
+        resolveBroadRecipientSessionIds: () => [],
+        filterEligibleRecipientSessionIds: (ids) => ids,
+        sendToTargetsWithResult: ({ recipientSessionIds }) => {
+            remoteSent.push(recipientSessionIds);
+        }
+    });
+    const router = new RallarServerWsRouter(service, {
+        authorizeRoomMessage: createGroupRoomWsAuthorizer({
+            readGroupSnapshot: () => snapshot,
+            readPreActivationAppData: () => 'allowed',
+            nowEpochMs: () => 100
+        }),
+        nowEpochMs: () => 100,
+        livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
+    });
+    return { router, groupRef, sockets, notices, canonical, remoteSent };
 }
