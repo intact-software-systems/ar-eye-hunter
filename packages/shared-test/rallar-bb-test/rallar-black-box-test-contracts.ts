@@ -1,6 +1,8 @@
 import type { ALAckAlgo, ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import type { BlackBoxRallarCrdtConnectionInput } from '../black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import type { ControlClientIdentity } from './control-protocol.ts';
 import type { RecipeCaptureSequence } from './recipe/recipe-capture-sequence.ts';
 
 import type {
@@ -173,6 +175,8 @@ export type RallarBlackBoxTestRecipeRunCommand =
     & RallarBlackBoxTestCommandBase<'recipe.run'>
     & Readonly<{
         rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
+        /** Absent for ordinary latest-loaded execution; when present, bind a bodyless run to this acknowledged load. */
+        expectedRecipeBodyId?: string;
         recipe?: RallarBlackBoxTestRecipe;
     }>;
 
@@ -505,6 +509,7 @@ export type RallarBlackBoxTestHttpRequestCommand =
 export type RallarBlackBoxTestCrdtOpenCommand =
     & RallarBlackBoxTestCommandBase<'crdt.open'>
     & Readonly<{
+        rallar?: BlackBoxRallarCrdtConnectionInput;
         handle?: string;
         name: string;
         applicationId?: string;
@@ -1139,8 +1144,20 @@ export type RallarBlackBoxTestRuntimeCleanup = (
     context: RallarBlackBoxTestCommandContext
 ) => void | Promise<void>;
 
+/** Installed executor support, declared by its construction owner; this never certifies an applied SDK receipt. */
+export interface RallarBlackBoxRtcCaptureSupport {
+    readonly configurationVersion: 1;
+    readonly modes: readonly RtcSignalingDiagnostics.CaptureMode[];
+}
+
 export interface RallarBlackBoxTestRuntime {
-    execute(command: RallarBlackBoxTestCommand): Promise<RallarBlackBoxTestResult>;
+    /** Absent for simulated, missing or unverified executors. Immutable for this runtime's lifetime. */
+    readonly rtcCaptureSupport?: RallarBlackBoxRtcCaptureSupport;
+    /** A control address scopes the active result cache; omitted for ordinary local execution. */
+    execute(
+        command: RallarBlackBoxTestCommand,
+        controlIdentity?: ControlClientIdentity
+    ): Promise<RallarBlackBoxTestResult>;
     state(): RallarBlackBoxTestState;
     recordEvent(event: RallarBlackBoxTestRuntimeEventInput): void;
     subscribe(listener: RallarBlackBoxTestStateListener): () => void;

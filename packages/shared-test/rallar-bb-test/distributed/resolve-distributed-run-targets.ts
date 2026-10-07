@@ -5,6 +5,7 @@ import type {
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRoleAssignment,
     RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedRunRecipeSelection,
     RallarBlackBoxDistributedTargetBlocker,
     RallarBlackBoxDistributedTargetResolution,
     RallarBlackBoxDistributedTargetResolutionSummary
@@ -15,6 +16,9 @@ import {
     validateAgentAssertionCapability,
     type DistributedAssertionFeatures
 } from './control-agent-capabilities.ts';
+
+import { RecipeCaptureRequirements } from '../recipe/recipe-capture-requirements.ts';
+import { toMissingRtcCaptureSupportReason } from './rtc-capture-support.ts';
 
 export interface ResolveDistributedRunTargetsInput {
     readonly manifest: RallarBlackBoxDistributedRunManifest;
@@ -64,8 +68,16 @@ export function resolveDistributedRunTargets(
         }
     }
 
-    const targetAgentIds = resolveDistributedSelectedAgentIds(input.manifest, targetableAgentIds);
-    const roleAssignments = resolveDistributedRoleAssignments(input.manifest, targetAgentIds);
+    const selectedAgentIds = resolveDistributedSelectedAgentIds(input.manifest, targetableAgentIds);
+    const selectedRoles = resolveDistributedRoleAssignments(input.manifest, selectedAgentIds);
+    blockers.push(
+        ...toDistributedCaptureBlockers({ ...input, selectedAgentIds, selectedRoles, eligibilityBlockers: blockers })
+    );
+    const blocked = new Set(blockers.map((blocker) => blocker.agentId));
+    const targetable = new Set(targetableAgentIds);
+    const targetAgentIds = selectedAgentIds.filter((agentId) => targetable.has(agentId) && !blocked.has(agentId));
+    const selected = new Set(targetAgentIds);
+    const roleAssignments = selectedRoles.filter((assignment) => selected.has(assignment.agentId));
     return {
         group: input.manifest.group,
         resolvedAtEpochMs: input.nowEpochMs,
@@ -77,12 +89,44 @@ export function resolveDistributedRunTargets(
         summary: computeDistributedTargetResolutionSummary({
             manifest: input.manifest,
             agents: input.agents,
-            targetableAgentIds,
+            targetableAgentIds: targetableAgentIds.filter((agentId) => !blocked.has(agentId)),
             targetAgentIds,
             roleAssignments,
             blockers
         })
     };
+}
+
+/** Capture eligibility depends on the actual role-selected executable requirements. */
+interface DistributedCaptureBlockersInput extends ResolveDistributedRunTargetsInput {
+    readonly selectedAgentIds: readonly string[];
+    readonly selectedRoles: readonly RallarBlackBoxDistributedRoleAssignment[];
+    readonly eligibilityBlockers: readonly RallarBlackBoxDistributedTargetBlocker[];
+}
+
+function toDistributedCaptureBlockers(
+    input: DistributedCaptureBlockersInput
+): readonly RallarBlackBoxDistributedTargetBlocker[] {
+    const blockers: RallarBlackBoxDistributedTargetBlocker[] = [];
+    for (const agentId of input.selectedAgentIds) {
+        const identity = input.agents.find((agent) => agent.agentId === agentId)?.identity;
+        const required = new RecipeCaptureRequirements().collect({
+            selections: toDistributedAgentRecipeSelections(input.manifest, input.selectedRoles, agentId),
+            run: input.manifest.rtcCaptureMode
+        });
+        if (required.length === 0) {
+            continue;
+        }
+        const unavailable = input.eligibilityBlockers.find((blocker) => blocker.agentId === agentId);
+        const reason = unavailable
+            ? `Required RTC capture target is unavailable: ${unavailable.reason}`
+            : toMissingRtcCaptureSupportReason(required, identity?.capabilities?.rtcCapture);
+        if (reason) {
+            const status = 'missing-rtc-capture-capability';
+            blockers.push(identity ? { agentId, identity, status, reason } : { agentId, status, reason });
+        }
+    }
+    return blockers;
 }
 
 /** Every blocker counter counts the resolution's blockers, so a resolution that blocks no agent counts zero of each. */
@@ -153,6 +197,30 @@ function resolveDistributedTargetBlocker(
         : undefined;
 }
 
+/** One command-link key shared by selection, admission and controller dispatch. */
+export function toDistributedRecipeKey(selection: RallarBlackBoxDistributedRunRecipeSelection): string | undefined {
+    return selection.recipeId?.trim() || selection.recipe?.recipeId?.trim() || selection.role?.trim() || undefined;
+}
+
+/** Role-selected recipes used by both admission and controller command construction. */
+export function toDistributedAgentRecipeSelections(
+    manifest: RallarBlackBoxDistributedRunManifest,
+    assignments: readonly RallarBlackBoxDistributedRoleAssignment[],
+    agentId: string
+): readonly RallarBlackBoxDistributedRunRecipeSelection[] {
+    const assigned = assignments.filter((assignment) => assignment.agentId === agentId);
+    const roles = new Set(assigned.map((assignment) => assignment.role));
+    const recipeIds = new Set(assigned.flatMap((assignment) => assignment.recipeIds));
+    const selections = manifest.recipes.filter((selection) => {
+        const key = toDistributedRecipeKey(selection);
+        if (recipeIds.size > 0 && key && recipeIds.has(key)) {
+            return true;
+        }
+        return selection.role ? roles.has(selection.role) : recipeIds.size === 0;
+    });
+    return selections.length > 0 ? selections : manifest.recipes.filter((selection) => !selection.role);
+}
+
 function resolveDistributedSelectedAgentIds(
     manifest: RallarBlackBoxDistributedRunManifest,
     targetableAgentIds: readonly string[]
@@ -161,7 +229,6 @@ function resolveDistributedSelectedAgentIds(
     if (policy.mode === 'all-online-group-members') {
         return [...targetableAgentIds].sort((left, right) => left.localeCompare(right));
     }
-    const targetable = new Set(targetableAgentIds);
     const candidates = policy.mode === 'selected-agents'
         ? policy.agentIds
         : [
@@ -169,7 +236,6 @@ function resolveDistributedSelectedAgentIds(
             ...manifest.roleAssignments.map((assignment) => assignment.agentId)
         ];
     return [...new Set(candidates)]
-        .filter((agentId) => targetable.has(agentId))
         .sort((left, right) => left.localeCompare(right));
 }
 

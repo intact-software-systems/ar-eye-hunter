@@ -20,7 +20,7 @@ import { toRallarBlackBoxDiagnostics } from '../../../packages/shared-test/ralla
 import { ApiHttpError } from '../../../packages/shared-web/browser/api/http-error.ts';
 import { RallarValidationError } from '../../../packages/shared/api/rallar-validation.ts';
 import type { RallarBlackBoxBrowserRoomRefreshOptions } from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/mod.ts';
 
 import { createBrowserRallarRequiredMethodsTestDouble } from '../shared-test/browser-rallar-required-methods-test-double.ts';
 import {
@@ -198,7 +198,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
 
     it('bridges browser Rallar events into the shared runtime', async () => {
         await withBrowserRuntime(async () => {
-            const runtime = createRallarBlackBoxBrowserTestRuntime({
+            const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                readSession: () => undefined,
                 rallarRuntime: createSpaBrowserRallarRuntime()
             });
             installSpaBrowserRallarEventBridge(runtime);
@@ -248,7 +249,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     result: { status: 'sent', bufferedAmount: 0 }
                 }
             ]);
-            const runtime = createRallarBlackBoxBrowserTestRuntime({
+            const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                readSession: () => undefined,
                 rallarRuntime: createSpaBrowserRallarRuntime()
             });
 
@@ -346,7 +348,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     readyPeerIds: ['peer-a', 'peer-b']
                 }
             });
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({
@@ -435,7 +438,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 );
             })
         };
-        const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime });
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ readSession: () => undefined, rallarRuntime });
 
         const result = await runtime.execute({
             kind: 'rtc.connect',
@@ -501,7 +504,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 'messages.rtc readiness must not poll global RTC health.'
             );
         });
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({ connected: true })),
@@ -549,7 +553,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             new Promise((_resolve, reject) => {
                 options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true });
             });
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({ connected: true })),
@@ -602,7 +607,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         const health = async (): Promise<never> => {
             throw new Error('messages.rtc readiness must not poll global RTC health.');
         };
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({ connected: true })),
@@ -639,7 +645,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
 
     it('refreshes room authority before accepting an already-ready RTC peer', async () => {
         const refreshRoom = vi.fn(async () => undefined);
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({ connected: true })),
@@ -687,7 +694,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 readyPeerIds: roomStateRefreshed ? ['peer-a'] : []
             }
         }));
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({
@@ -738,7 +746,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             const refreshRoom = vi.fn(
                 (_options: RallarBlackBoxBrowserRoomRefreshOptions) => new Promise<void>(() => undefined)
             );
-            const runtime = createRallarBlackBoxBrowserTestRuntime({
+            const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                readSession: () => undefined,
                 rallarRuntime: {
                     ...createBrowserRallarRequiredMethodsTestDouble(),
                     connect: vi.fn(async () => ({ connected: true })),
@@ -795,7 +804,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             const refreshRoom = vi.fn(
                 (_options: RallarBlackBoxBrowserRoomRefreshOptions) => new Promise<void>(() => undefined)
             );
-            const runtime = createRallarBlackBoxBrowserTestRuntime({
+            const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                readSession: () => undefined,
                 rallarRuntime: {
                     ...createBrowserRallarRequiredMethodsTestDouble(),
                     connect: vi.fn(async () => ({ connected: true })),
@@ -849,7 +859,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 .mockImplementationOnce(async () => {
                     roomStateRefreshed = true;
                 });
-            const runtime = createRallarBlackBoxBrowserTestRuntime({
+            const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                readSession: () => undefined,
                 rallarRuntime: {
                     ...createBrowserRallarRequiredMethodsTestDouble(),
                     connect: vi.fn(async () => ({ connected: true })),
@@ -906,7 +917,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 .fn()
                 .mockRejectedValueOnce(refreshError)
                 .mockResolvedValueOnce(undefined);
-            const runtime = createRallarBlackBoxBrowserTestRuntime({
+            const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                readSession: () => undefined,
                 rallarRuntime: {
                     ...createBrowserRallarRequiredMethodsTestDouble(),
                     connect: vi.fn(async () => ({ connected: true })),
@@ -984,7 +996,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             vi.useFakeTimers();
             try {
                 const refreshRoom = vi.fn().mockRejectedValue(refreshError);
-                const runtime = createRallarBlackBoxBrowserTestRuntime({
+                const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                    readSession: () => undefined,
                     rallarRuntime: {
                         ...createBrowserRallarRequiredMethodsTestDouble(),
                         connect: vi.fn(async () => ({ connected: true })),
@@ -1045,7 +1058,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     readyPeerIds: ['peer-a']
                 }
             });
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({
@@ -1084,7 +1098,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     });
 
     it('fails rtc.connect when readiness times out', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({
@@ -1131,7 +1146,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     });
 
     it('fails realtime send commands when the browser runtime resolves no peers', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({ connected: true })),
@@ -1183,7 +1199,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             laneId: 'realtime',
             result: { status, bufferedAmount: 0 }
         });
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({ connected: true })),
@@ -1223,7 +1240,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     it.each(['dropped', 'replaced'] as const)(
         'fails a loop with failOnBackpressure when a realtime send reports a %s payload',
         async (peerStatus) => {
-            const runtime = createRallarBlackBoxBrowserTestRuntime({
+            const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                readSession: () => undefined,
                 rallarRuntime: {
                     ...createBrowserRallarRequiredMethodsTestDouble(),
                     connect: vi.fn(async () => ({ connected: true })),
@@ -1267,7 +1285,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         }],
         ['a result that is not a record', 'sent']
     ])('fails rtc.send as an invalid result when the page runtime returns %s', async (_label, sendResult) => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({ connected: true })),
@@ -1293,7 +1312,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     });
 
     it('counts an rtc.stream frame whose page runtime result does not decode as a failed frame', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: vi.fn(async () => ({ connected: true })),
@@ -1352,7 +1372,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     typeId: 'manual.type'
                 }
             });
-            const runtime = createRallarBlackBoxBrowserTestRuntime({
+            const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                readSession: () => undefined,
                 rallarRuntime: createSpaBrowserRallarRuntime()
             });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    createRallarBlackBoxBrowserTestRuntime,
+    createDefaultRallarBlackBoxBrowserTestRuntime,
     createRallarBlackBoxCompositeConformanceMatrix,
     createRallarBlackBoxTestRuntime,
     formatJsonSchemaValidationErrors,
@@ -14,7 +14,12 @@ import {
     type RallarBlackBoxTestCommand,
     type RallarBlackBoxTestCommandOutcome,
     type RallarBlackBoxTestEvent,
-    type RallarBlackBoxTestRuntime
+    type RallarBlackBoxTestRtcConnectCommand,
+    type RallarBlackBoxTestRtcSendCommand,
+    type RallarBlackBoxTestRuntime,
+    type RallarBlackBoxTestRuntimeEventInput,
+    type RallarBlackBoxTestWsCloseCommand,
+    type RallarBlackBoxTestWsSendCommand
 } from '../../shared-test/rallar-bb-test/mod.ts';
 import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
@@ -30,6 +35,13 @@ function expectValidRecipe(entry: RallarBlackBoxCompositeConformanceMatrixEntry)
 const ALL_CASE_IDS = RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES.map((entry) => entry.caseId);
 const ALL_PROVIDER_IDS = RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS.map((entry) => entry.providerId);
 
+interface DeterministicConformanceCommandResult {
+    readonly elapsedMs: number;
+    readonly outcome: RallarBlackBoxTestCommandOutcome;
+    readonly events: readonly RallarBlackBoxTestRuntimeEventInput[];
+}
+
+/** The clock/event shell executes the fixture's pure, deterministic command policies. */
 function createDeterministicConformanceRuntime(): RallarBlackBoxTestRuntime {
     let now = 1_000;
     return createRallarBlackBoxTestRuntime({
@@ -38,144 +50,171 @@ function createDeterministicConformanceRuntime(): RallarBlackBoxTestRuntime {
             now += ms;
         },
         commandExecutor: (command, context) => {
-            const startedAtEpochMs = now;
-            if (command.kind === 'rtc.connect') {
-                now += 2;
-                context.recordEvent({
-                    kind: 'diagnostic',
-                    topic: 'rallar.bb.rtc.connected',
-                    commandId: command.commandId,
-                    connection: command.connection,
-                    actor: command.actor,
-                    transport: command.transport,
-                    severity: 'info',
-                    payload: {
-                        connected: true,
-                        commandId: command.commandId
-                    }
-                });
-                return toOkOutcome(command, {
-                    connected: true,
-                    durationMs: now - startedAtEpochMs
-                });
+            const result = toDeterministicConformanceCommandResult(command);
+            if (result === undefined) {
+                return undefined;
             }
-
-            if (command.kind === 'rtc.send') {
-                now += command.commandId?.includes('negative-no-peer') ? 3 : 4;
-                if (command.commandId?.includes('negative-no-peer')) {
-                    const error = {
-                        code: 'RALLAR_BB_RTC_NO_PEERS',
-                        message: 'RTC send resolved no target peers.',
-                        details: {
-                            accessToken: 'secret-negative-token'
-                        }
-                    };
-                    context.recordEvent({
-                        kind: 'diagnostic',
-                        topic: 'rallar.bb.rtc.send_failed',
-                        commandId: command.commandId,
-                        connection: command.connection,
-                        transport: command.transport,
-                        severity: 'error',
-                        payload: {
-                            error
-                        }
-                    });
-                    return {
-                        status: 'failed',
-                        value: {
-                            status: 'no-peers',
-                            sendObservation: {
-                                commandId: command.commandId,
-                                kind: command.kind,
-                                transport: command.transport,
-                                durationMs: now - startedAtEpochMs,
-                                ok: false,
-                                status: 'no-peers',
-                                errorCode: error.code
-                            }
-                        },
-                        error,
-                        nextStatus: 'failed'
-                    };
-                }
-
-                context.recordEvent({
-                    kind: 'message',
-                    topic: 'rallar.conformance.message',
-                    commandId: command.commandId,
-                    connection: command.connection,
-                    transport: command.transport,
-                    payload: toMessagePayload(command)
-                });
-                return toOkOutcome(command, {
-                    sent: command.send,
-                    sendObservation: {
-                        commandId: command.commandId,
-                        kind: command.kind,
-                        transport: command.transport,
-                        durationMs: now - startedAtEpochMs,
-                        ok: true,
-                        status: 'sent'
-                    }
-                });
-            }
-
-            if (command.kind === 'ws.open') {
-                now += 1;
-                return toOkOutcome(command, {
-                    connection: command.connection,
-                    opened: true
-                });
-            }
-
-            if (command.kind === 'ws.send') {
-                now += 2;
-                context.recordEvent({
-                    kind: 'message',
-                    topic: 'rallar.bb.ws.message',
-                    commandId: command.commandId,
-                    connection: command.connection,
-                    transport: 'ws',
-                    payload: {
-                        data: command.data
-                    }
-                });
-                return toOkOutcome(command, {
-                    connection: command.connection,
-                    sent: command.data,
-                    sendObservation: {
-                        commandId: command.commandId,
-                        kind: command.kind,
-                        transport: 'ws',
-                        durationMs: now - startedAtEpochMs,
-                        ok: true,
-                        status: 'sent'
-                    }
-                });
-            }
-
-            if (command.kind === 'ws.close') {
-                now += 1;
-                context.recordEvent({
-                    kind: 'event',
-                    topic: 'rallar.bb.ws.closed',
-                    commandId: command.commandId,
-                    connection: command.connection,
-                    transport: 'ws',
-                    payload: {
-                        closed: true
-                    }
-                });
-                return toOkOutcome(command, {
-                    connection: command.connection,
-                    closed: true
-                });
-            }
-
-            return undefined;
+            now += result.elapsedMs;
+            result.events.forEach((event) => context.recordEvent(event));
+            return result.outcome;
         }
     });
+}
+
+function toDeterministicConformanceCommandResult(
+    command: RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>
+): DeterministicConformanceCommandResult | undefined {
+    switch (command.kind) {
+        case 'rtc.connect':
+            return toConformanceRtcConnectResult(command);
+        case 'rtc.send':
+            return command.commandId.includes('negative-no-peer')
+                ? toConformanceNoPeerResult(command)
+                : toConformanceRtcSendResult(command);
+        case 'ws.open':
+            return { elapsedMs: 1, events: [], outcome: toOkOutcome(command, { connection: command.connection, opened: true }) };
+        case 'ws.send':
+            return toConformanceWebSocketSendResult(command);
+        case 'ws.close':
+            return toConformanceWebSocketCloseResult(command);
+        default:
+            return undefined;
+    }
+}
+
+function toConformanceRtcConnectResult(
+    command: RallarBlackBoxTestRtcConnectCommand & Readonly<{ commandId: string; }>
+): DeterministicConformanceCommandResult {
+    const elapsedMs = 2;
+    return {
+        elapsedMs,
+        outcome: toOkOutcome(command, { connected: true, durationMs: elapsedMs }),
+        events: [{
+            kind: 'diagnostic',
+            topic: 'rallar.bb.rtc.connected',
+            commandId: command.commandId,
+            connection: command.connection,
+            actor: command.actor,
+            transport: command.transport,
+            severity: 'info',
+            payload: { connected: true, commandId: command.commandId }
+        }]
+    };
+}
+
+function toConformanceNoPeerResult(
+    command: RallarBlackBoxTestRtcSendCommand & Readonly<{ commandId: string; }>
+): DeterministicConformanceCommandResult {
+    const elapsedMs = 3;
+    const error = {
+        code: 'RALLAR_BB_RTC_NO_PEERS',
+        message: 'RTC send resolved no target peers.',
+        details: { accessToken: 'secret-negative-token' }
+    };
+    return {
+        elapsedMs,
+        events: [{
+            kind: 'diagnostic',
+            topic: 'rallar.bb.rtc.send_failed',
+            commandId: command.commandId,
+            connection: command.connection,
+            transport: command.transport,
+            severity: 'error',
+            payload: { error }
+        }],
+        outcome: {
+            status: 'failed',
+            value: {
+                status: 'no-peers',
+                sendObservation: {
+                    commandId: command.commandId,
+                    kind: command.kind,
+                    transport: command.transport,
+                    durationMs: elapsedMs,
+                    ok: false,
+                    status: 'no-peers',
+                    errorCode: error.code
+                }
+            },
+            error,
+            nextStatus: 'failed'
+        }
+    };
+}
+
+function toConformanceRtcSendResult(
+    command: RallarBlackBoxTestRtcSendCommand & Readonly<{ commandId: string; }>
+): DeterministicConformanceCommandResult {
+    const elapsedMs = 4;
+    return {
+        elapsedMs,
+        events: [{
+            kind: 'message',
+            topic: 'rallar.conformance.message',
+            commandId: command.commandId,
+            connection: command.connection,
+            transport: command.transport,
+            payload: toMessagePayload(command)
+        }],
+        outcome: toOkOutcome(command, {
+            sent: command.send,
+            sendObservation: {
+                commandId: command.commandId,
+                kind: command.kind,
+                transport: command.transport,
+                durationMs: elapsedMs,
+                ok: true,
+                status: 'sent'
+            }
+        })
+    };
+}
+
+function toConformanceWebSocketSendResult(
+    command: RallarBlackBoxTestWsSendCommand & Readonly<{ commandId: string; }>
+): DeterministicConformanceCommandResult {
+    const elapsedMs = 2;
+    return {
+        elapsedMs,
+        events: [{
+            kind: 'message',
+            topic: 'rallar.bb.ws.message',
+            commandId: command.commandId,
+            connection: command.connection,
+            transport: 'ws',
+            payload: { data: command.data }
+        }],
+        outcome: toOkOutcome(command, {
+            connection: command.connection,
+            sent: command.data,
+            sendObservation: {
+                commandId: command.commandId,
+                kind: command.kind,
+                transport: 'ws',
+                durationMs: elapsedMs,
+                ok: true,
+                status: 'sent'
+            }
+        })
+    };
+}
+
+function toConformanceWebSocketCloseResult(
+    command: RallarBlackBoxTestWsCloseCommand & Readonly<{ commandId: string; }>
+): DeterministicConformanceCommandResult {
+    const elapsedMs = 1;
+    return {
+        elapsedMs,
+        events: [{
+            kind: 'event',
+            topic: 'rallar.bb.ws.closed',
+            commandId: command.commandId,
+            connection: command.connection,
+            transport: 'ws',
+            payload: { closed: true }
+        }],
+        outcome: toOkOutcome(command, { connection: command.connection, closed: true })
+    };
 }
 
 function toOkOutcome(
@@ -190,7 +229,7 @@ function toOkOutcome(
 }
 
 function toMessagePayload(
-    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>
+    command: RallarBlackBoxTestRtcSendCommand
 ): RallarBlackBoxTestEvent['payload'] {
     const send = command.send;
     return isJsonRecordValue(send)
@@ -293,7 +332,8 @@ describe('rallar-bb-test composite conformance matrix', () => {
             caseIds: ['looped-rtc-send'],
             recipeSettings: RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_DEFAULT_RECIPE_SETTINGS
         });
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             now: () => now,
             sleep: async (ms) => {
                 now += ms;

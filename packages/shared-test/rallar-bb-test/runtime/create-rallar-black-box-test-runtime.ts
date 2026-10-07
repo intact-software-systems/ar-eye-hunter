@@ -1,6 +1,8 @@
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
+import type { ControlClientIdentity } from '../control-protocol.ts';
 import { RecipeCaptureSequence } from '../recipe/recipe-capture-sequence.ts';
 import { snapshotExecutableCommand } from '../recipe/snapshot-executable-recipe.ts';
+import { decodeRecord } from './decode-runtime-result-values.ts';
 
 import { computeAssertCommandOutcome } from '../assert/compute-assert-command-outcome.ts';
 import { waitForBarrier } from '../barrier/wait-for-barrier.ts';
@@ -54,15 +56,52 @@ type CommandOfKind<Kind extends RallarBlackBoxTestCommand['kind']> = Extract<Com
 /** A child of a recipe, loop or parallel command always runs; only a top-level command replays its cached result. */
 type ResultCachePolicy = 'replay' | 'bypass';
 
+/** A successful cached invocation is historical evidence; a fresh reference must match the current acknowledged load. */
+function resolveRecipeBodyBindingFailure(
+    command: RallarBlackBoxTestCommand,
+    loaded: InMemoryRallarBlackBoxTestRuntime.LoadedRecipe | undefined,
+    cached: RallarBlackBoxTestResult | undefined
+): RallarBlackBoxTestCommandOutcome | undefined {
+    if (command.kind !== 'recipe.run' || command.expectedRecipeBodyId === undefined) {
+        return undefined;
+    }
+    const issues = validateExecutableCommand(command);
+    if (issues.length > 0) {
+        return toInvalidRecipeOutcome(issues);
+    }
+    if (cached?.ok === false) {
+        return undefined;
+    }
+    const actual = cached ? decodeRecord(decodeRecord(cached.value).invocation).recipeBodyId : loaded?.recipeBodyId;
+    return actual === command.expectedRecipeBodyId
+        ? undefined
+        : toInvalidRecipeOutcome(['The acknowledged recipe body is no longer available for this execution.']);
+}
+
 namespace InMemoryRallarBlackBoxTestRuntime {
     export interface LoadedRecipe {
         readonly recipe: RallarBlackBoxTestRecipe;
         readonly recipeBodyId: string;
     }
 
+    export interface RunCommandInput {
+        readonly command: RallarBlackBoxTestCommand;
+        readonly cachePolicy: ResultCachePolicy;
+        readonly captureSequence: RecipeCaptureSequence;
+        readonly cacheOwner: object;
+    }
+
+    export interface CommitResultInput {
+        readonly command: CommandWithId;
+        readonly startedAtEpochMs: number;
+        readonly outcome: RallarBlackBoxTestCommandOutcome;
+        readonly cacheOwner: object;
+    }
+
     export interface CommandAdmission {
         readonly captureSequence: RecipeCaptureSequence;
         readonly loadedRecipe: LoadedRecipe | undefined;
+        readonly cacheOwner: object;
     }
 
     export interface TargetedCleanup {
@@ -84,6 +123,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private readonly dependencies: InMemoryRallarBlackBoxTestRuntime.Dependencies;
     private readonly listeners = new Set<RallarBlackBoxTestStateListener>();
     private currentState: RallarBlackBoxTestState = createInitialRuntimeState();
+    private controlIdentity: ControlClientIdentity | undefined;
+    private cacheOwner: object = {};
     private readonly captureDefaults = new RecipeCaptureSequence({
         run: undefined,
         recipe: undefined,
@@ -118,32 +159,70 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         this.appendEvent(event);
     }
 
-    async execute(command: RallarBlackBoxTestCommand): Promise<RallarBlackBoxTestResult> {
-        return await this.runCommand(
-            snapshotExecutableCommand(command),
-            'replay',
-            command.kind === 'configure' ? this.captureDefaults : this.captureDefaults.fork()
-        );
+    async execute(
+        command: RallarBlackBoxTestCommand,
+        controlIdentity?: ControlClientIdentity
+    ): Promise<RallarBlackBoxTestResult> {
+        if (
+            (controlIdentity?.runId !== this.controlIdentity?.runId ||
+                controlIdentity?.agentId !== this.controlIdentity?.agentId)
+        ) {
+            this.controlIdentity = controlIdentity && Object.freeze({ ...controlIdentity });
+            this.cacheOwner = {};
+            this.currentState = { ...this.currentState, resultCache: {} };
+        }
+        return await this.runCommand({
+            command: snapshotExecutableCommand(command),
+            cachePolicy: 'replay',
+            captureSequence: command.kind === 'configure' ? this.captureDefaults : this.captureDefaults.fork(),
+            cacheOwner: this.cacheOwner
+        });
     }
 
     private async runCommand(
-        command: RallarBlackBoxTestCommand,
-        cachePolicy: ResultCachePolicy,
-        captureSequence: RecipeCaptureSequence
+        input: InMemoryRallarBlackBoxTestRuntime.RunCommandInput
     ): Promise<RallarBlackBoxTestResult> {
+        const { command, cachePolicy, captureSequence, cacheOwner } = input;
         const admission: InMemoryRallarBlackBoxTestRuntime.CommandAdmission = {
             captureSequence,
+            cacheOwner,
             loadedRecipe: command.kind === 'recipe.run' && command.recipe === undefined ? this.loadedRecipe : undefined
         };
         const commandWithId = this.toCommandWithId(command);
         const cached = this.currentState.resultCache[commandWithId.commandId];
-        if (cached && cachePolicy === 'replay') {
+        const bindingFailure = resolveRecipeBodyBindingFailure(
+            commandWithId,
+            admission.loadedRecipe,
+            cached && cachePolicy === 'replay' ? cached : undefined
+        );
+        if (bindingFailure) {
+            return this.commitResult({
+                command: commandWithId,
+                startedAtEpochMs: this.dependencies.now(),
+                outcome: bindingFailure,
+                cacheOwner
+            });
+        }
+        if (cached && cachePolicy === 'replay' && cacheOwner === this.cacheOwner) {
             return { ...cached, replayed: true };
+        }
+        if (cacheOwner !== this.cacheOwner) {
+            return this.commitResult({
+                command: commandWithId,
+                startedAtEpochMs: this.dependencies.now(),
+                outcome: toInvalidRecipeOutcome(['Control assignment changed before this child could execute.']),
+                cacheOwner
+            });
         }
 
         const refusal = this.admitCommand(commandWithId, cachePolicy);
         return refusal
-            ? this.commitResult(commandWithId, this.dependencies.now(), refusal)
+            ? this.commitResult({
+                command: commandWithId,
+                startedAtEpochMs: this.dependencies.now(),
+                outcome: refusal,
+                cacheOwner
+            })
             : await this.runRegisteredCommand(commandWithId, cachePolicy, admission);
     }
 
@@ -242,7 +321,12 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             status: commandWithId.kind === 'recipe.cancel' ? this.currentState.status : 'running'
         });
         const outcome = await this.runCommandOutcome(commandWithId, admission).catch(decodeThrownCommandOutcome);
-        return this.commitResult(commandWithId, startedAtEpochMs, outcome);
+        return this.commitResult({
+            command: commandWithId,
+            startedAtEpochMs,
+            outcome,
+            cacheOwner: admission.cacheOwner
+        });
     }
 
     private async runCommandOutcome(
@@ -272,7 +356,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             case 'reset':
                 return await this.reset(command);
             default:
-                return await this.runExternalCommand(command, admission.captureSequence);
+                return await this.runExternalCommand(command, admission);
         }
     }
 
@@ -329,7 +413,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 invocation,
                 timeoutMs: command.timeoutMs,
                 deadlineEpochMs,
-                ports: this.toCompositePorts(sequence)
+                ports: this.toCompositePorts(sequence, admission.cacheOwner)
             });
             if (outcome.status !== 'ok') {
                 await this.cleanupOwnedResources({
@@ -338,7 +422,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     recipeId: recipe.recipeId,
                     status: outcome.status,
                     error: outcome.error
-                });
+                }, admission.cacheOwner);
             }
             return outcome;
         }
@@ -430,23 +514,37 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
 
     private async runExternalCommand(
         command: CommandWithId,
-        captureSequence: RecipeCaptureSequence
+        admission: InMemoryRallarBlackBoxTestRuntime.CommandAdmission
     ): Promise<RallarBlackBoxTestCommandOutcome> {
-        const outcome = await this.dependencies.commandExecutor?.(command, this.toCommandContext(captureSequence));
+        const captureSequence = admission.captureSequence;
+        const outcome = await this.dependencies.commandExecutor?.(
+            command,
+            this.toCommandContext(captureSequence, admission.cacheOwner)
+        );
         if (outcome) {
             return outcome;
         }
         switch (command.kind) {
             case 'loop':
-                return await new LoopCommandExecution(command, this.toCompositePorts(captureSequence)).run();
+                return await new LoopCommandExecution(
+                    command,
+                    this.toCompositePorts(captureSequence, admission.cacheOwner)
+                ).run();
             case 'parallel':
-                return await new ParallelCommandExecution(command, this.toCompositePorts(captureSequence)).run();
+                return await new ParallelCommandExecution(
+                    command,
+                    this.toCompositePorts(captureSequence, admission.cacheOwner)
+                ).run();
             case 'wait':
                 return await waitForEvent({ command, ...this.toWaitPorts() });
             case 'barrier':
                 return await waitForBarrier({
                     command,
-                    recordEvent: (event) => this.appendEvent(event),
+                    recordEvent: (event) => {
+                        if (admission.cacheOwner === this.cacheOwner) {
+                            this.appendEvent(event);
+                        }
+                    },
                     ...this.toWaitPorts()
                 });
             case 'assert':
@@ -505,13 +603,22 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         };
     }
 
-    private async cleanupOwnedResources(input: RallarBlackBoxTestCleanupInput): Promise<void> {
+    private async cleanupOwnedResources(
+        input: RallarBlackBoxTestCleanupInput,
+        cacheOwner: object = this.cacheOwner
+    ): Promise<void> {
+        if (cacheOwner !== this.cacheOwner) {
+            return;
+        }
         const cleanup = this.dependencies.cleanup;
         if (!cleanup) {
             return;
         }
         try {
-            await cleanup(input, this.toCommandContext());
+            await cleanup(input, this.toCommandContext(undefined, cacheOwner));
+            if (cacheOwner !== this.cacheOwner) {
+                return;
+            }
             this.appendEvent({
                 kind: 'diagnostic',
                 topic: 'rallar.bb.cleanup.completed',
@@ -521,6 +628,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             });
         }
         catch (error) {
+            if (cacheOwner !== this.cacheOwner) {
+                return;
+            }
             this.appendEvent({
                 kind: 'diagnostic',
                 topic: 'rallar.bb.cleanup.failed',
@@ -531,27 +641,40 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         }
     }
 
-    private toCommandContext(captureSequence?: RecipeCaptureSequence): RallarBlackBoxTestCommandContext {
+    private toCommandContext(
+        captureSequence?: RecipeCaptureSequence,
+        cacheOwner: object = this.cacheOwner
+    ): RallarBlackBoxTestCommandContext {
         return {
             rtcCapture: captureSequence?.get(),
             state: () => this.currentState,
             config: () => this.currentConfig,
             abortSignal: () => this.cancellationController.signal,
-            recordEvent: (event) => this.appendEvent(event),
-            updateStats: (commandId) => this.updateStats(commandId)
+            recordEvent: (event) => {
+                if (cacheOwner === this.cacheOwner) {
+                    this.appendEvent(event);
+                }
+            },
+            updateStats: (commandId) =>
+                cacheOwner === this.cacheOwner
+                    ? this.updateStats(commandId)
+                    : toRuntimeStats(this.currentState, this.dependencies.now())
         };
     }
 
     private toCompositePorts(
-        captureSequence: RecipeCaptureSequence
+        captureSequence: RecipeCaptureSequence,
+        cacheOwner: object
     ): LoopCommandExecution.Ports & ParallelCommandExecution.Ports {
         return {
             now: this.dependencies.now,
             sleep: this.dependencies.sleep,
-            runChildCommand: (command) => this.runCommand(command, 'bypass', captureSequence),
+            runChildCommand: (command) =>
+                this.runCommand({ command, cachePolicy: 'bypass', captureSequence, cacheOwner }),
             forkChildCommands: () => {
                 const groupCapture = captureSequence.fork();
-                return (command) => this.runCommand(command, 'bypass', groupCapture);
+                return (command) =>
+                    this.runCommand({ command, cachePolicy: 'bypass', captureSequence: groupCapture, cacheOwner });
             },
             cancelRequested: () => this.cancellationController.signal.aborted,
             abortSignal: () => this.cancellationController.signal
@@ -564,11 +687,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         }
     }
 
-    private commitResult(
-        command: CommandWithId,
-        startedAtEpochMs: number,
-        outcome: RallarBlackBoxTestCommandOutcome
-    ): RallarBlackBoxTestResult {
+    private commitResult(input: InMemoryRallarBlackBoxTestRuntime.CommitResultInput): RallarBlackBoxTestResult {
+        const { command, startedAtEpochMs, outcome, cacheOwner } = input;
         const endedAtEpochMs = this.dependencies.now();
         const result: RallarBlackBoxTestResult = {
             commandId: command.commandId,
@@ -581,6 +701,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             value: this.toRedacted(outcome.value),
             error: this.toRedacted(outcome.error)
         };
+        if (cacheOwner !== this.cacheOwner) {
+            return result;
+        }
         this.currentState = {
             ...this.currentState,
             status: outcome.nextStatus ?? (result.ok ? 'completed' : 'failed'),

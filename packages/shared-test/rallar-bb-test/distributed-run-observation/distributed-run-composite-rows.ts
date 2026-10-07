@@ -3,7 +3,10 @@ import {
     toRallarBlackBoxCompositeResultFlatEntries,
     type RallarBlackBoxCompositeResultPosition
 } from '../composite-results.ts';
-import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestParallelGroupResult,
+    RallarBlackBoxTestResult
+} from '../rallar-black-box-test-contracts.ts';
 import { decodeParallelResultValue } from './decode-composite-result-values.ts';
 import type {
     DistributedRunCompositeChildDecodeIssueRow,
@@ -111,6 +114,14 @@ function toCompositeRowPosition(position: RallarBlackBoxCompositeResultPosition)
     switch (position.kind) {
         case 'root':
             return {};
+        case 'recipe-child':
+            return {
+                parentPath: position.parentPath,
+                parentCommandId: position.parentCommandId,
+                childIndex: position.childIndex,
+                commandIndex: position.commandIndex,
+                originalCommandId: position.originalCommandId
+            };
         case 'loop-child':
             return {
                 parentPath: position.parentPath,
@@ -134,7 +145,7 @@ function toCompositeRowPosition(position: RallarBlackBoxCompositeResultPosition)
 }
 
 function toCompositeGroupStatus(
-    group: Readonly<{ commandCount: number; passed: number; failed: number; cancelled: boolean; }>
+    group: RallarBlackBoxTestParallelGroupResult
 ): DistributedRunCompositeGroupSummary['status'] {
     if (group.cancelled) {
         return 'cancelled';

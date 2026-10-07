@@ -27,17 +27,25 @@ GitHub Actions, ignored evidence under `tmp/perf/`, and immutable observation ZI
 The accepted measurement contract is retained in Sections 5, 6, and 8 of this
 plan. The approved diagnostics amendment is specified in
 [RTC establishment diagnostics](../../../plans/active/rtc-establishment-diagnostics.md).
-Its current implementation horizon is the evidenced WS fixture correction, reviewed publication
-and fresh hosted/main acceptance. The fifteen-owner history-fixture, three-owner policy,
-current-main reconciliation, final corrective code/architecture and scoped prose reviews are
-accepted; the composed correction is published at `a3b1662df1184ff2cf9a56e9ded12b7356897604`.
-A fresh local Native correctness preflight passes with six correlated applied receipts and
-partial coverage. Formation and medium-scale gates pass, while the original Release Gate
-fails eleven WS observer tests because their common positive fixture still sends the previous
-envelope version. Immediate admission assertions witness eleven semantic failures; the
-canonical typed current-version fixture passes all eleven cases plus eighty adjacent controls.
-Independent full-file correction review returns SPEC PASS and QUALITY PASS; reviewed publication
-and fresh corrected-source hosted acceptance remain required.
+Task61 distributed run intent and Task62 installed capture support/admission are locally
+implemented and independently accepted. Task63 finite applied receipt preservation and
+required-result admission has completed GREEN implementation after verified semantic RED and
+both attribution findings are now closed by the original reviewer with SPEC/QUALITY Approved; Task63 is locally accepted;
+Task64 is locally implemented after semantic RED: immutable accepted intent, a pre-effect
+acknowledged-load guard, assignment-owned completion/replay, and root/recipe capture
+propagation through reload. Final source passes129 SDK/owner tests and177 controller tests,
+package/test typechecks, app build, formatting and diff checks. The shared SDK composition
+refactor closes the file-size violations without an exception; human standards and
+independent acceptance remain pending. This continuation is a draft delivery checkpoint.
+Publish each coherent validated slice on the feature branch; keep incomplete acceptance
+explicit in the draft pull request rather than accumulating accepted slices locally. The WS
+fixture correction is independently accepted and published at
+`9d683b3ba00cc0a450a8a940ecdd2eab4c55bbed`, with fresh normal hosted correctness accepted.
+Its original eleven failed observer cases and their semantic RED/GREEN correction remain
+retained. The local Native correctness preflight has six correlated applied receipts with
+partial coverage; this is separate from homogeneous performance acceptance. PR633's exact
+main integration approval remains pending. Remaining body/replay, visible recipe controls,
+runner and Actions outcomes stay mandatory.
 B06 selection and producer configuration are published; governed E3 has zero accepted cohorts
 and remains required in Section 11. Current product and architecture are [docs/product.md](../../product.md)
 and [docs/architecture.md](../../architecture.md). The canonical executable
@@ -90,17 +98,58 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
 ## 1. Current Outcome And Evidence
 
-The published corrective checkpoint is `a3b1662df1184ff2cf9a56e9ded12b7356897604`, tree
-`92e4313f19ab0bf72b7ce550112fdc3da1842596`. Final corrective code SPEC, architecture and
-scoped prose review are approved; all eighteen structural observations have explicit human
-dispositions. The original [Branch Release Gate37554289179](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37554289179)
-fails only main unit tests:11 failed /13627 passed /12 skipped, all in the WS inbox consumer
-observation suite. Other selected correctness checks and CodeQL pass; RTC observation integrity
-and validation-evidence publication are skipped. [Formation37554288812](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37554288812)
-and [medium37554288682](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37554288682)
-pass, with actual checkout trees independently matched to this source. Their29 recipe reports
-have zero blocking failures;56 formation failures are explicitly nonblocking and bounded
-result views remain disclosed. These are correctness gates, not B01–B06 performance cohorts.
+The published corrective checkpoint is `9d683b3ba00cc0a450a8a940ecdd2eab4c55bbed`, tree
+`061cd4d527f7c642b0f9c75f34607294bc81c081`. The bounded WS observer-fixture correction has
+independent SPEC and QUALITY acceptance. Fresh [Branch Release Gate37557532249](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37557532249)
+passes its selected correctness gates, with13638 passing unit tests and12 skips; the eleven
+WS observer cases pass. CodeQL also passes. RTC observation integrity is skipped, so this
+release does not supply E3 performance acceptance. The later same-head release37558882828
+uses trusted validation reuse and is not a fresh broad test run.
+
+Fresh [formation37557531819](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37557531819)
+and [medium37557532587](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37557532587)
+pass. Independent correlation verifies their actual checkout as the synthetic merge of
+base`e366f60ebf8ad5ee39165793d6decbe3da911418` and head9d, with the checkpoint's exact tree.
+All29 recipe reports pass with no blocking failures or skipped recipes. Across12303 executed
+results,12167 succeed and136 explicit nonblocking failure rows remain retained; nested
+Wait/Set/Parallel rows overlap and are not136 independent incidents. Bounded result/event
+views disclose omitted successful history. These are correctness gates, not B01–B06
+performance cohorts or full diagnostic-receipt acceptance.
+
+[PR633](https://github.com/intact-software-systems/ar-eye-hunter/pull/633) remains open and
+mergeable with native review required. The exact main merge proposal is prepared; the
+repository's just-in-time default-branch approval remains pending. No main operation or
+accepted E3 cohort is claimed. Task61 and Task62 are locally accepted in the separate
+continuation worktree, preserving the proposed integration source. The human-approved
+required-input/default-composition/client-clock correction adapts verified callers directly,
+with no migration path or retained predecessor. Two scoped review rounds close the admission
+and ownership findings. The final affected checks pass642 tests and318 controller cases;
+maintained typing covers1,478 files with zero errors. One canonical Either policy handles
+nonthrowing admission and strict execution. No named function exceeds60 lines. The five
+nonzero changed-style diagnostics were independently assessed against current standards;
+SPEC/QUALITY PASS does not treat checker tolerance as a waiver.
+
+Task63 RED now proves that storage drops an actual SDK applied-Off receipt after successful
+serialized admission. The full SDK fixture has one semantic failure and48 passing controls.
+Eleven invalid serialized completions are accepted and mutate completion state; five valid,
+ordinary-failure, replay and cancellation controls pass. Production was unchanged at the RED
+freeze. Root verified source and raw evidence, then released the same implementer for finite
+canonical admission/preservation, restore, real disk and export validation. The completed source audit
+is refreshed after acceptance: known queued-load acknowledgments and matching replay flags
+are now enforced. Task64 tests whether accepted caller mutation, pre-start replacement,
+cache reassignment or root/recipe capture intent lost across reload can still cause wrong
+execution or skip new work. Task64 now witnesses these failures through actual SDK/control
+consumers, with valid controls and unchanged production. Historical retired replay remains
+truthful recorded evidence; no new liveness/freshness requirement or ICE cause is proved.
+Before review fixes, covering native checks passed164 cases and five shared/browser/artifact owners passed102. The current fix passes144 focused native,86 shared and51 actual-SDK cases. Separate same-SDK producer/native-consumer checks
+pass and preserve the four original receipts across real disk and exported forms. The frozen handoff is complete;
+independent Task63 review found duplicate loop-position acceptance and valid nested loaded-body refusal. The same implementer completed semantic RED/GREEN and the original reviewer approved both corrections with no remaining findings. Task63 is locally accepted. The continuation remains uncommitted and unpublished; exact main
+integration approval and governed E3 acceptance remain open.
+
+The original [a3 Branch Release Gate37554289179](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37554289179)
+failed eleven WS observer tests with13627 passing tests and12 skips. Its original failed log,
+formation/medium artifacts and all earlier adverse checkpoints remain preserved; later
+successful correctness evidence does not replace those attempts.
 
 In the original a3 hosted source, the common observer-test packet has `id.v:2`, while the canonical envelope is
 version3. Public WS ingress returns `unsupported` before admission or callback dispatch;
@@ -109,8 +158,9 @@ public admission assertions reproduce11 semantic failures immediately with the o
 A typed `ALMessage` stamped with the canonical current-version constant then passes11 cases;
 80 resource-limit, WS ingress and owned dispatch-observation controls also pass. This is a
 bounded test-fixture correction, with no production, CRDT, retry, timeout or protocol fallback
-change indicated. Independent full-file SPEC and QUALITY review passes; reviewed publication
-and fresh hosted correctness remain the next prerequisites.
+change indicated. Independent full-file SPEC and QUALITY review passes. The correction is
+published at9d and its fresh hosted correctness is accepted; the approved configuration
+amendment and governed performance acceptance remain required.
 The original failed job log and earlier adverse checkpoints remain preserved.
 
 Fresh local Native correctness at a3 passes1 case/zero retries in48.04 seconds. Independent
@@ -2164,15 +2214,26 @@ The review's unreachable live/tab resources finding is corrected and independent
 quality remains unaccepted for the separate public encrypted-output typing decision.
 The next two useful implementation actions are:
 
-1. **WS fixture correction and publication:** The original a3 Release Gate exposes a stale
-   version2 positive fixture against current version3-only ingress. Immediate admission
-   assertions witness11 failures, and the canonical typed current-version fixture passes11
-   cases plus80 adjacent controls. Independent full-file SPEC/QUALITY review passes. Publish the
-   bounded test correction and factual plan refresh to PR633. Preserve original failed evidence.
-2. **Fresh hosted acceptance and main integration:** Inspect original-attempt required hosted
-   evidence for the exact reviewed correction source. After correctness acceptance, obtain the
-   repository-required exact main integration approval and select its immutable main source
-   for the governed E3 primary. Source acceptance does not complete E3 or broader UI/recipe work.
+1. **Recipe body and fresh execution guards:** Task63 is locally accepted after the
+   original reviewer closes both attribution findings. The accepted-source refresh is
+   complete:60 identities are frozen, including49 unchanged and6 changed prior owners
+   and5 newly relevant owners. Task64 has root-assessed semantic RED and a reviewed design;
+   GREEN is released through the same implementer. Reuse the existing snapshot, runtime
+   cache, control client and reload owners. The optional acknowledged-load token and
+   control-address inputs preserve ordinary callers without migration or a mixed-version
+   fallback. Preserve legitimate same-assignment replay, historical evidence and compatible
+   live reuse. Close full changed-file standards and independent review before acceptance.
+2. **Visible recipe controls and persisted intent:** After those guards, implement the
+   audited Console/local authoring and reusable recipe/manifest input gaps through current
+   canonical intent owners. Prove actual visible selection, omitted inheritance, explicit
+   Off, saved/imported/exported/rerun intent and immutable submitted configuration. General
+   worker, spawned/external/mixed/no-spawn and Actions propagation remain mandatory later
+   outcomes alongside B01–B06 and E3; neither this horizon nor local acceptance narrows them.
+
+The WS fixture correction and exact9d normal hosted acceptance are complete. PR633's exact
+main integration approval remains pending; no governed E3 cohort is accepted. After the
+required source and cohort preflight gates are satisfied, use the unchanged E3 primary and
+conditional repeat. Neither normal CI nor these two local implementation slices completes E3.
 
 Immutable7c3 full-body/diff coverage is complete across all257 paths; its adverse review
 remains retained. HTTP credential routing, startup context forwarding and B06 emitted-schema
@@ -2181,8 +2242,9 @@ current-main e366 reconciliation is independently accepted in local merge12197c3
 tree617062ab, preserving membership fencing and reviewed RTC capture/admission. The
 fixture and current policy corrections are independently accepted. Correct-e366 delivery
 checks pass; final corrective code/architecture review and all18 structural dispositions are
-accepted. Scoped prose review passes and that corrective batch is published at a3. The fresh
-WS fixture failure requires only the bounded test correction described above. No source concern
+accepted. Scoped prose review passes and that corrective batch is published at a3. Its later
+WS fixture failure is closed by the reviewed9d correction and fresh normal hosted acceptance.
+Original failed evidence remains retained. No source concern
 alone authorizes a CRDT, retry, timeout
 or immutable-context redesign; held original successors remain excluded.
 
@@ -3834,19 +3896,31 @@ cost, B06/E1/E3 and distributed acceptance remain outstanding. Prior884/6d evide
 
 ### Task 55: Completed distributed source preparation
 
-The current manifest/selection schemas and builder have no finite distributed run override.
+These are source findings at the accepted9d checkpoint, not claims that the later local
+Task61/62 implementation is absent. Task61 now supplies locally accepted executable intent;
+Task62's installed support change is completing validation and awaits independent acceptance.
+At the audited checkpoint, manifest/selection schemas and builder have no finite run override.
 The start-command owner must project that override into ordinary recipe execution; it must
 not introduce a second precedence resolver or redundant selection knob. Omission means
 Inherit, while Off is explicit.
 
-Agent capability advertisement lacks capture support/version. The ordinary resolver checks
+At that checkpoint, agent capability advertisement lacks capture support/version. The ordinary resolver checks
 only existing assertion capabilities, and explicit targeting bypasses those blockers.
 Every actual target must satisfy required capture support before relevant work, including
 manual starts without staging. Preserve unrelated Health/API/local-only behavior and the
 existing explicit-target baseline when no capture requirement applies.
 
-The adapter already returns the actual SDK receipt, but control evidence compaction discards
-nested ordinary successful results, and distributed result acceptance checks only `ok`.
+The refreshed read-only audit of exact9d/tree061 confirms that owned Connect completion
+already returns the actual SDK receipt and original middleware eligibility. The first normal
+loss is control evidence compaction: it discards nested ordinary successful results while
+retaining invocation metadata and bounded failure summaries. Distributed result acceptance
+checks only outer `ok`; the wire decoder does not validate application or its attribution.
+Do not replace this owned completion with later global receipt readback.
+
+Export paths differ. The configured disk `results.jsonl` may retain the original sanitized
+envelope, but accepted snapshots, restored runs, fallback JSONL and distributed bundles
+inherit the compacted loss. Retaining the raw side channel does not close typed admission
+or establish that the distributed success verdict checked the receipt. Reuse that recorder.
 Retain finite typed attribution through the existing control and distributed owners:
 run, agent, phase, accepted body, invocation, command, connection and actual receipt.
 Missing, malformed, mismatched or unavailable required application cannot pass. Explicit Off
@@ -5153,6 +5227,1008 @@ Manual's accepted browser result supports the SDK application capability but doe
 this B06 path. Held Task58 public typing and the remaining Recipe Console/distributed outcomes
 remain independent required goal work. E3 still has zero accepted cohorts; the initial
 post-ICE stall remains unresolved.
+
+### Task 61: Executable distributed run capture intent
+
+**Status:** Locally implemented and independently accepted for executable intent.
+Separate witnessed REDs established strict schema rejection and command projection loss;
+their original assertion bodies and failed logs remain preserved. One canonical optional
+root input now reaches every target through the existing ordinary invocation, including
+Configure isolation, inline/reference and staged/direct/manual/automatic/scheduled cases.
+Accepted snapshot restore and serialized export retain explicit Off and omission.
+The reusable shared fixture also passes actual HTTP admission, execution and result/export.
+
+Final native focused tests pass54/0, full controller tests254/0 and shared controls100/0.
+Independent SPEC review accepts this exact scope; the first QUALITY review's changed-style
+and temporary-storage lifetime findings are closed by scoped fix re-review. Exact reviewed
+JSON boundary dispositions preserve guards and matcher policy; affected HTTP tests pass4/0
+and policy controls88/0. Maintained test typing enforces1,478 files with zero debt/errors.
+The earlier raw vendor-declaration compiler failure remains failed diagnostic evidence,
+not a claim that vendor declarations pass. All10 final authored owners and original
+RED/report identities are root-verified; the local implementation is not yet published.
+Support advertisement and actual applied receipts are not certified by invocation data.
+The exact main integration decision remains pending and E3 has zero accepted cohorts.
+
+Add one optional canonical `rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode` input to
+the distributed run manifest, its shared builder and strict schema. Omission means Inherit;
+explicit Off survives serialization. Every selected target and role receives that input
+through the existing `recipe.run.rtcCaptureMode` boundary. Reuse the ordinary invocation's
+precedence policy; do not add a per-selection knob, copy the resolver, rewrite recipe
+Configure or place executable intent only in metadata or variables.
+
+Witness strict JSON acceptance and command projection independently before production
+edits. Execute dispatched load/run commands in the real ordinary runtimes and observe the
+owned connection effect port and returned invocation. Preserve all three modes, omission,
+invalid-input rejection, Configure isolation, inline and loaded reference-only execution,
+staged/direct/manual/automatic/scheduled starts, and accepted manifest restore/export.
+Reference-only forwarding does not prove that an ambient loaded body matches staging;
+that identity guard remains required downstream work.
+
+Run focused controller decoder/service tests and affected shared manifest/schema/runtime
+controls, then shared-test TypeScript and native controller checks. Review and remediate
+each changed file in full; modified support files enter closure recursively; independent
+untouched code stays outside closure. Preserve the reviewed integration source and held
+successor work by executing this slice in its separate feature worktree.
+
+### Task 62: Required capture support admission for every target
+
+**Approved continuation2026-10-07:** After the plain-English API explanation, the human
+approves the exact required-input/default-composition/client-clock proposal and restates
+“No migration code, no legacy retained, avoid duplication.” The same writer resumes fix
+round1. Existing typed construction REDs and all prior source/raw freezes remain the TDD
+starting evidence. Change the canonical owners and verified callers directly; the default
+factory must own actual composition, with explicit unavailable dependencies preserved by
+the required factory. No compatibility overload, alias, legacy forwarding wrapper or
+duplicated policy is authorized. Delivery status passes with OPEN_DRAFT/no existing PR
+for the continuation; after coherent source and focused GREEN, planned combined affected
+checks are released. Full touched/support closure and the original reviewer's single
+scoped re-review remain required. This approval is separate from the pending PR633 main
+merge and does not supply SDK receipt, downstream configuration or E3 acceptance.
+
+The approved construction correction now reaches its original clock, session, request,
+identifier, delay and unavailable-fetch assertions: first focused GREEN37/0. A complete-file
+runtime-store witness separately observes malformed recipe JSON throwing an internal
+`recipe.commands.map` error (one failure/two controls); the canonical validator correction
+then passes with valid-input controls in the affected runs. Intermediate GREEN96/0,377/0
+and198/0 retain their actual Node storage warnings. After owned test-environment corrections,
+the producer/public-construction run is warning-free GREEN66/0 with warning traces enabled.
+SDK fixture consolidation stays in its existing test owner; the untested relocation draft
+is preserved only in ignored scratch and removed from source. Those intermediate passes
+precede the final checks and source freeze below; they do not accept Task62, downstream
+receipt work or E3.
+
+The first combined affected run is retained with six failures/602 passes: five reload
+cases fail in test setup because assumed `window.localStorage` is unavailable; the default
+browser support witness times out while bootstrap reset lazily imports the page runtime
+that its fixture did not install. Controller correctness283/0, maintained typing1,478/zero,
+controller/shared-test type checks and the app build pass; the build's chunk-size advisory
+remains visible. The corrected owned-storage/actual-SDK-page-runtime fixtures now pass
+49 focused tests without warnings. The first changed-style check exits1 with22 findings;
+the same writer then closes the actual named-input and known-port typing violations and
+assesses untrusted JSON/wire boundaries and navigation before final checks. Review-only
+cognitive scores do not require a line-count split or waive a real violation. No timeout
+increase, production suppression or manufactured receipt is selected.
+
+The exact redaction-fixture warning is isolated to two response-only fetch fixtures that
+omitted their session reader. After explicit owned `readSession`, the final combined run
+passes608/0 without warnings, with warning traces enabled. Visitor consolidation shares
+active sibling-scope construction across discovery/classification and retains focused91/0;
+maintained typing remains1,478/zero and shared-test typing passes. The settled changed-style
+result is still exit1 with three specific review signals: runtime-store cohesion50, its
+single local JSON parsing `unknown` before canonical validation, and finite visitor
+cohesion70/worst parallel20. No new disposition or mechanical split is used. Root verifies
+56 complete frozen/current source and preimage identities, unchanged HEAD/index, preserved
+original RED declarations and the prior153,634-byte report prefix. The actual fix package
+has37 complete-context changed owners and19 frozen unchanged dependencies. The writer now
+stops with DONE_WITH_CONCERNS: complete report183,927 bytes, preserved153,634-byte prefix,
+and113 actual command/raw pairs. Root reads the entire30,293-byte append and verifies all
+source, report, metadata/log and child-exit identities. The single scoped re-review is now
+released to the original reviewer, including all original findings and the three actual
+nonzero style signals. This is verified source/raw evidence, not Task62 acceptance or live
+execution-order telemetry. Task63 remains next after independent Task62 acceptance.
+
+**Completed scoped re-review and fix round2/5:** The original reviewer marks I1–I4/M1/M2
+ADDRESSED, with SPEC and QUALITY still NEEDS FIXES. N1 observes a schema-valid, executable-valid
+`crdt.open` with an empty name and local-only transport: create returns draft, then stage
+throws “CRDT option must be a non-empty string.” The valid-name control returns a visible
+failed snapshot because its selected agent is absent. The new collector calls the complete
+execution decoder merely to classify transport; unrelated command validation now escapes
+admission. The same writer must witness the actual controller boundary RED and preserve
+canonical transport precedence and execution validation through a coherent shared policy
+or an explicitly contained failure. No duplicated precedence resolver or unrelated schema
+tightening is authorized.
+
+Source recovery during fix2 also shows that the connection schema validates capture mode
+but permits additional `crdtTransport` values. A transport-only decoder that still throws
+on those values would leave the same admission boundary unsafe. Include this schema-valid
+path in the semantic witnesses, distinguish invalid/unverified transport from omission or
+proved local-only, and preserve strict execution errors and valid top-level overrides.
+This is an admission-policy correction in the existing black-box owner, not a CRDT algorithm
+change; these source facts alone do not establish its RED or GREEN.
+
+The first focused fix2 controller run typechecks, then reports7 passes/26 failures:
+18 blank-name exceptions, six invalid-transport exceptions and two different assertion
+failures in valid local-only missing-target controls. Those controls incorrectly expect
+an error-bearing failed snapshot at both boundaries; stage fails without that error and
+start remains running under existing non-capture semantics. The same writer must correct
+the control premises without broadening the identity policy, preserving the first attempt.
+Root retains the raw output/metadata and explicitly post-check observed source copies.
+The24 exception failures are real boundary evidence; assertions after those exceptions
+remain unreached. Corrected RED, GREEN and independent acceptance are still pending.
+
+After preserving that attempt and a second25-failure/eight-control run with an exact
+undefined-property assertion mismatch, the corrected focused RED reports24 exceptions
+and nine passing controls. Both stage/start paths prove schema/executable validation and
+draft creation before the exception. Literal local-only missing-target controls now
+preserve the distinct existing stage/start states, links and absent dispatch. Root verifies
+all11 retained source/log/metadata identities and the actual child exit1; no assertion
+failure remains in the final RED. Later dispatch/refusal assertions still require GREEN.
+The writer proceeds with a finite valid/invalid canonical transport policy and strict
+execution error translation, then coherent function refactoring. Current source has begun
+changing; retrospective artifact verification does not assert live tool ordering.
+
+The first focused N1 GREEN now passes33/0 with the same controller witnesses: dispatch,
+capture refusal, missing-target and strict execution controls reach their assertions.
+The existing decoder owner has one finite nonthrowing transport resolution policy; execution
+translates invalid input to its strict TypeError, while admission consumes transport proof
+without decoding unrelated command fields. Root reads the actual command/output and observes
+the canonical source, retaining explicitly post-check copies. Coherent N2 refactoring and
+final covering validation remain underway; this first GREEN does not accept Task62 or
+certify SDK application, storage preservation or E3.
+
+N2 identifies three actual named-function violations under the current greater-than60-line
+rule: `visitParallel`91 lines, `bootstrapControlAgent`71 and the deterministic conformance
+fixture147. Named fixture builders are governed by this rule; test bodies are exempt.
+The fix must expose real discovery/classification, bootstrap lifecycle and command policy
+boundaries in place, with meaningful covering tests. No relocation-only split, forwarding
+chain, new exception, migration code, retained legacy or duplicated implementation is
+authorized. Root reads the complete39,681-byte review, then verifies and freezes60 actual
+source preimages plus the183,927-byte report prefix before releasing the same writer.
+All earlier failures and freezes remain intact. The original reviewer will perform one
+scoped re-review after the completed fix evidence; Task62 is not accepted and Task63,
+downstream configuration and E3 remain required.
+
+The first N2 covering run passes116/0 across six actual gate, conformance, CRDT command
+boundary and workbench test files. The conformance fixture now separates pure command-result
+policies from its single clock/event shell, and bootstrap runtime setup has an owned reset,
+Configure and validation lifecycle boundary. Root retains explicitly post-check observations;
+the provisional unformatted function audit is not final standards acceptance. Delivery status
+passes with OPEN_DRAFT/no continuation PR before planned final validation. Complete formatted
+function/separation review, final covering checks, source freeze and the original reviewer's
+single scoped re-review remain required. No source publication or main/E3 operation follows
+from this checkpoint.
+
+**Completed fix round2; independent re-review running:** The writer stops with
+DONE_WITH_CONCERNS. Root reads the full24,552-byte final report append and verifies61
+current/frozen/preimage source identities,42 command/raw pairs and114 auxiliary artifacts.
+The actual six-owner fix uses preserved working-tree preimages; unchanged HEAD..HEAD is
+not a fix diff. No migration bridge, legacy forwarding path, duplicate transport policy,
+source relocation or new exception is introduced.
+
+The canonical decoder owner now returns Either for raw transport selection. Admission
+consumes that result without validating unrelated execution fields; strict execution
+translates failure at its existing command-framework exception boundary. The corrected
+35-case controller family covers blank names, invalid configured transport, valid local
+and nonlocal precedence, omission, support, visible refusal and actual dispatch. The
+intermediate33-case GREEN and all first RED/control-setup failures remain preserved.
+
+Parallel traversal exposes owned branch, discovery and continuation phases; bootstrap
+exposes reset/Configure/provider validation and accepted publication before socket intent;
+the deterministic fixture uses pure command-result policies behind one clock/event shell.
+The final named audit covers95 functions with no greater-than60 violation: parallel21,
+bootstrap36 and fixture18 lines. The visitor's remaining50-line function has a recorded
+responsibility/separation review, still subject to independent acceptance. Public bootstrap
+coverage passes3/0; its first mistaken refusal expectation is retained as a setup failure.
+
+After the Either correction, the actual affected27-file run passes642/0, native controller
+318/0, maintained typing1,478/zero, controller/shared-test checking and app build. The last
+canonical command-type annotation cleanup has its own conformance4/0 and maintained typing
+checks. Exact61-owner formatting and whitespace pass. Changed style exits1 with five
+raw-input/JSON-boundary and warn-tier cognitive diagnostics; structure reports seven
+observations, and the build chunk advisory remains. The required overall style report exits0
+with3,450 nonblocking findings; that does not waive touched-file violations. The one scoped
+re-review is released to the same original reviewer. N1/N2, Task62 acceptance, downstream
+SDK receipt/body/replay/UI/recipes/Actions outcomes and E3 remain incomplete until their
+own evidence and verdicts. No source staging, commit, publication, main or E3 operation
+is performed by this checkpoint. No Issues are created or reused.
+
+**Independent fix2 acceptance:** The original reviewer marks N1/N2 ADDRESSED,
+SPEC and QUALITY PASS, with no new Critical/Important/Minor breakage or out-of-scope finding.
+It independently verifies all61 source identities,42 raw/metadata pairs and114 auxiliary
+artifacts; reconstructed source confirms95 named functions/none above60. The five changed-style
+diagnostics are assessed as explicit raw JSON/transport input normalization and coherent
+warning-tier owners; the tool's exit1 and bundle advisory remain preserved. Root reads the
+entire34,845-byte report, verifies its SHA and unchanged accepted source. Original
+I1–I4/M1/M2 were already addressed; no Task62 finding remains open. Task62 is locally accepted,
+with no source staging, commit or publication. This supplies installed-support/admission
+acceptance, not SDK application/storage, body/replay, UI/recipes/Actions or E3 acceptance.
+Task63 is the next test-first slice; no Issues were created or reused.
+
+**Verified evidence before the approved I3 continuation:** Named-target and serialized blocker corrections have focused
+GREEN15/0; capability/producer corrections have GREEN60/0, and affected schema/target
+controls pass104/0. These recorded passes precede additional witnesses and are not final
+slice acceptance. The current construction witnesses have three checked failures/34
+passing controls, with maintained typing1,478 files/zero debt/errors. Their failure sites
+prove the ignored clock, ignored session dependency and ambient fetch fallback; later
+assertions after the first failures remain unobserved. Root verifies11 source snapshots,
+five command/log pairs and the three unchanged held construction owners. The public input
+decision was pending at this checkpoint and is now approved as stated above. A storage warning in this new factory test seat is preserved
+separately from the earlier warning-free60-test run.
+
+A controlled additional I2 RED observes an actual delayed CRDT command consuming a
+parallel sibling's WS Configure with Native capture intent, while admission still selects
+an unsupported target: one failure/42 passing controls, maintained typing1,478/zero.
+The witness asserts the exact deliberate feature-port refusal before SDK execution and
+then compares the observed input with admission; it supplies no applied receipt or
+network success. Runtime configuration is shared while capture selection forks per branch;
+the collector's authored-order traversal misses that possible interleaving. The analogous
+structured WS witness now reaches its owned route with the literal Native context and
+then demonstrates the same unsafe admission. Their combined RED has two failures/42
+passing controls; six further controls pass for concurrency one, explicit local-only,
+Health, omission, local-only Configure and an explicit Configure reset. Root verifies the
+final two-failure/48-control output and freezes11 source/raw artifacts. Root now also verifies
+maintained typing1,478/zero for those final RED controls and the first focused GREEN50/0.
+The existing visitor records finite Configure alternatives and reuses the actual decoder,
+route predicate and branch capture owner. Root verifies its eight raw/source inventory
+identities and observes the working owner. The fix-introduced false refusal is now confirmed:
+one branch replaces its own WS Configure with local-only before opening, while the other
+branch contains only Health. The exact owned input is local-only with Native intent, yet
+admission refuses it. Corrected RED has one failure/52 controls and maintained typing1,478/zero;
+root verifies12 inventory items plus two original source copies. The initial two-record
+Health fixture failure and the earlier WS callback-narrowing compiler failure remain
+separate failed evidence. The writer is released to distinguish actual sibling Configure
+possibilities from a branch's own superseded values, with a post-parallel sole-writer reset
+control required too. The revised configuration traversal now passes71 focused gate/target
+tests and maintained typing1,478/zero, including the exact sole-writer input and nested
+inside/post-block reset and sibling controls. Root reads the complete final visitor and
+report append, verifies14 source/raw inventory items and both retained report prefixes.
+An earlier misspelled target path selected only53 gate tests; its exit0 does not prove
+target coverage. The corrected command explicitly selects both actual owners.
+
+The further reference classification gap now has a controlled semantic RED: after loading
+a Health recipe, a parallel branch waits before a body-less
+`recipe.run`, while a sibling loads an RTC body. Runtime freezes the loaded body when
+that nested run is admitted after the wait; the collector still classifies the original
+Health body and admits an unsupported agent. Corrected RED has one failure/55 controls and
+maintained typing1,478/zero. The actual absence wait and exact Connect-input refusal with
+Native context are asserted before the admission failure. Root verifies14 source/raw
+identities; initial child-ID lookup and missing-method fixture errors remain separate.
+
+A boolean unknown-reference shortcut would miss an authored loaded recipe's Native mode
+under omitted ambient intent and could falsely refuse distinct known Health-only bodies.
+The additional owned-input body-Native witness confirms that gap: two checked semantic
+failures/60 passing controls and maintained typing1,478/zero. Five literal controls retain
+known Health, inline bodies, genuine omission, serial execution and explicit loaded-body
+reset. Root reads both exact Connect observations and verifies six source/raw identities,
+plus the new report's unchanged136,563-byte prefix.
+
+The finite declared `recipe.load` bodies must use the existing visitor/canonical capture
+policy. Source recovery confirms that ambient references can recurse despite finite JSON;
+neither inline validation nor runtime lifecycle depth supplies a mandatory reference bound.
+The approved internal design distinguishes active known body, canonical capture selection
+and finite configuration-origin/loaded-body facts, skipping only identical active states.
+Merge-to-authored-input provenance remains local to collection; no hash or credential
+serialization is selected. The recursive controls now have checked RED: eight failures/60
+passing controls, maintained typing1,478/zero. Two failures are the observed loaded-body
+admission gaps; six are resolver stack overflows before their later mode/admission assertions.
+Literal validated bodies cover Health-only admission, RTC before reentry, changed route/mode,
+Native-only refusal and Off-plus-Native acceptance. Root verifies10 RED source/raw identities.
+The same writer's finite known-body traversal and identical active-frame guard now have
+focused GREEN91/0 and maintained typing1,478/zero, with the exact two-owner format command
+passing. Root reads the saved raw outputs, complete visitor, canonical capture sequence,
+actual Connect-input witnesses and literal recursive/lifetime controls. The six recursive
+cases now reach their later mode/admission assertions. Additional controls preserve possible
+final loaded bodies, serial certainty, own resets and changed loaded-body modes. The settled
+source checkpoint is now frozen: root verifies35 complete source/preimage copies,67 raw
+command/log pairs, unchanged HEAD/index and all three held construction owners. Root reads
+the complete11,846-byte report append and verifies its unchanged141,788-byte previous prefix.
+The settled-source check again passes91/0, maintained typing1,478/zero and exact two-owner
+format checking. This is retrospective source/raw-output correlation, not audited live
+tool-event ordering, SDK application or final Task62 acceptance. The writer stopped
+independent work at this checkpoint and now resumes the approved construction correction; broad final validation and
+scoped re-review remain required.
+This is admission traversal
+termination, not runtime rejection, a runtime depth limit or a liveness proof. Unknown or
+unavailable references retain their existing conservative boundary. No arbitrary external-
+body analyzer, replay guard or runtime change is selected.
+The writer must settle required support classification before I2 acceptance. No runtime
+parallel, CRDT synchronization, timer or retry algorithm change is selected. Broad final
+validation and the original reviewer's scoped re-review remain open; Task63 is not released.
+
+**Status:** Three typechecked semantic REDs are independently witnessed and frozen:
+shared resolution selects a target with no capture advertisement; explicit two-role
+staging queues both loads; unstaged manual start queues both Native runs without refusal.
+Native tests retain32 passing controls and shared tests9; maintained typing passes with
+zero debt/errors. At the frozen RED checkpoint, only the two released test owners changed;
+17 frozen owners, all prior service content, HEAD and the empty index remained unchanged.
+The sole writer has completed GREEN and frozen source for review. Root separately verifies three producer
+semantic failures with20 passing controls and one typechecked actual HTTP stage refusal
+failure with4 passing controls. Their original source, logs and actual child exits are
+preserved. The producer's initial setup type error remains separate failed evidence;
+the corrected maintained gate passes1,478 files with zero errors. No final source acceptance,
+deployed support or application is claimed yet.
+
+Two further semantic witnesses expose restaging replacing original membership and caller
+options swapping the executor after its support is captured. Root verifies both failed
+child exits, the preserved witness calls and the same focused assertions passing1/0 each.
+Restaging's full pre-correction controller was not snapshotted; its explicitly labelled
+reconstruction is diagnostic only. Root verifies recorded full controller correctness268/0,
+affected shared/browser/app controls201/0, maintained typing1,478 files/zero debt/errors and
+application build exit0. Changed-file style passes without new findings; structure passes
+with four navigation observations. One Node storage warning and the build's bundle warning
+remain visible. Root verifies all30 first-review checkpoint SHA/blob/preimages,21 changed final-source copies,
+42 raw-command identities, the original RED report prefix and three original witness hashes.
+The completed report preserves its original writer bytes and a labelled controller chronology
+correction: root's additional REST witness verification was retrospective, not a live
+pre-implementation approval. Independent SPEC/QUALITY review returns issues found/needs fixes.
+One in-memory controller witness stages only the supported surviving peer when another
+explicitly named peer is absent under selected-agents/ordered-targets. A second witness
+shows command-owned `rallar.crdtTransport: ws` decoded as live WS execution while capture
+requirements are empty. Both focused checks exit0 and demonstrate policy failures; they
+are not passing acceptance tests. The complete review also requires explicit runtime/client
+dependencies and removal of duplicated heartbeat coverage. The same writer receives these
+four findings together, with semantic TDD for behavioral corrections and scoped re-review.
+Absent/unverified producer assertions must reject every unsupported advertisement, and
+the Node storage warning remains a named test-environment finding. The build chunk advisory
+is retained. No new public compatibility exception, migration or CRDT algorithm change is
+approved. Acceptance and publication remain open.
+
+Before the2026-10-07 approval, fix round1 recovers a genuine public construction decision: `mod.ts` exports the browser
+factory/options and control client/options, and the browser agent, Console and18 test
+owners use their current partial inputs. A concrete proposal requires explicit browser
+dependencies, adds a named default-composition factory, injects the client clock and
+removes the browser cleanup input that execution never honors and no recovered caller
+supplies. Wire/persistence behavior is unchanged by the proposed source contract. Root
+reads and verifies the complete proposal and both production construction sites; human
+approval was pending at that checkpoint, then granted as recorded above. No wrapper, alias, migration or
+retention exception is authorized. Independent admission TDD continues meanwhile.
+
+Root verifies fix1's actual checked native RED:12 failing selected/role-map stage/start
+cases across absent, unidentified and offline peers, with the unrelated missing Health-role
+control passing. The corrected shared RED has2 transport-override failures and54 passing
+controls; maintained typing passes1,478 enforced files/zero errors. The earlier new test
+typing error remains preserved as a failed setup/static gate. All30 reviewed preimages,
+three checked RED source snapshots and15 raw log/command artifacts match their frozen
+identities; at root's observation, all24 production/support owners remain unchanged.
+The Node warning trace identifies auth-session-presence access during browser-agent startup;
+the separate recipe/messaging controls pass64 without that warning. Test-environment
+correction and GREEN remain open. A strict unidentified capture-blocker decoder/restore/export
+witness now has checked RED:1 decoder failure and7 passing controls, including strict
+malformed/other-status identity refusal. Its original compiler-only six-error attempt and
+exact corrected witness source remain preserved. RED stops at the decoder's mandatory
+identity rule; the later real disk-restore and export assertions require GREEN evidence.
+The same-slice union correction must not fabricate identity or loosen unrelated blocker
+shapes. These artifact checks do not claim live preflight-order telemetry.
+
+I2 recovery also confirms a recipe boundary mismatch: the browser feature executor merges
+command-owned CRDT connection fields and applies canonical step capture selection, while
+the reviewed strict `crdt.open` schema/field list has no `rallar` field and the collector
+ignores that step selection. Direct-executor support is not supported serialized recipe
+admission. Separate serialized-schema and step-selection REDs are required before those
+corrections, reusing `BlackBoxRallarCrdtConnectionInput` and the existing capture resolver.
+Close their actual command/schema/snapshot consumers; preserve run/Configure/step precedence,
+omission and explicit local-only controls. This is recipe input/admission work, with no
+CRDT synchronization algorithm or migration change. Construction input approval was
+pending separately at that checkpoint; it is now granted as recorded above.
+
+Focused fix1 GREEN is now verified from actual command/output: checked Deno15/0 includes
+all12 named-target stage/start refusals, the unrelated Health control, real disk restore/export
+of the unidentified blocker and strict identity controls. Vitest's two complete affected
+capability/producer owners pass60/0 with warning tracing enabled and no storage warning.
+Root reads the separate I2 schema/step RED2/32 and later mutation/validation RED4/32 plus
+their maintained typing1,478/zero;10 raw command/output artifacts and12 separate source
+snapshots are preserved with hashes. These focused results do not accept the complete slice:
+the held construction contract, broad final gates and scoped independent re-review remain
+open. No new source publication, main operation or E3 run follows from these checks.
+
+At the RED checkpoint, the browser agent selects its actual runtime at construction while
+identity reporting derives capabilities from mutable configuration. Advertise immutable support
+from the installed runtime owner, including injected/custom and absent-runtime boundaries.
+A configured provider name or neighboring CRDT capability cannot certify capture support.
+Recheck every frozen target before dispatch, including after staging and during automatic
+or scheduled advancement; do not re-resolve membership to conceal an unsupported target.
+
+Add finite capture support/version advertisement and reuse the existing target/start
+admission owners to refuse required capture work for every unsupported or missing target,
+including explicit/resolved targeting, all roles and unstaged manual start. Prove a visible
+refusal and no relevant command dispatch at that owned boundary. Preserve omission and
+non-RTC controls, including existing explicit-target behavior without blanket identity
+requirements. Validate affected capability/resolver/controller semantics and package/app
+typing. Advertised support cannot certify a particular connection's applied configuration.
+
+Actual applied-receipt preservation and assessment through compaction/restore/export,
+staged/reference-body guards, fresh replay attribution, visible Console/local controls and
+saved/imported/rerun intent, generated manifests, hosted/external/mixed/no-spawn and Actions
+forwarding remain mandatory later outcomes. No worker lifecycle action satisfies no-spawn
+selection. The standalone lifecycle workflow keeps25 manual inputs. B01–B06, governed E3,
+the unresolved initial stall and held B07 retain their existing acceptance conditions.
+
+### Remaining capture controls: current source coverage
+
+A completed source-only audit observes91 local source identities at2026-10-07T11:32:32Z.
+Root reads its complete40,872-byte report, verifies every current identity and freezes the
+observed sources. None overlaps the17 terminal Task63 changed owners; runtime-store is an
+accepted Task62 entry boundary. This prepares mandatory later outcomes, without adding a
+third concrete implementation slice, choosing a new API or proving deployed behavior.
+
+- **Canonical intent exists:** the shared parser preserves explicit Off and owns run >
+  step > recipe > host > product-default precedence. Recipe, run and distributed manifest
+  schemas already admit the finite mode. The shared manifest builder projects a defined
+  run override. A health-only capture fixture verifies fields, not RTC application.
+- **Manual is a separate accepted capability:** its visible desired/current controls,
+  direct Connect/Join command construction and draft persistence use canonical mode data.
+  Existing full-stack browser cases assert applied state, immutable recordings, reload and
+  reset. Earlier local acceptance remains valid at its recorded scope; this read-only
+  audit did not rerun those tests or replace Task63 receipt acceptance.
+- **Console creation drops the input:** `recipe-console/execute/execute-manifest.ts` and
+  `use-execute-workflow.ts` supply no mode to the capable shared builder. The visible
+  workspace has no run selector; personal preferences admit six other defaults but no
+  capture preference. Stored-manifest projection retains an already-authored field, which
+  does not satisfy visible new-run selection. Local JSON/fixture Load/Run and catalog launch
+  have no run override control. Saved custom-body import/export coverage remains to be
+  established at actual owners; this finite audit claims no whole-repository absence.
+- **General recipes and generated manifests need consumer propagation:** reusable live
+  recipe options, catalog and world-fleet generator inputs omit capture selection, while
+  checked-in RTC bodies omit the root mode and therefore request inheritance. Existing
+  source/effective fingerprints and scoped materialization must preserve authored fields,
+  explicit Off and complete bodies through save/decode/load/create, rather than certify
+  application from a hash or declared support.
+- **General worker startup has a missing chain:** worker configuration does not consume
+  the capture environment key or emit a capture query; shared launch allowlist/decoder,
+  bootstrap and remote Configure projection likewise omit it. Hosted finite environment
+  generation omits the key. Exercise real env/query precedence and command composition;
+  an invalid nonempty higher-priority input must not silently fall back to a valid lower
+  input. Keep the host default distinct from a later run selection.
+- **Distributed Actions and operators omit run selection:** the manual wrapper, reusable
+  runner, GitHub-free workflow, dispatch helper, materializer arguments and controller
+  request path offer no override. Whole-manifest spread can preserve already-authored
+  intent but does not supply the missing user input. Existing exact helper-argument tests
+  are verified consumer expectations to update semantically, not retention requirements.
+  Spawned, external and mixed legs need their real forwarding witnesses. Pre-existing
+  external agents must receive the admitted run command and return fresh applied evidence;
+  restarting or reinstalling them does not prove this path.
+- **No-spawn remains a distinct operator boundary:** its runner forwards an authored
+  manifest but consumes no capture selection option; a generically parsed unknown option
+  can be silently unused. Exercise strict admission and request forwarding with no worker
+  lifecycle or launch-URL rewrite. Keep the lifecycle workflow's existing25 manual inputs;
+  neither a26th input nor deleting an existing input is authorized.
+- **B06 already has a separate implemented path:** its workflow choice, admitted CLI/env
+  resolution, frozen producer configuration, actual child environment, Playwright entry and
+  connection command carry mode. This does not repair general worker/distributed Actions
+  omissions and does not certify a cohort. Preserve the current governed B06 mode/default,
+  homogeneous actual application, exact-main preflight, sampling and repeat conditions.
+
+Later semantic witnesses must cross real UI/CLI/env/query, saved/imported/generated recipe,
+materialization, request and SDK boundaries. Preserve omission/inheritance and explicit
+Off/Signaling/Native, distinguish desired/requested/installed/applied state, and prove that
+editing a desired choice does not mutate an accepted run. The audit inventories focused
+unit/process/browser candidates only: all are NOT RUN by that actor. Reuse canonical parser,
+precedence, body, fingerprint, bootstrap and request owners; add no migration reader,
+retained predecessor or duplicate policy. B01–B06/E3 and the original diagnosis remain
+required. No Issues were created or reused.
+
+### Task 63: Finite applied receipt preservation and required-result admission
+
+**Status:** Task62 is locally accepted after independent fix2 SPEC/QUALITY PASS.
+Task63 semantic RED is complete and root-correlated; the same implementer has completed
+GREEN; the first independent SPEC/QUALITY review returns Needs fixes with two Important attribution findings. The original implementer completed both corrections with semantic TDD; the original reviewer approves SPEC and QUALITY with both findings addressed and none remaining. Actual SDK receipt loss and invalid completion mutations justify this correction.
+The earlier nine-source refresh established the owner paths; the existing private SDK fixture
+uses the approved canonical default factory. The same SDK-produced Off receipt now survives
+actual native disk persistence, recording, restore, fallback and distributed export.
+Additional admission, Native-partial and boundedness controls have focused passing evidence.
+Complete affected validation, standards closure and fresh independent review are required.
+Task63 local acceptance is recorded below; no publication, main or E3 acceptance is claimed.
+
+The first actual SDK Off receipt-loss witness is now observed: the queued ordinary recipe
+returns a successful Connect child with applied Off, version1 and a nonempty observed
+connection identity, accepted by the canonical application policy. No signaling event rows
+are needed. Its body/invocation identity and exact result survive serialized control parsing;
+controller admission accepts the envelope, but stored connection evidence decodes as absent.
+The focused Vitest child exits1 at that final semantic receipt comparison. The first attempt
+failed earlier because the existing loop/parallel reader does not enumerate direct recipe
+children; that setup failure is preserved separately. Root reads the exact raw/source/
+metadata artifacts and confirms production unchanged from the72-source preimage witness.
+Missing/malformed required-success and outer-attribution REDs remain underway; no GREEN,
+finite stored contract, restore/export, real disk I/O, live connectivity or E3 acceptance
+is established by this first test.
+
+The separate checked Deno controller file now records11 semantic refusal failures/five
+passing controls. Public serialized results with missing result/receipt, malformed or
+unavailable application, wrong mode, conflicting inner completion, wrong root/child/agent,
+wrong invocation selection or connection name are still accepted. Each test addresses an
+actual registered and queued required-Off command. The first failure is accepted:true where
+false is independently required; later unchanged-results/completion assertions remain
+unreached. Literal omitted-intent and valid applied-Off controls pass, together with actual
+failure/replay/cancellation controls. Root reads the full frozen test source and actual
+raw/metadata. These are controlled serialized admission witnesses; they do not manufacture
+SDK application. Production is still unchanged, and final RED evidence/typing/source
+inventory is being completed before the GREEN release.
+
+The completed RED phase now confirms the same SDK receipt loss in the full fixture
+(48 controls pass), using the correct signaling event topic for the zero-event assertion.
+The final controller tests compare admission, stored-result count, completion timestamp and
+completed-command IDs together: all11 invalid completions still mutate success state.
+Five ordinary/valid/failure/replay/cancellation controls pass. Maintained test typing and
+formatting pass. Earlier setup failures remain preserved and distinct. Production is unchanged.
+Root verified the completed source/raw evidence and releases the same implementer for the
+canonical test-first correction, including actual restore/disk/export/distributed validation.
+No migration code, retained affected legacy, duplicate parser, new collector or raised
+retention limit is authorized. This release is not GREEN, review acceptance or E3 evidence.
+
+A bounded source supplement identifies an unrun witness in the existing SDK-backed recipe
+test: actual returned Connect receipt through serialized control parsing, controller
+compaction/storage, JSON snapshot decode/restore and artifact export. Reuse the existing
+private fixture and production seams without new exports or a collector. Actual Deno disk
+persistence has its separate owned harness; this source preparation does not prove that the
+same SDK-produced receipt traverses real filesystem I/O. Refresh against accepted Task62
+and witness RED before choosing the finite stored representation.
+
+Use the existing owned SDK Connect completion, canonical application policy and ordinary
+recipe invocation. Preserve the finite receipt and its original command, connection and
+scope identity with the enclosing run, agent, phase, accepted body and invocation attribution.
+The existing pure `toRtcCaptureReadout` and `toRtcCaptureConfiguration` decoder in
+`packages/shared-web/browser/connection/to-rtc-capture-readout.ts`, together with
+`resolveRequiredRtcCaptureFailure`, already serves B06 acceptance. Reuse these canonical
+owners after the outer JSON boundary is validated; do not copy a receipt parser or import
+the private benchmark package into product code. Their source is verified at accepted9d;
+the new enclosing run/command attribution still needs its own finite validation.
+The existing runtime body acceptance ID is not a content hash. Compatible same-mode reuse
+keeps its original construction origin; do not require the later desired origin to match it.
+Off has a minimal applied receipt. Native application and partial native coverage are
+separate facts; neither absence of events nor support advertisement proves application.
+
+Witness actual SDK-backed receipt loss through ordinary serialized completion before
+production edits. Separately witness malformed or missing required application, inconsistent
+outer/inner completion and attribution mismatches being accepted as success. Serialized
+fixtures prove decoder/admission behavior; they cannot substitute for the SDK producer
+witness. Preserve ordinary failures, cancellation and unavailable dispositions honestly.
+
+Validate required results before completion state is mutated. Retain bounded typed evidence
+through existing compaction, persistence, restore, snapshot and distributed export owners.
+Round-trip actual stored results and check disk JSONL, snapshot fallback and distributed
+bundles according to their different paths. Replace incidental assertions that every
+successful child result must be absent with boundedness and necessary-evidence assertions.
+Keep existing evidence limits; no generic recursive walker, duplicate recorder, new collector,
+budget increase or receipt-less success fallback is selected.
+
+Retain original body/invocation/receipt and explicit replay disposition when cached results
+are transported. Repeated child command IDs must retain their owned loop/parallel path.
+Preservation does not certify a fresh execution, staged content hash or new connection.
+The later actual staged/reference-body and fresh-scope guards remain required.
+
+Run focused SDK-backed recipe application, serialized control admission, compaction,
+snapshot persistence and artifact tests, plus affected maintained typing. Include public
+API and browser-boundary checks if entry points change. Apply full touched-file standards
+closure and fresh independent SPEC/QUALITY review. Do not migrate historical data or
+silently certify unsupported persisted shapes; any verified compatibility requirement
+requires the repository's explicit maintainer decision before retaining a boundary.
+
+The first corrected admission run passes all16 cases, and the original SDK application
+fixture passes all49 with its receipt comparison unchanged. The intervening compiler
+failure is retained. These are provisional runtime observations: early GREEN metadata
+mistakenly copied production preimages rather than tested owners. Those records remain
+unchanged and are explicitly limited; subsequent necessary checks will capture actual
+current source. Additional semantic controls cover valid capture with an unrelated permitted
+child failure and controller-known loaded-body references. Unknown reference bodies require
+the later binding prerequisite and cannot receive a receipt-less success fallback. Loop/path,
+Native-partial, replay, real disk, restore/export and complete standards closure remain open.
+
+The next correctly captured checks witness and close additional semantic gaps: actual
+SDK document identity was lost, a corrupted stored required receipt was accepted by restore,
+and legitimate continue-on-failure/known loaded-reference completions were refused. Original
+failures and compiler setup failures remain retained. Checked controller coverage now passes18
+cases. The focused SDK witness passes receipt/observed identity comparison through JSON
+snapshot decode, actual in-memory restore and artifact export. These later checks capture13
+actual owner paths rather than preimages. Controlled native executor receipts remain distinct
+from SDK-produced evidence. Those checks do not establish real filesystem I/O or distributed
+export; the later same-producer disk witness below addresses those paths separately.
+
+The actual SDK loop/parallel witness then exposes repeated path rebasing after restore:
+the loop's enclosing command path is added repeatedly, and parallel paths suffer the same
+corruption. Preserve that semantic RED and its corrected GREEN; earlier capability/snapshot
+setup failures remain distinct. All four canonical paths, source paths, positions and child
+command identities compare correctly after the correction. A subsequent SDK producer run
+and checked native consumer each pass one focused test, binding75 actual owner snapshots.
+The native consumer verifies the SDK producer source hash, uses real snapshot write/read/
+restore and recorder append/open, then exercises snapshot fallback and distributed export.
+Root reads both frozen harnesses, verifies the raw/source and five artifact identities,
+recomputes the original serialized envelope hash, and compares the same receipt, invocation,
+replay disposition and every original child position field across all five retained forms.
+Compaction adds explicit child kind/parent-path fields; those are verified against their
+owned positions rather than requiring raw wrapper shapes to remain identical. This is
+actual same-SDK Off disk lineage with fake HTTP/WS transport, not live connectivity,
+Native completeness, fresh execution, staged content binding or E3 evidence. Final standards
+closure and independent acceptance remain open. No migration reader, retained predecessor, duplicate collector or raised
+retention budget is introduced by this proof.
+
+Further semantic REDs expose wrong outer run/replay acceptance, corrupt stored restore,
+malformed wire lifecycle/error and composite parent/path/source/command/group attribution.
+Their corrected checked controller file passes29 cases, including original same-mode origin,
+Native partial and an ordinary2,000-child workload whose retained evidence must report its
+limit. These application controls use literal serialized receipts; they do not establish
+SDK Native capture. The canonical expansion budget stays unchanged and arbitrary child
+payloads are omitted. Broader affected checks expose two obsolete topology assertions:
+one expects a missing child list where the finite representation now contains an explicit
+empty list, and another accepts the predecessor `resultsOmitted` marker. Preserve those
+failed checks and replace the assertions with current bounded evidence/failure-count
+requirements. Freeze the additional composite-results test owner before its closure;
+root verifies its actual preimage against HEAD. Complete affected gates and fresh review
+remain pending, rather than treating these focused passes as full acceptance.
+
+Additional checked RED/GREEN covers nested recipe selection, restored queue ownership,
+silent sibling omission at the traversal budget, and lost parallel completion/timing
+summary fields. The focused native checks pass63 cases with the separately exercised SDK
+handoff test explicitly ignored; the covering Vitest run passes102 cases across five
+matched owners. Maintained typing and shared-test typing pass after closing the new
+recipe-child projection in the existing distributed observation consumer. These checks
+do not finish standards closure or independent acceptance.
+
+Restore validation also exposes a real lifecycle distinction: independent command/result
+bounds can legitimately retain an old result after its queued command is trimmed. An actual
+Configure enqueue/dispatch/accepted completion with runtime retention commands0/results1 fails the
+overbroad restore refusal. Preserve that RED and correct the earlier premise that restoring
+a historical fact performs new required-success admission. Use the absent retained owner
+as the provenance input to one canonical current snapshot policy, deriving unavailable
+ownership for historical facts, including outer-only completions. Carry a finite output
+disposition where needed for artifacts and current admission; do not require an old stored
+record to contain a new marker. Owned required results remain strict, and an unavailable
+historical fact must not complete a current queued required command or certify fresh
+execution. Unknown reference bodies still have no receipt-less fallback. Witness those
+semantics before GREEN. This avoids a persisted compatibility break, migration reader,
+parallel store or retention-budget increase; it is not a legacy-retention exception.
+
+The completed read-only source audit identifies the next body/freshness boundaries.
+Reference-only distributed staging ACKs a Health command; start executes the body loaded
+at runtime admission without an expected accepted-body identity. The existing body token
+names acceptance rather than hashing content. The control client can reuse an interactive
+runtime under a changed run/agent and emits its cached results with the current outer address;
+bootstrap reset and legitimate same-run replay remain separate controls. Reload segment
+construction omits root run/recipe capture fields, while independently configured children
+may still select a mode. These are source-derived semantic test candidates, not executed
+application failures or a diagnosed cause of the original ICE stall. Recheck overlapping
+Task63 owners after independent acceptance before the next RED. No migration, dual reader,
+retained predecessor or speculative public contract is selected by this preparation.
+
+The current bounded-history controls now cover pending and completed required commands,
+including historical failed results. An invalid-status setup failure is preserved separately;
+the corrected failed-result witness exposes acceptance of unavailable ownership before the
+ordinary-failure early return. The minimum canonical correction refuses unavailable history
+before that return. Genuine current failures, cancellation and permitted child failures remain
+admissible. Independent runtime retention commands0/results1 restores ordinary and outer-only
+historical facts with explicitly unavailable ownership; those facts cannot complete a current
+required command. No old stored marker, migration reader or additional store is required.
+
+The covering native run then exposes15 coupled intent-only test expectations: their simulated
+executor propagates selection but produces no applied receipt, while their controller assertion
+claims success. Preserve the actual intent assertions and require honest refusal with unchanged
+completion/storage. References preloaded only in the runtime do not establish controller-known
+body ownership. After correcting those expectations and their touched-file closure, the same
+six native owners pass164 cases with one optional SDK handoff ignored; that handoff is executed
+separately. Five shared/browser/artifact owners pass102 cases. Maintained typing covers1,478
+files with zero errors, and shared-test TS/native plus controller main/test checks pass.
+
+Fresh same-SDK producer/native-consumer checks each pass once after those refinements and bind77
+actual source snapshots. Root independently verifies source and serialized-envelope hashes,
+then compares all four original connection receipts, invocation, command/position/scope identity
+and replay across the producer snapshot, actual disk snapshot, disk JSONL, snapshot fallback and
+distributed export. This remains Off capture under fake HTTP/WS, with no Native completeness,
+fresh execution or E3 claim. Overall style exits0 with3,441 nonblocking observations; changed-style
+exits1 with13 findings against clean9d, a mixed Task61/62/63 comparison requiring scoped current
+standard assessment. Structure exits0 with seven observations and controller navigation finds
+none. Final packet preparation finds that the edited canonical state-construction owner was
+omitted from those77 captured paths and its claimed prior freeze was incorrect. Preserve all
+attempts and their actual coverage; recover the baseline evidence and add a minimal final
+source-bound check with that owner included. Checker tolerance does not waive touched-file closure. Final frozen handoff and fresh
+independent SPEC/QUALITY review remain required; Task63 is not yet accepted or published.
+
+The writer's terminal handoff freezes17 changed owners and78 current source identities.
+Root verifies every current/frozen source,106 original command metadata/raw attempts with
+6,410 captured source copies,35 auxiliary objects, and the complete176,610-byte report.
+The original RED prefix and HEAD9d/empty index remain unchanged. The state-only baseline is
+explicitly reconstructed and unverified; the added78-owner lifecycle check passes1/0, and
+earlier77-bound attempts retain their original limitation. A512,369-byte full-context review
+packet uses actual accepted Task61/62 preimages for the other owners and labels that state
+reconstruction. The fresh reviewer checks specification, current full-file standards,
+legacy/duplication removal and these evidence limits. No acceptance, source publication,
+main operation or E3 measurement follows merely from the terminal handoff.
+
+**Independent review round1: two fixes required.** Root reads the complete18,179-byte
+review report and verifies its identity, the exact3,001-byte focused harness and complete
+raw output, all78 current owners, and unchanged HEAD/index. The diagnostic harness exits0
+while observing defects; this is not a passing regression verdict. Its runtime-generated
+count-2 loop is admitted normally and remains admitted after iteration2 is replaced with a
+second copy of iteration1. Both wrappers are individually consistent, but the duplicated
+owned position cannot certify another invocation. A runtime-generated inline outer recipe
+with an authored inner `recipe.load` followed by reference `recipe.run` succeeds with an
+applied-Off input fixture, yet admission refuses its nested connection because requirement
+discovery and result attribution disagree about that known body. This fixture is not
+additional SDK construction proof.
+
+SPEC and QUALITY both return Needs fixes:2 Important,0 Critical,0 Minor. The review asserts
+no additional concrete current touched-file standards defect; broad checker observations
+and the unverified state preimage remain explicit limits. Root releases both findings to
+the original implementer together for semantic RED/GREEN and proportional affected checks.
+Reject contradictory duplicate positions while preserving legitimate partial/cancelled
+results; recover nested known-body attribution through the existing canonical lifecycle
+owner and retain unknown-body refusal. No second walker, classifier, collector, parser,
+migration, compatibility bridge, retained affected legacy, evidence budget or deferred
+body/fresh-execution contract is authorized. The original reviewer will perform the scoped
+re-review after the terminal fix report. Task63 acceptance, publication, main integration,
+UI/recipes/workers/Actions and E3 remain open. No Issues were created or reused.
+
+**Fix round1 independently accepted:** Root verifies the actual first four command/raw pairs
+and all312 captured source copies. The initial filter matches zero tests and is setup only.
+The duplicate iteration and duplicate child-index controls then fail semantically with4
+valid controls passing; unchanged test bytes pass all6 after canonical bounded decoder
+correction. First-success, failure and cancellation remain admitted with their actual partial
+children. The nested authored load/reference positive then fails admission with3 refusal
+controls passing. Subsequent correction reaches storage, where snapshot decode still fails:
+attempt05 has3/1 and focused06 has42/1. Their names do not turn those semantic failures into
+GREEN. The existing compactor must retain the finite load acknowledgment identity needed
+for the same canonical nested attribution, without retaining arbitrary successful payloads
+or introducing a loaded-body store. Root verifies that stronger storage-loss RED at07 and
+unchanged test bytes passing4/0 at08. Current focused native09 passes144/0 with1 optional
+SDK disk handoff ignored, shared10 passes86/0 across3 files, and the final actual-SDK owner18
+passes51/0. Its existing fixture now covers inline and nested execution, rejects a mutated
+application before results/completed IDs change, and compares original receipt/invocation
+through storage, restore and export. This remains actual SDK Off under fake HTTP/WS, with
+no live connectivity, Native completeness, body-hash or fresh-scope claim. Shared12,
+maintained17 with1,478 files/zero errors and corrected native20 pass; prior owned typing and
+unsupported CLI setup failures remain preserved. The unchanged original reviewer harness
+source21 now admits the valid loop/nested recipe and rejects the duplicate. These raw
+results bind the same corrected production source.
+
+Root reads the complete22,558-byte fix append, preserving the199,168-byte report and original
+176,610/42,967 prefixes, and verifies78 actual before/current/frozen owners,6 fix differences,
+23 command/raw records with1,794 captured source copies and9 auxiliary objects. The original
+state baseline remains unverified; its exact current fix preimage is captured and unchanged.
+No production file, migration, retained predecessor, parallel collector or increased bound
+is added. The internal requirement analysis replaces its single-consumer entry collector;
+independent capability collection remains. The private package/no exports/maintained barrel
+investigation found no published API or independently required consumer to retain that
+operation. This is finite current attribution, not a claim of immutable executable identity.
+
+Scoped style22 reports12 cognitive/unknown/callback review signals; the writer's full-file
+manual dispositions require independent judgment. Named maxima58/53 and ten unique
+LanguageService definition edges are supporting observations, not standards waivers or
+native IDE/live skill telemetry. Root prepares a221,145-byte full-context six-owner package
+from the actual fix preimages and releases the original reviewer for combined SPEC/QUALITY
+and explicit dispositions of both findings. The other11 originally reviewed owners are
+unchanged; no duplicate review seat or broad suite rerun is requested.
+
+The original reviewer returns SPEC Approved and QUALITY Approved with both original
+Important findings ADDRESSED and0 remaining findings. Root reads the complete24,126-byte
+re-review report, verifies its identity and all78 unchanged current sources plus HEAD/index,
+and records Task63 local acceptance. The review independently judges all12 current style
+signals and complete six-file closure; it executes no test/check/harness again. This closes
+finite admission/preservation only, retaining the historical state preimage limitation and
+all broader evidence limits. The continuation remains unstaged, uncommitted and unpublished.
+Body/fresh-scope guards, visible and operator propagation, main and governed E3 remain
+required. No Issues were created or reused.
+
+A bounded post-acceptance source refresh is released before the next semantic RED. The
+prior body/replay audit's55 source rows have49 unchanged and6 changed identities: requirement
+analysis, protocol, service/restore and the two affected SDK/distributed tests. Include the
+new canonical admission policy, whose finite load acknowledgment and original-attribution
+checks may close earlier candidates. Reuse unchanged observations, update only affected
+caller/dataflow facts, and distinguish remaining gaps from corrected or unproved behavior.
+This is source preparation only: no test execution, future API selection, migration,
+legacy retention, new store or Task64 implementation is authorized by the audit.
+
+### Task 64: Accepted recipe intent and execution after reassignment or reload
+
+**Status:** Local GREEN implementation is complete. Final-source129 SDK/owner tests,
+177 controller tests, types, app build and mechanics checks pass. The approved shared
+composition refactor closes size violations; human standards judgments and independent
+acceptance remain pending. Task63 is independently accepted locally. The full RTC baseline
+and governed E3 remain incomplete; this work is a draft feature-branch checkpoint.
+
+The first actual SDK/controller witness now fails semantically: genuine queued load A and
+its serialized acknowledgment succeed, then local replacement B with the same recipe ID
+executes `replacement-B` and applies Off/run in the real SDK before controller admission
+refuses its mismatching body token. The unchanged-A control passes. Exact focused command
+exits1 with1 failed,1 passed and51 filtered tests; root reads the entire raw output and
+verifies109 execution-time source copies, with only the existing SDK test changed and
+production still equal to the accepted preimages. This proves unintended execution before
+correct report refusal, not accepted wrong metrics or a fresh E3 result. Other candidates
+remain tests-in-progress; no production/public field/body-hash/store choice is released.
+
+The inline caller-mutation witness also fails semantically: after distributed creation and
+successful staging of A, replacing the caller-owned command with `inline-B` causes that
+actual SDK connection to execute with applied Off/run, and its completion is accepted as
+a passed distributed run. Direct-inline A and staged-inline A controls pass. The focused
+command exits1 with1 failed,2 passed and53 filtered tests; root reads the entire raw output
+and verifies109 execution-time copies with only the SDK test changed. Mutating the
+top-level manifest capture scalar remains Off, so that already-correct normalization is
+a control rather than a new failure. Nested Configure mutation is being witnessed
+separately. Production remains frozen and no replacement implementation is selected.
+
+The nested Configure witness now proves the remaining configuration alias: mutating the
+caller-owned Off value to Native after create/stage reaches the real SDK as applied
+Native/step and is accepted. The Native fixture receipt explicitly has partial coverage;
+this is configuration application evidence, not a homogeneous Native cohort. Off controls
+pass. The first combined consumer attempt retains three semantic failures and four
+unfinished setup attempts separately; setup is not counted as RED.
+
+After infrastructure setup is corrected without production changes, the actual maintained
+agent prefix/reload callback/session storage/later registration/suffix sequence executes
+the SDK. Root-only Off and recipe-only Off both become applied Signaling/product-default
+and are admitted; explicit step Off passes. The original deadline and a new document
+time origin are verified. This focused command exits1 with3 failed,1 passed and58 filtered
+tests, with116 execution-time source copies verified. Its interactive observation also
+shows old resumed IDs skipping new B dispatch/effects and actual same-run replay refused
+for inconsistent flags. Root requires correcting that test's stale admission/replay
+expectations to desired fresh B acceptance and coherent same-run acceptance before GREEN;
+the test must not pin the observed bug while expecting a new effect. Malformed historical
+relabeling remains a separate refusal control. No Task63 review is reopened.
+
+The corrected interactive witnesses preserve the controller's intentional run-global
+command-payload conflict rule. Run-only and run-plus-agent reassignment can legitimately
+queue the colliding ID as fresh work; agent-only reassignment in the same run instead
+checks ownership of advertised completed IDs and authentic conflict refusal. Do not
+invent a fresh same-run/different-agent collision contract. Actual reconnect producer
+incoherence is a separate witness: old invocation/receipt and no duplicate effect remain,
+but outer replay true with absent inner replay is refused and must become truthful
+coherent replay. Unchanged active and retired historical SDK measurement controls pass;
+their exact trace and eligibility limits belong in the phase report.
+
+The expanded SDK test owner is reported at1,710 adjusted lines above its real1,500-line
+navigation backstop, with cognitive load279 requiring separation review. This is a
+closure issue, not a waiver. Root directs consolidation of repeated protocol execution
+and identical domain fixture setup in place, preserving coverage and original frames,
+receipts, effects and decisions. A direct named dispatch/decode/execute/serialize/admit
+helper may own that actual protocol/side-effect boundary; pass-through chains, copied
+setup, artificial line compression and moving the private harness merely to avoid closure
+remain disallowed. Freeze the current RED before test refactoring and run only changed
+focused witnesses. If coherent consolidation cannot close the limit, report the actual
+attempt, remaining facts and concrete alternative before any exception decision. No
+persistent size exception or new owner migration is approved. Production remains frozen.
+
+The tests-only implementer completes DONE_WITH_CONCERNS. Root reads the complete17,267-byte
+phase report and verifies both final119-owner execution inventories, current test identity,
+original preimages and unchanged production/HEAD/index. Coherent in-place consolidation
+preserves eight semantic failures and ten passing controls; the final two-row correction
+keeps one genuine replacement-effect failure and one strict A control while allowing
+truthful admitted failure evidence before effects. The complete report and exact source,
+raw commands, counts and limits are retained in the task workspace; the85,599-byte combined
+raw packet is assessed through its decoded structured witnesses and assertion/count
+records, not claimed read in full textual form.
+
+Current test-owner facts are1,661 adjusted lines above1,500,2,308 physical lines and
+cognitive load242. The code is typed/formatted, but warning-only scanner exit0 does not
+close that real backstop. No persistent exception, migration, extraction or copied setup
+is approved. Retired and active SDK replay controls trace exported snapshots through the
+actual historical timing consumer, which deduplicates command IDs and retains two stage/start
+samples without claiming a new connection. No fresh-retired-cache RED is justified.
+
+Root releases a bounded design-only followup to the same implementer for the four proved
+policy/lifecycle corrections. Name exact current owners, any genuinely necessary public
+shape and verified consumers preserved before choosing product code. Prefer compatible
+existing contracts, one cache/store/parser, immutable accepted nested intent, pre-effect
+body selection/refusal, scoped completion/replay ownership and root/recipe reload capture
+propagation. A genuine breaking or standards exception decision must be concrete; no
+routine compatible correction requires invented migration or retention. GREEN and final
+closure/independent acceptance remain unreleased. Task65/worker/Actions/E3 still required.
+
+Root subsequently reads the complete bounded proposal and releases the four corrections
+through the same writer. The accepted design reuses `snapshotExecutableRecipe` and
+`snapshotExecutableCommand`; adds optional `recipe.run.expectedRecipeBodyId` for the
+accepted load instance and optional `execute(command, controlIdentity)` for cache ownership;
+keeps one runtime result cache plus control-client completion ownership metadata; and
+carries root and recipe capture modes separately through reload segments. Existing
+finite queued-load/ACK resolution serves dispatch lowering and result admission. Queued
+fingerprints, original invocation evidence and intentional run-global command conflicts
+remain authoritative. Older strict schemas receive no migration or ignore-field fallback.
+
+Assignment is captured at admission and settlement: finishing A work cannot become B's
+completion, and registration cannot advertise A or manual/child cache entries as B work.
+A changed address must not force a compatible SDK reset or erase historical evidence.
+Routine compatible corrections proceed; any concrete public breaking decision or genuine
+remaining standards exception is reported for human direction. Existing RED packets are
+preserved; focused GREEN, affected owner suites and package/application checks precede
+independent review. No extraction, copied setup or size waiver is approved. Task65 and
+worker/Actions/B01–B06/E3 remain mandatory.
+
+Before changing the cache/client, the implementer witnesses asynchronous reassignment
+through the maintained SDK ICE port: A connects after the client has switched to B;
+A's result and result-event are emitted under B, B's reconnect advertises A's root as
+completed, and genuinely new B work never dispatches or connects. The focused test exits1
+with1 semantic failure and65 filtered controls. Root reads the frozen witness and all five
+failure/assertion sections. This expands the ownership correction to settlement and event
+routing, with no retry, initial ICE cause or E3 claim. The original eight failures/ten passing
+controls remain separate preserved evidence.
+
+The first focused GREEN passes19 tests with47 filtered tests. Further real SDK TDD
+witnesses extend accepted-input ownership to inherited connection defaults and report
+ownership when assignments reuse a root ID. The latter proves an old A report can precede
+B's root-result event; selecting cumulative history by matching string IDs is insufficient.
+Use current-cache original-result ownership metadata rather than a second result store.
+Periodic cumulative runtime statistics remain a verified diagnostic contract. An attempted
+scoped-stats projection broke that contract and is corrected without changing its shape.
+Final verification must cover the last snapshot, heartbeat and dispatch-policy edits;
+earlier GREEN alone does not prove that final source.
+
+Root approves a concrete ordinary structural closure after the current behavioral and
+application checks: one canonical actual SDK composition fixture, the existing capture
+conformance owner, and a distinct control-consumer lifecycle test owner. This replaces the
+earlier overly broad extraction restriction with a responsibility-based decision. The
+shared fixture owns real SDK dependency construction and cleanup; tests retain direct
+protocol, effect and admission assertions. Remove the old private setup when its ownership
+moves, with one implementation and no migration, forwarding or compatibility path. Full
+changed/support-file closure, the preserved test corpus, canonical structure/style facts
+and concrete owner-to-effect-to-assertion navigation must pass before acceptance. A size
+waiver is not the default. Outgoing-envelope translation belongs in the existing pure
+queue-policy owner; controller state mutation stays in its service. Both changes remain
+inside Task64, with Task65 the only next concrete slice.
+
+The completed post-Task63 source refresh is retained at
+`.superpowers/sdd/2026-08-06-rallar-rtc-performance-baseline-plan/next-recipe-body-freshness-post-task63-refresh-report.md`
+(31,018 bytes, SHA256 `3500016467dbf4107dbbf7dc9facc5580c3d9717d1aeca912cfd807e85fd5fa1`).
+Root read the entire report, verified all60 current source identities and29 overlapping
+accepted Task63 identities, and froze the observed sources. The canonical admission policy
+now requires a genuine preceding successful queued-load acknowledgment for a bodyless
+required-capture run. It also refuses mismatched outer/inner replay flags. Neither finding
+proves that unintended effects were prevented or that newly assigned work executes.
+This audit executed no tests and selected no future public contract.
+
+**Initial release: tests only, before production changes.** Use the existing public
+controller, runtime, actual SDK and interactive/reload consumers as applicable. Read the
+fresh report rather than importing earlier presumed failures. Preserve accepted Task61–63
+behavior and record exact current preimages before changing a test or support file.
+
+1. Establish a successful controller-queued load A with its actual acknowledgment, followed
+   by a serialized bodyless run and observable execution/admission. Pair it with local
+   replacement B using the same recipe ID and different observable steps. Prove accepted
+   A executes, or the substitution is refused before B's effects; a late receipt refusal
+   alone does not prove intended execution. A health-only reference with no known body is
+   already refused and is not a new RED.
+2. Through the injected controller service, create/stage an inline body A, then mutate the
+   caller-owned body/configuration to B before start. Observe executable steps and capture
+   setting independently of the echoed command. Accepted intent must remain A or be
+   visibly refused before unintended execution. Preserve direct-inline and known-load
+   positive controls. Do not choose copying, hashing or a new field before this witness.
+3. Exercise the actual interactive consumer retaining its runtime across run/agent
+   reassignment with a colliding command ID. Distinguish correctly refused mismatched
+   evidence from newly assigned work that never executes. Include legitimate coherent
+   same-run replay/reconnect and bootstrap resume controls. Do not turn all replay into
+   fresh execution or erase original attribution to manufacture a passing test.
+4. Exercise a real prefix/reload/later-registration/suffix. Under host/default Signaling,
+   root-only run Off and recipe-only Off must reach the actual suffix SDK as Off; use an
+   explicit step Off as a positive control. Preserve existing sequencing, deadlines and
+   scope attribution. Materialized commands alone are not application evidence.
+5. Trace the actual measurement consumer before asserting any rule for retired SDK replay.
+   Truthful coherent historical replay and compatible live/pending connection reuse remain
+   valid behavior. A new freshness rule requires an actual consumer and semantic witness;
+   the absence of a new connection alone is not a failure or an initial ICE root cause.
+
+Retain setup failures separately from semantic RED, with command, exit status, relevant
+raw output and source identity. Keep tests focused and use the actual effect/application
+boundary; synthetic matching receipts alone cannot prove fresh execution. Report any
+already-correct candidates as controls. Stop for root review of the witnessed RED before
+changing production, serialized/public contracts or selecting an implementation shape.
+
+**GREEN and acceptance, after the witnessed scope is released:** Choose one canonical
+owner for each demonstrated policy/lifecycle boundary, functional decisions within owned
+stateful shells, and direct dataflow. No migration code, affected retained legacy, parallel
+stores/decoders, aliases or duplicated policy. Apply full touched-file/support standards
+closure and preserve independently verified ordinary bodyless runs, same-run replay and
+compatible reuse. A genuine public compatibility decision is presented concretely under
+repo guidance rather than guessed in advance. Use focused surface checks selected by
+`rallar-testing`, then one covering independent SPEC/QUALITY review; do not repeatedly run
+unchanged broad suites. Preserve raw failures and existing source limitations. Root owns
+this plan; the task implementer owns tests and released product/support work. No commits,
+publication, main operation, E3 measurement, retry/watchdog or CRDT redesign in this release.
+
+### Task 65: Visible recipe controls and persisted intent (prepared next slice)
+
+After Task64 acceptance, refresh the audited Console/local authoring and reusable
+recipe/manifest consumers against its accepted source. Follow current canonical intent
+owners to visible selection, omitted inheritance, explicit Off, immutable submitted
+configuration, and saved/imported/exported/rerun intent. Use semantic TDD and actual
+consumer/application controls. Select no API, extra store, migration, retained legacy or
+duplicated policy now. Generic workers, spawned/external/mixed/no-spawn recipes and GitHub
+Actions propagation remain mandatory later outcomes, together with B01–B06/E3. This
+prepared next slice is not released and does not narrow the original goal.
 
 ## 12. Baseline Completion Gate
 

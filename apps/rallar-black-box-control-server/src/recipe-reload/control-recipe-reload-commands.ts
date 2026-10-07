@@ -139,7 +139,9 @@ function toReloadSegment(
 ): ControlCommandEnvelope {
     return toReloadChild(root, {
         kind: 'recipe.run',
+        rtcCaptureMode: root.command.rtcCaptureMode,
         recipe: {
+            rtcCaptureMode: root.command.recipe.rtcCaptureMode,
             schemaVersion: 1,
             recipeId: `${root.command.recipe.recipeId}:segment:${index}`,
             continueOnFailure: false,

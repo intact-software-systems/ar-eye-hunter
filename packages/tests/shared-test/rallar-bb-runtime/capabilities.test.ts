@@ -1,16 +1,17 @@
 import * as timers from 'node:timers/promises';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { decodeBrowserCommandRecord } from '../../../shared-test/rallar-bb-test/browser/browser-command-values.ts';
 import {
+    createDefaultRallarBlackBoxBrowserTestRuntime,
     createRallarBlackBoxBrowserTestRuntime,
     getRallarBlackBoxEvents,
     toRallarBlackBoxDiagnostics,
     toRallarBlackBoxMessages,
     type RallarBlackBoxBrowserRallarConnectionConfig,
     type RallarBlackBoxBrowserRallarRuntime,
-    type RallarBlackBoxBrowserRallarRuntimeMethod,
-    type RallarBlackBoxTestRtcStreamResultValue
+    type RallarBlackBoxBrowserRallarRuntimeMethod
 } from '../../../shared-test/rallar-bb-test/mod.ts';
-import { createBrowserRallarRequiredMethodsTestDouble } from '.././browser-rallar-required-methods-test-double.ts';
+import { createBrowserRallarRequiredMethodsTestDouble } from '../browser-rallar-required-methods-test-double.ts';
 
 type AdapterMethodInput =
     | Parameters<RallarBlackBoxBrowserRallarRuntimeMethod>[0]
@@ -30,7 +31,8 @@ interface RecordedFetchCall {
 describe('rallar-bb runtime capabilities', () => {
     it('delegates RTC commands to the browser Rallar runtime adapter', async () => {
         const calls: RecordedAdapterCall[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             now: (() => {
                 let now = 2_000;
                 return () => now++;
@@ -184,7 +186,8 @@ describe('rallar-bb runtime capabilities', () => {
             close: recordCrdtCall('close'),
             destroy: recordCrdtCall('destroy')
         };
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
@@ -347,7 +350,8 @@ describe('rallar-bb runtime capabilities', () => {
             syncRequest: recordDirectorCall('syncRequest'),
             relayStop: recordDirectorCall('relayStop')
         };
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
@@ -454,7 +458,8 @@ describe('rallar-bb runtime capabilities', () => {
     });
 
     it('reports unsupported CRDT browser runtimes clearly', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
@@ -479,7 +484,8 @@ describe('rallar-bb runtime capabilities', () => {
     });
 
     it('reports unsupported director browser runtimes clearly', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
@@ -505,7 +511,8 @@ describe('rallar-bb runtime capabilities', () => {
 
     it('honors local browser command delays before live adapter execution', async () => {
         const sendCallEpochMs: number[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
@@ -539,7 +546,8 @@ describe('rallar-bb runtime capabilities', () => {
 
     it('executes rtc.stream sends without sequentially blocking frame scheduling', async () => {
         const sendStarts: number[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
@@ -570,7 +578,7 @@ describe('rallar-bb runtime capabilities', () => {
                 }
             }
         });
-        const value = result.value as RallarBlackBoxTestRtcStreamResultValue;
+        const value = decodeBrowserCommandRecord(result.value);
         const topics = toRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic);
 
         expect(result.ok).toBe(true);
@@ -585,7 +593,7 @@ describe('rallar-bb runtime capabilities', () => {
             failedFrames: 0,
             droppedFrames: 0
         });
-        expect(value.duration.p95Ms).toBeGreaterThanOrEqual(70);
+        expect(decodeBrowserCommandRecord(value?.duration)?.p95Ms).toBeGreaterThanOrEqual(70);
         expect(topics).toEqual(expect.arrayContaining([
             'rallar.bb.rtc.stream_started',
             'rallar.bb.rtc.stream_completed'
@@ -593,7 +601,8 @@ describe('rallar-bb runtime capabilities', () => {
     });
 
     it('fails rtc.stream when max in-flight saturation violates thresholds', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
@@ -625,21 +634,21 @@ describe('rallar-bb runtime capabilities', () => {
                 maxDroppedFrames: 0
             }
         });
-        const value = result.value as RallarBlackBoxTestRtcStreamResultValue;
+        const value = decodeBrowserCommandRecord(result.value);
         const diagnostic = toRallarBlackBoxDiagnostics(runtime.state())
             .find((event) => event.topic === 'rallar.bb.rtc.stream_failed');
 
         expect(result.ok).toBe(false);
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED');
-        expect(value.droppedFrames).toBeGreaterThan(0);
+        expect(value?.droppedFrames).toBeGreaterThan(0);
         expect(result.error?.details).toMatchObject({
             value: {
                 commandId: 'stream-saturated',
                 plannedFrames: 5,
-                droppedFrames: value.droppedFrames
+                droppedFrames: value?.droppedFrames
             }
         });
-        expect(value.thresholdFailures.map((failure) => failure.name)).toContain('maxDroppedFrames');
+        expect(value?.thresholdFailures).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'maxDroppedFrames' })]));
         expect(diagnostic?.payload).toMatchObject({
             diagnosticTypeId: 'rallar.bb.rtc.stream_failed',
             severity: 'error',
@@ -648,7 +657,8 @@ describe('rallar-bb runtime capabilities', () => {
     });
 
     it('samples rtc.stream raw observations without changing aggregate counts', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
@@ -671,7 +681,7 @@ describe('rallar-bb runtime capabilities', () => {
                 }
             }
         });
-        const value = result.value as RallarBlackBoxTestRtcStreamResultValue;
+        const value = decodeBrowserCommandRecord(result.value);
 
         expect(result.ok).toBe(true);
         expect(value).toMatchObject({
@@ -682,12 +692,13 @@ describe('rallar-bb runtime capabilities', () => {
             failedFrames: 0,
             droppedFrames: 0
         });
-        expect(value.observations.map((observation) => observation.index)).toEqual([0, 2, 5]);
+        expect(value?.observations).toEqual([0, 2, 5].map((index) => expect.objectContaining({ index })));
     });
 
     it('executes browser-native HTTP requests through the adapter', async () => {
         const fetchCalls: RecordedFetchCall[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             fetch: async (input, init) => {
                 fetchCalls.push({ input, init });
                 return new Response(
@@ -766,4 +777,87 @@ describe('rallar-bb runtime capabilities', () => {
         });
         expect(getRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.http.response')).toBe(true);
     });
+});
+
+it('capture dependency fix1 consumes explicit browser session, request ID, clock, command ID and delay ports', async () => {
+    const fetchCalls: RecordedFetchCall[] = [];
+    const delays: number[] = [];
+    const opened: string[] = [];
+    let sequence = 1;
+    const input = {
+        rallarRuntime: undefined,
+        fetch: async (request: RequestInfo | URL, init?: RequestInit) => {
+            fetchCalls.push({ input: request, init });
+            return new Response(JSON.stringify({ ticket: 'fixture-ticket', sessionId: 'owned-session' }));
+        },
+        webSocketFactory: (url: string) => {
+            opened.push(url);
+            return { readyState: 1, protocol: '', url, send: () => undefined, close: () => undefined };
+        },
+        defaultWsOpenTimeoutMs: 500,
+        defaultHttpBodyLimit: 1_000,
+        now: () => 2_000,
+        readSession: () => ({
+            clientId: 'owned-client',
+            accessToken: 'fixture-token',
+            username: 'owned-user',
+            sessionId: 'owned-session',
+            expiresAtEpochMs: 20_000
+        }),
+        requestId: () => 'owned-request',
+        sleep: async (ms: number) => {
+            delays.push(ms);
+        },
+        idFactory: (prefix: string) => `owned-${prefix}-${sequence++}`
+    };
+    const runtime = createRallarBlackBoxBrowserTestRuntime(input);
+    try {
+        const configured = await runtime.execute({ kind: 'configure', config: { apiBaseUrl: 'https://api.example.test' } });
+        expect(configured.commandId).toBe('owned-command-1');
+        const result = await runtime.execute({
+            kind: 'ws.open',
+            metadata: { localDelayMs: 7 },
+            url: '{config.wsBaseUrl}/api/ws/{auth.sessionId}?ticket={auth.wsTicket}'
+        });
+        expect(result.ok).toBe(true);
+        expect(result.startedAtEpochMs).toBe(2_000);
+        expect(fetchCalls[0].input).toBe('https://api.example.test/api/auth/ws-ticket/requests/owned-request');
+        expect(new Headers(fetchCalls[0].init?.headers).get('authorization')).toBe('Bearer fixture-token');
+        expect(opened).toEqual(['wss://api.example.test/api/ws/owned-session?ticket=fixture-ticket']);
+        expect(delays).toEqual([7]);
+        expect(runtime.rtcCaptureSupport).toBeUndefined();
+    }
+    finally {
+        await runtime.execute({ kind: 'close' });
+    }
+});
+
+it('capture dependency fix1 keeps explicit unavailable fetch unavailable despite an ambient implementation', async () => {
+    const ambientFetch = vi.fn(async () => {
+        throw new Error('Ambient fetch must not be called.');
+    });
+    vi.stubGlobal('fetch', ambientFetch);
+    const input = {
+        rallarRuntime: undefined,
+        fetch: undefined,
+        webSocketFactory: undefined,
+        defaultWsOpenTimeoutMs: 500,
+        defaultHttpBodyLimit: 1_000,
+        now: () => 2_000,
+        readSession: () => undefined,
+        requestId: () => 'owned-request',
+        sleep: async () => undefined,
+        idFactory: (prefix: string) => `unavailable-${prefix}`
+    };
+    try {
+        const runtime = createRallarBlackBoxBrowserTestRuntime(input);
+        const result = await runtime.execute({ kind: 'http.request', request: { url: 'https://api.example.test/health' } });
+        expect(ambientFetch).not.toHaveBeenCalled();
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toContain('fetch is not available');
+        expect(runtime.rtcCaptureSupport).toBeUndefined();
+    }
+    finally {
+        vi.unstubAllGlobals();
+    }
 });

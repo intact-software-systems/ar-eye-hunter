@@ -1,112 +1,343 @@
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+import { createHash } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
+import { describe, expect, it, vi } from 'vitest';
 
-import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
-import {
-    createBlackBoxRallarRuntime,
-    type BlackBoxRallarRuntimeInstallationTarget
-} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
-import {
-    createBlackBoxBrowserRallarRuntimeDependency,
-    type BlackBoxBrowserRallarRuntimeDependency
-} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
+
+import { type BlackBoxBrowserRallarRuntimeDependency } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import type { BlackBoxRallarConnectionRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-connection-runtime.ts';
-import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
+
 import { createSpaBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
-import type { RallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
-import { parseControlServerMessage } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+
+import { toRallarBlackBoxCompositeResultFlatEntries } from '@shared-test/rallar-bb-test/composite-results.ts';
+import { parseControlClientMessage, parseControlServerMessage } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
+import { computeDistributedRunSnapshotPerformance } from '@shared-test/rallar-bb-test/distributed-run-performance/compute-distributed-run-snapshot-performance.ts';
+import { toControlAgentCapabilities } from '@shared-test/rallar-bb-test/distributed/control-agent-capabilities.ts';
+import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { decodeJsonValue, decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import { resolveRequiredRtcCaptureFailure } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
 import * as connectionHttp from '@shared-web/browser/connection/connection-http-api.ts';
+import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
-import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
+
 import * as snapshots from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import * as auth from '@shared/api/auth.ts';
 import { isRallarCrdtDocumentRef, type RallarCrdtMetricEvent } from '@shared/crdt/mod.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
-import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
-import '../../setup-browser-indexeddb.ts';
+import { createControlRunArtifactBundle } from '../../../../apps/rallar-black-box-control-server/src/control-artifacts.ts';
+
 import { createHttpCatchUpResponse } from '../../shared-web/crdt/rallar-crdt-test-runtime.ts';
-import { installFakeBroadcastChannelPerTest } from '../../shared-web/data/rallar-data-test-runtime.ts';
 
-installFakeBroadcastChannelPerTest();
-beforeEach(() => {
-    vi.spyOn(auth, 'readSession').mockReturnValue({
-        clientId: 'client',
-        sessionId: 'session',
-        username: 'tester',
-        accessToken: 'unit-test',
-        expiresAtEpochMs: Date.now() + 60_000
-    });
-    vi.stubGlobal(
-        'localStorage',
-        {
-            getItem: () => JSON.stringify(auth.readSession()),
-            setItem: vi.fn(),
-            removeItem: vi.fn()
-        } satisfies Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
-    );
-    vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
-        apiBaseUrl: 'https://test.invalid',
-        wsBaseUrl: 'wss://test.invalid',
-        endpoints: { createWs: '/ws' }
-    });
-    vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: Date.now() + 60_000 });
-    vi.spyOn(JsonWebSocketClient.prototype, 'connect').mockResolvedValue();
-    vi.spyOn(snapshots, 'refreshStateSnapshots').mockResolvedValue({ clients: [], groups: [] });
-    vi.spyOn(heartbeat, 'initHeartbeat').mockResolvedValue({ sessionId: 'session', generationId: 'test', stop: () => {} });
-});
-afterEach(() => {
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-});
+import {
+    createCaptureApplicationRuntime,
+    createCaptureController,
+    executeSerializedControllerCommand,
+    installCaptureApplicationTestEnvironment
+} from './capture-application-test-runtime.ts';
 
-interface CaptureApplicationRuntime {
-    readonly events: BlackBoxRallarEvent[];
-    readonly facade: BlackBoxBrowserRallarRuntimeDependency;
-    readonly page: BlackBoxRallarRuntime;
-    readonly runtime: RallarBlackBoxBrowserTestRuntime;
-    readonly targetWindow: BlackBoxRallarRuntimeInstallationTarget;
-}
+installCaptureApplicationTestEnvironment();
 
 interface HydratedCrdtSubscription {
     readonly selector: RallarMessageSelectorInput;
     readonly ownershipFailure: ReturnType<BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion['captureOwnershipFailure']>;
 }
 
-function createRuntime(
-    readDocument: BlackBoxRallarConnectionRuntime.Input['readDocument'] = () => ({ timeOrigin: 1, origin: 'https://test.invalid' })
-): CaptureApplicationRuntime {
-    const events: BlackBoxRallarEvent[] = [];
-    const volatileLimits = new BlackBoxRallarVolatileLimits();
-    const facade = createBlackBoxBrowserRallarRuntimeDependency({ readVolatileSessionLimits: volatileLimits.get });
-    const targetWindow: BlackBoxRallarRuntimeInstallationTarget = {
-        __blackBoxRallarEmit: (event) => {
-            events.push(event);
-        }
-    };
-    const page = createBlackBoxRallarRuntime({
-        facade,
-        volatileLimits,
-        targetWindow,
-        clock: { now: Date.now },
-        readDocument,
-        delay: async () => {}
-    });
-    vi.stubGlobal('window', Object.assign(new EventTarget(), { __blackBoxRallar: page }));
-    return { events, facade, page, targetWindow, runtime: createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() }) };
-}
-
 describe('decoded recipe application through the SPA and SDK initializer', () => {
+    it.each([false, true])(
+        'preserves the actual SDK Off receipt and invocation in accepted controller storage; nested reference=%s',
+        async (nestedReference) => {
+            const { page, runtime, events } = createCaptureApplicationRuntime();
+            const service = createCaptureController();
+            service.receiveClientEnvelope({
+                kind: 'register',
+                protocolVersion: 1,
+                runId: 'sdk-receipt-run',
+                agentId: 'sdk-agent',
+                atEpochMs: 1_000,
+                identity: { sessionLabel: 'sdk-agent', updatedAtEpochMs: 1_000 },
+                resume: { completedCommandIds: [] }
+            });
+            try {
+                const recipe: RallarBlackBoxTestRecipe = {
+                    schemaVersion: 1,
+                    recipeId: 'sdk-receipt',
+                    commands: [
+                        { kind: 'configure', commandId: 'sdk-configure', config: { rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app' } } },
+                        { kind: 'rtc.connect', commandId: 'sdk-connect' }
+                    ]
+                };
+                const queued = service.enqueueCommand({
+                    runId: 'sdk-receipt-run',
+                    agentId: 'sdk-agent',
+                    commandId: 'sdk-recipe-root',
+                    command: {
+                        kind: 'recipe.run',
+                        rtcCaptureMode: 'off',
+                        recipe: nestedReference
+                            ? {
+                                schemaVersion: 1,
+                                recipeId: 'sdk-outer',
+                                commands: [
+                                    { kind: 'recipe.load', commandId: 'sdk-load', recipe },
+                                    { kind: 'recipe.run', commandId: 'sdk-reference' }
+                                ]
+                            }
+                            : recipe
+                    }
+                });
+                expect(queued.left).toBeUndefined();
+                const [dispatch] = service.takeDispatchableCommands('sdk-receipt-run', 'sdk-agent');
+                expect(dispatch?.commandId).toBe('sdk-recipe-root');
+                const { result, envelope } = await executeSerializedControllerCommand(runtime, dispatch);
+                expect(result).toMatchObject({ commandId: 'sdk-recipe-root', status: 'ok', ok: true });
+                const connect = toRallarBlackBoxCompositeResultFlatEntries([result])
+                    .find((entry) => entry.commandId === 'sdk-connect')?.result;
+                expect(connect).toMatchObject({ kind: 'rtc.connect', status: 'ok', ok: true });
+                const rtcCapture = toRtcCaptureReadout(decodeJsonValue(decodeRecord(connect?.value).rtcCapture));
+                expect(rtcCapture.left).toBeUndefined();
+                expect(rtcCapture.right).toMatchObject({
+                    status: 'observed',
+                    value: {
+                        configurationVersion: 1,
+                        configuration: { mode: 'off', origin: 'run' },
+                        application: { status: 'applied', mode: 'off' },
+                        connectionId: { status: 'observed', value: expect.any(String) },
+                        nativeScopeId: { status: 'unavailable', reason: 'not-applicable' },
+                        nativeAvailability: { status: 'unavailable', reason: 'disabled' },
+                        nativeCoverage: 'not-applicable'
+                    }
+                });
+                if (rtcCapture.right === undefined) {
+                    throw new Error('Actual SDK receipt did not decode.');
+                }
+                expect(resolveRequiredRtcCaptureFailure({ mode: 'off', origin: 'run' }, rtcCapture.right)).toBeUndefined();
+                expect(events.filter((event) => event.topic === 'rallar.browser.rtc.signaling_diagnostics')).toEqual([]);
+                const invocation = decodeRecord(decodeRecord(result.value).invocation);
+                expect(invocation).toMatchObject({ invocationId: expect.any(String), recipeBodyId: expect.any(String), run: 'off' });
+                const invalid = JSON.parse(JSON.stringify(envelope));
+                const invalidRecipe = nestedReference ? invalid.result.value.results[1] : invalid.result;
+                invalidRecipe.value.results[1].value.rtcCapture.value.application.mode = 'native';
+                const refused = parseControlClientMessage(JSON.stringify(invalid));
+                if (!refused.ok) {
+                    throw new Error('Invalid application fixture must still cross the wire decoder.');
+                }
+                expect(service.receiveClientEnvelope(refused.envelope).accepted).toBe(false);
+                expect(service.snapshotRun('sdk-receipt-run')?.results).toEqual([]);
+                expect(service.snapshotCommand('sdk-receipt-run', 'sdk-recipe-root')?.completedAtEpochMs).toBeUndefined();
+                expect(service.snapshotRun('sdk-receipt-run')?.agents[0].completedCommandIds).toEqual([]);
+                expect(service.receiveClientEnvelope(envelope).accepted).toBe(true);
+                const stored = service.snapshotRun('sdk-receipt-run')?.results.find((entry) => entry.commandId === 'sdk-recipe-root');
+                expect(stored).toMatchObject({ runId: 'sdk-receipt-run', agentId: 'sdk-agent', commandId: 'sdk-recipe-root', ok: true, replayed: false });
+                expect(decodeRecord(stored?.result?.value).invocation).toEqual(invocation);
+                if (stored?.result === undefined) {
+                    throw new Error('Accepted actual SDK result must retain its finite children.');
+                }
+                const storedConnect = toRallarBlackBoxCompositeResultFlatEntries([stored.result])
+                    .find((entry) => entry.commandId === 'sdk-connect')?.result;
+                expect(toRtcCaptureReadout(decodeJsonValue(decodeRecord(storedConnect?.value).rtcCapture)).right).toEqual(rtcCapture.right);
+                for (const field of ['document', 'scope', 'roomRef', 'applicationId', 'workspaceId', 'clientId', 'sessionId']) {
+                    expect(decodeRecord(storedConnect?.value)[field]).toEqual(decodeRecord(connect?.value)[field]);
+                }
+                const snapshot = service.snapshotForPersistence({});
+                const decoded = decodeControlRunSnapshot(JSON.parse(JSON.stringify(snapshot.runs[0])));
+                expect(decoded.left).toBeUndefined();
+                if (decoded.right === undefined) {
+                    throw new Error('Stored SDK receipt snapshot did not decode.');
+                }
+                service.restoreSnapshot({ ...snapshot, runs: [decoded.right] });
+                const restored = service.snapshotRun('sdk-receipt-run');
+                expect(restored).toBeDefined();
+                if (restored === undefined) {
+                    throw new Error('Stored SDK receipt run did not restore.');
+                }
+                const exported = createControlRunArtifactBundle(restored, 1_001);
+                const rows = exported.files['results.jsonl'].trim().split('\n').map((line) => decodeRecord(JSON.parse(line)));
+                expect(rows).toHaveLength(1);
+                const exportedActual = decodeRecord(rows[0].actual);
+                expect(exportedActual.invocation).toEqual(invocation);
+                const exportedConnect = toRallarBlackBoxCompositeResultFlatEntries([{ ...stored.result, value: exportedActual }])
+                    .find((entry) => entry.commandId === 'sdk-connect')?.result;
+                expect(toRtcCaptureReadout(decodeJsonValue(decodeRecord(exportedConnect?.value).rtcCapture)).right).toEqual(rtcCapture.right);
+            }
+            finally {
+                await page.close();
+            }
+        }
+    );
+
+    it.each([false, true])(
+        'retains actual SDK receipt paths and replay through distributed snapshots and native disk provenance; retired=%s',
+        async (retired) => {
+            const { page, facade, runtime, events } = createCaptureApplicationRuntime();
+            const service = createCaptureController();
+            const recipe: RallarBlackBoxTestRecipe = {
+                schemaVersion: 1,
+                recipeId: 'sdk-path-receipt',
+                commands: [
+                    { kind: 'configure', commandId: 'sdk-configure', config: { rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app' } } },
+                    { kind: 'loop', commandId: 'sdk-loop', count: 2, commands: [{ kind: 'rtc.connect', commandId: 'same-connect' }] },
+                    {
+                        kind: 'parallel',
+                        commandId: 'sdk-parallel',
+                        maxConcurrency: 1,
+                        groups: [
+                            { groupId: 'left', commands: [{ kind: 'rtc.connect', commandId: 'same-connect' }] },
+                            { groupId: 'right', commands: [{ kind: 'rtc.connect', commandId: 'same-connect' }] }
+                        ]
+                    }
+                ]
+            };
+            service.receiveClientEnvelope({
+                kind: 'register',
+                protocolVersion: 1,
+                runId: 'sdk-path-run',
+                agentId: 'sdk-agent',
+                atEpochMs: 1_000,
+                identity: {
+                    sessionLabel: 'sdk-agent',
+                    applicationId: 'app',
+                    workspaceId: 'workspace',
+                    groupId: 'group',
+                    updatedAtEpochMs: 1_000,
+                    capabilities: toControlAgentCapabilities({
+                        rtcCaptureSupport: runtime.rtcCaptureSupport,
+                        config: undefined,
+                        providerMode: undefined,
+                        apiBaseUrl: undefined
+                    })
+                },
+                resume: { completedCommandIds: [] }
+            });
+            try {
+                const created = service.createDistributedRun({
+                    schemaVersion: 1,
+                    distributedRunId: 'sdk-distributed',
+                    controlRunId: 'sdk-path-run',
+                    rtcCaptureMode: 'off',
+                    group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'group' },
+                    recipes: [{ recipeId: recipe.recipeId, recipe, variables: {} }],
+                    targetPolicy: { mode: 'selected-agents', agentIds: ['sdk-agent'] },
+                    variables: {},
+                    roleAssignments: [],
+                    ackTimeoutMs: 1_000,
+                    barrier: { enabled: false },
+                    startMode: 'manual',
+                    groupAssertions: [],
+                    metadata: {}
+                });
+                expect(created.left).toBeUndefined();
+                expect(service.stageDistributedRun('sdk-distributed').left).toBeUndefined();
+                const [stage] = service.takeDispatchableCommands('sdk-path-run', 'sdk-agent');
+                expect(stage?.command.kind).toBe('recipe.load');
+                const { envelope: stageEnvelope } = await executeSerializedControllerCommand(runtime, stage);
+                expect(service.receiveClientEnvelope(stageEnvelope).accepted).toBe(true);
+                expect(service.startDistributedRun('sdk-distributed').left).toBeUndefined();
+                const [start] = service.takeDispatchableCommands('sdk-path-run', 'sdk-agent');
+                expect(start?.command.kind).toBe('recipe.run');
+                const { result } = await executeSerializedControllerCommand(runtime, start);
+                expect(result.ok).toBe(true);
+                const original = toRallarBlackBoxCompositeResultFlatEntries([result]);
+                const connections = original.filter((entry) => entry.kind === 'rtc.connect');
+                expect(connections).toHaveLength(4);
+                expect(new Set(connections.map((entry) => entry.path)).size).toBe(4);
+                const originalReceipt = toRtcCaptureReadout(decodeJsonValue(decodeRecord(connections[0].result.value).rtcCapture)).right;
+                expect(originalReceipt?.status).toBe('observed');
+                if (originalReceipt === undefined) {
+                    throw new Error('Distributed SDK receipt did not decode.');
+                }
+                expect(resolveRequiredRtcCaptureFailure({ mode: 'off', origin: 'run' }, originalReceipt)).toBeUndefined();
+                for (const connection of connections) {
+                    expect(toRtcCaptureReadout(decodeJsonValue(decodeRecord(connection.result.value).rtcCapture)).right).toEqual(originalReceipt);
+                }
+                const originalEffects = events.filter((event) => event.topic === 'rallar.browser.connect_completed');
+                if (retired) {
+                    await page.close();
+                    expect(facade.isConnected()).toBe(false);
+                }
+                const { result: replay, envelope: replayEnvelope, wire } = await executeSerializedControllerCommand(runtime, start);
+                expect(replay.replayed).toBe(true);
+                expect(replay.value).toEqual(result.value);
+                expect(events.filter((event) => event.topic === 'rallar.browser.connect_completed')).toEqual(originalEffects);
+                expect(replayEnvelope.replayed).toBe(true);
+                expect(service.receiveClientEnvelope(replayEnvelope).accepted).toBe(true);
+                const snapshot = service.snapshotForPersistence({});
+                const decoded = decodeControlRunSnapshot(JSON.parse(JSON.stringify(snapshot.runs[0])));
+                expect(decoded.left).toBeUndefined();
+                if (decoded.right === undefined) {
+                    throw new Error('Distributed SDK snapshot did not decode.');
+                }
+                service.restoreSnapshot({ ...snapshot, runs: [decoded.right] });
+                const distributed = service.snapshotDistributedRun('sdk-distributed');
+                expect(distributed?.state).toBe('passed');
+                expect(distributed?.commandLinks.find((link) => link.commandId === start.commandId)?.phase).toBe('start');
+                const bundle = service.createDistributedRunArtifactBundle('sdk-distributed', {});
+                expect(bundle).toBeDefined();
+                if (bundle === undefined) {
+                    throw new Error('Distributed SDK bundle was unavailable.');
+                }
+                const exported = decodeControlRunSnapshot(JSON.parse(bundle.files['control-run.json'])).right;
+                if (exported === undefined || distributed === undefined) {
+                    throw new Error('Historical measurement source snapshots did not decode.');
+                }
+                const measurement = computeDistributedRunSnapshotPerformance({ distributedRun: distributed, controlRun: exported });
+                expect(measurement.commandTiming.count).toBe(2);
+                const stored = exported?.results.find((entry) => entry.commandId === start.commandId);
+                expect(stored).toMatchObject({ replayed: true, result: { replayed: true } });
+                expect(decodeRecord(stored?.result?.value).invocation).toEqual(decodeRecord(result.value).invocation);
+                if (stored?.result === undefined) {
+                    throw new Error('Distributed SDK stored result was unavailable.');
+                }
+                const retained = toRallarBlackBoxCompositeResultFlatEntries([stored.result]).filter((entry) => entry.kind === 'rtc.connect');
+                expect(
+                    retained.map((entry) => ({
+                        path: entry.path,
+                        sourceRecipePath: entry.sourceRecipePath,
+                        position: entry.position,
+                        commandId: entry.commandId
+                    }))
+                )
+                    .toEqual(
+                        connections.map((entry) => ({
+                            path: entry.path,
+                            sourceRecipePath: entry.sourceRecipePath,
+                            position: entry.position,
+                            commandId: entry.commandId
+                        }))
+                    );
+                for (const entry of retained) {
+                    expect(toRtcCaptureReadout(decodeJsonValue(decodeRecord(entry.result.value).rtcCapture)).right).toEqual(originalReceipt);
+                }
+                const witnessPath = process.env.RALLAR_SDK_RECEIPT_WITNESS_PATH;
+                if (witnessPath !== undefined && !retired) {
+                    const source = await readFile(new URL('./recipe-rtc-capture-application.test.ts', import.meta.url));
+                    const producer = {
+                        test: 'actual SDK distributed Off receipt and replay',
+                        sourceSha256: createHash('sha256').update(source).digest('hex'),
+                        wireSha256: createHash('sha256').update(wire).digest('hex')
+                    };
+                    const text = JSON.stringify({
+                        producer,
+                        snapshot,
+                        envelopes: [stageEnvelope, replayEnvelope],
+                        receipt: originalReceipt,
+                        invocation: decodeRecord(result.value).invocation,
+                        commandId: start.commandId
+                    });
+                    await writeFile(witnessPath, text, { flag: 'wx' });
+                    console.log(`SDK disk witness producer: ${createHash('sha256').update(text).digest('hex')}`);
+                }
+            }
+            finally {
+                await page.close();
+            }
+        }
+    );
+
     it.each(
         [
             { scenario: 'explicit Off', mode: 'off', run: undefined, recipe: undefined },
@@ -114,7 +345,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
             { scenario: 'ordinary omitted capture intent', mode: undefined, run: undefined, recipe: undefined }
         ] as const
     )('carries captured $scenario into the owned room join port', async (selection) => {
-        const { facade, page } = createRuntime();
+        const { facade, page } = createCaptureApplicationRuntime();
         const connectPort = vi.spyOn(facade, 'connect');
         const joinPort = vi.spyOn(facade.rooms, 'join').mockResolvedValue();
         const captureContext: { run: RtcSignalingDiagnostics.CaptureMode; recipe: RtcSignalingDiagnostics.CaptureMode; } | undefined =
@@ -154,215 +385,118 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
         }
     });
 
-    it('required connect cannot verify after phase-completed callback closes its page', async () => {
-        const { events, facade, page, runtime, targetWindow } = createRuntime();
-        let closing: ReturnType<BlackBoxRallarRuntime['close']> | undefined;
-        let originalReceipt: ReturnType<BlackBoxBrowserRallarRuntimeDependency['rtcCapture']>;
-        targetWindow.__blackBoxRallarEmit = (event) => {
-            events.push(event);
-            if (
-                event.topic === 'rallar.browser.connect.phase_completed' &&
-                typeof event.data === 'object' && event.data !== null &&
-                'phase' in event.data && event.data.phase === 'rallar-connect'
-            ) {
-                originalReceipt = facade.rtcCapture();
-                closing = page.close();
-            }
-        };
-        try {
-            const result = await runtime.execute({
-                kind: 'recipe.run',
-                rtcCaptureMode: 'off',
-                recipe: {
-                    schemaVersion: 1,
-                    recipeId: 'closed-connect',
-                    commands: [
-                        { kind: 'configure', config: { rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app' } } },
-                        { kind: 'rtc.connect' }
-                    ]
+    it.each(['phase completed', 'phase status', 'result lane health', 'terminal publication', 'document read', 'SDK clock'] as const)(
+        'required connect retains its original refusal after %s closes its page',
+        async (boundary) => {
+            const realNow = Date.now;
+            const clock = boundary === 'SDK clock' ? vi.spyOn(Date, 'now') : undefined;
+            const readDocument = vi.fn<BlackBoxRallarConnectionRuntime.Input['readDocument']>(() => ({ timeOrigin: 1, origin: 'https://test.invalid' }));
+            const { events, facade, page, runtime, targetWindow } = createCaptureApplicationRuntime(readDocument);
+            let closing: ReturnType<BlackBoxRallarRuntime['close']> | undefined;
+            let originalReceipt: ReturnType<BlackBoxBrowserRallarRuntimeDependency['rtcCapture']>;
+            let constructionConnected = false;
+            const closeObservedPage = (): void => {
+                const receipt = facade.rtcCapture();
+                if (!closing && receipt) {
+                    originalReceipt = receipt;
+                    constructionConnected = facade.isConnected();
+                    closing = page.close();
                 }
-            });
-            expect(originalReceipt).toMatchObject({
-                configuration: { mode: 'off', origin: 'run' },
-                application: { status: 'applied', mode: 'off' }
-            });
-            expect(closing).toBeDefined();
-            await closing;
-            expect.soft(result.ok, JSON.stringify(result)).toBe(false);
-            const connectCommand = runtime.state().commandHistory.find((entry) => entry.kind === 'rtc.connect');
-            expect.soft(JSON.parse(JSON.stringify(connectCommand))).toMatchObject({
-                status: 'failed',
-                error: {
-                    code: 'RALLAR_RTC_CAPTURE_UNVERIFIED',
-                    details: {
-                        reason: 'operation-not-current',
-                        requestedConfiguration: { mode: 'off', origin: 'run' },
-                        rtcCapture: { status: 'observed', value: originalReceipt }
+            };
+            if (boundary === 'phase completed' || boundary === 'terminal publication') {
+                targetWindow.__blackBoxRallarEmit = (event) => {
+                    events.push(event);
+                    if (
+                        boundary === 'terminal publication'
+                            ? event.topic === 'rallar.browser.connect_completed'
+                            : event.topic === 'rallar.browser.connect.phase_completed' && typeof event.data === 'object' && event.data !== null &&
+                                'phase' in event.data && event.data.phase === 'rallar-connect'
+                    ) {
+                        closeObservedPage();
                     }
-                }
-            });
-            expect.soft(events.filter((event) => event.topic === 'rallar.browser.connect_completed')).toEqual([]);
-            expect.soft(JSON.parse(JSON.stringify(events.filter((event) => event.topic === 'rallar.browser.connect_failed')))).toEqual(
-                expect.arrayContaining([expect.objectContaining({
-                    topic: 'rallar.browser.connect_failed',
-                    error: expect.objectContaining({
-                        code: 'RALLAR_RTC_CAPTURE_UNVERIFIED',
-                        reason: 'operation-not-current',
-                        requestedConfiguration: { mode: 'off', origin: 'run' },
-                        rtcCapture: { status: 'observed', value: originalReceipt }
-                    })
-                })])
-            );
-        }
-        finally {
-            await page.close();
-        }
-    });
-
-    it.each(['phase status', 'result lane health'] as const)('required connect cannot verify after %s diagnostic read closes its page', async (boundary) => {
-        const { events, facade, page, runtime } = createRuntime();
-        let closing: ReturnType<BlackBoxRallarRuntime['close']> | undefined;
-        let originalReceipt: ReturnType<BlackBoxBrowserRallarRuntimeDependency['rtcCapture']>;
-        const closeAfterDiagnosticRead = (): void => {
-            const receipt = facade.rtcCapture();
-            if (!closing && receipt) {
-                originalReceipt = receipt;
-                closing = page.close();
+                };
             }
-        };
-        if (boundary === 'phase status') {
-            const readStatus = facade.rtc.status;
-            vi.spyOn(facade.rtc, 'status').mockImplementation((options) => {
-                const status = readStatus(options);
-                closeAfterDiagnosticRead();
-                return status;
-            });
-        }
-        else {
-            const readHealth = facade.realtime.health;
-            vi.spyOn(facade.realtime, 'health').mockImplementation((options) => {
-                const health = readHealth(options);
-                closeAfterDiagnosticRead();
-                return health;
-            });
-        }
-        try {
-            const result = await runtime.execute({
-                kind: 'recipe.run',
-                rtcCaptureMode: 'off',
-                recipe: {
-                    schemaVersion: 1,
-                    recipeId: 'closed-diagnostic-read',
-                    commands: [
-                        { kind: 'configure', config: { rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app' } } },
-                        { kind: 'rtc.connect' }
-                    ]
-                }
-            });
-            expect(originalReceipt).toMatchObject({
-                configuration: { mode: 'off', origin: 'run' },
-                application: { status: 'applied', mode: 'off' }
-            });
-            expect(closing).toBeDefined();
-            await closing;
-            expect.soft(result.ok, JSON.stringify(result)).toBe(false);
-            const connectCommand = runtime.state().commandHistory.find((entry) => entry.kind === 'rtc.connect');
-            expect.soft(JSON.parse(JSON.stringify(connectCommand))).toMatchObject({
-                status: 'failed',
-                error: {
-                    code: 'RALLAR_RTC_CAPTURE_UNVERIFIED',
-                    details: {
-                        reason: 'operation-not-current',
-                        requestedConfiguration: { mode: 'off', origin: 'run' },
-                        rtcCapture: { status: 'observed', value: originalReceipt }
-                    }
-                }
-            });
-            expect.soft(events.filter((event) => event.topic === 'rallar.browser.connect_completed')).toEqual([]);
-            expect.soft(JSON.parse(JSON.stringify(events.filter((event) => event.topic === 'rallar.browser.connect_failed')))).toEqual(
-                expect.arrayContaining([expect.objectContaining({
-                    connection: 'default',
-                    error: expect.objectContaining({
-                        code: 'RALLAR_RTC_CAPTURE_UNVERIFIED',
-                        reason: 'operation-not-current',
-                        requestedConfiguration: { mode: 'off', origin: 'run' },
-                        rtcCapture: { status: 'observed', value: originalReceipt }
-                    })
-                })])
-            );
-        }
-        finally {
-            await page.close();
-        }
-    });
-
-    it('required connect cannot return verified success after terminal publication closes its page', async () => {
-        const { events, facade, page, runtime, targetWindow } = createRuntime();
-        let closing: ReturnType<BlackBoxRallarRuntime['close']> | undefined;
-        let originalReceipt: ReturnType<BlackBoxBrowserRallarRuntimeDependency['rtcCapture']>;
-        targetWindow.__blackBoxRallarEmit = (event) => {
-            events.push(event);
-            if (event.topic === 'rallar.browser.connect_completed') {
-                originalReceipt = facade.rtcCapture();
-                closing = page.close();
+            else if (boundary === 'phase status') {
+                const readStatus = facade.rtc.status;
+                vi.spyOn(facade.rtc, 'status').mockImplementation((options) => {
+                    const status = readStatus(options);
+                    closeObservedPage();
+                    return status;
+                });
             }
-        };
-        try {
-            const result = await runtime.execute({
-                kind: 'recipe.run',
-                rtcCaptureMode: 'off',
-                recipe: {
-                    schemaVersion: 1,
-                    recipeId: 'closed-terminal-publication',
-                    commands: [
-                        { kind: 'configure', config: { rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app' } } },
-                        { kind: 'rtc.connect' }
-                    ]
-                }
-            });
-            expect(originalReceipt).toMatchObject({
-                configuration: { mode: 'off', origin: 'run' },
-                application: { status: 'applied', mode: 'off' }
-            });
-            expect(closing).toBeDefined();
-            await closing;
-            const completion = events.find((event) => event.topic === 'rallar.browser.connect_completed');
-            expect(JSON.parse(JSON.stringify(completion))).toMatchObject({
-                connection: 'default',
-                data: { status: 'connected', rtcCapture: { status: 'observed', value: originalReceipt } }
-            });
-            expect.soft(result.ok, JSON.stringify(result)).toBe(false);
-            const connectCommand = runtime.state().commandHistory.find((entry) => entry.kind === 'rtc.connect');
-            expect.soft(JSON.parse(JSON.stringify(connectCommand))).toMatchObject({
-                status: 'failed',
-                error: {
-                    code: 'RALLAR_RTC_CAPTURE_UNVERIFIED',
-                    details: {
-                        reason: 'operation-not-current',
-                        requestedConfiguration: { mode: 'off', origin: 'run' },
-                        rtcCapture: { status: 'observed', value: originalReceipt }
+            else if (boundary === 'result lane health') {
+                const readHealth = facade.realtime.health;
+                vi.spyOn(facade.realtime, 'health').mockImplementation((options) => {
+                    const health = readHealth(options);
+                    closeObservedPage();
+                    return health;
+                });
+            }
+            else if (boundary === 'document read') {
+                readDocument.mockImplementation(() => {
+                    closeObservedPage();
+                    return { timeOrigin: 1, origin: 'https://test.invalid' };
+                });
+            }
+            else {
+                clock?.mockImplementation(() => {
+                    const now = realNow();
+                    if (facade.isConnected()) {
+                        closeObservedPage();
                     }
+                    return now;
+                });
+            }
+            try {
+                const result = await runtime.execute({
+                    kind: 'recipe.run',
+                    rtcCaptureMode: 'off',
+                    recipe: {
+                        schemaVersion: 1,
+                        recipeId: 'closed-connect',
+                        commands: [
+                            { kind: 'configure', config: { rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app' } } },
+                            { kind: 'rtc.connect' }
+                        ]
+                    }
+                });
+                expect(originalReceipt).toMatchObject({ configuration: { mode: 'off', origin: 'run' }, application: { status: 'applied', mode: 'off' } });
+                expect(constructionConnected).toBe(true);
+                expect(closing).toBeDefined();
+                await closing;
+                expect.soft(result.ok, JSON.stringify(result)).toBe(false);
+                const failure = {
+                    code: 'RALLAR_RTC_CAPTURE_UNVERIFIED',
+                    reason: 'operation-not-current',
+                    requestedConfiguration: { mode: 'off', origin: 'run' },
+                    rtcCapture: { status: 'observed', value: originalReceipt }
+                };
+                expect.soft(JSON.parse(JSON.stringify(runtime.state().commandHistory.find((entry) => entry.kind === 'rtc.connect')))).toMatchObject({
+                    status: 'failed',
+                    error: { code: 'RALLAR_RTC_CAPTURE_UNVERIFIED', details: failure }
+                });
+                const completions = events.filter((event) => event.topic === 'rallar.browser.connect_completed');
+                if (boundary === 'terminal publication') {
+                    expect(JSON.parse(JSON.stringify(completions))).toEqual([expect.objectContaining({
+                        connection: 'default',
+                        data: expect.objectContaining({ status: 'connected', rtcCapture: { status: 'observed', value: originalReceipt } })
+                    })]);
                 }
-            });
-            expect.soft(JSON.parse(JSON.stringify(events.filter((event) => event.topic === 'rallar.browser.connect_failed')))).toEqual(
-                expect.arrayContaining([expect.objectContaining({
-                    connection: 'default',
-                    error: expect.objectContaining({
-                        code: 'RALLAR_RTC_CAPTURE_UNVERIFIED',
-                        reason: 'operation-not-current',
-                        requestedConfiguration: { mode: 'off', origin: 'run' },
-                        rtcCapture: { status: 'observed', value: originalReceipt }
-                    })
-                })])
-            );
+                else {
+                    expect.soft(completions).toEqual([]);
+                }
+                expect.soft(JSON.parse(JSON.stringify(events.filter((event) => event.topic === 'rallar.browser.connect_failed')))).toEqual(
+                    expect.arrayContaining([expect.objectContaining({ connection: 'default', error: expect.objectContaining(failure) })])
+                );
+            }
+            finally {
+                await page.close();
+            }
         }
-        finally {
-            await page.close();
-        }
-    });
+    );
 
     it('required Native refuses unavailable application while actual SDK construction succeeds', async () => {
-        const { facade, page, runtime, events, targetWindow } = createRuntime();
+        const { facade, page, runtime, events, targetWindow } = createCaptureApplicationRuntime();
         let originalReceipt: ReturnType<BlackBoxBrowserRallarRuntimeDependency['rtcCapture']>;
         let constructionConnected = false;
         let connectedAtRefusal = false;
@@ -432,7 +566,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it('required Native preserves actual applied partial coverage through page JSON success', async () => {
-        const { facade, page, runtime, events } = createRuntime();
+        const { facade, page, runtime, events } = createCaptureApplicationRuntime();
         try {
             const result = await runtime.execute({
                 kind: 'recipe.run',
@@ -471,7 +605,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     it('required connect refuses session invalidated through observed SDK lifecycle clock after graph acceptance', async () => {
         const realNow = Date.now;
         const clock = vi.spyOn(Date, 'now');
-        const { facade, page, runtime, events, targetWindow } = createRuntime();
+        const { facade, page, runtime, events, targetWindow } = createCaptureApplicationRuntime();
         let completion: BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion | undefined;
         let constructionConnected = false;
         let connectedAtRefusal = false;
@@ -554,78 +688,11 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
         }
     });
 
-    it('required connect preserves canonical refusal when observed SDK lifecycle clock closes its page', async () => {
-        const realNow = Date.now;
-        const clock = vi.spyOn(Date, 'now');
-        const { facade, page, runtime, events } = createRuntime();
-        let originalReceipt: ReturnType<BlackBoxBrowserRallarRuntimeDependency['rtcCapture']>;
-        let constructionConnected = false;
-        let closing: ReturnType<BlackBoxRallarRuntime['close']> | undefined;
-        clock.mockImplementation(() => {
-            const now = realNow();
-            const receipt = facade.rtcCapture();
-            if (!closing && receipt && facade.isConnected()) {
-                originalReceipt = receipt;
-                constructionConnected = facade.isConnected();
-                closing = page.close();
-            }
-            return now;
-        });
-        try {
-            const result = await runtime.execute({
-                kind: 'recipe.run',
-                rtcCaptureMode: 'off',
-                recipe: {
-                    schemaVersion: 1,
-                    recipeId: 'sdk-clock-page-closed',
-                    commands: [
-                        { kind: 'configure', config: { rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app' } } },
-                        { kind: 'rtc.connect' }
-                    ]
-                }
-            });
-            expect(originalReceipt).toMatchObject({
-                configuration: { mode: 'off', origin: 'run' },
-                application: { status: 'applied', mode: 'off' }
-            });
-            expect(constructionConnected).toBe(true);
-            expect(closing).toBeDefined();
-            await closing;
-            expect.soft(result.ok, JSON.stringify(result)).toBe(false);
-            expect.soft(JSON.parse(JSON.stringify(runtime.state().commandHistory.find((entry) => entry.kind === 'rtc.connect')))).toMatchObject({
-                status: 'failed',
-                error: {
-                    code: 'RALLAR_RTC_CAPTURE_UNVERIFIED',
-                    details: {
-                        reason: 'operation-not-current',
-                        requestedConfiguration: { mode: 'off', origin: 'run' },
-                        rtcCapture: { status: 'observed', value: originalReceipt }
-                    }
-                }
-            });
-            expect.soft(events.filter((event) => event.topic === 'rallar.browser.connect_completed')).toEqual([]);
-            expect.soft(JSON.parse(JSON.stringify(events.filter((event) => event.topic === 'rallar.browser.connect_failed')))).toEqual(
-                expect.arrayContaining([expect.objectContaining({
-                    connection: 'default',
-                    error: expect.objectContaining({
-                        code: 'RALLAR_RTC_CAPTURE_UNVERIFIED',
-                        reason: 'operation-not-current',
-                        requestedConfiguration: { mode: 'off', origin: 'run' },
-                        rtcCapture: { status: 'observed', value: originalReceipt }
-                    })
-                })])
-            );
-        }
-        finally {
-            await page.close();
-        }
-    });
-
     it.each([
         { scenario: 'required Off room-await closure retains canonical refusal', required: true },
         { scenario: 'omitted-intent room-await closure retains ordinary cancellation', required: false }
     ])('$scenario', async ({ required }) => {
-        const { facade, page, runtime, events } = createRuntime();
+        const { facade, page, runtime, events } = createCaptureApplicationRuntime();
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         let originalReceipt: ReturnType<BlackBoxBrowserRallarRuntimeDependency['rtcCapture']>;
@@ -711,7 +778,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it('required room connect refuses replaced SDK middleware with its original receipt', async () => {
-        const { facade, page, runtime, events, targetWindow } = createRuntime();
+        const { facade, page, runtime, events, targetWindow } = createCaptureApplicationRuntime();
         let originalCompletion: BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion | undefined;
         let replacementCompletion: BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion | undefined;
         let originalSession: ReturnType<BlackBoxBrowserRallarRuntimeDependency['session']>;
@@ -803,7 +870,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
         { scenario: 'non-reentrant room completion starts genuine readiness', closePage: false },
         { scenario: 'closed room completion refuses before readiness starts', closePage: true }
     ])('$scenario', async ({ closePage }) => {
-        const { facade, page, runtime, events, targetWindow } = createRuntime();
+        const { facade, page, runtime, events, targetWindow } = createCaptureApplicationRuntime();
         let originalReceipt: ReturnType<BlackBoxBrowserRallarRuntimeDependency['rtcCapture']>;
         let closing: ReturnType<BlackBoxRallarRuntime['close']> | undefined;
         vi.spyOn(facade.rooms, 'join').mockResolvedValue();
@@ -878,59 +945,8 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
         }
     });
 
-    it('required connect refuses when separate document read closes its page', async () => {
-        const readDocument = vi.fn<BlackBoxRallarConnectionRuntime.Input['readDocument']>();
-        const { facade, page, runtime, events } = createRuntime(readDocument);
-        let originalReceipt: ReturnType<BlackBoxBrowserRallarRuntimeDependency['rtcCapture']>;
-        let closing: ReturnType<BlackBoxRallarRuntime['close']> | undefined;
-        readDocument.mockImplementation(() => {
-            const receipt = facade.rtcCapture();
-            if (!closing && receipt) {
-                originalReceipt = receipt;
-                closing = page.close();
-            }
-            return { timeOrigin: 1, origin: 'https://test.invalid' };
-        });
-        try {
-            const result = await runtime.execute({
-                kind: 'recipe.run',
-                rtcCaptureMode: 'off',
-                recipe: {
-                    schemaVersion: 1,
-                    recipeId: 'document-closed-connect',
-                    commands: [
-                        { kind: 'configure', config: { rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app' } } },
-                        { kind: 'rtc.connect' }
-                    ]
-                }
-            });
-            expect(originalReceipt).toMatchObject({
-                configuration: { mode: 'off', origin: 'run' },
-                application: { status: 'applied', mode: 'off' }
-            });
-            expect(closing).toBeDefined();
-            await closing;
-            expect(result.ok, JSON.stringify(result)).toBe(false);
-            expect(JSON.parse(JSON.stringify(runtime.state().commandHistory.find((entry) => entry.kind === 'rtc.connect')))).toMatchObject({
-                status: 'failed',
-                error: {
-                    code: 'RALLAR_RTC_CAPTURE_UNVERIFIED',
-                    details: {
-                        reason: 'operation-not-current',
-                        requestedConfiguration: { mode: 'off', origin: 'run' },
-                        rtcCapture: { status: 'observed', value: originalReceipt }
-                    }
-                }
-            });
-            expect(events.filter((event) => event.topic === 'rallar.browser.connect_completed')).toEqual([]);
-        }
-        finally {
-            await page.close();
-        }
-    });
-
     it('preserves actual non-reentrant Off connect evidence through page JSON success', async () => {
-        const { facade, page } = createRuntime();
+        const { facade, page } = createCaptureApplicationRuntime();
         try {
             const connected = await createSpaBrowserRallarRuntime().connect({
                 connection: 'default',
@@ -954,7 +970,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it('carries a recipe run override to an already connected WS acquisition', async () => {
-        const { page, runtime, events } = createRuntime();
+        const { page, runtime, events } = createCaptureApplicationRuntime();
         try {
             const connected = await page.connect({
                 connection: 'default',
@@ -1013,7 +1029,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it('refuses incompatible capture passed through the SPA WS operation before sending', async () => {
-        const { page } = createRuntime();
+        const { page } = createCaptureApplicationRuntime();
         try {
             await page.connect({ connection: 'default', rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app', rtcCaptureMode: 'native' } });
             const bridge = createSpaBrowserRallarRuntime();
@@ -1029,7 +1045,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it('snapshots separate SPA WS intent before its runtime lookup yields', async () => {
-        const { page } = createRuntime();
+        const { page } = createCaptureApplicationRuntime();
         try {
             await page.connect({ connection: 'default', rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app', rtcCaptureMode: 'off' } });
             const context: { run: 'off' | 'native'; } = { run: 'off' };
@@ -1043,7 +1059,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it('returns the acquired Off receipt through the existing page WS result and JSON boundary', async () => {
-        const { page, facade } = createRuntime();
+        const { page, facade } = createCaptureApplicationRuntime();
         try {
             await page.connect({ connection: 'default', rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app', rtcCaptureMode: 'off' } });
             const result = await page.sendWs({ typeId: 'test', topicId: 'app.capture', payload: { rtcCapture: { status: 'observed', value: 'lookalike' } } });
@@ -1066,7 +1082,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
         { mode: 'off', origin: 'product-default', application: { status: 'applied', mode: 'off' } },
         { run: 'native', mode: 'native', origin: 'run', application: { status: 'unavailable', reason: 'sink-unavailable' } }
     ])('constructs $mode/$origin and exposes the actual public receipt', async (selection) => {
-        const { facade, page, runtime } = createRuntime();
+        const { facade, page, runtime } = createCaptureApplicationRuntime();
         let completion: BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion | undefined;
         let constructionConnected = false;
         const connect = facade.connect;
@@ -1141,7 +1157,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
         }
     });
     it('queues different source intent while construction is held and rejects it with the actual original receipt', async () => {
-        const { page, facade } = createRuntime();
+        const { page, facade } = createCaptureApplicationRuntime();
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         vi.mocked(connectionHttp.readIceCandidates).mockImplementation(async () => {
@@ -1186,9 +1202,9 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it('carries run Off through the WS fallback and retries exactly once', async () => {
-        const { page, facade } = createRuntime();
+        const { page, facade } = createCaptureApplicationRuntime();
         const send = vi.fn().mockRejectedValueOnce(new Error('Black-box Rallar runtime is not connected.')).mockResolvedValue({ status: 'sent' });
-        const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: { ...createSpaBrowserRallarRuntime(), sendWs: send } });
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ rallarRuntime: { ...createSpaBrowserRallarRuntime(), sendWs: send } });
         try {
             const result = await runtime.execute({
                 kind: 'recipe.run',
@@ -1226,7 +1242,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
             { scenario: 'omitted intent preserves initial CRDT subscriptions through a non-reentrant hydrate metric', mode: undefined, invalidate: false }
         ] as const
     )('fences initial live CRDT hydrate subscriptions: $scenario', async ({ mode, invalidate }) => {
-        const { page, facade, events } = createRuntime();
+        const { page, facade, events } = createCaptureApplicationRuntime();
         const session = auth.readSession();
         const subscriptions: HydratedCrdtSubscription[] = [];
         const unsubscribes: Array<() => void> = [];
@@ -1330,7 +1346,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it('required Native refuses initial live CRDT effects when its actual SDK application is unavailable', async () => {
-        const { page, facade, events } = createRuntime();
+        const { page, facade, events } = createCaptureApplicationRuntime();
         try {
             facade.configure({ apiBaseUrl: 'https://test.invalid' });
             const completion = await facade.connect({ rtcCaptureContext: { run: 'native' } });
@@ -1381,7 +1397,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it.each(['off', 'native'] as const)('preserves applied %s initial live CRDT effects and original receipt', async (mode) => {
-        const { page, facade } = createRuntime();
+        const { page, facade } = createCaptureApplicationRuntime();
         try {
             facade.configure({ apiBaseUrl: 'https://test.invalid' });
             facade.setDefaults({ applicationId: 'app', diagnosticsPorts: { signalingDiagnostics: () => {} } });
@@ -1429,7 +1445,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it('omitted CRDT capture intent preserves live effects with an actual unavailable Native application', async () => {
-        const { page, facade } = createRuntime();
+        const { page, facade } = createCaptureApplicationRuntime();
         try {
             facade.configure({ apiBaseUrl: 'https://test.invalid' });
             facade.setDefaults({ applicationId: 'app', rtc: { captureMode: 'native' } });
@@ -1462,7 +1478,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it('local CRDT capture intent preserves persisted authored state without constructing a live graph', async () => {
-        const { page, facade } = createRuntime();
+        const { page, facade } = createCaptureApplicationRuntime();
         try {
             const opened = await page.crdt.open({
                 name: 'local-capture-control',
@@ -1503,7 +1519,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it('ordinary HTTP CRDT catch-up preserves durable readback without a live message effect', async () => {
-        const { page, facade } = createRuntime();
+        const { page, facade } = createCaptureApplicationRuntime();
         try {
             facade.configure({ apiBaseUrl: 'https://test.invalid' });
             facade.setDefaults({ applicationId: 'app' });
@@ -1545,7 +1561,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it.each(['fresh', 'existing', 'no-api', 'local-only'] as const)('carries capture into the %s CRDT path', async (path) => {
-        const { page, facade, runtime } = createRuntime();
+        const { page, facade, runtime } = createCaptureApplicationRuntime();
         if (path === 'existing' || path === 'no-api') {
             await page.connect({ connection: 'default', rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app', rtcCaptureMode: 'off' } });
         }
@@ -1588,7 +1604,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it('preserves host selection and actual pending receipt across compatible direct SDK acquisition', async () => {
-        const { facade, page } = createRuntime();
+        const { facade, page } = createCaptureApplicationRuntime();
         facade.setDefaults({ applicationId: 'app', rtc: { captureMode: 'native' }, diagnosticsPorts: { signalingDiagnostics: () => {} } });
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
@@ -1624,7 +1640,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
     });
 
     it('captures direct adapter intent before asynchronous authentication and construction', async () => {
-        const { facade, page } = createRuntime();
+        const { facade, page } = createCaptureApplicationRuntime();
         const run: { run: 'off' | 'native'; } = { run: 'off' };
         const pending = page.connect({ connection: 'default', rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app', rtcCaptureContext: run } });
         run.run = 'native';
@@ -1637,7 +1653,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
         }
     });
     it('captures supported page CRDT context before live connection awaits', async () => {
-        const { facade, page } = createRuntime();
+        const { facade, page } = createCaptureApplicationRuntime();
         const context: { run: 'off' | 'native'; } = { run: 'off' };
         const pending = page.crdt.open({
             name: 'immutable-page-context',

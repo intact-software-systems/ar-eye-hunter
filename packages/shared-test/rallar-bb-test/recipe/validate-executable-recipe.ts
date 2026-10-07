@@ -18,8 +18,19 @@ export function validateExecutableRecipe(recipe: RallarBlackBoxTestRecipe): read
 export function validateExecutableCommand(command: RallarBlackBoxTestCommand): readonly string[] {
     const issues = [...validateCommandCaptureSelection({ ...command })];
     switch (command.kind) {
-        case 'recipe.load':
         case 'recipe.run':
+            if (
+                command.expectedRecipeBodyId !== undefined &&
+                (typeof command.expectedRecipeBodyId !== 'string' || command.expectedRecipeBodyId.trim() === '' ||
+                    command.recipe !== undefined)
+            ) {
+                issues.push('expectedRecipeBodyId requires a nonempty acknowledged load token and no inline recipe.');
+            }
+            if (command.recipe !== undefined) {
+                issues.push(...validateExecutableRecipe(command.recipe));
+            }
+            break;
+        case 'recipe.load':
             if (command.recipe !== undefined) {
                 issues.push(...validateExecutableRecipe(command.recipe));
             }

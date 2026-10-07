@@ -10,7 +10,7 @@ import { createBrowserCommandAbortScope } from '../../shared-test/rallar-bb-test
 import type { BrowserCommandEnvironment } from '../../shared-test/rallar-bb-test/browser/browser-command-environment.ts';
 import { BrowserHttpRequests } from '../../shared-test/rallar-bb-test/browser/browser-http-requests.ts';
 import { toControlEventEnvelope } from '../../shared-test/rallar-bb-test/control-protocol.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import type {
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestRuntimeEventInput
@@ -185,7 +185,8 @@ it.each([undefined, '/api/items'])('preserves explicit foreign HTTP headers with
 it.each(['fetch', 'body'] as const)('retains the reached %s phase without attributing an AbortError to the scope', async (phase) => {
     const failure = new Error('private-error-sentinel');
     failure.name = 'AbortError';
-    const runtime = createRallarBlackBoxBrowserTestRuntime({
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+        readSession: () => undefined,
         now: () => 120,
         fetch: async () => {
             if (phase === 'fetch') {
@@ -225,7 +226,8 @@ it.each(['fetch', 'body'] as const)('retains the reached %s phase without attrib
 it.each(['fetch', 'body'] as const)('observes its actual timeout while awaiting %s without changing the budget', async (phase) => {
     vi.useFakeTimers();
     let reachedFetch = false;
-    const runtime = createRallarBlackBoxBrowserTestRuntime({
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+        readSession: () => undefined,
         fetch: async (_url, request) => {
             reachedFetch = true;
             const signal = request?.signal;
@@ -259,7 +261,8 @@ it.each(['fetch', 'body'] as const)('observes its actual timeout while awaiting 
 
 it('retains actual parent cancellation through the public runtime', async () => {
     const began = Promise.withResolvers<void>();
-    const runtime = createRallarBlackBoxBrowserTestRuntime({
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+        readSession: () => undefined,
         fetch: async (_url, request) => {
             const signal = request?.signal;
             if (!signal) {
@@ -366,7 +369,7 @@ it('preserves timeout precedence, an already aborted parent, and absent abort ow
 
 it.each(['none', 'text', 'json'] as const)('preserves successful %s body handling without producing failure evidence', async (body) => {
     vi.useFakeTimers();
-    const runtime = createRallarBlackBoxBrowserTestRuntime({ fetch: async () => new Response('{"value":1}') });
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ readSession: () => undefined, fetch: async () => new Response('{"value":1}') });
     const result = await runtime.execute({ ...command, timeoutMs: 50, response: { body, maxBodyChars: 3 } });
     expect(result.ok).toBe(true);
     expect(runtime.state().events.some((event) => event.topic === 'rallar.bb.http.failure')).toBe(false);
@@ -376,7 +379,7 @@ it.each(['none', 'text', 'json'] as const)('preserves successful %s body handlin
 });
 
 it('keeps rejected HTTP status outcomes and request preparation failures outside the caught-failure evidence', async () => {
-    const runtime = createRallarBlackBoxBrowserTestRuntime({ fetch: async () => new Response('{}', { status: 403 }) });
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ readSession: () => undefined, fetch: async () => new Response('{}', { status: 403 }) });
     expect(await runtime.execute({ ...command, response: { body: 'json', acceptedStatusCodes: [200] } })).toMatchObject({
         ok: false,
         error: { code: 'RALLAR_BLACK_BOX_HTTP_STATUS_NOT_ACCEPTED' }
@@ -441,7 +444,7 @@ it.each(['before', 'after'] as const)('observes a losing operation rejected %s a
 });
 
 function createContext(): RallarBlackBoxTestCommandContext {
-    const runtime = createRallarBlackBoxBrowserTestRuntime();
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime();
     return {
         state: () => runtime.state(),
         config: () => undefined,

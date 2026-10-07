@@ -1,5 +1,4 @@
 import {
-    isBlackBoxCommandRecord,
     isRallarMessagePayload
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
@@ -27,7 +26,7 @@ import {
     requiresAuthSessionPlaceholder,
     requiresWsTicketPlaceholder
 } from './browser-command-placeholders.ts';
-import { decodeBrowserCommandString } from './browser-command-values.ts';
+import { decodeBrowserCommandString, isRallarSignalingWebSocketMessage } from './browser-command-values.ts';
 import { requestWebSocketTicket } from './browser-http-requests.ts';
 import { addWebSocketListener, toWebSocketClosePayload, waitForWebSocketOpen } from './browser-websocket-events.ts';
 import { sendRallarWebSocketMessage } from './send-rallar-websocket-message.ts';
@@ -196,9 +195,7 @@ export class BrowserWebSocketCommands {
     /** Only a structured Rallar envelope in browser-rallar provider mode travels over the Rallar signaling socket. */
     private usesRallarSignaling(data: RallarMessagePayload, context: RallarBlackBoxTestCommandContext): boolean {
         return Boolean(this.environment.rallarRuntime?.sendWs) &&
-            decodeBrowserCommandString(context.config()?.control?.providerMode) === 'browser-rallar' &&
-            isBlackBoxCommandRecord(data) &&
-            ['typeId', 'topicId', 'contextId', 'resourceId'].some((key) => data[key] !== undefined);
+            isRallarSignalingWebSocketMessage(data, context.config());
     }
 
     private recordOpened(

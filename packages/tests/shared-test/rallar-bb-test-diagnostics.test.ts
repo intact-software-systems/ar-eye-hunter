@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-    createRallarBlackBoxBrowserTestRuntime,
+    createDefaultRallarBlackBoxBrowserTestRuntime,
     createRallarBlackBoxTestRuntime,
     toRallarBlackBoxDiagnostics,
-    toRallarBlackBoxRuntimeDiagnostic,
-    type RallarBlackBoxTestWaitResultValue
+    toRallarBlackBoxRuntimeDiagnostic
 } from '../../shared-test/rallar-bb-test/mod.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
 
@@ -97,15 +96,19 @@ describe('rallar-bb-test runtime diagnostics', () => {
         });
 
         expect(waitResult.ok).toBe(true);
-        expect((waitResult.value as RallarBlackBoxTestWaitResultValue).event?.payload).toMatchObject({
-            diagnosticSchemaVersion: 1,
-            diagnosticTypeId: 'rallar.browser.ws.unhandled_message',
-            topic: 'rallar.browser.ws.unhandled_message',
-            transport: 'ws',
-            severity: 'warning',
-            message: 'Unhandled WS message: room.unknown',
-            data: {
-                typeId: 'room.unknown'
+        expect(waitResult.value).toMatchObject({
+            event: {
+                payload: {
+                    diagnosticSchemaVersion: 1,
+                    diagnosticTypeId: 'rallar.browser.ws.unhandled_message',
+                    topic: 'rallar.browser.ws.unhandled_message',
+                    transport: 'ws',
+                    severity: 'warning',
+                    message: 'Unhandled WS message: room.unknown',
+                    data: {
+                        typeId: 'room.unknown'
+                    }
+                }
             }
         });
         expect(assertResult.ok).toBe(true);
@@ -129,7 +132,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
     });
 
     it('normalizes browser Rallar RTC warning events from the adapter bridge', () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime();
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime();
 
         runtime.receiveRallarBrowserEvent({
             kind: 'diagnostic',
@@ -164,7 +167,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
     });
 
     it('records browser event evidence in the JSON form the control connection carries, all the way down', () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime();
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime();
         const cyclic: { self?: object; } = {};
         cyclic.self = cyclic;
 
@@ -199,7 +202,8 @@ describe('rallar-bb-test runtime diagnostics', () => {
     });
 
     it('normalizes browser-adapter RTC send failures as structured diagnostics', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),

@@ -17,7 +17,7 @@ import { decodeBlackBoxRallarFormationCommandInput } from '@shared-test/black-bo
 import { BlackBoxRallarFormationController } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/formation/formation-controller.ts';
 import { installSpaBrowserRallarEventBridge } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import { toControlEventEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import type {
     RallarRoomTransportStatus,
     RallarRtcRoomTransportStatus,
@@ -329,7 +329,7 @@ it('omits the absent fields from the summary instead of carrying undefined keys'
     expect(Object.keys(summary)).not.toContain('accepted');
     expect(Object.keys(summary)).not.toContain('coverageRate');
     expect(
-        JSON.parse(JSON.stringify(summary)) as BlackBoxRallarFormationSummary
+        JSON.parse(JSON.stringify(summary))
     ).toEqual(summary);
 });
 
@@ -702,7 +702,7 @@ interface RecordedFormationRejection {
 }
 
 async function recordCapturedRejection(harness: FormationHarness): Promise<RecordedFormationRejection> {
-    const runtime = createRallarBlackBoxBrowserTestRuntime({ now: () => 120 });
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ now: () => 120 });
     const target: BlackBoxRallarRuntimeInstallationTarget = {};
     vi.stubGlobal('window', target);
     const cleanup = installSpaBrowserRallarEventBridge(runtime);

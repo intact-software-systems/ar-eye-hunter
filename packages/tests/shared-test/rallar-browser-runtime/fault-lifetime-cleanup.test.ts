@@ -8,7 +8,7 @@ import {
 
 import { createSpaBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import type { RallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 
 import {
@@ -218,7 +218,7 @@ async function createHeldFaultRuntime(): Promise<HeldFaultRuntime> {
     const pageRuntime = await loadRuntime();
     await pageRuntime.connect(CONNECTION);
     vi.stubGlobal('window', { __blackBoxRallar: pageRuntime });
-    const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() });
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ readSession: () => undefined, rallarRuntime: createSpaBrowserRallarRuntime() });
     const injected = await runtime.execute({
         kind: 'recipe.run',
         commandId: 'hold-prefix',

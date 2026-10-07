@@ -11,7 +11,10 @@ import type {
     ControlRunFailureBundle,
     ControlRunSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
+import { decodeJsonValue } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 export const CONTROL_ARTIFACT_SCHEMA_VERSION = 1;
 export const CONTROL_DISTRIBUTED_ARTIFACT_SCHEMA_VERSION = 2;
@@ -45,13 +48,13 @@ function commandAction(command: ControlQueuedCommandSnapshot | undefined): strin
     return command?.envelope.command.kind ?? 'unknown';
 }
 
-function commandConnection(command: ControlQueuedCommandSnapshot | undefined): unknown {
-    if (command?.envelope.command.kind.startsWith('crdt.') && 'handle' in command.envelope.command) {
-        return command.envelope.command.handle;
-    }
-    return command?.envelope.command && 'connection' in command.envelope.command
+function commandConnection(command: ControlQueuedCommandSnapshot | undefined): string | undefined {
+    const value = command?.envelope.command.kind.startsWith('crdt.') && 'handle' in command.envelope.command
+        ? command.envelope.command.handle
+        : command?.envelope.command && 'connection' in command.envelope.command
         ? command.envelope.command.connection
         : undefined;
+    return typeof value === 'string' ? value : undefined;
 }
 
 function commandTransport(command: ControlQueuedCommandSnapshot | undefined): string {
@@ -82,18 +85,16 @@ function artifactEventKind(
     return 'rtc-diagnostic';
 }
 
-function redact<T>(value: T): T {
-    return redactRallarBlackBoxValue(value);
+interface ArtifactSummarySlices {
+    readonly commands?: readonly ControlQueuedCommandSnapshot[];
+    readonly results?: readonly ControlResultEnvelope[];
+    readonly events?: readonly ControlEventEnvelope[];
+    readonly reports?: readonly ControlEventEnvelope[];
 }
 
 function artifactSummary(
     run: ControlRunSnapshot,
-    input: Readonly<{
-        commands?: readonly ControlQueuedCommandSnapshot[];
-        results?: readonly ControlResultEnvelope[];
-        events?: readonly ControlEventEnvelope[];
-        reports?: readonly ControlEventEnvelope[];
-    }> = {}
+    input: ArtifactSummarySlices = {}
 ): ControlRunArtifactSummary {
     const results = input.results ?? run.results;
     const success = results.filter((result) => result.ok).length;
@@ -113,14 +114,14 @@ function resultStatus(result: ControlResultEnvelope): 'SUCCESS' | 'FAILURE' {
     return result.ok ? 'SUCCESS' : 'FAILURE';
 }
 
-function resultActual(result: ControlResultEnvelope): unknown {
-    return result.ok ? result.result?.value ?? result.result : result.error;
+function resultActual(result: ControlResultEnvelope): ApiJsonValue | undefined {
+    return decodeJsonValue(result.ok ? result.result?.value ?? result.result : result.error);
 }
 
 function resultRows(
     run: ControlRunSnapshot,
     results: readonly ControlResultEnvelope[] = run.results
-): readonly Record<string, unknown>[] {
+): readonly RallarBlackBoxTestRecord[] {
     const commands = commandById(run);
     return results.map((result) => controlResultArtifactRow(result, commands.get(result.commandId)));
 }
@@ -128,8 +129,8 @@ function resultRows(
 export function controlResultArtifactRow(
     result: ControlResultEnvelope,
     command?: ControlQueuedCommandSnapshot
-): Record<string, unknown> {
-    return redact({
+): RallarBlackBoxTestRecord {
+    return redactRallarBlackBoxValue({
         resultKey: `${result.agentId}:${result.commandId}`,
         name: result.commandId,
         status: resultStatus(result),
@@ -139,6 +140,7 @@ export function controlResultArtifactRow(
         agentId: result.agentId,
         commandId: result.commandId,
         replayed: result.replayed,
+        attribution: result.attribution,
         ok: result.ok,
         actual: resultActual(result)
     });
@@ -165,8 +167,8 @@ export function controlEventArtifactJsonl(
     return `${JSON.stringify(artifactEventFromControlEvent(event, command))}\n`;
 }
 
-function artifactEventFromResult(row: Record<string, unknown>): Record<string, unknown> {
-    return redact({
+function artifactEventFromResult(row: RallarBlackBoxTestRecord): RallarBlackBoxTestRecord {
+    return redactRallarBlackBoxValue({
         kind: 'step-result',
         name: row.name,
         status: row.status,
@@ -175,15 +177,16 @@ function artifactEventFromResult(row: Record<string, unknown>): Record<string, u
         connection: row.connection,
         agentId: row.agentId,
         commandId: row.commandId,
-        actual: row.actual
+        actual: row.actual,
+        attribution: row.attribution
     });
 }
 
 function artifactEventFromControlEvent(
     event: ControlEventEnvelope,
     command: ControlQueuedCommandSnapshot | undefined
-): Record<string, unknown> {
-    return redact({
+): RallarBlackBoxTestRecord {
+    return redactRallarBlackBoxValue({
         kind: artifactEventKind(event, command),
         name: event.eventId ?? event.commandId ?? event.kind,
         status: event.kind,
@@ -197,7 +200,7 @@ function artifactEventFromControlEvent(
     });
 }
 
-function jsonl(values: readonly unknown[]): string {
+function jsonl(values: readonly RallarBlackBoxTestRecord[]): string {
     return values.map((value) => JSON.stringify(value)).join('\n') + (values.length > 0 ? '\n' : '');
 }
 
@@ -208,12 +211,14 @@ export function controlRunEventsJsonl(run: ControlRunSnapshot): string {
     });
 }
 
+interface ControlRunEventSlices {
+    readonly results: readonly ControlResultEnvelope[];
+    readonly events: readonly ControlEventEnvelope[];
+}
+
 function controlRunEventsJsonlFromSlices(
     run: ControlRunSnapshot,
-    input: Readonly<{
-        results: readonly ControlResultEnvelope[];
-        events: readonly ControlEventEnvelope[];
-    }>
+    input: ControlRunEventSlices
 ): string {
     const rows = resultRows(run, input.results);
     const commands = commandById(run);
@@ -238,7 +243,7 @@ export function controlRunFailureBundle(run: ControlRunSnapshot): ControlRunFail
     return {
         summary: artifactSummary(run),
         failures,
-        outputs: redact({
+        outputs: redactRallarBlackBoxValue({
             runId: run.runId,
             generatedFrom: 'rallar-black-box-control-server',
             agentIds: run.agents.map((agent) => agent.agentId),
@@ -247,13 +252,12 @@ export function controlRunFailureBundle(run: ControlRunSnapshot): ControlRunFail
     };
 }
 
-export function createControlRunArtifactBundle(
+function toControlRunArtifactReport(
     run: ControlRunSnapshot,
-    generatedAtEpochMs = Date.now()
-): ControlRunArtifactBundle {
-    const rows = resultRows(run);
-    const summary = artifactSummary(run);
-    const outputs = redact({
+    rows: readonly RallarBlackBoxTestRecord[],
+    summary: ControlRunArtifactSummary
+): RallarBlackBoxTestRecord {
+    const outputs = redactRallarBlackBoxValue({
         runId: run.runId,
         agents: run.agents.map((agent) => ({
             agentId: agent.agentId,
@@ -267,7 +271,7 @@ export function createControlRunArtifactBundle(
         eventCount: run.events.length,
         reportCount: run.reports.length
     });
-    const report = {
+    return {
         schemaVersion: CONTROL_ARTIFACT_SCHEMA_VERSION,
         artifactSchemaVersion: CONTROL_ARTIFACT_SCHEMA_VERSION,
         summary,
@@ -279,7 +283,14 @@ export function createControlRunArtifactBundle(
             stats: run.stats.length
         }
     };
-    const metadata = {
+}
+
+function toControlRunArtifactMetadata(
+    run: ControlRunSnapshot,
+    summary: ControlRunArtifactSummary,
+    generatedAtEpochMs: number
+): RallarBlackBoxTestRecord {
+    return {
         schemaVersion: CONTROL_ARTIFACT_SCHEMA_VERSION,
         artifactSchemaVersion: CONTROL_ARTIFACT_SCHEMA_VERSION,
         generatedAtEpochMs,
@@ -296,26 +307,42 @@ export function createControlRunArtifactBundle(
             run.runId
         ]
     };
+}
+
+export function createControlRunArtifactBundle(
+    run: ControlRunSnapshot,
+    generatedAtEpochMs = Date.now()
+): ControlRunArtifactBundle {
+    const rows = resultRows(run);
+    const summary = artifactSummary(run);
 
     return {
         artifactSchemaVersion: CONTROL_ARTIFACT_SCHEMA_VERSION,
         runId: run.runId,
         generatedAtEpochMs,
         files: {
-            'report.json': JSON.stringify(report, null, 2),
+            'report.json': JSON.stringify(toControlRunArtifactReport(run, rows, summary), null, 2),
             'results.jsonl': controlRunResultsJsonl(run),
             'events.jsonl': controlRunEventsJsonl(run),
             'failures.json': JSON.stringify(controlRunFailureBundle(run), null, 2),
-            'metadata.json': JSON.stringify(metadata, null, 2)
+            'metadata.json': JSON.stringify(toControlRunArtifactMetadata(run, summary, generatedAtEpochMs), null, 2)
         }
     };
 }
 
-export function createControlDistributedRunArtifactBundle(
+interface DistributedArtifactEvidence {
+    readonly linkedCommands: readonly ControlQueuedCommandSnapshot[];
+    readonly linkedResults: readonly ControlResultEnvelope[];
+    readonly linkedEvents: readonly ControlEventEnvelope[];
+    readonly linkedReports: readonly ControlEventEnvelope[];
+    readonly summary: ControlRunArtifactSummary;
+    readonly resultList: readonly RallarBlackBoxTestRecord[];
+}
+
+function toDistributedArtifactEvidence(
     distributedRun: ControlDistributedRunSnapshot,
-    controlRun: ControlRunSnapshot | undefined,
-    generatedAtEpochMs = Date.now()
-): ControlDistributedRunArtifactBundle {
+    controlRun: ControlRunSnapshot | undefined
+): DistributedArtifactEvidence {
     const linkedCommandIds = new Set(distributedRun.commandLinks.map((link) => link.commandId));
     const linkedCommands = (controlRun?.commands ?? [])
         .filter((command) => linkedCommandIds.has(command.envelope.commandId));
@@ -324,12 +351,12 @@ export function createControlDistributedRunArtifactBundle(
     const linkedEvents = (controlRun?.events ?? [])
         .filter((event) =>
             (event.commandId !== undefined && linkedCommandIds.has(event.commandId)) ||
-            payloadReferencesDistributedRun(event.payload, distributedRun.distributedRunId)
+            payloadReferencesDistributedRun(decodeJsonValue(event.payload), distributedRun.distributedRunId)
         );
     const linkedReports = (controlRun?.reports ?? [])
         .filter((report) =>
             (report.commandId !== undefined && linkedCommandIds.has(report.commandId)) ||
-            payloadReferencesDistributedRun(report.payload, distributedRun.distributedRunId)
+            payloadReferencesDistributedRun(decodeJsonValue(report.payload), distributedRun.distributedRunId)
         );
     const summary = controlRun
         ? artifactSummary(controlRun, {
@@ -348,7 +375,14 @@ export function createControlDistributedRunArtifactBundle(
             reportCount: 0
         };
     const resultList = controlRun ? resultRows(controlRun, linkedResults) : [];
-    const output = redact({
+    return { linkedCommands, linkedResults, linkedEvents, linkedReports, summary, resultList };
+}
+
+function toDistributedArtifactOutput(
+    distributedRun: ControlDistributedRunSnapshot,
+    linkedCommands: readonly ControlQueuedCommandSnapshot[]
+): RallarBlackBoxTestRecord {
+    return redactRallarBlackBoxValue({
         distributedRunId: distributedRun.distributedRunId,
         controlRunId: distributedRun.controlRunId,
         state: distributedRun.state,
@@ -359,7 +393,19 @@ export function createControlDistributedRunArtifactBundle(
         linkedCommandCount: linkedCommands.length,
         generatedFrom: 'rallar-black-box-control-server'
     });
-    const report = redact({
+}
+
+interface DistributedArtifactReportInput {
+    readonly distributedRun: ControlDistributedRunSnapshot;
+    readonly controlRun: ControlRunSnapshot | undefined;
+    readonly evidence: DistributedArtifactEvidence;
+    readonly output: RallarBlackBoxTestRecord;
+}
+
+function toDistributedArtifactReport(input: DistributedArtifactReportInput): RallarBlackBoxTestRecord {
+    const { distributedRun, controlRun, evidence, output } = input;
+    const { summary, resultList, linkedEvents, linkedReports } = evidence;
+    return redactRallarBlackBoxValue({
         schemaVersion: CONTROL_DISTRIBUTED_ARTIFACT_SCHEMA_VERSION,
         artifactSchemaVersion: CONTROL_DISTRIBUTED_ARTIFACT_SCHEMA_VERSION,
         execution: 'distributed-run',
@@ -381,7 +427,15 @@ export function createControlDistributedRunArtifactBundle(
             linkedReports: linkedReports.length
         }
     });
-    const failures = redact({
+}
+
+function toDistributedArtifactFailures(
+    distributedRun: ControlDistributedRunSnapshot,
+    evidence: DistributedArtifactEvidence,
+    output: RallarBlackBoxTestRecord
+): RallarBlackBoxTestRecord {
+    const { summary, resultList } = evidence;
+    return redactRallarBlackBoxValue({
         summary,
         failures: [
             ...distributedRun.rollup.failures.map((failure) => ({
@@ -397,7 +451,14 @@ export function createControlDistributedRunArtifactBundle(
         ],
         outputs: output
     });
-    const metadata = redact({
+}
+
+function toDistributedArtifactMetadata(
+    distributedRun: ControlDistributedRunSnapshot,
+    summary: ControlRunArtifactSummary,
+    generatedAtEpochMs: number
+): RallarBlackBoxTestRecord {
+    return redactRallarBlackBoxValue({
         schemaVersion: CONTROL_DISTRIBUTED_ARTIFACT_SCHEMA_VERSION,
         artifactSchemaVersion: CONTROL_DISTRIBUTED_ARTIFACT_SCHEMA_VERSION,
         generatedAtEpochMs,
@@ -415,41 +476,52 @@ export function createControlDistributedRunArtifactBundle(
             distributedRun.distributedRunId
         ]
     });
+}
+
+export function createControlDistributedRunArtifactBundle(
+    distributedRun: ControlDistributedRunSnapshot,
+    controlRun: ControlRunSnapshot | undefined,
+    generatedAtEpochMs = Date.now()
+): ControlDistributedRunArtifactBundle {
+    const evidence = toDistributedArtifactEvidence(distributedRun, controlRun);
+    const output = toDistributedArtifactOutput(distributedRun, evidence.linkedCommands);
 
     return {
         artifactSchemaVersion: CONTROL_DISTRIBUTED_ARTIFACT_SCHEMA_VERSION,
         distributedRunId: distributedRun.distributedRunId,
         generatedAtEpochMs,
         files: {
-            'distributed-run.json': JSON.stringify(redact(distributedRun), null, 2),
-            'manifest.json': JSON.stringify(redact(distributedRun.manifest), null, 2),
-            'target-resolution.json': JSON.stringify(redact(distributedRun.targetResolution ?? null), null, 2),
-            'control-run.json': JSON.stringify(redact(controlRun ?? null), null, 2),
-            'report.json': JSON.stringify(report, null, 2),
-            'failures.json': JSON.stringify(failures, null, 2),
-            'metadata.json': JSON.stringify(metadata, null, 2)
+            'distributed-run.json': JSON.stringify(redactRallarBlackBoxValue(distributedRun), null, 2),
+            'manifest.json': JSON.stringify(redactRallarBlackBoxValue(distributedRun.manifest), null, 2),
+            'target-resolution.json': JSON.stringify(
+                redactRallarBlackBoxValue(distributedRun.targetResolution ?? null),
+                null,
+                2
+            ),
+            'control-run.json': JSON.stringify(redactRallarBlackBoxValue(controlRun ?? null), null, 2),
+            'report.json': JSON.stringify(
+                toDistributedArtifactReport({ distributedRun, controlRun, evidence, output }),
+                null,
+                2
+            ),
+            'failures.json': JSON.stringify(toDistributedArtifactFailures(distributedRun, evidence, output), null, 2),
+            'metadata.json': JSON.stringify(
+                toDistributedArtifactMetadata(distributedRun, evidence.summary, generatedAtEpochMs),
+                null,
+                2
+            )
         }
     };
 }
 
-function payloadReferencesDistributedRun(payload: unknown, distributedRunId: string): boolean {
-    if (!payload || !distributedRunId) {
-        return false;
-    }
-    try {
-        return JSON.stringify(payload).includes(distributedRunId);
-    }
-    catch (_error) {
-        return false;
-    }
+function payloadReferencesDistributedRun(payload: ApiJsonValue | undefined, distributedRunId: string): boolean {
+    return payload !== undefined && distributedRunId.length > 0 && JSON.stringify(payload).includes(distributedRunId);
 }
 
 export function controlRunArtifactFileNameFromValue(
     value: string
 ): ControlRunArtifactFileName | undefined {
-    return CONTROL_ARTIFACT_FILE_NAMES.includes(value as ControlRunArtifactFileName)
-        ? value as ControlRunArtifactFileName
-        : undefined;
+    return CONTROL_ARTIFACT_FILE_NAMES.find((fileName) => fileName === value);
 }
 
 export function controlRunArtifactContentType(fileName: ControlRunArtifactFileName): string {

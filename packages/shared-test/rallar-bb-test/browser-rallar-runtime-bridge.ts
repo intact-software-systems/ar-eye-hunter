@@ -22,6 +22,10 @@ let runtimeImportPromise: Promise<void> | undefined;
 
 export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRuntime {
     return {
+        rtcCaptureSupport: Object.freeze({
+            configurationVersion: 1,
+            modes: Object.freeze(['off', 'signaling', 'native'] as const)
+        }),
         authenticate: async (config) =>
             await (await readBrowserRallarRuntime()).authenticate(decodeBlackBoxRallarConnectionConfig(config)),
         connect: async (config) =>

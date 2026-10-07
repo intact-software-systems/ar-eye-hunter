@@ -19,7 +19,7 @@ import { decodeBlackBoxRallarMessageSendInput } from '@shared-test/black-box-run
 import { createSpaBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import type { RallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/browser-delivery-composition.ts';
 import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/rallar.ts';
@@ -711,7 +711,11 @@ it('waits the 5,000 ms default admission budget when a send names neither timeou
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await native.connect(connection);
     vi.stubGlobal('window', { __blackBoxRallar: native });
-    const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime(), now: Date.now });
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+        readSession: () => undefined,
+        rallarRuntime: createSpaBrowserRallarRuntime(),
+        now: Date.now
+    });
     const { timeoutMs: _timeoutMs, ...unbounded } = send;
     let settled = false;
     const sending = runtime.execute({ kind: 'messages.send', commandId: 'default-budget', ...unbounded, ttlMs: 60_000 });
@@ -740,7 +744,11 @@ it('clamps an already-elapsed command deadline to a zero admission wait', async 
         }
     };
     vi.stubGlobal('window', { __blackBoxRallar: recordingRuntime });
-    const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime(), now: Date.now });
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+        readSession: () => undefined,
+        rallarRuntime: createSpaBrowserRallarRuntime(),
+        now: Date.now
+    });
     const sending = runtime.execute({ kind: 'messages.send', commandId: 'elapsed', ...send, timeoutMs: 500, deadlineEpochMs: 1_500, ttlMs: 60_000 });
 
     await vi.advanceTimersByTimeAsync(0);
@@ -755,7 +763,11 @@ it('carries the earlier absolute command deadline into a pending admission wait'
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await native.connect(connection);
     vi.stubGlobal('window', { __blackBoxRallar: native });
-    const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime(), now: Date.now });
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+        readSession: () => undefined,
+        rallarRuntime: createSpaBrowserRallarRuntime(),
+        now: Date.now
+    });
     const sending = runtime.execute({ kind: 'messages.send', commandId: 'bounded', ...send, timeoutMs: 500, deadlineEpochMs: 1_037, ttlMs: 60_000 });
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(37);
@@ -781,7 +793,7 @@ it('keeps the authored bounded-rejection cancellation probe aligned with a real 
     sendThroughProductionSender(8);
     await native.connect(connection);
     vi.stubGlobal('window', { __blackBoxRallar: native });
-    const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() });
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ readSession: () => undefined, rallarRuntime: createSpaBrowserRallarRuntime() });
     const scenario = createAlmConformanceRecipes({
         group: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
         carrier: 'ws',
@@ -791,8 +803,10 @@ it('keeps the authored bounded-rejection cancellation probe aligned with a real 
         deadlineMs: 18_000
     })
         .find((entry) => entry.scenarioId === 'bounded-rejection');
-    expect(scenario).toBeDefined();
-    const commands = scenario!.sender.commands.filter((command) => ['messages.send', 'messages.observe', 'messages.cancel'].includes(command.kind));
+    if (!scenario) {
+        throw new Error('Expected the canonical bounded-rejection conformance recipe.');
+    }
+    const commands = scenario.sender.commands.filter((command) => ['messages.send', 'messages.observe', 'messages.cancel'].includes(command.kind));
     expect(new Set(commands.map((command) => command.commandId)).size).toBe(commands.length);
     for (const command of commands) {
         const result = await runtime.execute(command);
@@ -819,7 +833,10 @@ async function connectRtcRecipeRuntime(): Promise<RtcRecipeRuntime> {
     const native = await loadRuntime();
     await native.connect({ ...connection, rallar: { ...connection.rallar, transport: 'messages.rtc', typeId: 'alm.conformance' } });
     vi.stubGlobal('window', { __blackBoxRallar: native });
-    return { native, runtime: createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime(), now: Date.now }) };
+    return {
+        native,
+        runtime: createDefaultRallarBlackBoxBrowserTestRuntime({ readSession: () => undefined, rallarRuntime: createSpaBrowserRallarRuntime(), now: Date.now })
+    };
 }
 
 it.each([

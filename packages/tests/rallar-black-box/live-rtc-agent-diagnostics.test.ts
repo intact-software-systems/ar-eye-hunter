@@ -7,7 +7,7 @@ import { controlEventArtifactJsonl } from '../../../apps/rallar-black-box-contro
 import { BlackBoxRallarRuntimeDiagnostics } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts';
 import { toRallarBrowserEventInput } from '../../shared-test/rallar-bb-test/browser/to-rallar-browser-event-input.ts';
 import { toControlEventEnvelope } from '../../shared-test/rallar-bb-test/control-protocol.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/mod.ts';
 import type { ApiJsonValue } from '../../shared/api/api-json-value.ts';
 
 import {
@@ -1253,7 +1253,7 @@ describe('serialized original native evidence', () => {
         }
     );
 
-    it.each(['snapshot', 'state', 'error', 'coverage', 'identity', 'capture'])('rejects raw private keys at the nested %s boundary', (boundary) => {
+    it.each(['snapshot', 'state', 'error', 'coverage', 'identity', 'capture'] as const)('rejects raw private keys at the nested %s boundary', (boundary) => {
         const native = nativeSnapshotFixture();
         const poison = {
             sdp: 'private-sdp',
@@ -1268,7 +1268,7 @@ describe('serialized original native evidence', () => {
             ? { ...native, firstError: { ...native.firstError, coverage: { ...native.firstError.coverage, ...poison } } }
             : boundary === 'error'
             ? { ...native, firstError: { ...native.firstError, ...poison } }
-            : { ...native, [boundary]: { ...native[boundary as 'state' | 'identity' | 'capture'], ...poison } };
+            : { ...native, [boundary]: { ...native[boundary], ...poison } };
         const history = toNotificationHistory(serializeNativeRows([{ kind: 'native-lifetime', action: 'retiring', retirement: 'reset', native: poisoned }]));
         expect(history).toMatchObject({ events: [], nativeObservation: { malformedRows: true } });
         expect(JSON.stringify(history)).not.toContain('private-');
@@ -1308,7 +1308,7 @@ function nativeSnapshotFixture() {
 }
 
 function serializeNativeRows(rows: readonly object[]): string {
-    const runtime = createRallarBlackBoxBrowserTestRuntime({ now: () => 120 });
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ now: () => 120 });
     const diagnostics = new BlackBoxRallarRuntimeDiagnostics({
         now: () => 119,
         publish: (event) =>

@@ -2,25 +2,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     takeAgentResumeRecord,
-    writeAgentResumeRecord,
-    type AgentResumeRecord
+    writeAgentResumeRecord
 } from '../../shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import {
     createRallarBlackBoxBrowserControlAgent,
     type RallarBlackBoxBrowserControlAgent
 } from '../../shared-test/rallar-bb-test/browser-control-agent.ts';
+import { decodeBrowserCommandRecord } from '../../shared-test/rallar-bb-test/browser/browser-command-values.ts';
 import {
     RallarBlackBoxControlClient,
     type RallarBlackBoxControlSocketListener
 } from '../../shared-test/rallar-bb-test/control-client.ts';
-import type {
-    ControlClientEnvelope,
-    ControlCommandEnvelope,
-    ControlRegisterEnvelope,
-    ControlResultEnvelope
+import {
+    parseControlClientMessage,
+    type ControlClientEnvelope,
+    type ControlCommandEnvelope,
+    type ControlRegisterEnvelope,
+    type ControlResultEnvelope
 } from '../../shared-test/rallar-bb-test/control-protocol.ts';
+import type { RallarBlackBoxTestRecord } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createBrowserTestStorage } from './browser-test-storage.ts';
 
 const RESUME_KEY = 'rallar-bb-agent-resume';
 const SEARCH = '?mode=control&provider=simulated&autoConnect=1&controlUrl=ws%3A%2F%2Fcontrol.example.test%2Fcontrol&runId=run-reload&agentId=agent-reload';
@@ -61,6 +64,7 @@ class FakeControlSocket {
 function createReloadAgent(sockets: FakeControlSocket[]): RallarBlackBoxBrowserControlAgent {
     const runtime = createRallarBlackBoxTestRuntime();
     const controlClient = new RallarBlackBoxControlClient({
+        now: Date.now,
         runtime,
         webSocketFactory: () => {
             const socket = new FakeControlSocket();
@@ -81,7 +85,13 @@ function createReloadAgent(sockets: FakeControlSocket[]): RallarBlackBoxBrowserC
 }
 
 function toEnvelopes(sent: readonly string[]): ControlClientEnvelope[] {
-    return sent.map((serialized) => JSON.parse(serialized) as ControlClientEnvelope);
+    return sent.map((serialized) => {
+        const parsed = parseControlClientMessage(serialized);
+        if (!parsed.ok) {
+            throw new Error(parsed.error);
+        }
+        return parsed.envelope;
+    });
 }
 
 function toResultEnvelopes(sent: readonly string[], commandId: string): ControlResultEnvelope[] {
@@ -106,53 +116,56 @@ function toReloadCommandEnvelope(commandId: string): ControlCommandEnvelope {
     };
 }
 
-function readStoredResumeRecord(): AgentResumeRecord | undefined {
+function readStoredResumeRecord(): RallarBlackBoxTestRecord | undefined {
     const raw = globalThis.sessionStorage.getItem(RESUME_KEY);
-    return raw === null ? undefined : JSON.parse(raw) as AgentResumeRecord;
+    return raw === null ? undefined : decodeBrowserCommandRecord(JSON.parse(raw));
 }
 
 describe('browser control-agent reload', () => {
     beforeEach(() => {
-        globalThis.sessionStorage.clear();
+        vi.stubGlobal('localStorage', createBrowserTestStorage());
+        vi.stubGlobal('sessionStorage', createBrowserTestStorage());
     });
 
     afterEach(() => {
         vi.restoreAllMocks();
+        vi.unstubAllGlobals();
     });
 
     it('sends the agent.reload result before reloading and persists the resume record', async () => {
         const sockets: FakeControlSocket[] = [];
         const sentAtReload: ControlClientEnvelope[][] = [];
         const agent = createReloadAgent(sockets);
-        await agent.start();
-        const socket = sockets[0];
-        const reload = vi
-            .spyOn(globalThis.location, 'reload')
-            .mockImplementation(() => {
-                sentAtReload.push(toEnvelopes(socket.sent));
+        try {
+            await agent.start();
+            const socket = sockets[0];
+            const reload = vi
+                .spyOn(globalThis.location, 'reload')
+                .mockImplementation(() => {
+                    sentAtReload.push(toEnvelopes(socket.sent));
+                });
+            socket.open();
+
+            socket.publishMessage(JSON.stringify(toReloadCommandEnvelope('reload-1')));
+            await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+
+            // The result must already be on the wire when the page goes away.
+            expect(toResultEnvelopes(socket.sent, 'reload-1')).toHaveLength(1);
+            expect(sentAtReload[0].filter((envelope) => envelope.kind === 'result' && envelope.commandId === 'reload-1')).toHaveLength(1);
+            expect(toResultEnvelopes(socket.sent, 'reload-1')[0]).toMatchObject({
+                ok: true,
+                result: {
+                    status: 'ok',
+                    value: { reloading: true, readyTimeoutMs: 30_000 }
+                }
             });
-        socket.open();
 
-        socket.publishMessage(JSON.stringify(toReloadCommandEnvelope('reload-1')));
-        await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
-
-        // The result must already be on the wire when the page goes away.
-        expect(toResultEnvelopes(socket.sent, 'reload-1')).toHaveLength(1);
-        expect(sentAtReload[0].filter((envelope) => envelope.kind === 'result' && envelope.commandId === 'reload-1')).toHaveLength(1);
-        expect(toResultEnvelopes(socket.sent, 'reload-1')[0]).toMatchObject({
-            ok: true,
-            result: {
-                status: 'ok',
-                value: { reloading: true, readyTimeoutMs: 30_000 }
-            }
-        });
-
-        const record = readStoredResumeRecord();
-        expect(record?.runId).toBe('run-reload');
-        expect(record?.agentId).toBe('agent-reload');
-        expect(record?.completedCommandIds).toContain('reload-1');
-
-        agent.dispose();
+            const record = readStoredResumeRecord();
+            expect(record).toMatchObject({ runId: 'run-reload', agentId: 'agent-reload', completedCommandIds: expect.arrayContaining(['reload-1']) });
+        }
+        finally {
+            agent.dispose();
+        }
     });
 
     it('registers a rebooted agent with the resumed command ids and clears the record', async () => {
@@ -163,17 +176,19 @@ describe('browser control-agent reload', () => {
         });
         const sockets: FakeControlSocket[] = [];
         const agent = createReloadAgent(sockets);
+        try {
+            await agent.start();
+            sockets[0].open();
 
-        await agent.start();
-        sockets[0].open();
-
-        const registers = toRegisterEnvelopes(sockets[0].sent);
-        expect(registers).toHaveLength(1);
-        expect(registers[0].resume.completedCommandIds).toContain('reload-1');
-        expect(registers[0].resume.completedCommandIds).toContain('configure-control-1');
-        expect(globalThis.sessionStorage.getItem(RESUME_KEY)).toBeNull();
-
-        agent.dispose();
+            const registers = toRegisterEnvelopes(sockets[0].sent);
+            expect(registers).toHaveLength(1);
+            expect(registers[0].resume.completedCommandIds).toContain('reload-1');
+            expect(registers[0].resume.completedCommandIds).toContain('configure-control-1');
+            expect(globalThis.sessionStorage.getItem(RESUME_KEY)).toBeNull();
+        }
+        finally {
+            agent.dispose();
+        }
     });
 
     it('does not resume a record written by a different run or agent', () => {

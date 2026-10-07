@@ -10,6 +10,7 @@ import type {
     RallarBlackBoxControlAgentCrdtCapability
 } from '../distributed-run.ts';
 import type {
+    RallarBlackBoxRtcCaptureSupport,
     RallarBlackBoxTestAssertOperator,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestConfig,
@@ -22,6 +23,8 @@ import {
     decodeControlAgentMessagingCapability
 } from './control-agent-messaging-capability.ts';
 
+import { decodeRtcCaptureSupport, type ParsedRtcCaptureSupport } from './rtc-capture-support.ts';
+
 export interface DistributedAssertionFeatures {
     readonly absence: boolean;
     readonly untilLoop: boolean;
@@ -29,6 +32,8 @@ export interface DistributedAssertionFeatures {
 }
 
 export interface ToControlAgentCapabilitiesInput {
+    /** Supplied only by the installed executor's construction owner; never inferred from configuration. */
+    readonly rtcCaptureSupport?: RallarBlackBoxRtcCaptureSupport;
     /** Absent before the agent has loaded a test configuration. */
     readonly config: RallarBlackBoxTestConfig | undefined;
     /** Absent when the agent's configuration names no provider mode. */
@@ -38,6 +43,7 @@ export interface ToControlAgentCapabilitiesInput {
 }
 
 interface DecodedCapabilityBlocks {
+    readonly rtcCapture: Either<string, ParsedRtcCaptureSupport>;
     readonly crdt: RallarBlackBoxControlAgentCrdtCapability;
     readonly assertions: Either<string, RallarBlackBoxControlAgentAssertionsCapability>;
     readonly messaging: Either<string, RallarBlackBoxControlAgentCapabilities['messaging']>;
@@ -71,7 +77,9 @@ export function toControlAgentCapabilities(
 ): RallarBlackBoxControlAgentCapabilities {
     const crdtSupported = isCrdtCapableProvider(input.providerMode) ||
         hasCrdtRuntimeHints(input.config);
+    const rtcCapture = decodeRtcCaptureSupport(input.rtcCaptureSupport).right?.support;
     return {
+        ...(rtcCapture === undefined ? {} : { rtcCapture }),
         crdt: {
             supported: crdtSupported,
             transports: crdtSupported ? CONTROL_AGENT_CRDT_TRANSPORTS : [],
@@ -96,7 +104,13 @@ export function decodeControlAgentCapabilities(value: unknown): Either<string, R
     const messaging = decodeControlAgentMessagingCapability(value.messaging);
     return decodeCrdtCapability(value.crdt).flatMap(
         (issue) => Either.ofLeft(issue),
-        (crdt) => toDecodedControlAgentCapabilities({ crdt, assertions, messaging })
+        (crdt) =>
+            toDecodedControlAgentCapabilities({
+                crdt,
+                assertions,
+                messaging,
+                rtcCapture: decodeRtcCaptureSupport(value.rtcCapture)
+            })
     );
 }
 
@@ -198,7 +212,17 @@ function toDecodedControlAgentCapabilities(
 ): Either<string, RallarBlackBoxControlAgentCapabilities> {
     return blocks.assertions.flatMap(
         (issue) => Either.ofLeft(issue),
-        (assertions) => blocks.messaging.mapRight((messaging) => ({ crdt: blocks.crdt, assertions, messaging }))
+        (assertions) =>
+            blocks.messaging.flatMap(
+                (issue) => Either.ofLeft(issue),
+                (messaging) =>
+                    blocks.rtcCapture.mapRight(({ support: rtcCapture }) => ({
+                        crdt: blocks.crdt,
+                        assertions,
+                        messaging,
+                        ...(rtcCapture === undefined ? {} : { rtcCapture })
+                    }))
+            )
     );
 }
 

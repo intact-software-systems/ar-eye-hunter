@@ -5,6 +5,29 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Independent Task61 review: these anonymous native-test JSON boundaries
+    // are exact module owners (symbol undefined), not named-function waivers.
+    // HTTP records/files/strings are guarded before local assertions; snapshots
+    // use public decoders/collection validation before restore. Serialized body
+    // and manifest observations go directly to independent literal equality.
+    // No unknown becomes trusted execution input. Every future touched use in
+    // these owners needs full validation/equality and propagation review; this
+    // inventory neither counts nor certifies future occurrences.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/test/control-distributed-api.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/test/control-distributed-service.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/test/distributed-run-request-codec.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // The existing browser facade entry exports the single intentional public
     // surface; concrete capabilities remain owned in their feature modules.
     // Its typed capture refusal adds the thirteenth value; further exports

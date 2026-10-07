@@ -13,6 +13,9 @@ import {
     toRallarBlackBoxCompositeResultTree,
     type RallarBlackBoxCompositeResultSummary,
     type RallarBlackBoxCompositeResultTreeNode,
+    type RallarBlackBoxTestCommand,
+    type RallarBlackBoxTestCommandContext,
+    type RallarBlackBoxTestCommandOutcome,
     type RallarBlackBoxTestParallelChildResult,
     type RallarBlackBoxTestResult
 } from '../../shared-test/rallar-bb-test/mod.ts';
@@ -97,41 +100,96 @@ function toParallelChild(child: RecordedParallelChild): RecordedParallelChildWit
     };
 }
 
+const NESTED_COMPOSITE_COMMAND: RallarBlackBoxTestCommand = {
+    kind: 'parallel',
+    commandId: 'composite-root',
+    continueOnFailure: true,
+    maxConcurrency: 1,
+    groups: [
+        {
+            groupId: 'left',
+            commands: [
+                {
+                    kind: 'loop',
+                    commandId: 'inner-loop',
+                    count: 2,
+                    continueOnFailure: true,
+                    commands: [
+                        {
+                            kind: 'rtc.send',
+                            commandId: 'position-send',
+                            send: {
+                                frame: '{loop.iteration}'
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            groupId: 'right',
+            commands: [
+                {
+                    kind: 'wait',
+                    commandId: 'wait-ready',
+                    match: {
+                        topic: 'rallar.test.ready',
+                        payloadPath: 'state',
+                        equals: 'ready'
+                    }
+                },
+                {
+                    kind: 'assert',
+                    commandId: 'assert-event-count',
+                    source: 'events.length',
+                    operator: 'gte',
+                    expected: 1
+                }
+            ]
+        }
+    ]
+};
+
+function toSyntheticSendOutcome(
+    command: RallarBlackBoxTestCommand,
+    context: RallarBlackBoxTestCommandContext
+): RallarBlackBoxTestCommandOutcome | undefined {
+    if (command.kind !== 'rtc.send') {
+        return undefined;
+    }
+
+    const loop = command.metadata?.loop;
+    if (isJsonRecordValue(loop) && loop.iteration === 2) {
+        return {
+            status: 'failed',
+            error: {
+                code: 'SEND_FAILED',
+                message: 'Synthetic send failure.',
+                details: {
+                    token: 'secret-token',
+                    body: 'contains hidden-body'
+                }
+            },
+            nextStatus: 'failed'
+        };
+    }
+
+    return {
+        status: 'ok',
+        value: {
+            sent: true,
+            password: 'secret-token',
+            metadata: command.metadata
+        },
+        nextStatus: context.state().status
+    };
+}
+
 async function runNestedCompositeResult(): Promise<RallarBlackBoxTestResult> {
     let now = 1_000;
     const runtime = createRallarBlackBoxTestRuntime({
         now: () => now++,
-        commandExecutor: (command, context) => {
-            if (command.kind !== 'rtc.send') {
-                return undefined;
-            }
-
-            const loop = command.metadata?.loop;
-            if (isJsonRecordValue(loop) && loop.iteration === 2) {
-                return {
-                    status: 'failed',
-                    error: {
-                        code: 'SEND_FAILED',
-                        message: 'Synthetic send failure.',
-                        details: {
-                            token: 'secret-token',
-                            body: 'contains hidden-body'
-                        }
-                    },
-                    nextStatus: 'failed'
-                };
-            }
-
-            return {
-                status: 'ok',
-                value: {
-                    sent: true,
-                    password: 'secret-token',
-                    metadata: command.metadata
-                },
-                nextStatus: context.state().status
-            };
-        }
+        commandExecutor: toSyntheticSendOutcome
     });
 
     await runtime.execute({
@@ -151,55 +209,7 @@ async function runNestedCompositeResult(): Promise<RallarBlackBoxTestResult> {
         }
     });
 
-    return await runtime.execute({
-        kind: 'parallel',
-        commandId: 'composite-root',
-        continueOnFailure: true,
-        maxConcurrency: 1,
-        groups: [
-            {
-                groupId: 'left',
-                commands: [
-                    {
-                        kind: 'loop',
-                        commandId: 'inner-loop',
-                        count: 2,
-                        continueOnFailure: true,
-                        commands: [
-                            {
-                                kind: 'rtc.send',
-                                commandId: 'position-send',
-                                send: {
-                                    frame: '{loop.iteration}'
-                                }
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                groupId: 'right',
-                commands: [
-                    {
-                        kind: 'wait',
-                        commandId: 'wait-ready',
-                        match: {
-                            topic: 'rallar.test.ready',
-                            payloadPath: 'state',
-                            equals: 'ready'
-                        }
-                    },
-                    {
-                        kind: 'assert',
-                        commandId: 'assert-event-count',
-                        source: 'events.length',
-                        operator: 'gte',
-                        expected: 1
-                    }
-                ]
-            }
-        ]
-    });
+    return await runtime.execute(NESTED_COMPOSITE_COMMAND);
 }
 
 describe('rallar-bb-test composite result helpers', () => {
@@ -367,7 +377,25 @@ describe('rallar-bb-test composite result helpers', () => {
         expect(computeRallarBlackBoxCompositeResultSummary([parallel], {}).childDecodeIssueCount).toBe(2);
     });
 
-    it('reports a composite value that records no child list, but not one without a value or with compacted children', () => {
+    it('reports a skipped sibling when an earlier subtree exhausts the finite traversal budget', () => {
+        const first: RallarBlackBoxTestResult = {
+            ...toLeafResult('first'),
+            kind: 'recipe.run',
+            value: {
+                results: Array.from({ length: 1998 }, (_, index) => toLeafResult(`leaf-${index}`))
+            }
+        };
+        const root: RallarBlackBoxTestResult = {
+            ...toLeafResult('root'),
+            kind: 'recipe.run',
+            value: { results: [first, toLeafResult('skipped')] }
+        };
+        const entries = toRallarBlackBoxCompositeResultFlatEntries([root]);
+        expect(entries).toHaveLength(2000);
+        expect(entries[0].childDecodeIssues).toContainEqual({ valuePath: 'value', invalidFields: ['expanded-command-limit'] });
+    });
+
+    it('requires an explicit child list for recorded composite evidence', () => {
         const recordedWithoutChildren: RallarBlackBoxTestResult = {
             ...toLeafResult('loop-without-results'),
             kind: 'loop',
@@ -377,7 +405,14 @@ describe('rallar-bb-test composite result helpers', () => {
         const compacted: RallarBlackBoxTestResult = {
             ...toLeafResult('loop-compacted'),
             kind: 'loop',
-            value: { commandId: 'loop-compacted', iterations: 1, resultCount: 2, failureCount: 0, resultsOmitted: true }
+            value: {
+                commandId: 'loop-compacted',
+                iterations: 1,
+                resultCount: 0,
+                failureCount: 0,
+                results: [],
+                resultEvidence: { status: 'finite', payloadsOmitted: true }
+            }
         };
 
         const entries = toRallarBlackBoxCompositeResultFlatEntries([recordedWithoutChildren, withoutValue, compacted]);

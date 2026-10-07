@@ -489,6 +489,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
     }),
     'recipe.run': strictCommandSchema('recipe.run', {
         rtcCaptureMode: rtcCaptureModeSchema,
+        expectedRecipeBodyId: { type: 'string' },
         recipe: inlineRecipeSchema
     }),
     'recipe.cancel': strictCommandSchema('recipe.cancel', {
@@ -716,6 +717,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         response: httpResponseSchema
     }),
     'crdt.open': strictCommandSchema('crdt.open', {
+        rallar: rallarConnectionSchema,
         handle: stringSchema,
         name: stringSchema,
         applicationId: stringSchema,
@@ -907,6 +909,7 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
         schemaVersion: { const: 1 },
         distributedRunId: stringSchema,
         controlRunId: stringSchema,
+        rtcCaptureMode: rtcCaptureModeSchema,
         displayName: stringSchema,
         description: stringSchema,
         group: {

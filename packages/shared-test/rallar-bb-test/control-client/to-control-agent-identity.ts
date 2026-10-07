@@ -3,10 +3,16 @@ import type { Either } from '@shared/resilience/Either.ts';
 import type { RallarBlackBoxControlAgentIdentity, RallarBlackBoxGeoLocation } from '../distributed-run.ts';
 import { toControlAgentCapabilities } from '../distributed/control-agent-capabilities.ts';
 import { decodeOptionalGeoLocation } from '../distributed/decode-control-agent-identity.ts';
-import type { RallarBlackBoxTestConfig, RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxRtcCaptureSupport,
+    RallarBlackBoxTestConfig,
+    RallarBlackBoxTestRecord
+} from '../rallar-black-box-test-contracts.ts';
 import { decodeRecord, decodeTrimmedText } from '../runtime/decode-runtime-result-values.ts';
 
 export interface ToControlAgentIdentityInput {
+    /** Installed runtime fact; absent for unverified or simulated executors. */
+    readonly rtcCaptureSupport?: RallarBlackBoxRtcCaptureSupport;
     /** Absent before the agent loads a test configuration. */
     readonly config: RallarBlackBoxTestConfig | undefined;
     readonly agentId: string;
@@ -63,7 +69,18 @@ export function decodeControlAgentFleetLocation(
 /** Reads only the keys configuration producers write; the principal is the configured actor. */
 export function toControlAgentIdentity(input: ToControlAgentIdentityInput): RallarBlackBoxControlAgentIdentity {
     if (input.config === undefined) {
-        return { sessionLabel: input.agentId, updatedAtEpochMs: input.atEpochMs };
+        return {
+            sessionLabel: input.agentId,
+            updatedAtEpochMs: input.atEpochMs,
+            ...(input.rtcCaptureSupport === undefined ? {} : {
+                capabilities: toControlAgentCapabilities({
+                    config: undefined,
+                    providerMode: undefined,
+                    apiBaseUrl: undefined,
+                    rtcCaptureSupport: input.rtcCaptureSupport
+                })
+            })
+        };
     }
 
     const records: IdentityConfigRecords = {
@@ -82,6 +99,7 @@ export function toControlAgentIdentity(input: ToControlAgentIdentityInput): Rall
         location: input.location,
         capabilities: toControlAgentCapabilities({
             config: input.config,
+            rtcCaptureSupport: input.rtcCaptureSupport,
             providerMode: rallarFacts.providerMode,
             apiBaseUrl: decodeTrimmedText(input.config.apiBaseUrl) ?? decodeTrimmedText(records.rallar.apiBaseUrl)
         }),

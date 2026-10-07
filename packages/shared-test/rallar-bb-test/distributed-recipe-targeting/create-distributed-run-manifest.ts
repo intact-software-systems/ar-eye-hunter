@@ -1,3 +1,5 @@
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import type { DistributedRecipeCatalogItem } from '../distributed-recipe-catalog.ts';
 import type {
     RallarBlackBoxDistributedBarrierPolicy,
@@ -22,6 +24,8 @@ export type CreateDistributedRunManifestInput = CreateDistributedRunManifestFiel
 export interface CreateDistributedRunManifestFields {
     readonly distributedRunId: string;
     readonly controlRunId: string;
+    /** Absent when each invocation inherits its authored capture selection. */
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     /** Absent when the author gives the run no display name. */
     readonly displayName?: string;
     readonly group: RallarBlackBoxDistributedGroupRef;
@@ -58,6 +62,7 @@ export function createDistributedRunManifest(
         schemaVersion: 1,
         distributedRunId: input.distributedRunId,
         controlRunId: input.controlRunId,
+        ...(input.rtcCaptureMode === undefined ? {} : { rtcCaptureMode: input.rtcCaptureMode }),
         displayName: input.displayName,
         group: input.group,
         recipes: toRecipeSelections(input),

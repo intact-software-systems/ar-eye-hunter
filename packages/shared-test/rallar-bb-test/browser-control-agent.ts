@@ -22,7 +22,7 @@ import {
     type RallarBlackBoxAgentControlClient,
     type RallarBlackBoxControlSnapshot
 } from './control-client.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from './create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from './create-rallar-black-box-browser-test-runtime.ts';
 import type {
     RallarBlackBoxTestConfig,
     RallarBlackBoxTestRuntime,
@@ -278,7 +278,7 @@ function createDefaultBrowserControlAgentRuntime(providerMode: RallarBlackBoxPro
         return { runtime: createRallarBlackBoxTestRuntime() };
     }
 
-    const runtime = createRallarBlackBoxBrowserTestRuntime({
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
         rallarRuntime: createSpaBrowserRallarRuntime(),
         fetch: (request, init) => globalThis.fetch(request, init),
         webSocketFactory: createBrowserWebSocketFactory()

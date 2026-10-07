@@ -8,7 +8,7 @@ export function validateCommandCaptureSelection(command: RallarBlackBoxTestRecor
         return (parseRtcCaptureMode(command.rtcCaptureMode).left ?? []).map((issue) => issue.message);
     }
     const config = command.kind === 'configure' ? command.config : command;
-    if (command.kind !== 'configure' && command.kind !== 'rtc.connect') {
+    if (command.kind !== 'configure' && command.kind !== 'rtc.connect' && command.kind !== 'crdt.open') {
         return [];
     }
     if (typeof config !== 'object' || config === null || !('rallar' in config)) {
