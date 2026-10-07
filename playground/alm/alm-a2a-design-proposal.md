@@ -78,9 +78,10 @@ audience in the room (`newALPrincipalBroadcastMessage` with the room's `groupRef
 `fanout: 'outbox'`, a 15 s TTL as the snapshot's): after an applied command, the hunter's recorded action
 for the round (`{ kind: 'action-recorded', round, action }`); after a refused command, the rule's text
 (`{ kind: 'command-refused', command, text }`). The browser reads it through a typed `messages.room`
-channel and shows the refusal text where the command's error shows today; the other device shows the
-recorded action. This closes D72's lost rule text for the acting hunter's own sessions without a
-correlated reply (I1 keeps correlation).
+channel and shows the refusal text where the command's error shows today; the event carries the
+acting `playerId`, so only the acting session renders it and another session of the hunter drops it.
+This closes D72's lost rule text for the acting hunter's own session without a correlated reply (I1
+keeps correlation).
 
 ### 2.f The proof (D169)
 

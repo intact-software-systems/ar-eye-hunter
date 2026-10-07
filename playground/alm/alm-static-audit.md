@@ -67,7 +67,7 @@ roadmap's [release map](alm-improvement-plan.md#release-map).
 | F13     | Resolved for ceilings; aggregate budgets remain.                                                                                    | S3, V1             |
 | F14     | Mechanism present in both directions; cross-backend proof remains.                                                                  | R1                 |
 | F15     | Resolved for the first release's scope; roadmap decision D8 governs the series.                                                     | every PR           |
-| F16     | Partly closed: fencing (R2) and audiences (A1) delivered; leader ACK, correlation, ownership open.                                  | R2, A1, A2, I1     |
+| F16     | Partly closed: fencing (R2), audiences (A1) and the leader ACK (A2a) delivered; correlation, ownership open.                        | R2, A1, A2, I1     |
 | F17     | Partial. Settlement truthful; handle and disposal outcomes remain.                                                                  | S1, I2             |
 
 ## Scope and evidence
