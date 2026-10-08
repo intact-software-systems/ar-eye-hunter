@@ -495,8 +495,9 @@ claim past its message's deadline leaves the key free for the next claimant. A m
 own (no `expiresAtMs`, no expiry policy) holds the key until the deadline its admission implies (`durableEffectTtlMs`,
 the store's retention default); every browser send carries a `ttlMs`. Two claimants that both read a free key
 conflict at the commit, and the loser's retained admission is replayed and planned against the winner. A claim
-retained on a conflict may have started its `admitted` receipt at the WS server; the `held-by-other` NACK of its
-replay then ends it, because the origin reads that NACK as a refusal of the whole send whatever its receipt. A
+retained on a conflict may have started its `admitted` receipt; the `held-by-other` NACK of its replay then ends
+the origin's receipt, because the origin reads that NACK as a refusal of the whole send whatever its receipt (the
+server's own aggregate runs to its deadline, and its late `timed-out` receipt changes nothing). A
 `shared` message neither reads nor writes an exclusive claim, and an `rtc-peer` or `trusted-server` admission never
 reads or writes one, so a browser never drops a message for it.
 

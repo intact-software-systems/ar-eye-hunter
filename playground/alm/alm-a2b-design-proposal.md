@@ -79,7 +79,8 @@ arbitrate two claimants. An exclusive send takes the WS route under every strate
 world broadcast does; the RTC origin refuses an exclusive message `unsupported`, the refusal a fallback
 carrier takes over and the verdict of an `rtc`-only send. The browser validator refuses before either
 carrier: `exclusive-requires-resource` when the sender names no `resourceId` (a fresh id per send claims
-nothing), and `exclusive-requires-room-audience` for `scope: 'world'` or a principal send without a room.
+nothing), and `exclusive-requires-room-audience` for `scope: 'world'`; a principal send without a room is
+refused by the existing room checks before the claim rule runs.
 Every send the room authorizer admits may be exclusive: a room multicast, a room broadcast, a principal or
 listed audience in the room, a leader send and a room unicast.
 

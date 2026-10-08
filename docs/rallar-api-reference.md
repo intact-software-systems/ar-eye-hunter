@@ -1080,8 +1080,9 @@ outcomes, none of them a new handle state (D175):
   claim is live is dropped at the server's admission and NACKed
   `held-by-other`; it reaches no one. A dropped claim starts no receipt; a
   claim retained on a conflict may have started one, which the `held-by-other`
-  NACK then ends. The handle reads it as it reads `no-leader` over WS, whatever
-  receipt it already holds: with a receipt-bearing `ack`
+  NACK then ends. The handle reads it as a trusted-server relay rejection
+  whatever receipt it already holds (unlike `no-leader`, which counts only
+  before a receipt): with a receipt-bearing `ack`
   it ends `rejected` with `failure: { kind: 'relay-rejected', rejection }` and
   `evidence.relayRejection` reading
   `{ relay: 'trusted-server', reason: 'held-by-other' }`; with `ack: 'none'` it
