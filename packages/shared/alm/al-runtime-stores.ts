@@ -14,10 +14,10 @@ import type { ALRuntimeStoreRetentionConfig } from './ALStoreRetention.ts';
 import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from './ALStoreRetention.ts';
 import type { ALCheckpointWriter } from './checkpoint/al-checkpoint-writer.ts';
 import { ALCheckpoint, type ALCheckpointStorage } from './checkpoint/al-checkpoint.ts';
+import type { ALInboundOrderingTracksReport } from './inbound/admission/al-inbound-ordering-track-cap.ts';
 import {
     createALInboundAdmissionStore,
     createVolatileALInboundAdmissionStore,
-    type ALInboundOrderingTracksReport,
     type CreateALInboundAdmissionStoreInput
 } from './inbound/al-inbound-admission-store.ts';
 import type {

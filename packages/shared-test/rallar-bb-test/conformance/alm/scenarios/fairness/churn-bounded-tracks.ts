@@ -1,4 +1,4 @@
-import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/al-inbound-ordering-track-cap.ts';
 import {
     AL_VOLATILE_SESSION_MAX_ADMISSIONS,
     AL_VOLATILE_SESSION_MAX_BYTES
@@ -25,10 +25,14 @@ import {
 import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
 import { toCommandId, toSendHandleId } from '../../alm-conformance-step-identities.ts';
 import { toBoundReconnectCommands, toReconnectedArrivalsCommand } from '../volatile-bound/volatile-bound-commands.ts';
+import { toPauseCommand } from './to-pause-command.ts';
 import { toSendLoopCommand } from './to-send-loop-command.ts';
 
-/** More tracks than a session store keeps ordering snapshots for (`AL_INBOUND_MAX_ORDERING_TRACKS`, D191). */
-const CHURN_TRACK_COUNT = 300;
+/**
+ * More tracks than a session store keeps ordering snapshots for (`AL_INBOUND_MAX_ORDERING_TRACKS`, D191), with a
+ * margin: at this count the opens take about 21 s at the loop's pace, inside the receiver's 58 s window.
+ */
+const CHURN_TRACK_COUNT = AL_INBOUND_MAX_ORDERING_TRACKS + 24;
 /**
  * The sender's own ledger counts every live track of its own (64 by default, D179); each of these tracks lives as
  * long as its one send, so the sender reconnects with room for all of them.
@@ -43,10 +47,9 @@ const CHURN_SENDER_LIMITS = {
  * its own snapshots, and a hand-over moves a message to a relay that never saw its track (D56).
  */
 const RECEIVER_ORDERED_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc'];
-const SNAPSHOT_SETTLE_TOPIC = 'rallar.black-box.alm.ordering-snapshots-settled';
 
 /**
- * D191: the sender opens 300 tracks with one send each and leaves. The receiver delivers the 300, and its inbound
+ * D191: the sender opens 280 tracks with one send each and leaves. The receiver delivers the 280, and its inbound
  * stores then hold exactly the cap of ordering snapshots: each track past it evicted the least recently updated one.
  */
 export const churnBoundedTracks: AlmConformanceScenarioDefinition = {
@@ -59,7 +62,8 @@ export const churnBoundedTracks: AlmConformanceScenarioDefinition = {
     toSenderCommands: toChurnSenderCommands,
     toRecipientCommands: (receiver) => [
         toReconnectedArrivalsCommand(receiver, CHURN_TRACK_COUNT, 0),
-        toSnapshotSettleWait(receiver),
+        // A store states its count right after a new track's admission commit, before that track's delivery.
+        toPauseCommand(receiver, 'snapshots-settle', RESPONSE_MARGIN_MS),
         ...toOrderingTracksCommands(receiver)
     ]
 };
@@ -104,20 +108,6 @@ function toTrackSend(sender: AlmConformanceStepInput, track: string): RallarBlac
             seq: 1
         }
     });
-}
-
-/**
- * A store states its count after the eviction pass that follows a new track's admission commit, before that track's
- * delivery, so the count of the 300th is stated by its arrival; nothing emits the topic, the wait only holds a moment.
- */
-function toSnapshotSettleWait(receiver: AlmConformanceStepInput): RallarBlackBoxTestCommand {
-    return {
-        kind: 'wait',
-        commandId: toCommandId(receiver, 'snapshots-settle'),
-        match: { kind: 'diagnostic', topic: SNAPSHOT_SETTLE_TOPIC },
-        absent: true,
-        timeoutMs: RESPONSE_MARGIN_MS
-    };
 }
 
 /** The receiver's ordering snapshots after the churn: at the cap, neither under it nor past it. */

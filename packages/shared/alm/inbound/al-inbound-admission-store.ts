@@ -11,11 +11,7 @@ import {
     requireLivePersistenceWrite
 } from '../../persistence/persistence-write-deadline.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
-import {
-    type ALAdmissionBackend,
-    type ALAdmissionBackendEntry,
-    type ALAdmissionWriteContext
-} from '../al-admission-backend.ts';
+import { type ALAdmissionBackend, type ALAdmissionWriteContext } from '../al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import {
     decodeALAdmissionNumber,
@@ -32,6 +28,10 @@ import {
     type ALReplacementSupersedenceValue,
     type ALSupersedenceAcceptance
 } from '../compute-al-supersedence-observation.ts';
+import {
+    evictOrderingTracksPastCap,
+    type ALInboundOrderingTracksReport
+} from './admission/al-inbound-ordering-track-cap.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import {
     readALInboundStoredMessage,
@@ -63,12 +63,6 @@ import {
     type AcksControlValue,
     type PendingControlValue
 } from './control/al-inbound-control-rows.ts';
-
-/**
- * The most ordering snapshots one store keeps (D191). The next new track evicts the least recently updated
- * one, so a departed sender's tracks leave under churn instead of an hour after their last message.
- */
-export const AL_INBOUND_MAX_ORDERING_TRACKS = 256;
 
 export interface ALInboundMessageOwner {
     readonly msgId: string;
@@ -346,9 +340,6 @@ export interface CreateALInboundAdmissionStoreInput {
      */
     readonly reportOrderingTracks?: ALInboundOrderingTracksReport;
 }
-
-/** The ordering snapshots one store holds, stated after the eviction pass a new track runs. */
-export type ALInboundOrderingTracksReport = (tracks: number) => void;
 
 export interface ALInboundAdmissionStore extends ALReadyable {
     readonly namespace: string;
@@ -653,8 +644,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
         const status = await this.writeValidatedBundle(validated.right!);
         if (status === 'committed' && opensALInboundOrderingTrack(bundle)) {
-            const held = await this.evictOrderingTracksPastCap();
-            this.reportOrderingTracks?.(held);
+            await evictOrderingTracksPastCap(this.backend, this.toOrderingPrefix(), this.reportOrderingTracks);
         }
         return status;
     }
@@ -676,48 +666,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 return 'conflict';
             }
             throw error;
-        }
-    }
-
-    /**
-     * Removes the least recently updated snapshots past the cap, each only if it is still the one read: a snapshot
-     * updated in between is no longer the least recent, and its conflict leaves the eviction to the next new track.
-     * Only the snapshot leaves; the track's delivered marker keeps the completion evidence its live work reads.
-     * Answers how many snapshots the store holds after the pass.
-     */
-    private async evictOrderingTracksPastCap(): Promise<number> {
-        const held = await this.backend.readWithin((session) =>
-            session.list(this.toOrderingPrefix(), decodeALInboundOrderingSnapshot)
-        );
-        const evicted = resolveLeastRecentlyUpdatedTracks(held, held.length - AL_INBOUND_MAX_ORDERING_TRACKS);
-        return evicted.length === 0 ? held.length : held.length - await this.removeUnchangedTracks(evicted);
-    }
-
-    /** Answers how many of `evicted` the store no longer holds: those it removed and those a rival pass already had. */
-    private async removeUnchangedTracks(
-        evicted: readonly ALAdmissionBackendEntry<ALOrderingTrackSnapshot>[]
-    ): Promise<number> {
-        try {
-            return await this.backend.write(async (transaction) => {
-                let gone = 0;
-                for (const track of evicted) {
-                    const current = await transaction.read(track.key, decodeALInboundOrderingSnapshot);
-                    const unchanged = current !== undefined && jsonEquals(current, track.value);
-                    if (unchanged) {
-                        await transaction.remove(track.key);
-                    }
-                    if (unchanged || current === undefined) {
-                        gone += 1;
-                    }
-                }
-                return gone;
-            });
-        }
-        catch (error) {
-            if (!(error instanceof ALAdmissionBackendConflictError)) {
-                throw error;
-            }
-            return 0;
         }
     }
 
@@ -945,16 +893,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 function opensALInboundOrderingTrack(bundle: ALInboundCommitBundle): boolean {
     return bundle.observations.ordering?.snapshot === undefined &&
         bundle.mutations.some((mutation) => mutation.kind === 'set-ordering');
-}
-
-/** Every snapshot expires one TTL after its update, so the least recently updated is also the next to expire. */
-function resolveLeastRecentlyUpdatedTracks(
-    held: readonly ALAdmissionBackendEntry<ALOrderingTrackSnapshot>[],
-    count: number
-): readonly ALAdmissionBackendEntry<ALOrderingTrackSnapshot>[] {
-    return [...held]
-        .sort((left, right) => left.value.updatedAtMs - right.value.updatedAtMs || left.key.localeCompare(right.key))
-        .slice(0, Math.max(0, count));
 }
 
 /**

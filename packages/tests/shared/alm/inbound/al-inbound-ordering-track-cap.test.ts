@@ -4,7 +4,7 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
-import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/al-inbound-ordering-track-cap.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 

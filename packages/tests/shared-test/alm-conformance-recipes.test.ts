@@ -216,8 +216,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'capacity',
         'capacity-age',
         'capacity-tracks',
-        'backpressure-hands-over',
-        'own-share-under-inbound'
+        'backpressure-hands-over'
     ]
 } as const;
 
@@ -523,7 +522,6 @@ describe('alm-conformance recipe family', () => {
             'unicast-fallback',
             ...VOLATILE_BOUND_KEYS,
             'backpressure-hands-over',
-            'own-share-under-inbound',
             'receipted-audience',
             'receipted-audience',
             'receipted-audience',

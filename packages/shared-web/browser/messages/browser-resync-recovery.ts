@@ -1,7 +1,7 @@
 import type { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import type { RallarChannelRecovery } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/al-inbound-ordering-track-cap.ts';
 import type {
     ALInboundResyncCursor,
     ALInboundResyncRequired

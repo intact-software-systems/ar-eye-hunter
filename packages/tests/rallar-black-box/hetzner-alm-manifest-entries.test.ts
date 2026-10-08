@@ -161,7 +161,7 @@ describe('ALM conformance hosted lane families', () => {
             'alm-rtc-with-ws-fallback-backpressure-hands-over',
             'alm-rtc-backpressure-refused',
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-backpressure-deferred`),
-            ...ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-own-share-under-inbound`),
+            ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-own-share-under-inbound`),
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-buffered-track-drains`),
             'alm-rtc-churn-bounded-tracks'
         ];

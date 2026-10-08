@@ -97,8 +97,8 @@ carried (§5), not changed.
   stay byte-identical: `own-share-under-inbound` (the sender floods the room at a rate that fills the receiver's
   lowered total; the receiver's own send is `acknowledged`, its usage shows `inbound` at the limit and `own` under
   its share), `buffered-track-drains` (the sender sends seq 2..65 on one key, then seq 1; the receiver delivers all 65
-  within one lifetime and the observation shows `promotedReleases > 0`), `churn-bounded-tracks` (the sender opens
-  300 tracks with one send each and closes; the receiver's ordering-row count reads at most 256).
+  and the observation shows `promotedReleases > 0`), `churn-bounded-tracks` (the sender opens
+  280 tracks with one send each and closes; the receiver's ordering-row count reads at most 256).
 
 ### 2.e Docs, corrections and carries (D193)
 

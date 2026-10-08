@@ -119,7 +119,10 @@ describe('congestion conformance scenarios', () => {
         // The two-agent family runs them after every other cell but the fairness cells, which follow them, so the
         // counter each one reads is its own.
         const twoAgent = scenarios.filter((scenario) => scenario.laneFamily === 'two-agent').map(({ scenarioId }) => scenarioId);
-        const beforeFairness = twoAgent.slice(0, twoAgent.indexOf('own-share-under-inbound'));
+        const fairnessStart = twoAgent.findIndex((scenarioId) =>
+            ['own-share-under-inbound', 'buffered-track-drains', 'churn-bounded-tracks'].includes(scenarioId)
+        );
+        const beforeFairness = fairnessStart === -1 ? twoAgent : twoAgent.slice(0, fairnessStart);
         expect(beforeFairness.slice(beforeFairness.length - cells.length)).toEqual(cells.map(({ scenarioId }) => scenarioId));
     });
 

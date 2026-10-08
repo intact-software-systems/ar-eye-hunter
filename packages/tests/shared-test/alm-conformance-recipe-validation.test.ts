@@ -127,7 +127,6 @@ const CARRIER_SCENARIO_IDS = {
         'capacity-age',
         'capacity-tracks',
         'backpressure-hands-over',
-        'own-share-under-inbound',
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const),
         'principal-delivery',
         'fixed-list-delivery',

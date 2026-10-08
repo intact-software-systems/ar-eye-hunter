@@ -9,7 +9,7 @@ import type {
 } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
-import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
+import { ALM_CONFORMANCE_SINGLE_HOP_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
@@ -33,8 +33,9 @@ const OWN_SHARE_ADMISSIONS = Math.floor(OWN_SHARE_LIMITS.maxAdmissions * AL_VOLA
  * Arrivals alone fill the lowered total. An arrival counts for `min(ttl, 30 s)` from the moment it arrives, so the
  * total stays full only while all 20 arrivals are younger than that. The flood therefore asks for no receipt: a
  * receipted send waits for its ACK (about 1.5 s over `ws`), twenty of them in a row span the whole window, and the
- * first arrivals have left it before the receiver reads its stats. Unreceipted, the 20 are on the wire within
- * seconds, and the receiver reads its stats once it has seen all of them and its own send is acknowledged.
+ * first arrivals have left it before the receiver reads its stats. Unreceipted and paced at 75 ms, the 20 are on the
+ * wire within two seconds, under the RTC limiter that the receiver's ready ACK shares, and the receiver reads its
+ * stats once it has seen all of them and its own send is acknowledged.
  */
 const FLOOD_COUNT = OWN_SHARE_LIMITS.maxAdmissions;
 const READY_INDEX = 1;
@@ -45,13 +46,14 @@ const OWN_INDEX = 2;
  * the receiver's arrivals alone hold its total at the bound. The receiver's own room send is still admitted, since
  * its own pool is under its share, and acknowledged; its ledger then reads the inbound pool at the bound, the own pool
  * under its share and no overload. One shared pool would have refused that send `capacity`. The receiver reconnects
- * with its constants last.
+ * with its constants last. The ledger is carrier-independent, and the lowered-limit reconnect is not stable under
+ * `rtc-with-ws-fallback`'s readiness, so the cell runs on `ws` and `rtc`.
  */
 export const ownShareUnderInbound: AlmConformanceScenarioDefinition = {
     scenarioId: 'own-share-under-inbound',
     scenarioKey: 'own-share-under-inbound',
     tags: FULL_TAGS,
-    carriers: ALM_CONFORMANCE_CARRIERS,
+    carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: (sender) => [

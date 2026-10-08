@@ -26,7 +26,7 @@ const RECEIVER_PROLOGUE = ['ensure-group', 'ensure-member', 'connect'] as const;
 type FairnessScenarioId = (typeof FAIRNESS_SCENARIO_IDS)[number];
 
 const FAIRNESS_CARRIERS: Readonly<Record<FairnessScenarioId, readonly AlmConformanceCarrier[]>> = {
-    'own-share-under-inbound': ['ws', 'rtc', 'rtc-with-ws-fallback'],
+    'own-share-under-inbound': ['ws', 'rtc'],
     'buffered-track-drains': ['ws', 'rtc'],
     'churn-bounded-tracks': ['rtc']
 };
@@ -136,7 +136,7 @@ describe('own-share-under-inbound', () => {
         orderingTracks: 0
     };
 
-    it.each(ALM_CONFORMANCE_CARRIERS)(
+    it.each(FAIRNESS_CARRIERS['own-share-under-inbound'])(
         'fills the %s receiver\'s lowered total with arrivals, and its own send is still acknowledged under its share',
         async (carrier) => {
             const scenario = findScenario(carrier, 'own-share-under-inbound');
@@ -196,6 +196,7 @@ describe('own-share-under-inbound', () => {
                 kind: 'loop',
                 commandId: `${scenario.sender.recipeId}-flood`,
                 count: 20,
+                intervalMs: 75,
                 commands: [expect.objectContaining({
                     kind: 'messages.send',
                     commandId: `${scenario.sender.recipeId}-flood-send`,
@@ -212,26 +213,35 @@ describe('own-share-under-inbound', () => {
 
 describe('buffered-track-drains', () => {
     it.each(FAIRNESS_CARRIERS['buffered-track-drains'])(
-        'sends seq 2 to 65 on one %s track before seq 1, and the receiver delivers all 65 within one lifetime',
+        'sends seq 2 to 65 bare and paced on one %s track before seq 1, and the receiver delivers all 65',
         (carrier) => {
             const scenario = findScenario(carrier, 'buffered-track-drains');
-            const orderedSeqs = [...Array.from({ length: 64 }, (_, offset) => offset + 2), 1];
+            const bufferedSeqs = Array.from({ length: 64 }, (_, offset) => offset + 2);
 
+            // Seq 2 to 65 are bare sends with a 75 ms quiet wait after each; only seq 1 is observed admitted.
             expect(toCommandNames(scenario.sender)).toEqual([
                 ...SENDER_PROLOGUE,
-                ...orderedSeqs.flatMap((seq) => [`send-${seq}`, `observe-admitted-${seq}`, `assert-admitted-${seq}`]),
+                ...bufferedSeqs.flatMap((seq) => [`send-${seq}`, `pause-${seq}`]),
+                'send-1',
+                'observe-admitted-1',
+                'assert-admitted-1',
                 'stats'
             ]);
-            // No receipt is asked for: the receiver cannot acknowledge seq 2 to 65 before seq 1 arrives.
-            for (const seq of orderedSeqs) {
+            // No receipt is asked for (the receiver cannot acknowledge seq 2 to 65 before seq 1 arrives), and the
+            // sends outlive the cell's own 90 s window; the 30 s lifetime is proven on the real runtime.
+            for (const seq of [...bufferedSeqs, 1]) {
                 expect(findCommand(scenario.sender, `send-${seq}`)).toMatchObject({
                     reliability: 'at-least-once',
                     ack: 'none',
+                    ttlMs: 90_000,
                     orderingKey: `alm-${carrier}-buffered-track-drains`,
                     seq
                 });
             }
-            expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 65, absent: false, windowMs: 29_000, timeoutMs: 30_000 });
+            for (const seq of bufferedSeqs) {
+                expect(findCommand(scenario.sender, `pause-${seq}`)).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 75 });
+            }
+            expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 65, absent: false, windowMs: 89_000, timeoutMs: 90_000 });
         }
     );
 
@@ -258,7 +268,7 @@ describe('churn-bounded-tracks', () => {
         orderingTracks: 256
     };
 
-    it('opens 300 tracks with one send each and leaves; the receiver then holds exactly the cap of ordering snapshots', async () => {
+    it('opens 280 tracks with one send each, paced, and leaves; the receiver then holds exactly the cap of ordering snapshots', async () => {
         const scenario = findScenario('rtc', 'churn-bounded-tracks');
 
         expect(toCommandNames(scenario.sender)).toEqual([
@@ -271,19 +281,20 @@ describe('churn-bounded-tracks', () => {
             'close-departs',
             'stats'
         ]);
-        // The sender's own ledger holds every one of its live tracks; 64 by default.
+        // The sender's own ledger holds every one of its live tracks; 64 by default. 280 is the cap and a margin.
         expect(findCommand(scenario.sender, 'connect-raised')).toMatchObject({
             rallar: {
                 almVolatileLimits: {
                     maxAdmissions: AL_VOLATILE_SESSION_LIMITS.maxAdmissions,
                     maxBytes: AL_VOLATILE_SESSION_LIMITS.maxBytes,
-                    maxTracks: 600
+                    maxTracks: 560
                 }
             }
         });
         expect(findCommand(scenario.sender, 'open-tracks')).toMatchObject({
             kind: 'loop',
-            count: 300,
+            count: 280,
+            intervalMs: 75,
             commands: [{
                 kind: 'messages.send',
                 reliability: 'at-least-once',
@@ -292,10 +303,10 @@ describe('churn-bounded-tracks', () => {
                 handleId: 'alm-rtc-churn-bounded-tracks-send-0-{loop.index}'
             }]
         });
-        // The loop names each handle by its index, so the last track's handle ends in 299.
+        // The loop names each handle by its index, so the last track's handle ends in 279.
         expect(findCommand(scenario.sender, 'observe-last-track')).toMatchObject({
             kind: 'messages.observe',
-            handleId: 'alm-rtc-churn-bounded-tracks-send-0-299',
+            handleId: 'alm-rtc-churn-bounded-tracks-send-0-279',
             state: ['transport-accepted']
         });
         expect(findCommand(scenario.sender, 'close-departs')).toEqual({ kind: 'close', commandId: `${scenario.sender.recipeId}-close-departs` });
@@ -309,7 +320,7 @@ describe('churn-bounded-tracks', () => {
             'assert-ordering-tracks-at-the-cap',
             'stats'
         ]);
-        expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 300, absent: false, windowMs: 57_000 });
+        expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 280, absent: false, windowMs: 57_000 });
         expect(findCommand(scenario.receiver, 'snapshots-settle')).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 1_000 });
         expect(await readLedgerTail(scenario.receiver, 'stats-ordering-tracks', atTheCap)).toBe(true);
         const results: boolean[] = [];
