@@ -796,21 +796,37 @@ it, so no owner is invoked there.
 ## Ownership
 
 `shared` means every matching local subscriber may observe the message.
-`exclusive` means exactly one registered consumer in the declared ownership
-scope may claim it. The scope is explicit: local process, browser session,
-principal, group, or server consumer group. Durable exclusive claims use leases
-and redelivery from existing QueueBox/ResourceInbox; volatile exclusive selection
-is deterministic and observable. Distributed ownership reuses the existing
-ResourceInbox reservation with lease, expiry, and redelivery; no generic claim
-system is added.
+`exclusive` means exactly one sending session holds the message's resource key
+in its room at a time. The room is the only ownership scope defined. The exclusive
+claim is an admission-store key with the insert-if-absent-with-expiry semantics the
+dedup key already has; no generic claim system is added.
 
-**PARTIAL:** Current services use `exclusive` to select one local callback.
-
-**PLANNED — A2b, ownership scope:** The contract does not say whether exclusive
-is local or distributed, and no distributed exclusive-consumer claim exists. A2
-defines `exclusive` as a claim on the message's resource key backed by the
-existing ResourceInbox reservation with lease, expiry, and redelivery, surfaced
-as `claimed`, `held-by-other`, or `expired`.
+**CURRENT — A2b, the claim on the resource key:** an `exclusive` send the WS
+server admits from a client claims the room-scoped resource key (the room's
+`GroupRef` scope with the route `topicId`, `contextId` and `resourceId`) for the
+sending session (D171). The first claimant is admitted and delivered, which is
+`claimed`; another session's exclusive send on a live claim is dropped
+`held-by-other` and NACKed, a trusted-server `relay-rejected` on its handle and
+no fallback trigger; the holder's re-send is admitted and moves the expiry
+(D175). The lease is the message's lifetime: the claim expires with the
+message's `constraints.expiresAtMs`, an expired claim frees the key for the next
+claimant, and an unconfirmed claimed message ends `expired`; there is no lease
+constant, renewal call or release call (D172); a send with no expiry of its own
+holds the key for the WS server's retention default, and every browser send
+carries a `ttlMs`. The claim lives in the WS
+server's admission store beside dedup, read with the message and decided in the
+planner as the drop code `held-by-other`, so it holds across every API process;
+browsers never read one (D173). Exclusive is WS-only: the browser sends it over
+WS under every strategy but `rtc`, the RTC origin refuses it `unsupported`, and
+the browser validator refuses an exclusive send without a `resourceId` or
+without a room audience (D174). `shared` sends neither read nor take a claim,
+and receivers still select one local callback for an `exclusive` message. AR
+Eye Hunter's pickup intents claim the pickup: the loser reads `held-by-other`
+before its intent reaches the director, and the arena shows the loss (D176).
+The conformance lane's `claim` family proves one winner over `ws` and
+`rtc-with-ws-fallback`, the reclaim after expiry over `ws` and the refusal over
+`rtc`; manifests 18 and 22 are unchanged (D177). Server publications claim
+nothing, and scopes other than the room are not defined (D178).
 
 ## Observability and privacy
 

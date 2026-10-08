@@ -55,10 +55,25 @@ if (!relay.status().isDirector) {
     if (sent.status === 'stale-director' || sent.status === 'no-director') {
         showReconnectingDirectorState(sent.reason);
     }
+
+    const claimed = await relay.sendIntent({
+        seq: nextInputSeq(),
+        direction: 'up'
+    }, { resourceId: 'north-gate' });
+
+    if (claimed.status === 'held-by-other') {
+        showGateTaken(claimed.reason);
+    }
 }
 
 relay.stop();
 ```
+
+An intent sent with a claim (`{ resourceId }`) is exclusive on that resource:
+it goes over WS, and when another session already holds the resource the relay
+returns `held-by-other` before the intent reaches the director. Send a claim only
+for a one-winner action, such as a pickup or the one-wide gate above; the
+claim lasts as long as the intent message does.
 
 Director relay is for low-rate authority messages. Use
 `rallar.realtime.room<T>(...)` for high-rate input/snapshot traffic.

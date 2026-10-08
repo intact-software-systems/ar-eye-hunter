@@ -41,5 +41,9 @@ and director accepted shots use `messages/arena-director-peer-message.ts` for th
 same state projection, including deferred ownership checks. Motion uses canonical
 game presence. Hit, pickup and match-start actions use canonical game intents,
 including the director's local receiver; unused raw intent sends were removed.
+A pickup intent claims its pickup (`{ resourceId: pickupId }`, D176): the first
+hunter's intent reaches the director, and a hunter whose intent finds the pickup
+already claimed reads `held-by-other` and sees a `pickup-taken` activity
+headline until the next arena snapshot or director event replaces it. The director's own pickups are routed locally and claim nothing.
 The generic game envelope still identifies rooms by `roomId`; this app fallback
 repair does not claim full scope isolation for that separate shared protocol.

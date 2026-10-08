@@ -513,7 +513,16 @@ within 30 s; a send the carrier refuses `no-leader` returns
 `status: 'no-director'`. Before it sends, the relay itself returns
 `no-director` when no director is appointed, `stale-director` when the
 appointed director is not fresh, and `not-director` when the local session is
-the director. The director's own outputs go to the whole room: with
+the director. `sendIntent(intent, { resourceId })` claims that resource for the
+intent (D176, see Exclusive Ownership): the intent goes out as
+`ownership: 'exclusive'` on that `resourceId`, over WS, and an intent whose
+resource another session holds returns `status: 'held-by-other'` before it
+reaches the director; without the claim the intent is shared, as before.
+Rallar Game's `match.sendIntent(intent, { resourceId })` passes the claim to
+the relay and returns the same `held-by-other` status; when the local session
+is the director, the match routes the intent locally and it claims nothing.
+Outputs, heartbeats, snapshots and sync requests claim nothing. The director's
+own outputs go to the whole room: with
 `ack: 'all-logical-recipients'` when the output states it, best effort
 otherwise. While the local session is the director, its relay acts on an intent
 or sync request stamped with its own appointment epoch or an earlier one, since
@@ -1040,6 +1049,80 @@ const noLeader = (failure?.kind === 'refused' && failure.reason === 'no-leader')
     (failure?.kind === 'relay-rejected' && failure.rejection.reason === 'no-leader');
 if (noLeader) {
     console.warn('The room has no director to confirm the intent.');
+}
+```
+
+### Exclusive Ownership
+
+A send's `ownership` is `'shared'`, the default, or `'exclusive'`. A `shared`
+send reaches its audience and takes nothing. An `exclusive` send claims its
+resource key for the sending session (D171): the key is the room's `GroupRef`
+scope (application, workspace and group, since the same group id can exist in
+another scope) with the send's `topicId`, `contextId` and `resourceId`. The
+exclusive claim is decided where the WS server admits the send, and it has three
+outcomes, none of them a new handle state (D175):
+
+- **Claimed.** The first exclusive send on a free key is admitted and delivered
+  exactly as the same `shared` send would be: its admission is the claim, and
+  no separate claim event exists. The holder's own later exclusive send on the
+  key is admitted too and moves the claim's expiry to its own.
+- **Held by another.** An exclusive send from another session on a key whose
+  claim is live is dropped at the server's admission and NACKed
+  `held-by-other`; it reaches no one and writes no `admitted` receipt. The
+  handle reads it as it reads `no-leader` over WS: with a receipt-bearing `ack`
+  it ends `rejected` with `failure: { kind: 'relay-rejected', rejection }` and
+  `evidence.relayRejection` reading
+  `{ relay: 'trusted-server', reason: 'held-by-other' }`; with `ack: 'none'` it
+  keeps `transport-accepted` and the rejection is evidence only.
+  `held-by-other` is no fallback trigger: a claim another session holds is a
+  decision, not a carrier failure.
+- **Expired.** The claim's lease is the message's lifetime (D172): its
+  `constraints.expiresAtMs`, which the send's `ttlMs` or the channel default
+  sets. There is no lease constant, no renewal call and no release call: a
+  holder renews by sending again, and once the claim has expired the key is
+  free, so the next exclusive send on it is admitted and delivered. A claimed
+  send that expires without its receipt ends `expired`, as any send does. A
+  send with no expiry of its own holds the key for the WS server's retention
+  default; every browser send carries a `ttlMs`.
+
+A `shared` send neither reads nor takes an exclusive claim, so a shared send on a
+claimed key is delivered: ownership is decided between exclusive senders. The claim
+lives in the WS server's admission store, beside the message's dedup key, and
+every API process shares it, so it holds across the cluster (D173). Server
+publications claim nothing, and a receiver's local callback selection is
+unchanged: an exclusive message reaches its typed callback or, failing that,
+the wildcard, never both.
+
+Exclusive is WS-only (D174). No server stands on the RTC path, so nothing there
+can arbitrate two claimants: an exclusive send takes WS under every strategy
+but `rtc`, with no RTC leg and no `carrierFallback` evidence, as a `world` send
+does; on `rtc` the RTC origin refuses it before any attempt, and the handle
+ends `rejected` with `failure: { kind: 'refused', reason: 'unsupported' }`.
+Every room audience the WS server admits may be exclusive: a room, principal
+or fixed-list send, a `group-leader` send and a room unicast. The browser
+validator refuses two shapes before either carrier admits them:
+`exclusive-requires-resource` when the send names no `resourceId`, since a
+send that names none takes a fresh one and so claims nothing, and
+`exclusive-requires-room-audience` for `scope: 'world'`, which has no room to
+hold the claim. A principal send that names no room is refused as roomless, as
+any principal send is.
+
+```ts
+interface PickupIntent {
+    readonly pickupId: string;
+}
+
+const pickups = rallar.messages.room<PickupIntent>({
+    topicId: 'room.match.pickup',
+    typeId: 'match.pickup.v1',
+    purpose: 'command'
+});
+
+const handle = await pickups.send({ pickupId }, { ownership: 'exclusive', resourceId: pickupId });
+const outcome = await handle.wait({ until: ['acknowledged'], timeoutMs: 30_000 });
+const failure = outcome.lifecycle.evidence.failure;
+if (failure?.kind === 'relay-rejected' && failure.rejection.reason === 'held-by-other') {
+    console.warn('Another session claimed this pickup first.');
 }
 ```
 

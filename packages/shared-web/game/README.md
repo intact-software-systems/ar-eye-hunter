@@ -37,7 +37,10 @@ are grouped by the owner that makes each runtime decision:
 2. `match/rallar-game-match-status-runtime.ts` owns lifecycle flags, director
    freshness recovery, egress state, and status observers.
 3. Director-owned input is handled locally or relayed by
-   `director/rallar-game-director-relay-runtime.ts`.
+   `director/rallar-game-director-relay-runtime.ts`. An intent sent with a claim,
+   `match.sendIntent(intent, { resourceId })`, is relayed exclusive on that
+   resource and returns `held-by-other` when another session holds it (D176); an
+   intent the director handles locally claims nothing.
 4. Match and presence egress select the required RTC lane, make any explicit
    recovery send, and return the canonical `RallarGameSendResult`. Its `ws` field carries a
    `RallarMessageHandle`; admission-dependent decisions await its lifecycle before reporting sent.
