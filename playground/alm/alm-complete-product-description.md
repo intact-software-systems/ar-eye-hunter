@@ -713,7 +713,7 @@ reliable lane (the realtime lane keeps its own `replace-by-key`); relay fanout
 reduction and alternate routes under congestion; routing around one
 backpressured peer; congestion on RTC unicasts; server-side WS backpressure;
 an outbound claim order that rotates across senders or tracks (V1b-ii measured
-the insertion order and kept it); a count bound on a track's delivered marker,
+the sender-blind claim order and kept it); a count bound on a track's delivered marker,
 which lives for the hour after its snapshot is evicted.
 
 ## Durability and browser-local storage

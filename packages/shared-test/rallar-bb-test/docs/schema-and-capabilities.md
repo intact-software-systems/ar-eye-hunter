@@ -526,16 +526,18 @@ instead of each waiting out an ACK. Arrivals alone then hold the receiver's tota
 send, which asks for a receiver receipt, is admitted only under the share: it is `acknowledged`, and its `stats`,
 read once the receiver has counted all 20 arrivals, reads `rallar.alm.inbound.admissions`
 `gte` 20, `rallar.alm.own.admissions` `lt` 10 and `rallar.alm.overloaded` false; it then reconnects without the
-field. `buffered-track-drains` (`ws`, `rtc`) sends seq 2 to 65 on one ordering key as 64 commands (a loop index counts
-from 0 and cannot name them) and then seq 1, all with `ack: 'none'` since the receiver cannot acknowledge a buffered
-sequence before seq 1 arrives, and the receiver receives all 65 within one 30 s lifetime. Over`rtc`the
-receiver buffered the track, so it also waits for an inbound`effect-drain`whose`promoted`count is above zero
-(D190): a`loop`with`until: 'first-success'`tries`"promoted":1`to`"promoted":9`, one leading digit per
-iteration. Over`ws`the relay buffers and releases the track out of the page's sight, as in`ordering-gap-repair`.`churn-bounded-tracks`(`rtc`, where the receiver is the one hop that orders a track) closes the sender and reconnects
-it with the production count and byte limits and`maxTracks: 600`, since each of its tracks counts in its own ledger,
-sends seq 1 on 300 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`) in a`loop`, observes the
-last one`transport-accepted`and closes; the receiver receives the 300, holds one second, and its`stats`reads`rallar.alm.orderingTracks`both`lte`and`gte`256 (D191). Hosted manifest 18 withholds all three, so manifests 18
-and 22 stay as recorded. The cells live in`conformance/alm/scenarios/fairness/`.
+field. `buffered-track-drains` (`ws`, `rtc`) sends seq 2 to 65 on one ordering key as 64 literal send commands, each
+observed admitted (a loop index counts from 0 and cannot name them), and then seq 1, all with `ack: 'none'` since the
+receiver cannot acknowledge a buffered sequence before seq 1 arrives, and the receiver receives all 65 within one 30 s
+lifetime. Over `rtc` the receiver buffered the track, so it also waits for an inbound `effect-drain` whose `promoted`
+count is above zero (D190): a `loop` with `until: 'first-success'` tries `"promoted":1` to `"promoted":9`, one leading
+digit per iteration. Over `ws` the relay buffers and releases the track out of the page's sight, as in
+`ordering-gap-repair`. `churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the
+sender and reconnects it with the production count and byte limits and `maxTracks: 600`, since each of its tracks counts
+in its own ledger, sends seq 1 on 300 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`) in a
+`loop`, observes the last one `transport-accepted` and closes; the receiver receives the 300, holds one second, and its
+`stats` reads `rallar.alm.orderingTracks` both `lte` and `gte` 256 (D191). Hosted manifest 18 withholds all three, so
+manifests 18 and 22 stay as recorded. The cells live in `conformance/alm/scenarios/fairness/`.
 
 The addressed family runs on two agents, in the full scope, as its own Playwright test per carrier (R-S3c-ii-2,
 R-S3c-ii-5); each scenario declares it as its `laneFamily`. The lane proves the addressee's receipt, not the
