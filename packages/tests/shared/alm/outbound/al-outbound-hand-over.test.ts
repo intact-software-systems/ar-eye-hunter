@@ -1,3 +1,4 @@
+import { DEFAULT_AL_REPOSITORY_TTL_MS } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { ALOutboundSendControls } from '@shared/alm/outbound/lane/al-outbound-send-controls.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
@@ -114,7 +115,7 @@ describe('the settlement-free hand-over (D56, Q3)', () => {
 
 describe('ALOutboundSendControls.handOver', () => {
     it('aborts the live attempt and ends the message without cancelling it', () => {
-        const controls = new ALOutboundSendControls();
+        const controls = new ALOutboundSendControls({ nowMs: Date.now });
         const signal = controls.acquire('msg-1');
 
         expect(controls.handOver('msg-1')).toBe('handed-over');
@@ -125,9 +126,38 @@ describe('ALOutboundSendControls.handOver', () => {
     });
 
     it('leaves a cancelled message as it is', () => {
-        const controls = new ALOutboundSendControls();
+        const controls = new ALOutboundSendControls({ nowMs: Date.now });
         controls.cancel('msg-1');
 
         expect(controls.handOver('msg-1')).toBe('already-ended');
+    });
+});
+
+describe('how long the send controls remember an ended message', () => {
+    it('remembers a handed-over message for the durable row retention and forgets it after', () => {
+        let nowMs = 1_000;
+        const controls = new ALOutboundSendControls({ nowMs: () => nowMs });
+        controls.handOver('msg-1');
+
+        nowMs += DEFAULT_AL_REPOSITORY_TTL_MS;
+        expect(controls.isEnded('msg-1')).toBe(true);
+        expect(controls.handOver('msg-1')).toBe('already-ended');
+
+        nowMs += 1;
+        expect(controls.isEnded('msg-1')).toBe(false);
+        expect(controls.handOver('msg-1')).toBe('handed-over');
+    });
+
+    it('remembers a cancelled message for the durable row retention and forgets it after', () => {
+        let nowMs = 1_000;
+        const controls = new ALOutboundSendControls({ nowMs: () => nowMs });
+        controls.cancel('msg-1');
+
+        nowMs += DEFAULT_AL_REPOSITORY_TTL_MS;
+        expect(controls.cancel('msg-1')).toBe('already-cancelled');
+
+        nowMs += 1;
+        expect(controls.isEnded('msg-1')).toBe(false);
+        expect(controls.cancel('msg-1')).toBe('cancelled');
     });
 });

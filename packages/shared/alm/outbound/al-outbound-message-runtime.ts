@@ -453,7 +453,7 @@ export namespace ALOutboundMessageRuntime {
  *   send its storage refused: that admission committed nothing, so the memory lane holds the only copy.
  */
 export class ALOutboundMessageRuntime<TPrepared> {
-    private readonly sendControls = new ALOutboundSendControls();
+    private readonly sendControls: ALOutboundSendControls;
     private readonly durable: ALOutboundStoreLane<TPrepared>;
     private readonly volatile: ALOutboundStoreLane<TPrepared> | undefined;
     private readonly checkpoint: ALOutboundStoreLane<TPrepared> | undefined;
@@ -462,6 +462,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     constructor(dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>) {
         this.dependencies = dependencies;
+        this.sendControls = new ALOutboundSendControls({ nowMs: () => dependencies.clock.nowMs() });
         this.durable = new ALOutboundStoreLane({
             lane: 'durable',
             stores: dependencies,
@@ -525,10 +526,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     /**
-     * Cancels one message for this owner's lifetime. A message the owner never admitted is still
+     * Cancels one message for the durable row retention (60 minutes). A message the owner never admitted is still
      * remembered, so a row later claimed for it completes without sending; a message with a live
-     * attempt has that attempt's transport signal aborted. Idempotent: only the first call states the
-     * `cancelled` settlement.
+     * attempt has that attempt's transport signal aborted. Idempotent within the retention: only the first
+     * call states the `cancelled` settlement.
      */
     cancel(msgId: string): ALOutboundCancelOutcome {
         const outcome = this.sendControls.cancel(msgId);

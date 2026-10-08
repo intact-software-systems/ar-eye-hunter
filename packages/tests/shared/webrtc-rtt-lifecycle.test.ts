@@ -125,6 +125,31 @@ describe('RTC single-reporter heartbeat lifecycle', () => {
         expect(responder.measurements).toEqual([]);
     });
 
+    it('numbers every peer\'s measurements from one counter, so a removed peer leaves no version behind', async () => {
+        const reporter = createStreamingEndpoint('session-a', 'session-b');
+        const responder = createStreamingEndpoint('session-b', 'session-a');
+        openStreamingPair(reporter, responder);
+        await vi.advanceTimersByTimeAsync(5_020);
+        reporter.streamer.removePeer(reporter.peer);
+
+        const toThirdPeer = createStreamingPeer('session-a', 'session-c');
+        const third = createStreamingEndpoint('session-c', 'session-a');
+        toThirdPeer.wire.remote = third.wire;
+        third.wire.remote = toThirdPeer.wire;
+        third.streamer.setRttReportingPeerIds([]);
+        reporter.streamer.addPeer(toThirdPeer.peer);
+        toThirdPeer.peer.channel.connect(true);
+        reporter.streamer.setRttReportingPeerIds(['session-c']);
+        toThirdPeer.wire.open();
+        third.wire.open();
+        await vi.advanceTimersByTimeAsync(5_020);
+
+        expect(reporter.measurements.map((measurement) => [measurement.sessionIdTo, measurement.version])).toEqual([
+            ['session-b', 2],
+            ['session-c', 3]
+        ]);
+    });
+
     it('answers zero-origin pings but ignores malformed traffic and unsolicited passive pongs', async () => {
         const reporter = createStreamingEndpoint('session-a', 'session-b');
         const responder = createStreamingEndpoint('session-b', 'session-a');
@@ -171,7 +196,12 @@ describe('RTC single-reporter heartbeat lifecycle', () => {
     });
 });
 
-function createStreamingEndpoint(sessionId: string, peerSessionId: string): StreamingEndpoint {
+interface StreamingPeer {
+    readonly peer: WebRtcConnectionService.Peer;
+    readonly wire: LoopbackDataChannel;
+}
+
+function createStreamingPeer(sessionId: string, peerSessionId: string): StreamingPeer {
     const signaler = { send: async () => undefined, connect: async () => undefined };
     const iceCandidates = { iceServers: [], expiresAtEpochMs: 60_000 };
     const connection = new QRtcPeerConnection(signaler, {
@@ -191,6 +221,13 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         channels: new Map([['reliable', channel]]),
         media: new QRtcMediaChannel(connection, { peerId: peerSessionId })
     };
+    return { peer, wire };
+}
+
+function createStreamingEndpoint(sessionId: string, peerSessionId: string): StreamingEndpoint {
+    const signaler = { send: async () => undefined, connect: async () => undefined };
+    const iceCandidates = { iceServers: [], expiresAtEpochMs: 60_000 };
+    const { peer, wire } = createStreamingPeer(sessionId, peerSessionId);
     const connectionService = new WebRtcConnectionService(signaler, {
         sessionId,
         token: 'test-token',
@@ -226,7 +263,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         }
     });
     streamer.addPeer(peer);
-    channel.connect(true);
+    peer.channel.connect(true);
     return { streamer, peer, wire, measurements };
 }
 

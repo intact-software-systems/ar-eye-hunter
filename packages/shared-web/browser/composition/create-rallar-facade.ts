@@ -159,7 +159,7 @@ function createBrowserSessionMessaging(
     delivery: typeof browserDeliveryComposition
 ): Pick<BrowserFacadeCompositions, 'session' | 'stateEvents' | 'messaging'> {
     const { nowMs, deliveries, sessionDeliveries } = delivery;
-    const recovery = createBrowserResyncRecoveryComposition({ connectionRuntime: foundation.connectionRuntime });
+    const recovery = createBrowserResyncRecoveryComposition({ connectionRuntime: foundation.connectionRuntime, nowMs });
     const session = createBrowserSessionCoreComposition({
         foundation,
         state,
