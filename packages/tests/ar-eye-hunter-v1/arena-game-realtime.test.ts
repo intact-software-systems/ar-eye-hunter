@@ -387,6 +387,51 @@ describe('arena game realtime acceptance and egress', () => {
         });
     });
 
+    it.each(
+        [
+            { arrival: 'snapshot', afterMs: 1_000, kind: 'pickup-taken' },
+            { arrival: 'director event', afterMs: 1_000, kind: 'pickup-taken' },
+            { arrival: 'snapshot', afterMs: 2_800, kind: 'spawn-eye' },
+            { arrival: 'director event', afterMs: 2_800, kind: 'spawn-eye' }
+        ] as const
+    )('keeps the loss headline over a $arrival arriving $afterMs ms after the loss until it expires', async ({ arrival, afterMs, kind }) => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        await arena.render();
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        mockMatch.status.mockReturnValue(remoteDirectorMatchStatus());
+        const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
+        const lostAtEpochMs = Date.now();
+        const fixture = pickupSnapshotFixture(lostAtEpochMs);
+        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        mockMatch.sendIntent.mockResolvedValueOnce({ status: 'held-by-other', transport: 'director-relay' });
+        await act(async () => arena.current?.sendPickupIntent(fixture.intent));
+        await waitForState(() => arena.current?.activeEvent?.kind === 'pickup-taken');
+
+        vi.setSystemTime(lostAtEpochMs + afterMs);
+        const directorEvent = spawnEyeEvent(lostAtEpochMs + afterMs);
+        await act(async () => {
+            if (arrival === 'snapshot') {
+                await config?.onSnapshot?.(directorEnvelope('snapshot', {
+                    ...fixture.snapshot,
+                    activeEvent: directorEvent,
+                    events: [directorEvent]
+                }));
+            }
+            else {
+                await config?.onEvent?.(directorEnvelope('event', {
+                    protocol: 'ar-eye-hunter.v1',
+                    kind: 'arena-event',
+                    event: directorEvent
+                }));
+            }
+        });
+
+        expect(arena.current?.activeEvent?.kind).toBe(kind);
+    });
+
     it.each(['sent', 'no-director', 'failed'] as const)('records no loss for a pickup intent whose send reads %s', async (status) => {
         await arena.render();
         await waitForState(() => arena.current?.connectionState === 'connected');
@@ -839,6 +884,31 @@ function peerShotMessage(roomRef: GroupRef | undefined) {
             acceptedAtEpochMs: 1000
         }
     };
+}
+
+/** A director event that would replace whatever headline the arena shows. */
+function spawnEyeEvent(nowEpochMs: number): ArenaEvent {
+    return {
+        id: `spawn-eye:${nowEpochMs}`,
+        kind: 'spawn-eye',
+        source: 'director',
+        startsAtEpochMs: nowEpochMs,
+        expiresAtEpochMs: nowEpochMs + 2_800,
+        revision: 2
+    };
+}
+
+function directorEnvelope<T>(kind: 'snapshot' | 'event', payload: T) {
+    return createRallarGameEnvelope({
+        protocol: 'ar-eye-hunter.v1',
+        kind,
+        roomId: 'arena-1',
+        senderId: 'director-session',
+        seq: 1,
+        directorEpoch: 1,
+        sentAtEpochMs: Date.now(),
+        payload
+    });
 }
 
 function remoteDirectorMatchStatus(): RallarGameMatchStatus {

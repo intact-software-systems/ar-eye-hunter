@@ -47,6 +47,9 @@ verdict until then, so a claimant the director refuses, or one that leaves,
 blocks a 12 s pickup for 4 s, not the 30 s command default. The first
 hunter's intent reaches the director, and a hunter whose intent finds the pickup
 already claimed reads `held-by-other` and sees a `pickup-taken` activity
-headline until the next arena snapshot or director event replaces it. The director's own pickups are routed locally and claim nothing.
+headline for its 2.8 s (`ARENA_EVENT_HEADLINE_MS`): a local event holds the
+headline until it expires, so the snapshot or director event that follows, usually
+the winner's own pickup, does not replace it. The director's own pickups are
+routed locally and claim nothing.
 The generic game envelope still identifies rooms by `roomId`; this app fallback
 repair does not claim full scope isolation for that separate shared protocol.

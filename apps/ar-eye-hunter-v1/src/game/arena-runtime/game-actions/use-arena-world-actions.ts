@@ -5,7 +5,7 @@ import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
-import { PICKUP_CLAIM_TTL_MS } from '../../simulation.ts';
+import { ARENA_EVENT_HEADLINE_MS, PICKUP_CLAIM_TTL_MS } from '../../simulation.ts';
 import {
     GAME_PROTOCOL,
     type ArenaEvent,
@@ -34,9 +34,6 @@ interface ArenaWorldActionsInput extends Pick<ArenaMatchDelivery, 'publishMatchL
     readonly setActiveEvent: Dispatch<SetStateAction<ArenaEvent | undefined>>;
     readonly setArenaSnapshot: Dispatch<SetStateAction<ArenaSnapshot | undefined>>;
 }
-
-/** As long as the director's own pickup headline stays up. */
-const PICKUP_TAKEN_HEADLINE_MS = 2_800;
 
 export function useArenaWorldActions(
     input: ArenaWorldActionsInput
@@ -87,7 +84,7 @@ function sendArenaPickupIntent(input: ArenaWorldActionsInput, intent: PickupInte
     }, generation);
 }
 
-/** The loss is the local session's alone: it shows as the activity headline until the next arena event replaces it. */
+/** The loss is the local session's alone: it holds the activity headline until it expires. */
 function setPickupTakenEvent(input: ArenaWorldActionsInput, pickupId: string, generation: number): void {
     const snapshot = input.arenaSnapshotRef.current;
     const pickup = snapshot?.pickups.find((item) => item.id === pickupId);
@@ -156,9 +153,9 @@ function toPickupTakenEvent(pickup: ArenaPickupState, revision: number, nowEpoch
         id: `pickup-taken:${pickup.id}`,
         kind: 'pickup-taken',
         position: pickup.position,
-        durationMs: PICKUP_TAKEN_HEADLINE_MS,
+        durationMs: ARENA_EVENT_HEADLINE_MS,
         startsAtEpochMs: nowEpochMs,
-        expiresAtEpochMs: nowEpochMs + PICKUP_TAKEN_HEADLINE_MS,
+        expiresAtEpochMs: nowEpochMs + ARENA_EVENT_HEADLINE_MS,
         revision,
         source: 'local',
         headline: `${pickup.label} was taken first`
