@@ -31,6 +31,7 @@ import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import {
+    WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES,
     WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS,
     WsQueueBoxServerReceiptAggregation
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
@@ -387,7 +388,7 @@ describe('WS server receipt aggregate', () => {
     it('answers an empty audience complete at admission and keeps nothing to sweep', () => {
         const aggregation = createAggregation();
 
-        expect(aggregation.recordAdmission({ ...admission(), expectedRecipientPeerIds: [] })).toMatchObject({
+        expect(aggregation.recordAdmission({ ...admission(), expectedRecipientPeerIds: [] }).admitted).toMatchObject({
             phase: 'admitted',
             expectedRecipientPeerIds: []
         });
@@ -396,6 +397,79 @@ describe('WS server receipt aggregate', () => {
         expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toEqual([]);
     });
 });
+
+describe('WS server receipt aggregates at their cap', () => {
+    it('holds every aggregate up to the cap until its deadline', () => {
+        const aggregation = createAggregation();
+
+        const evicted = admitAggregates(aggregation, WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES);
+
+        expect(evicted).toEqual([]);
+        expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toHaveLength(WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES);
+    });
+
+    it('ends the oldest aggregate, as its deadline would, when an admission finds the cap reached', () => {
+        const aggregation = createAggregation();
+        admitAggregates(aggregation, 1);
+        aggregation.recordAck(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }));
+        admitAggregates(aggregation, WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES - 1, 1);
+
+        const [evicted] = admitAggregates(aggregation, 1, WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES);
+
+        expect(evicted).toEqual({
+            receipt: {
+                msgId: 'room-message-1',
+                originPeerId: 'a',
+                expectedRecipientPeerIds: ['b', 'c'],
+                confirmedRecipientPeerIds: ['b'],
+                snapshotVersion: SNAPSHOT_VERSION,
+                phase: 'timed-out',
+                observedAtEpochMs: 1_000
+            },
+            deadlineAtMs: 30_000
+        });
+        expect(aggregation.recordAck(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' })).left?.message)
+            .toBe('AL acknowledgement names no receipt this server aggregates');
+        const swept = aggregation.sweep(Number.MAX_SAFE_INTEGER);
+        expect(swept).toHaveLength(WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES);
+        expect(swept.map((receipt) => receipt.msgId)).not.toContain('room-message-1');
+    });
+
+    it('writes the evicted aggregate\'s timed-out receipt beside the new admission\'s', async () => {
+        const enqueued: ALMessage[] = [];
+        const aggregation = createAggregation(enqueued);
+        admitAggregates(aggregation, WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES, 1);
+
+        await aggregation.writeAdmittedReceipt({
+            message: roomMessage(1_000),
+            originPeerId: 'a',
+            roomAudience: { recipientPeerIds: ['a', 'b', 'c'], snapshotVersion: SNAPSHOT_VERSION },
+            acceptance: { kind: 'admitted' }
+        });
+
+        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource))))
+            .toMatchObject([
+                { msgId: 'room-message-2', phase: 'timed-out' },
+                { msgId: 'room-message-1', phase: 'admitted' }
+            ]);
+    });
+});
+
+/** Admits `count` aggregates numbered from `first + 1`, and returns what each admission evicted. */
+function admitAggregates(
+    aggregation: WsQueueBoxServerReceiptAggregation,
+    count: number,
+    first = 0
+): readonly WsQueueBoxServerReceiptAggregation.EndedAggregate[] {
+    const evicted: WsQueueBoxServerReceiptAggregation.EndedAggregate[] = [];
+    for (let index = first + 1; index <= first + count; index += 1) {
+        const recorded = aggregation.recordAdmission({ ...admission(), msgId: `room-message-${index}` });
+        if (recorded.evicted !== undefined) {
+            evicted.push(recorded.evicted);
+        }
+    }
+    return evicted;
+}
 
 function createAggregation(enqueued: ALMessage[] = []): WsQueueBoxServerReceiptAggregation {
     const aggregation = new WsQueueBoxServerReceiptAggregation({

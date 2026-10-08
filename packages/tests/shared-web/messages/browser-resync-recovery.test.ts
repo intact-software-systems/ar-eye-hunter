@@ -6,6 +6,7 @@ import { BrowserResyncRecovery } from '@shared-web/browser/messages/browser-resy
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
 import type { RallarChannelRecovery } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type {
     ALInboundResyncCursor,
     ALInboundResyncRequired
@@ -21,6 +22,8 @@ interface ResyncMessageInput {
     readonly typeId: string;
     readonly seq: number;
     readonly epoch?: number;
+    /** Absent orders the message on the one `chat` track. */
+    readonly orderingKey?: string;
 }
 
 /** A message whose ordering is stated, so the cursor reads it without asserting. */
@@ -37,7 +40,11 @@ function createResyncMessage(input: ResyncMessageInput): OrderedResyncMessage {
     );
     return {
         ...msg,
-        ordering: { orderingKey: 'chat', seq: input.seq, ...(input.epoch === undefined ? {} : { epoch: input.epoch }) }
+        ordering: {
+            orderingKey: input.orderingKey ?? 'chat',
+            seq: input.seq,
+            ...(input.epoch === undefined ? {} : { epoch: input.epoch })
+        }
     };
 }
 
@@ -54,6 +61,11 @@ function toResync(msg: OrderedResyncMessage): ALInboundResyncRequired {
             carrier: 'rtc'
         }
     };
+}
+
+/** A resynchronization on the track `track-<track>`, each track its own. */
+function createTrackResync(track: number): ALInboundResyncRequired {
+    return toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 300, orderingKey: `track-${track}` }));
 }
 
 interface RecoveryFixture {
@@ -147,6 +159,20 @@ describe('the browser resync recovery', () => {
         fixture.recovery.onResyncRequired(later);
 
         expect(fixture.invocations).toEqual([first.cursor, later.cursor]);
+    });
+
+    it('remembers at most the receiver\'s ordering-track cap, forgetting the first remembered first', () => {
+        const fixture = createRecoveryFixture();
+        fixture.owners.setOwner(CHAT_ROUTE, fixture.owner);
+        for (let track = 0; track <= AL_INBOUND_MAX_ORDERING_TRACKS; track += 1) {
+            fixture.recovery.onResyncRequired(createTrackResync(track));
+        }
+
+        fixture.recovery.onResyncRequired(createTrackResync(AL_INBOUND_MAX_ORDERING_TRACKS));
+        fixture.recovery.onResyncRequired(createTrackResync(0));
+
+        expect(fixture.invocations).toHaveLength(AL_INBOUND_MAX_ORDERING_TRACKS + 2);
+        expect(fixture.invocations.at(-1)?.orderingKey).toBe('track-0');
     });
 
     it('invokes nothing and states nothing for a route without an owner', () => {

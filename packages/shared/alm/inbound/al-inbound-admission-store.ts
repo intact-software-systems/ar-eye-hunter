@@ -11,7 +11,11 @@ import {
     requireLivePersistenceWrite
 } from '../../persistence/persistence-write-deadline.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
-import { type ALAdmissionBackend, type ALAdmissionWriteContext } from '../al-admission-backend.ts';
+import {
+    type ALAdmissionBackend,
+    type ALAdmissionBackendEntry,
+    type ALAdmissionWriteContext
+} from '../al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import {
     decodeALAdmissionNumber,
@@ -59,6 +63,12 @@ import {
     type AcksControlValue,
     type PendingControlValue
 } from './control/al-inbound-control-rows.ts';
+
+/**
+ * The most ordering snapshots one store keeps (D191). The next new track evicts the least recently updated
+ * one, so a departed sender's tracks leave under churn instead of an hour after their last message.
+ */
+export const AL_INBOUND_MAX_ORDERING_TRACKS = 256;
 
 export interface ALInboundMessageOwner {
     readonly msgId: string;
@@ -622,9 +632,19 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             throw new TypeError(validated.left.message);
         }
 
+        const status = await this.writeValidatedBundle(validated.right!);
+        if (status === 'committed' && opensALInboundOrderingTrack(bundle)) {
+            await this.evictOrderingTracksPastCap();
+        }
+        return status;
+    }
+
+    private async writeValidatedBundle(
+        bundle: ALInboundCommitBundle
+    ): Promise<'committed' | 'conflict' | 'expired'> {
         try {
             return await this.backend.write(
-                (transaction) => this.writeCommitBundle(transaction, validated.right!),
+                (transaction) => this.writeCommitBundle(transaction, bundle),
                 bundle.admissionExpiresAtMs
             );
         }
@@ -636,6 +656,36 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 return 'conflict';
             }
             throw error;
+        }
+    }
+
+    /**
+     * Removes the least recently updated snapshots past the cap, each only if it is still the one read: a snapshot
+     * updated in between is no longer the least recent, and its conflict leaves the eviction to the next new track.
+     * Only the snapshot leaves; the track's delivered marker keeps the completion evidence its live work reads.
+     */
+    private async evictOrderingTracksPastCap(): Promise<void> {
+        const held = await this.backend.readWithin((session) =>
+            session.list(this.toOrderingPrefix(), decodeALInboundOrderingSnapshot)
+        );
+        const evicted = resolveLeastRecentlyUpdatedTracks(held, held.length - AL_INBOUND_MAX_ORDERING_TRACKS);
+        if (evicted.length === 0) {
+            return;
+        }
+        try {
+            await this.backend.write(async (transaction) => {
+                for (const track of evicted) {
+                    const current = await transaction.read(track.key, decodeALInboundOrderingSnapshot);
+                    if (current?.updatedAtMs === track.value.updatedAtMs) {
+                        await transaction.remove(track.key);
+                    }
+                }
+            });
+        }
+        catch (error) {
+            if (!(error instanceof ALAdmissionBackendConflictError)) {
+                throw error;
+            }
         }
     }
 
@@ -835,7 +885,11 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     }
 
     private toOrderingKey(trackKey: string): string {
-        return `${this.namespace}:ordering:${trackKey}`;
+        return `${this.toOrderingPrefix()}${trackKey}`;
+    }
+
+    private toOrderingPrefix(): string {
+        return `${this.namespace}:ordering:`;
     }
 
     private toSupersedenceLatestKey(key: string): string {
@@ -853,6 +907,22 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     private toBufferedTrackPrefix(trackKey: string): string {
         return `${this.namespace}:buffered:${trackKey}:`;
     }
+}
+
+/** A bundle that writes the first snapshot of its track: the only commit that can take the store past its cap. */
+function opensALInboundOrderingTrack(bundle: ALInboundCommitBundle): boolean {
+    return bundle.observations.ordering?.snapshot === undefined &&
+        bundle.mutations.some((mutation) => mutation.kind === 'set-ordering');
+}
+
+/** Every snapshot expires one TTL after its update, so the least recently updated is also the next to expire. */
+function resolveLeastRecentlyUpdatedTracks(
+    held: readonly ALAdmissionBackendEntry<ALOrderingTrackSnapshot>[],
+    count: number
+): readonly ALAdmissionBackendEntry<ALOrderingTrackSnapshot>[] {
+    return [...held]
+        .sort((left, right) => left.value.updatedAtMs - right.value.updatedAtMs || left.key.localeCompare(right.key))
+        .slice(0, Math.max(0, count));
 }
 
 /**
