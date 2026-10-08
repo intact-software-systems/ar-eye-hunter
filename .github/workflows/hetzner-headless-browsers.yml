@@ -221,6 +221,7 @@ jobs:
       - name: Render remote headless env
         shell: bash
         env:
+          RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: ${{ vars.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE }}
           RALLAR_BLACK_BOX_SPA_URL: ${{ inputs.spa_url }}
           RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}
           RALLAR_API_BASE_URL: ${{ inputs.api_base_url }}
@@ -262,6 +263,9 @@ jobs:
 
           env_file="${RUNNER_TEMP}/rallar-headless-action.env"
           {
+            if [[ -n "${RALLAR_BLACK_BOX_RTC_CAPTURE_MODE:-}" ]]; then
+              printf 'RALLAR_BLACK_BOX_RTC_CAPTURE_MODE=%s\n' "$(quote "${RALLAR_BLACK_BOX_RTC_CAPTURE_MODE}")"
+            fi
             printf 'RALLAR_BLACK_BOX_SPA_URL=%s\n' "$(quote "${RALLAR_BLACK_BOX_SPA_URL}")"
             printf 'RALLAR_BLACK_BOX_CONTROL_URL=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_URL}")"
             printf 'RALLAR_API_BASE_URL=%s\n' "$(quote "${RALLAR_API_BASE_URL}")"

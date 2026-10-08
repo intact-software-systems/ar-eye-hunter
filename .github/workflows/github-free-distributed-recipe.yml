@@ -365,6 +365,7 @@ jobs:
           set +a
           npm --workspace rallar-black-box run worker:headless
         env:
+          RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: ${{ vars.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE }}
           CI: '1'
           RALLAR_BLACK_BOX_SPA_URL: ${{ inputs.spa_url }}
           RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}

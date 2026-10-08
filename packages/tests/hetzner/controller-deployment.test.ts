@@ -1,9 +1,24 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import {
+    mkdir,
+    mkdtemp,
+    readdir,
+    readFile,
+    rm,
+    stat,
+    symlink,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import type { TestContext } from 'vitest';
+
 import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+
 import { runOwnedTestProcess, type OwnedTestProcessOutcome } from './owned-test-process.ts';
 
 interface ControllerSelfTestInput {
@@ -17,9 +32,15 @@ const rolloutScriptPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/
 const distributedRunnerWorkflowPath = '.github/workflows/hetzner-distributed-recipe-runner.yml';
 
 async function runControllerSelfTest(context: TestContext, input: ControllerSelfTestInput): Promise<OwnedTestProcessOutcome> {
-    return await runOwnedTestProcess(context, { executable: 'bash', args: [input.scriptPath], options: { env: { ...process.env, ...input.environment } } });
+    return await runOwnedTestProcess(context, {
+        executable: 'bash',
+        args: [input.scriptPath],
+        options: { env: { PATH: process.env.PATH, LANG: 'C', LC_ALL: 'C', ...input.environment } }
+    });
 }
 
+// Hetzner controller orchestration owns the remaining deployment/source-binding checks.
+// Replace each supplementary source check when an isolated entrypoint test proves its admission or deployment risk.
 describe('Hetzner controller contracts and effects', () => {
     it('provides a provider-neutral wait script for externally started control agents', async () => {
         const script = await readFile(
@@ -28,7 +49,6 @@ describe('Hetzner controller contracts and effects', () => {
         );
 
         expect(script).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX');
-        expect(script).toContain('control_run_snapshot_url');
         expect(script).toContain(
             'RALLAR_BLACK_BOX_CONTROL_READ_TOKEN="${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN:-${RALLAR_BLACK_BOX_CONTROL_TOKEN:-}}"'
         );
@@ -48,9 +68,6 @@ describe('Hetzner controller contracts and effects', () => {
         );
         expect(workflow).toContain(
             'RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}'
-        );
-        expect(workflow).toContain(
-            'printf \'RALLAR_BLACK_BOX_CONTROL_READ_TOKEN=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN}")"'
         );
         expect(workflow).not.toContain('RALLAR_WRITE_HEADLESS_ENV=0 ./11-restart-headless-workers.sh');
     });
@@ -158,12 +175,6 @@ describe('Hetzner controller contracts and effects', () => {
             'RALLAR_BLACK_BOX_AGENT_START_INDEX: ${{ vars.RALLAR_BLACK_BOX_AGENT_START_INDEX || \'1\' }}'
         );
         expect(runnerWorkflow).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX: \'1\'');
-        expect(workflow).toContain(
-            'printf \'RALLAR_BLACK_BOX_AGENT_START_INDEX=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_AGENT_START_INDEX}")"'
-        );
-        expect(runnerWorkflow).toContain(
-            'printf \'RALLAR_BLACK_BOX_AGENT_START_INDEX=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_AGENT_START_INDEX}")"'
-        );
         expect(script).toContain(
             'RALLAR_BLACK_BOX_AGENT_START_INDEX="${RALLAR_BLACK_BOX_AGENT_START_INDEX:-1}"'
         );
@@ -172,7 +183,6 @@ describe('Hetzner controller contracts and effects', () => {
             'read_token="${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN:-${RALLAR_BLACK_BOX_CONTROL_TOKEN:-}}"'
         );
         expect(script).toContain('curl "${curl_args[@]}" "${snapshot_url}"');
-        expect(script).toContain('^RALLAR_BLACK_BOX_AGENT_[0-9]+_(USERNAME|PASSWORD|CONTROL_TOKEN)$');
         expect(script).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX');
         expect(script).toContain('agent_start="${RALLAR_BLACK_BOX_AGENT_START_INDEX}"');
         expect(script).toContain('agent_end="$((agent_start + expected - 1))"');
@@ -182,7 +192,7 @@ describe('Hetzner controller contracts and effects', () => {
 
     it('repairs known Deno lockfile drift before the controlled rollout dirty checkout guard', async (context) => {
         const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-rollout-lock-drift-'));
-        onTestFinished(() => rm(tmp, { recursive: true, force: true }));
+        context.onTestFinished(() => rm(tmp, { recursive: true, force: true }));
         const checkoutDir = path.join(tmp, 'checkout');
         const denoLock = path.join(checkoutDir, 'apps/api-v1/deno.lock');
         await mkdir(path.dirname(denoLock), { recursive: true });
@@ -207,7 +217,7 @@ describe('Hetzner controller contracts and effects', () => {
 
     it('cleans rollout transient disk pressure before installing dependencies', async (context) => {
         const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-rollout-cleanup-'));
-        onTestFinished(() => rm(tmp, { recursive: true, force: true }));
+        context.onTestFinished(() => rm(tmp, { recursive: true, force: true }));
         const checkoutDir = path.join(tmp, 'checkout');
         const artifactDir = path.join(tmp, 'distributed-runs');
         const npmCacheDir = path.join(tmp, 'npm-cache');
@@ -271,11 +281,10 @@ describe('Hetzner controller contracts and effects', () => {
 
     it('checks out exact commit SHAs without treating them as branch pull refs', async (context) => {
         const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-rollout-sha-ref-'));
-        onTestFinished(() => rm(tmp, { recursive: true, force: true }));
+        context.onTestFinished(() => rm(tmp, { recursive: true, force: true }));
         const originDir = path.join(tmp, 'origin.git');
         const sourceDir = path.join(tmp, 'source');
         const checkoutDir = path.join(tmp, 'checkout');
-        const rolloutScript = await readFile(rolloutScriptPath, 'utf8');
 
         await runOwnedTestProcess(context, { executable: 'git', args: ['init', '--bare', originDir], options: {} });
         await mkdir(sourceDir, { recursive: true });
@@ -309,14 +318,11 @@ describe('Hetzner controller contracts and effects', () => {
 
         expect(stdout).toContain(`checkoutHead=${commitSha.trim()}`);
         expect(stdout).toContain('checkoutBranch=HEAD');
-        expect(rolloutScript).toMatch(
-            /if is_full_git_sha "\$\{repo_ref\}"; then[\s\S]*checkout --detach "\$\{repo_ref\}"[\s\S]*return[\s\S]*checkout -B "\$\{repo_ref\}" "origin\/\$\{repo_ref\}"/
-        );
     });
 
     it('follows a rewritten remote branch instead of failing the fast-forward of a diverged local one', async (context) => {
         const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-rollout-rewritten-branch-'));
-        onTestFinished(() => rm(tmp, { recursive: true, force: true }));
+        context.onTestFinished(() => rm(tmp, { recursive: true, force: true }));
         const originDir = path.join(tmp, 'origin.git');
         const sourceDir = path.join(tmp, 'source');
         const checkoutDir = path.join(tmp, 'checkout');
@@ -413,7 +419,7 @@ describe('Hetzner controller contracts and effects', () => {
 
     it('isolates Ubuntu, NodeSource, and Caddy apt repository profiles', async (context) => {
         const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-apt-profiles-'));
-        onTestFinished(() => rm(tmp, { recursive: true, force: true }));
+        context.onTestFinished(() => rm(tmp, { recursive: true, force: true }));
         const ubuntuSource = path.join(tmp, 'ubuntu.sources');
         const nodeSource = path.join(tmp, 'nodesource.list');
         const caddySource = path.join(tmp, 'caddy-stable.list');
@@ -482,7 +488,7 @@ describe('Hetzner controller contracts and effects', () => {
 
     it('writes and validates a complete deployment-readiness stamp', async (context) => {
         const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-deployment-readiness-'));
-        onTestFinished(() => rm(tmp, { recursive: true, force: true }));
+        context.onTestFinished(() => rm(tmp, { recursive: true, force: true }));
         const readinessPath = path.join(tmp, 'deployment-readiness.json');
         const browserRoot = path.join(tmp, 'browsers');
         const browserDir = path.join(browserRoot, 'versions', '1.61.1-chromium-test');

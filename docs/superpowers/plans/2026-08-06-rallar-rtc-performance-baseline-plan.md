@@ -137,10 +137,40 @@ snapshots. Both normal workers stop with exit 0, all service ports close and the
 owned database is removed. Native coverage remains partial; this is local default
 worker correctness, not homogeneous performance or Actions/operator acceptance.
 
-The next two useful slices are the approved Actions HOST writer/render forwarding,
-then canonical operator RUN forwarding and actual adapter application. The parent
-evidence selector correction separately awaits its bounded design answer and
-semantic TDD; its deadlines and independent outcome assertions stay unchanged.
+Published reader checkpoint `0f9fabb2b` has terminal Formation and Medium success;
+Branch37820467167 retains the known observation-selector failure and one separate
+API recipe failure (29 other recipes pass). Original group-data-policy artifacts
+confirm that the exact allowed message was refused with `membership-fenced`.
+Bob's preceding HTTP presence snapshot still contains only Alice at revision(2,1);
+a later delta adds Bob at(2,2). Bob's mutation transaction succeeds on attempt1,
+and the later delta is sent successfully to both recipients. The exact authorizer
+snapshot and summary commit timing remain absent: summary convergence is a strong
+inference, not an established production defect. Longer receiver waiting cannot
+recover this terminally refused send. No retry, timeout or repair contract is selected.
+
+Actions HOST forwarding now has independent SPEC and complete QUALITY acceptance.
+One canonical worker environment writer carries the optional HOST mode through the
+three real Actions environment maps; it preserves omission and propagates validation,
+write and rename failures without replacing prior bytes before successful rename.
+Genuine semantic RED has 17 passing controls and 16 intended failures: 12 lost-mode
+paths and four CR/LF refusal/replacement defects. The same 33 cases pass after the
+correction; 95 affected cases and both consumer builds pass. Review removes obsolete
+private serializer/source assertions while preserving every maintained case and its
+independent behavior requirements. The corrected existing owners pass 27 cases, and
+51 maintained review-disposition controls pass. Five exact schema-validated external
+boundaries use the maintained reviewed-false-positive route; no standards exception,
+legacy compatibility path, duplicate capture parser or new policy is introduced.
+The final actual-parent changed-style and current coupling checks pass; test typing
+covers 1,509 files with zero errors. Source and original RED/GREEN/correction artifacts
+are independently bound. These local writer/YAML/process results do not accept real
+Actions deployment, deployed worker application, operator RUN or E3.
+
+The next two useful slices are canonical operator RUN forwarding, then HOST/RUN
+application through existing deployed workers and actual Actions. The parent evidence
+selector correction separately awaits its bounded design answer and semantic TDD;
+its deadlines and independent outcome assertions stay unchanged. The separate hosted
+API admission refusal also needs its correctness contract resolved from the original
+correlated evidence before a repair is selected.
 
 After source correctness and integration, complete Actions HOST/operator RUN
 forwarding and actual application through existing deployed workers. The former exact

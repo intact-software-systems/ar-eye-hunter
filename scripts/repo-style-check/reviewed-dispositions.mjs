@@ -35,6 +35,41 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
+    // Loaded Actions YAML is raw until its complete consumed shape validates;
+    // the selected step must have an executable body and a string env map.
+    Object.freeze({
+        path: 'packages/tests/hetzner/headless-worker-environment.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readHeadlessEnvironmentStep'
+    }),
+    // Owned process recorder JSON validates every consumed argument/env field
+    // before typed assertion evidence leaves the read boundary.
+    Object.freeze({
+        path: 'packages/tests/hetzner/headless-worker-environment.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readNpmRecord'
+    }),
+    // Rename-port JSON validates paths, contents and finite temporary mode
+    // before typed filesystem assertions consume the record.
+    Object.freeze({
+        path: 'packages/tests/hetzner/headless-worker-environment.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readRenameRecord'
+    }),
+    // The complete consumed workflow schema admits YAML before any typed
+    // source-authority, planning or credential-protection assertions.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readWorkflow'
+    }),
+    // Planner stdout JSON remains raw inside the anonymous owned-process test
+    // until its required IDs and every numeric matrix field validate.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // The emitted GroupRef is guarded before isolation assertions; the capture
     // caller independently validates the complete canonical output manifest.
     Object.freeze({
