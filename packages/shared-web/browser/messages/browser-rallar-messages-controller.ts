@@ -35,6 +35,7 @@ export namespace BrowserRallarMessagesController {
         readonly recoveryOwners: BrowserChannelRecoveryOwners;
         connect(): Promise<ApiMiddleware>;
         readMiddleware(): ApiMiddleware | undefined;
+        requireMiddleware(): ApiMiddleware;
         requireSession(): AuthSession;
         resolveDefaultRoom(): string | GroupRef | undefined;
         resolveCurrentRoomRef(): GroupRef | undefined;
@@ -107,7 +108,8 @@ export class BrowserRallarMessagesController {
             ): RallarTypedMessageChannel<T> => channels.channel<T>(definition),
             room: <T>(
                 definition: RallarRoomMessageChannelDefinition
-            ): RallarTypedMessageChannel<T> => channels.room<T>(definition)
+            ): RallarTypedMessageChannel<T> => channels.room<T>(definition),
+            readUsage: () => input.requireMiddleware().middleware.volatileBudget.readReport(input.nowMs())
         };
         this.crdtTransport = createRallarCrdtMessageTransport(this.operations);
     }

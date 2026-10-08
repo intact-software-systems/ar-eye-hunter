@@ -214,7 +214,8 @@ function createMessages(input: CallSignalTestInput): RallarMessagesOperations {
         },
         rtc: { send: unsupportedCallOperation, onMessage: unsupportedCallOperation },
         channel: unsupportedCallOperation,
-        room: unsupportedCallOperation
+        room: unsupportedCallOperation,
+        readUsage: unsupportedCallOperation
     };
 }
 

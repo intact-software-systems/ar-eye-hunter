@@ -122,6 +122,7 @@ export function createBrowserMessagingComposition(
         recoveryOwners: input.recoveryOwners,
         connect: async () => await input.session.connect(),
         readMiddleware: input.session.readMiddleware,
+        requireMiddleware: input.session.requireMiddleware,
         requireSession: input.session.requireSession,
         resolveDefaultRoom: input.state.resolveDefaultRoom,
         resolveCurrentRoomRef: () => input.state.roomStateStore.resolveCurrentRoomRef(),

@@ -74,6 +74,8 @@ export interface RallarBlackBoxBrowserRallarRuntime {
     submitControl: RallarBlackBoxBrowserRallarRuntimeMethod;
     injectFault: RallarBlackBoxBrowserRallarRuntimeMethod;
     readStorageCounters: RallarBlackBoxBrowserRallarRuntimeMethod;
+    /** The page's session ledger report, read by the `stats` command; `undefined` before the page connects. */
+    readAlmUsage(): Promise<unknown>;
     refreshRoom(options: RallarBlackBoxBrowserRoomRefreshOptions): Promise<unknown>;
     waitForRoom: BlackBoxRallarRuntime['waitForRoom'];
     readonly crdt?: RallarBlackBoxBrowserRallarCrdtRuntime;
@@ -149,7 +151,7 @@ export type RallarBlackBoxBrowserTestRuntime =
     }>;
 
 export type CreateRallarBlackBoxBrowserTestRuntimeOptions =
-    & Omit<CreateRallarBlackBoxTestRuntimeOptions, 'commandExecutor'>
+    & Omit<CreateRallarBlackBoxTestRuntimeOptions, 'commandExecutor' | 'readAlmUsage'>
     & Readonly<{
         rallarRuntime?: RallarBlackBoxBrowserRallarRuntime;
         fetch?: typeof fetch;

@@ -5,6 +5,7 @@ import type {
     ALDeliveryCarrier,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type {
     IndexedDbOperationKind,
     IndexedDbOperationOwner
@@ -1063,6 +1064,12 @@ export interface RallarBlackBoxTestStatsSnapshot {
         transport?: RallarBlackBoxTestTransport;
         peerCount?: number;
         laneHealth?: unknown;
+        /**
+         * The page's session ledger, read by the `stats` command through `rallar.messages.readUsage()` (D180).
+         * Absent before the page connects, on a runtime that drives no Rallar page, and in the control client's
+         * periodic stats and final report, which read no page.
+         */
+        alm?: ALVolatileSessionReport;
     }>;
     readonly load?: Readonly<{
         loopCount: number;
@@ -1116,7 +1123,7 @@ export interface RallarBlackBoxTestCommandContext {
     config(): RallarBlackBoxTestConfig | undefined;
     abortSignal?(): AbortSignal | undefined;
     recordEvent(event: RallarBlackBoxTestRuntimeEventInput): void;
-    updateStats(commandId?: string): RallarBlackBoxTestStatsSnapshot;
+    updateStats(commandId?: string): Promise<RallarBlackBoxTestStatsSnapshot>;
 }
 
 export type RallarBlackBoxTestCommandExecutor = (

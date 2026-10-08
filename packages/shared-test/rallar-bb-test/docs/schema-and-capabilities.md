@@ -1048,6 +1048,18 @@ configured limits. The `stats` command mirrors the latest loop under
 `stats.load` without raw iteration or send observation arrays for SPA and
 artifact summaries.
 
+A browser agent's `stats` result also carries its page's session ledger under
+`stats.rallar.alm`: `{ usage: { admissions, bytes, oldestAgeMs, tracks },
+limits: { maxAdmissions, maxBytes, maxAgeMs, maxTracks }, overloaded }`, read at
+the command from `rallar.messages.readUsage()` (D180) — the same block reaches
+`health`'s `stats`, the `rallar.bb.stats` event and `latestStats`, so an
+`assert` reads it as `latestStats.rallar.alm.usage.admissions`. The block is
+absent before the page's connect completes, on a runtime that drives no Rallar
+page, and in the control client's periodic stats envelopes and final report,
+which read no page. A page answer that is not a whole report fails the `stats`
+command, naming each bad field. No command kind is added: a manifest's
+existing stats loops record the ledger over time.
+
 `rtc.stream` is the high-rate RTC traffic primitive. Use it when a recipe wants
 to model a realtime stream, such as 100 frames at 20 Hz, without expanding that
 stream into hundreds of sequential `rtc.send` commands. A stream command owns

@@ -117,6 +117,9 @@ function createDirectorAtTheBound(): DirectorAtTheBound {
             },
             room: () => {
                 throw new Error('A director heartbeat travels the lane sends.');
+            },
+            readUsage: () => {
+                throw new Error('A director heartbeat reads no ledger.');
             }
         },
         readSession: () => fixture.middleware.session

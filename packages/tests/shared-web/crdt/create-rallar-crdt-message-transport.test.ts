@@ -18,6 +18,9 @@ function createTransport(delivery: MessageDeliveryFixture): RallarCrdtMessageTra
         },
         room: () => {
             throw new Error('Not a room test');
+        },
+        readUsage: () => {
+            throw new Error('Not a ledger test');
         }
     };
     return createRallarCrdtMessageTransport(messages);
@@ -38,6 +41,9 @@ describe('built-in CRDT message admission', () => {
             },
             room: () => {
                 throw new Error('Not a room test');
+            },
+            readUsage: () => {
+                throw new Error('Not a ledger test');
             }
         };
         const received: Array<typeof payload> = [];

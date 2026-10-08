@@ -159,6 +159,7 @@ export class BlackBoxRallarConnectionRuntime {
             refreshRoom: async (options) => await this.#refreshRoom(options),
             waitForRoom: async (options) => await this.#waitForRoom(options),
             readRtcMessageNacks: (messageId) => rallar.readRtcMessageNacks(messageId),
+            readAlmUsage: async () => rallar.isConnected() ? rallar.messages.readUsage() : undefined,
             crdt,
             director,
             formation,

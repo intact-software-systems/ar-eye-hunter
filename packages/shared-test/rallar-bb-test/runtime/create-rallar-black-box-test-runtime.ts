@@ -1,4 +1,5 @@
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
+import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { computeAssertCommandOutcome } from '../assert/compute-assert-command-outcome.ts';
 import { waitForBarrier } from '../barrier/wait-for-barrier.ts';
@@ -43,6 +44,8 @@ export interface CreateRallarBlackBoxTestRuntimeOptions {
     readonly idFactory?: (prefix: string) => string;
     readonly commandExecutor?: RallarBlackBoxTestCommandExecutor;
     readonly cleanup?: RallarBlackBoxTestRuntimeCleanup;
+    /** Reads the page's session ledger for `stats`; absent on a runtime that drives no Rallar page. */
+    readonly readAlmUsage?: () => Promise<ALVolatileSessionReport | undefined>;
 }
 
 type CommandWithId = RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>;
@@ -65,6 +68,7 @@ namespace InMemoryRallarBlackBoxTestRuntime {
         readonly idFactory: (prefix: string) => string;
         readonly commandExecutor: RallarBlackBoxTestCommandExecutor | undefined;
         readonly cleanup: RallarBlackBoxTestRuntimeCleanup | undefined;
+        readonly readAlmUsage: (() => Promise<ALVolatileSessionReport | undefined>) | undefined;
     }
 }
 
@@ -228,7 +232,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             case 'stats':
                 return {
                     status: 'ok',
-                    value: this.updateStats(command.commandId),
+                    value: await this.updateStats(command.commandId),
                     nextStatus: this.currentState.status
                 };
             case 'reset':
@@ -537,8 +541,10 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         return result;
     }
 
-    private updateStats(commandId?: string): RallarBlackBoxTestStatsSnapshot {
-        const latestStats = toRuntimeStats(this.currentState, this.dependencies.now());
+    private async updateStats(commandId?: string): Promise<RallarBlackBoxTestStatsSnapshot> {
+        const alm = await this.dependencies.readAlmUsage?.();
+        const stats = toRuntimeStats(this.currentState, this.dependencies.now());
+        const latestStats = alm === undefined ? stats : { ...stats, rallar: { ...stats.rallar, alm } };
         this.currentState = { ...this.currentState, latestStats };
         this.appendEvent({
             kind: 'stats',
@@ -595,7 +601,8 @@ function toRuntimeDependencies(
         sleep: options.sleep ?? sleepWithAbort,
         idFactory: options.idFactory ?? createSequentialIdFactory(),
         commandExecutor: options.commandExecutor,
-        cleanup: options.cleanup
+        cleanup: options.cleanup,
+        readAlmUsage: options.readAlmUsage
     };
 }
 

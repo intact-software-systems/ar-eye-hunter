@@ -144,3 +144,4 @@ export type {
     ALStorageRecoveryOutcome
 } from '@shared/alm/storage/al-storage-event.ts';
 export type { ALStorageUnavailable, ALStorageUnavailableCause } from '@shared/alm/storage/al-storage-unavailable.ts';
+export type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';

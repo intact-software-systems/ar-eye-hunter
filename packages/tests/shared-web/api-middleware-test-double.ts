@@ -5,12 +5,15 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
+import { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import {
     DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
     type WebRtcConnectionService
 } from '@shared/services/web-rtc-connection-service.ts';
+
+import { createDefaultVolatileSessionBudget } from './default-volatile-session-budget.ts';
 
 export type MiddlewareTestOverrides = {
     readonly [K in keyof RallarBrowserMiddleware]?: Partial<RallarBrowserMiddleware[K]>;
@@ -53,7 +56,10 @@ export function createDefaultApiMiddlewareTestDouble(
                 session.sessionId,
                 middlewareOverrides.heartbeat
             ),
-            storageAvailability: createStorageAvailabilityDouble(middlewareOverrides.storageAvailability)
+            storageAvailability: createStorageAvailabilityDouble(middlewareOverrides.storageAvailability),
+            volatileBudget: middlewareOverrides.volatileBudget instanceof ALVolatileSessionBudget
+                ? middlewareOverrides.volatileBudget
+                : createDefaultVolatileSessionBudget()
         }
     };
 }

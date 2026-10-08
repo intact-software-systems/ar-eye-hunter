@@ -261,7 +261,13 @@ export async function initialiseMiddleware(
 
     const { checkpointStores } = transportInput;
     return {
-        middleware: { ...webSocketTransport, ...rtcTransport, heartbeat: heartbeatHandle, storageAvailability },
+        middleware: {
+            ...webSocketTransport,
+            ...rtcTransport,
+            heartbeat: heartbeatHandle,
+            storageAvailability,
+            volatileBudget: transportInput.volatileBound.budget
+        },
         checkpoints: [checkpointStores.wsClient.checkpoint, checkpointStores.rtcOverlay.checkpoint]
     };
 }
