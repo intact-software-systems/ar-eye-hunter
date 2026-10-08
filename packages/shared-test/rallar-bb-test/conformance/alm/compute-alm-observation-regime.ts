@@ -131,6 +131,9 @@ export type ALMObservationLedger =
         maxBytes: number;
         maxOldestAgeMs: number;
         maxTracks: number;
+        /** The most arrivals and arrival bytes one page's inbound pool held (D189). */
+        maxInboundAdmissions: number;
+        maxInboundBytes: number;
         overloadedReadings: number;
     }>
     | Readonly<{ outcome: 'no-readings'; }>;
@@ -377,6 +380,8 @@ function computeLedger(readings: readonly ALMObservationLedgerReading[]): ALMObs
         maxBytes: usages.reduce((max, usage) => Math.max(max, usage.bytes), 0),
         maxOldestAgeMs: usages.reduce((max, usage) => Math.max(max, usage.oldestAgeMs), 0),
         maxTracks: usages.reduce((max, usage) => Math.max(max, usage.tracks), 0),
+        maxInboundAdmissions: readings.reduce((max, reading) => Math.max(max, reading.inbound.admissions), 0),
+        maxInboundBytes: readings.reduce((max, reading) => Math.max(max, reading.inbound.bytes), 0),
         overloadedReadings: readings.filter((reading) => reading.overloaded).length
     };
 }

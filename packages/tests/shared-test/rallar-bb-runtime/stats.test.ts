@@ -17,11 +17,15 @@ import { createDeterministicRuntime } from './create-deterministic-runtime.ts';
 
 const FIRST_REPORT: ALVolatileSessionReport = {
     usage: { admissions: 3, bytes: 912, oldestAgeMs: 1_250, tracks: 2 },
+    own: { admissions: 2, bytes: 600 },
+    inbound: { admissions: 1, bytes: 312 },
     limits: AL_VOLATILE_SESSION_LIMITS,
     overloaded: false
 };
 const SECOND_REPORT: ALVolatileSessionReport = {
-    usage: { admissions: 1_000, bytes: 40_000, oldestAgeMs: 29_000, tracks: 64 },
+    usage: { admissions: 1_500, bytes: 60_000, oldestAgeMs: 29_000, tracks: 64 },
+    own: { admissions: 500, bytes: 20_000 },
+    inbound: { admissions: 1_000, bytes: 40_000 },
     limits: AL_VOLATILE_SESSION_LIMITS,
     overloaded: true
 };
@@ -122,14 +126,20 @@ describe('the stats result rallar.alm block', () => {
     });
 
     it('fails the stats command when the page answers with something that is not a ledger report, naming each bad field', async () => {
-        const runtime = createPageRuntime([{ usage: { admissions: -1, bytes: 0, oldestAgeMs: 0 }, limits: AL_VOLATILE_SESSION_LIMITS, overloaded: 'no' }]);
+        const runtime = createPageRuntime([{
+            usage: { admissions: -1, bytes: 0, oldestAgeMs: 0 },
+            own: { admissions: 0, bytes: -2 },
+            limits: AL_VOLATILE_SESSION_LIMITS,
+            overloaded: 'no'
+        }]);
 
         const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
 
         expect(result.ok).toBe(false);
         expect(result.error?.message).toBe(
             'The page\'s session ledger report is not valid: usage.admissions is not a count; ' +
-                'usage.tracks is not a count; overloaded is not a boolean'
+                'usage.tracks is not a count; own.bytes is not a count; inbound.admissions is not a count; ' +
+                'inbound.bytes is not a count; overloaded is not a boolean'
         );
     });
 });

@@ -147,6 +147,8 @@ const QUEUED_ADMISSION: ALDeliveryAdmissionVerdict = { kind: 'admitted', durable
 /** The ledger of a connected session that holds nothing, at the production limits. */
 const IDLE_SESSION_REPORT: ALVolatileSessionReport = {
     usage: { admissions: 0, bytes: 0, oldestAgeMs: 0, tracks: 0 },
+    own: { admissions: 0, bytes: 0 },
+    inbound: { admissions: 0, bytes: 0 },
     limits: AL_VOLATILE_SESSION_LIMITS,
     overloaded: false
 };

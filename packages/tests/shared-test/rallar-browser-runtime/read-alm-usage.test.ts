@@ -9,6 +9,8 @@ import { facade, loadRuntime, resetFacade } from './browser-rallar-runtime-test-
 
 const REPORT: ALVolatileSessionReport = {
     usage: { admissions: 2, bytes: 640, oldestAgeMs: 800, tracks: 1 },
+    own: { admissions: 1, bytes: 320 },
+    inbound: { admissions: 1, bytes: 320 },
     limits: AL_VOLATILE_SESSION_LIMITS,
     overloaded: false
 };

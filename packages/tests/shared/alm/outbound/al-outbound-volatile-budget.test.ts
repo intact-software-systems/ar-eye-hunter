@@ -15,6 +15,7 @@ import {
     AL_VOLATILE_SESSION_LIMITS,
     AL_VOLATILE_SESSION_MAX_ADMISSIONS,
     AL_VOLATILE_SESSION_MAX_AGE_MS,
+    AL_VOLATILE_SESSION_OWN_SHARE,
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
@@ -62,10 +63,10 @@ function createDefaultBudget(): ALVolatileSessionBudget {
     return new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
 }
 
-/** One volatile admission short of a full bound, so this session's next data admission is its 1 000th. */
-function recordReceivedUntilOneShort(budget: ALVolatileSessionBudget): void {
+/** Arrivals that hold the whole count limit, as a room flooding this session does. */
+function recordArrivalsAtTheLimit(budget: ALVolatileSessionBudget): void {
     const nowMs = Date.now();
-    for (let index = 0; index < AL_VOLATILE_SESSION_MAX_ADMISSIONS - 1; index += 1) {
+    for (let index = 0; index < AL_VOLATILE_SESSION_MAX_ADMISSIONS; index += 1) {
         budget.record({
             msgId: `received-${index}`,
             bytes: 1,
@@ -86,19 +87,26 @@ async function createFullRuntime() {
 }
 
 describe('the session volatile bound at the outbound admission (D74, D78)', () => {
-    it('refuses the 1 001st volatile data admission with the drop code capacity', async () => {
+    it('admits its own share of volatile sends while arrivals hold the count limit, and refuses the next with capacity (D189)', async () => {
         const budget = createDefaultBudget();
-        recordReceivedUntilOneShort(budget);
+        recordArrivalsAtTheLimit(budget);
         const runtime = createBudgetedRuntime(budget);
+        const ownShare = AL_VOLATILE_SESSION_MAX_ADMISSIONS * AL_VOLATILE_SESSION_OWN_SHARE;
 
-        const thousandth = await runtime.enqueueIfAbsent(createOutboundMessage('volatile-1000'));
-        const refused = await runtime.enqueueIfAbsent(createOutboundMessage('volatile-1001'));
+        const admitted = await runtime.enqueueAllIfAbsent(
+            Array.from({ length: ownShare }, (_, index) => createOutboundMessage(`volatile-${index + 1}`))
+        );
+        const refused = await runtime.enqueueIfAbsent(createOutboundMessage('volatile-past-the-share'));
 
-        expect(thousandth.verdict).toMatchObject({ kind: 'admitted', durable: false });
+        expect(admitted.filter(({ verdict }) => verdict.kind === 'admitted')).toHaveLength(ownShare);
         expect(refused.verdict).toMatchObject({ kind: 'refused', reason: 'capacity', limit: 'admissions' });
-        expect(refused.reason).toContain('volatile bound');
+        expect(refused.reason).toContain(`its own sends hold ${ownShare} admissions`);
         expect(refused.entries).toEqual([]);
-        expect(budget.readReport(Date.now()).usage.admissions).toBe(AL_VOLATILE_SESSION_MAX_ADMISSIONS);
+        expect(budget.readReport(Date.now())).toMatchObject({
+            usage: { admissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS + ownShare },
+            own: { admissions: ownShare },
+            inbound: { admissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS }
+        });
     });
 
     it('counts each member of a group this session sends, in order', async () => {

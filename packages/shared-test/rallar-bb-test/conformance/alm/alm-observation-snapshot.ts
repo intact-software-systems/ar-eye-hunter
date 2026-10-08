@@ -1,7 +1,10 @@
 import type { ALStoreDurability } from '../../../../shared/alm/al-runtime-stores.ts';
 import type { ALDeliveryCarrier } from '../../../../shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALCongestionCounters } from '../../../../shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { ALVolatileSessionUsage } from '../../../../shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import type {
+    ALVolatileSessionPoolUsage,
+    ALVolatileSessionUsage
+} from '../../../../shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { Either } from '../../../../shared/resilience/Either.ts';
 import { decodeALCongestionCounters } from '../../alm/decode-al-congestion-counters.ts';
 import { decodeALVolatileSessionReport } from '../../alm/decode-al-volatile-session-report.ts';
@@ -56,6 +59,8 @@ export interface ALMObservationLedgerReading {
     readonly atEpochMs: number;
     readonly agentId: string;
     readonly usage: ALVolatileSessionUsage;
+    readonly own: ALVolatileSessionPoolUsage;
+    readonly inbound: ALVolatileSessionPoolUsage;
     readonly overloaded: boolean;
 }
 
@@ -406,7 +411,7 @@ function toLedgerReading(stats: ALMObservationStatsEvent): ALMObservationLedgerR
     const { atEpochMs, agentId } = stats;
     return decodeALVolatileSessionReport(stats.rallar.alm).fold(
         () => undefined,
-        ({ usage, overloaded }) => ({ atEpochMs, agentId, usage, overloaded })
+        ({ usage, own, inbound, overloaded }) => ({ atEpochMs, agentId, usage, own, inbound, overloaded })
     );
 }
 
