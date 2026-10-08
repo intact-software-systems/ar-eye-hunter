@@ -182,7 +182,7 @@ every server message keeps its one backend.
   durabilities is split between the lanes; no caller declares one that way.
 - **A volatile admission never leaves the caller's turn.** It reads no IndexedDB and takes no Web Lock,
   so it completes within the caller's microtask chain, and a loop of awaited volatile sends yields no
-  task turn until it ends (R-S3a-7). A burst loop should yield or batch; fairness is V1's.
+  task turn until it ends (R-S3a-7). A burst loop should yield or batch; fairness is V1b's.
 - **Every lane-emitted diagnostic names its lane.** `commit-phases`, `effect-drain` and
   `readiness-probe` carry a required `lane` (`ALStoreDurability`: `durable`, `checkpoint` or
   `volatile`) (R-S3a-15), so a reader of the runner's storage speed can leave the memory lanes out.
@@ -772,15 +772,28 @@ refused at the sender.
 The volatile pairs keep their owner and sent-message rows until the message deadline plus the receipt grace
 ([`computeALReceiptRetentionExpiryMs`](../delivery/compute-al-receipt-retention-expiry-ms.ts)), not for an hour. One
 budget per session ([`ALVolatileSessionBudget`](../volatile-budget/al-volatile-session-budget.ts)) counts the data
-admissions the session originates and receives on its volatile pairs, by message and by envelope bytes. An outbound
-admission is released at its own deadline; an inbound one at the earlier of its deadline and 30 s after its arrival
+admissions the session originates and receives on its volatile pairs, by message and by envelope bytes, the age of
+its oldest admission and the ordering tracks of its own ordered sends. An outbound admission is released at its own
+deadline; an inbound one at the earlier of its deadline and 30 s after its arrival
 (`AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS`, R-S3c-ii-6), because the inbound deadline is the sender's clock
 and choice. Controls, receipts, acknowledgements, repairs, retransmissions and relay forwards are not counted, and
-neither is a message whose sender named no deadline (RTC signalling). Over `AL_VOLATILE_SESSION_MAX_ADMISSIONS`
-(1 000) or `AL_VOLATILE_SESSION_MAX_BYTES` (4 MiB) an outbound data admission is refused `capacity`: the handle ends
-`rejected` with `evidence.failure` `{ kind: 'refused', reason: 'capacity' }`, and no fallback is tried, because the
+neither is a message whose sender named no deadline (RTC signalling). An outbound data admission is refused
+`capacity` when it would pass one of four limits (D179): `AL_VOLATILE_SESSION_MAX_ADMISSIONS` (1 000) admissions,
+`AL_VOLATILE_SESSION_MAX_BYTES` (4 MiB) of envelopes, a deadline further than `AL_VOLATILE_SESSION_MAX_AGE_MS`
+(5 minutes) from now, or a new ordering track while `AL_VOLATILE_SESSION_MAX_TRACKS` (64) are counted. The handle
+ends `rejected` with `evidence.failure` `{ kind: 'refused', reason: 'capacity', limit }`, `limit` naming the limit
+the ledger's refusal names (`'admissions'`, `'bytes'`, `'age'` or `'tracks'`), and no fallback is tried, because the
 other carrier shares the budget. The RTC circuit breaker does not count a `capacity` refusal as a failure. A counted
 send whose commit then admits nothing stays counted until its deadline: the ledger has no release call.
+
+A track is the ordering track key of a send that states an ordering key and a sequence together
+([`toALOrderingTrackKey`](../../al-contracts/al-runtime.ts): the ordering key, the sender and the epoch); a send
+that states neither, or a key without a sequence, names none. A track is counted while the ledger holds
+at least one counted admission on it, so it leaves the count when the last of them reaches its deadline. A received
+message never opens a counted track. The ledger answers its state in one read, `readReport(nowMs)`
+(`ALVolatileSessionReport`: the usage with `oldestAgeMs`, 0 when nothing is counted, and `tracks`; the limits; and
+`overloaded`), which the browser exposes as `rallar.messages.readUsage()` and the black-box `stats` result as
+`rallar.alm` (D180).
 
 An inbound admission is counted and never refused, and it counts toward the same limits as the session's own sends
 (R-S3c-ii-3): a session whose volatile traffic in and out stays above about 33 messages a second (at the 30 s default
@@ -788,15 +801,36 @@ deadline) has its own volatile sends refused. The bound is also shared with the 
 WS inbound runtime admits on the volatile pair (`group-state.event`, `client-state.snapshot`, `client-state.event`,
 R-S3c-ii-7): a lane agent that leaves and rejoins a room holds about 26 KB of it, under one per cent of the
 production limits. Whether platform topics leave the application's bound is an open decision for the maintainer.
-While the budget is at or over a limit the session's QoS provider reports `overloaded` for the session's own outbound
+While the budget is at or over its count or byte limit the session's QoS provider reports `overloaded` for the session's own outbound
 data originations only: never for a control, a receipt, an acknowledgement, a repair, a relay forward or an inbound
 plan (R-S3c-ii-8), so a session at its bound still acknowledges, forwards and delivers for other sessions. Under the
 default policy the RTC origin drops a best-effort room send that reads it, and that drop reads `capacity` as the
 admission bound's refusal does: at the bound every send, best-effort or not, on either carrier, ends `rejected` with
-`{ kind: 'refused', reason: 'capacity' }` and is never handed to a fallback. The WS outbound path does not consult
+`{ kind: 'refused', reason: 'capacity' }` and is never handed to a fallback. That drop names no `limit`, because
+`overloaded` names none; only the ledger's own refusal does. The WS outbound path does not consult
 `overloaded`; its admission bound refuses the same sends. The RTC rate limiter spends its token before the plan, so a
 refused send still spends one: a burst of refused sends can push a later send inside the bound to `rate-limited`,
 which hands it to WS, where the shared budget admits it.
+
+The age limit bounds the admissions the ledger counts, not the ordering state the pairs keep (D181): the volatile
+pairs keep an ordering track for the repository's hour (`orderingTrackTtlMs`), because a receiver that forgot a track
+would read the next sequence as a gap, and every track quiet for 5 minutes would stall on its repair. What the session
+holds per message, track or peer is bounded instead of kept for the owner's lifetime. The send controls' cancelled and
+handed-over message ids are [`LatestRepository`](../../cache/LatestRepository.ts) entries with
+`DEFAULT_AL_REPOSITORY_TTL_MS` (60 minutes) as their TTL, the durable lane's row retention, so a cancelled durable
+message a worker picks up after 5 minutes still does not send. The browser's resync recovery keeps the tracks it has
+invoked a recovery owner for in a `LatestRepository` with `AL_VOLATILE_SESSION_MAX_AGE_MS` as its TTL, renewed by
+each of the track's resynchronisations, so a track that resyncs again after that long without one invokes the owner
+again. `WebRtcRxStreamerService` numbers every peer's
+round-trip measurements from one counter and keeps no version per peer. None of them adds a timer or a sweep of its
+own: a repository forgets an expired entry it reads and sweeps the rest when it accepts one.
+
+**Limit:** the memory pairs plateau rather than empty: an idle inbound ordering track keeps two rows for the hour after
+its last message, and each sending origin keeps one outbound version row (`versionTtlMs`, 1 h). The long-run test
+sends on minted sequences on the volatile lane, which no production planner does: only the browser builds the volatile
+outbound pair, and the browser never mints. A volatile pair that did mint would drop a track's ordering head with its
+last sent row, after the deadline plus the receipt grace, while a receiver keeps the track for the hour, so a track
+silent for longer than that would restart at sequence 1.
 
 ### Grouped control sends
 
@@ -932,8 +966,8 @@ states none of its own. Either way, an attempt that already stated `attempt-star
 still terminates with its own `attempt-settled` (`outcome: 'cancelled'`, `willRetry:
 false`) -- stated directly when the abort lands before the carrier runs (inside the
 admission-store reads `writeAttemptedSend` makes first), or by the carrier's own
-settlement when it lands during or after the send. Cancellation is held only for the
-owner's lifetime, in memory, never persisted: a row still pending when the owner is
+settlement when it lands during or after the send. Cancellation is held in memory, never
+persisted, for `DEFAULT_AL_REPOSITORY_TTL_MS` (60 minutes, D181): a row still pending when the owner is
 disposed may be drained by the next owner as an ordinary send. A durable cancel fact
 -- one that survives disposal or reload -- is a named sink seam left to S3 or I2
 (D13), not part of this settlement path. `handOver(msgId)` aborts the same signal and
@@ -987,10 +1021,10 @@ batch also cleared the receipt row; that row now waits for its own expiry, which
 reader treats a complete receipt as ended.
 
 **The hand-over (D66).** `ALOutboundMessageRuntime.handOver(msgId)` gives a message to another carrier's
-owner: it remembers the id for the owner's lifetime, aborts the live attempt (which still settles its own
+owner: it remembers the id for `DEFAULT_AL_REPOSITORY_TTL_MS` (60 minutes, D181), aborts the live attempt (which still settles its own
 `attempt-settled`), completes every later effect of the message silently and deletes the receipt rows in
 one commit, and states no settlement -- the message is not cancelled. A conflict on that delete leaves an
-inert row that nothing retries before it expires in this owner's lifetime. RTC reaches it through
+inert row that nothing retries before it expires. RTC reaches it through
 `WebRtcRxStreamerService.handOverOutbox` -> `WebRtcOverlayMulticastManager.handOver`. The hand-over is held
 in memory like a cancellation: a durable RTC message resumed after a reload is not handed over (D64).
 

@@ -665,6 +665,55 @@ track no receipt unless the send states `ack` (or `qos.ack`); without one,
 `qos: { durability: { algo: 'local-outbox' } }`, or to a checkpointed memory
 send with `qos: { durability: { algo: 'local-checkpoint' } }`.
 
+Every volatile message a session sends or receives counts against the session's
+volatile bound, on both carriers and for lane and typed channel sends alike
+(D74, D179). It has four limits: 1 000 messages and 4 MiB of envelopes, sent
+and received together; a deadline at most 5 minutes ahead
+(`AL_VOLATILE_SESSION_MAX_AGE_MS`); and 64 live ordering tracks of the session's
+own ordered sends (`AL_VOLATILE_SESSION_MAX_TRACKS`); a send opens a track when
+it states an `orderingKey` and a `seq` together, and a send without them opens
+none. A sent message counts until its deadline, and its track until the last
+counted send on it reaches its deadline. A received message counts until the earlier of its deadline and
+30 s after it arrives; it never opens a counted track and is never refused. A
+send that would pass a limit is refused before any carrier attempt: the handle
+ends `rejected` with `evidence.failure`
+`{ kind: 'refused', reason: 'capacity', limit }`, where `limit` names the
+limit it would pass (`'admissions'`, `'bytes'`, `'age'` or `'tracks'`), and no
+fallback is tried, because both carriers share the bound. A message whose
+sender named no deadline, a control, a receipt, a relay forward and a
+retransmission count nothing.
+
+`rallar.messages.readUsage()` reads the bound synchronously, with no event
+(D180): `usage` (`admissions`, `bytes`, `oldestAgeMs`, the age of the oldest
+counted message, 0 when none is counted, and `tracks`), `limits` (`maxAdmissions`,
+`maxBytes`, `maxAgeMs`, `maxTracks`) and `overloaded`, true while the usage is at
+or over the count or the byte limit. It throws before the session is connected.
+
+```ts
+const { usage, limits, overloaded } = rallar.messages.readUsage();
+if (overloaded || usage.tracks >= limits.maxTracks) {
+    showSlowDown();
+}
+```
+
+The age limit bounds the messages the bound counts, not the ordering state a
+session keeps (D181). An ordering track stays known for an hour after its last
+message, so a sender that resumes a track within the hour is read in order
+rather than as a gap. What the session keeps per message, track or peer is
+bounded rather than held for its lifetime: the ids of cancelled and handed-over
+sends for 60 minutes, as long as a durable message's own rows, so a cancelled
+message picked up late still does not send; the browser's record of the tracks
+it has resynchronised for 5 minutes after the track's last resynchronisation, so
+a track that needs a resync again after longer than that calls the channel's
+recovery handler again; and RTC round-trip
+measurements are numbered from one counter for all peers, with no entry per
+peer.
+
+**Limit:** an idle volatile ordering track still holds two inbound rows for the
+hour after its last message, and each sending origin one outbound version row
+for an hour, so a long session plateaus at that size rather than returning to
+empty within the age limit.
+
 `messages.room<T>(definition)` creates a room channel directly;
 `roomSession.message(...)` delegates to it. A typed channel exposes `send`,
 `sendRtc`, `sendWs`, `onRtc` and `onWs`. A `RallarMessageHandle` exposes
@@ -811,8 +860,8 @@ every `ALStorageEvent`:
 - `persist`: the outcome of the connect's one persistence request
   (`ALStoragePersistOutcome`);
 - `recovery-owner-invoked`: the `ALInboundResyncCursor` the browser handed a
-  typed channel's recovery owner (below), once per ordering track per runtime,
-  stated even when the owner throws. It names no store.
+  typed channel's recovery owner (below), once per ordering track while it goes
+  on resynchronizing, stated even when the owner throws. It names no store.
 
 Room channels add room defaults and default `send(...)` to the existing
 `rtc-with-ws-fallback` strategy. This scopes sends; `onWs(...)` and
@@ -1203,7 +1252,8 @@ const rounds = rallar.messages.channel<RoundState>({
 ```
 
 `RallarChannelRecovery.onResyncRequired(cursor)` is invoked once per ordering
-track (ordering key, sender, epoch) for the life of the browser runtime, after
+track (ordering key, sender, epoch) while it goes on resynchronizing (a track
+that resynchronizes again after 5 minutes without one invokes it again), after
 the receiver refused a message of that track `resync-required` -- at admission,
 or at an ordered release it can no longer complete -- and after its NACK to the
 sender committed. The cursor (`ALInboundResyncCursor`, exported with

@@ -517,6 +517,16 @@ lane, larger in a long-lived hosted room) for at most 30 s; the 31 s wait lets i
 send (R-S3c-ii-9). The limit is three fillers, so the two counted sends alone refuse the third, and the second keeps
 at least 9 180 bytes of headroom. Its receiver's window adds one readiness budget and the 31 s wait, since the sender
 reconnects and waits before it sends. In manifest 18 the three `capacity` blocks run after every other block.
+Two more cells of the family prove the age and track limits over every carrier, and manifest 18
+withholds both, so it stays as recorded. `capacity-age` keeps the sender's connection and constants and sends one
+message with `ttlMs` `AL_VOLATILE_SESSION_MAX_AGE_MS + 1_000` (301 000): it ends `rejected` with
+`failure: { kind: 'refused', reason: 'capacity', limit: 'age' }` and `attempts` 0, and the receiver proves for the
+whole window that nothing reaches it. `capacity-tracks` closes, reconnects with `rallar.almVolatileLimits`
+naming the four production limits but `maxTracks: 2` and sends three at-least-once messages with `ack: 'receiver'`, each `seq` 1 on an ordering key of
+its own (`alm-<carrier>-capacity-tracks-<index>`), so each would open one track: the third ends `rejected` with
+`limit: 'tracks'` and `attempts` 0, and the first two are acknowledged; then it reconnects without the field. A
+received message never opens a counted track, so it needs no wait for the rejoin's state sync, and its receiver's
+window adds only the readiness budget. The three cells live in `conformance/alm/scenarios/volatile-bound/`.
 
 The same-context family runs, in the full scope, as the `same-context family over <carrier>` Playwright test. Its
 scenarios declare a fourth role, `successor`: a second page opened in the sender's own browser context, so it shares
@@ -722,14 +732,18 @@ a connect-only transport: `rtc.send` accepts `realtime` and `messages.rtc` only.
 
 ### The lane-only `rallar.almVolatileLimits` connect field
 
-`rtc.connect.rallar.almVolatileLimits` is `{ maxAdmissions, maxBytes }`, each a positive integer, and nothing else;
-any other shape fails the connect. It is validated in the page only: the recipe schema and the control validator treat
-`rallar` as a free record, so a malformed value fails its `rtc.connect` rather than the recipe. It lowers the ALM volatile bound (D74) of the session this connect initialises: the
-page holds it and hands the browser session a read port that the session reads once, when it initialises. It is a
-harness capability, never a `rallar.connect` option. A facade that is already connected keeps the bound its session
-read, and a connect that names the field on a live facade has no effect until its next session, so a recipe closes
-the connection before a connect that names the field, and closes and reconnects without it
-to restore the constants (`AL_VOLATILE_SESSION_MAX_ADMISSIONS`, `AL_VOLATILE_SESSION_MAX_BYTES`).
+`rtc.connect.rallar.almVolatileLimits` names `maxAdmissions` and `maxBytes` and may name `maxAgeMs` and `maxTracks`,
+each a positive integer, and nothing else; any other shape fails the connect with
+`rallar.almVolatileLimits must name maxAdmissions and maxBytes and may name maxAgeMs and maxTracks, each a positive integer.`
+An age or track limit the field leaves out reads its constant (`AL_VOLATILE_SESSION_MAX_AGE_MS`,
+`AL_VOLATILE_SESSION_MAX_TRACKS`), so a two-field value lowers the count or byte limit alone. It is validated in
+the page only: the recipe schema and the control validator treat `rallar` as a free record, so a malformed value fails
+its `rtc.connect` rather than the recipe. It lowers the ALM volatile bound (D74) of the session this connect
+initialises: the page holds it and hands the browser session a read port that the session reads once, when it
+initialises. It is a harness capability, never a `rallar.connect` option. A facade that is already connected keeps the
+bound its session read, and a connect that names the field on a live facade has no effect until its next session, so a
+recipe closes the connection before a connect that names the field, and closes and reconnects without it to restore
+the constants (`AL_VOLATILE_SESSION_LIMITS`).
 
 ### The lane-only `rallar.recoveryOwner` connect field
 
