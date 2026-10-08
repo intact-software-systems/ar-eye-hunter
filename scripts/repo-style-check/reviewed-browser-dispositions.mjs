@@ -34,6 +34,139 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
+    // Framework listener probes validate callable shape; rejected and unhandled values
+    // are kept only for exact originating-identity or empty-unhandled assertions.
+    // Converting the oracle to Error would conceal arbitrary thrown values.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-helper-boundaries.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-helper-boundaries.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'onUnhandled'
+    }),
+    // Browser HTTP JSON is validated/projected into finite ticket fields and
+    // canonical API configuration before auth or URL use. Failed ticket replies
+    // expose status only; raw browser values never become domain session data.
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-auth-multi-session.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readWsTicketResponse'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-auth-multi-session.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'createWsTicket'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-auth-multi-session.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'prepareApiWebSocket'
+    }),
+    // Outgoing join JSON is opaque request evidence for literal status and forbidden
+    // requestId assertions. It never feeds execution or grants a domain type.
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-rest-workbench.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // The issued CDP crash rejection is joined and preserved unless independently
+    // observed page crash/closure establishes its intended terminal outcome.
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-same-context-run.ts',
+        rule: 'boundary.unknown',
+        symbol: 'endOwnerPage'
+    }),
+    // Request observations check/project mutation fields. Actual HTTP state and
+    // event readers use canonical validators with scope/principal checks before
+    // returning snapshots/events; opaque JSON does not leave as domain data.
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-browser-rallar-resilience.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readJsonBody'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-browser-rallar-resilience.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'getGroupSnapshot'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-browser-rallar-resilience.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'getClientSnapshot'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-browser-rallar-resilience.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'getClientEvents'
+    }),
+    // Canonical result/event payloads remain opaque assertion evidence. These probes
+    // require traversed records and guard session text/peer arrays before literal
+    // comparisons; they neither execute director commands nor claim a state DTO.
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-director-orchestration.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireRecord'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-director-orchestration.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'stringValue'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-director-orchestration.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'stringArrayValue'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-director-orchestration.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'resultValue'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-director-orchestration.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'directorStatusValue'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-director-orchestration.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'eventPayload'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-director-orchestration.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'runtimeEventPayload'
+    }),
+    // Storage JSON enters the canonical full-session decoder before auth use; the
+    // connected-event predicate checks records/topic/ok and returns only boolean.
+    // Acquisition failure keeps the framework rejection and cleanup cause in
+    // native error accounting, never an unknown domain error DTO.
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-helpers.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readBrowserAuthSession'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-helpers.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isConnectedEventPayload'
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-helpers.ts',
+        rule: 'boundary.unknown',
+        symbol: 'closeAfterAcquisitionFailure'
+    }),
+    // The configured-service probe owns this Promise<unknown> port; its consumer
+    // immediately applies canonical API/control readiness validators. Parsing
+    // failures are labeled without claiming a typed successful readiness body.
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-recipe-console-monitor.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'configuredReadinessJson'
+    }),
     // SDK rejection and logger values stay raw until Error/message/identity
     // assertions; normalizing the oracle would conceal a primitive Error leak.
     // Production catches normalize before domain use. Re-review this owner

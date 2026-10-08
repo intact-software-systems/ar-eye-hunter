@@ -1,4 +1,6 @@
 import * as Playwright from '@playwright/test';
+import { once } from 'node:events';
+import { createServer } from 'node:http';
 import {
     describe,
     expect,
@@ -8,15 +10,17 @@ import {
 
 import { toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { parseControlServerMessage } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
-import { runRecipePairOnTwoAgents, type TwoAgentRun } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
+import { runRecipePairOnTwoAgents, type RecipePairRun } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
 
 interface PostedCommand {
     readonly url: string;
     readonly commandId: string;
+    readonly agentId: string;
     readonly command: RallarBlackBoxTestCommand;
 }
 
@@ -38,7 +42,19 @@ describe('local paired reload enqueue', () => {
                 }).find((candidate) => candidate.scenarioId === 'delivery-reload')!;
                 const posted: PostedCommand[] = [];
                 let readBeforeBothEnqueued = false;
+                const server = createServer((_request, response) => {
+                    response.writeHead(202, { 'content-type': 'application/json' });
+                    response.end('{}');
+                });
+                server.listen(0, '127.0.0.1');
+                await once(server, 'listening');
+                const address = server.address();
+                if (address === null || typeof address === 'string') {
+                    throw new Error('Expected the owned HTTP server address.');
+                }
                 const request = await Playwright.request.newContext();
+                const post = request.post.bind(request);
+                const responseUrl = `http://127.0.0.1:${address.port}`;
                 vi.spyOn(request, 'post').mockImplementation(async (url, options) => {
                     const data: unknown = options?.data;
                     if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
@@ -52,55 +68,35 @@ describe('local paired reload enqueue', () => {
                     if (!decoded.ok) {
                         throw new Error(decoded.error);
                     }
-                    posted.push({ url, commandId: data.commandId, command: decoded.envelope.command });
-                    return {
-                        url: () => url,
-                        ok: () => true,
-                        status: () => 202,
-                        statusText: () => 'Accepted',
-                        headers: () => ({}),
-                        headersArray: () => [],
-                        securityDetails: async () => null,
-                        serverAddr: async () => null,
-                        body: async () => Buffer.from('{}'),
-                        text: async () => '{}',
-                        json: async () => ({}),
-                        dispose: async () => {},
-                        [Symbol.asyncDispose]: async () => {}
-                    };
+                    posted.push({ url, commandId: data.commandId, agentId, command: decoded.envelope.command });
+                    return await post(responseUrl, options);
                 });
-                const run: TwoAgentRun = {
+                const run: RecipePairRun = {
                     request,
                     runId: 'actual-local-run',
-                    group,
-                    sender: {
-                        agentId: 'actual-sender',
-                        actor: 'sender',
-                        connection: 'sender',
-                        get context(): Playwright.BrowserContext {
-                            throw new Error('Enqueue must not create a browser context.');
-                        },
-                        get page(): Playwright.Page {
-                            throw new Error('Enqueue must not replace the sender page.');
-                        }
-                    },
-                    receiver: {
-                        agentId: 'actual-receiver',
-                        actor: 'receiver',
-                        connection: 'receiver',
-                        get context(): Playwright.BrowserContext {
-                            throw new Error('Enqueue must not create a browser context.');
-                        },
-                        get page(): Playwright.Page {
-                            throw new Error('Enqueue must not replace receiver subscriptions.');
-                        }
-                    },
+                    sender: { agentId: 'actual-sender' },
+                    receiver: { agentId: 'actual-receiver' },
                     readSnapshot: async () => {
                         readBeforeBothEnqueued ||= posted.length !== 2;
-                        return { results: posted.map((command) => ({ commandId: command.commandId, ok: true })) };
-                    },
-                    close: async () => {
-                        throw new Error('Enqueue must not close the agents.');
+                        return {
+                            runId: 'actual-local-run',
+                            createdAtEpochMs: 1,
+                            updatedAtEpochMs: 2,
+                            agents: [],
+                            commands: [],
+                            results: posted.map((command): ControlResultEnvelope => ({
+                                kind: 'result',
+                                protocolVersion: 1,
+                                runId: 'actual-local-run',
+                                agentId: command.agentId,
+                                commandId: command.commandId,
+                                ok: true
+                            })),
+                            events: [],
+                            stats: [],
+                            reports: [],
+                            heartbeats: []
+                        };
                     }
                 };
                 try {
@@ -134,6 +130,7 @@ describe('local paired reload enqueue', () => {
                 finally {
                     vi.restoreAllMocks();
                     await request.dispose();
+                    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
                 }
             }
         );

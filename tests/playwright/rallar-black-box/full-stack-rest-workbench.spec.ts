@@ -1,13 +1,28 @@
-import { expect, test, type APIRequestContext, type Locator } from '@playwright/test';
+import type { BrowserContext } from '@playwright/test';
+import {
+    expect,
+    test,
+    type APIRequestContext,
+    type Locator
+} from '@playwright/test';
+
+import type { AuthSession } from '@shared/api/api-config.ts';
+
 import {
     expectFullStackApiReady,
     loginThroughUi,
     readBrowserAuthSession,
     readFullStackConfig,
     sendWsTicketFromRestWorkbench,
-    uniqueSuffix,
-    type BrowserAuthSession
+    uniqueSuffix
 } from './full-stack-helpers.ts';
+
+interface EnsureGroupExistsInput {
+    readonly panel: Locator;
+    readonly request: APIRequestContext;
+    readonly authSession: AuthSession;
+    readonly scopePath: string;
+}
 
 const config = readFullStackConfig();
 const statusMatcher = /^(\d{3}) /;
@@ -21,16 +36,22 @@ test.describe('full-stack Rallar Server REST workbench', () => {
 
         const suffix = uniqueSuffix();
         const contextA = await browser.newContext();
-        const contextB = await browser.newContext();
-        const pageA = await contextA.newPage();
-        const pageB = await contextB.newPage();
-
+        let contextB: BrowserContext | undefined;
         try {
-            await loginThroughUi(pageA, config, config.userA, {
+            contextB = await browser.newContext();
+            const pageA = await contextA.newPage();
+            const pageB = await contextB.newPage();
+            await loginThroughUi({
+                page: pageA,
+                config,
+                user: config.userA,
                 suffix: `a-${suffix}`,
                 tab: 'rallar-server'
             });
-            await loginThroughUi(pageB, config, config.userB, {
+            await loginThroughUi({
+                page: pageB,
+                config,
+                user: config.userB,
                 suffix: `b-${suffix}`,
                 tab: 'rallar-server'
             });
@@ -53,7 +74,7 @@ test.describe('full-stack Rallar Server REST workbench', () => {
         finally {
             await Promise.all([
                 contextA.close(),
-                contextB.close()
+                contextB?.close()
             ]);
         }
     });
@@ -63,7 +84,10 @@ test.describe('full-stack Rallar Server REST workbench', () => {
         await expectFullStackApiReady(request, config);
 
         const suffix = uniqueSuffix();
-        await loginThroughUi(page, config, config.userA, {
+        await loginThroughUi({
+            page,
+            config,
+            user: config.userA,
             suffix: `group-join-${suffix}`,
             tab: 'rallar-server'
         });
@@ -71,7 +95,7 @@ test.describe('full-stack Rallar Server REST workbench', () => {
         const panel = page.locator('#panel-rallar-server');
         const scopePath = stateScopePath();
 
-        await ensureGroupExists(panel, request, authSession, scopePath);
+        await ensureGroupExists({ panel, request, authSession, scopePath });
 
         const joinRequestPromise = page.waitForRequest((request) => {
             const url = new URL(request.url());
@@ -102,7 +126,7 @@ test.describe('full-stack Rallar Server REST workbench', () => {
         expect(isStrictMutationPath(joinPath, joinMutationPath)).toBe(true);
         expect(joinRequest.headers().authorization).toMatch(/^Bearer /);
         expect(joinRequest.headers()['x-client-id']).toBe(authSession.clientId);
-        const joinBody = JSON.parse(joinRequest.postData() ?? '{}');
+        const joinBody: unknown = JSON.parse(joinRequest.postData() ?? '{}');
         expect(joinBody).toMatchObject({
             status: 'active'
         });
@@ -116,7 +140,10 @@ test.describe('full-stack Rallar Server REST workbench', () => {
         await expectFullStackApiReady(request, config);
 
         const suffix = uniqueSuffix();
-        await loginThroughUi(page, config, config.userA, {
+        await loginThroughUi({
+            page,
+            config,
+            user: config.userA,
             suffix: `group-join-negative-${suffix}`,
             tab: 'rallar-server'
         });
@@ -124,7 +151,7 @@ test.describe('full-stack Rallar Server REST workbench', () => {
         const panel = page.locator('#panel-rallar-server');
         const scopePath = stateScopePath();
 
-        await ensureGroupExists(panel, request, authSession, scopePath);
+        await ensureGroupExists({ panel, request, authSession, scopePath });
 
         await panel.getByLabel('Endpoint').selectOption('group-member-join');
         await panel.getByLabel('Body JSON').fill('');
@@ -180,7 +207,10 @@ test.describe('full-stack Rallar Server REST workbench', () => {
         await expectFullStackApiReady(request, config);
 
         const suffix = uniqueSuffix();
-        await loginThroughUi(page, config, config.userA, {
+        await loginThroughUi({
+            page,
+            config,
+            user: config.userA,
             suffix: `group-collection-${suffix}`,
             tab: 'rallar-server'
         });
@@ -188,7 +218,7 @@ test.describe('full-stack Rallar Server REST workbench', () => {
         const panel = page.locator('#panel-rallar-server');
         const scopePath = stateScopePath();
 
-        await ensureGroupExists(panel, request, authSession, scopePath);
+        await ensureGroupExists({ panel, request, authSession, scopePath });
 
         await panel.getByLabel('Variables JSON').fill(JSON.stringify(
             {
@@ -272,12 +302,26 @@ function stateScopePath(): string {
     }`;
 }
 
-async function ensureGroupExists(
-    panel: Locator,
-    request: APIRequestContext,
-    authSession: BrowserAuthSession,
-    scopePath: string
-): Promise<void> {
+function isStrictMutationPath(path: string, mutationPath: string): boolean {
+    const prefix = `${mutationPath}/requests/`;
+    const requestId = path.startsWith(prefix) ? path.slice(prefix.length) : '';
+    return /^[A-Za-z0-9_-]{20,128}$/u.test(requestId);
+}
+
+function authHeaders(authSession: AuthSession): Record<string, string> {
+    return {
+        accept: 'application/json',
+        authorization: `Bearer ${authSession.accessToken}`,
+        'x-client-id': authSession.clientId
+    };
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function ensureGroupExists(input: EnsureGroupExistsInput): Promise<void> {
+    const { panel, request, authSession, scopePath } = input;
     const readResponse = await request.get(
         `${config.apiBaseUrl}${scopePath}/groups/${encodeURIComponent(config.roomId)}`,
         { headers: authHeaders(authSession) }
@@ -296,7 +340,7 @@ async function ensureGroupExists(
 
 async function createGroupFromWorkbench(
     panel: Locator,
-    authSession: BrowserAuthSession,
+    authSession: AuthSession,
     scopePath: string
 ): Promise<void> {
     await panel.getByLabel('Endpoint').selectOption('group-create');
@@ -330,20 +374,6 @@ async function createGroupFromWorkbench(
     }
 }
 
-function isStrictMutationPath(path: string, mutationPath: string): boolean {
-    const prefix = `${mutationPath}/requests/`;
-    const requestId = path.startsWith(prefix) ? path.slice(prefix.length) : '';
-    return /^[A-Za-z0-9_-]{20,128}$/u.test(requestId);
-}
-
-function authHeaders(authSession: BrowserAuthSession): Record<string, string> {
-    return {
-        accept: 'application/json',
-        authorization: `Bearer ${authSession.accessToken}`,
-        'x-client-id': authSession.clientId
-    };
-}
-
 async function expectResponseStatus(
     panel: Locator,
     statuses: readonly number[]
@@ -355,8 +385,4 @@ async function expectResponseStatus(
         const match = text?.match(statusMatcher);
         return match ? statuses.includes(Number(match[1])) : false;
     }).toBe(true);
-}
-
-function escapeRegExp(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

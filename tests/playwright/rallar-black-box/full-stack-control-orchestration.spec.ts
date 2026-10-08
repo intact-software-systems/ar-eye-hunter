@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
+
 import {
     enqueueControlCommand,
-    fetchControlRun,
-    FULL_STACK_CONTROL_BASE_URL,
+    exportControlRunArtifacts,
     FULL_STACK_CONTROL_WS_URL,
+    readControlRun,
     readFullStackConfig,
     uniqueSuffix,
     waitForControlCommandOk
@@ -36,24 +37,24 @@ test.describe('full-stack control orchestration', () => {
         await expect(page.locator('#panel-local-workbench .control-panel'))
             .toContainText('registered');
 
-        await enqueueControlCommand(request, runId, agentId, commandId, {
-            kind: 'stats',
-            commandId
+        await enqueueControlCommand({
+            request,
+            runId,
+            agentId,
+            commandId,
+            command: {
+                kind: 'stats',
+                commandId
+            }
         });
         await waitForControlCommandOk(request, runId, commandId);
 
-        const run = await fetchControlRun(request, runId);
-        expect(run.results?.some((result) => result.commandId === commandId && result.ok === true)).toBe(true);
-        expect((run.events ?? []).length).toBeGreaterThan(0);
-        const artifactResponse = await request.get(
-            `${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/artifacts`
-        );
-        expect(artifactResponse.ok()).toBe(true);
-        const artifact = await artifactResponse.json() as {
-            files?: Record<string, string>;
-        };
-        expect(artifact.files?.['report.json']).toContain(commandId);
-        expect(artifact.files?.['events.jsonl']).toContain('step-result');
+        const run = await readControlRun(request, runId);
+        expect(run.results.some((result) => result.commandId === commandId && result.ok === true)).toBe(true);
+        expect(run.events.length).toBeGreaterThan(0);
+        const artifact = await exportControlRunArtifacts(request, runId);
+        expect(artifact.files['report.json']).toContain(commandId);
+        expect(artifact.files['events.jsonl']).toContain('step-result');
         await page.getByRole('tab', { name: 'Event Stream' }).click();
         await expect(page.locator('#panel-event-stream')).toContainText(commandId);
     });

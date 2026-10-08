@@ -196,20 +196,30 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
 ## 1. Current Outcome And Evidence
 
-The latest code checkpoint consolidates ordinary and distributed artifact envelope validation
-in one shared-test incoming schema owner, published in draft
-[PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645). The decoders validate
-mandatory identity, finite version/time and required string files, plus supplied optional
-distributed files. Existing readers retain content and version-specific policy. Independent
-SPEC/QUALITY review approves the complete four-file correction; all38 behavioral assertions
-remain unchanged and pass after final normalization. The affected 2,636-test shared-test
-suite passed on the preceding consolidation. The final correction confines unknown input
-to direct validation parameters and returns a validation issue, preserving all admission
-decisions while removing opaque record propagation. Both newly added predecessor modules
-are deleted without compatibility shims or checker waivers. The original hosted directory
-and prefix failures, their exact local reproduction and a subsequent broader helper gate
-failure remain retained. Helper adoption and lifecycle closure are separate and pending.
-This does not supply copied native delivery, live-worker or E3 acceptance.
+The latest reviewed checkpoint adopts canonical snapshot, issued-auth and artifact contracts
+in the existing browser helpers and callers. Named inputs replace positional compatibility
+paths; permissive duplicate decoders are removed. Each acquired browser resource and initiated
+recipe observation has explicit lifecycle ownership. Original errors remain reachable when
+later evidence collection or disposal also fails. Deadlines, ordering and warning/release policy
+are unchanged. Semantic TDD reproduces seven initial resource defects, six post-barrier
+observation failures and four originating-error failures. The final five-file run passes all
+71 cases, and the existing Local Native consumer passes once with workers1/retries0 under
+unchanged budgets. Independent SPEC/QUALITY review closes all helper findings. The 22 exact
+boundary dispositions classify validated inputs or opaque error observations; all 111 prior
+entries and the checker matcher/thresholds are unchanged. All 88 support semantic cases pass,
+and the changed-file WORKTREE gate passes. This checkpoint is being published in draft
+[PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645). The unfinished Copy
+witness is excluded. Helper acceptance supplies no copied delivery, live-worker or E3 acceptance.
+
+The preceding envelope checkpoint consolidates ordinary and distributed artifact validation
+in one shared-test incoming schema owner. Mandatory identity, finite version/time and required
+string files, plus supplied optional distributed files, are validated at admission. Existing
+readers retain content and version-specific policy. Independent SPEC/QUALITY review approves
+the correction; all 38 unchanged behavioral assertions pass, and the preceding consolidation
+passed the affected 2,636-test shared-test suite. Both newly added predecessor modules are
+deleted without compatibility shims. The original hosted directory/prefix failures and the
+original broader helper gate failure remain retained as adverse evidence. The subsequent
+source review and exact boundary closure resolve that helper gate without a policy relaxation.
 
 The preceding general-worker HOST capture slice remains accepted, published in draft
 [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645) at
@@ -223,9 +233,8 @@ Actual hosted native/refusal/Manual cases and RTC integrity are skipped. This ac
 carrier slice and its stated local boundaries; real launched-worker/Actions/native and
 B01–B06/E3 acceptance remain open.
 
-The next two useful outcomes are actual Manual Copy and ordinary same-session Local repeat,
-then existing worker/Actions capture propagation and application. Copy uses the same payload
-and sessions, retained native receive objects, successful canonical Close, actual old-target
+The next two useful outcomes are explicit Manual readiness authoring, then actual Manual Copy
+and ordinary same-session Local repeat. Existing worker/Actions propagation follows. Copy uses the same payload and sessions, retained native receive objects, successful canonical Close, actual old-target
 closure and distinct open receiving targets within unchanged budgets. Its first database
 configuration failure and subsequent test-construction failures are retained; none is product
 RED or delivery acceptance. The existing healthy canonical Postgres already has all required
@@ -245,8 +254,8 @@ persistence; Local execution does not enter its separate Copy history. Complete 
 explicit authoring path in those current owners, preserving omitted readiness and submitted
 history, before repeating the native witness. Reuse the existing bounded readiness contract;
 add no implicit SDK wait, copied-text edit, new retry, timeout expansion or readiness policy.
-The touched helper also requires canonical snapshot/auth/artifact boundary closure; remove
-its duplicate permissive contracts rather than retaining them because advisory checks pass.
+The helper's canonical snapshot/auth/artifact boundary closure is now independently approved.
+No duplicate permissive contract or compatibility path is retained.
 
 Tests-first fixture checks now reproduce seven resource/failure ownership defects: failed
 page creation or navigation leaves an owned context open; borrowed-context setup leaves its
@@ -263,21 +272,26 @@ passes, but independent full-owner review identified four corrections: own resul
 polling throughout later setup/failure; close the Local Native case's manually owned context
 after acquisition, attachment or cleanup failure; use issued auth facts or the genuine narrow
 request-auth capability; and remove the fallback for already validated mandatory events.
-Six additional actual-port tests reproduce the post-barrier lifetime failures before the fix.
-The bounded correction passes all 65 focused checks, and the exact existing Local Native
-case passes once under unchanged budgets. Its passing buffered observation attachment was
-not retained by the list reporter; acceptance is limited to the executed assertions and
-frozen source/command/exit evidence. Scoped re-review closes recipient observation lifetime,
-auth capability, mandatory events and context disposal. One remaining cleanup correction
-must keep the originating failure reachable if subsequent disposal also fails. The broader
-changed-style gate also records28 helper/caller boundary signals requiring source review
-and focused closure; they are not waived or treated as28 confirmed code defects. These
-pending helper owners are excluded from the separate envelope publication checkpoint.
-Local pass counts alone do not close the remaining findings.
+Six additional actual-port tests reproduce post-barrier lifetime failures before their fix.
+The bounded correction first passes all 65 focused checks. Four further originating-error
+failures reproduce lost causes during finalization; the final run passes all 71 cases, including
+controls for successful cleanup and single-error identity. The genuine Local Native consumer
+uses the tested receiver lifecycle owner and passes once on the final source (10.4s test /13.0s
+total). Passing buffered observations were not retained by the list reporter; acceptance is
+limited to executed assertions and frozen source/command/exit evidence. Scoped re-review closes
+recipient observation lifetime, authentic auth capability, mandatory events, context disposal
+and preservation of originating and later failures. The original broader gate's 28 records
+represent 29 occurrences and 22 exact boundary keys. Complete source review confirms validated
+inputs or opaque error observations; no real standards exception is retained. The support
+semantic run passes all 88 cases without skips, and the subsequent changed-file gate passes.
 The original receiver/result deadlines and warning-and-release policy are preserved.
-Publish this coherent helper checkpoint with updated existing callers; keep the unfinished
-Copy witness pending for the subsequent readiness slice. Local helper acceptance does not
-complete actual Copy/repeat, live-worker, Actions, distributed or E3 acceptance.
+Root rejects the first private publication projection before staging: it excluded the unfinished
+Copy case but also dropped four existing trailing browser cases. The original candidate and
+patch remain adverse evidence. The corrected private projection preserves all eight prior cases and their complete bodies
+with only the approved login/lifecycle changes, excludes exactly the new Copy case, and passes
+focused typing/formatting. Independent complete-file preservation review precedes publication.
+Local helper acceptance does not complete Copy/repeat, live-worker, Actions, distributed or E3
+acceptance. Publish each coherent tested/reviewed checkpoint promptly.
 
 The bounded worker/Actions audit finds three concrete gaps: controller09 drops the HOST env
 input; general Actions/helpers expose no finite operator RUN override; and generic room

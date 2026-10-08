@@ -1,10 +1,11 @@
+import type { BrowserContext, Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
+
 import {
     cleanupRallarPage,
     expectFullStackApiReady,
     expectNoSecrets,
     loginUser,
-    openTab,
     readExhaustivePostgresConfig,
     uniqueGroupId
 } from './full-stack-helpers.ts';
@@ -22,18 +23,26 @@ test.describe('exhaustive Quick Test and WebSocket command center', () => {
         await expectFullStackApiReady(request, config);
         const groupId = uniqueGroupId(testInfo);
         const contextA = await browser.newContext();
-        const contextB = await browser.newContext();
-        const pageA = await contextA.newPage();
-        const pageB = await contextB.newPage();
-
+        let contextB: BrowserContext | undefined;
+        let pageA: Page | undefined;
+        let pageB: Page | undefined;
         try {
+            contextB = await browser.newContext();
+            pageA = await contextA.newPage();
+            pageB = await contextB.newPage();
             await Promise.all([
-                loginUser(pageA, config, config.userA, {
+                loginUser({
+                    page: pageA,
+                    config,
+                    user: config.userA,
                     groupId,
                     sessionId: `${groupId}-alice-session`,
                     tab: 'quick-test'
                 }),
-                loginUser(pageB, config, config.userB, {
+                loginUser({
+                    page: pageB,
+                    config,
+                    user: config.userB,
                     groupId,
                     sessionId: `${groupId}-bob-session`,
                     tab: 'quick-test'
@@ -90,14 +99,12 @@ test.describe('exhaustive Quick Test and WebSocket command center', () => {
             await expectNoSecrets(pageB.locator('body'), [config.userB.password]);
         }
         finally {
-            await Promise.all([
-                cleanupRallarPage(pageA),
-                cleanupRallarPage(pageB)
-            ]);
-            await Promise.all([
-                contextA.close(),
-                contextB.close()
-            ]);
+            try {
+                await Promise.all([pageA && cleanupRallarPage(pageA), pageB && cleanupRallarPage(pageB)]);
+            }
+            finally {
+                await Promise.all([contextA.close(), contextB?.close()]);
+            }
         }
     });
 
@@ -109,7 +116,10 @@ test.describe('exhaustive Quick Test and WebSocket command center', () => {
         const groupId = uniqueGroupId(testInfo);
 
         try {
-            await loginUser(page, config, config.userA, {
+            await loginUser({
+                page,
+                config,
+                user: config.userA,
                 groupId,
                 sessionId: `${groupId}-ws-session`,
                 tab: 'websocket'

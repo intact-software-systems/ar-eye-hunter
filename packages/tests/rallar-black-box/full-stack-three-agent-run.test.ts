@@ -1,4 +1,6 @@
 import * as Playwright from '@playwright/test';
+import { once } from 'node:events';
+import { createServer } from 'node:http';
 import {
     describe,
     expect,
@@ -10,10 +12,9 @@ import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformanc
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
-import type { TwoAgentRunParticipant } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
 import {
     runRecipeTrioOnThreeAgents,
-    type ThreeAgentRun
+    type ThreeAgentRecipeRun
 } from '../../../tests/playwright/rallar-black-box/full-stack-three-agent-run.ts';
 
 const group = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
@@ -27,38 +28,6 @@ function toScenarios(carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number]) {
         receiverConnection: 'receiver',
         deadlineMs: 18_000
     });
-}
-
-function toParticipant(agentId: string): TwoAgentRunParticipant {
-    return {
-        agentId,
-        actor: agentId,
-        connection: agentId,
-        get context(): Playwright.BrowserContext {
-            throw new Error('Enqueue must not create a browser context.');
-        },
-        get page(): Playwright.Page {
-            throw new Error('Enqueue must not touch an agent page.');
-        }
-    };
-}
-
-function toAcceptedResponse(url: string): Playwright.APIResponse {
-    return {
-        url: () => url,
-        ok: () => true,
-        status: () => 202,
-        statusText: () => 'Accepted',
-        headers: () => ({}),
-        headersArray: () => [],
-        securityDetails: async () => null,
-        serverAddr: async () => null,
-        body: async () => Buffer.from('{}'),
-        text: async () => '{}',
-        json: async () => ({}),
-        dispose: async () => {},
-        [Symbol.asyncDispose]: async () => {}
-    };
 }
 
 describe('three-agent ALM run', () => {
@@ -107,28 +76,54 @@ describe('three-agent ALM run', () => {
         };
         const posted: string[] = [];
         const receiverConnected = Promise.withResolvers<void>();
+        const server = createServer((_request, response) => {
+            response.writeHead(202, { 'content-type': 'application/json' });
+            response.end('{}');
+        });
+        server.listen(0, '127.0.0.1');
+        await once(server, 'listening');
+        const address = server.address();
+        if (address === null || typeof address === 'string') {
+            throw new Error('Expected the owned HTTP server address.');
+        }
         const request = await Playwright.request.newContext();
+        const post = request.post.bind(request);
+        const responseUrl = `http://127.0.0.1:${address.port}`;
         vi.spyOn(request, 'post').mockImplementation(async (url, options) => {
             const data = options?.data;
             if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
                 throw new Error('Expected the actual control HTTP command body.');
             }
             posted.push(data.commandId);
-            return toAcceptedResponse(url);
+            return await post(responseUrl, options);
         });
-        const run: ThreeAgentRun = {
+        const run: ThreeAgentRecipeRun = {
             request,
             runId: 'three-agent-run',
-            group,
-            sender: toParticipant('sender-agent'),
-            receiver: toParticipant('receiver-agent'),
-            third: toParticipant('recipient-b-agent'),
+            sender: { agentId: 'sender-agent' },
+            receiver: { agentId: 'receiver-agent' },
+            third: { agentId: 'recipient-b-agent' },
             readSnapshot: async () => {
                 await receiverConnected.promise;
-                return { results: posted.map((commandId) => ({ commandId, ok: true })) };
-            },
-            close: async () => {
-                throw new Error('Enqueue must not close the agents.');
+                return {
+                    runId: 'three-agent-run',
+                    createdAtEpochMs: 1,
+                    updatedAtEpochMs: 2,
+                    agents: [],
+                    commands: [],
+                    events: [],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                    results: posted.map((commandId) => ({
+                        kind: 'result',
+                        protocolVersion: 1,
+                        runId: 'three-agent-run',
+                        agentId: 'observed-agent',
+                        commandId,
+                        ok: true
+                    }))
+                };
             }
         };
         try {
@@ -154,6 +149,7 @@ describe('three-agent ALM run', () => {
         finally {
             vi.restoreAllMocks();
             await request.dispose();
+            await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
         }
     });
 });

@@ -1,12 +1,14 @@
 import { expect, test } from '@playwright/test';
+
 import {
     cleanupRallarPage,
     expectFullStackApiReady,
     exportControlRunArtifacts,
-    fetchControlRun,
     openBrowserControlAgent,
+    openTab,
+    readControlRun,
     readExhaustivePostgresConfig,
-    resolveDistributedTargets,
+    refreshDistributedTargets,
     selectControlRunInManager,
     uniqueGroupId,
     uniqueRunId,
@@ -30,23 +32,25 @@ test.describe('exhaustive control server and distributed recipes', () => {
         const agentBId = `${runId}-agent-b`;
         const agentCId = `${runId}-agent-c`;
 
-        const agents = await Promise.all([
-            openBrowserControlAgent(browser, config, config.userA, {
-                runId,
-                agentId: agentAId,
-                groupId
-            }),
-            openBrowserControlAgent(browser, config, config.userB, {
-                runId,
-                agentId: agentBId,
-                groupId
-            }),
-            openBrowserControlAgent(browser, config, config.userC, {
-                runId,
-                agentId: agentCId,
-                groupId
-            })
+        const acquired = await Promise.allSettled([
+            openBrowserControlAgent({ browser, config, user: config.userA, runId, agentId: agentAId, groupId }),
+            openBrowserControlAgent({ browser, config, user: config.userB, runId, agentId: agentBId, groupId }),
+            openBrowserControlAgent({ browser, config, user: config.userC, runId, agentId: agentCId, groupId })
         ]);
+        const agents = acquired.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+        const acquisitionFailure = acquired.find((result) => result.status === 'rejected');
+        if (acquisitionFailure !== undefined) {
+            const cleanup = await Promise.allSettled(agents.map((agent) => agent.context.close()));
+            const failures = cleanup.filter((result) => result.status === 'rejected').map((result) => result.reason);
+            if (failures.length > 0) {
+                throw new AggregateError(
+                    [acquisitionFailure.reason, ...failures],
+                    'Concurrent agent acquisition and cleanup failed.',
+                    { cause: acquisitionFailure.reason }
+                );
+            }
+            throw acquisitionFailure.reason;
+        }
 
         try {
             await Promise.all([
@@ -63,16 +67,16 @@ test.describe('exhaustive control server and distributed recipes', () => {
             await runManager.getByRole('button', { name: 'Health' }).click();
             await runManager.getByRole('button', { name: 'Enqueue Selected' }).click();
             await expect.poll(async () => {
-                const run = await fetchControlRun(request, runId);
-                return run.results?.length ?? 0;
+                const run = await readControlRun(request, runId);
+                return run.results.length;
             }, { timeout: 60_000 }).toBeGreaterThanOrEqual(3);
             await expect(runManager).toContainText(/health|Results/i);
 
             await runManager.getByRole('button', { name: 'Stats' }).click();
             await runManager.getByRole('button', { name: 'Enqueue Selected' }).click();
             await expect.poll(async () => {
-                const run = await fetchControlRun(request, runId);
-                return run.stats?.length ?? 0;
+                const run = await readControlRun(request, runId);
+                return run.stats.length;
             }, { timeout: 60_000 }).toBeGreaterThanOrEqual(1);
 
             await openTab(agents[0].page, 'recipes', 'black-box-runner');
@@ -116,7 +120,7 @@ test.describe('exhaustive control server and distributed recipes', () => {
             const artifacts = await exportControlRunArtifacts(request, runId);
             expect(JSON.stringify(artifacts)).toContain('report.json');
 
-            const distributed = await resolveDistributedTargets(agents[0].page, runId);
+            const distributed = await refreshDistributedTargets(agents[0].page, runId);
             await expect(distributed).toContainText(agentAId);
             await expect(distributed).toContainText(agentBId);
             await expect(distributed).toContainText(agentCId);
@@ -154,8 +158,12 @@ test.describe('exhaustive control server and distributed recipes', () => {
             await expect(runManager).toContainText(/Deleted|No runs|Runs/i, { timeout: 30_000 });
         }
         finally {
-            await Promise.all(agents.map((agent) => cleanupRallarPage(agent.page)));
-            await Promise.all(agents.map((agent) => agent.context.close()));
+            try {
+                await Promise.all(agents.map((agent) => cleanupRallarPage(agent.page)));
+            }
+            finally {
+                await Promise.all(agents.map((agent) => agent.context.close()));
+            }
         }
     });
 });
