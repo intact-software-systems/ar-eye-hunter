@@ -147,7 +147,10 @@ export function toALOutboundControlSettlements(
     return refused === undefined ? [acknowledgement] : [acknowledgement, refused];
 }
 
-/** An `expired`, `unauthorized`, `stale` or `membership-fenced` NACK removed a receipt its hop will never confirm. */
+/**
+ * An `expired`, `unauthorized`, `stale`, `membership-fenced` or `held-by-other` NACK removed a receipt its hop will
+ * never confirm.
+ */
 function toRefusedReceiptFact(
     read: ALControlAdmissionRead,
     receipt: ALOutboundPendingAckSnapshot
@@ -264,8 +267,11 @@ export function toALOutboundControlRepairHint(control: ALNackPayload | ALRepairP
     };
 }
 
-/** A `resync-required` refusal ends the receipt too: the hop will refuse every resend of the message. */
+/**
+ * A `resync-required` or `held-by-other` refusal ends the receipt too: the hop will refuse every resend of
+ * the message.
+ */
 function isTerminalNack(nack: ALNackPayload): boolean {
     return nack.reason === 'expired' || nack.reason === 'unauthorized' || nack.reason === 'stale' ||
-        nack.reason === 'resync-required' || nack.reason === 'membership-fenced';
+        nack.reason === 'resync-required' || nack.reason === 'membership-fenced' || nack.reason === 'held-by-other';
 }

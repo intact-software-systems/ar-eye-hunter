@@ -168,14 +168,18 @@ describe('ALM conformance hosted lane families', () => {
         ]);
     });
 
-    it('carries the three-agent family in the 3-agent entry, withholding the membership fence and leader cells wherever they run', () => {
+    it('carries the three-agent family in the 3-agent entry, withholding the membership fence, leader and claim cells wherever they run', () => {
         const withheld = [
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.flatMap((carrier) => ['fenced-delivery', 'fenced-catch-up'].map((key) => `alm-${carrier}-${key}`)),
             'alm-ws-fenced-rejection',
             ...ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-leader-confirms`),
             'alm-ws-no-leader-refused',
             'alm-rtc-no-leader-refused',
-            'alm-ws-leader-outside-list'
+            'alm-ws-leader-outside-list',
+            'alm-ws-claim-first-wins',
+            'alm-rtc-with-ws-fallback-claim-first-wins',
+            'alm-ws-claim-expires-reclaims',
+            'alm-rtc-claim-refused-on-rtc'
         ];
         const defined = toFamilyCells(['three-agent']);
 

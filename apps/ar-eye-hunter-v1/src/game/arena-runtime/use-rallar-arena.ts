@@ -326,6 +326,7 @@ function useArenaGameActions(
         runBestEffortNetworkTask: transport.runBestEffortNetworkTask,
         scheduleReliableArenaSnapshot: transport.scheduleReliableArenaSnapshot,
         sessionRef: state.sessionRef,
+        setActiveEvent: state.setActiveEvent,
         setArenaSnapshot: state.setArenaSnapshot
     });
     return { presenceActions, combatActions, worldActions };

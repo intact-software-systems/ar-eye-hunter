@@ -84,7 +84,8 @@ describe('director command browser storage volume (D60, D87)', () => {
             current: CLIENT_STATUS,
             topicId: 'room.director',
             typeId: 'room.director.intent.v1',
-            payload: { kind: 'pickup-intent' }
+            payload: { kind: 'pickup-intent' },
+            claim: undefined
         });
         await vi.waitFor(() => expect(sent.length).toBeGreaterThan(0));
         const counts = observer.getCounts();

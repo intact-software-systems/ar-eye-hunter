@@ -6,7 +6,7 @@ import type {
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from './alm-conformance-budgets.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
-import { toCommandId, toScenarioTypeId } from './alm-conformance-step-identities.ts';
+import { toCommandId, toConnectionName, toScenarioTypeId } from './alm-conformance-step-identities.ts';
 
 interface AlmConformanceReceivedInput extends AlmConformanceMessageStepInput {
     readonly count: number;
@@ -40,7 +40,7 @@ export function toReceivedCommand(received: AlmConformanceReceivedInput): Rallar
     return {
         kind: 'messages.received',
         commandId: toCommandId(received, `received-${received.index}`),
-        connection: received.input.receiverConnection,
+        connection: toConnectionName(received),
         typeId: toScenarioTypeId(received),
         count: received.count,
         absent: received.absent,
@@ -57,7 +57,7 @@ export function toPayloadWait(
         commandId: toCommandId(step, name),
         match: {
             kind: 'message',
-            connection: step.input.receiverConnection,
+            connection: toConnectionName(step),
             payloadPath: 'data.payload',
             equals: payload
         },

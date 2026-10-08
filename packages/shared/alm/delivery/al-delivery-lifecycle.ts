@@ -277,14 +277,15 @@ export interface ALDeliveryReceiptEvidence {
 
 /**
  * The hop whose admitted NACK refused the message, and the reason it gave (D50); a trusted server may also refuse
- * a message the origin holds no receipt row for (`unauthorized`, or `no-leader` for a `group-leader` send whose room
- * has no active leader inside the audience it names), and a trusted server or a peer one whose sender is no longer a
- * member of the roster it was stamped with (`membership-fenced`). A trusted server relay is not named.
+ * a message the origin holds no receipt row for (`unauthorized`, `no-leader` for a `group-leader` send whose room
+ * has no active leader inside the audience it names, or `held-by-other` for an exclusive send on a resource another
+ * session holds), and a trusted server or a peer one whose sender is no longer a member of the roster it was stamped
+ * with (`membership-fenced`). A trusted server relay is not named.
  */
 export type ALDeliveryRelayRejection =
     | Readonly<{
         relay: 'trusted-server';
-        reason: 'resync-required' | 'unauthorized' | 'membership-fenced' | 'no-leader';
+        reason: 'resync-required' | 'unauthorized' | 'membership-fenced' | 'no-leader' | 'held-by-other';
     }>
     | Readonly<{ relay: 'peer'; peerId: string; reason: 'resync-required' | 'membership-fenced'; }>;
 

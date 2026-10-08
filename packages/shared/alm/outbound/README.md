@@ -501,6 +501,14 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   gap resolves its director when it freezes. The leader stays frozen through a succession: the receipt expects
   the session it froze, and a resend re-admits against the current appointment.
   `refused/no-leader` is no fallback trigger, since WS reads the same appointment.
+- An exclusive send is refused at the RTC origin as `refused/unsupported` (D174): no RTC peer can arbitrate an
+  exclusive claim on its resource key.
+  [`computeRtcExclusiveRefusal`](../../multicast/compute-rtc-exclusive-refusal.ts) reads the effective ownership the
+  policy normalizes (a `qos.ownership` request wins over the `ownership` option) right after the scope refusal,
+  before anything is persisted or sent, and names the refused message with the targets its sender gave, so a fallback
+  carrier takes over the sender's own audience. The browser sender routes
+  an exclusive send to WS first whenever the strategy allows it, as it routes a `world` send, so the refusal is the
+  verdict of an `rtc`-only send and the RTC carrier's own guard.
 - **The RTC room limit (R-S2c-ii-13).** The RTC frozen audience rides on the wire, where one
   collection holds at most `AL_MESSAGE_RESOURCE_LIMITS.collectionEntries` (256) ids, so an RTC room
   multicast reaches rooms of at most 257 sessions, the origin included. A larger audience is refused as
@@ -612,6 +620,12 @@ an active member is `membership-fenced` instead. A `group-leader` room send is r
 `no-leader` NACK when the snapshot the room authorizer reads appoints no director present in the room, when the
 sender is the director, or when the send's exclusions, fixed list or principal leave the director out; the
 origin states it as a trusted-server `relay-rejected` with that reason and the handle reads `rejected` (D165).
+An exclusive send whose resource key another session's live exclusive claim holds is dropped at the server's
+admission with a `held-by-other` NACK, which the origin states the same way, a trusted-server `relay-rejected` with
+that reason, so a receipted send reads `rejected` and a receipt-less one names it in `relayRejection` alone (D171,
+D175; the exclusive claim itself is [the inbound README's](../inbound/README.md)). Unlike the pre-admission refusals
+it refuses the whole send whatever the receipt, and it ends the receipt as `resync-required` does: a claim the server
+retained on a conflict has its `admitted` receipt before its replay drops it.
 A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
 aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
 audience verbatim, so a session that left since reads unconfirmed (D73).
@@ -984,7 +998,8 @@ in memory like a cancellation: a durable RTC message resumed after a reload is n
 [`resolve-al-delivery-fallback-trigger.ts`](../delivery/resolve-al-delivery-fallback-trigger.ts). At
 admission every `unroutable` reason (`no-route`, `circuit-open`, `rate-limited`) and
 `refused/unsupported` hands the send to the fallback carrier at once, while `refused/no-leader`
-hands nothing over (D165); an RTC room fanout in a carrier gap reads `no-route` there (D96). After
+hands nothing over (D165), nor does a trusted-server `held-by-other` relay rejection (D175); an RTC
+room fanout in a carrier gap reads `no-route` there (D96). After
 admission `AL_FALLBACK_NOT_READY_ATTEMPTS` (3) consecutive `not-ready` RTC attempts across the
 message's send-prepared rows (reset by a `sent` attempt or an acknowledgement),
 `not-yet-in-sync-exhausted` and `receipt-exhausted` hand an admitted `rtc-with-ws-fallback` message

@@ -1,4 +1,4 @@
-import type { ALAckAlgo, ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
+import type { ALAckAlgo, ALDurabilityAlgo, ALOwnershipAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import type {
@@ -333,6 +333,10 @@ export type RallarBlackBoxTestMessagesSendCommand =
          * that is not the room's leader. Absent, the send names no list.
          */
         recipientPeer?: 'receiver' | 'recipient-b';
+        /** `exclusive` claims the send's resource for the sending session; absent, the send is `shared`. */
+        ownership?: ALOwnershipAlgo;
+        /** The route's resource, which an exclusive send claims; absent, the product mints a fresh one per send. */
+        resourceId?: string;
         reliability?: 'best-effort' | 'at-least-once';
         ack?: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
         durability?: ALDurabilityAlgo;

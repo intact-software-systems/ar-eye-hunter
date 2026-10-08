@@ -56,6 +56,8 @@ const CARRIER_SCENARIO_IDS = {
         'leader-confirms',
         'no-leader-refused',
         'leader-outside-list',
+        'claim-first-wins',
+        'claim-expires-reclaims',
         'durable-takeover',
         'flush-on-hide'
     ],
@@ -84,6 +86,7 @@ const CARRIER_SCENARIO_IDS = {
         'world-routing',
         'leader-confirms',
         'no-leader-refused',
+        'claim-refused-on-rtc',
         'durable-takeover',
         'flush-on-hide'
     ],
@@ -114,6 +117,7 @@ const CARRIER_SCENARIO_IDS = {
         'fixed-list-delivery',
         'world-routing',
         'leader-confirms',
+        'claim-first-wins',
         'durable-takeover'
     ]
 } as const;

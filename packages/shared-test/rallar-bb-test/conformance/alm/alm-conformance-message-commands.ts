@@ -17,6 +17,7 @@ import {
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import {
     toCommandId,
+    toConnectionName,
     toRoomRef,
     toScenarioTopicId,
     toScenarioTypeId,
@@ -42,6 +43,10 @@ interface AlmConformanceSendDelivery {
     readonly principalId?: string;
     /** Absent, the send names no fixed audience. */
     readonly recipientPeer?: RallarBlackBoxTestMessagesSendCommand['recipientPeer'];
+    /** Absent, the send is `shared`. */
+    readonly ownership?: RallarBlackBoxTestMessagesSendCommand['ownership'];
+    /** Absent, the product mints a fresh resource for the send. */
+    readonly resourceId?: string;
 }
 
 interface AlmConformanceSendInput extends AlmConformanceMessageStepInput {
@@ -82,7 +87,7 @@ export function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTest
     return {
         kind: 'messages.send',
         commandId: toCommandId(send, `send-${send.index}`),
-        connection: input.senderConnection,
+        connection: toConnectionName(send),
         carrier: input.carrier,
         typeId,
         topicId: toScenarioTopicId(send),
@@ -101,7 +106,7 @@ export function toObserveCommand(observe: AlmConformanceObserveInput): RallarBla
     return {
         kind: 'messages.observe',
         commandId: toCommandId(observe, `observe-${observe.state}-${observe.index}`),
-        connection: observe.input.senderConnection,
+        connection: toConnectionName(observe),
         handleId: toSendHandleId(observe),
         state: observe.state === 'admitted' ? AL_DELIVERY_ADMITTED_STATES : [observe.state],
         timeoutMs: toBudgetMs(observe.budgetMs ?? toObserveBudgetMs(observe.state), observe.input.deadlineMs)
@@ -170,7 +175,7 @@ export function toCancelCommand(cancel: AlmConformanceMessageStepInput): RallarB
     return {
         kind: 'messages.cancel',
         commandId: toCommandId(cancel, `cancel-${cancel.index}`),
-        connection: cancel.input.senderConnection,
+        connection: toConnectionName(cancel),
         handleId: toSendHandleId(cancel),
         timeoutMs: toBudgetMs(MESSAGE_CONTROL_TIMEOUT_MS, cancel.input.deadlineMs)
     };
@@ -180,7 +185,7 @@ export function toReceiptsCommand(receipts: AlmConformanceMessageStepInput): Ral
     return {
         kind: 'messages.receipts',
         commandId: toCommandId(receipts, `receipts-${receipts.index}`),
-        connection: receipts.input.senderConnection,
+        connection: toConnectionName(receipts),
         handleId: toSendHandleId(receipts),
         timeoutMs: toBudgetMs(MESSAGE_CONTROL_TIMEOUT_MS, receipts.input.deadlineMs)
     };

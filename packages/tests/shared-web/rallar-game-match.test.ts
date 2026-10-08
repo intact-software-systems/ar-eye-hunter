@@ -3,6 +3,7 @@ import { createMessageDelivery } from './messages/test-message-delivery.ts';
 
 import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
+    RallarDirectorRelayClaim,
     RallarDirectorRelayConfig,
     RallarDirectorRelayHandle,
     RallarDirectorRelaySendResult,
@@ -778,6 +779,46 @@ describe('Rallar Game match', () => {
         expect(fake.relayStopped).toBe(true);
     });
 
+    it('relays an intent with the resource it claims and reads the relay\'s held-by-other as its own', async () => {
+        const fake = createFakeRallar({ directorPeerId: 'peer-b', directorIsFresh: true });
+        const match = createMatch(fake);
+        await match.start();
+        const refused: RallarDirectorRelaySendResult = {
+            status: 'held-by-other',
+            reason: 'The server relay refused the message: held-by-other.'
+        };
+        vi.mocked(fake.relay.sendIntent).mockResolvedValueOnce(refused);
+
+        const result = await match.sendIntent({ action: 'pickup' }, { resourceId: 'pickup-1', ttlMs: 4_000 });
+
+        expect(fake.relay.sendIntent).toHaveBeenCalledWith(
+            expect.objectContaining({ kind: 'intent', payload: { action: 'pickup' } }),
+            { resourceId: 'pickup-1', ttlMs: 4_000 }
+        );
+        expect(result).toEqual({
+            status: 'held-by-other',
+            transport: 'director-relay',
+            relay: refused,
+            reason: refused.reason
+        });
+    });
+
+    it('routes the fresh local director\'s own intent to its own handler, claiming nothing', async () => {
+        const fake = createFakeRallar({ directorPeerId: 'peer-a', directorIsFresh: true });
+        const receivedIntents: RallarGameEnvelope<Intent>[] = [];
+        const match = createMatch(fake, {
+            onIntent: (intent) => {
+                receivedIntents.push(intent);
+            }
+        });
+        await match.start();
+
+        expect(await match.sendIntent({ action: 'pickup' }, { resourceId: 'pickup-1', ttlMs: 4_000 }))
+            .toEqual({ status: 'sent', transport: 'local' });
+        expect(receivedIntents.map((intent) => intent.payload)).toEqual([{ action: 'pickup' }]);
+        expect(fake.relay.sendIntent).not.toHaveBeenCalled();
+    });
+
     it('returns stopped for network methods after stop without touching transports', async () => {
         const fake = createFakeRallar({
             directorPeerId: 'peer-a',
@@ -950,7 +991,7 @@ interface FakeRallarHandlers {
 interface FakeRelayPorts {
     readonly relay: {
         status(): RallarDirectorStatus;
-        sendIntent<T>(intent: T): Promise<RallarDirectorRelaySendResult>;
+        sendIntent<T>(intent: T, claim?: RallarDirectorRelayClaim): Promise<RallarDirectorRelaySendResult>;
         sendOutput<T>(output: T): Promise<RallarDirectorRelaySendResult>;
         sendHeartbeat(): Promise<RallarDirectorRelaySendResult>;
         sendSnapshot<T>(snapshot?: T): Promise<RallarDirectorRelaySendResult>;
@@ -1127,7 +1168,7 @@ function createFakeRallarState(options: FakeRallarOptions): FakeRallarState {
 function createFakeRelayPorts(state: FakeRallarState): FakeRelayPorts {
     const relay = {
         status: () => state.directorStatus,
-        sendIntent: vi.fn(async <T>(_intent: T) => ({ status: 'sent' as const })),
+        sendIntent: vi.fn(async <T>(_intent: T, _claim?: RallarDirectorRelayClaim) => ({ status: 'sent' as const })),
         sendOutput: vi.fn(async <T>(_output: T) => ({ status: 'sent' as const })),
         sendHeartbeat: vi.fn(async () => ({ status: 'sent' as const })),
         sendSnapshot: vi.fn(async <T>(_snapshot?: T) => ({ status: 'sent' as const })),

@@ -139,7 +139,7 @@ export function toALInboundNegativeControlEffects(
     }
     const toPeerId = input.plan.nack.toPeerId ?? input.fromPeerId;
     const reason = toNackReason(input.plan.nack.reason);
-    const roomAuthorityRefusal = isRoomAuthorityNackReason(reason);
+    const authorityRefusal = isAuthorityRefusalNackReason(reason);
     const nack: ALInboundEffectIntent = {
         effectId: toEffectId(['nack', input.msg.id.senderId, input.msg.id.msgId, toPeerId, reason]),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
@@ -149,15 +149,15 @@ export function toALInboundNegativeControlEffects(
             toPeerId,
             msgId: input.msg.id.msgId,
             reason,
-            ordering: roomAuthorityRefusal ? undefined : input.plan.orderingRuntime
+            ordering: authorityRefusal ? undefined : input.plan.orderingRuntime
         }
     };
-    return roomAuthorityRefusal ? [nack] : [nack, ...toRepairEffects(input)];
+    return authorityRefusal ? [nack] : [nack, ...toRepairEffects(input)];
 }
 
-/** A room authority refusal is about the receiver's roster, never the ordering track, so it asks for no repair. */
-function isRoomAuthorityNackReason(reason: ALNackReason): boolean {
-    return reason === 'not-yet-in-sync' || reason === 'membership-fenced';
+/** An authority refusal is about the receiver's roster or a claim, never the ordering track, so it asks for no repair. */
+function isAuthorityRefusalNackReason(reason: ALNackReason): boolean {
+    return reason === 'not-yet-in-sync' || reason === 'membership-fenced' || reason === 'held-by-other';
 }
 
 function toRepairEffects(
@@ -254,6 +254,8 @@ function toNackReason(reason?: string) {
             return 'not-yet-in-sync' as const;
         case 'membership-fenced':
             return 'membership-fenced' as const;
+        case 'held-by-other':
+            return 'held-by-other' as const;
         default:
             return 'stale' as const;
     }

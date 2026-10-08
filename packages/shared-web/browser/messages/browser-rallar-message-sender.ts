@@ -1,6 +1,7 @@
-import type {
-    BrowserMessageInputValidator,
-    ResolvedWsMessageInput
+import {
+    isExclusiveSendInput,
+    type BrowserMessageInputValidator,
+    type ResolvedWsMessageInput
 } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import type {
     RallarMessageHandle,
@@ -201,11 +202,18 @@ export class BrowserRallarMessageSender {
         return { room, resolved: { input, scope, roomId, roomRef } };
     }
 
+    /**
+     * Only the WS server arbitrates a claim, so an exclusive send, room- or peer-addressed, and a world send go over WS
+     * under every strategy but `rtc`, whose own carrier refuses them as unsupported.
+     */
     public async sendTyped<T>(
         input: BrowserRallarMessageSender.TypedInput<T>,
         channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
         const strategy = input.strategy ?? 'rtc-with-ws-fallback';
+        if (isExclusiveSendInput(input) && strategy !== 'rtc') {
+            return await this.sendWs(input, channel);
+        }
         if (input.peerId !== undefined && strategy !== 'ws') {
             return strategy === 'ws-then-rtc'
                 ? throwMessageValidationIssue(

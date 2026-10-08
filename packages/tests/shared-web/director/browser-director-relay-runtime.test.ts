@@ -346,6 +346,48 @@ describe('Rallar director relay', () => {
         }
     );
 
+    it('sends a director intent that claims its resource as one exclusive command over WS alone, with no RTC leg', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(Date.now());
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'director-session',
+            principalId: 'director-principal',
+            epoch: 2,
+            appointedAtEpochMs: Date.now(),
+            heartbeatTtlMs: 60_000
+        }));
+        const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
+            roomId: 'room-1',
+            topicId: 'app.game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+            heartbeatIntervalMs: 60_000
+        });
+
+        const sending = relay.sendIntent({ move: 'left' }, { resourceId: 'pickup-1', ttlMs: 4_000 });
+        await vi.advanceTimersByTimeAsync(4_000);
+        const result = await sending;
+        relay.stop();
+
+        const isIntent = (message: ALMessage) => message.payload.typeId === 'game.intent';
+        const wsIntents = mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message).filter(isIntent);
+        const rtcIntents = mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message).filter(isIntent);
+        expect(wsIntents).toHaveLength(1);
+        expect(rtcIntents).toEqual([]);
+        expect(wsIntents[0]).toMatchObject({
+            id: { msgId: result.receipt?.msgId },
+            route: { topicId: 'app.game.director', contextId: 'room-1', resourceId: 'pickup-1' },
+            targets: { groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' } },
+            delivery: { reliability: 'at-least-once', ack: 'group-leader', ownership: 'exclusive' }
+        });
+        expect(wsIntents[0]?.constraints?.expiresAtMs).toBe(wsIntents[0]!.id.ts + 4_000);
+        expect(result.status).toBe('failed');
+        expect(result.receipt?.lifecycle().evidence).toMatchObject({ attempts: [], carrierFallback: undefined });
+    });
+
     it('delivers RTC director commands to the director\'s handlers (correction 13)', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'

@@ -343,6 +343,60 @@ describe('ALM recipe commands', () => {
         }
     });
 
+    it('accepts an exclusive claim on a named resource on messages.send, and refuses an unknown ownership and a claim beside a replay', () => {
+        const send = {
+            kind: 'messages.send',
+            commandId: 'send-claim',
+            carrier: 'ws',
+            typeId: 'alm.conformance',
+            payload: { n: 1 }
+        };
+        const accepted = [
+            { ...send, ownership: 'exclusive', resourceId: 'claim-ws-claim-first-wins' },
+            { ...send, ownership: 'shared' },
+            { ...send, resourceId: 'resource-1' }
+        ];
+        for (const command of accepted) {
+            expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send', command)).ok)
+                .toBe(true);
+            expect(validateRallarBlackBoxTestCommand(command)).toEqual({ ok: true });
+        }
+
+        const refused = validateJsonSchema(
+            RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
+            recipeWithCommand('send-queue', { ...send, ownership: 'queue', resourceId: 7 })
+        );
+        expect(refused.ok).toBe(false);
+        if (!refused.ok) {
+            expect(formatJsonSchemaValidationErrors(refused.errors)).toContain(
+                'ownership: Expected one of "shared", "exclusive".'
+            );
+        }
+        const control = validateRallarBlackBoxTestCommand({ ...send, ownership: 'queue', resourceId: 7 });
+        expect(control.ok).toBe(false);
+        if (!control.ok) {
+            expect(control.messages).toEqual([
+                'messages.send.resourceId must be a string.',
+                'messages.send.ownership must be one of shared, exclusive.'
+            ]);
+        }
+        const replay = validateRallarBlackBoxTestCommand({
+            kind: 'messages.send',
+            commandId: 'send-replay-claim',
+            replayOnCarrier: { handleId: 'h-1', carrier: 'ws' },
+            ownership: 'exclusive',
+            resourceId: 'resource-1'
+        });
+        expect(replay.ok).toBe(false);
+        if (!replay.ok) {
+            expect(replay.messages).toEqual(
+                ['ownership', 'resourceId'].map((field) =>
+                    `messages.send.${field} is not allowed on a replay; a replay names only connection and replayOnCarrier.`
+                )
+            );
+        }
+    });
+
     it('accepts a messages.send replay onto one carrier and refuses an unknown replay carrier', () => {
         const replay = (carrier: string) => ({
             kind: 'messages.send',
@@ -623,7 +677,8 @@ describe('ALM browser adapter execution', () => {
     it.each([
         { relay: 'trusted-server', reason: 'membership-fenced' } as const,
         { relay: 'peer', peerId: 'relay-session', reason: 'membership-fenced' } as const,
-        { relay: 'trusted-server', reason: 'no-leader' } as const
+        { relay: 'trusted-server', reason: 'no-leader' } as const,
+        { relay: 'trusted-server', reason: 'held-by-other' } as const
     ])('reads a $relay $reason refusal from a delivery observation, on its failure and its evidence', async (rejection) => {
         const failure = { kind: 'relay-rejected', rejection } as const;
         const runtime = createRallarBlackBoxBrowserTestRuntime({

@@ -69,6 +69,7 @@ import type {
     RtcDataChannelSendOptions,
     RtcDataChannelSendResult
 } from '../webrtc/qrtc-data-channel.ts';
+import { computeRtcExclusiveRefusal } from './compute-rtc-exclusive-refusal.ts';
 import {
     computeRtcOutboundCarrierAvailability,
     isRtcCarrierGapHandedOver,
@@ -536,6 +537,10 @@ export class WebRtcOverlayMulticastManager {
         const plan = computeRtcBroadcastScopeRefusal(msg)
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
+                (carried) => computeRtcExclusiveRefusal(carried, original, policy.effective)
+            )
+            .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
+                (refusal) => Either.ofLeft(refusal),
                 (carried) =>
                     computeALOutboundAckRefusal<ALOutboundTransportMessage>({ msg: carried, carrier: 'rtc', policy })
             )
@@ -992,6 +997,7 @@ function toALOutboundDropReasonCodeFromHandlingPlan(
         case 'unmet-requirements':
         case 'ordering-rejected':
         case 'resync-required':
+        case 'held-by-other':
         case undefined:
             return 'planner-drop';
     }

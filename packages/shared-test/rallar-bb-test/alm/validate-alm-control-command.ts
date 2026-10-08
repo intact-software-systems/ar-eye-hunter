@@ -90,11 +90,14 @@ function validateOrdinaryMessagesSendCommand(command: RallarBlackBoxTestRecord):
         ...validateStringField(command, 'connection', path),
         ...validateEnumField({ record: command, key: 'carrier', path, allowed: values.messagesCarrier }),
         ...validateStringField(command, 'typeId', path),
-        ...['topicId', 'orderingKey', 'handleId'].flatMap((key) => validateStringField(command, key, path)),
+        ...['topicId', 'orderingKey', 'handleId', 'resourceId'].flatMap((key) =>
+            validateStringField(command, key, path)
+        ),
         ...validateObjectField(command, 'roomRef', path),
         ...validateEnumField({ record: command, key: 'scope', path, allowed: values.messagesScope }),
         ...validateStringField(command, 'principalId', path),
         ...validateEnumField({ record: command, key: 'recipientPeer', path, allowed: values.messagesRecipientPeer }),
+        ...validateEnumField({ record: command, key: 'ownership', path, allowed: values.messagesOwnership }),
         ...validateEnumField({ record: command, key: 'reliability', path, allowed: values.messagesReliability }),
         ...validateEnumField({ record: command, key: 'ack', path, allowed: values.messagesAck }),
         ...validateEnumField({ record: command, key: 'durability', path, allowed: values.messagesDurability }),

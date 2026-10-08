@@ -478,6 +478,29 @@ frozen at the RTC origin and admitted by the WS server (D164). Only the director
 ordinary ACK, sent at admission as any recipient's, is the one the `leader` receipt expects; a room
 peer that carries it over RTC only forwards it and ends its subtree with `subtree-complete`.
 
+**Exclusive claims.** The WS server's admission of a client's exclusive message decides an exclusive claim on
+the message's resource key (D171–D173); it is not the worker's claim on a work row. The admission store's private
+`toALInboundClaimKey` ([`al-inbound-admission-store.ts`](./al-inbound-admission-store.ts)) names the key
+`<applicationId>/<workspaceId>/<groupId>/<topicId>/<contextId>/<resourceId>`, each part URI-encoded, only when the
+admission source is `ws-client`, the message's effective ownership is `exclusive` and its targets name a room
+`groupRef`; the room scope is part of the key because the same group id exists in other scopes. `readIncomingMessage`
+reads the exclusive-claim row at `<namespace>:claim:<key>` beside the dedup key, as a guarded observation of the
+commit: its value is the holder's peer id and its liveness is the row's own expiry, which every backend applies on
+read. The planning observation `claimHolderPeerId` carries the holder, and `resolveMessageDrop`, right after the
+duplicate check, drops an exclusive message whose key another peer holds with the code `held-by-other`; `planNack`
+answers it with a NACK of that reason to the sender, so nothing is delivered and a dropped claim starts no receipt. An
+admitted exclusive message writes the `set-claim` mutation, its sender as holder and its own deadline as expiry, in
+the transaction that commits its dedup, ordering and ACK rows: the holder's re-send moves the expiry, and an exclusive
+claim past its message's deadline leaves the key free for the next claimant. A message with no deadline of its
+own (no `expiresAtMs`, no expiry policy) holds the key until the deadline its admission implies (`durableEffectTtlMs`,
+the store's retention default); every browser send carries a `ttlMs`. Two claimants that both read a free key
+conflict at the commit, and the loser's retained admission is replayed and planned against the winner. A claim
+retained on a conflict may have started its `admitted` receipt; the `held-by-other` NACK of its replay then ends
+the origin's receipt, because the origin reads that NACK as a refusal of the whole send whatever its receipt (the
+server's own aggregate runs to its deadline, and its late `timed-out` receipt changes nothing). A
+`shared` message neither reads nor writes an exclusive claim, and an `rtc-peer` or `trusted-server` admission never
+reads or writes one, so a browser never drops a message for it.
+
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce
 it through `commitWork()`: it asks the rotation page for a head read

@@ -3328,6 +3328,36 @@ moved or changed test.
       }
     },
     {
+      "id": "browser-roomless-exclusive-send-no-admission",
+      "domain": "Typed message audience validation",
+      "owner": "Rallar browser maintainers",
+      "summary": "An exclusive WS send to one peer that names no room rejects before the WS carrier can publish it.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#refuses an exclusive WS send to one peer that names no room, saying it names a room",
+      "coverageRelation": "The public WS lane rejects the room-audience issue alone; the WS carrier admission port is observed.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebSocketQueueBox enqueueOutboxIfAbsent carrier admission port",
+        "observableEffect": "Carrier admission can retain or publish a message to its resolved audience.",
+        "requiredConstraint": "An exclusive send with no room to hold its claim must produce no WS admission.",
+        "failureRationale": "An error response can follow an illicit send; the validation error alone does not prove absence of publication."
+      }
+    },
+    {
+      "id": "game-local-director-intent-claims-nothing",
+      "domain": "Rallar Game director intents",
+      "owner": "Rallar browser maintainers",
+      "summary": "The fresh local director's own claiming intent reaches its own handler and never the director relay.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-game-match.test.ts#routes the fresh local director's own intent to its own handler, claiming nothing",
+      "coverageRelation": "The match result reads local and the handler receives the intent; the relay send port is observed.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarDirectorRelayHandle sendIntent relay port",
+        "observableEffect": "A relay send claims the intent's resource at the WS server for the claim's lifetime.",
+        "requiredConstraint": "An intent the local director handles must produce no relay send, so it claims nothing.",
+        "failureRationale": "A local result and a handled intent can follow a relay send; neither proves the claim was never sent."
+      }
+    },
+    {
       "id": "browser-ai-principal-result-not-realtime",
       "domain": "Browser AI result delivery",
       "owner": "Rallar browser maintainers",
@@ -7848,6 +7878,28 @@ moved or changed test.
       "owner": "Rallar browser maintainers",
       "rationale": "The RTC admission port's first call names the hold gap admission: a world send on rtc has no fallback carrier.",
       "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal"
+    },
+    {
+      "id": "test-structure-coupling-41fdf7fd054acc78",
+      "path": "packages/tests/shared-web/messages/browser-message-audiences.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-roomless-exclusive-send-no-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The WS admission absence proves a roomless exclusive send publishes nothing despite the public validation rejection.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#refuses an exclusive WS send to one peer that names no room, saying it names a room"
+    },
+    {
+      "id": "test-structure-coupling-c032f9de37bfc1f0",
+      "path": "packages/tests/shared-web/rallar-game-match.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "game-local-director-intent-claims-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The relay port's absence proves the local director's own intent, routed to its handler, sends no claim to the server.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-game-match.test.ts#routes the fresh local director's own intent to its own handler, claiming nothing"
     },
     {
       "id": "test-structure-coupling-c0a128e08129b94a",

@@ -103,6 +103,7 @@ export type {
     RallarDiagnosticsPortsInput,
     RallarDirectorAppointOptions,
     RallarDirectorOutputOptions,
+    RallarDirectorRelayClaim,
     RallarDirectorRelayConfig,
     RallarDirectorRelayEnvelope,
     RallarDirectorRelayHandle,

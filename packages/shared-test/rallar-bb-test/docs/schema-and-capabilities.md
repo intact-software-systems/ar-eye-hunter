@@ -151,9 +151,12 @@ browser-only: the in-process runner adapter refuses them with the
 that refusal fails the step.
 
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
-and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`,
-`reliability`, `ack`, `durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
-`minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason? }`.
+and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`, `principalId`, `recipientPeer`,
+`reliability`, `ack`, `ownership`, `resourceId`, `durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`,
+`seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason? }`.
+`ownership` (`shared`, `exclusive`) and `resourceId` pass unchanged to the product's typed send options of the same
+names; absent, the send is `shared` on a fresh resource id, as a product send is. A recipe that names a
+`resourceId` lets two agents' sends meet on one resource key, which an exclusive claim needs.
 `durability` (`volatile`, `local-checkpoint`, `local-outbox`, `local-inbox`) declares the typed
 channel's durability; absent, the send is volatile. `onStorageUnavailable`
 (`refuse`, `volatile`) is the channel's choice when its storage cannot hold a
@@ -206,8 +209,9 @@ logical algorithm.
 A replay is the other shape of `messages.send`: it names `replayOnCarrier:
 { handleId, carrier }` (`carrier` is `ws` or `rtc`), optionally `connection`, and
 nothing else a send would. `carrier`, `typeId`, `topicId`, `payload`, `roomRef`,
-`scope`, `reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
-`minSnapshotVersion`, `qos` and `toPeer` are each refused beside it, by the control validator and by
+`scope`, `principalId`, `recipientPeer`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`,
+`onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`
+are each refused beside it, by the control validator and by
 the page, because the replayed envelope already fixes them. It is a harness
 capability, not a product path: the product falls back to its second carrier only
 after an `unroutable` verdict or a `refused` `unsupported` one (an ack algorithm the
@@ -374,6 +378,33 @@ it sends the sender polls `director.status` with `refresh: true` until
   not the room's leader.
 
 The hosted manifest 22 withholds the leader cells too, so it stays as recorded.
+
+The `claim` conformance scenarios (`scenarios/claim/`) run on the same three agents, in
+the full scope, and prove an exclusive send's claim on its resource key. Each cell
+names the resource `claim-<carrier>-<scenarioKey>`, so every send of the cell meets on one
+key and no cell meets a key another carrier's cell may still hold. A recipient role may
+send: `recipient-b` sends on its own connection, and its handle id names the role.
+
+- `claim-first-wins` (`ws`, `rtc-with-ws-fallback`): the sender's exclusive room
+  broadcast with `ack: 'all-logical-recipients'` is confirmed by `receiver` and
+  `recipient-b` in the receipt window, and its `attemptCarriers` reads `['ws']` on both
+  carriers, since an exclusive send takes WS under every strategy but `rtc`. Once
+  `recipient-b` has received that message, it sends its own exclusive broadcast on the
+  same resource and reads the verdict `rejected`: `failure.kind: 'relay-rejected'`,
+  `failure.rejection.relay: 'trusted-server'`, `failure.rejection.reason:
+  'held-by-other'`, one attempt. `recipient-b` then reads that no second copy arrives for
+  the rest of its window, so its page stays until its ACK of the exclusive claim has left.
+- `claim-expires-reclaims` (`ws` only): the sender holds an exclusive claim with `ttlMs: 3000` and pins
+  no receipt, since its short exclusive claim may end `acknowledged` or `expired`; its evidence is
+  its admission and receiving the reclaim. `recipient-b` receives that send, holds
+  3500 ms past it as a `messages.received` absence (no second copy arrives), and its own
+  exclusive send on the resource is admitted and delivered to the sender and the receiver;
+  it reads its receipt `acknowledged` after its own absence window.
+- `claim-refused-on-rtc` (`rtc` only): the RTC origin refuses the sender's exclusive
+  send, which ends `rejected` with `failure.kind: 'refused'`, `failure.reason:
+  'unsupported'` and no carrier attempt.
+
+The hosted manifests 18 and 22 withhold the claim cells, so they stay as recorded.
 
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
 `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that

@@ -41,5 +41,21 @@ and director accepted shots use `messages/arena-director-peer-message.ts` for th
 same state projection, including deferred ownership checks. Motion uses canonical
 game presence. Hit, pickup and match-start actions use canonical game intents,
 including the director's local receiver; unused raw intent sends were removed.
+A pickup intent claims its pickup for `PICKUP_CLAIM_TTL_MS`, 4 s
+(`{ resourceId: pickupId, ttlMs }`, D176): the claim outlives the director's
+verdict until then, so a claimant the director refuses, or one that leaves,
+blocks a 12 s pickup for 4 s, not the 30 s command default. The first
+hunter's intent reaches the director, and a hunter whose intent finds the pickup
+already claimed reads `held-by-other` and sees a `pickup-taken` activity
+headline for its 2.8 s (`ARENA_EVENT_HEADLINE_MS`): a local event holds the
+headline until it expires, so the snapshot or director event that follows, usually
+the winner's own pickup, does not replace it. The director's own pickups are
+routed locally and claim nothing.
+Limits of the pickup claim: the loser still plays the pickup impact, sound and
+haptic at send time, before its result arrives; losing to a director-hunter
+shows nothing, since the director's local pickup claims nothing and the
+director refuses the remote intent `pickup-unavailable` with no headline; and
+pickup intents go over WS only, one server hop where they were RTC-first, with
+no RTC path while WS reconnects.
 The generic game envelope still identifies rooms by `roomId`; this app fallback
 repair does not claim full scope isolation for that separate shared protocol.
