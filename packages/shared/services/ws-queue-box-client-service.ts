@@ -1,5 +1,6 @@
 import { AL_WS_CLIENT_CAPABILITIES, toALCarrierQosInputProvider } from '../al-contracts/al-carrier-capabilities.ts';
 import type { ALMessage } from '../al-contracts/al-contract.ts';
+import { isALControlTypeId } from '../al-contracts/al-control-type-ids.ts';
 import {
     decodeALMessageValue,
     decodePersistedALMessage,
@@ -25,7 +26,11 @@ import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runti
 import type { ALInboundResyncRequired } from '../alm/inbound/al-inbound-resync-required.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
-import type { ALOutboundCancelOutcome } from '../alm/outbound/al-outbound-message-runtime.ts';
+import {
+    AL_SUBMISSION_NOT_READY_RETRY_MS,
+    writeALOutboundCongestionDeferral,
+    type ALOutboundCancelOutcome
+} from '../alm/outbound/al-outbound-message-runtime.ts';
 import type {
     ALCheckpointOutboundRuntimeStores,
     ALOutboundRuntimeDiagnosticsSink,
@@ -68,6 +73,9 @@ import type {
 } from './queue-message-callbacks.ts';
 import { toWsQueueBoxClientDispatchPlan } from './ws-queue-box-client/to-ws-queue-box-client-dispatch-plan.ts';
 import { acceptWsQueueBoxClientControlMessage } from './ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts';
+
+/** The bytes the browser socket may hold unsent before this session's own sends wait (D184). */
+export const AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES = 256 * 1024;
 
 export const DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS: WsQueueBoxClientService.ReconnectOptions = {
     maxAttempts: 12,
@@ -226,8 +234,10 @@ export class WsQueueBoxClientService {
                         WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE
                     ),
                 readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-                planOutgoingMessage: (msg) => this.planOutgoingMessage(msg),
-                planDequeuedMessage: (msg) => this.planOutgoingMessage(msg),
+                // A plan without authority is a new admission's; a retained message is planned with its captured one.
+                planOutgoingMessage: (msg, authority) =>
+                    this.planOutgoingMessage(msg, authority === undefined ? 'admission' : 'replan'),
+                planDequeuedMessage: (msg) => this.planOutgoingMessage(msg, 'replan'),
                 afterDequeueAdmission: undefined,
                 planRepairMessage: undefined,
                 hopPeerIds: this.serverPeerId === undefined ? undefined : [this.serverPeerId],
@@ -275,11 +285,18 @@ export class WsQueueBoxClientService {
         }
     }
 
-    private planOutgoingMessage(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
+    /** Only a new admission of this session's own data reads backpressure, never a control or a replan (D184). */
+    private planOutgoingMessage(
+        msg: ALMessage,
+        stage: 'admission' | 'replan'
+    ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
+        const readsBackpressure = stage === 'admission' && !isALControlTypeId(msg.payload.typeId);
         return toWsQueueBoxClientDispatchPlan(msg, {
             sessionId: this.sessionId,
             serverPeerId: this.serverPeerId,
             socketOpen: this.isSocketOpen(),
+            nowMs: this.dependencies.outboundRuntime.clock.nowMs(),
+            backpressured: readsBackpressure && this.decideBackpressure(msg),
             qosProvider: this.dependencies.qosProvider
         });
     }
@@ -565,10 +582,18 @@ export class WsQueueBoxClientService {
         // effect contract; rechecking here between callbacks could misreport an earlier write.
         const reason = this.dependencies.readSubmissionIneligibility(lifecycle.canonicalMessage);
         if (reason !== undefined) {
-            return { status: 'not-ready', submissionAttempted: false, reason };
+            return {
+                status: 'not-ready',
+                submissionAttempted: false,
+                reason,
+                retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS
+            };
         }
         if (!this.socket.decideSubmissionReadiness(entry.resource, this.dependencies.submissionReadinessFaultPort)) {
-            return { status: 'not-ready', submissionAttempted: false };
+            return { status: 'not-ready', submissionAttempted: false, retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS };
+        }
+        if (this.decideBackpressure(lifecycle.canonicalMessage)) {
+            return this.deferBackpressuredSend(lifecycle.canonicalMessage);
         }
         if (this.onOutboxMessageCallbacks.size === 0) {
             this.socket.sendAsJsonString(entry.resource);
@@ -585,6 +610,28 @@ export class WsQueueBoxClientService {
         return { status: 'sent', submissionAttempted: true };
     }
 
+    /** A scripted fault holds the socket backpressured, or it holds at or above its watermark (D184). */
+    private decideBackpressure(message: ALMessage): boolean {
+        return this.socket.decideBackpressureFault(message) ||
+            (this.socket.ws?.bufferedAmount ?? 0) >= AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES;
+    }
+
+    private deferBackpressuredSend(message: ALMessage): ALOutboundSettledSendResult {
+        writeALOutboundCongestionDeferral({
+            diagnostics: this.dependencies.outboundDiagnostics,
+            carrier: 'ws',
+            message,
+            selfPeerId: this.sessionId,
+            qosProvider: this.dependencies.qosProvider
+        });
+        return {
+            status: 'not-ready',
+            submissionAttempted: false,
+            reason: 'WS socket is backpressured',
+            retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS
+        };
+    }
+
     private readSendIneligibility(
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): ALOutboundSettledSendResult | undefined {
@@ -597,7 +644,9 @@ export class WsQueueBoxClientService {
         ) {
             return { status: 'expired', submissionAttempted: false };
         }
-        return this.isSocketOpen() ? undefined : { status: 'not-ready', submissionAttempted: false };
+        return this.isSocketOpen()
+            ? undefined
+            : { status: 'not-ready', submissionAttempted: false, retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS };
     }
 
     private isSocketOpen(): boolean {

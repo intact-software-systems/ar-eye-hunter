@@ -457,7 +457,8 @@ export function toRtcOverlayMulticastManagerInput(
         checkpointStores: input.checkpointStores.rtcOverlay,
         durableWorkOwnership: input.options.durableWorkOwnership,
         outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
-        outboundSettlements: input.options.deliverySettlements.rtc
+        outboundSettlements: input.options.deliverySettlements.rtc,
+        faultPort: input.options.diagnosticsPorts.transportFaultPort
     };
 }
 

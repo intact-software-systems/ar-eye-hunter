@@ -30,7 +30,10 @@ import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay
 import { toCircuitBreaker, type CircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import {
+    createPassThroughTransportFaultPort,
+    type TransportFaultPort
+} from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
@@ -65,6 +68,8 @@ export interface RtcOriginOverlayFixtureInput {
     readonly volatileStores?: ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage>;
     /** The session's provider the composition hands the manager; absent, the carrier's capabilities alone. */
     readonly qosProvider?: ALQosInputProvider;
+    /** The session's transport faults; absent, a pass-through port. */
+    readonly faultPort?: TransportFaultPort;
 }
 
 export interface OriginAcknowledgementInput {
@@ -104,6 +109,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         outboundRuntime: resources,
         circuitBreaker: input.circuitBreaker ?? toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
+        faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
     onTestFinished(() => manager.dispose());
@@ -266,7 +272,12 @@ function createOpenChannel(peerId: string): CapturedChannel {
     const health = channel.readHealth();
     const sent: ALMessage[] = [];
     vi.spyOn(channel, 'readHealth').mockReturnValue({ ...health, readyState: 'open' });
+    // As the reliable lane's `drop-new` overflow does, a send at the high watermark is dropped, never queued.
     vi.spyOn(channel, 'sendJson').mockImplementation((message) => {
+        const { bufferedAmount, flowControl } = channel.readHealth();
+        if (bufferedAmount >= flowControl.highWatermarkBytes) {
+            return { status: 'dropped', reason: 'Back pressure', bufferedAmount };
+        }
         sent.push(decodePersistedALMessageValue(message));
         return { status: 'sent', bufferedAmount: 0 };
     });

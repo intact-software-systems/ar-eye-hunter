@@ -1,12 +1,15 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../al-contracts/al-control.ts';
-import type {
-    ALAckAlgo,
-    ALCongestionCause,
-    ALMessageHandlingPlan,
-    ALReceiptMode,
-    ALRepairAlgo,
-    ALSupersedenceAlgo
+import {
+    normalizeALQosPolicy,
+    resolveALQosNormalizationInput,
+    type ALAckAlgo,
+    type ALCongestionCause,
+    type ALMessageHandlingPlan,
+    type ALQosInputProvider,
+    type ALReceiptMode,
+    type ALRepairAlgo,
+    type ALSupersedenceAlgo
 } from '../../al-contracts/al-policy.ts';
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { StateScope } from '../../api/state-types.ts';
@@ -267,6 +270,36 @@ export function writeALOutboundCongestionDiagnostic(
     catch (error) {
         console.error('AL outbound runtime diagnostics sink failed', error);
     }
+}
+
+export interface WriteALOutboundCongestionDeferralInput {
+    readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+    readonly carrier: ALDeliveryCarrier;
+    readonly message: ALMessage;
+    readonly selfPeerId: string;
+    /** The carrier's provider, so the deferral names the priority its planner read. */
+    readonly qosProvider: ALQosInputProvider;
+}
+
+/** A send its carrier holds back at submission because its channel or socket cannot take it now (D186). */
+export function writeALOutboundCongestionDeferral(input: WriteALOutboundCongestionDeferralInput): void {
+    const { message } = input;
+    const policy = normalizeALQosPolicy(
+        message,
+        resolveALQosNormalizationInput(
+            message,
+            { direction: 'outbound', selfPeerId: input.selfPeerId },
+            input.qosProvider
+        )
+    );
+    writeALOutboundCongestionDiagnostic(input.diagnostics, {
+        kind: 'congestion',
+        carrier: input.carrier,
+        cause: 'backpressured',
+        action: 'defer',
+        priority: policy.effective.congestion.opts.priority,
+        msgId: message.id.msgId
+    });
 }
 
 /** The call path that asked for a commit, so its wait and its hold are charged to the work behind it. */

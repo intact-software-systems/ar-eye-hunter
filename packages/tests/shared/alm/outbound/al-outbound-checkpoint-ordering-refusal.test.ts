@@ -27,6 +27,8 @@ const WS_CONTEXT = {
     sessionId: 'a',
     serverPeerId: 'server',
     socketOpen: true,
+    nowMs: Date.now(),
+    backpressured: false,
     qosProvider: toALCarrierQosInputProvider(AL_WS_CLIENT_CAPABILITIES, undefined)
 };
 

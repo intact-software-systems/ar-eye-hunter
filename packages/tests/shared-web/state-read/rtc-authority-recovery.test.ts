@@ -1081,6 +1081,7 @@ class NativeAuthorityEndpoint {
             outboundRuntime: this.resources,
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         this.streamer = createDefaultWebRtcRxStreamerService({

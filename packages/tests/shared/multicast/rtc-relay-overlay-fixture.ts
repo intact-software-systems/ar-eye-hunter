@@ -17,7 +17,10 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import * as shared from '@shared/mod.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import {
+    createPassThroughTransportFaultPort,
+    type TransportFaultPort
+} from '@shared/transport-faults/transport-fault-port.ts';
 
 import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
 import { waitForOwnedQueueWork } from '../wait-for-owned-queue-work.ts';
@@ -34,6 +37,8 @@ export interface RtcRelayOverlayFixtureInput {
     readonly qosProvider?: ALQosInputProvider;
     /** The keys the overlay is cached under; absent, the bare room id. The browser sender reads the scoped key. */
     readonly overlayIds?: readonly string[];
+    /** The transport faults the relay's overlay reads; absent, a pass-through port. */
+    readonly faultPort?: TransportFaultPort;
 }
 
 /** A real RTC receive pipeline for one relay: inbound admission, the relay row, and its own forwarding. */
@@ -79,6 +84,7 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
         outboundRuntime: outboundResources,
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
+        faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
     const inboundStores = shared.createDefaultInMemoryALInboundRuntimeStores();

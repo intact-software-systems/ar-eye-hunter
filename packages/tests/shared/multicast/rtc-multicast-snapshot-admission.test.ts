@@ -1,4 +1,5 @@
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import {
     describe,
     expect,
@@ -242,6 +243,7 @@ function createDefaultSnapshotAdmissionManager(
         outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, nowMs: () => 1_000 }),
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
+        faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
 }

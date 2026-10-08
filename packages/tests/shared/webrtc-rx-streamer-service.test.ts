@@ -111,6 +111,7 @@ function createMediaFixture(): MediaFixture {
         outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
+        faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
     const service = createDefaultWebRtcRxStreamerService({ multicast, sessionId: 'self' });
