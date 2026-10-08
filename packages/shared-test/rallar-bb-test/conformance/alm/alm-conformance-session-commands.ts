@@ -184,10 +184,10 @@ export function toOwnerLeaseLapseWait(step: AlmConformanceStepInput): RallarBlac
     };
 }
 
-export function toStatsCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+export function toStatsCommand(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestCommand {
     return {
         kind: 'stats',
-        commandId: toCommandId(step, 'stats'),
+        commandId: toCommandId(step, name),
         timeoutMs: toBudgetMs(STATS_TIMEOUT_MS, step.input.deadlineMs)
     };
 }

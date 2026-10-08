@@ -229,7 +229,7 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
             toConnectCommand(recipe),
             ...toConnectedStorageCountersCommands(recipe),
             ...recipe.commands,
-            toStatsCommand(recipe)
+            toStatsCommand(recipe, 'stats')
         ]
     };
 }

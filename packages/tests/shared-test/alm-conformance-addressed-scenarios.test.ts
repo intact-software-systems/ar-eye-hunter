@@ -297,7 +297,7 @@ describe('the addressed-send family (C11)', () => {
         }
     });
 
-    it('reconnects with two tracks, refuses the send opening a third capacity/tracks with no attempt, and restores them', () => {
+    it('reconnects with two tracks, refuses the send opening a third capacity/tracks with no attempt, reads the ledger at the bound, and restores them', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const scenario = scenarioOf(carrier, 'capacity-tracks');
             const body = bodyOf(scenario.sender);
@@ -308,6 +308,7 @@ describe('the addressed-send family (C11)', () => {
                 ...['messages.send', 'messages.observe', 'assert'],
                 ...['messages.send', 'messages.observe', 'assert'],
                 ...['messages.send', 'messages.observe', 'assert', 'assert', 'assert', 'assert', 'assert'],
+                ...['stats', 'assert', 'assert', 'assert'],
                 ...['messages.observe', 'assert', 'messages.observe', 'assert'],
                 'close',
                 'rtc.connect'
@@ -316,6 +317,10 @@ describe('the addressed-send family (C11)', () => {
                 ADMITTED,
                 ADMITTED,
                 ...REFUSED_AT_THE_BOUND('tracks'),
+                // The ledger's own reading at the bound: both admitted sends still hold their tracks.
+                'rallar.alm.usage.tracks equals 2',
+                'rallar.alm.limits.maxTracks equals 2',
+                'rallar.alm.overloaded equals false',
                 'state equals acknowledged',
                 'state equals acknowledged'
             ]);

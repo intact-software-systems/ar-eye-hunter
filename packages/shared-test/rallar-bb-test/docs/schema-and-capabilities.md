@@ -524,7 +524,10 @@ message with `ttlMs` `AL_VOLATILE_SESSION_MAX_AGE_MS + 1_000` (301 000): it ends
 whole window that nothing reaches it. `capacity-tracks` closes, reconnects with `rallar.almVolatileLimits`
 naming the four production limits but `maxTracks: 2` and sends three at-least-once messages with `ack: 'receiver'`, each `seq` 1 on an ordering key of
 its own (`alm-<carrier>-capacity-tracks-<index>`), so each would open one track: the third ends `rejected` with
-`limit: 'tracks'` and `attempts` 0, and the first two are acknowledged; then it reconnects without the field. A
+`limit: 'tracks'` and `attempts` 0; right after the refusal, while both sends still hold their tracks, it reads
+`stats` and asserts `rallar.alm.usage.tracks` 2, `rallar.alm.limits.maxTracks` 2 and `rallar.alm.overloaded` false
+(the only ledger reading a lane cell asserts at a bound); the first two are acknowledged; then it reconnects without
+the field. A
 received message never opens a counted track, so it needs no wait for the rejoin's state sync, and its receiver's
 window adds only the readiness budget. The three cells live in `conformance/alm/scenarios/volatile-bound/`.
 
