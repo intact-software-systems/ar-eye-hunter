@@ -796,3 +796,38 @@ capacity-tracks cells beside capacity.
 Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts
 ```
+
+```text
+Title: fault.inject may hold a transport carrier backpressured; stats and observations name congestion
+Date: 2026-10-08
+Owner: ALM V1b-i
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA (fault.inject branch)
+- validateRallarBlackBoxTestCommand fault.inject action
+
+Old shape:
+A transport fault.inject named action "drop", "not-ready" (ws only) or { delayMs }. A stats result carried rallar.alm
+and no congestion block; a delivery observation named no refusal reason per attempt.
+
+New shape:
+A transport fault.inject may also name action "backpressure" on either carrier: the carrier reads its channel at its
+high watermark for each matching origination it plans, and each such read consumes one of remaining. A browser
+agent's stats result carries rallar.congestion { dropped, deferred, handedOver } beside rallar.alm while the page is
+connected, and a delivery observation carries attemptRefusalReasons, the reason of every refused attempt row.
+
+Migration:
+None: existing recipes validate and read as before.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the action, the stats block, the observation field and the congestion cells.
+
+Verification:
+npx vitest run packages/tests/shared-test/alm-conformance-congestion.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts
+```

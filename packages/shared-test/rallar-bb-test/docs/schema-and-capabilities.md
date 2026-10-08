@@ -495,6 +495,26 @@ shows the last outcome per row, not a count of retries, so `fallback-within-dead
 `not-ready` RTC attempts settle inside one attempt entry (`attemptOutcomes` reads `[not-ready, sent]`, not
 three `not-ready` entries).
 
+The congestion cells run in the two-agent family, in the full scope, after its other cells (D187). Each holds the
+sender's own carrier at its high watermark with a transport `fault.inject` of action `backpressure` on the cell's
+`typeId`, `remaining: 'until-cleared'`, sends one room send with `ack: 'receiver'`, and releases the hold with
+`remaining: 0`; it reads the page's counter of its decision from `stats` (`rallar.congestion.<counter>` above 0),
+which no earlier cell of the family raises. `backpressure-hands-over` (`rtc-with-ws-fallback`) holds the RTC leg and
+sends `reliability: 'best-effort'` (priority 0; the harness's channel purposes default to at-least-once): the RTC
+leg is refused `congested` and the send handed to WS at admission, so it ends `acknowledged` with `attemptOutcomes`
+`[refused, sent]`, `attemptCarriers` `[rtc, ws]` and `attemptRefusalReasons` `[congested]`, and `handedOver` above
+0; the same send also counts in `dropped`, since the RTC admission drops it first. The receiver delivers it once and
+reads its `admission-outcome` `committed`/`admitted` on carrier `ws`. `backpressure-refused` (`rtc`) sends the same
+best-effort send, which ends `rejected` with `failure: { kind: 'refused', reason: 'congested' }` and `attempts` 0,
+with `dropped` above 0, and the receiver proves for the whole window that nothing reaches it.
+`backpressure-deferred` (`ws`, `rtc`) sends `reliability: 'at-least-once'` (priority 5, which `drop-low` keeps),
+holds the carrier for 2 s with an absent diagnostic wait, reads the send's receipt while it is held and asserts its
+`state` is not `acknowledged` (`notEquals`), releases the hold, and observes `acknowledged` with exactly one attempt
+row, `sent`, pinned by the `length` operator on `attemptOutcomes`, and `deferred` above 0: the attempt row is
+overwritten on each retry, so the counter, not `attemptOutcomes`, shows the `not-ready` submissions. Under
+`rtc-with-ws-fallback` three of them would hand the send to WS, so the cell runs on single carriers. Hosted manifest 18 withholds all three, so it stays as recorded. The cells live in
+`conformance/alm/scenarios/congestion/`.
+
 The addressed family runs on two agents, in the full scope, as its own Playwright test per carrier (R-S3c-ii-2,
 R-S3c-ii-5); each scenario declares it as its `laneFamily`. The lane proves the addressee's receipt, not the
 addressing: on two agents a room send yields the same receipt, so the addressing is pinned by unit tests.
@@ -555,12 +575,13 @@ Carrier settlements update the handle directly. Observations include
 `submitted`, `attempts`, `attemptOutcomes`, `attemptCarriers`, `relayRejection`, `carrierFallback`, `failure`,
 `receiptMode`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`, `expectedRecipientPeerIds`,
 `confirmedRecipientPeerIds`, `unconfirmedRecipientPeerIds`, `reason`,
-`backpressured`, `enqueued`, and `durabilityDowngrade` (`{ requested, cause }`, present only on a send its
-channel downgraded to volatile because storage could not hold it). `attempts` counts every attempt row,
-including a carrier admission that never reached the transport: an `unroutable`
+`attemptRefusalReasons`, `backpressured`, `enqueued`, and `durabilityDowngrade` (`{ requested, cause }`, present
+only on a send its channel downgraded to volatile because storage could not hold it). `attempts` counts every attempt
+row, including a carrier admission that never reached the transport: an `unroutable`
 leg, or a `refused` leg the fallback carrier took over. `attemptOutcomes` lists
 the outcome of every settled row in attempt order. `attemptCarriers` names the carrier of each of
-those settled rows, index for index, so a hand-over reads `rtc` rows then a `ws` row. `receiptMode` is the latest
+those settled rows, index for index, so a hand-over reads `rtc` rows then a `ws` row. `attemptRefusalReasons` lists
+the reason of every `refused` row in attempt order, so a leg refused `congested` and handed to WS names its cause. `receiptMode` is the latest
 receipt's mode (`hop`, `subtree` or `receiver`), absent until a receipt
 settles. Under `hop` and `subtree` the recipient lists equal the hop lists.
 Under `receiver` the recipient lists count the frozen logical audience:
@@ -582,7 +603,7 @@ only, in `relayRejection`.
 
 `failure` is present once the send ended `rejected`, `failed` or `expired`, and says why, typed:
 `refused` with the carrier's `reason` (`capacity`, a session over its volatile bound, never hands
-the send over), `relay-rejected` with its `rejection`, `admission-failed`, `storage-unavailable` with
+the send over; `congested`, a carrier at its high watermark with no fallback carrier left), `relay-rejected` with its `rejection`, `admission-failed`, `storage-unavailable` with
 its `cause` (`missing`, `open-failed`, `reset-blocked`, `quota`, `closed`, `evicted` or
 `transaction-failed`: the durable store wrote nothing), `skipped` with its
 `reason`, `unroutable` with its `reason`, `attempt-failed` with its `outcome`, `receipt-exhausted`
@@ -592,11 +613,15 @@ with its `cause` (`budget`, or `hop-refused` with `hopPeerId` and `nackReason`),
 `carrierFallback` is present once the strategy handed an admitted message to its second carrier (D56):
 `{ from, to, reason, atMs, detail }`, with `reason` one of `not-ready`, `not-yet-in-sync-exhausted` and
 `receipt-exhausted`. A refusal at admission, such as the volatile bound's `capacity`, is no hand-over, so it
-leaves `carrierFallback` absent and `attempts` at 0.
+leaves `carrierFallback` absent and `attempts` at 0. A `congested` refusal under `rtc-with-ws-fallback` is a
+hand-over at admission, not of an admitted message: it leaves `carrierFallback` absent and a `refused` RTC row before
+the WS row.
 
 `backpressured` is true when a carrier
 refused admission for its own rate limit or open circuit, never when it simply
-had no peer; `enqueued` is true once a durable admission put the message in a
+had no peer: it counts admission refusals (`rate-limited`, `circuit-open`), not
+channel backpressure, which reads as a `congested` refusal or deferral and the
+`stats.rallar.congestion` counters; `enqueued` is true once a durable admission put the message in a
 carrier queue.
 A terminal state ends a wait even when it was not requested; a true timeout
 reports the last state. A send waits for admission until the earlier of the
@@ -625,7 +650,11 @@ as soon as `count` is reached; `absent: true` holds the full `windowMs` and then
 passes only when fewer than `max(count, 1)` messages arrived.
 
 `fault.inject` schedules a scripted `drop` or `{ delayMs }` for the next
-`remaining` matching frames on the `ws` or `rtc` carrier. The matcher reads the
+`remaining` matching frames on the `ws` or `rtc` carrier; `not-ready` (`ws` only)
+answers a matching submission not ready. `backpressure` (either transport carrier)
+makes the carrier read its channel at its high watermark when it plans a
+matching origination and when it submits a matching frame; each such read
+consumes one of `remaining`. The matcher reads the
 **AL envelope**, not the recipe's own fields: `match.typeId` compares against
 `payload.typeId`, `match.msgId` against `id.msgId` — or, for an ACK, NACK or
 repair, against the original message id parsed out of the control payload's own
@@ -1077,6 +1106,13 @@ which read no page. A page answer that is not a whole report fails the `stats`
 command, naming each bad field. No command kind is added: a manifest's
 existing stats loops record the ledger over time.
 
+Beside it, `stats.rallar.congestion` carries the page's congestion counters,
+`{ dropped, deferred, handedOver }` (D186): one count per `congestion` outbound
+diagnostic of the page, `drop`, `defer` or `hand-over`, on either carrier and for
+either cause. The counters belong to the connection: a `close` resets them, and the
+block is absent while the page is not connected, in the same places `rallar.alm` is
+absent. An `assert` reads it as `latestStats.rallar.congestion.deferred`.
+
 `rtc.stream` is the high-rate RTC traffic primitive. Use it when a recipe wants
 to model a realtime stream, such as 100 frames at 20 Hz, without expanding that
 stream into hundreds of sequential `rtc.send` commands. A stream command owns
@@ -1089,7 +1125,8 @@ frame observations. Typed RTC sends and frames wait for admission within the ear
 command timeout or absolute deadline; an otherwise unbounded send uses a 5,000 ms
 admission budget. Message TTL remains independent. Frame observations report
 `queued` from lifecycle state, `enqueued` from durable admission, and
-`backpressured` for rate-limited or circuit-open admission, never for no-route.
+`backpressured` for rate-limited or circuit-open admission, never for no-route: the
+stream's backpressure count counts those admission refusals, not channel backpressure.
 `queued` and `enqueued` are absent when a frame has no decoded typed-message send result.
 
 `rtc.stream` differs from `loop` plus `rtc.send`: `loop` intentionally awaits

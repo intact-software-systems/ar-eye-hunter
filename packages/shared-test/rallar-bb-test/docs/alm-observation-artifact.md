@@ -183,6 +183,13 @@ records what the runner was doing while the cell ran:
   found their page at its count or byte bound. `{ outcome: 'no-readings' }` when no agent read a
   ledger: an artifact from before the block existed, or a cell whose recipes stopped before their
   `stats` step. No threshold reads it; the observation stays non-blocking.
+- `congestion` — the congestion decisions the cell's pages counted (D186), from the `rallar.congestion` block of
+  each `stats` command's result; the decoded snapshot keeps each reading as `congestionReadings`,
+  `{ atEpochMs, agentId, counters }`. A page's counters only grow until its next `close`, so each page contributes its
+  largest reading of each count and the cell sums its pages: `{ outcome: 'measured', readingCount, dropped, deferred,
+  handedOver }`. A send handed over at admission counts in both `dropped` and `handedOver`. `{ outcome: 'no-readings' }`
+  when no agent read the counters: an artifact from before the block existed, not an uncongested cell. No threshold
+  reads it.
 - `snapshotIssues` — non-empty only when the control snapshot could not be decoded at all.
 
 ## Reading a red
