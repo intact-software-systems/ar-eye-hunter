@@ -434,11 +434,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 senderId: msg.id.senderId
             });
             const dedupExpiresAt = await session.read(this.toDedupKey(prePlan.dedupKey), decodeALAdmissionNumber);
-            const claimKey = toALInboundClaimKey(input);
-            const claim = claimKey === undefined ? undefined : {
-                key: claimKey,
-                holderPeerId: await session.read(this.toClaimStoreKey(claimKey), decodeALAdmissionString)
-            };
+            const claim = await this.readClaim(session, toALInboundClaimKey(input));
             const ordering = await this.readOrderingState(session, toALOrderingTrackKey(msg));
             const supersedence = await this.readSupersedenceState(session, prePlan.supersedence.key, msg.id.msgId);
             const deliveryProgress = await this.readDeliveryProgress(session, ordering.trackKey);
@@ -490,24 +486,41 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         return { trackKey, snapshot, buffered: buffered.sort((left, right) => left.seq - right.seq) };
     }
 
+    /** The session holding the exclusive claim on `claimKey`, read beside the dedup key and guarded at the commit. */
+    private async readClaim(
+        database: Pick<ALAdmissionBackend, 'read'>,
+        claimKey: string | undefined
+    ): Promise<ALInboundAdmissionObservations['claim']> {
+        return claimKey === undefined ? undefined : {
+            key: claimKey,
+            holderPeerId: await database.read(this.toClaimStoreKey(claimKey), decodeALAdmissionString)
+        };
+    }
+
+    private async readBufferedMessage(
+        database: Pick<ALAdmissionBackend, 'read'>,
+        trackKey: string,
+        seq: number
+    ): Promise<ALInboundResolvedDeliverySnapshot | undefined> {
+        const prefix = this.toBufferedTrackPrefix(trackKey);
+        const stored = await database.read(
+            this.toBufferedKey(trackKey, seq),
+            (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
+        );
+        return stored === undefined
+            ? undefined
+            : await readALInboundBufferedMessage({ database, namespace: this.namespace, stored });
+    }
+
     async readBufferedRelease(
         input: ReadALInboundBufferedReleaseInput
     ): Promise<ALInboundBufferedReleaseReadDto | undefined> {
         const { trackKey, seq, nowMs } = input;
-        const prefix = this.toBufferedTrackPrefix(trackKey);
         return await this.backend.readWithin(async (session): Promise<ALInboundBufferedReleaseReadDto | undefined> => {
-            const stored = await session.read(
-                this.toBufferedKey(trackKey, seq),
-                (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
-            );
-            if (!stored) {
+            const snapshot = await this.readBufferedMessage(session, trackKey, seq);
+            if (snapshot === undefined) {
                 return undefined;
             }
-            const snapshot = await readALInboundBufferedMessage({
-                database: session,
-                namespace: this.namespace,
-                stored
-            });
             const { msgId, senderId } = snapshot.msg.id;
             const messageOwner = await this.readMessageOwner(session, snapshot.msg);
             const deliveryProgress = await this.readDeliveryProgress(session, trackKey);
@@ -664,37 +677,14 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             key: observed.dedup.key,
             expiresAtTimestamp: await transaction.read(this.toDedupKey(observed.dedup.key), decodeALAdmissionNumber)
         };
-        const claim = observed.claim === undefined ? undefined : {
-            key: observed.claim.key,
-            holderPeerId: await transaction.read(this.toClaimStoreKey(observed.claim.key), decodeALAdmissionString)
-        };
+        const claim = await this.readClaim(transaction, observed.claim?.key);
         const ordering = observed.ordering === undefined
             ? undefined
             : await this.readOrderingState(transaction, observed.ordering.trackKey);
-        const deliveryProgress = observed.deliveryProgress === undefined ? undefined : {
-            trackKey: observed.deliveryProgress.trackKey,
-            value: await transaction.read(
-                `${this.namespace}:delivered:${observed.deliveryProgress.trackKey}`,
-                decodeALInboundDeliveryProgress
-            )
-        };
-        const observedBuffered = observed.buffered;
-        const storedBuffered = observedBuffered === undefined ? undefined : await transaction.read(
-            this.toBufferedKey(observedBuffered.trackKey, observedBuffered.seq),
-            (value, key) =>
-                decodeALInboundBufferedSnapshot(value, {
-                    trackKey: observedBuffered.trackKey,
-                    prefix: this.toBufferedTrackPrefix(observedBuffered.trackKey),
-                    key
-                })
-        );
-        const buffered = storedBuffered === undefined
+        const deliveryProgress = await this.readDeliveryProgress(transaction, observed.deliveryProgress?.trackKey);
+        const buffered = observed.buffered === undefined
             ? undefined
-            : await readALInboundBufferedMessage({
-                database: transaction,
-                namespace: this.namespace,
-                stored: storedBuffered
-            });
+            : await this.readBufferedMessage(transaction, observed.buffered.trackKey, observed.buffered.seq);
         if (
             !jsonEquals(observed, {
                 ...observed,

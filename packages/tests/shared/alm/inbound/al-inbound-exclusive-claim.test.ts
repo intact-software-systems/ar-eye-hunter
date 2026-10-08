@@ -43,7 +43,7 @@ interface ClaimDecision {
 
 describe('the exclusive claim key a WS client admission reads', () => {
     it('names the room scope and the route, each part encoded', async () => {
-        const message = exclusiveRoomBroadcast('claimant-a', 'exclusive', {
+        const message = roomBroadcast('claimant-a', 'exclusive', {
             ...ROOM,
             groupId: 'room/1'
         });
@@ -52,8 +52,8 @@ describe('the exclusive claim key a WS client admission reads', () => {
     });
 
     it('tells the same route apart in another workspace', async () => {
-        const here = exclusiveRoomBroadcast('claimant-a', 'exclusive', ROOM);
-        const there = exclusiveRoomBroadcast('claimant-a', 'exclusive', { ...ROOM, workspaceId: 'other' });
+        const here = roomBroadcast('claimant-a', 'exclusive', ROOM);
+        const there = roomBroadcast('claimant-a', 'exclusive', { ...ROOM, workspaceId: 'other' });
 
         expect(await readClaimKey(here)).not.toBe(await readClaimKey(there));
     });
@@ -72,7 +72,7 @@ describe('the exclusive claim key a WS client admission reads', () => {
     });
 
     it.each([
-        { name: 'a shared room send', message: exclusiveRoomBroadcast('claimant-a', 'shared', ROOM) },
+        { name: 'a shared room send', message: roomBroadcast('claimant-a', 'shared', ROOM) },
         {
             name: 'an exclusive world broadcast',
             message: newALBroadcastMessage(
@@ -103,7 +103,7 @@ describe('the exclusive claim key a WS client admission reads', () => {
 describe.each(['memory', 'pglite'] as const)('the exclusive claim in the inbound admission store over %s', (storage) => {
     it('admits the first exclusive send on a free resource and claims it for the sender until its deadline', async () => {
         const fixture = await createClaimFixture(storage);
-        const first = await readClaimDecision(fixture, exclusiveRoomBroadcast('claimant-a', 'exclusive', ROOM));
+        const first = await readClaimDecision(fixture, roomBroadcast('claimant-a', 'exclusive', ROOM));
 
         expect(first.plan.dropReasonCode).toBeUndefined();
         expect(first.bundle.mutations.filter((mutation) => mutation.kind === 'set-claim')).toEqual([{
@@ -115,11 +115,26 @@ describe.each(['memory', 'pglite'] as const)('the exclusive claim in the inbound
         expect(await fixture.store.commitBundle(first.bundle)).toBe('committed');
     });
 
+    it('holds the claim of a send that names no deadline for the store\'s durable-effect retention', async () => {
+        const fixture = await createClaimFixture(storage);
+        const { constraints: _deadline, ...deadlineless } = roomBroadcast('claimant-a', 'exclusive', ROOM);
+
+        const first = await readClaimDecision(fixture, deadlineless);
+
+        expect(first.bundle.mutations.filter((mutation) => mutation.kind === 'set-claim')).toEqual([{
+            kind: 'set-claim',
+            claimKey: 'app/workspace/room-1/arena.intent/room/pickup-1',
+            holderPeerId: 'claimant-a',
+            expireAtTimestamp: STARTED_AT_MS + normalizeALRuntimeStoreRetention().durableEffectTtlMs
+        }]);
+        expect(await fixture.store.commitBundle(first.bundle)).toBe('committed');
+    });
+
     it('drops another session\'s exclusive send on the live claim, NACKs it held-by-other and writes nothing', async () => {
         const fixture = await createClaimFixture(storage);
-        await claim(fixture, exclusiveRoomBroadcast('claimant-a', 'exclusive', ROOM));
+        await commitClaim(fixture, roomBroadcast('claimant-a', 'exclusive', ROOM));
 
-        const second = await readClaimDecision(fixture, exclusiveRoomBroadcast('claimant-b', 'exclusive', ROOM));
+        const second = await readClaimDecision(fixture, roomBroadcast('claimant-b', 'exclusive', ROOM));
 
         expect(second.plan.dropReasonCode).toBe('held-by-other');
         expect(second.plan.nack).toEqual({
@@ -133,22 +148,24 @@ describe.each(['memory', 'pglite'] as const)('the exclusive claim in the inbound
             second.bundle.durableEffects.map((effect) => effect.payload.kind === 'send-control' ? parseALControlMessage(effect.payload.msg) : effect.payload)
         ).toEqual([{
             type: 'nack',
-            payload: expect.objectContaining({
+            payload: {
                 msgId: second.bundle.observations.msgId,
+                fromPeerId: 'server-1',
                 toPeerId: 'claimant-b',
-                reason: 'held-by-other'
-            })
+                reason: 'held-by-other',
+                observedAtEpochMs: STARTED_AT_MS
+            }
         }]);
     });
 
     it('admits the holder\'s re-send and moves the claim\'s expiry to its deadline', async () => {
         const fixture = await createClaimFixture(storage);
-        await claim(fixture, exclusiveRoomBroadcast('claimant-a', 'exclusive', ROOM));
+        await commitClaim(fixture, roomBroadcast('claimant-a', 'exclusive', ROOM));
         fixture.clock.nowMs = STARTED_AT_MS + 1_000;
 
         const resend = await readClaimDecision(
             fixture,
-            exclusiveRoomBroadcast('claimant-a', 'exclusive', ROOM, fixture.clock.nowMs)
+            roomBroadcast('claimant-a', 'exclusive', ROOM, fixture.clock.nowMs)
         );
 
         expect(resend.plan.dropReasonCode).toBeUndefined();
@@ -160,19 +177,19 @@ describe.each(['memory', 'pglite'] as const)('the exclusive claim in the inbound
         expect(
             (await readClaimDecision(
                 fixture,
-                exclusiveRoomBroadcast('claimant-b', 'exclusive', ROOM, fixture.clock.nowMs)
+                roomBroadcast('claimant-b', 'exclusive', ROOM, fixture.clock.nowMs)
             )).plan.dropReasonCode
         ).toBe('held-by-other');
     });
 
     it('frees the resource once the claiming message has expired, for the next claimant', async () => {
         const fixture = await createClaimFixture(storage);
-        await claim(fixture, exclusiveRoomBroadcast('claimant-a', 'exclusive', ROOM));
+        await commitClaim(fixture, roomBroadcast('claimant-a', 'exclusive', ROOM));
         fixture.clock.nowMs = STARTED_AT_MS + CLAIM_TTL_MS + 500;
 
         const reclaim = await readClaimDecision(
             fixture,
-            exclusiveRoomBroadcast('claimant-b', 'exclusive', ROOM, fixture.clock.nowMs)
+            roomBroadcast('claimant-b', 'exclusive', ROOM, fixture.clock.nowMs)
         );
 
         expect(reclaim.plan.dropReasonCode).toBeUndefined();
@@ -184,9 +201,9 @@ describe.each(['memory', 'pglite'] as const)('the exclusive claim in the inbound
 
     it('lets a shared send on a claimed resource through without reading or taking the claim', async () => {
         const fixture = await createClaimFixture(storage);
-        await claim(fixture, exclusiveRoomBroadcast('claimant-a', 'exclusive', ROOM));
+        await commitClaim(fixture, roomBroadcast('claimant-a', 'exclusive', ROOM));
 
-        const shared = await readClaimDecision(fixture, exclusiveRoomBroadcast('claimant-b', 'shared', ROOM));
+        const shared = await readClaimDecision(fixture, roomBroadcast('claimant-b', 'shared', ROOM));
 
         expect(shared.plan.dropReasonCode).toBeUndefined();
         expect(shared.bundle.observations.claim).toBeUndefined();
@@ -198,11 +215,11 @@ describe.each(['memory', 'pglite'] as const)('the exclusive claim in the inbound
         { kind: 'trusted-server' }
     ])('neither reads nor takes a claim for a $kind source', async (source) => {
         const fixture = await createClaimFixture(storage);
-        await claim(fixture, exclusiveRoomBroadcast('claimant-a', 'exclusive', ROOM));
+        await commitClaim(fixture, roomBroadcast('claimant-a', 'exclusive', ROOM));
 
         const decision = await readClaimDecision(
             fixture,
-            exclusiveRoomBroadcast('claimant-b', 'exclusive', ROOM),
+            roomBroadcast('claimant-b', 'exclusive', ROOM),
             source
         );
 
@@ -239,7 +256,7 @@ async function createClaimBackend(
     return new PSqlAdmissionWorkBackend(sql, namespace, nowMs);
 }
 
-async function claim(fixture: ClaimFixture, message: ALMessage): Promise<void> {
+async function commitClaim(fixture: ClaimFixture, message: ALMessage): Promise<void> {
     const decision = await readClaimDecision(fixture, message);
     expect(decision.plan.dropReasonCode).toBeUndefined();
     expect(await fixture.store.commitBundle(decision.bundle)).toBe('committed');
@@ -276,8 +293,11 @@ function toWsClientSource(peerId: string): ALInboundMessageRuntime.Source {
     return { kind: 'ws-client', peerId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } };
 }
 
-/** Sent at `sentAtMs`, so its deadline, and the lease of the claim it takes, is that instant plus the claim TTL. */
-function exclusiveRoomBroadcast(
+/**
+ * A room broadcast of either ownership sent at `sentAtMs`, so its deadline, and the lease of an exclusive claim it
+ * takes, is that instant plus the claim TTL.
+ */
+function roomBroadcast(
     senderId: string,
     ownership: 'shared' | 'exclusive',
     groupRef: typeof ROOM,

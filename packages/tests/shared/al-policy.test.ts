@@ -381,7 +381,7 @@ describe('AL QoS policy', () => {
     });
 
     it('drops an exclusive message on a resource another session holds and NACKs the sender held-by-other', () => {
-        const plan = planALMessageHandling(exclusiveRoomBroadcast('exclusive'), {
+        const plan = planALMessageHandling(roomBroadcast('exclusive'), {
             nowMs: 0,
             selfPeerId: 'server',
             fromPeerId: 'claimant-b',
@@ -403,7 +403,7 @@ describe('AL QoS policy', () => {
             { ownership: 'exclusive', claimHolderPeerId: undefined, name: 'an exclusive send on a free resource' }
         ] as const
     )('admits $name', ({ ownership, claimHolderPeerId }) => {
-        const plan = planALMessageHandling(exclusiveRoomBroadcast(ownership), {
+        const plan = planALMessageHandling(roomBroadcast(ownership), {
             nowMs: 0,
             selfPeerId: 'server',
             fromPeerId: 'claimant-b',
@@ -741,7 +741,7 @@ describe('AL QoS policy', () => {
     });
 });
 
-function exclusiveRoomBroadcast(ownership: 'shared' | 'exclusive'): ALMessage {
+function roomBroadcast(ownership: 'shared' | 'exclusive'): ALMessage {
     return newALBroadcastMessage(
         'claimant-b',
         { topicId: 'arena.intent', contextId: 'room', resourceId: 'pickup-1' },
