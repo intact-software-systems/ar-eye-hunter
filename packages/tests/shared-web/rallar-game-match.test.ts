@@ -816,6 +816,7 @@ describe('Rallar Game match', () => {
         expect(await match.sendIntent({ action: 'pickup' }, { resourceId: 'pickup-1', ttlMs: 4_000 }))
             .toEqual({ status: 'sent', transport: 'local' });
         expect(receivedIntents.map((intent) => intent.payload)).toEqual([{ action: 'pickup' }]);
+        expect(fake.relay.sendIntent).not.toHaveBeenCalled();
     });
 
     it('returns stopped for network methods after stop without touching transports', async () => {

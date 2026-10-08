@@ -371,7 +371,7 @@ describe('an exclusive send', () => {
         }
     );
 
-    it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc-with-ws-fallback'])(
+    it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc-with-ws-fallback', 'ws-then-rtc'])(
         'claims its resource for a send addressed to one peer over WS alone on %s',
         async (strategy) => {
             await createRoomChannel().send(
@@ -388,20 +388,39 @@ describe('an exclusive send', () => {
         }
     );
 
-    it('admits an exclusive send on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal', async () => {
+    it.each([
+        { audience: 'the room', options: {} },
+        { audience: 'one peer', options: { peerId: 'peer-1' } }
+    ])('admits an exclusive send to $audience on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal', async ({ options }) => {
         rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementationOnce(async (message) => toAdmission(message, EXCLUSIVE_UNSUPPORTED_VERDICT));
 
         const handle = await createRoomChannel().send(
             { text: 'mine' },
-            { strategy: 'rtc', ownership: 'exclusive', resourceId: 'pickup-1' }
+            { strategy: 'rtc', ownership: 'exclusive', resourceId: 'pickup-1', ...options }
         );
         const { lifecycle } = await handle.wait();
 
         expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0]![0].delivery).toMatchObject({ ownership: 'exclusive' });
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
         expect(lifecycle).toMatchObject({
             state: 'rejected',
             evidence: { attempts: [], carrierFallback: undefined, failure: { kind: 'refused', reason: 'unsupported' } }
         });
+    });
+
+    it.each(
+        [
+            { send: 'a shared send that names a resource', options: { resourceId: 'pickup-1' } },
+            {
+                send: 'an exclusive send its qos makes shared, naming no resource',
+                options: { ownership: 'exclusive', qos: { ownership: { algo: 'shared' } } }
+            }
+        ] as const
+    )('keeps $send on its RTC-first route', async ({ options }) => {
+        await createRoomChannel().send({ text: 'ours' }, { strategy: 'rtc-with-ws-fallback', ...options });
+
+        expect(rtcRxStreamer.enqueueOutboxIfAbsent).toHaveBeenCalledTimes(1);
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
     });
 
     it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc', 'rtc-with-ws-fallback', 'ws-then-rtc'])(

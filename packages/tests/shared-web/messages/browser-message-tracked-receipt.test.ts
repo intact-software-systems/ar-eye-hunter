@@ -55,6 +55,12 @@ interface DispatchHarness {
 
 type CarrierAdmission = (message: ALMessage) => Promise<ALOutboundEnqueueResult>;
 
+/** The origin WS client and the browser's dispatch over it, so a test can hand the client the server's controls. */
+interface ExclusiveWsLeg {
+    readonly ws: WsQueueBoxClientService;
+    readonly harness: DispatchHarness;
+}
+
 describe('the receipt a WS send tracks reaches its handle (R-S3a-4)', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
@@ -408,8 +414,7 @@ function createLeaderSend(senderId: string, resourceId: string): ALMessage {
     });
 }
 
-/** The origin WS client and the browser's dispatch over it, so a test can hand the client the server's controls. */
-async function createExclusiveWsLeg(): Promise<{ ws: WsQueueBoxClientService; harness: DispatchHarness; }> {
+async function createExclusiveWsLeg(): Promise<ExclusiveWsLeg> {
     const registry = createRegistry();
     const ws = await createWsClient(registry, SESSION_ID, SERVER_PEER_ID);
     return { ws, harness: createDispatchHarness(registry, 'ws', { ws: (message) => ws.enqueueOutboxIfAbsent(message) }) };

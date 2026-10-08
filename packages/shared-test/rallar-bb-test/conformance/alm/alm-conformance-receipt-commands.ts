@@ -60,7 +60,10 @@ interface AlmConformanceAudienceSendInput {
 }
 
 /** An exclusive send claims its named resource for the sending session. */
-export type AlmConformanceSendClaim = Readonly<{ ownership: 'exclusive'; resourceId: string; }>;
+export interface AlmConformanceSendClaim {
+    readonly ownership: 'exclusive';
+    readonly resourceId: string;
+}
 
 /** The first send of an addressed scenario, admitted and observed until its addressee acknowledges it. */
 export function toAddressedSendCommands(

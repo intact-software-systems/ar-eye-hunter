@@ -374,7 +374,9 @@ describe('Rallar director relay', () => {
 
         const isIntent = (message: ALMessage) => message.payload.typeId === 'game.intent';
         const wsIntents = mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message).filter(isIntent);
+        const rtcIntents = mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message).filter(isIntent);
         expect(wsIntents).toHaveLength(1);
+        expect(rtcIntents).toEqual([]);
         expect(wsIntents[0]).toMatchObject({
             id: { msgId: result.receipt?.msgId },
             route: { topicId: 'app.game.director', contextId: 'room-1', resourceId: 'pickup-1' },

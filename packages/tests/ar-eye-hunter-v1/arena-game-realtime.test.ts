@@ -44,6 +44,12 @@ import type {
     PlayerPose
 } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
+interface PickupSnapshotFixture {
+    readonly snapshot: ArenaSnapshot;
+    readonly pickup: ArenaPickupState;
+    readonly intent: PickupIntent;
+}
+
 interface AcceptedIntentFixture {
     readonly nowEpochMs: number;
     readonly snapshot: ArenaSnapshot;
@@ -915,7 +921,7 @@ function remoteDirectorMatchStatus(): RallarGameMatchStatus {
     return { ...localDirectorMatchStatus(), directorPeerId: 'director-session' };
 }
 
-function pickupSnapshotFixture(nowEpochMs: number): Readonly<{ snapshot: ArenaSnapshot; pickup: ArenaPickupState; intent: PickupIntent; }> {
+function pickupSnapshotFixture(nowEpochMs: number): PickupSnapshotFixture {
     const snapshot = toArenaSnapshot(
         spawnWeaponPickup(createInitialArenaState(44, nowEpochMs), nowEpochMs, 'audit-pea-shooter'),
         'arena-1',
