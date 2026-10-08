@@ -116,7 +116,6 @@ export const reviewedDispositions = Object.freeze([
     // Exact reviewed RTC evidence/control owners (Task62/63 and Task64 round1).
     // Each numeric cap bounds the observed coherent capability/shell magnitude;
     // no function-size, other-path or future-growth exception is implied.
-    // Task64 callback review accepted the current runtime at magnitude106.
     Object.freeze({
         path: 'apps/rallar-black-box-control-server/src/control-evidence-compaction.ts',
         rule: 'file.cognitive-load',
@@ -167,11 +166,14 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 71
     }),
+    // One admitted invocation owns capture, cached results, events and cleanup.
+    // Async ledger reads choose accepted/current state, include available usage
+    // and fence successor writes inside that same reviewed warning-tier shell.
     Object.freeze({
         path: 'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 106
+        maximumMagnitude: 109
     }),
     // Workbench JSON.parse remains raw until its selected schema validates it.
     Object.freeze({

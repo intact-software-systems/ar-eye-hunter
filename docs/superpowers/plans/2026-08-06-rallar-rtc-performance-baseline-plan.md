@@ -56,7 +56,8 @@ failure, not a timeout or evidence that the message was delivered twice.
 The proposed structured admission-kind/scenario match awaits bounded design approval;
 deadlines, both carrier orders and independent outcome assertions remain required.
 
-The stacked PR645's six conflicts are resolved in a reviewed seven-owner repair.
+The stacked PR645's six conflicts are resolved in a reviewed seven-owner repair,
+published at `de77443ee`; GitHub reports it MERGEABLE and fresh validation runs.
 Its integration preserves canonical routing/volatile bounds, HOST capture and
 mandatory/default input factories. Semantic TDD catches a delayed page-ledger read
 writing into a successor assignment; the correction fences writes after the await.
@@ -74,11 +75,16 @@ public/routing controls pass 55. The maintained final packaging workload measure
 Package/headless/operator typing and the maintained recursive native app check pass;
 affected test typing retains only the known external Temporal declaration error.
 The corrected source passes the canonical `6711b160` working-tree style gate.
-The committed gate against actual parent `e71db5f0a` fails one aggregate runtime
-complexity warning: measured 109 exceeds its existing reviewed disposition cap
-of 106. Complete owner reviews judge the runtime cohesive; classification against
-the current cohesion-warning tier and exact registry boundary remains required.
-No arbitrary split, broad suppression or new standards exception is selected.
+The first committed gate against actual parent `e71db5f0a` fails one aggregate
+runtime complexity warning: measured 109 exceeds the recorded reviewed cap of 106.
+That failed result remains retained. Complete runtime and support-owner reviews
+confirm one cohesive admitted invocation lifecycle at the current warning tier.
+The exact existing disposition now records 109 with its local ownership rationale;
+path, rule, module symbol, matchers, global thresholds and all other entries remain
+unchanged. Independent SPEC and original QUALITY approve the bounded correction.
+The corrected actual-parent working-tree gate and all 88 maintained disposition
+controls pass; sensitivity still rejects 110 and wrong-owner findings. Executable
+owners remain byte-identical. No arbitrary split or new standards exception is selected.
 The next two useful slices are to correct the parent evidence selector after
 design approval and semantic TDD, then complete the approved worker/Actions intent
 forwarding and actual default headless application witness.
