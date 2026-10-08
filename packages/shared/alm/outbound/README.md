@@ -828,10 +828,10 @@ rate.
 
 **Limit:** the memory pairs plateau rather than empty: an idle inbound ordering track keeps two rows for the hour after
 its last message, and each sending origin keeps one outbound version row (`versionTtlMs`, 1 h). The long-run test
-sends on minted sequences on the volatile lane, which no production planner does: only the browser builds the volatile
-outbound pair, and the browser never mints. A volatile pair that did mint would drop a track's ordering head with its
-last sent row, after the deadline plus the receipt grace, while a receiver keeps the track for the hour, so a track
-silent for longer than that would restart at sequence 1.
+sends on the application's own sequences, as the browser does: only the browser builds the volatile outbound pair, and
+the browser never mints. A volatile pair that did mint would drop a track's ordering head with its last sent row, after
+the deadline plus the receipt grace, while a receiver keeps the track for the hour, so a track silent for longer than
+that would restart at sequence 1.
 
 ### Grouped control sends
 

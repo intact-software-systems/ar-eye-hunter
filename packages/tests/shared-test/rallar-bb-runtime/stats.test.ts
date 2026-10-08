@@ -82,6 +82,17 @@ describe('the stats result rallar.alm block', () => {
         expect(stats.rallar).not.toHaveProperty('alm');
     });
 
+    it('drops the block once the page disconnects mid-run, carrying no earlier reading forward', async () => {
+        const runtime = createPageRuntime([FIRST_REPORT, undefined]);
+
+        const connected = await readStats(runtime, 'stats-1');
+        const disconnected = await readStats(runtime, 'stats-2');
+
+        expect(connected.rallar?.alm).toEqual(FIRST_REPORT);
+        expect(disconnected.rallar).not.toHaveProperty('alm');
+        expect(runtime.state().latestStats?.rallar).not.toHaveProperty('alm');
+    });
+
     it('leaves the block absent on a runtime that drives no Rallar page', async () => {
         const browserStats = await readStats(createRallarBlackBoxBrowserTestRuntime(), 'stats-1');
         const result = await createDeterministicRuntime().execute({ kind: 'stats', commandId: 'stats-2' });

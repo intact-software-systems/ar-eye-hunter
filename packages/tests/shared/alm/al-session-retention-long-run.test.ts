@@ -25,7 +25,8 @@ import {
     createInboundTestRuntime,
     createInboundTestStores,
     INBOUND_TEST_SOURCE,
-    readInboundTestDecisionSurface
+    readInboundTestDecisionSurface,
+    type InboundTestRuntime
 } from './inbound-runtime-test-fixture.ts';
 import {
     createDefaultOutboundTestRuntime,
@@ -45,6 +46,7 @@ const ORDERED_TRACKS = 200;
 /** Past the age budget and every volatile message row's own expiry, its deadline plus the receipt grace. */
 const AFTER_LAST_STEP_MS = AL_VOLATILE_SESSION_MAX_AGE_MS + AL_RECEIPT_DEADLINE_GRACE_MS + 1;
 const EMPTY_LEDGER_USAGE = { admissions: 0, bytes: 0, oldestAgeMs: 0, tracks: 0 };
+const DRAIN_ROUND_LIMIT = 50;
 /** An inbound track's two rows: its ordering snapshot and its delivered marker. */
 const TRACK_ROW_KEY = /:(ordering|delivered):track-\d+:/;
 
@@ -81,7 +83,11 @@ describe('a volatile session over a simulated hour', () => {
             endedMsgIds.add(`never-sent-${step}`);
             runtime.cancel(`never-sent-${step}`);
         }
-        expect(budget.readReport(Date.now()).usage.admissions).toBeGreaterThan(0);
+        // The sends of the step before left at their 30 s deadline; each of the last step's opens a counted track.
+        expect(budget.readReport(Date.now()).usage).toMatchObject({
+            admissions: SENDS_PER_STEP,
+            tracks: SENDS_PER_STEP
+        });
         expect(backend.peekKeys().length).toBeGreaterThan(0);
 
         const lastStepAtMs = Date.now();
@@ -129,15 +135,21 @@ describe('a volatile session over a simulated hour', () => {
         });
         await fixture.runtime.ready();
 
+        let arrivalCount = 0;
         for (let step = 0; step < SIMULATED_STEPS; step += 1) {
             vi.setSystemTime(SESSION_START_MS + step * STEP_MS);
-            for (const message of createStepArrivals(step)) {
+            const arrivals = createStepArrivals(step);
+            for (const message of arrivals) {
                 // A sequence that arrives while its predecessor's delivery is still claimed is retained and replayed.
                 expect((await fixture.runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE)).right?.kind)
                     .toMatch(/^(admitted|pending-admission)$/);
             }
-            await drainEngine(fixture.queueEngine);
+            arrivalCount += arrivals.length;
+            await drainUntilDelivered(fixture, arrivalCount);
         }
+        // Every arrival was delivered: each track's two sequences, the last step's tracks only their first, and the
+        // step's unordered message.
+        expect(fixture.delivered).toHaveLength(2 * SIMULATED_STEPS + 2 * (SIMULATED_STEPS - 1) + SIMULATED_STEPS);
         expect(budget.readReport(Date.now()).usage.admissions).toBeGreaterThan(0);
         expect(backend.peekKeys().length).toBeGreaterThan(0);
 
@@ -216,6 +228,17 @@ function captureRepositoriesAcceptingEndedIds(
     return repositories;
 }
 
+/**
+ * The session's worker keeps running between arrivals; here the test runs the engine, a bounded number of rounds,
+ * until it delivered every arrival so far: one round does not reach every delivery its arrivals made due, and a
+ * delivery left for the next step would pass its deadline there.
+ */
+async function drainUntilDelivered(fixture: InboundTestRuntime, arrivalCount: number): Promise<void> {
+    for (let round = 0; round < DRAIN_ROUND_LIMIT && fixture.delivered.length < arrivalCount; round += 1) {
+        await drainEngine(fixture.queueEngine);
+    }
+}
+
 /** The memory pair's own backend: the one its `evictExpired` sweeps, read back by its keys. */
 function captureEvictingBackend(evictExpired: () => void): InMemoryAdmissionBackend {
     const backends: InMemoryAdmissionBackend[] = [];
@@ -234,14 +257,15 @@ function captureEvictingBackend(evictExpired: () => void): InMemoryAdmissionBack
 }
 
 function planOrderedVolatileSend(msg: ALMessage): ALOutboundDispatchPlan<OutboundTestPayload> {
-    return { msg, dropReasonCode: undefined, lane: 'volatile', mintsSequence: true, preparedMessages: [{ kind: 'send' }] };
+    return { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] };
 }
 
-/** The step's sends, each on the next of the session's ordered tracks. */
+/** The step's sends, each the next sequence the application numbers on the next of the session's ordered tracks. */
 function createOrderedSend(step: number, index: number): ALMessage {
     const sendIndex = step * SENDS_PER_STEP + index;
     const message = createOutboundMessage(`send-${sendIndex}`);
-    return { ...message, ordering: { orderingKey: `track-${sendIndex % ORDERED_TRACKS}` } };
+    const seq = Math.floor(sendIndex / ORDERED_TRACKS) + 1;
+    return { ...message, ordering: { orderingKey: `track-${sendIndex % ORDERED_TRACKS}`, seq } };
 }
 
 /**
