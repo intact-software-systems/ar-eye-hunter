@@ -204,7 +204,7 @@ function ManualRecipeOutput({ model }: Pick<ManualRallarExecutionPanelProps, 'mo
                 readOnly
                 spellCheck={false}
             />
-            {model.manualRecipeValidation && <SchemaAuthoringPanel validation={model.manualRecipeValidation} compact />}
+            <SchemaAuthoringPanel validation={model.manualRecipeValidation} compact />
         </>
     );
 }

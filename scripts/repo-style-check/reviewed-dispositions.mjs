@@ -5,6 +5,27 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Authored readiness JSON stays raw inside this decoder until the canonical
+    // rtc.connect command schema validates it; only the typed result escapes.
+    Object.freeze({
+        path: 'apps/rallar-black-box/src/manual-workbench/manual-command-fields.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeManualRtcReadinessText'
+    }),
+    // The anonymous Reset test compares parsed stored JSON directly with its
+    // independent persistence oracle; it never supplies trusted runtime state.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/manual-workbench-actions.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // The anonymous negative-recipe test validates parsed JSON against the
+    // canonical recipe schema before its cast and exact command assertions.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/manual-workbench.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // Console Execute's outgoing HTTP fixture serializer keeps its body opaque:
     // JSON.stringify feeds route.fulfill without domain interpretation, and no
     // unknown result escapes. Typed responses stay with their fixture owners.

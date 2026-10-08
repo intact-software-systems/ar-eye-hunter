@@ -254,6 +254,16 @@ Rallar black-box/shared-test suite passes 4,786 cases across 386 files, and the 
 with its existing large-chunk warning. Actual browser/native Copy/repeat and E3 acceptance
 remain open.
 
+The original committed style gate found one real missing recipe-result contract and three
+raw-JSON boundary findings. The follow-up names all eight result fields with canonical types
+and undefined unions only for genuinely absent payload-derived validations. Manual history
+always serializes a recipe, so its validation is mandatory and the unreachable empty-text
+branch is removed without changing validation behavior. Three exact reviewed dispositions
+cover schema-normalized readiness input and the two opaque/schema-validated test oracles;
+every prior disposition and matcher remains unchanged. All 99 focused cases and 51 existing
+disposition controls pass with no skips. The original failed gate remains retained; no real
+standards violation, threshold relaxation or legacy-retention exception is authorized.
+
 The preceding envelope checkpoint consolidates ordinary and distributed artifact validation
 in one shared-test incoming schema owner. Mandatory identity, finite version/time and required
 string files, plus supplied optional distributed files, are validated at admission. Existing
