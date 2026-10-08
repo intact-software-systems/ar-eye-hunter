@@ -21,17 +21,16 @@ source, environment, exact attempts, raw samples, and checksums. Tooling is
 implemented; capture and ranking acceptance remain separate outcomes.
 
 **Current checkpoint, 2026-10-08:** Manual readiness and actual native Copy/repeat
-are reviewed and published in PR645. All three fresh hosted correctness workflows
-for the browser checkpoint pass; those jobs skip native Copy/repeat, whose acceptance
-comes from the retained local execution. Six full valid-manifest cases now reproduce
-diagnostic-mode corruption in the actual materializer. Their independent TDD review
-approves the minimum correction and required touched-owner closure; implementation
-and final reviews remain open. A fresh parent check now reports PR633 CONFLICTING:
-main advanced to `74f8c05875b46a3812ef6023b3d955f38f21384e`, while parent head979
-is unchanged. The prior exact main-integration proposal is stale. Complete this isolated
-slice, then repair the real parent conflicts before broad integration validation.
-HOST/operator RUN forwarding through existing workers and Actions remains required.
-Governed E3 still has zero accepted cohorts; no default-branch operation is selected.
+are reviewed and published in PR645. The materializer correction now preserves authored
+capture and unrelated strings while translating executable scope. Semantic TDD and
+independent complete-owner specification/quality review approve this slice. Child-process cancellation and physical cleanup are owned through one shared boundary.
+The latest documentation checkpoint's hosted Branch workflow reused existing validation;
+Formation and Medium actually executed. This adds no new native or E3 acceptance.
+PR633 has real conflicts with current main while its parent head remains unchanged.
+The prior exact integration proposal is stale. Repair those conflicts before broad
+integration validation, then complete HOST/operator RUN forwarding and actual application
+through existing workers and Actions. Governed E3 still has zero accepted cohorts;
+no default-branch operation is selected.
 
 **Tech Stack:** TypeScript, Deno, Vitest, Node.js, Playwright Chromium, Git,
 GitHub Actions, ignored evidence under `tmp/perf/`, and immutable observation ZIPs.
@@ -379,26 +378,41 @@ literals. Thirty literal/schema assertions fail; omission and five original scop
 controls pass. Root and independent SPEC review verify the retained original bytes
 and approve correction release. The initial cleanup-hook construction failure remains
 separate; passing omission files were cleaned and the reporter suppressed their log
-packet, so no retained omission child artifacts are claimed. The complete touched test
-owner exceeds its navigation backstop and requires genuine responsibility consolidation,
+packet, so no retained omission child artifacts are claimed. The original touched test
+owner exceeded its navigation backstop and required genuine responsibility consolidation,
 checked boundaries and resource ownership alongside the minimum scope correction.
-GREEN, final SPEC/QUALITY and publication remain pending for this slice.
+The original RED and construction failure remain retained. The minimum correction now
+rewrites only identity fields, canonical state paths and structurally recognized request
+identifiers. Independent ordinary-data and suffixless-request cases protect preservation
+and accepted request forms. The oversized test is consolidated into five actual capability
+owners with checked input/output boundaries and cleanup at acquisition. Obsolete snapshot
+source assertions are replaced by a native filesystem failure/replacement/restore witness;
+the checked child uses installed dependencies and an empty test-owned cache.
+The five capability owners now consume one explicit process-lifecycle owner. Real Vitest
+cancellation first failed physical-child retirement and outcome-accounting assertions;
+the correction joins both before deleting owned files and preserves timeout/cleanup
+failures. The isolated six-owner route passes 104 cases. Fresh final controller/materializer
+controls pass 34 cases, and the final process-lifetime controls pass 4; these cover later
+changes without claiming another entire 104-case run. The final private fixture-read
+naming correction also passes 17 materializer cases. The current 88 maintained disposition
+controls pass with zero skips. Format and canonical staged style/coupling pass. Scoped
+typing fails only on the unchanged external Temporal dependency mismatch, with no owned
+errors or suppression. Independent SPEC review closes the cleanup and boundary findings;
+independent complete-owner QUALITY review approves the corrected source without remaining
+findings. Original adversity, including the concurrent 5000ms atomic test timeout, remains retained. Hosted tooling uses maintained default concurrency;
+local isolated success does not certify its timing.
 
-The next two useful slices are full valid-manifest materialization preserving literal
-capture modes under colliding room identities, then repair of PR633's newly reported
-conflicts against pinned main74f8c before broad integration validation. Preserve current
-main's independently required behavior and remove affected predecessor paths; fresh
-complete-owner review and a new exact integration proposal are required after repair.
-Do not reuse the old main94e/head979 proposal or perform an unapproved main operation.
-Existing HOST/operator RUN forwarding and application through workers/Actions follows
-that repair and remains mandatory. The refreshed audit finds64 of67 earlier inputs
-unchanged; only plan/progress context and the separately accepted browser helper changed.
-Controller09 still drops HOST input, general operator adapters still omit finite RUN
-choice, and generic room replacement still reaches capture literals. Witness each real
-boundary's semantic RED before selecting its minimum correction. Keep existing scope,
-canonical precedence, omission and fixture-isolation semantics; use existing commands
-and owned effects without adding a policy/store/harness or silently expanding workflow
-input contracts. Publish each coherent reviewed slice promptly.
+The next two useful slices are repair of PR633's real conflicts, then HOST/operator RUN
+forwarding through the existing workers and Actions. Preserve current main's canonical
+audience-routing behavior and the parent capture/admission behavior. Measure integrated
+packaging before selecting its minimum allowance, complete changed-owner review and
+prepare a fresh exact integration proposal. Do not reuse the old proposal or perform an
+unapproved main operation. The earlier adapter audit identified the materializer corruption
+now corrected here; controller09 still drops HOST input and general operator adapters still
+omit finite RUN selection. Witness those real boundaries before their minimum correction.
+Keep canonical precedence, omission and scoped room identity through existing commands
+and effects; add no policy/store/harness, migration or retained predecessor path. Publish
+each coherent reviewed slice promptly. B01–B06 and E3 remain required outcomes.
 The helper's canonical snapshot/auth/artifact boundary closure is now independently approved.
 No duplicate permissive contract or compatibility path is retained.
 
@@ -442,7 +456,8 @@ The bounded worker/Actions audit identified three concrete gaps: controller09 dr
 input; general Actions/helpers expose no finite operator RUN override; and generic room
 rewriting corrupts authored capture modes. Its initial pure scope-owner probe was insufficient
 for materializer acceptance; the six current full-valid-manifest RED cases above now witness
-that actual boundary. Worker forwarding/application remains unaccepted. The next adapter
+that actual boundary, and its correction now has the focused evidence above. Worker
+forwarding/application remains unaccepted. The next adapter
 proposal keeps HOST in the existing env/Actions variables and adds one optional RUN input
 to distributed and GitHub-Free workflows, preserving the lifecycle workflow's25 inputs.
 The existing materializer's plain-Node entry must call the canonical finite validator through
@@ -2580,24 +2595,21 @@ The review's unreachable live/tab resources finding is corrected and independent
 quality remains unaccepted for the separate public encrypted-output typing decision.
 The next two useful implementation actions are:
 
-1. **Recipe body and fresh execution guards:** Task63 is locally accepted after the
-   original reviewer closes both attribution findings. The accepted-source refresh is
-   complete:60 identities are frozen, including49 unchanged and6 changed prior owners
-   and5 newly relevant owners. Task64 has root-assessed semantic RED and a reviewed design;
-   GREEN is released through the same implementer. Reuse the existing snapshot, runtime
-   cache, control client and reload owners. The optional acknowledged-load token and
-   control-address inputs preserve ordinary callers without migration or a mixed-version
-   fallback. Preserve legitimate same-assignment replay, historical evidence and compatible
-   live reuse. Close full changed-file standards and independent review before acceptance.
-2. **Visible recipe controls and persisted intent:** After those guards, implement the
-   audited Console/local authoring and reusable recipe/manifest input gaps through current
-   canonical intent owners. Prove actual visible selection, omitted inheritance, explicit
-   Off, saved/imported/exported/rerun intent and immutable submitted configuration. General
-   worker, spawned/external/mixed/no-spawn and Actions propagation remain mandatory later
-   outcomes alongside B01–B06 and E3; neither this horizon nor local acceptance narrows them.
+1. **Repair the real parent conflicts:** combine current main's canonical exclusive-audience
+   routing with the parent's capture/acquisition and final admission guards. Establish the
+   integrated headless packaging allowance from its maintained measurement. Complete
+   semantic tests, changed-owner standards closure, independent review and feature
+   publication before preparing a fresh exact default-branch proposal.
+2. **Forward and apply worker/Actions intent:** carry HOST through existing environment
+   and Actions variables, and optional finite operator RUN selection through the existing
+   distributed/GitHub-Free adapters. Use the canonical validator and precedence, preserve
+   omission and authored recipe/step intent, and prove actual launched SDK application.
+   Serve the existing headless app alongside API/control for that acceptance. Existing
+   storage/recipe, spawned/external/mixed/no-spawn and B01–B06/E3 outcomes remain required.
 
-The WS fixture correction and exact9d normal hosted acceptance are complete. PR633's exact
-main integration approval remains pending; no governed E3 cohort is accepted. After the
+The WS fixture correction and exact9d normal hosted acceptance are complete. PR633's real
+conflicts require repair and fresh review before a new exact integration proposal; no
+governed E3 cohort is accepted. After the
 required source and cohort preflight gates are satisfied, use the unchanged E3 primary and
 conditional repeat. Neither normal CI nor these two local implementation slices completes E3.
 
@@ -7270,13 +7282,14 @@ workflows and dispatch/world-fleet helpers have no executable finite operator RU
 The existing manifest `rtcCaptureMode` remains the canonical run carrier; HOST and RUN
 must retain their separate ownership and actual SDK receipt origins.
 
-The pure `toEffectiveHetznerRunManifestScope` reproduction changes capture literal `off`
-at manifest, recipe, operation and nested HOST fields into the effective room ID when
-source groupId is `off`. Its generic string `replaceAll` reaches every such leaf. Preserve
-that original invocation/output. The fragment is not a full schema-valid manifest, and no
-real materializer, launched worker or Actions application is accepted from it. Meaningful
-TDD must exercise the existing complete materializer/request boundary with independent
-literal modes and valid scoped room identities, then prove actual command/receipt application.
+The original pure `toEffectiveHetznerRunManifestScope` reproduction changed capture
+literal `off` at manifest, recipe, operation and nested HOST fields into the effective
+room ID. That invocation/output remains preserved as fragment evidence. Subsequent
+complete schema-valid materializer REDs witnessed all four carriers; the reviewed structural
+scope correction now preserves them, unrelated data and admitted request forms. Its focused
+validation and owned-process cleanup are accepted at the checkpoint above. The remaining
+worker/Actions TDD must witness their actual HOST/RUN forwarding and SDK application,
+including command/receipt ownership; the earlier fragment does not supply that proof.
 Worker registration alone, a selected input, an applied native receipt or absent log rows
 cannot prove native channel attachment, delivery or Off allocation behavior.
 

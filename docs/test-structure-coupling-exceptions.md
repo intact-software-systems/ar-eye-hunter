@@ -1046,59 +1046,51 @@ moved or changed test.
     },
     {
       "id": "hetzner-distributed-workflow--keeps-playwright-packages-aligned-past-the-node-24-browser-insta",
-      "domain": "Supported Hetzner distributed workflow",
+      "domain": "Published Playwright dependency contract",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “keeps Playwright packages aligned past the Node 24 browser-install hang regression”.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#keeps Playwright packages aligned past the Node 24 browser-install hang regression",
-      "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
+      "summary": "Published package and lockfile inputs carry the same supported Playwright version above the known Node 24 hang regression.",
+      "semanticCoverage": "packages/tests/hetzner/playwright-browser-installation.test.ts#keeps Playwright packages aligned past the Node 24 browser-install hang regression",
+      "coverageRelation": "Reads actual package and lockfile dependency inputs, narrows the consumed versions to strings, and compares the three independently selected versions."
     },
     {
       "id": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
-      "domain": "Supported Hetzner distributed workflow",
+      "domain": "Immutable materialization input",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “materializes a deterministic isolated group throughout executable manifest data”.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#materializes a deterministic isolated group throughout executable manifest data",
-      "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
-    },
-    {
-      "id": "hetzner-distributed-workflow--persists-control-server-snapshots-with-an-atomic-temp-file-renam",
-      "domain": "Supported Hetzner distributed workflow",
-      "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “persists control-server snapshots with an atomic temp-file rename”.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#persists control-server snapshots with an atomic temp-file rename",
-      "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
+      "summary": "Actual materializer executions produce deterministic isolated scopes and correct source/output hashes without modifying the authored source bytes.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data",
+      "coverageRelation": "Re-reads the source after real child execution and compares it byte-for-byte with the independently acquired pre-execution input."
     },
     {
       "id": "hetzner-distributed-workflow--prepares-the-supported-commit-once-before-running-the-serial-man",
-      "domain": "Supported Hetzner distributed workflow",
+      "domain": "Supported manifest preparation contract",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “prepares the supported commit once before running the serial manifest matrix”.",
+      "summary": "Full canonical supported manifests omit topology-only RTC requirements; authored prepare/run job controls are independently asserted.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#prepares the supported commit once before running the serial manifest matrix",
-      "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
+      "coverageRelation": "Reads the concrete supported manifests consumed by the named case and checks their authored metadata after full canonical validation."
     },
     {
       "id": "hetzner-distributed-workflow--preserves-a-parallel-label-that-happens-to-equal-the-source-room",
-      "domain": "Supported Hetzner distributed workflow",
+      "domain": "Executable scope versus parallel label",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “preserves a parallel label that happens to equal the source room”.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#preserves a parallel label that happens to equal the source room",
-      "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
+      "summary": "The actual materializer isolates executable room identities while preserving a parallel label that equals the original room.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#preserves a parallel label that happens to equal the source room",
+      "coverageRelation": "Loads the fully validated source fixture consumed by the real materializer child; independent output assertions distinguish the parallel label from executable scope."
     },
     {
       "id": "hetzner-distributed-workflow--rejects-an-executable-command-scoped-outside-the-source-manifest",
-      "domain": "Supported Hetzner distributed workflow",
+      "domain": "Materializer executable scope admission",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “rejects an executable command scoped outside the source manifest group”.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#rejects an executable command scoped outside the source manifest group",
-      "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
+      "summary": "The actual child rejects independently authored room, marked-request and canonical-path scope violations in a full valid source manifest.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#rejects an executable command scoped outside the source manifest group",
+      "coverageRelation": "Reads the canonical source fixture before independently injecting three executable scope violations; the real child stderr must identify each violation."
     },
     {
       "id": "hetzner-distributed-workflow--repairs-known-deno-lockfile-drift-before-the-controlled-rollout-",
-      "domain": "Supported Hetzner distributed workflow",
+      "domain": "Controlled controller lockfile repair",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “repairs known Deno lockfile drift before the controlled rollout dirty checkout guard”.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard",
-      "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
+      "summary": "The controlled rollout child restores the exact clean lockfile bytes before reporting its dirty-checkout guard outcome.",
+      "semanticCoverage": "packages/tests/hetzner/controller-deployment.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard",
+      "coverageRelation": "Reads the lockfile written by the executed controlled rollout and compares it with the independently authored clean bytes."
     },
     {
       "id": "indexeddb-invalid-schema-no-open",
@@ -4575,92 +4567,81 @@ moved or changed test.
       "semanticCoverage": "packages/tests/helpers/source-analysis.test.ts#normalizes TypeScript and TSX module syntax without exposing parser nodes"
     },
     {
-      "id": "test-structure-coupling-3f87efb9ffdb8ee2",
-      "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
+      "id": "test-structure-coupling-50e937a698c474eb",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
       "contract": "hetzner-distributed-workflow--preserves-a-parallel-label-that-happens-to-equal-the-source-room",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Loads the manifest whose parallel label collides with its source room, letting the materializer prove labels and group identities are distinct fields.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#preserves a parallel label that happens to equal the source room"
+      "rationale": "Loads the fully validated source fixture consumed by the real materializer child; independent output assertions distinguish the parallel label from executable scope.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#preserves a parallel label that happens to equal the source room"
     },
     {
-      "id": "test-structure-coupling-4cd9007c14d9f597",
+      "id": "test-structure-coupling-3f87efb9ffdb8ee2",
       "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
       "kind": "production-source-read",
       "contract": "hetzner-distributed-workflow--prepares-the-supported-commit-once-before-running-the-serial-man",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Reads the workflow job steps to establish that checkout preparation precedes, and is not repeated inside, each serial manifest execution.",
+      "rationale": "Reads the concrete supported manifests consumed by the named case and checks their authored metadata after full canonical validation.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#prepares the supported commit once before running the serial manifest matrix"
     },
     {
-      "id": "test-structure-coupling-5a80cb6ccad17309",
-      "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
-      "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--persists-control-server-snapshots-with-an-atomic-temp-file-renam",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar operations maintainers",
-      "rationale": "Inspects the snapshot writer used in the executed control-server process and verifies persistence crosses the temp-file rename boundary atomically.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#persists control-server snapshots with an atomic temp-file rename"
-    },
-    {
-      "id": "test-structure-coupling-8bee8864cd2dc720",
-      "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
+      "id": "test-structure-coupling-007b6848c3460f16",
+      "path": "packages/tests/hetzner/playwright-browser-installation.test.ts",
       "kind": "production-source-read",
       "contract": "hetzner-distributed-workflow--keeps-playwright-packages-aligned-past-the-node-24-browser-insta",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Reads the workflow package-install steps and verifies both Playwright packages advance together beyond the known Node 24 hang combination.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#keeps Playwright packages aligned past the Node 24 browser-install hang regression"
+      "rationale": "Reads actual package and lockfile dependency inputs, narrows the consumed versions to strings, and compares the three independently selected versions.",
+      "semanticCoverage": "packages/tests/hetzner/playwright-browser-installation.test.ts#keeps Playwright packages aligned past the Node 24 browser-install hang regression"
     },
     {
-      "id": "test-structure-coupling-9a1ba98a66c78c07",
-      "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
+      "id": "test-structure-coupling-222daf3d9786f3ed",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
       "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Captures the source manifest before group materialization so the assertion can compare the generated execution copy without losing its immutable baseline.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+      "rationale": "Acquires the exact source bytes before child execution for independent source hash, output scope and determinism assertions.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
     },
     {
-      "id": "test-structure-coupling-9d8dac3f600fee05",
-      "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
+      "id": "test-structure-coupling-03bcfb46477d3a40",
+      "path": "packages/tests/hetzner/controller-deployment.test.ts",
       "kind": "production-source-read",
       "contract": "hetzner-distributed-workflow--repairs-known-deno-lockfile-drift-before-the-controlled-rollout-",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar operations maintainers",
-      "rationale": "Reads the rollout workflow order to verify the narrow lockfile repair occurs before the dirty-checkout guard evaluates operator changes.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard"
+      "rationale": "Reads the lockfile written by the executed controlled rollout and compares it with the independently authored clean bytes.",
+      "semanticCoverage": "packages/tests/hetzner/controller-deployment.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard"
     },
     {
-      "id": "test-structure-coupling-d25b56efbb8aaefe",
-      "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
+      "id": "test-structure-coupling-f27c417734abdf55",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
       "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Re-reads the source manifest after execution and proves isolation was materialized in a copy rather than persisted back into the operator input.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+      "rationale": "Re-reads the source after real child execution and compares it byte-for-byte with the independently acquired pre-execution input.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
     },
     {
-      "id": "test-structure-coupling-de62f83dc45c42c1",
-      "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
+      "id": "test-structure-coupling-49b2eb646cbcf30e",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
       "contract": "hetzner-distributed-workflow--rejects-an-executable-command-scoped-outside-the-source-manifest",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar operations maintainers",
-      "rationale": "Reads the source manifest as the ownership baseline before injecting a command for another group; the validator must reject that executable scope escape.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#rejects an executable command scoped outside the source manifest group"
+      "rationale": "Reads the canonical source fixture before independently injecting three executable scope violations; the real child stderr must identify each violation.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#rejects an executable command scoped outside the source manifest group"
     },
     {
       "id": "test-structure-coupling-2fe7626b3fa35573",

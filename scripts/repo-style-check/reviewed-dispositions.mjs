@@ -5,6 +5,77 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // The native execFile rejection is immediately narrowed for captured stdout;
+    // every other rejection is normalized through canonical toError, preserving
+    // Error identity. No rejected value becomes trusted state or process input.
+    Object.freeze({
+        path: 'packages/tests/hetzner/owned-test-process.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'runDeadlineFixture'
+    }),
+    // Real-child observation JSON supplies only guarded PID cleanup and opaque
+    // independent lifecycle assertions. No raw observation escapes to a domain.
+    Object.freeze({
+        path: 'packages/tests/hetzner/owned-test-process.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Readiness JSON is guarded before exact independent assertions and the
+    // deliberately invalid variant is sent only to the real refusal boundary.
+    Object.freeze({
+        path: 'packages/tests/hetzner/controller-deployment.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // The emitted GroupRef is guarded before isolation assertions; the capture
+    // caller independently validates the complete canonical output manifest.
+    Object.freeze({
+        path: 'packages/tests/hetzner/distributed-manifest-materialization.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'expectCaptureManifestIsolation'
+    }),
+    // Parsed outputs remain opaque assertion evidence for exact capture/data
+    // preservation and hashes; executable manifests use the canonical decoder.
+    Object.freeze({
+        path: 'packages/tests/hetzner/distributed-manifest-materialization.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Incoming reports pass their complete canonical schema before the typed
+    // consumed-field projection; malformed reports fail at this same boundary.
+    Object.freeze({
+        path: 'packages/tests/hetzner/distributed-operation-artifacts.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readOperationReport'
+    }),
+    // Checked child JSON is compared only with independent persistence oracles;
+    // inline commands are accessed only after canonical manifest admission.
+    Object.freeze({
+        path: 'packages/tests/hetzner/distributed-operation-artifacts.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Each package path segment is record-guarded and only the checked final
+    // string escapes; no raw package object becomes trusted domain metadata.
+    Object.freeze({
+        path: 'packages/tests/hetzner/playwright-browser-installation.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readPackageString'
+    }),
+    // Parsed package/lock data reaches the checked string reader before exact
+    // independent version assertions; no opaque value supplies runtime state.
+    Object.freeze({
+        path: 'packages/tests/hetzner/playwright-browser-installation.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Loaded YAML remains raw until the complete consumed-document schema
+    // validates it; sparse workflow fields preserve meaningful omission.
+    Object.freeze({
+        path: 'packages/tests/hetzner/distributed-recipe-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readWorkflow'
+    }),
     // Authored readiness JSON stays raw inside this decoder until the canonical
     // rtc.connect command schema validates it; only the typed result escapes.
     Object.freeze({
