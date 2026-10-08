@@ -5,6 +5,81 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Admission, target preflight, run phases and artifact export form one
+    // no-spawn operation with direct named effect adapters and visible failures.
+    // The cap records this reviewed warning-tier magnitude, not future growth.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 69
+    }),
+    // File JSON is raw until decodeDistributedRunManifest admits the complete
+    // manifest; no field is consumed or request emitted before that admission.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readWorldFleetManifest'
+    }),
+    // Successful HTTP JSON passes directly to the canonical target, snapshot
+    // or artifact-envelope decoder before DTO consumption or the next effect.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readWorldFleetHttpJson'
+    }),
+    // The anonymous CLI rejection is immediately normalized through toError
+    // for printing and exit status only; it never supplies domain state.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Untrusted payloadFields is record-guarded and each operand is admitted by
+    // decodeJsonValue. Only validation issues leave this issue-returning boundary.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control/validate-wait-control-command.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateWaitPayloadFields'
+    }),
+    // This generic copier owns comparison arrays/records without admitting
+    // them. Cycles and invalid non-JSON operands retain their existing validation
+    // boundary; unknown array storage stays local. Its checker owner is absent.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/recipe/snapshot-comparison-value.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Module-owned bodies observe outgoing HTTP JSON for independent equality;
+    // adversarial responses feed the real decoders. Child rejection reasons are
+    // checked as Errors only. No fixture unknown becomes trusted domain state.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/world-fleet-runner.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // This owned network serializer sends both valid and malformed response
+    // fixtures through production HTTP admission without interpreting their DTOs.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/world-fleet-runner.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonResponse'
+    }),
+    // The loopback fixture captures outbound request JSON solely for literal
+    // body assertions; protocol state comes from the independently authored DTO.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/world-fleet-runner.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'createWorldFleetCliFixture'
+    }),
+    // Raw defaults JSON includes malformed topology input to the actual workflow
+    // Bash boundary. Anonymous child refusals are asserted as Errors and checked
+    // for absent outputs/source preservation, never used as trusted DTOs.
+    Object.freeze({
+        path: 'packages/tests/hetzner/distributed-recipe-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // Actual attempted/replacement snapshot envelopes are record-guarded before
     // their snapshot values are emitted only as opaque assertion evidence. The
     // caller independently checks complete DTOs; no raw value feeds domain logic.
