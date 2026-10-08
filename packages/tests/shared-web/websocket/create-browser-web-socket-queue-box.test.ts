@@ -21,8 +21,7 @@ import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALCheckpointOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
-    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-    AL_VOLATILE_SESSION_MAX_BYTES,
+    AL_VOLATILE_SESSION_LIMITS,
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
@@ -278,10 +277,7 @@ describe('the session volatile bound on the WS client (C3)', () => {
     });
 
     it('counts a received and a sent volatile message against the one budget both of its memory pairs carry', async () => {
-        const budget = new ALVolatileSessionBudget({
-            maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-            maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-        });
+        const budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
         const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         onTestFinished(() => socket.close(1000, 'test-finished'));
         const qboxEngine = new InboxOutboxEngine();
@@ -337,7 +333,7 @@ describe('the session volatile bound on the WS client (C3)', () => {
         ));
 
         expect(sent.verdict).toMatchObject({ kind: 'admitted', durable: false });
-        expect(budget.readUsage(Date.now()).admissions).toBe(2);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(2);
     });
 });
 
@@ -370,7 +366,7 @@ describe('the checkpoint lane on the WS client', () => {
 
         expect(sent.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(await checkpointStores.admissionStore.hasSentMessageAdmission(sent.message.id.msgId)).toBe(true);
-        expect(budget.readUsage(Date.now()).admissions).toBe(0);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(0);
     });
 });
 

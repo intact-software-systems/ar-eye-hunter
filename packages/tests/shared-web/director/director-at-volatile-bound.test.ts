@@ -4,7 +4,7 @@ import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-con
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
-    AL_VOLATILE_SESSION_MAX_BYTES,
+    AL_VOLATILE_SESSION_LIMITS,
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { toALVolatileSessionQosProvider } from '@shared/alm/volatile-budget/to-al-volatile-session-qos-provider.ts';
@@ -95,8 +95,8 @@ describe('a director at its volatile bound (D78)', () => {
 
 /** The director session at its bound: its RTC carrier is a real overlay manager, its WS carrier refuses for capacity. */
 function createDirectorAtTheBound(): DirectorAtTheBound {
-    const budget = new ALVolatileSessionBudget({ maxAdmissions: 1, maxBytes: AL_VOLATILE_SESSION_MAX_BYTES });
-    budget.record({ msgId: 'received', bytes: 1, deadlineAtMs: Date.now() + 60_000, nowMs: Date.now() });
+    const budget = new ALVolatileSessionBudget({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 1 });
+    budget.record({ msgId: 'received', bytes: 1, deadlineAtMs: Date.now() + 60_000, nowMs: Date.now(), trackKey: undefined });
     const rtc = createRtcRelayOverlayFixture({
         selfPeerId: DIRECTOR_PEER_ID,
         snapshot: createOriginSnapshot(['a', DIRECTOR_PEER_ID], 4),

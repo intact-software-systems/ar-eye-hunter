@@ -22,8 +22,25 @@ describe('a message as the session budget counts it', () => {
             msgId: msg.id.msgId,
             bytes: new TextEncoder().encode(JSON.stringify(msg)).length,
             deadlineAtMs: msg.constraints?.expiresAtMs,
-            nowMs: NOW_MS
+            nowMs: NOW_MS,
+            trackKey: undefined
         });
+    });
+
+    it('names the ordering track of an ordered message, which an unordered key without a sequence does not hold', () => {
+        const msg = newALUnicastMessage(
+            'self',
+            { topicId: 'chat', resourceId: 'ordered', contextId: 'room' },
+            'peer',
+            'chat.message.v1',
+            { text: 'ordered' },
+            { ttlMs: 30_000 }
+        );
+
+        expect(toALVolatileSessionAdmission({ ...msg, ordering: { orderingKey: 'moves', seq: 4 } }, NOW_MS)?.trackKey)
+            .toBe('moves:self:0');
+        expect(toALVolatileSessionAdmission({ ...msg, ordering: { orderingKey: 'moves' } }, NOW_MS)?.trackKey)
+            .toBeUndefined();
     });
 
     it('counts no message without a deadline, as the RTC signaling transport sends every signal', () => {

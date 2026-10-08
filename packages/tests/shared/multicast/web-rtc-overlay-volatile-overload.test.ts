@@ -11,7 +11,7 @@ import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-c
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import {
-    AL_VOLATILE_SESSION_MAX_BYTES,
+    AL_VOLATILE_SESSION_LIMITS,
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { toALVolatileSessionQosProvider } from '@shared/alm/volatile-budget/to-al-volatile-session-qos-provider.ts';
@@ -29,16 +29,14 @@ import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc
 
 /** A session budget of one admission, full exactly when `atTheBound`, read as the QoS provider of the session. */
 function createBoundQosProvider(atTheBound: boolean): ALQosInputProvider {
-    const budget = new ALVolatileSessionBudget({
-        maxAdmissions: 1,
-        maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-    });
+    const budget = new ALVolatileSessionBudget({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 1 });
     if (atTheBound) {
         budget.record({
             msgId: 'received',
             bytes: 1,
             deadlineAtMs: Date.now() + 60_000,
-            nowMs: Date.now()
+            nowMs: Date.now(),
+            trackKey: undefined
         });
     }
     return toALVolatileSessionQosProvider(undefined, budget, Date.now);
@@ -108,6 +106,13 @@ describe('the session volatile bound as the RTC origin\'s overloaded signal (D78
         expect((await enqueueAndDrain(fixture.manager, createBestEffortMulticast('over'))).verdict)
             .toMatchObject({ kind: 'refused', reason: 'capacity' });
         expect(fixture.channels.b!.sent).toEqual([]);
+    });
+
+    it('names no limit on that refusal, which congestion made before the session ledger was asked', async () => {
+        const fixture = createBoundOriginFixture(true);
+
+        expect((await enqueueAndDrain(fixture.manager, createBestEffortMulticast('shed'))).verdict)
+            .not.toHaveProperty('limit');
     });
 
     it('leaves an at-least-once send to the admission bound: default congestion drops only low priority', async () => {

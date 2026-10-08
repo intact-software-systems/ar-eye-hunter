@@ -197,6 +197,40 @@ describe('outbound admission verdict', () => {
         expect(isALDeliveryAdmissionFallbackVerdict(computed.verdict)).toBe(false);
     });
 
+    it('is refused as capacity with the limit the session volatile ledger names', async () => {
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
+        const message = createOutboundMessage('verdict-capacity-tracks');
+        const read = await store.readOutgoingMessage({
+            msg: message,
+            planner: () => ({
+                msg: message,
+                dropReason: 'The session\'s volatile bound refused the send (tracks).',
+                dropReasonCode: 'capacity',
+                capacityLimit: 'tracks',
+                lane: 'volatile',
+                preparedMessages: []
+            }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
+        const computed = computeALOutboundDispatch({
+            read,
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            dispatchAtMs: Date.now(),
+            intent: 'enqueue',
+            phase: 'immediate',
+            options: {}
+        });
+
+        expect(computed.verdict).toEqual({
+            kind: 'refused',
+            reason: 'capacity',
+            limit: 'tracks',
+            detail: 'The session\'s volatile bound refused the send (tracks).'
+        });
+    });
+
     it('is deferred as not-yet-in-sync when the planner drops the message with that code', async () => {
         const stores = createDefaultOutboundTestStores();
         const store = stores.admissionStore;

@@ -136,6 +136,20 @@ const FAILURE_CASES: readonly FailureCase[] = [
         reason: 'The session is over its volatile bound.'
     },
     {
+        meaning: 'a refusal past the age bound of the session volatile ledger',
+        settlements: [
+            toAdmission({
+                kind: 'refused',
+                reason: 'capacity',
+                limit: 'age',
+                detail: 'The session\'s volatile bound refused the send (age).'
+            })
+        ],
+        state: 'rejected',
+        failure: { kind: 'refused', reason: 'capacity', limit: 'age' },
+        reason: 'The session\'s volatile bound refused the send (age).'
+    },
+    {
         meaning: 'a refusal by the trusted server',
         settlements: [ADMITTED, SERVER_REFUSAL],
         state: 'rejected',

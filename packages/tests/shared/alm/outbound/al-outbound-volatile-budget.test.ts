@@ -12,8 +12,9 @@ import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecyc
 import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import {
+    AL_VOLATILE_SESSION_LIMITS,
     AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-    AL_VOLATILE_SESSION_MAX_BYTES,
+    AL_VOLATILE_SESSION_MAX_AGE_MS,
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
@@ -58,10 +59,7 @@ function createBudgetedRuntime(
 }
 
 function createDefaultBudget(): ALVolatileSessionBudget {
-    return new ALVolatileSessionBudget({
-        maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-        maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-    });
+    return new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
 }
 
 /** One volatile admission short of a full bound, so this session's next data admission is its 1 000th. */
@@ -72,17 +70,15 @@ function recordReceivedUntilOneShort(budget: ALVolatileSessionBudget): void {
             msgId: `received-${index}`,
             bytes: 1,
             deadlineAtMs: nowMs + 60_000,
-            nowMs
+            nowMs,
+            trackKey: undefined
         });
     }
 }
 
 /** A budget of one, filled by one volatile data admission of the runtime under test. */
 async function createFullRuntime() {
-    const budget = new ALVolatileSessionBudget({
-        maxAdmissions: 1,
-        maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-    });
+    const budget = new ALVolatileSessionBudget({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 1 });
     const runtime = createBudgetedRuntime(budget);
     expect((await runtime.enqueueIfAbsent(createOutboundMessage('fills-the-bound'))).verdict.kind)
         .toBe('admitted');
@@ -99,17 +95,14 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
         const refused = await runtime.enqueueIfAbsent(createOutboundMessage('volatile-1001'));
 
         expect(thousandth.verdict).toMatchObject({ kind: 'admitted', durable: false });
-        expect(refused.verdict).toMatchObject({ kind: 'refused', reason: 'capacity' });
+        expect(refused.verdict).toMatchObject({ kind: 'refused', reason: 'capacity', limit: 'admissions' });
         expect(refused.reason).toContain('volatile bound');
         expect(refused.entries).toEqual([]);
-        expect(budget.readUsage(Date.now()).admissions).toBe(AL_VOLATILE_SESSION_MAX_ADMISSIONS);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(AL_VOLATILE_SESSION_MAX_ADMISSIONS);
     });
 
     it('counts each member of a group this session sends, in order', async () => {
-        const budget = new ALVolatileSessionBudget({
-            maxAdmissions: 2,
-            maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-        });
+        const budget = new ALVolatileSessionBudget({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 2 });
         const runtime = createBudgetedRuntime(budget);
 
         const results = await runtime.enqueueAllIfAbsent([
@@ -127,17 +120,14 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
     });
 
     it('counts a msgId once when a second carrier re-admits it, as the WS leg of a fallback does', async () => {
-        const budget = new ALVolatileSessionBudget({
-            maxAdmissions: 1,
-            maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-        });
+        const budget = new ALVolatileSessionBudget({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 1 });
         const rtc = createBudgetedRuntime(budget, 'rtc');
         const ws = createBudgetedRuntime(budget, 'ws');
         const message = createOutboundMessage('handed-over');
 
         expect((await rtc.enqueueIfAbsent(message)).verdict.kind).toBe('admitted');
         expect((await ws.enqueueIfAbsent(message)).verdict.kind).toBe('admitted');
-        expect(budget.readUsage(Date.now()).admissions).toBe(1);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(1);
     });
 
     it('never counts an ACK batch, even one that carries a deadline', async () => {
@@ -162,7 +152,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
         }]);
 
         expect(acked?.verdict.kind).toBe('admitted');
-        expect(budget.readUsage(Date.now()).admissions).toBe(1);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(1);
     });
 
     it.each([
@@ -203,7 +193,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
         }]);
 
         expect(sent?.verdict.kind).toBe('admitted');
-        expect(budget.readUsage(Date.now()).admissions).toBe(1);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(1);
     });
 
     it('never counts a relay forward, whose admission carries its plan', async () => {
@@ -212,7 +202,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
 
         expect((await runtime.enqueueIfAbsent(forward, planByTypeId(forward))).verdict)
             .toMatchObject({ kind: 'admitted', durable: false });
-        expect(budget.readUsage(Date.now()).admissions).toBe(1);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(1);
     });
 
     it('never counts a durable send', async () => {
@@ -230,7 +220,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
             kind: 'admitted',
             durable: true
         });
-        expect(budget.readUsage(Date.now()).admissions).toBe(1);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(1);
     });
 
     it('never counts a volatile message without a deadline, as an RTC signal is sent', async () => {
@@ -247,7 +237,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
             kind: 'admitted',
             durable: false
         });
-        expect(budget.readUsage(Date.now()).admissions).toBe(1);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(1);
     });
 
     it('releases a counted send at its planned deadline, which the effective QoS expiry may bring forward', async () => {
@@ -261,19 +251,16 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
 
         expect((await runtime.enqueueIfAbsent(message)).verdict.kind).toBe('admitted');
 
-        expect(budget.readUsage(message.id.ts + 4_999).admissions).toBe(1);
-        expect(budget.readUsage(message.id.ts + 5_000).admissions).toBe(0);
+        expect(budget.readReport(message.id.ts + 4_999).usage.admissions).toBe(1);
+        expect(budget.readReport(message.id.ts + 5_000).usage.admissions).toBe(0);
     });
 
     it('never counts a retransmission, which carries its own plan', async () => {
-        const budget = new ALVolatileSessionBudget({
-            maxAdmissions: 1,
-            maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-        });
+        const budget = new ALVolatileSessionBudget({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 1 });
         const runtime = createBudgetedRuntime(budget);
         const relayed = createOutboundMessage('relayed-then-retried');
         expect((await runtime.enqueueIfAbsent(relayed, planByTypeId(relayed))).verdict.kind).toBe('admitted');
-        budget.record({ msgId: 'received', bytes: 1, deadlineAtMs: Date.now() + 10_000, nowMs: Date.now() });
+        budget.record({ msgId: 'received', bytes: 1, deadlineAtMs: Date.now() + 10_000, nowMs: Date.now(), trackKey: undefined });
 
         const retried = await runtime.retransmitAdmittedMessage({
             msg: relayed,
@@ -282,6 +269,48 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
         });
 
         expect(retried.verdict).toMatchObject({ kind: 'admitted', durable: false });
-        expect(budget.readUsage(Date.now()).admissions).toBe(1);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(1);
+    });
+
+    it('refuses a volatile send whose deadline lies past the age bound with the limit age, and counts nothing', async () => {
+        const budget = createDefaultBudget();
+        const runtime = createBudgetedRuntime(budget);
+
+        const refused = await runtime.enqueueIfAbsent(
+            createOutboundMessage('too-far-ahead', { ttlMs: AL_VOLATILE_SESSION_MAX_AGE_MS + 1_000 })
+        );
+        const admitted = await runtime.enqueueIfAbsent(
+            createOutboundMessage('at-the-age-bound', { ttlMs: AL_VOLATILE_SESSION_MAX_AGE_MS - 1_000 })
+        );
+
+        expect(refused.verdict).toEqual({
+            kind: 'refused',
+            reason: 'capacity',
+            limit: 'age',
+            detail: expect.stringContaining('(age)')
+        });
+        expect(refused.entries).toEqual([]);
+        expect(admitted.verdict).toMatchObject({ kind: 'admitted', durable: false });
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(1);
+    });
+
+    it('refuses the ordered send that opens a track past the track bound with the limit tracks', async () => {
+        const budget = new ALVolatileSessionBudget({ ...AL_VOLATILE_SESSION_LIMITS, maxTracks: 1 });
+        const runtime = createBudgetedRuntime(budget);
+        const toOrdered = (resourceId: string, orderingKey: string, seq: number): ALMessage => ({
+            ...createOutboundMessage(resourceId),
+            ordering: { orderingKey, seq }
+        });
+
+        const first = await runtime.enqueueIfAbsent(toOrdered('moves-1', 'moves', 1));
+        const opening = await runtime.enqueueIfAbsent(toOrdered('chat-1', 'chat', 1));
+        const following = await runtime.enqueueIfAbsent(toOrdered('moves-2', 'moves', 2));
+        const unordered = await runtime.enqueueIfAbsent(createOutboundMessage('unordered'));
+
+        expect(first.verdict).toMatchObject({ kind: 'admitted', durable: false });
+        expect(opening.verdict).toMatchObject({ kind: 'refused', reason: 'capacity', limit: 'tracks' });
+        expect(following.verdict).toMatchObject({ kind: 'admitted', durable: false });
+        expect(unordered.verdict).toMatchObject({ kind: 'admitted', durable: false });
+        expect(budget.readReport(Date.now()).usage).toMatchObject({ admissions: 3, tracks: 1 });
     });
 });

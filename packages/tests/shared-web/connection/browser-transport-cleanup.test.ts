@@ -12,6 +12,7 @@ import { createRallarLifecycleCoordinator } from '@shared-web/browser/session/ra
 import { createRallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import { BrowserSessionConnectionLifecycle, type RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
 import { toALDurableOwnerLockName, type ALBrowserLockOptions } from '@shared/alm/storage/al-browser-locks.ts';
+import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
@@ -461,7 +462,7 @@ describe('the session volatile limits seam', () => {
         mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
-        const readVolatileSessionLimits = () => ({ maxAdmissions: 3, maxBytes: 4_096 });
+        const readVolatileSessionLimits = () => ({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3, maxBytes: 4_096 });
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
             readVolatileSessionLimits,

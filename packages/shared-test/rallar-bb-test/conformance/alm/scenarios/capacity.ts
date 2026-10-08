@@ -1,6 +1,6 @@
 import {
     AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS,
-    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+    AL_VOLATILE_SESSION_LIMITS,
     type ALVolatileSessionLimits
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
@@ -40,10 +40,7 @@ import { toCommandId } from '../alm-conformance-step-identities.ts';
  * so that sync has left the budget. The count bound keeps its constant, so bytes alone decide.
  */
 const CAPACITY_FILLER = 'x'.repeat(12_000);
-const CAPACITY_LIMITS: ALVolatileSessionLimits = {
-    maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-    maxBytes: 36_000
-};
+const CAPACITY_LIMITS: ALVolatileSessionLimits = { ...AL_VOLATILE_SESSION_LIMITS, maxBytes: 36_000 };
 const REJOIN_SETTLE_MS = AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS + 1_000;
 const REJOIN_SETTLE_TOPIC = 'rallar.black-box.alm.capacity-rejoin-settled';
 const ADMITTED_INDEXES = [1, 2] as const;

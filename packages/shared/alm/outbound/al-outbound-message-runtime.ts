@@ -25,7 +25,7 @@ import type { ALBrowserLocks } from '../storage/al-browser-locks.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
-import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
+import type { ALVolatileSessionBudget, ALVolatileSessionLimit } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
 import type {
@@ -156,6 +156,8 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly dropReason?: string;
     /** Required so every planner states its drop code; `undefined` means the plan is not dropping the message. */
     readonly dropReasonCode: ALOutboundDropReasonCode | undefined;
+    /** The session volatile bound a `capacity` drop passed (D179); absent on a congestion drop the planner made. */
+    readonly capacityLimit?: ALVolatileSessionLimit;
     /** The store lane the admission runs in: the message's durability, or `volatile` for a dropping plan. */
     readonly lane: ALStoreDurability;
     readonly preparedMessages: readonly TPrepared[];

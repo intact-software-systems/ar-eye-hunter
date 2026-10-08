@@ -30,8 +30,7 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
-    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-    AL_VOLATILE_SESSION_MAX_BYTES,
+    AL_VOLATILE_SESSION_LIMITS,
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
@@ -345,10 +344,7 @@ describe('browser RTC runtime composition', () => {
         for (const channel of nativePeer.channels) {
             channel.open();
         }
-        const budget = new ALVolatileSessionBudget({
-            maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-            maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-        });
+        const budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
         const manager = initialiseRtcOverlayMulticastManager({
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
@@ -372,7 +368,7 @@ describe('browser RTC runtime composition', () => {
         );
 
         expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
-        expect(budget.readUsage(Date.now()).admissions).toBe(1);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(1);
     });
 
     it('admits a local-checkpoint send to the checkpoint pair it is handed, outside the volatile budget', async () => {
@@ -409,7 +405,7 @@ describe('browser RTC runtime composition', () => {
 
         expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(await checkpointStores.admissionStore.hasSentMessageAdmission(result.message.id.msgId)).toBe(true);
-        expect(budget.readUsage(Date.now()).admissions).toBe(0);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(0);
     });
 });
 

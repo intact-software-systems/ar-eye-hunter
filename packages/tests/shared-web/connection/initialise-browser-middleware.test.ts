@@ -11,6 +11,7 @@ import {
     type BrowserConnectOptions
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
@@ -29,7 +30,7 @@ const SESSION: AuthSession = {
 
 const OPTIONS: BrowserConnectOptions = {
     qosProvider: undefined,
-    readVolatileSessionLimits: () => ({ maxAdmissions: 3, maxBytes: 4_096 }),
+    readVolatileSessionLimits: () => ({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3, maxBytes: 4_096 }),
     deliverySettlements: { ws: () => {}, rtc: () => {} },
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},
@@ -79,7 +80,7 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
         const nowMs = Date.now();
 
         const admissions = [1, 2, 3, 4].map((index) =>
-            budget.tryAdmit({ msgId: `sent-${index}`, bytes: 1, deadlineAtMs: nowMs + 30_000, nowMs }).left !== undefined
+            budget.tryAdmit({ msgId: `sent-${index}`, bytes: 1, deadlineAtMs: nowMs + 30_000, nowMs, trackKey: undefined }).left !== undefined
         );
 
         expect(admissions).toEqual([false, false, false, true]);

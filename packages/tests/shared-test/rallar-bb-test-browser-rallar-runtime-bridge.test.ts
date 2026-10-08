@@ -2,6 +2,10 @@ import type {
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarHealthInput
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import {
+    AL_VOLATILE_SESSION_MAX_AGE_MS,
+    AL_VOLATILE_SESSION_MAX_TRACKS
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     createBrowserWebSocketFactory,
@@ -10,7 +14,8 @@ import {
 } from '../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import type {
     RallarBlackBoxBrowserRallarEvent,
-    RallarBlackBoxBrowserTestRuntime
+    RallarBlackBoxBrowserTestRuntime,
+    RallarBlackBoxBrowserWebSocketEvent
 } from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { SimulatedWebSocket } from '../shared/native-websocket-fixture.ts';
 
@@ -68,7 +73,7 @@ describe('browser Rallar runtime bridge', () => {
         expect(connect).toHaveBeenCalledTimes(1);
     });
 
-    it('decodes the lane-only volatile limits of a connect and refuses a partial or non-positive pair', async () => {
+    it('decodes the lane-only volatile limits of a connect, reading the age and track bounds the connect leaves out as the constants', async () => {
         const forwarded: BlackBoxRallarConnectionConfig[] = [];
         vi.stubGlobal('window', {
             __blackBoxRallar: {
@@ -86,23 +91,36 @@ describe('browser Rallar runtime bridge', () => {
                 almVolatileLimits: { maxAdmissions: 2, maxBytes: 4_096 }
             }
         };
+        const lowered = { maxAdmissions: 2, maxBytes: 4_096, maxAgeMs: 60_000, maxTracks: 2 };
 
-        await expect(bridge.connect(input)).resolves.toEqual(input);
+        await bridge.connect(input);
+        await bridge.connect({ ...input, rallar: { ...input.rallar, almVolatileLimits: lowered } });
         for (
             const almVolatileLimits of [
                 { maxAdmissions: 0, maxBytes: 4_096 },
                 { maxAdmissions: 2 },
                 { maxAdmissions: 2, maxBytes: 1.5 },
-                { maxAdmissions: 2, maxBytes: 4_096, maxAgeMs: 1 }
+                { maxAdmissions: 2, maxBytes: 4_096, maxAgeMs: 0 },
+                { maxAdmissions: 2, maxBytes: 4_096, maxTracks: 1.5 },
+                { maxAdmissions: 2, maxBytes: 4_096, maxWindowMs: 1 }
             ]
         ) {
             await expect(bridge.connect({ ...input, rallar: { ...input.rallar, almVolatileLimits } }))
                 .rejects.toThrow(
-                    'rallar.almVolatileLimits must name maxAdmissions and maxBytes, each a positive integer.'
+                    'rallar.almVolatileLimits must name maxAdmissions and maxBytes and may name maxAgeMs and maxTracks, ' +
+                        'each a positive integer.'
                 );
         }
-        // Only the well-formed pair reached the native runtime.
-        expect(forwarded).toEqual([input]);
+        // Only the well-formed limits reached the native runtime.
+        expect(forwarded.map((config) => config.rallar.almVolatileLimits)).toEqual([
+            {
+                maxAdmissions: 2,
+                maxBytes: 4_096,
+                maxAgeMs: AL_VOLATILE_SESSION_MAX_AGE_MS,
+                maxTracks: AL_VOLATILE_SESSION_MAX_TRACKS
+            },
+            lowered
+        ]);
     });
 
     it('installs and restores the SPA browser event bridge', async () => {
@@ -156,7 +174,7 @@ describe('browser Rallar runtime bridge', () => {
         expect(constructed[0].protocols).toEqual(['control.v1']);
         expect(socket.url).toBe('wss://control.example.test/agent');
         const received: string[] = [];
-        const receive = (event: unknown) => {
+        const receive = (event: RallarBlackBoxBrowserWebSocketEvent) => {
             if (!(event instanceof MessageEvent) || typeof event.data !== 'string') {
                 throw new TypeError('Expected a native text message');
             }

@@ -2,6 +2,7 @@ import type { ALAckMode } from '../../al-contracts/al-contract.ts';
 import type { ALAckAlgo, ALDurabilityAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
+import type { ALVolatileSessionLimit } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALDeliveryFailure, ALDeliveryReceiptExhaustion } from './al-delivery-failure.ts';
 
 export type ALDeliveryState =
@@ -83,7 +84,8 @@ export type ALDeliveryAdmissionVerdict =
     /** A retained admission conflict: the owner replays it; the handle stays `submitted`. */
     | Readonly<{ kind: 'pending'; }>
     | Readonly<{ kind: 'deferred'; reason: 'not-yet-in-sync'; detail: string; }>
-    | Readonly<{ kind: 'refused'; reason: ALDeliveryRefusalReason; detail: string; }>
+    /** `limit` names the session volatile bound a `capacity` refusal passed (D179); absent on every other refusal. */
+    | Readonly<{ kind: 'refused'; reason: ALDeliveryRefusalReason; limit?: ALVolatileSessionLimit; detail: string; }>
     | Readonly<{
         kind: 'unroutable';
         reason: ALDeliveryUnroutableReason;

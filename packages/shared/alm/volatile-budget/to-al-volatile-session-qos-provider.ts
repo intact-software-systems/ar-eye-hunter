@@ -18,7 +18,7 @@ export function toALVolatileSessionQosProvider(
         authorizationForMessage: (msg, context) => provider?.authorizationForMessage?.(msg, context),
         liveForMessage: (msg, context) => {
             const live = provider?.liveForMessage?.(msg, context);
-            return isALSessionDataOrigination(msg, context) && budget.isOverloaded(nowMs())
+            return isALSessionDataOrigination(msg, context) && budget.readReport(nowMs()).overloaded
                 ? { ...live, overloaded: true }
                 : live;
         }
