@@ -11,12 +11,15 @@ import { RTC_REFUSAL_FACTS, WS_ROUTE_FACTS } from '../audiences/world-routing.ts
 /** Only the WS server arbitrates a claim; a strategy that allows WS routes an exclusive send there at once. */
 export const CLAIM_WS_ROUTE_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc-with-ws-fallback'];
 
-/** The trusted server NACKs a claim another session holds after the frame left, which settles the send's one attempt. */
+/**
+ * The trusted server NACKs a claim another session holds after the frame left, which settles the send's one attempt:
+ * the WS one, with no hand-over.
+ */
 const HELD_BY_OTHER_FACTS: readonly AlmConformanceVerdictFact[] = [
     ['relay-rejected', 'failure.kind', 'equals', 'relay-rejected'],
     ['trusted-server', 'failure.rejection.relay', 'equals', 'trusted-server'],
     ['held-by-other', 'failure.rejection.reason', 'equals', 'held-by-other'],
-    ['one-attempt', 'attempts', 'equals', 1]
+    ...WS_ROUTE_FACTS
 ];
 
 /** The cell's carrier names the resource, so no cell claims a key another carrier's cell may still hold. */

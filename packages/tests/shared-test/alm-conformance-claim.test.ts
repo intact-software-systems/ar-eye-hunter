@@ -158,7 +158,8 @@ describe('claim-first-wins', () => {
         state: 'rejected',
         failure: { kind: 'relay-rejected', rejection: { relay: 'trusted-server', reason: 'held-by-other' } },
         attempts: 1,
-        attemptCarriers: ['ws']
+        attemptCarriers: ['ws'],
+        carrierFallback: undefined
     };
 
     it.each(CLAIM_CARRIERS['claim-first-wins'])(
@@ -229,6 +230,8 @@ describe('claim-first-wins', () => {
                 'assert-trusted-server-1',
                 'assert-held-by-other-1',
                 'assert-one-attempt-1',
+                'assert-ws-attempt-1',
+                'assert-no-fallback-1',
                 'received-2',
                 'stats'
             ]);
@@ -255,10 +258,13 @@ describe('claim-first-wins', () => {
                     { failure: { ...heldByOther.failure, kind: 'refused' } },
                     { failure: { ...heldByOther.failure, rejection: { relay: 'peer', reason: 'held-by-other' } } },
                     { failure: { ...heldByOther.failure, rejection: { relay: 'trusted-server', reason: 'no-leader' } } },
-                    { attempts: 2 }
+                    { attempts: 2 },
+                    { attemptCarriers: ['rtc'] },
+                    { carrierFallback: { from: 'rtc', to: 'ws' } },
+                    { attempts: 2, attemptCarriers: ['rtc', 'ws'], carrierFallback: { from: 'rtc', to: 'ws' } }
                 ])
             )
-                .toEqual([false, false, false, false]);
+                .toEqual([false, false, false, false, false, false, false]);
         }
     );
 
@@ -281,6 +287,7 @@ describe('claim-expires-reclaims', () => {
             'observe-admitted-1',
             'assert-admitted-1',
             'received-1',
+            'received-2',
             'stats'
         ]);
         expect(findCommand(sender, 'send-1')).toMatchObject({
@@ -296,6 +303,12 @@ describe('claim-expires-reclaims', () => {
             typeId: 'alm.conformance.ws.claim-expires-reclaims',
             count: 1,
             absent: false
+        });
+        expect(findCommand(sender, 'received-2')).toMatchObject({
+            kind: 'messages.received',
+            connection: 'sender',
+            count: 2,
+            absent: true
         });
         expect(readAlmReceiptRolesEntries(sender)).toEqual([]);
     });

@@ -29,7 +29,8 @@ const SENDER_AND_RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = {
 /**
  * The sender claims the cell's resource with a short-lived room send. Recipient-b receives it, holds past its
  * lifetime and claims the same resource from its own session: the expired claim frees the key, so the server admits
- * and delivers the reclaim to the sender and the receiver, and its receipt ends acknowledged.
+ * and delivers the reclaim to the sender and the receiver, and its receipt ends acknowledged. The sender's closing
+ * window proves the one copy it received is the reclaim, never an echo of its own claim.
  */
 export const claimExpiresReclaims: AlmConformanceScenarioDefinition = {
     scenarioId: 'claim-expires-reclaims',
@@ -45,7 +46,8 @@ export const claimExpiresReclaims: AlmConformanceScenarioDefinition = {
             ack: 'all-logical-recipients',
             claim: toClaim(sender)
         }),
-        toReceivedCommand({ ...sender, index: 1, count: 1, absent: false })
+        toReceivedCommand({ ...sender, index: 1, count: 1, absent: false }),
+        toReceivedCommand({ ...sender, index: 2, count: 2, absent: true })
     ],
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver'
