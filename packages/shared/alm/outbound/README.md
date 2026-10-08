@@ -788,7 +788,7 @@ send whose commit then admits nothing stays counted until its deadline: the ledg
 
 A track is the ordering track key of a send that states an ordering key and a sequence together
 ([`toALOrderingTrackKey`](../../al-contracts/al-runtime.ts): the ordering key, the sender and the epoch); a send
-that states neither, or a key without a sequence, names none. A track is counted while the ledger holds
+that does not state both names none. A track is counted while the ledger holds
 at least one counted admission on it, so it leaves the count when the last of them reaches its deadline. A received
 message never opens a counted track. The ledger answers its state in one read, `readReport(nowMs)`
 (`ALVolatileSessionReport`: the usage with `oldestAgeMs`, 0 when nothing is counted, and `tracks`; the limits; and
@@ -820,10 +820,11 @@ handed-over message ids are [`LatestRepository`](../../cache/LatestRepository.ts
 `DEFAULT_AL_REPOSITORY_TTL_MS` (60 minutes) as their TTL, the durable lane's row retention, so a cancelled durable
 message a worker picks up after 5 minutes still does not send. The browser's resync recovery keeps the tracks it has
 invoked a recovery owner for in a `LatestRepository` with `AL_VOLATILE_SESSION_MAX_AGE_MS` as its TTL, renewed by
-each of the track's resynchronisations, so a track that resyncs again after that long without one invokes the owner
+each of the track's resynchronizations, so a track that resyncs again after that long without one invokes the owner
 again. `WebRtcRxStreamerService` numbers every peer's
 round-trip measurements from one counter and keeps no version per peer. None of them adds a timer or a sweep of its
-own: a repository forgets an expired entry it reads and sweeps the rest when it accepts one.
+own: a repository forgets an expired entry it reads, and an accept may sweep the rest, at the repository's eviction
+rate.
 
 **Limit:** the memory pairs plateau rather than empty: an idle inbound ordering track keeps two rows for the hour after
 its last message, and each sending origin keeps one outbound version row (`versionTtlMs`, 1 h). The long-run test

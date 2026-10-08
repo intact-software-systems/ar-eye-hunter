@@ -900,7 +900,9 @@ its deadline and 30 s after its arrival, and it never opens a counted track; a
 message whose sender named no deadline is not counted. A send that would pass a
 limit is refused `capacity` with the `limit` it would pass (`admissions`,
 `bytes`, `age` or `tracks`), and a received message is counted, never refused
-(D74, D78). The bound is shared with the platform's own state sync received on
+(D74, D78). A best-effort RTC room send that the RTC carrier's congestion drop
+sheds while the session is at or over the count or byte limit is refused
+`capacity` with no `limit`. The bound is shared with the platform's own state sync received on
 the volatile pair: a lane agent that leaves and rejoins a room holds about
 26 KB of it, under one per cent of the production limits (R-S3c-ii-6,
 R-S3c-ii-7).
@@ -909,14 +911,16 @@ R-S3c-ii-7).
 the session's usage (messages, bytes, the age of the oldest counted message,
 tracks), its limits and whether it is `overloaded`, and the black-box `stats`
 command records the same report as `rallar.alm`, so every run that reads
-`stats` measures the bound over time and the ALM lane's observation keeps its
-peaks (D180). The age limit bounds the messages the bound counts, not ordering
+`stats` measures the bound over time; the ALM lane's observation records each
+page's one end-of-cell reading, and the `capacity-tracks` cell's reading at the
+track bound (D180). The age limit bounds the messages the bound counts, not ordering
 state: an ordering track stays known for an hour after its last message, so a
 resumed track is not read as a gap. What a session keeps per message, track or
 peer is bounded rather than held for its lifetime: the ids of cancelled and
-handed-over sends for 60 minutes, the browser's record of resynchronised tracks
-for 5 minutes (a track quiet for longer that resyncs again calls its recovery
-handler again), and RTC round-trip measurements share one counter for all peers
+handed-over sends for 60 minutes, the browser's record of resynchronized tracks
+for 5 minutes (a track that has not resynchronized for 5 minutes calls its
+recovery handler again when it next resyncs), and RTC round-trip measurements
+share one counter for all peers
 (D181). **Limit:** a long session plateaus rather than empties: an idle ordering
 track keeps two inbound rows for an hour, and each sending origin one outbound
 version row.

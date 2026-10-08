@@ -533,7 +533,7 @@ are the sync points of a paired `agent.reload`.
 - `recovery-owner-invoked`: the browser handed a typed channel's recovery owner
   the cursor of an ordering track it can no longer order, once per track
   (ordering key, sender, epoch) while it goes on resynchronizing (a track forgotten
-  after 5 minutes without one is invoked again), after the sender
+  after 5 minutes without a resynchronization is invoked again), after the sender
   was NACKed `resync-required`. The event is the cursor with its `kind` first:
   `orderingKey`, `senderId`, `epoch`, `lastContiguousSeq`, `expectedSeq`,
   `observedSeq` and `carrier`, in that order. It has no `storeId`. It is stated
