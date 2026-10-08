@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import type { RtcBaselineCaptureRequestDto } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
 import { createRtcBaselineRuntimeObservationInput } from '../../../baseline/runtime/create-rtc-baseline-runtime-observation-input.ts';
 import type { DenoRtcBaselineAdapters } from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
 import { createRtcBaselineDenoRuntime } from '../../../baseline/runtime/rtc-baseline-deno-runtime.ts';
@@ -18,7 +19,7 @@ function readWorkerFlag(arguments_: readonly string[], name: string) {
     return value.slice(name.length + 3);
 }
 
-function createTemporaryFilePort(rootPath: string): DenoRtcBaselineAdapters['filePort'] {
+function createRtcBaselineTemporaryFilePortFixture(rootPath: string): DenoRtcBaselineAdapters['filePort'] {
     const toTemporaryPath = (path: string) => join(rootPath, path);
     return {
         inspectPath: async (path) => {
@@ -44,11 +45,11 @@ function createTemporaryFilePort(rootPath: string): DenoRtcBaselineAdapters['fil
                 name: entry.name,
                 kind: entry.isDirectory() ? ('directory' as const) : ('file' as const)
             })),
-        ...createTemporaryWriterLock(rootPath)
+        ...createRtcBaselineTemporaryWriterLockFixture(rootPath)
     };
 }
 
-function createTemporaryWriterLock(rootPath: string): Pick<DenoRtcBaselineAdapters['filePort'], 'tryAcquireExclusiveFileLock'> {
+function createRtcBaselineTemporaryWriterLockFixture(rootPath: string): Pick<DenoRtcBaselineAdapters['filePort'], 'tryAcquireExclusiveFileLock'> {
     let writerLockHeld = false;
     const toTemporaryPath = (path: string) => join(rootPath, path);
     return {
@@ -91,7 +92,7 @@ function createTemporaryWriterLock(rootPath: string): Pick<DenoRtcBaselineAdapte
     };
 }
 
-function createNeutralSyntheticWorker(): DenoRtcBaselineAdapters['freshWorker'] {
+function createNeutralRtcBaselineSyntheticWorkerFixture(): DenoRtcBaselineAdapters['freshWorker'] {
     return {
         run: async ({ arguments: workerArguments }) => {
             const workloadId = readWorkerFlag(workerArguments, 'workload');
@@ -137,10 +138,10 @@ interface RtcBaselineRuntimeTestAdapters {
     rootPath: string;
 }
 
-async function createRuntimeAdapters(): Promise<RtcBaselineRuntimeTestAdapters> {
+async function createRtcBaselineRuntimeAdaptersFixture(): Promise<RtcBaselineRuntimeTestAdapters> {
     const rootPath = await mkdtemp(join(tmpdir(), 'rtc-runtime-observation-'));
     const adapters: DenoRtcBaselineAdapters = {
-        filePort: createTemporaryFilePort(rootPath),
+        filePort: createRtcBaselineTemporaryFilePortFixture(rootPath),
         writerLockRuntime: {
             createOwnerToken: () => '00000000-0000-4000-8000-000000000001',
             readOwnerIdentity: () => ({ hostname: 'runner-a', processId: 123 }),
@@ -154,7 +155,7 @@ async function createRuntimeAdapters(): Promise<RtcBaselineRuntimeTestAdapters> 
             readStatus: async () => ({ ok: true, value: '' })
         },
         process: { run: async () => ({ ok: true, value: { exitStatus: 0, stdout: '', stderr: '' } }) },
-        freshWorker: createNeutralSyntheticWorker(),
+        freshWorker: createNeutralRtcBaselineSyntheticWorkerFixture(),
         environment: { readAllowlisted: () => ({}) },
         runtimeHost: {
             read: async () => ({
@@ -183,7 +184,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
             ['native', 'native', 'environment']
         ] as const
     )('persists admitted B06 capture %s with truthful provenance before capture', async (environmentMode, mode, source) => {
-        const { adapters, rootPath } = await createRuntimeAdapters();
+        const { adapters, rootPath } = await createRtcBaselineRuntimeAdaptersFixture();
         const environment: Record<string, string> = {
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
@@ -238,7 +239,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
     });
 
     it.each(['native', 'invalid-ambient'])('gives explicit CLI Off precedence over actual environment %s', async (ambient) => {
-        const { adapters, rootPath } = await createRuntimeAdapters();
+        const { adapters, rootPath } = await createRtcBaselineRuntimeAdaptersFixture();
         adapters.environment.readAllowlisted = () => ({
             RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: ambient,
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
@@ -247,8 +248,10 @@ describe('RTC baseline Deno runtime observation binding', () => {
         });
         try {
             const runtime = createRtcBaselineDenoRuntime(adapters, { mode: 'off', source: 'cli' });
-            expect(await runtime.initializeBaseline(liveRequest())).toMatchObject({ ok: true });
-            const stored = JSON.parse(await readFile(join(rootPath, 'tmp/perf/rtc-baseline', liveRequest().baselineId, 'environment.json'), 'utf8'));
+            expect(await runtime.initializeBaseline(createLiveRtcBaselineCaptureRequestFixture())).toMatchObject({ ok: true });
+            const stored = JSON.parse(
+                await readFile(join(rootPath, 'tmp/perf/rtc-baseline', createLiveRtcBaselineCaptureRequestFixture().baselineId, 'environment.json'), 'utf8')
+            );
             expect(stored.observation.resolvedConfiguration.filter((entry: { field: string; }) => entry.field === 'rtcCaptureMode'))
                 .toEqual(['default', 'all-scenarios', 'retention-100'].map((caseId) => ({
                     caseKey: { workloadId: 'RTC-B06', caseId, inputKey: `e3-memory-${caseId}` },
@@ -265,7 +268,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
     });
 
     it('keeps per-run initialization admission after caller mutation while refusing changed observed environment at acceptance', async () => {
-        const { adapters, rootPath } = await createRuntimeAdapters();
+        const { adapters, rootPath } = await createRtcBaselineRuntimeAdaptersFixture();
         let ambient = 'off';
         adapters.environment.readAllowlisted = () => ({
             RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: ambient,
@@ -276,11 +279,11 @@ describe('RTC baseline Deno runtime observation binding', () => {
         const admission = { mode: 'off' as 'off' | 'native', source: 'environment' as const };
         const runtime = createRtcBaselineDenoRuntime(adapters, admission);
         try {
-            expect(await runtime.initializeBaseline(liveRequest())).toMatchObject({ ok: true });
+            expect(await runtime.initializeBaseline(createLiveRtcBaselineCaptureRequestFixture())).toMatchObject({ ok: true });
             ambient = 'native';
             admission.mode = 'native';
             const nextId = '20260817-956a057c9ab5-e3-memory';
-            expect(await runtime.initializeBaseline({ ...liveRequest(), baselineId: nextId })).toMatchObject({ ok: true });
+            expect(await runtime.initializeBaseline({ ...createLiveRtcBaselineCaptureRequestFixture(), baselineId: nextId })).toMatchObject({ ok: true });
             const stored = JSON.parse(await readFile(join(rootPath, 'tmp/perf/rtc-baseline', nextId, 'environment.json'), 'utf8'));
             expect(
                 stored.observation.resolvedConfiguration.filter((entry: { field: string; }) => entry.field === 'rtcCaptureMode').map((
@@ -290,7 +293,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
                 .toEqual(['off', 'off', 'off']);
             expect(stored.observation.allowlistedEnvironment.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE).toBe('native');
             const accepted = await runtime.recordExternalAttempt({
-                baselineId: liveRequest().baselineId,
+                baselineId: createLiveRtcBaselineCaptureRequestFixture().baselineId,
                 locator: { workloadId: 'RTC-B06', caseId: 'default', inputKey: 'e3-memory-default', intendedPhase: 'warmup', outerOrdinal: 1 },
                 producerExitStatus: 0,
                 rawResultRelativePath: 'artifacts/staging/default.json'
@@ -309,7 +312,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
     });
 
     it('rejects a selected invalid capture environment before observing host or creating evidence', async () => {
-        const { adapters, rootPath } = await createRuntimeAdapters();
+        const { adapters, rootPath } = await createRtcBaselineRuntimeAdaptersFixture();
         let effects = 0;
         adapters.environment.readAllowlisted = () => ({
             RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'Native',
@@ -322,7 +325,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
             throw new Error('Host observation must not run');
         };
         try {
-            const result = await createRtcBaselineDenoRuntime(adapters).initializeBaseline(liveRequest());
+            const result = await createRtcBaselineDenoRuntime(adapters).initializeBaseline(createLiveRtcBaselineCaptureRequestFixture());
             expect(result).toMatchObject({ ok: false, issues: [expect.objectContaining({ code: 'invalid-rtc-capture-mode' })] });
             expect(effects).toBe(0);
             expect(await readdir(rootPath)).toEqual([]);
@@ -333,14 +336,14 @@ describe('RTC baseline Deno runtime observation binding', () => {
     });
 
     it('retains initialized environment admission while reporting changed actual environment', async () => {
-        const { adapters, rootPath } = await createRuntimeAdapters();
+        const { adapters, rootPath } = await createRtcBaselineRuntimeAdaptersFixture();
         try {
             adapters.environment.readAllowlisted = () => ({
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
             });
-            const initialized = await createRtcBaselineDenoObservation(adapters)(liveRequest());
+            const initialized = await createRtcBaselineDenoObservation(adapters)(createLiveRtcBaselineCaptureRequestFixture());
             if (!initialized.ok) {
                 throw new Error('Observation setup failed');
             }
@@ -353,7 +356,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
                     source: 'environment' as const
                 }))
             };
-            const current = createRtcBaselineRuntimeObservationInput(liveRequest(), {
+            const current = createRtcBaselineRuntimeObservationInput(createLiveRtcBaselineCaptureRequestFixture(), {
                 RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'native',
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
@@ -373,7 +376,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
     });
 
     it('hashes the actual B06 full-stack producer configuration and exercised capture owners', async () => {
-        const { adapters, rootPath } = await createRuntimeAdapters();
+        const { adapters, rootPath } = await createRtcBaselineRuntimeAdaptersFixture();
         const hashedPaths: string[] = [];
         adapters.sourceConfigHashing.read = async (files) => {
             hashedPaths.push(...files.map((file) => file.path));
@@ -385,13 +388,13 @@ describe('RTC baseline Deno runtime observation binding', () => {
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
             });
-            await createRtcBaselineDenoObservation(adapters)(liveRequest());
+            await createRtcBaselineDenoObservation(adapters)(createLiveRtcBaselineCaptureRequestFixture());
             expect(hashedPaths).toEqual(expect.arrayContaining([
                 'apps/rallar-black-box/playwright.full-stack.config.ts',
                 'tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts',
                 'tests/playwright/rallar-black-box/live-rtc-delivery-operations.ts',
                 'tests/playwright/rallar-black-box/live-rtc-agent-environment.ts',
-                'tests/playwright/rallar-black-box/live-rtc-native-acquisition.ts',
+                'tests/playwright/rallar-black-box/to-live-rtc-native-acquisition.ts',
                 'packages/shared/webrtc/rtc-capture-configuration.ts'
             ]));
             expect(hashedPaths).not.toContain('apps/rallar-black-box/playwright.config.ts');
@@ -402,7 +405,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
     });
 
     it('carries the initialized runtime observation into B03 synthetic metric finalization', async () => {
-        const { adapters, rootPath } = await createRuntimeAdapters();
+        const { adapters, rootPath } = await createRtcBaselineRuntimeAdaptersFixture();
         const runtime = createRtcBaselineDenoRuntime(adapters);
         try {
             expect(
@@ -471,7 +474,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
     });
 });
 
-function liveRequest() {
+function createLiveRtcBaselineCaptureRequestFixture(): RtcBaselineCaptureRequestDto {
     return {
         schema: 'rallar.rtc-baseline.capture-request.v1' as const,
         baselineId: '20260816-956a057c9ab5-e3-memory',

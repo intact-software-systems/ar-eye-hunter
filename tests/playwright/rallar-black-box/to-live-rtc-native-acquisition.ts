@@ -6,6 +6,7 @@ import {
     toRtcNativeObservationProjection,
     type RtcNativeProjection
 } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts';
+import { decodeRallarBlackBoxTestResult } from '../../../packages/shared-test/rallar-bb-test/composite-results.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { jsonRecord, type LiveRtcJsonRecord } from './live-rtc-evidence-json.ts';
 import {
@@ -138,12 +139,55 @@ interface LiveRtcRecorderConnectionRow {
 
 function matchesAdmittedConnect(input: LiveRtcRecorderConnectionRow): boolean {
     const { row, connection } = input;
+    if (connection.recipeAttribution !== undefined) {
+        return matchesAdmittedRecipeConnect(input);
+    }
     const actual = jsonRecord(row.actual);
     return row.kind === 'step-result' && row.status === 'SUCCESS' && row.action === 'rtc.connect' &&
         row.agentId === connection.agentId && row.commandId === connection.commandId &&
         row.transport === connection.transport && row.connection === connection.connection &&
         actual?.sessionId === connection.sessionId &&
         isDeepStrictEqual(actual.rtcCapture, { status: 'observed', value: connection.receipt });
+}
+
+function matchesAdmittedRecipeConnect(input: LiveRtcRecorderConnectionRow): boolean {
+    const { row, connection } = input;
+    const attribution = connection.recipeAttribution;
+    if (
+        !attribution || typeof attribution !== 'object' ||
+        ![attribution.rootCommandId, attribution.recipeId, attribution.invocationId, attribution.recipeBodyId]
+            .every((identity) => typeof identity === 'string' && identity.length > 0) ||
+        !Number.isSafeInteger(attribution.childIndex) || attribution.childIndex < 0
+    ) {
+        return false;
+    }
+    const actual = jsonRecord(row.actual);
+    const invocation = jsonRecord(actual?.invocation);
+    const evidence = jsonRecord(actual?.resultEvidence);
+    if (
+        row.kind !== 'step-result' || row.status !== 'SUCCESS' || row.action !== 'recipe.run' ||
+        row.agentId !== connection.agentId || row.commandId !== attribution.rootCommandId ||
+        row.transport !== 'control' || row.connection !== connection.agentId ||
+        actual?.recipeId !== attribution.recipeId || invocation?.invocationId !== attribution.invocationId ||
+        invocation.recipeBodyId !== attribution.recipeBodyId ||
+        (actual.resultEvidence !== undefined &&
+            (evidence?.status !== 'finite' || typeof evidence.payloadsOmitted !== 'boolean')) ||
+        !Array.isArray(actual.results)
+    ) {
+        return false;
+    }
+    const children = actual.results;
+    if (children.filter((child) => jsonRecord(child)?.commandId === connection.commandId).length !== 1) {
+        return false;
+    }
+    const child = jsonRecord(children[attribution.childIndex]);
+    const decoded = decodeRallarBlackBoxTestResult(child).right;
+    const value = jsonRecord(child?.value);
+    return decoded?.kind === 'rtc.connect' && decoded.status === 'ok' && decoded.ok === true &&
+        decoded.replayed !== true && decoded.commandId === connection.commandId &&
+        value?.transport === connection.transport && value.connection === connection.connection &&
+        value.sessionId === connection.sessionId &&
+        isDeepStrictEqual(value.rtcCapture, { status: 'observed', value: connection.receipt });
 }
 
 function toAcquiredNativeProjection(

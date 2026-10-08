@@ -3,9 +3,12 @@ import type {
     RtcBaselineConfigurationFieldDescriptorDto,
     RtcBaselineWorkloadId
 } from '../contracts/rtc-baseline-contracts.ts';
-type Scalar = boolean | number | string;
-type ScalarKind = RtcBaselineConfigurationFieldDescriptorDto['scalarKind'];
-type Field = readonly [string, string, ScalarKind, Scalar];
+type RtcBaselineSyntheticField = readonly [
+    field: string,
+    flag: string,
+    scalarKind: RtcBaselineConfigurationFieldDescriptorDto['scalarKind'],
+    defaultValue: RtcBaselineConfigurationFieldDescriptorDto['defaultValue']
+];
 interface RtcBaselineWorkloadCase {
     caseId: string;
     inputKey: string;
@@ -28,13 +31,15 @@ interface RtcBaselineDescriptorInput {
     caseKey: RtcBaselineCaseKeyDto;
     field: string;
     flag: string;
-    scalarKind: ScalarKind;
-    defaultValue: Scalar;
+    scalarKind: RtcBaselineConfigurationFieldDescriptorDto['scalarKind'];
+    defaultValue: RtcBaselineConfigurationFieldDescriptorDto['defaultValue'];
     environment?: string | null;
     unset?: 'reject' | null;
 }
 
-function descriptor(input: RtcBaselineDescriptorInput): RtcBaselineConfigurationFieldDescriptorDto {
+function toRtcBaselineConfigurationDescriptor(
+    input: RtcBaselineDescriptorInput
+): RtcBaselineConfigurationFieldDescriptorDto {
     const { environment = null, unset = null, ...fields } = input;
     return { ...fields, allowlistedEnvironmentVariable: environment, environmentUnsetBehavior: unset };
 }
@@ -44,11 +49,11 @@ interface RtcBaselineSyntheticCaseInput {
     caseId: string;
     inputKey: string;
     sourcePath: string;
-    fields: readonly Field[];
+    fields: readonly RtcBaselineSyntheticField[];
     attempts?: [number, number];
 }
 
-function syntheticCase(input: RtcBaselineSyntheticCaseInput): RtcBaselineWorkloadCase {
+function toRtcBaselineSyntheticCase(input: RtcBaselineSyntheticCaseInput): RtcBaselineWorkloadCase {
     const { workloadId, caseId, inputKey, sourcePath, fields, attempts } = input;
     const caseKey = { workloadId, caseId, inputKey };
     return {
@@ -58,7 +63,7 @@ function syntheticCase(input: RtcBaselineSyntheticCaseInput): RtcBaselineWorkloa
         sourcePaths: [sourcePath],
         configPaths: ['packages/shared-rtc-bench/deno.json'],
         configuration: fields.map(([field, flag, kind, value]) =>
-            descriptor({ caseKey, field, flag, scalarKind: kind, defaultValue: value })
+            toRtcBaselineConfigurationDescriptor({ caseKey, field, flag, scalarKind: kind, defaultValue: value })
         ),
         ...(attempts === undefined
             ? {}
@@ -67,7 +72,7 @@ function syntheticCase(input: RtcBaselineSyntheticCaseInput): RtcBaselineWorkloa
 }
 
 const b01Cases: RtcBaselineWorkloadCase[] = [
-    syntheticCase({
+    toRtcBaselineSyntheticCase({
         workloadId: 'RTC-B01',
         caseId: 'peer-connection-diagnostics-burst',
         inputKey: 'pairs-500',
@@ -79,7 +84,7 @@ const b01Cases: RtcBaselineWorkloadCase[] = [
             ['innerRuns', '--rtc-inner-runs', 'nonnegative-integer', 5]
         ]
     }),
-    syntheticCase({
+    toRtcBaselineSyntheticCase({
         workloadId: 'RTC-B01',
         caseId: 'ice-candidate-queue',
         inputKey: 'candidates-25000',
@@ -89,7 +94,7 @@ const b01Cases: RtcBaselineWorkloadCase[] = [
             ['innerRuns', '--rtc-inner-runs', 'nonnegative-integer', 5]
         ]
     }),
-    syntheticCase({
+    toRtcBaselineSyntheticCase({
         workloadId: 'RTC-B01',
         caseId: 'peer-listener-cleanup',
         inputKey: 'peers-10000',
@@ -102,7 +107,7 @@ const b01Cases: RtcBaselineWorkloadCase[] = [
 ];
 
 const replaceCases = [32, 1000, 5000].map((depth) =>
-    syntheticCase({
+    toRtcBaselineSyntheticCase({
         workloadId: 'RTC-B02',
         caseId: 'data-channel-replace-key',
         inputKey: `depth-${depth}`,
@@ -115,7 +120,7 @@ const replaceCases = [32, 1000, 5000].map((depth) =>
     })
 );
 const drainCases = [32, 1000, 5000].map((depth) =>
-    syntheticCase({
+    toRtcBaselineSyntheticCase({
         workloadId: 'RTC-B02',
         caseId: 'data-channel-drain',
         inputKey: `depth-${depth}`,
@@ -133,7 +138,7 @@ const drainCases = [32, 1000, 5000].map((depth) =>
 const b02Cases = [
     ...replaceCases,
     ...drainCases,
-    syntheticCase({
+    toRtcBaselineSyntheticCase({
         workloadId: 'RTC-B02',
         caseId: 'data-channel-close-retention',
         inputKey: 'queue-32',
@@ -143,7 +148,7 @@ const b02Cases = [
             ['innerRuns', '--rtc-inner-runs', 'nonnegative-integer', 5]
         ]
     }),
-    syntheticCase({
+    toRtcBaselineSyntheticCase({
         workloadId: 'RTC-B02',
         caseId: 'data-channel-error-reference',
         inputKey: 'fixed',
@@ -152,13 +157,13 @@ const b02Cases = [
     })
 ];
 
-function sessionCases(
+function toRtcBaselineSessionCases(
     caseId: string,
     sourcePath: string,
     extras: Array<[string, string, 'nonnegative-integer', number]> = []
-) {
+): RtcBaselineWorkloadCase[] {
     return [30, 100, 300].map((sessions) =>
-        syntheticCase({
+        toRtcBaselineSyntheticCase({
             workloadId: 'RTC-B03',
             caseId,
             inputKey: `sessions-${sessions}`,
@@ -174,7 +179,7 @@ function sessionCases(
 
 const repositoryCases = [5, 30].flatMap((roomSessions) =>
     [1000, 10000, 100000].map((globalMeasurements) =>
-        syntheticCase({
+        toRtcBaselineSyntheticCase({
             workloadId: 'RTC-B03',
             caseId: 'rtt-repository-filter',
             inputKey: `room-${roomSessions}-global-${globalMeasurements}`,
@@ -193,32 +198,32 @@ const repositoryCases = [5, 30].flatMap((roomSessions) =>
     )
 );
 const b03Cases = [
-    ...sessionCases(
+    ...toRtcBaselineSessionCases(
         'topology-star',
         'packages/shared-rtc-bench/workloads/topology/rtc-topology-star-bench.ts'
     ),
-    ...sessionCases(
+    ...toRtcBaselineSessionCases(
         'topology-tree',
         'packages/shared-rtc-bench/workloads/topology/rtc-topology-tree-no-rtt-bench.ts',
         [['degreeLimit', '--rtc-degree-limit', 'nonnegative-integer', 5]]
     ),
-    ...sessionCases(
+    ...toRtcBaselineSessionCases(
         'topology-mesh',
         'packages/shared-rtc-bench/workloads/topology/rtc-topology-mesh-no-rtt-bench.ts',
         [['meshParamK', '--rtc-mesh-param-k', 'nonnegative-integer', 2]]
     ),
-    ...sessionCases(
+    ...toRtcBaselineSessionCases(
         'room-graph-rtt-sparse',
         'packages/shared-rtc-bench/workloads/topology/rtc-room-graph-rtt-bench.ts',
         [['sparseDegree', '--rtc-sparse-degree', 'nonnegative-integer', 4]]
     ),
-    ...sessionCases(
+    ...toRtcBaselineSessionCases(
         'room-graph-rtt-complete',
         'packages/shared-rtc-bench/workloads/topology/rtc-room-graph-rtt-bench.ts'
     ),
     ...repositoryCases,
     ...(['retain', 'cleanup'] as const).map((mode) =>
-        syntheticCase({
+        toRtcBaselineSyntheticCase({
             workloadId: 'RTC-B03',
             caseId: 'topology-inactive-churn',
             inputKey: `mode-${mode}`,
@@ -236,7 +241,7 @@ const b03Cases = [
 
 const multicastCases = [10, 100, 1000].flatMap((peers) =>
     [4096, 65536].map((payloadBytes) =>
-        syntheticCase({
+        toRtcBaselineSyntheticCase({
             workloadId: 'RTC-B04',
             caseId: 'multicast-serialization',
             inputKey: `peers-${peers}-payload-${payloadBytes}`,
@@ -288,7 +293,7 @@ const fixedB04 = [
 const b04Cases = [
     ...multicastCases,
     ...fixedB04.map(([caseId, sourcePath, fields]) =>
-        syntheticCase({
+        toRtcBaselineSyntheticCase({
             workloadId: 'RTC-B04',
             caseId,
             inputKey: 'fixed',
@@ -319,7 +324,7 @@ const b05Cases: RtcBaselineWorkloadCase[] = [
         ],
         configPaths: ['apps/rallar-black-box/playwright.config.ts'],
         configuration: [
-            descriptor({
+            toRtcBaselineConfigurationDescriptor({
                 caseKey: b05Key,
                 field: 'iterations',
                 flag: '--rtc-iterations',
@@ -330,7 +335,7 @@ const b05Cases: RtcBaselineWorkloadCase[] = [
     }
 ];
 
-function fullStackRuntimeScript(
+function toRtcBaselineFullStackRuntimeScript(
     database: 'memory' | 'postgres',
     allScenarios: boolean
 ): string {
@@ -360,7 +365,7 @@ const fullStackSourcePaths = [
     'tests/playwright/rallar-black-box/live-rtc-browser-agents.ts',
     'tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts',
     'tests/playwright/rallar-black-box/live-rtc-evidence-json.ts',
-    'tests/playwright/rallar-black-box/live-rtc-native-acquisition.ts',
+    'tests/playwright/rallar-black-box/to-live-rtc-native-acquisition.ts',
     'packages/shared/webrtc/rtc-capture-configuration.ts',
     'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
     'packages/shared-web/browser/connection/to-rtc-capture-readout.ts',
@@ -370,7 +375,7 @@ const fullStackSourcePaths = [
     'apps/rallar-black-box-control-server/src/control-artifacts.ts'
 ];
 
-function fullStackCase(input: RtcBaselineFullStackCaseInput): RtcBaselineWorkloadCase {
+function toRtcBaselineFullStackCase(input: RtcBaselineFullStackCaseInput): RtcBaselineWorkloadCase {
     const { caseId, inputKey, database, allScenarios, retention } = input;
     const postgres = database === 'postgres';
     return {
@@ -380,24 +385,26 @@ function fullStackCase(input: RtcBaselineFullStackCaseInput): RtcBaselineWorkloa
             executable: 'npm',
             prefixArguments: [
                 'run',
-                fullStackRuntimeScript(database, allScenarios)
+                toRtcBaselineFullStackRuntimeScript(database, allScenarios)
             ]
         },
         sourcePaths: fullStackSourcePaths,
         configPaths: ['apps/rallar-black-box/playwright.full-stack.config.ts'],
         warmupOuterAttempts: 1,
         retainedOuterAttempts: caseId === 'default' ? 5 : 3,
-        configuration: fullStackConfiguration(input),
+        configuration: toRtcBaselineFullStackConfiguration(input),
         ...(retention ? { cohortId: `rtc-b06-${postgres ? 'e4-pg' : 'e3-memory'}-retention` } : {})
     };
 }
 
-function fullStackConfiguration(input: RtcBaselineFullStackCaseInput): RtcBaselineConfigurationFieldDescriptorDto[] {
+function toRtcBaselineFullStackConfiguration(
+    input: RtcBaselineFullStackCaseInput
+): RtcBaselineConfigurationFieldDescriptorDto[] {
     const { caseId, inputKey, database, allScenarios, retention } = input;
     const caseKey = { workloadId: 'RTC-B06' as const, caseId, inputKey };
     const postgres = database === 'postgres';
     return [
-        descriptor({
+        toRtcBaselineConfigurationDescriptor({
             caseKey,
             field: 'rtcCaptureMode',
             flag: '--rtc-capture-mode',
@@ -405,7 +412,7 @@ function fullStackConfiguration(input: RtcBaselineFullStackCaseInput): RtcBaseli
             defaultValue: 'signaling',
             environment: 'RALLAR_BLACK_BOX_RTC_CAPTURE_MODE'
         }),
-        descriptor({
+        toRtcBaselineConfigurationDescriptor({
             caseKey,
             field: 'allScenarios',
             flag: '--rtc-all-scenarios',
@@ -414,7 +421,7 @@ function fullStackConfiguration(input: RtcBaselineFullStackCaseInput): RtcBaseli
             environment: allScenarios ? 'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS' : null,
             unset: allScenarios ? 'reject' : null
         }),
-        descriptor({
+        toRtcBaselineConfigurationDescriptor({
             caseKey,
             field: 'retentionSoak',
             flag: '--rtc-retention-soak',
@@ -423,7 +430,7 @@ function fullStackConfiguration(input: RtcBaselineFullStackCaseInput): RtcBaseli
             environment: retention ? 'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK' : null,
             unset: retention ? 'reject' : null
         }),
-        descriptor({
+        toRtcBaselineConfigurationDescriptor({
             caseKey,
             field: 'retentionCycles',
             flag: '--rtc-retention-cycles',
@@ -432,14 +439,14 @@ function fullStackConfiguration(input: RtcBaselineFullStackCaseInput): RtcBaseli
             environment: retention ? 'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES' : null,
             unset: retention ? 'reject' : null
         }),
-        descriptor({
+        toRtcBaselineConfigurationDescriptor({
             caseKey,
             field: 'databaseProvider',
             flag: '--rtc-database-provider',
             scalarKind: 'string',
             defaultValue: database
         }),
-        descriptor({
+        toRtcBaselineConfigurationDescriptor({
             caseKey,
             field: 'iceMode',
             flag: '--rtc-ice-mode',
@@ -452,42 +459,42 @@ function fullStackConfiguration(input: RtcBaselineFullStackCaseInput): RtcBaseli
 }
 
 const b06Cases = [
-    fullStackCase({
+    toRtcBaselineFullStackCase({
         caseId: 'default',
         inputKey: 'e3-memory-default',
         database: 'memory',
         allScenarios: false,
         retention: false
     }),
-    fullStackCase({
+    toRtcBaselineFullStackCase({
         caseId: 'all-scenarios',
         inputKey: 'e3-memory-all-scenarios',
         database: 'memory',
         allScenarios: true,
         retention: false
     }),
-    fullStackCase({
+    toRtcBaselineFullStackCase({
         caseId: 'retention-100',
         inputKey: 'e3-memory-retention-100',
         database: 'memory',
         allScenarios: false,
         retention: true
     }),
-    fullStackCase({
+    toRtcBaselineFullStackCase({
         caseId: 'default',
         inputKey: 'e4-pg-default',
         database: 'postgres',
         allScenarios: false,
         retention: false
     }),
-    fullStackCase({
+    toRtcBaselineFullStackCase({
         caseId: 'all-scenarios',
         inputKey: 'e4-pg-all-scenarios',
         database: 'postgres',
         allScenarios: true,
         retention: false
     }),
-    fullStackCase({
+    toRtcBaselineFullStackCase({
         caseId: 'retention-100',
         inputKey: 'e4-pg-retention-100',
         database: 'postgres',

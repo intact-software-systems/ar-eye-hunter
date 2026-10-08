@@ -38,7 +38,6 @@ import {
     stringValue,
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
-import { toLiveRtcNativeAcquisition } from './live-rtc-native-acquisition.ts';
 import type {
     LiveRtcAttemptFailureDiagnostic,
     LiveRtcDiagnosticFailure,
@@ -58,6 +57,7 @@ import type {
 } from './live-rtc-performance-evidence.ts';
 import { LIVE_RTC_LIFECYCLE_LIMITS } from './live-rtc-recorder-rows.ts';
 import { summarizeLiveRtcNackWireObservation } from './live-rtc-wire-observation.ts';
+import { toLiveRtcNativeAcquisition } from './to-live-rtc-native-acquisition.ts';
 
 interface FirstMessageFailureCase {
     readonly senderAgentId: string;
@@ -85,6 +85,14 @@ const HEALTH_CAPTURE_FAILURE: LiveRtcDiagnosticFailure = {
 };
 
 export namespace LiveRtcControlClient {
+    export interface RecipeAttribution {
+        readonly rootCommandId: string;
+        readonly recipeId: string;
+        readonly invocationId: string;
+        readonly recipeBodyId: string;
+        readonly childIndex: number;
+    }
+
     export interface CapturedConnection {
         readonly runId: string;
         readonly agentId: string;
@@ -94,6 +102,8 @@ export namespace LiveRtcControlClient {
         readonly sessionId: string;
         readonly requestedConfiguration: RtcSignalingDiagnostics.CaptureConfiguration;
         readonly receipt: RtcSignalingDiagnostics.CaptureReceipt;
+        /** Absence identifies the independently supported standalone Connect path. */
+        readonly recipeAttribution?: RecipeAttribution;
     }
 
     export interface NativeAcquisitionProof {

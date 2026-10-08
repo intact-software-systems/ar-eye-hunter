@@ -94,27 +94,56 @@ Unit retains only the known selector assertion: 14342 cases pass, one fails and
 12 skip. RTC observation integrity and publication remain skipped. No all-green
 source or E3 claim follows from these results.
 
-The actual default headless worker witness is under semantic test development.
-Three distinct attempts remain retained: missing database configuration; restore
-Configure before authentication; then an isolated-database run with genuine
-authentication whose extra full replacement Configure removes launch HOST before
-SDK construction. The last Connect preserves its issued session but correctly
-reports Signaling/product-default after that replacement. This is an introduced
-test-composition failure, not an established production capture defect. The approved
+The actual default headless worker witness now has local correctness acceptance.
+Six distinct attempts are retained. The first three expose missing database
+configuration, restore Configure before authentication, and an extra full
+replacement Configure removing launch HOST before SDK construction. The approved
 Configure replacement semantics remain authoritative. The test-only correction
-removes the redundant replacement and reuses one room creation followed by both
-canonical member additions; capture stays supplied only through the actual worker
-environment/query/bootstrap. Native receipt, matching current initialized scope,
-exact scoped RTC delivery, independent Off facts and stable issued sessions still
-require actual acceptance. No production repair is selected from these failures.
+removes the redundant replacement and uses one room creation followed by both
+canonical member additions; capture remains supplied through actual worker
+configuration, query and bootstrap.
 
-The next two useful slices are to close this actual HOST witness, then complete
-the approved operator RUN/Actions forwarding and adapter application. The parent
+Attempt04 then proves genuine stable issued identities and successful
+Native/HOST/applied Connect receipts with partial coverage. The old standalone
+reader cannot match the acknowledged recipe child, and the unbound recorder route
+serves the 200-event dashboard tail, which omits initialization. Those observations
+do not establish a capture-producer defect. A bounded attributed-recipe reader
+candidate passes 200 semantic and 19 baseline consumer tests, typing and discovery
+of all three worker cases; those checks do not accept its real worker behavior.
+
+Attempt05 binds the existing append recorder to a fresh owned directory and uses
+a fresh owned database. Its served route exactly equals the physical 642547-byte,
+378-row append file. Both canonical Connect children and their exact current
+initialized scopes are present. The first Native case still fails before payload;
+Off and malformed HOST do not run after the first failure. Root and independent
+SPEC/QUALITY review identify the exact defect: the new reader incorrectly requires
+resultEvidence metadata added by snapshot compaction. The append recorder correctly
+retains complete original recipe results without that metadata. The same matcher
+must accept complete raw results and validate any provided finite compaction
+metadata; identity, immediate-child, current-lifecycle, privacy and bounds remain
+mandatory. Same-author semantic RED precedes correction; prior candidate and
+actual-run packets remain immutable. Worker exit and service/database cleanup are
+verified. No production capture or retry correction is selected.
+
+Verified raw-shape RED reproduces five intended admission/lifecycle failures while
+200 still-valid controls pass. The existing optional-metadata guard is corrected;
+all 214 semantic cases and affected typing/formatting pass with unchanged RED tests.
+The same reviewer approves SPEC/QUALITY of the complete corrected source. Actual
+append-bound attempt06 then passes all three cases in 19.8 seconds, zero retries:
+Native with two exact current initialized scopes and scoped RTC delivery, Off with
+disabled/not-applicable receipts and scoped delivery, and invalid HOST refused before
+agent acquisition. Recorded current active scopes include open native channel
+snapshots. Both normal workers stop with exit 0, all service ports close and the
+owned database is removed. Native coverage remains partial; this is local default
+worker correctness, not homogeneous performance or Actions/operator acceptance.
+
+The next two useful slices are the approved Actions HOST writer/render forwarding,
+then canonical operator RUN forwarding and actual adapter application. The parent
 evidence selector correction separately awaits its bounded design answer and
 semantic TDD; its deadlines and independent outcome assertions stay unchanged.
 
-After source correctness and integration, complete HOST/operator RUN forwarding
-and actual application through existing workers and Actions. The former exact
+After source correctness and integration, complete Actions HOST/operator RUN
+forwarding and actual application through existing deployed workers. The former exact
 integration proposal is stale; no default-branch operation is selected. Governed
 E3 still has zero accepted cohorts. Its unchanged protocol is three warmups plus
 11 retained primary attempts, 100 retention cycles and zero retries; the conditional
@@ -7380,6 +7409,75 @@ worker/Actions TDD must witness their actual HOST/RUN forwarding and SDK applica
 including command/receipt ownership; the earlier fragment does not supply that proof.
 Worker registration alone, a selected input, an applied native receipt or absent log rows
 cannot prove native channel attachment, delivery or Off allocation behavior.
+
+**Actual default worker and reader — current local status:** The maintained three-case
+worker witness uses the actual default CLI/headless entry, genuine issued sessions,
+canonical membership setup and recipe execution with RUN/STEP capture omitted.
+Native, Off and malformed HOST remain separate required outcomes. The introduced
+restore-Configure ordering and redundant full replacement are corrected only in
+the test; the approved production replacement contract is preserved.
+
+Actual attempt04 retains Native/HOST/applied/partial receipts and stable issued
+identities, but fails the old standalone reader before payload. Its unbound
+JSONL route equals the bounded dashboard tail; missing initialization there is
+retention evidence, not a producer failure. The attributed-recipe support candidate
+preserves the original 112 controls and adds 84 recipe plus 4 root-carrier controls.
+Verified RED/GREEN, complete-owner review and conservation packets bind its 200
+semantic passes, 19 baseline passes, successful affected typing and discovery of three cases.
+Those results are necessary correctness evidence, not actual acceptance.
+
+Actual attempt05 binds the existing RALLAR_BLACK_BOX_STORAGE_DIR and runs against
+an owned fresh current-schema database. The route and physical append file are
+byte-identical at 642,547 bytes across 378 rows, including both exact initialized scopes. The
+first Native case fails in 8.7 seconds with connect-result-unavailable; the other two cases
+are unrun, zero retries, and scoped payload has not been sent. Both acknowledged
+immediate Connect children canonically decode and carry matching issued sessions,
+Native/HOST/applied/partial capture and current scopes. Root's read-only marker-only
+experiment isolates the rejection; it is diagnostic, never actual acceptance.
+Independent SPEC FAIL / QUALITY changes required identifies the same P1.
+
+Current canonical producer facts amend the reader brief: runRecipeCommands emits
+complete recipeId/invocation/results; ControlArtifactRecorder writes the original
+received envelope; the stored-snapshot compactor separately adds resultEvidence.
+Use one exact immediate-child matcher for both current representations. An absent
+compaction marker on complete raw evidence is valid; provided malformed/null/limited
+metadata refuses. Preserve all root/recipe/invocation/body/position/child/session/
+transport/readout and lifecycle checks, unchanged one-GET/byte/row/scan/privacy
+bounds and actual worker budgets. The original author adds the raw-shape semantic
+RED and explicitly corrects the erroneous missing-marker refusal test before GREEN;
+the same reviewer rechecks the corrected freeze. No producer marker, alternate
+reader/store/parser, migration, public API or transport/retry change is selected.
+
+Raw-shape RED has five intended failures, ten correction passes and 199 skipped;
+200 still-valid controls pass separately. Case accounting explicitly removes the
+incorrect missing-marker expectation, adds null-metadata refusal and fourteen raw/
+optional-attribution cases, preserving all original 112 and still-valid 87 prior
+recipe controls. Only the existing optional-metadata guard changes after RED;
+tests remain byte-identical. All 214 cases, affected typing and formatting pass.
+The same reviewer approves SPEC/QUALITY of the complete corrected closure, with no
+findings. Original candidates, REDs and actual attempts04/05 remain immutable.
+
+Actual append-bound attempt06 passes Native, Off and malformed HOST: three cases
+in 19.8 seconds with zero retries and unchanged budgets. Root verifies 44 archived
+and current source bindings, genuine distinct issued/restored clients and sessions,
+exact acknowledged raw recipe children, both current initialized native scopes,
+complete scope/peer/payload equality and cleanup. Native acquisition reproduces
+exactly from the recorded 642522-byte prefix; both current active scopes also have
+open native channel snapshots. The final Native route/append are identical at
+665329 bytes/389 rows; Off is identical at 539240 bytes/322 rows. Off receipts are
+applied/HOST with native disabled/not-applicable and actual RTC delivery; retain
+the separate load-bearing SDK allocation controls rather than treating absent rows
+as an allocation oracle. Invalid HOST exits 1 before opening an agent, run status 404.
+Both normal workers exit 0/stopped; root runner 71012 exits 0, owned DB is absent and
+8080/5176/5179/5180 refuse connections.
+
+This closes the local default-worker HOST correctness witness. Partial Native
+coverage is explicit; no homogeneous performance, deployed-worker/Actions, operator
+RUN or E3 acceptance follows. Root owns final Git-aware checks, reviewed source/plan
+publication and exact remote readback. Actions HOST render/writer and operator RUN
+forwarding/application are the next two concrete slices. The pending structured
+selector design, reviewed main integration and original B01–B06/E3 acceptance remain
+required. No Issues were created or reused.
 
 **Hosted acceptance of the published worker carrier:** Fresh original-attempt
 Branch37714910111, Formation37714909898 and Medium37714909915 succeed. Eight original
