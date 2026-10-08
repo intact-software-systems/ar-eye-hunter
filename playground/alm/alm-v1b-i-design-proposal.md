@@ -119,3 +119,46 @@ server-side WS backpressure; per-hop routing around a backpressured peer.
 Fairness under many tracks and churn (V1b-ii); `replace-latest` and bounded-queue policies; relay fanout reduction
 and alternate routes under congestion; server-side WS backpressure; per-hop routing around one backpressured peer; a
 per-peer backpressure metric.
+
+## 6. As applied (#650, `84472ce`)
+
+- D184 landed with the read narrowed to a new admission's plan of the session's own data (`authority === undefined`):
+  dequeue re-plans, repairs, retransmissions, relay forwards, controls, inbound and carrier-gap plans never read the
+  flag. The RTC overlay plans once without the flag, takes that plan's open-channel hops, and plans again with
+  `backpressured: true` only when every such hop is at or above its watermark. RTC unicast and unaddressed sends are
+  planned on paths that read neither `overloaded` nor `backpressured`; that gap predates this slice and is carried to
+  V1b-ii. `readOutgoingQosPolicy` gains no `backpressured` (normalization never reads it); the WS watermark comparison
+  lives in the WS client service, and the socket client only exposes the scripted fault.
+- D185's "applies to `overloaded` or `backpressured`" holds on RTC only: the WS client reads `backpressured` and never
+  `overloaded`, because the planner runs before the ledger and a WS send at the bound must keep the ledger's `capacity`
+  naming its limit (D179). On RTC the planner's overloaded drop still precedes the ledger as a limit-less `capacity`. The
+  admission hand-over writes no `carrierFallback`: a congested RTC leg is a refused attempt row with `refusalReason:
+  'congested'` before the WS attempt, as `unsupported` hands over. The RTC deferral keys on the channel's synchronous
+  `dropped` result at or above the watermark, so queue-on-overflow lanes keep queueing; WS backpressure at submission
+  holds every message, controls included, for the 50 ms retry. The hand-over's priority is the message's normalized
+  congestion priority, since the dispatch holds no QoS provider.
+- D186's harness block is `stats.rallar.congestion` beside `alm`, not `stats.rallar.alm.congestion`; the diagnostic
+  carries `msgId`. The `drop` is written by the outbound admission keyed on the plan's `congestionDrop` (a ledger
+  `capacity` refusal writes none), the `defer` by the two submissions, the `hand-over` by the browser message dispatch,
+  where the admission hand-over is decided; the fallback controller only watches admitted legs. A handed-over send
+  counts in both `dropped` and `handedOver`. The counters are per connection, reset at `close` and absent while
+  disconnected; the observation sums each page's largest reading, so a page that reconnects inside one cell
+  under-reports its earlier connection.
+- D187's fault port action is `decideBackpressure(carrier, message)`, read at planning and at each submission with one
+  count per read; the lane's holds are `until-cleared` and released by the same fault id with `remaining: 0`, because
+  recipe validation refuses counted faults. The observation gains the required `attemptRefusalReasons` field (refused
+  rows only, in attempt order) so the hands-over cell reads `congested` on its refused row; the deferred cell reads the
+  receipt while held and pins exactly one `sent` attempt row, since a retried attempt overwrites its row. The cells
+  state their reliability (the harness channel purposes default to at-least-once) and run after the two-agent family's
+  other cells. The lane's per-carrier budget moved from nine to fifteen minutes after the fallback carrier measured
+  10.0 to 10.3 minutes in the full scope.
+- D185's `drop-low` drops priority 0 or lower, not priority 0 only. D186's `defer` is written only by the two
+  submissions, so a `defer`-policy planning decision writes nothing, and a submission deferral counts every held
+  message on that page, relay forwards and controls included. D187's cells live in the `congestion` subfolder of the
+  two-agent family (there is no separate lane family), and `backpressure-deferred` runs on `rtc` and `ws` only, since
+  three RTC `not-ready`s hand a fallback send to WS.
+- D188's carries gain the unicast/unaddressed read, the RTC control early-return and repair re-plan (untested this
+  slice), the reconnect-inside-a-cell under-count of the observation fold (a lower bound), the page's retry cadence
+  under backpressure (the lane measured four to five deferrals over a two-second hold, not the forty a 50 ms retry
+  would give), and the observation job's thirty-minute budget against a full-scope family that measures about
+  twenty-five minutes across its three carriers.
