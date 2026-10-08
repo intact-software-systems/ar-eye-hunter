@@ -20,6 +20,19 @@ finalization, repeat selection, and archive verification preserve each run's
 source, environment, exact attempts, raw samples, and checksums. Tooling is
 implemented; capture and ranking acceptance remain separate outcomes.
 
+**Current checkpoint, 2026-10-08:** Manual readiness and actual native Copy/repeat
+are reviewed and published in PR645. All three fresh hosted correctness workflows
+for the browser checkpoint pass; those jobs skip native Copy/repeat, whose acceptance
+comes from the retained local execution. Six full valid-manifest cases now reproduce
+diagnostic-mode corruption in the actual materializer. Their independent TDD review
+approves the minimum correction and required touched-owner closure; implementation
+and final reviews remain open. A fresh parent check now reports PR633 CONFLICTING:
+main advanced to `74f8c05875b46a3812ef6023b3d955f38f21384e`, while parent head979
+is unchanged. The prior exact main-integration proposal is stale. Complete this isolated
+slice, then repair the real parent conflicts before broad integration validation.
+HOST/operator RUN forwarding through existing workers and Actions remains required.
+Governed E3 still has zero accepted cohorts; no default-branch operation is selected.
+
 **Tech Stack:** TypeScript, Deno, Vitest, Node.js, Playwright Chromium, Git,
 GitHub Actions, ignored evidence under `tmp/perf/`, and immutable observation ZIPs.
 
@@ -347,9 +360,38 @@ the existing receiver scope, preserving every evidence/cleanup failure. No produ
 SDK, CRDT, protocol, policy, environment-file or database change is selected. Worker,
 Actions, distributed, B01–B06/E3 acceptance and the original post-ICE cause remain open.
 
+This browser checkpoint is published at `39f68c53`. Fresh original-attempt
+[Branch37753289344](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37753289344),
+[Formation37753288943](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37753288943)
+and [Medium37753288922](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37753288922)
+pass. Eight original archives, the canonical validation receipt and18 checkout proofs
+bind the published source or its equivalent synthetic merge. Executed selection is
+broad with reuse=false. Hosted app results are48 passed/70 skipped, then7 memory
+full-stack passes. Native refusal/delivery, Manual capture and Copy/repeat are skipped,
+as is RTC integrity. Hosted success adds correctness evidence within those executed
+lanes; local native acceptance and the remaining distributed/performance work stay distinct.
+
+**Materializer TDD checkpoint:** Six complete schema-valid manifests use legitimate
+room names `off`, `signaling`, `native`, `of`, `gnal` and `ativ`. Actual unchanged
+materializer children exit0, emit valid isolated executable scope and preserve source
+bytes and hash records, but corrupt all four authored RUN/RECIPE/STEP/HOST capture
+literals. Thirty literal/schema assertions fail; omission and five original scope
+controls pass. Root and independent SPEC review verify the retained original bytes
+and approve correction release. The initial cleanup-hook construction failure remains
+separate; passing omission files were cleaned and the reporter suppressed their log
+packet, so no retained omission child artifacts are claimed. The complete touched test
+owner exceeds its navigation backstop and requires genuine responsibility consolidation,
+checked boundaries and resource ownership alongside the minimum scope correction.
+GREEN, final SPEC/QUALITY and publication remain pending for this slice.
+
 The next two useful slices are full valid-manifest materialization preserving literal
-capture modes under colliding room identities, then existing HOST/operator RUN forwarding
-and application through workers/Actions. The refreshed audit finds64 of67 earlier inputs
+capture modes under colliding room identities, then repair of PR633's newly reported
+conflicts against pinned main74f8c before broad integration validation. Preserve current
+main's independently required behavior and remove affected predecessor paths; fresh
+complete-owner review and a new exact integration proposal are required after repair.
+Do not reuse the old main94e/head979 proposal or perform an unapproved main operation.
+Existing HOST/operator RUN forwarding and application through workers/Actions follows
+that repair and remains mandatory. The refreshed audit finds64 of67 earlier inputs
 unchanged; only plan/progress context and the separately accepted browser helper changed.
 Controller09 still drops HOST input, general operator adapters still omit finite RUN
 choice, and generic room replacement still reaches capture literals. Witness each real
@@ -396,12 +438,16 @@ focused typing/formatting. Independent complete-file preservation review precede
 Local helper acceptance does not complete Copy/repeat, live-worker, Actions, distributed or E3
 acceptance. Publish each coherent tested/reviewed checkpoint promptly.
 
-The bounded worker/Actions audit finds three concrete gaps: controller09 drops the HOST env
+The bounded worker/Actions audit identified three concrete gaps: controller09 drops the HOST env
 input; general Actions/helpers expose no finite operator RUN override; and generic room
-rewriting can corrupt authored capture modes. A pure existing-scope-owner invocation changes
-literal `off` to the effective room ID when the source room is `off`. This is a reproduced
-translation defect, not full schema-valid materializer/worker acceptance. Prepare semantic
-RED through the existing real materializer and owned outbound effects before choosing a fix.
+rewriting corrupts authored capture modes. Its initial pure scope-owner probe was insufficient
+for materializer acceptance; the six current full-valid-manifest RED cases above now witness
+that actual boundary. Worker forwarding/application remains unaccepted. The next adapter
+proposal keeps HOST in the existing env/Actions variables and adds one optional RUN input
+to distributed and GitHub-Free workflows, preserving the lifecycle workflow's25 inputs.
+The existing materializer's plain-Node entry must call the canonical finite validator through
+an executable supported route before operator admission is accepted. Real default headless
+SDK acceptance also needs the existing headless application served alongside API/control.
 Preserve the canonical mode parser/precedence and full scoped room identity; add no migration,
 legacy path, duplicate policy, configuration store or transport/retry change.
 
