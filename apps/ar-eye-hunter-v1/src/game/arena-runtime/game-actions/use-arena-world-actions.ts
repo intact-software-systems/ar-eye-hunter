@@ -5,6 +5,7 @@ import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+import { PICKUP_CLAIM_TTL_MS } from '../../simulation.ts';
 import {
     GAME_PROTOCOL,
     type ArenaEvent,
@@ -78,7 +79,7 @@ function sendArenaPickupIntent(input: ArenaWorldActionsInput, intent: PickupInte
     input.runBestEffortNetworkTask(async () => {
         const result = await match.sendIntent(
             { protocol: GAME_PROTOCOL, kind: 'pickup-intent', intent: fullIntent },
-            { resourceId: intent.pickupId }
+            { resourceId: intent.pickupId, ttlMs: PICKUP_CLAIM_TTL_MS }
         );
         if (result.status === 'held-by-other') {
             setPickupTakenEvent(input, intent.pickupId, generation);

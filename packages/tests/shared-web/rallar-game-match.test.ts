@@ -789,11 +789,11 @@ describe('Rallar Game match', () => {
         };
         vi.mocked(fake.relay.sendIntent).mockResolvedValueOnce(refused);
 
-        const result = await match.sendIntent({ action: 'pickup' }, { resourceId: 'pickup-1' });
+        const result = await match.sendIntent({ action: 'pickup' }, { resourceId: 'pickup-1', ttlMs: 4_000 });
 
         expect(fake.relay.sendIntent).toHaveBeenCalledWith(
             expect.objectContaining({ kind: 'intent', payload: { action: 'pickup' } }),
-            { resourceId: 'pickup-1' }
+            { resourceId: 'pickup-1', ttlMs: 4_000 }
         );
         expect(result).toEqual({
             status: 'held-by-other',
@@ -813,7 +813,7 @@ describe('Rallar Game match', () => {
         });
         await match.start();
 
-        expect(await match.sendIntent({ action: 'pickup' }, { resourceId: 'pickup-1' }))
+        expect(await match.sendIntent({ action: 'pickup' }, { resourceId: 'pickup-1', ttlMs: 4_000 }))
             .toEqual({ status: 'sent', transport: 'local' });
         expect(receivedIntents.map((intent) => intent.payload)).toEqual([{ action: 'pickup' }]);
     });

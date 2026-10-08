@@ -231,14 +231,20 @@ describe('director command', () => {
             { room: toRoomOperation(room), rtcSend: rejectCarrierSend }
         );
 
-        const sending = transport.sendCommand({ ...commandInput, claim: { resourceId: 'pickup-1' } });
+        const sending = transport.sendCommand({ ...commandInput, claim: { resourceId: 'pickup-1', ttlMs: 4_000 } });
         await vi.waitFor(() => expect(sentEnvelopes).toHaveLength(1));
         recordDirectorReceipt(command);
 
         expect(await sending).toEqual({ status: 'sent', receipt: command.handle });
         expect(room.send).toHaveBeenCalledWith(
             expect.objectContaining({ typeId: 'room.director.intent.v1', payload: { revision: 7 } }),
-            { ack: 'group-leader', strategy: 'rtc-with-ws-fallback', ownership: 'exclusive', resourceId: 'pickup-1' }
+            {
+                ack: 'group-leader',
+                strategy: 'rtc-with-ws-fallback',
+                ownership: 'exclusive',
+                resourceId: 'pickup-1',
+                ttlMs: 4_000
+            }
         );
     });
 
@@ -258,7 +264,7 @@ describe('director command', () => {
             { room: toRoomOperation(createRoomChannel(async () => command.handle)), rtcSend: rejectCarrierSend }
         );
 
-        expect(await transport.sendCommand({ ...commandInput, claim: { resourceId: 'pickup-1' } })).toEqual({
+        expect(await transport.sendCommand({ ...commandInput, claim: { resourceId: 'pickup-1', ttlMs: 4_000 } })).toEqual({
             status: 'held-by-other',
             receipt: command.handle,
             reason: 'The server relay refused the message: held-by-other.'
@@ -348,6 +354,33 @@ describe('director command', () => {
 
         const sending = transport.sendCommand(commandInput);
         await vi.advanceTimersByTimeAsync(30_000);
+
+        expect(await sending).toEqual({
+            status: 'failed',
+            receipt: command.handle,
+            reason: 'The director did not confirm the command before its deadline.'
+        });
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('reports a claiming intent the director never confirms as failed once the claim\'s own lifetime ends', async () => {
+        vi.useFakeTimers();
+        const command = createMessageDelivery('ws', { kind: 'admitted', durable: false, queuedAttempts: 1 }, 'group-leader');
+        const transport = createTransport(
+            createMessageDelivery('rtc', undefined),
+            rejectCarrierSend,
+            { room: toRoomOperation(createRoomChannel(async () => command.handle)), rtcSend: rejectCarrierSend }
+        );
+        let settled = false;
+
+        const sending = transport.sendCommand({ ...commandInput, claim: { resourceId: 'pickup-1', ttlMs: 4_000 } })
+            .then((result) => {
+                settled = true;
+                return result;
+            });
+        await vi.advanceTimersByTimeAsync(3_999);
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
 
         expect(await sending).toEqual({
             status: 'failed',

@@ -92,6 +92,8 @@ export const PLAYER_PVP_DAMAGE_MULTIPLIER = 0.15;
 export const PLAYER_EYE_ATTACK_DAMAGE_MULTIPLIER = 0.2;
 export const PICKUP_RADIUS = 1.45;
 export const PICKUP_TTL_MS = 12_000;
+/** A pickup intent's claim, and so its lifetime: a claimant the director refuses blocks the pickup no longer. */
+export const PICKUP_CLAIM_TTL_MS = 4_000;
 export const PICKUP_MIN_INTERVAL_MS = 4_200;
 export const PICKUP_MAX_INTERVAL_MS = 8_600;
 export const DEFAULT_WEAPON_KIND: WeaponKind = 'pulse-rifle';

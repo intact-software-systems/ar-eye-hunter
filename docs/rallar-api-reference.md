@@ -513,12 +513,17 @@ within 30 s; a send the carrier refuses `no-leader` returns
 `status: 'no-director'`. Before it sends, the relay itself returns
 `no-director` when no director is appointed, `stale-director` when the
 appointed director is not fresh, and `not-director` when the local session is
-the director. `sendIntent(intent, { resourceId })` claims that resource for the
-intent (D176, see Exclusive Ownership): the intent goes out as
-`ownership: 'exclusive'` on that `resourceId`, over WS, and an intent whose
-resource another session holds returns `status: 'held-by-other'` before it
-reaches the director; without the claim the intent is shared, as before.
-Rallar Game's `match.sendIntent(intent, { resourceId })` passes the claim to
+the director. `sendIntent(intent, { resourceId, ttlMs })` claims that resource
+for the intent (D176, see Exclusive Ownership): the intent goes out as
+`ownership: 'exclusive'` on that `resourceId` with that `ttlMs`, over WS, and an
+intent whose resource another session holds returns `status: 'held-by-other'`
+before it reaches the director; without the claim the intent is shared, as
+before. A claim outlives the receiver's verdict until its ttl: an intent the
+director refuses, or whose sender leaves, still holds the resource until its
+`ttlMs` has passed, so a claim names the few seconds the director needs, not
+the 30 s command default, and the relay waits for the director's confirmation
+no longer than the claim lives.
+Rallar Game's `match.sendIntent(intent, { resourceId, ttlMs })` passes the claim to
 the relay and returns the same `held-by-other` status; when the local session
 is the director, the match routes the intent locally and it claims nothing.
 Outputs, heartbeats, snapshots and sync requests claim nothing. The director's

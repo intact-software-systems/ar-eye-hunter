@@ -367,8 +367,8 @@ describe('Rallar director relay', () => {
             heartbeatIntervalMs: 60_000
         });
 
-        const sending = relay.sendIntent({ move: 'left' }, { resourceId: 'pickup-1' });
-        await vi.advanceTimersByTimeAsync(30_000);
+        const sending = relay.sendIntent({ move: 'left' }, { resourceId: 'pickup-1', ttlMs: 4_000 });
+        await vi.advanceTimersByTimeAsync(4_000);
         const result = await sending;
         relay.stop();
 
@@ -381,6 +381,8 @@ describe('Rallar director relay', () => {
             targets: { groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' } },
             delivery: { reliability: 'at-least-once', ack: 'group-leader', ownership: 'exclusive' }
         });
+        expect(wsIntents[0]?.constraints?.expiresAtMs).toBe(wsIntents[0]!.id.ts + 4_000);
+        expect(result.status).toBe('failed');
         expect(result.receipt?.lifecycle().evidence).toMatchObject({ attempts: [], carrierFallback: undefined });
     });
 

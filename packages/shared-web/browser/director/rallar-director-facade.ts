@@ -78,11 +78,13 @@ export interface RallarDirectorRelaySendResult {
 }
 
 /**
- * The resource an intent claims in its room (D176): while the claim lives, which is as long as the intent's own
- * deadline, another session's intent claiming it reads `held-by-other`. An intent without one claims nothing.
+ * The resource an intent claims in its room (D176) and the intent's lifetime, which is the claim's: until `ttlMs`
+ * has passed, another session's intent claiming it reads `held-by-other`, whatever the director decides about the
+ * claiming intent. An intent without one claims nothing.
  */
 export interface RallarDirectorRelayClaim {
     readonly resourceId: string;
+    readonly ttlMs: number;
 }
 
 /** An output sent with these options asks every frozen room recipient to confirm it. */

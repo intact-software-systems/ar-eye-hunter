@@ -80,9 +80,9 @@ export class BrowserDirectorRelayTransport {
                     strategy: 'rtc-with-ws-fallback',
                     ...(input.claim === undefined
                         ? {}
-                        : { ownership: 'exclusive', resourceId: input.claim.resourceId })
+                        : { ownership: 'exclusive', resourceId: input.claim.resourceId, ttlMs: input.claim.ttlMs })
                 });
-            return await readDirectorReceipt(receipt);
+            return await readDirectorReceipt(receipt, toDirectorReceiptWaitMs(input.claim));
         }
         catch (error) {
             if (!isRallarValidationError(error)) {
@@ -206,15 +206,21 @@ export class BrowserDirectorRelayTransport {
     }
 }
 
+/** A claiming intent lives no longer than its claim, so its confirmation is awaited no longer either. */
+function toDirectorReceiptWaitMs(claim: RallarDirectorRelayClaim | undefined): number {
+    const commandTtlMs = AL_CHANNEL_SEND_DEFAULTS.command.ttlMs;
+    return claim === undefined ? commandTtlMs : Math.min(claim.ttlMs, commandTtlMs);
+}
+
 /**
  * The room's leader confirms a command; a room without one refuses it `no-leader` on either carrier (D167), and the
  * server refuses an intent claiming a resource another session holds `held-by-other` (D176).
  */
-async function readDirectorReceipt(receipt: RallarMessageHandle): Promise<RallarDirectorRelaySendResult> {
-    const outcome = await receipt.wait({
-        until: ['acknowledged'],
-        timeoutMs: AL_CHANNEL_SEND_DEFAULTS.command.ttlMs
-    });
+async function readDirectorReceipt(
+    receipt: RallarMessageHandle,
+    timeoutMs: number
+): Promise<RallarDirectorRelaySendResult> {
+    const outcome = await receipt.wait({ until: ['acknowledged'], timeoutMs });
     const lifecycle = outcome.lifecycle;
     if (lifecycle.state === 'acknowledged') {
         return { status: 'sent', receipt };

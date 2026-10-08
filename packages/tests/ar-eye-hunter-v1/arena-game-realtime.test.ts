@@ -374,7 +374,7 @@ describe('arena game realtime acceptance and egress', () => {
                 kind: 'pickup-intent',
                 intent: { ...fixture.intent, sessionId: session.sessionId, sentAtEpochMs: expect.any(Number) }
             },
-            { resourceId: fixture.pickup.id }
+            { resourceId: fixture.pickup.id, ttlMs: 4_000 }
         );
         await waitForState(() => arena.current?.activeEvent?.kind === 'pickup-taken');
         expect(arena.current?.activeEvent).toMatchObject({
@@ -404,7 +404,7 @@ describe('arena game realtime acceptance and egress', () => {
             await sent.promise;
         });
 
-        expect(mockMatch.sendIntent).toHaveBeenCalledWith(expect.anything(), { resourceId: fixture.pickup.id });
+        expect(mockMatch.sendIntent).toHaveBeenCalledWith(expect.anything(), { resourceId: fixture.pickup.id, ttlMs: 4_000 });
         expect(arena.current?.activeEvent?.kind).not.toBe('pickup-taken');
     });
 
