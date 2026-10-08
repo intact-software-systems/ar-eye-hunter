@@ -241,6 +241,8 @@ export interface RallarBlackBoxTestWaitMatch {
     readonly transport?: RallarBlackBoxTestTransport;
     readonly severity?: RallarBlackBoxTestSeverity;
     readonly payloadPath?: string;
+    /** Every path must reach its expected JSON value in the same event payload. */
+    readonly payloadFields?: Readonly<Record<string, ApiJsonValue>>;
     readonly equals?: ApiJsonValue;
     readonly contains?: string;
     readonly exists?: boolean;

@@ -383,6 +383,7 @@ const waitMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELD
     transport: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.waitMatchTransport },
     severity: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.waitMatchSeverity },
     payloadPath: stringSchema,
+    payloadFields: { type: 'object', additionalProperties: anySchema },
     equals: anySchema,
     contains: stringSchema,
     exists: booleanSchema,

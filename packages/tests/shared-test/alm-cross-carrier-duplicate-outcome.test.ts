@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import {
     BlackBoxRallarRuntimeDiagnostics,
@@ -16,6 +20,7 @@ import {
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createCountingIndexedDbOperationObserver, createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { createScriptedStorageFaultPort } from '@shared/persistence/storage-fault-port.ts';
 import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
@@ -47,17 +52,34 @@ function toCrossCarrierScenario(order: CrossCarrierOrder): AlmConformanceScenari
     return scenario;
 }
 
-/**
- * One message admitted once per arrival, in order, through the real inbound runtime's `admission-outcome` emitter
- * and the page runtime's diagnostics port into a recipe runtime's event buffer; then only the receiver commands
- * after its absence window, the duplicate-outcome check, run against that buffer.
- */
-async function runDuplicateOutcomeCommands(
+async function readDuplicateDiagnostics(
     order: CrossCarrierOrder,
     arrivals: readonly ALInboundMessageRuntime.Source[]
-): Promise<boolean> {
+): Promise<readonly ALInboundRuntimeDiagnosticsEvent[]> {
     const scenario = toCrossCarrierScenario(order);
-    const recipeRuntime = createRallarBlackBoxTestRuntime();
+    const { runtime, diagnostics } = createInboundTestRuntime({
+        carrier: 'rtc',
+        stores: createInboundTestStores({
+            namespace: `cross-carrier-duplicate-${order}`,
+            storage: 'memory',
+            observer: createPassThroughIndexedDbOperationObserver()
+        }),
+        effectWorkerId: 'cross-carrier-worker'
+    });
+    const inbound = createInboundTestMessage({ msgId: `cross-carrier-${order}` });
+    const message = {
+        ...inbound,
+        payload: { ...inbound.payload, typeId: `alm.conformance.rtc-with-ws-fallback.${scenario.scenarioKey}` }
+    };
+    await runtime.ready();
+    for (const source of arrivals) {
+        await runtime.admitIncomingMessage(message, source);
+    }
+    await Promise.resolve();
+    return diagnostics;
+}
+
+function createRecipeDiagnosticsPorts(recipeRuntime: ReturnType<typeof createRallarBlackBoxTestRuntime>) {
     const pageDiagnostics = new BlackBoxRallarRuntimeDiagnostics({
         now: Date.now,
         publish: (event) => {
@@ -74,36 +96,38 @@ async function runDuplicateOutcomeCommands(
         laneIdOf: resolveBlackBoxRallarLaneId,
         scopeDiagnostics: blackBoxRallarScopeDiagnosticsOf
     });
-    const ports = createBlackBoxRallarDiagnosticsPorts(pageDiagnostics, {
+    return createBlackBoxRallarDiagnosticsPorts(pageDiagnostics, {
         faults: createScriptedTransportFaultPort(),
         storage: createCountingIndexedDbOperationObserver(),
         storageFaults: createScriptedStorageFaultPort()
     });
-    const { runtime, diagnostics } = createInboundTestRuntime({
-        carrier: 'rtc',
-        stores: createInboundTestStores({
-            namespace: `cross-carrier-duplicate-${order}`,
-            storage: 'memory',
-            observer: createPassThroughIndexedDbOperationObserver()
-        }),
-        effectWorkerId: 'cross-carrier-worker'
-    });
-    const inbound = createInboundTestMessage({ msgId: `cross-carrier-${order}` });
-    const message = { ...inbound, payload: { ...inbound.payload, typeId: `alm.conformance.rtc-with-ws-fallback.${scenario.scenarioKey}` } };
-    await runtime.ready();
-    for (const source of arrivals) {
-        await runtime.admitIncomingMessage(message, source);
-    }
+}
+
+/** Real page diagnostic publication feeds the authored receiver commands after their absence window. */
+async function runDiagnosticOutcomeCommands(
+    order: CrossCarrierOrder,
+    diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]
+): Promise<boolean> {
+    const scenario = toCrossCarrierScenario(order);
+    const recipeRuntime = createRallarBlackBoxTestRuntime();
+    const ports = createRecipeDiagnosticsPorts(recipeRuntime);
     for (const event of diagnostics) {
         ports.inboundDiagnostics?.(event);
     }
-    await Promise.resolve();
     const authored = scenario.receiver.commands;
     const absence = authored.findIndex((command) => command.kind === 'messages.received' && command.absent === true);
     const commands = authored.slice(absence + 1).filter((command) => command.kind !== 'stats');
     expect(commands.length).toBeGreaterThan(0);
     const result = await recipeRuntime.execute({ kind: 'recipe.run', recipe: { ...scenario.receiver, commands } });
     return result.ok;
+}
+
+/** Admission and page publication use their production ports; neither matcher nor diagnostics are mocked. */
+async function runDuplicateOutcomeCommands(
+    order: CrossCarrierOrder,
+    arrivals: readonly ALInboundMessageRuntime.Source[]
+): Promise<boolean> {
+    return runDiagnosticOutcomeCommands(order, await readDuplicateDiagnostics(order, arrivals));
 }
 
 /** An absent branch spends its whole wall-clock wait budget, so each case that fails takes about two seconds. */
@@ -120,5 +144,34 @@ describe('the cross-carrier duplicate outcome wait', () => {
         expect(await runDuplicateOutcomeCommands('ws-then-rtc', [WS_ARRIVAL, RTC_ARRIVAL])).toBe(true);
         expect(await runDuplicateOutcomeCommands('ws-then-rtc', [RTC_ARRIVAL, WS_ARRIVAL])).toBe(true);
         expect(await runDuplicateOutcomeCommands('ws-then-rtc', [WS_ARRIVAL])).toBe(false);
+    }, WAIT_BUDGET_TEST_TIMEOUT_MS);
+
+    it.each(['rtc-then-ws', 'ws-then-rtc'] as const)('ignores newer routing and wrong-scenario admissions for %s', async (order) => {
+        const diagnostics = await readDuplicateDiagnostics(order, [RTC_ARRIVAL, WS_ARRIVAL]);
+        const duplicate = diagnostics.find((event) => event.kind === 'admission-outcome' && event.reason === 'duplicate');
+        if (duplicate?.kind !== 'admission-outcome') {
+            throw new Error('The real duplicate arrival produced no admission outcome.');
+        }
+        const newerRouting: ALInboundRuntimeDiagnosticsEvent = {
+            kind: 'dispatch-decision',
+            lane: 'volatile',
+            workerId: 'cross-carrier-worker',
+            effectId: 'newer-dispatch',
+            msgId: duplicate.msgId,
+            typeId: duplicate.typeId,
+            carrier: 'ws',
+            attempts: 1,
+            atEpochMs: Date.now(),
+            disposition: 'port-returned'
+        };
+        const wrongScenario: ALInboundRuntimeDiagnosticsEvent = {
+            ...duplicate,
+            typeId: 'alm.conformance.rtc-with-ws-fallback.other-scenario',
+            outcome: 'committed',
+            reason: 'admitted'
+        };
+
+        expect(await runDiagnosticOutcomeCommands(order, [...diagnostics, newerRouting, wrongScenario])).toBe(true);
+        expect(await runDiagnosticOutcomeCommands(order, [newerRouting, wrongScenario])).toBe(false);
     }, WAIT_BUDGET_TEST_TIMEOUT_MS);
 });

@@ -237,6 +237,7 @@ export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
             'transport',
             'severity',
             'payloadPath',
+            'payloadFields',
             'equals',
             'contains',
             'exists',

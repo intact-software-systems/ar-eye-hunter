@@ -4,6 +4,10 @@ import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
+
+import { snapshotComparisonValue } from './snapshot-comparison-value.ts';
+import { snapshotExecutableMetadata } from './snapshot-executable-metadata.ts';
 
 /** Captures executable structure and capture options. Opaque application payloads retain their semantics. */
 export function snapshotExecutableRecipe(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestRecipe {
@@ -56,18 +60,23 @@ export function snapshotExecutableCommand(command: RallarBlackBoxTestCommand): R
             return snapshotOwnedOptions(command, {
                 participants: command.participants && Object.freeze([...command.participants])
             });
-        case 'fault.inject': {
-            const fault = { ...command };
-            fault.match = Object.freeze({ ...command.match });
-            fault.action = typeof command.action === 'object' ? Object.freeze({ ...command.action }) : command.action;
-            return Object.freeze(fault);
-        }
+        case 'fault.inject':
+            return snapshotFaultCommand(command);
         case 'messages.observe':
         case 'messages.send':
             return snapshotMessageCommand(command);
         default:
             return Object.freeze({ ...command });
     }
+}
+
+function snapshotFaultCommand(
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'fault.inject'; }>
+): RallarBlackBoxTestCommand {
+    const fault = { ...command };
+    fault.match = Object.freeze({ ...command.match });
+    fault.action = typeof command.action === 'object' ? Object.freeze({ ...command.action }) : command.action;
+    return Object.freeze(fault);
 }
 
 /** Configuration controls SDK selection, capture, defaults, fleet admission and redaction. */
@@ -79,7 +88,9 @@ function snapshotRuntimeConfig(config: RallarBlackBoxTestConfig): RallarBlackBox
         defaults: config.defaults && Object.freeze({ ...config.defaults }),
         fleet: config.fleet && snapshotOwnedOptions(config.fleet, {
             ...(Array.isArray(config.fleet.tags) ? { tags: Object.freeze([...config.fleet.tags]) } : {}),
-            ...(isOptionRecord(config.fleet.location) ? { location: Object.freeze({ ...config.fleet.location }) } : {})
+            ...(isJsonRecordValue(config.fleet.location)
+                ? { location: Object.freeze({ ...config.fleet.location }) }
+                : {})
         }),
         redaction: config.redaction && snapshotOwnedOptions(config.redaction, {
             keys: config.redaction.keys && Object.freeze([...config.redaction.keys]),
@@ -133,7 +144,10 @@ function snapshotComparisonCommand(
             return snapshotOwnedOptions(command, { expected: snapshotComparisonValue(command.expected) });
         case 'wait':
             return snapshotOwnedOptions(command, {
-                match: snapshotOwnedOptions(command.match, { equals: snapshotComparisonValue(command.match.equals) })
+                match: snapshotOwnedOptions(command.match, {
+                    equals: snapshotComparisonValue(command.match.equals),
+                    payloadFields: snapshotComparisonValue(command.match.payloadFields)
+                })
             });
         case 'crdt.wait':
             return snapshotOwnedOptions(command, {
@@ -145,34 +159,6 @@ function snapshotComparisonCommand(
                 )
             });
     }
-}
-
-/** Own JSON comparison trees while retaining invalid non-JSON values for their existing validation boundary. */
-function snapshotComparisonValue<Operand>(value: Operand, copies = new WeakMap<object, object>()): Operand {
-    if (value === null || typeof value !== 'object') {
-        return value;
-    }
-    const copied = copies.get(value);
-    if (copied) {
-        return copied as Operand;
-    }
-    if (Array.isArray(value)) {
-        const array: unknown[] = [];
-        copies.set(value, array);
-        for (const item of value) {
-            array.push(snapshotComparisonValue(item, copies));
-        }
-        return Object.freeze(array) as Operand;
-    }
-    if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
-        return value;
-    }
-    const record: RallarBlackBoxTestRecord = {};
-    copies.set(value, record);
-    for (const [key, item] of Object.entries(value)) {
-        Object.defineProperty(record, key, { value: snapshotComparisonValue(item, copies), enumerable: true });
-    }
-    return Object.freeze(record) as Operand;
 }
 
 /** Network policy arrays/headers are owned, while request bodies and WS sends retain payload semantics. */
@@ -217,14 +203,10 @@ function snapshotConnectionOptions<Record extends RallarBlackBoxTestRecord>(opti
         ...options,
         ...Object.fromEntries(
             ['scope', 'roomRef', 'rtcCaptureContext'].flatMap((key) =>
-                isOptionRecord(options[key]) ? [[key, Object.freeze({ ...options[key] })]] : []
+                isJsonRecordValue(options[key]) ? [[key, Object.freeze({ ...options[key] })]] : []
             )
         )
     });
-}
-
-function isOptionRecord(value: unknown): value is RallarBlackBoxTestRecord {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 /** Owning optional execution fields must preserve the caller's absence, including native in-process consumers. */
@@ -232,43 +214,5 @@ function snapshotOwnedOptions<Options extends object>(original: Options, copied:
     return Object.freeze({
         ...original,
         ...Object.fromEntries(Object.entries(copied).filter(([key]) => Object.hasOwn(original, key)))
-    });
-}
-
-/** ALM addresses/checkpoints drive reload decisions; all other metadata values remain opaque. */
-function snapshotExecutableMetadata(metadata: RallarBlackBoxTestRecord): RallarBlackBoxTestRecord {
-    if (!isOptionRecord(metadata)) {
-        return metadata;
-    }
-    const pair = metadata.almReloadPair;
-    return Object.freeze({
-        ...metadata,
-        ...(Array.isArray(metadata.almReloadCheckpoints)
-            ? {
-                almReloadCheckpoints: Object.freeze(
-                    metadata.almReloadCheckpoints.map((checkpoint) =>
-                        isOptionRecord(checkpoint) ? Object.freeze({ ...checkpoint }) : checkpoint
-                    )
-                )
-            }
-            : {}),
-        ...(isOptionRecord(pair)
-            ? {
-                almReloadPair: Object.freeze({
-                    ...pair,
-                    ...(isOptionRecord(pair.sender) ? { sender: Object.freeze({ ...pair.sender }) } : {}),
-                    ...(isOptionRecord(pair.receiver) ? { receiver: Object.freeze({ ...pair.receiver }) } : {}),
-                    ...(Array.isArray(pair.checkpoints)
-                        ? {
-                            checkpoints: Object.freeze(
-                                pair.checkpoints.map((checkpoint) =>
-                                    isOptionRecord(checkpoint) ? Object.freeze({ ...checkpoint }) : checkpoint
-                                )
-                            )
-                        }
-                        : {})
-                })
-            }
-            : {})
     });
 }

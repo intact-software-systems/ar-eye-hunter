@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import {
     ALM_CONFORMANCE_CARRIERS,
@@ -311,6 +315,10 @@ describe('fenced-catch-up', () => {
             match: {
                 kind: 'diagnostic',
                 topic: INBOUND_DIAGNOSTICS_TOPIC,
+                payloadFields: {
+                    'data.kind': 'admission-outcome',
+                    'data.typeId': 'alm.conformance.rtc.fenced-catch-up'
+                },
                 payloadPath: 'data',
                 contains: '"typeId":"alm.conformance.rtc.fenced-catch-up","carrier":"rtc","outcome":"rejected","reason":"not-yet-in-sync'
             },
