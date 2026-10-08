@@ -46,8 +46,11 @@ export interface RallarBrowserMiddleware {
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
     readonly heartbeat: RallarSessionHeartbeat;
     readonly storageAvailability: BrowserALStorageAvailability;
-    /** The session's volatile ledger, which both carriers' runtimes count against (D74). */
-    readonly volatileBudget: ALVolatileSessionBudget;
+    /**
+     * The report of the session's volatile ledger, which both carriers' runtimes count against (D74); its admissions
+     * stay the carriers' own, so no caller can count into the bound that refuses sends.
+     */
+    readonly volatileBudget: Pick<ALVolatileSessionBudget, 'readReport'>;
 }
 
 /** Authenticated browser connection returned by setup and connect operations. */

@@ -22,14 +22,16 @@ import { toCommandId } from '../../alm-conformance-step-identities.ts';
 /** One field the refused send's observation states, and the value it must hold. */
 export type AlmVolatileBoundRefusalFact = readonly [field: string, expected: string | number];
 
-/** The refusal of a send that would pass one of the session's volatile bounds: no carrier attempt, so no fallback. */
+/** The refusal of a send the session's volatile bound turned away: no carrier attempt, so no fallback. */
+export const VOLATILE_BOUND_REFUSAL_FACTS: readonly AlmVolatileBoundRefusalFact[] = [
+    ['failure.kind', 'refused'],
+    ['failure.reason', 'capacity'],
+    ['attempts', 0]
+];
+
+/** That refusal, naming the bound of the session ledger the send would pass. */
 export function toLimitRefusalFacts(limit: ALVolatileSessionLimit): readonly AlmVolatileBoundRefusalFact[] {
-    return [
-        ['failure.kind', 'refused'],
-        ['failure.reason', 'capacity'],
-        ['failure.limit', limit],
-        ['attempts', 0]
-    ];
+    return [...VOLATILE_BOUND_REFUSAL_FACTS, ['failure.limit', limit]];
 }
 
 /**
@@ -40,7 +42,12 @@ export function toLimitRefusalFacts(limit: ALVolatileSessionLimit): readonly Alm
 export function toBoundReconnectCommands(
     sender: AlmConformanceStepInput,
     name: 'lowered' | 'restored',
-    limits: Pick<ALVolatileSessionLimits, 'maxAdmissions' | 'maxBytes'> | undefined
+    limits:
+        | (
+            & Pick<ALVolatileSessionLimits, 'maxAdmissions' | 'maxBytes'>
+            & Partial<Pick<ALVolatileSessionLimits, 'maxAgeMs' | 'maxTracks'>>
+        )
+        | undefined
 ): readonly RallarBlackBoxTestCommand[] {
     const connect = toConnectCommand(sender);
     return [

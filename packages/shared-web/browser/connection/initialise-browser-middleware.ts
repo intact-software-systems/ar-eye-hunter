@@ -261,15 +261,22 @@ export async function initialiseMiddleware(
 
     const { checkpointStores } = transportInput;
     return {
-        middleware: {
+        middleware: toBrowserMiddleware(transportInput, {
             ...webSocketTransport,
             ...rtcTransport,
             heartbeat: heartbeatHandle,
-            storageAvailability,
-            volatileBudget: transportInput.volatileBound.budget
-        },
+            storageAvailability
+        }),
         checkpoints: [checkpointStores.wsClient.checkpoint, checkpointStores.rtcOverlay.checkpoint]
     };
+}
+
+/** The facade reads the one ledger the connect's carriers count against, never one of its own. */
+export function toBrowserMiddleware(
+    input: InitialiseBrowserTransportInput,
+    carriers: Omit<RallarBrowserMiddleware, 'volatileBudget'>
+): RallarBrowserMiddleware {
+    return { ...carriers, volatileBudget: input.volatileBound.budget };
 }
 
 export function createBrowserTransportInput(

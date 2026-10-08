@@ -6,6 +6,7 @@ import type {
 import { Either } from '@shared/resilience/Either.ts';
 
 import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
+import { decodeBoolean, decodeRecord } from '../runtime/decode-runtime-result-values.ts';
 
 const USAGE_FIELDS = [
     'admissions',
@@ -22,39 +23,44 @@ const LIMIT_FIELDS = [
 
 /** A page's session ledger report, read off page output or a recorded `stats` event; the left names every bad field. */
 export function decodeALVolatileSessionReport(value: unknown): Either<readonly string[], ALVolatileSessionReport> {
-    const record = decodeReportRecord(value);
-    const usage = decodeReportRecord(record?.usage);
-    const limits = decodeReportRecord(record?.limits);
-    const overloaded = record?.overloaded;
-    const issues = [
-        ...USAGE_FIELDS.filter((field) => !isCount(usage?.[field])).map((field) => `usage.${field} is not a count`),
-        ...LIMIT_FIELDS.filter((field) => !isCount(limits?.[field])).map((field) => `limits.${field} is not a count`),
-        ...(typeof overloaded === 'boolean' ? [] : ['overloaded is not a boolean'])
-    ];
-    if (usage === undefined || limits === undefined || typeof overloaded !== 'boolean' || issues.length > 0) {
-        return Either.ofLeft(issues);
+    const record = decodeRecord(value);
+    const usage = decodeCounts(record.usage, USAGE_FIELDS, 'usage');
+    const limits = decodeCounts(record.limits, LIMIT_FIELDS, 'limits');
+    const overloaded = decodeBoolean(record.overloaded);
+    if (usage.right === undefined || limits.right === undefined || overloaded === undefined) {
+        return Either.ofLeft([
+            ...(usage.left ?? []),
+            ...(limits.left ?? []),
+            ...(overloaded === undefined ? ['overloaded is not a boolean'] : [])
+        ]);
     }
+    const { admissions, bytes, oldestAgeMs, tracks } = usage.right;
+    const { maxAdmissions, maxBytes, maxAgeMs, maxTracks } = limits.right;
     return Either.ofRight({
-        usage: {
-            admissions: usage.admissions as number,
-            bytes: usage.bytes as number,
-            oldestAgeMs: usage.oldestAgeMs as number,
-            tracks: usage.tracks as number
-        },
-        limits: {
-            maxAdmissions: limits.maxAdmissions as number,
-            maxBytes: limits.maxBytes as number,
-            maxAgeMs: limits.maxAgeMs as number,
-            maxTracks: limits.maxTracks as number
-        },
+        usage: { admissions, bytes, oldestAgeMs, tracks },
+        limits: { maxAdmissions, maxBytes, maxAgeMs, maxTracks },
         overloaded
     });
 }
 
-function decodeReportRecord(value: unknown): RallarBlackBoxTestRecord | undefined {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
-        ? value as RallarBlackBoxTestRecord
-        : undefined;
+function decodeCounts<Field extends string>(
+    value: unknown,
+    fields: readonly Field[],
+    path: string
+): Either<readonly string[], Readonly<Record<Field, number>>> {
+    const record = decodeRecord(value);
+    return hasCounts(record, fields)
+        ? Either.ofRight(record)
+        : Either.ofLeft(
+            fields.filter((field) => !isCount(record[field])).map((field) => `${path}.${field} is not a count`)
+        );
+}
+
+function hasCounts<Field extends string>(
+    record: RallarBlackBoxTestRecord,
+    fields: readonly Field[]
+): record is RallarBlackBoxTestRecord & Readonly<Record<Field, number>> {
+    return fields.every((field) => isCount(record[field]));
 }
 
 function isCount(value: unknown): value is number {

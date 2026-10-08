@@ -19,7 +19,7 @@ import {
     toBoundReconnectCommands,
     toBoundRefusalCommands,
     toReconnectedArrivalsCommand,
-    type AlmVolatileBoundRefusalFact
+    VOLATILE_BOUND_REFUSAL_FACTS
 } from './volatile-bound-commands.ts';
 
 /**
@@ -42,11 +42,6 @@ const REJOIN_SETTLE_MS = AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS + 1_000
 const REJOIN_SETTLE_TOPIC = 'rallar.black-box.alm.capacity-rejoin-settled';
 const ADMITTED_INDEXES = [1, 2] as const;
 const REFUSED_INDEX = 3;
-const REFUSAL: readonly AlmVolatileBoundRefusalFact[] = [
-    ['failure.kind', 'refused'],
-    ['failure.reason', 'capacity'],
-    ['attempts', 0]
-];
 
 /**
  * D74 and D78: the sender reconnects under a lowered bound, sends up to it, and the next send ends `rejected` with
@@ -75,7 +70,7 @@ function toCapacitySenderCommands(
             index
         ) => [toCapacitySend(sender, index), ...toAdmissionCommands({ ...sender, index })]),
         toCapacitySend(sender, REFUSED_INDEX),
-        ...toBoundRefusalCommands(sender, REFUSED_INDEX, REFUSAL),
+        ...toBoundRefusalCommands(sender, REFUSED_INDEX, VOLATILE_BOUND_REFUSAL_FACTS),
         ...ADMITTED_INDEXES.flatMap((index) => toAcknowledgedCommands(sender, index)),
         ...toBoundReconnectCommands(sender, 'restored', undefined)
     ];

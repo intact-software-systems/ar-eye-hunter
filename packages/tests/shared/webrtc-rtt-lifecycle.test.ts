@@ -27,6 +27,9 @@ import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
+const SIGNALER = { send: async () => undefined, connect: async () => undefined };
+const ICE_CANDIDATES = { iceServers: [], expiresAtEpochMs: 60_000 };
+
 interface StreamingEndpoint {
     readonly streamer: WebRtcRxStreamerService;
     readonly peer: WebRtcConnectionService.Peer;
@@ -202,13 +205,11 @@ interface StreamingPeer {
 }
 
 function createStreamingPeer(sessionId: string, peerSessionId: string): StreamingPeer {
-    const signaler = { send: async () => undefined, connect: async () => undefined };
-    const iceCandidates = { iceServers: [], expiresAtEpochMs: 60_000 };
-    const connection = new QRtcPeerConnection(signaler, {
+    const connection = new QRtcPeerConnection(SIGNALER, {
         sessionId,
         peerSessionId,
         token: 'test-token',
-        iceCandidates,
+        iceCandidates: ICE_CANDIDATES,
         isPolite: false
     }, new DeterministicRtcOfferIds());
     const channel = new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId: peerSessionId, dataChannelName: 'rtc-test' });
@@ -225,13 +226,11 @@ function createStreamingPeer(sessionId: string, peerSessionId: string): Streamin
 }
 
 function createStreamingEndpoint(sessionId: string, peerSessionId: string): StreamingEndpoint {
-    const signaler = { send: async () => undefined, connect: async () => undefined };
-    const iceCandidates = { iceServers: [], expiresAtEpochMs: 60_000 };
     const { peer, wire } = createStreamingPeer(sessionId, peerSessionId);
-    const connectionService = new WebRtcConnectionService(signaler, {
+    const connectionService = new WebRtcConnectionService(SIGNALER, {
         sessionId,
         token: 'test-token',
-        iceCandidates,
+        iceCandidates: ICE_CANDIDATES,
         dataChannelName: 'rtc-test',
 
         rtcSignalingTopicId: 'rtc-signaling'

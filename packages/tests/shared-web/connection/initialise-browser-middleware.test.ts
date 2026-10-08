@@ -6,6 +6,7 @@ import { BrowserALSessionChannel } from '@shared-web/browser/al-runtime/browser-
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import {
     createBrowserTransportInput,
+    toBrowserMiddleware,
     toBrowserWebSocketQueueBoxInput,
     toRtcOverlayMulticastManagerInput,
     type BrowserConnectOptions
@@ -19,6 +20,7 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { DeterministicRtcOfferIds } from '../../shared/webrtc/deterministic-rtc-offer-ids.ts';
+import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 const SESSION: AuthSession = {
     clientId: 'client-1',
@@ -49,7 +51,7 @@ const OPTIONS: BrowserConnectOptions = {
 };
 
 describe('the one volatile bound a browser session hands its carriers (D74)', () => {
-    it('gives the inbound pair, the WS client and the RTC overlay the same budget and provider', () => {
+    it('gives the inbound pair, the WS client, the RTC overlay and the middleware the same budget and provider', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
@@ -72,6 +74,8 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
         expect(ws.qosProvider).toBe(qosProvider);
         expect(rtc.volatileBudget).toBe(budget);
         expect(rtc.qosProvider).toBe(qosProvider);
+        // The carriers stand in with a ledger of their own, which the session's must replace.
+        expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).volatileBudget).toBe(budget);
     });
 
     it('bounds the budget by the limits the session reads', () => {

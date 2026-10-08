@@ -5,7 +5,6 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
-import { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import {
@@ -15,9 +14,14 @@ import {
 
 import { createDefaultVolatileSessionBudget } from './default-volatile-session-budget.ts';
 
-export type MiddlewareTestOverrides = {
-    readonly [K in keyof RallarBrowserMiddleware]?: Partial<RallarBrowserMiddleware[K]>;
-};
+/** The volatile ledger is replaced whole: a partial ledger would read a report no session holds. */
+export type MiddlewareTestOverrides =
+    & {
+        readonly [K in Exclude<keyof RallarBrowserMiddleware, 'volatileBudget'>]?: Partial<RallarBrowserMiddleware[K]>;
+    }
+    & {
+        readonly volatileBudget?: RallarBrowserMiddleware['volatileBudget'];
+    };
 
 export interface ApiMiddlewareTestOverrides {
     readonly session?: Partial<AuthSession>;
@@ -57,9 +61,7 @@ export function createDefaultApiMiddlewareTestDouble(
                 middlewareOverrides.heartbeat
             ),
             storageAvailability: createStorageAvailabilityDouble(middlewareOverrides.storageAvailability),
-            volatileBudget: middlewareOverrides.volatileBudget instanceof ALVolatileSessionBudget
-                ? middlewareOverrides.volatileBudget
-                : createDefaultVolatileSessionBudget()
+            volatileBudget: middlewareOverrides.volatileBudget ?? createDefaultVolatileSessionBudget()
         }
     };
 }

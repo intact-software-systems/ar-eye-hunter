@@ -42,8 +42,8 @@ const REFUSED_AT_THE_BOUND = (limit: string) => [
     'status equals rejected',
     'failure.kind equals refused',
     'failure.reason equals capacity',
-    `failure.limit equals ${limit}`,
-    'attempts equals 0'
+    'attempts equals 0',
+    `failure.limit equals ${limit}`
 ];
 const ADDRESSEE_RECEIPT = [
     'state equals acknowledged',
