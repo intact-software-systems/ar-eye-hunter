@@ -6901,16 +6901,43 @@ PR645 conflict against parent979 is confined to this plan; source auto-composes.
 reconciles both plan additions and preserves all continuation evidence and parent facts.
 Independent composition review and affected combined-source validation precede publication.
 
-**Next authored-intent outcomes:** Finish concrete actual UI SDK application/refusal and
-fresh external-effect witnesses. Recover only existing storage/reload paths from code;
-invent no saved recipe store, API, migration or duplicate policy. Actual UI unavailable-Native
-refusal is now independently accepted within the limits above. The next two concrete outcomes
-are a scoped Local Native run with an independently observed receiving-browser payload, then
-recovery of existing Copy/repeat execution boundaries with attributable fresh effects after
-canonical Close. Applied receipts and fresh invocation IDs alone do not prove delivery;
-create no new placeholder or policy to manufacture a freshness discriminator. Publish each
-coherent tested/reviewed slice promptly rather than holding unrelated completed slices for
-later work.
+**Published composition failure and receiving-witness limits:** Formation and Medium pass on
+the composed published source. Branch broad execution fails exactly the headless boundary:
+323.1591796875 Brotli KiB exceeds its 323 KiB packaging allowance. The same focused local
+check reproduces the failure. The maintained adjustable strict whole-KiB rule selects 324 KiB,
+with all forbidden operator dependencies and other limits preserved. Focused GREEN,
+affected headless typecheck/build and independent complete-owner SPEC/QUALITY review pass;
+the one-value correction is separately published. Its build retains the existing chunk
+warning, and fresh new-head Branch CI remains pending.
+
+The real receiving-browser witness has two preserved setup failures: a Transport selector,
+then Local Load correctly rejects an unsupported top-level rtc.send.roomId after receiver
+connection. Neither reaches Local Run or proves a transport regression. Root verifies the
+canonical schema and removes only invalid test input, with no admission/compatibility change.
+The separately frozen valid-roomRef attempt passes1/1 under unchanged timeout and zero
+retries. Its source assertions prove the complete authored Off body remains unchanged,
+a fresh Native/run/applied receipt, scope-bound actual channel-open, and fresh exact
+independent receiving-browser RTC event plus visible payload. Application typing,
+focused browser-owner typing and formatting pass; all30 executable input bindings match,
+and all earlier cases remain byte-identical. Independent complete-owner SPEC/QUALITY
+review approves with no source findings; affected style and coupling checks pass.
+
+Passing preimage/observations body-buffer attachments were not retained by the maintained
+list reporter. Preserve actual command/input/exit/log evidence and disclose this limit;
+claim no post-hoc raw receipt/native/receiver correlation, capture completeness, repeat,
+reliability, performance or E3 result. This is tests-only existing behavior, with no
+manufactured semantic RED, production change or selected retention remedy. The original
+post-ICE cause remains unknown, and no retry algorithm change is justified here.
+
+**Next authored-intent outcomes:** Actual UI unavailable-Native refusal and successful
+Local Native delivery are independently accepted within their stated limits. Recover only
+existing storage/reload paths from code; invent no saved recipe store, API, migration or
+duplicate policy. The next two concrete outcomes are existing Copy/repeat execution with
+attributable fresh receiving effects after canonical Close, then the current worker/Actions
+capture controls and resulting execution/artifact paths. Applied receipts and fresh invocation
+IDs alone do not prove delivery; create no new placeholder or policy to manufacture a
+freshness discriminator. Publish each coherent tested/reviewed slice promptly while
+independent unfinished outcomes remain in progress.
 
 Full Task65, Console, existing Load/Copy/storage/restore/repeat outcomes, workers, Actions
 and B01–B06/E3 remain required. No retry, recovery, CRDT or RTC transport behavior changes.

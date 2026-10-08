@@ -473,6 +473,320 @@ test.describe('exhaustive runner workbench tabs', () => {
         }
     });
 
+    test('Local Full native run delivers its authored payload to another browser', async ({
+        page,
+        browser,
+        request
+    }, testInfo) => {
+        await expectFullStackApiReady(request, config);
+        const groupId = uniqueGroupId(testInfo);
+        const marker = `${groupId}-native-delivery`;
+        const connection = `${groupId}-native-sender`;
+        const receiverConnection = `${groupId}-receiver`;
+        const connectCommandId = `${groupId}-connect`;
+        const roomRef = { applicationId: config.applicationId, workspaceId: config.workspaceId, groupId };
+        const expectedPayload = { topic: 'local.native.delivery', marker, roomRef, value: 37 };
+        const receiverContext = await browser.newContext();
+        const receiver = await receiverContext.newPage();
+
+        try {
+            const receiverSession = await loginUser(receiver, config, config.userB, {
+                groupId,
+                sessionId: `${groupId}-receiver-session`,
+                tab: 'manual-rallar',
+                workspace: 'black-box-runner'
+            });
+            const manual = receiver.locator('#panel-manual-rallar');
+            await manual.getByLabel('Application', { exact: true }).fill(config.applicationId);
+            await manual.getByLabel('Workspace', { exact: true }).fill(config.workspaceId);
+            await manual.getByLabel('Group', { exact: true }).fill(groupId);
+            await manual.getByLabel('Connection', { exact: true }).fill(receiverConnection);
+            await manual.getByRole('combobox', { name: 'Transport', exact: true }).selectOption('realtime');
+            await manual.getByLabel('Scope JSON', { exact: true }).fill(JSON.stringify({
+                applicationId: config.applicationId,
+                workspaceId: config.workspaceId
+            }));
+            await manual.getByLabel('Room Ref JSON', { exact: true }).fill(JSON.stringify(roomRef));
+            await expect(manual.getByLabel('Session', { exact: true })).toHaveValue(receiverSession.sessionId);
+            const createPath = `/api/state/apps/${encodeURIComponent(config.applicationId)}/workspaces/${
+                encodeURIComponent(config.workspaceId)
+            }/groups/requests/`;
+            const createResponsePromise = receiver.waitForResponse((response) => {
+                const url = new URL(response.url());
+                return response.request().method() === 'POST' &&
+                    url.origin === config.apiBaseUrl && url.pathname.startsWith(createPath);
+            });
+            await manual.getByRole('button', { name: 'Create and join group', exact: true }).click();
+            expect([200, 201]).toContain((await createResponsePromise).status());
+            await expect.poll(() =>
+                receiver.evaluate(async () => {
+                    const modulePath = '/src/runtime-store.ts';
+                    const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                    return rallarBlackBoxRuntimeStore.getSnapshot().state.commandHistory
+                        .filter((result: RallarBlackBoxTestResult) => result.kind === 'rtc.connect').at(-1);
+                })
+            ).toMatchObject({ kind: 'rtc.connect', ok: true, status: 'ok', value: { connection: receiverConnection } });
+
+            const senderSession = await loginUser(page, config, config.userA, {
+                groupId,
+                sessionId: `${groupId}-sender-session`,
+                tab: 'local-workbench',
+                workspace: 'black-box-runner'
+            });
+            expect(senderSession.sessionId).not.toBe(receiverSession.sessionId);
+            const panel = page.locator('#panel-local-workbench');
+            const recipe = {
+                schemaVersion: 1,
+                recipeId: `${groupId}-local-native-delivery`,
+                rtcCaptureMode: 'off',
+                commands: [
+                    {
+                        kind: 'configure',
+                        commandId: `${groupId}-configure`,
+                        config: {
+                            actor: senderSession.clientId,
+                            sessionId: senderSession.sessionId,
+                            roomId: groupId,
+                            transport: 'realtime',
+                            rallar: {
+                                apiBaseUrl: config.apiBaseUrl,
+                                applicationId: config.applicationId,
+                                workspaceId: config.workspaceId,
+                                restoreSession: true,
+                                rtcCaptureMode: 'off'
+                            }
+                        }
+                    },
+                    {
+                        kind: 'rtc.connect',
+                        commandId: connectCommandId,
+                        connection,
+                        roomId: groupId,
+                        roomRef,
+                        transport: 'realtime',
+                        rallar: { rtcCaptureMode: 'off' },
+                        readiness: { minReadyPeers: 1, timeoutMs: 5_000, intervalMs: 100 }
+                    },
+                    {
+                        kind: 'rtc.send',
+                        commandId: `${groupId}-send`,
+                        connection,
+                        roomRef,
+                        transport: 'realtime',
+                        send: { peerIds: [receiverSession.sessionId], laneId: 'realtime', data: expectedPayload }
+                    }
+                ]
+            } satisfies RallarBlackBoxTestRecipe;
+            const recipeText = JSON.stringify(recipe, null, 2);
+            const editor = panel.getByRole('textbox', { name: 'Recipe JSON', exact: true });
+            await editor.fill(recipeText);
+            await panel.getByRole('button', { name: 'Load', exact: true }).click();
+            await expect.poll(() =>
+                page.evaluate(async () => {
+                    const modulePath = '/src/runtime-store.ts';
+                    const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                    return rallarBlackBoxRuntimeStore.getSnapshot().state.loadedRecipe;
+                })
+            ).toEqual(recipe);
+            await expect(editor).toHaveValue(recipeText);
+            const before = await page.evaluate(async () => {
+                const modulePath = '/src/runtime-store.ts';
+                const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                const state = rallarBlackBoxRuntimeStore.getSnapshot().state;
+                return {
+                    runs: state.commandHistory.filter((result: RallarBlackBoxTestResult) =>
+                        result.kind === 'recipe.run'
+                    ),
+                    loaded: state.events.filter((event: RallarBlackBoxTestEvent) =>
+                        event.topic === 'rallar.bb.recipe.loaded'
+                    ).at(-1),
+                    eventIds: state.events.map((event: RallarBlackBoxTestEvent) => event.eventId)
+                };
+            });
+            const recipeBodyId = decodeNonBlankText(decodeRecord(before.loaded?.payload).recipeBodyId);
+            expect(recipeBodyId).toEqual(expect.stringMatching(/\S/));
+            const receiverBefore = await receiver.evaluate(async () => {
+                const modulePath = '/src/runtime-store.ts';
+                const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                return rallarBlackBoxRuntimeStore.getSnapshot().state.events;
+            });
+            expect(
+                receiverBefore.filter((event: RallarBlackBoxTestEvent) =>
+                    decodeRecord(decodeRecord(event.payload).data).marker === marker
+                )
+            ).toEqual([]);
+            const receiverEventIds = receiverBefore.map((event: RallarBlackBoxTestEvent) => event.eventId);
+            const receivedRow = manual.locator('.received-row').filter({ hasText: marker });
+            await expect(receivedRow).toHaveCount(0);
+            await testInfo.attach('local-native-delivery-preimage', {
+                body: Buffer.from(JSON.stringify(
+                    {
+                        before,
+                        receiverBefore,
+                        senderSessionId: senderSession.sessionId,
+                        receiverSessionId: receiverSession.sessionId,
+                        recipeBodyId
+                    },
+                    null,
+                    2
+                )),
+                contentType: 'application/json'
+            });
+
+            await panel.getByRole('combobox', { name: 'Run RTC capture', exact: true })
+                .selectOption({ label: 'Full native' });
+            await panel.getByRole('button', { name: 'Run', exact: true }).click();
+            await expect(panel.locator('.workbench-panel .panel-heading .pill')).toHaveText('passed');
+            await expect(editor).toHaveValue(recipeText);
+            const observed = await page.evaluate(async () => {
+                const modulePath = '/src/runtime-store.ts';
+                const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                const state = rallarBlackBoxRuntimeStore.getSnapshot().state;
+                return {
+                    loadedRecipe: state.loadedRecipe,
+                    latestRun: state.commandHistory.filter((result: RallarBlackBoxTestResult) =>
+                        result.kind === 'recipe.run'
+                    ).at(-1)
+                };
+            });
+            expect(observed.loadedRecipe).toEqual(recipe);
+            expect(observed.latestRun).toMatchObject({
+                kind: 'recipe.run',
+                ok: true,
+                status: 'ok',
+                value: {
+                    recipeId: recipe.recipeId,
+                    invocation: {
+                        invocationId: expect.stringMatching(/\S/),
+                        recipeBodyId,
+                        run: 'native',
+                        recipe: 'off'
+                    },
+                    results: [
+                        { commandId: `${groupId}-configure`, kind: 'configure', ok: true, status: 'ok' },
+                        { commandId: connectCommandId, kind: 'rtc.connect', ok: true, status: 'ok' },
+                        { commandId: `${groupId}-send`, kind: 'rtc.send', ok: true, status: 'ok' }
+                    ]
+                }
+            });
+            expect(observed.latestRun?.replayed).not.toBe(true);
+            const invocationId = decodeRecord(decodeRecord(observed.latestRun?.value).invocation).invocationId;
+            expect(
+                before.runs.map((result: RallarBlackBoxTestResult) =>
+                    decodeRecord(decodeRecord(result.value).invocation).invocationId
+                )
+            ).not.toContain(invocationId);
+            const connectRow = panel.locator('.queue-row').filter({ hasText: connectCommandId });
+            await expect(connectRow).toHaveCount(1);
+            await connectRow.click();
+            await openTab(page, 'event-stream');
+            const resultJson = page.locator('#panel-event-stream .focus-panel .json-block');
+            await expect.poll(async () => decodeRecord(JSON.parse(await resultJson.textContent() ?? 'null')))
+                .toMatchObject({
+                    commandId: connectCommandId,
+                    kind: 'rtc.connect',
+                    ok: true,
+                    status: 'ok',
+                    value: {
+                        connection,
+                        rtcCapture: {
+                            status: 'observed',
+                            value: {
+                                configuration: { mode: 'native', origin: 'run' },
+                                configurationVersion: 1,
+                                application: { status: 'applied', mode: 'native' },
+                                connectionId: { status: 'observed', value: expect.stringMatching(/\S/) },
+                                nativeScopeId: { status: 'observed', value: expect.stringMatching(/\S/) },
+                                nativeAvailability: { status: 'observed', value: 'enabled' },
+                                nativeCoverage: expect.stringMatching(/^(attached|partial)$/)
+                            }
+                        },
+                        readiness: { ready: true, readyPeerIds: expect.arrayContaining([receiverSession.sessionId]) }
+                    }
+                });
+            const connectValue = decodeRecord(decodeRecord(JSON.parse(await resultJson.textContent() ?? 'null')).value);
+            const receipt = decodeRecord(decodeRecord(connectValue.rtcCapture).value);
+            const nativeScopeId = decodeRecord(receipt.nativeScopeId).value;
+            await expect.poll(() =>
+                page.evaluate(async (eventIds) => {
+                    const modulePath = '/src/runtime-store.ts';
+                    const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                    return rallarBlackBoxRuntimeStore.getSnapshot().state.events.filter((
+                        event: RallarBlackBoxTestEvent
+                    ) => event.topic === 'rallar.browser.rtc.signaling_diagnostics' &&
+                        !eventIds.includes(event.eventId)
+                    );
+                }, before.eventIds)
+            ).toEqual(expect.arrayContaining([expect.objectContaining({
+                kind: 'diagnostic',
+                payload: expect.objectContaining({
+                    data: expect.objectContaining({
+                        kind: 'native-state',
+                        trigger: 'channel-open',
+                        localSessionId: senderSession.sessionId,
+                        peerSessionId: receiverSession.sessionId,
+                        native: expect.objectContaining({
+                            capture: expect.objectContaining({
+                                scope: 'active',
+                                scopeId: { status: 'observed', value: nativeScopeId }
+                            }),
+                            identity: {
+                                peerConnectionId: { status: 'observed', value: expect.stringMatching(/\S/) },
+                                channelId: { status: 'observed', value: expect.stringMatching(/\S/) }
+                            },
+                            state: expect.objectContaining({ channelState: { status: 'observed', value: 'open' } })
+                        })
+                    })
+                })
+            })]));
+            await expect.poll(() =>
+                receiver.evaluate(async (eventIds) => {
+                    const modulePath = '/src/runtime-store.ts';
+                    const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                    return rallarBlackBoxRuntimeStore.getSnapshot().state.events.filter((
+                        event: RallarBlackBoxTestEvent
+                    ) => event.kind === 'message' && !eventIds.includes(event.eventId));
+                }, receiverEventIds)
+            ).toEqual(expect.arrayContaining([expect.objectContaining({
+                kind: 'message',
+                topic: 'rallar.browser.realtime.message',
+                transport: 'realtime',
+                connection: receiverConnection,
+                payload: expect.objectContaining({
+                    laneId: 'realtime',
+                    remotePeerId: senderSession.sessionId,
+                    data: expectedPayload
+                })
+            })]));
+            await expect(receivedRow.first()).toBeVisible();
+            expect(JSON.parse(await receivedRow.first().locator('.mini-json').textContent() ?? 'null'))
+                .toEqual(expectedPayload);
+        }
+        finally {
+            const senderEvidence = await page.evaluate(async () => {
+                const modulePath = '/src/runtime-store.ts';
+                const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                const state = rallarBlackBoxRuntimeStore.getSnapshot().state;
+                return { loadedRecipe: state.loadedRecipe, commandHistory: state.commandHistory, events: state.events };
+            }).catch(() => undefined);
+            const receiverEvidence = await receiver.evaluate(async () => {
+                const modulePath = '/src/runtime-store.ts';
+                const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                const state = rallarBlackBoxRuntimeStore.getSnapshot().state;
+                return { commandHistory: state.commandHistory, events: state.events };
+            }).catch(() => undefined);
+            await testInfo.attach('local-native-delivery-observations', {
+                body: Buffer.from(
+                    JSON.stringify({ groupId, expectedPayload, senderEvidence, receiverEvidence }, null, 2)
+                ),
+                contentType: 'application/json'
+            });
+            await cleanupRallarPage(page);
+            await cleanupRallarPage(receiver);
+            await receiverContext.close();
+        }
+    });
+
     test('runs Manual Rallar actions, history, matrix exports, and cleanup', async ({
         page,
         request
