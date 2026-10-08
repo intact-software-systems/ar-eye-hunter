@@ -119,12 +119,14 @@ export function createBlackBoxRallarDiagnosticsPorts(
                 return effects.storageFaults.observe(operation);
             }
         },
-        outboundDiagnostics: (event) =>
+        outboundDiagnostics: (event) => {
+            effects.congestion.observe(event);
             diagnostics.emit({
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.outbound_diagnostics',
                 data: { ...event }
-            }),
+            });
+        },
         inboundDiagnostics: (event) =>
             diagnostics.emit({
                 kind: 'diagnostic',

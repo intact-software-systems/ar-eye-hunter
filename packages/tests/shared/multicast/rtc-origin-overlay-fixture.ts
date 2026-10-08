@@ -9,6 +9,7 @@ import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-life
 import type {
     ALOutboundEnqueueResult,
     ALOutboundMessageRuntime,
+    ALOutboundRuntimeDiagnosticsEvent,
     ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -29,7 +30,10 @@ import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay
 import { toCircuitBreaker, type CircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import {
+    createPassThroughTransportFaultPort,
+    type TransportFaultPort
+} from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
@@ -50,6 +54,7 @@ export interface RtcOriginOverlayFixture {
     readonly channels: Readonly<Record<string, CapturedChannel>>;
     readonly ready: { peerIds: readonly string[]; };
     readonly settlements: readonly ALDeliverySettlement[];
+    readonly diagnostics: readonly ALOutboundRuntimeDiagnosticsEvent[];
 }
 
 export interface RtcOriginOverlayFixtureInput {
@@ -63,6 +68,10 @@ export interface RtcOriginOverlayFixtureInput {
     readonly volatileStores?: ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage>;
     /** The session's provider the composition hands the manager; absent, the carrier's capabilities alone. */
     readonly qosProvider?: ALQosInputProvider;
+    /** The session's transport faults; absent, a pass-through port. */
+    readonly faultPort?: TransportFaultPort;
+    /** Also told every settlement the fixture records, as a browser session's delivery feed is; absent, only recorded. */
+    readonly onSettlement?: (settlement: ALDeliverySettlement) => void;
 }
 
 export interface OriginAcknowledgementInput {
@@ -90,21 +99,26 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         volatileStores: input.volatileStores
     });
     const settlements: ALDeliverySettlement[] = [];
+    const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     const manager = new WebRtcOverlayMulticastManager({
         connectionService: connection,
         groupCache: groups,
         overlayCache: overlays,
         multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),
         qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
-        outboundDiagnostics: undefined,
-        outboundSettlements: (settlement) => settlements.push(settlement),
+        outboundDiagnostics: (event) => diagnostics.push(event),
+        outboundSettlements: (settlement) => {
+            settlements.push(settlement);
+            input.onSettlement?.(settlement);
+        },
         outboundRuntime: resources,
         circuitBreaker: input.circuitBreaker ?? toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
+        faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
     onTestFinished(() => manager.dispose());
-    return { manager, resources, groups, overlays, channels, ready, settlements };
+    return { manager, resources, groups, overlays, channels, ready, settlements, diagnostics };
 }
 
 export function createOriginReceiverMulticast(resourceId: string): ALMessage {
@@ -263,7 +277,12 @@ function createOpenChannel(peerId: string): CapturedChannel {
     const health = channel.readHealth();
     const sent: ALMessage[] = [];
     vi.spyOn(channel, 'readHealth').mockReturnValue({ ...health, readyState: 'open' });
+    // As the reliable lane's `drop-new` overflow does, a send at the high watermark is dropped, never queued.
     vi.spyOn(channel, 'sendJson').mockImplementation((message) => {
+        const { bufferedAmount, flowControl } = channel.readHealth();
+        if (bufferedAmount >= flowControl.highWatermarkBytes) {
+            return { status: 'dropped', reason: 'Back pressure', bufferedAmount };
+        }
         sent.push(decodePersistedALMessageValue(message));
         return { status: 'sent', bufferedAmount: 0 };
     });

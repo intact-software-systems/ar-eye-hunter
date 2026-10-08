@@ -412,7 +412,8 @@ acknowledges, forwards and delivers for other sessions (R-S3c-ii-8). At the
 bound every send, best-effort or not, on either carrier, reads `capacity`: it
 ends `rejected` with `{ kind: 'refused', reason: 'capacity' }` and is never
 handed to a fallback. The age and track budgets joined in V1a (D179, below);
-fairness is V1b's, and transport-aware authorization stays planned.
+channel backpressure joined in V1b-i (D184, below); fairness is V1b-ii's, and
+transport-aware authorization stays planned.
 
 ## Reliability and acknowledgement
 
@@ -666,7 +667,33 @@ congestion/fanout/supersedence concepts.
 volatile budget is the first `overloaded` producer (D78), reported for the
 session's own outbound data originations only, so at the bound every send
 reads `capacity` and controls, forwards and arrivals flow on (R-S3c-ii-8).
-Channel backpressure as a policy input is V1b's.
+
+**CURRENT — V1b-i, channel backpressure as a policy input:** the session's own
+new data sends are planned with a live `backpressured` flag beside `overloaded`
+(D184): the RTC overlay reports it for a room send when the reliable channel of
+every ready next hop holds at least its high watermark, the WS client when the
+socket's `bufferedAmount` is at least 256 KiB
+(`AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES`), and the WS client reads it alone.
+Controls, forwards, retransmissions, replans, inbound plans, RTC unicasts and
+unaddressed RTC sends never read it. The congestion policy applies to either
+flag and its drop names the cause (D185): an `overloaded` drop stays `capacity`;
+a backpressure drop is the refusal `congested`, a fallback trigger that hands an
+`rtc-with-ws-fallback` RTC leg to WS at admission and otherwise ends the send
+`rejected` with no attempt. `drop-low` drops a priority-0 (or lower) send only,
+`reject` every send and `defer` none; a kept send waits at submission, where
+backpressure is a `not-ready` retried after 50 ms on both carriers, so a held
+send is not acknowledged until its carrier takes it. WS submission backpressure
+holds every message, controls included: an ACK waits 50 ms on a full socket.
+Every decision is a `congestion` diagnostic, and the black-box harness counts
+them as `stats.rallar.congestion { dropped, deferred, handedOver }` (D186);
+`deferred` counts every message the page held at submission, relay forwards and
+controls included. Channel health stays on `rallar.rtc.status()`.
+
+**PLANNED:** `replace-latest` by semantic key and a bounded queue on the
+reliable lane (the realtime lane keeps its own `replace-by-key`); relay fanout
+reduction and alternate routes under congestion; routing around one
+backpressured peer; congestion on RTC unicasts; server-side WS backpressure;
+fairness under many tracks and churn (V1b-ii).
 
 ## Durability and browser-local storage
 

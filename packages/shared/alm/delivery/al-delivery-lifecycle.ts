@@ -57,14 +57,18 @@ export type ALDeliveryAttemptOutcome =
 /** Why a carrier admission found no route: no peer at all, or the sender's own rate limit or open circuit. */
 export type ALDeliveryUnroutableReason = 'no-route' | 'rate-limited' | 'circuit-open';
 
-/** `no-leader`: a `group-leader` send whose room has no active leader inside the audience it names (D165). */
+/**
+ * `no-leader`: a `group-leader` send whose room has no active leader inside the audience it names (D165).
+ * `congested`: the carrier's channel could not take the send and its congestion policy dropped it (D185).
+ */
 export type ALDeliveryRefusalReason =
     | 'unauthorized'
     | 'malformed'
     | 'oversized'
     | 'unsupported'
     | 'capacity'
-    | 'no-leader';
+    | 'no-leader'
+    | 'congested';
 
 export type ALDeliverySkippedReason =
     | 'disposed'

@@ -137,7 +137,7 @@ never refused for capacity (D74, D78). It raises the usage the session's own vol
 the usage `overloaded` reads (R-S3c-ii-3): its count, its bytes and the age of the oldest counted admission, but
 never the track count, since the ledger records it with no ordering track (D179). A duplicate, a rejected arrival and a message whose sender named no
 deadline count nothing. The platform's own state sync admitted on the volatile pair counts as well (R-S3c-ii-7). An
-inbound plan never reads `overloaded` (R-S3c-ii-8): at its bound a session still delivers a best-effort arrival at
+inbound plan never reads `overloaded` (R-S3c-ii-8), nor `backpressured` (D184): at its bound a session still delivers a best-effort arrival at
 once, still forwards it to the children it owns and still sends its ACKs and NACKs.
 
 A message handed from RTC to WS (D66) reaches a receiver twice when its RTC copy was delivered but not

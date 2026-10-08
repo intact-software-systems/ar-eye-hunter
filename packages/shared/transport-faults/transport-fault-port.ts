@@ -1,3 +1,4 @@
+import type { ALMessage } from '../al-contracts/al-contract.ts';
 import {
     AL_CONTROL_ACK_TYPE_ID,
     AL_CONTROL_NACK_TYPE_ID,
@@ -15,6 +16,8 @@ export type TransportFaultDecision =
 
 export interface TransportFaultPort {
     decideSend(carrier: TransportFaultCarrier, serialized: string): TransportFaultDecision;
+    /** Whether the carrier reports itself backpressured for this message, whatever its channel or socket holds. */
+    decideBackpressure(carrier: TransportFaultCarrier, message: ALMessage): boolean;
 }
 
 /** Decides eligibility before submission; scripted decisions consume their matching fault count. */
@@ -32,14 +35,14 @@ export interface ScriptedTransportFault {
     readonly faultId: string;
     readonly carrier: TransportFaultCarrier;
     readonly match: TransportFaultMatch;
-    readonly action: 'drop' | 'not-ready' | Readonly<{ delayMs: number; }>;
+    readonly action: 'drop' | 'not-ready' | 'backpressure' | Readonly<{ delayMs: number; }>;
     readonly remaining: number | 'until-cleared';
 }
 
 export interface TransportFaultObservation {
     readonly faultId: string;
     readonly carrier: TransportFaultCarrier;
-    readonly decision: 'drop' | 'delay' | 'not-ready';
+    readonly decision: 'drop' | 'delay' | 'not-ready' | 'backpressure';
 }
 
 export interface ScriptedTransportFaultPort extends TransportFaultPort, WebSocketSubmissionReadinessFaultPort {
@@ -47,6 +50,9 @@ export interface ScriptedTransportFaultPort extends TransportFaultPort, WebSocke
     clear(): void;
     getObservations(): readonly TransportFaultObservation[];
 }
+
+/** Where a scripted fault acts: before submission, on the written frame, or on the carrier's backpressure read. */
+type TransportFaultStage = 'readiness' | 'frame' | 'backpressure';
 
 /**
  * Both carriers write `JSON.stringify(ALMessage)`, so these facts are read out of the AL envelope:
@@ -66,7 +72,7 @@ const CONTROL_TYPE_IDS = {
 } as const;
 
 export function createPassThroughTransportFaultPort(): TransportFaultPort {
-    return { decideSend: () => ({ kind: 'pass' }) };
+    return { decideSend: () => ({ kind: 'pass' }), decideBackpressure: () => false };
 }
 
 export function createPassThroughWebSocketSubmissionReadinessFaultPort(): WebSocketSubmissionReadinessFaultPort {
@@ -95,7 +101,7 @@ class ScriptedTransportFaults implements ScriptedTransportFaultPort {
     }
 
     decideSubmissionReadiness(serialized: string): 'ready' | 'not-ready' {
-        const fault = this.findMatchingFault('ws', serialized, 'readiness');
+        const fault = this.findMatchingFault('ws', toSerializedFrameFacts(serialized), 'readiness');
         if (fault === undefined) {
             return 'ready';
         }
@@ -104,31 +110,39 @@ class ScriptedTransportFaults implements ScriptedTransportFaultPort {
     }
 
     decideSend(carrier: TransportFaultCarrier, serialized: string): TransportFaultDecision {
-        const fault = this.findMatchingFault(carrier, serialized, 'frame');
-        if (fault === undefined || fault.action === 'not-ready') {
-            return { kind: 'pass' };
-        }
-        if (fault.action === 'drop') {
+        const fault = this.findMatchingFault(carrier, toSerializedFrameFacts(serialized), 'frame');
+        if (fault?.action === 'drop') {
             this.consumeFault(fault, 'drop');
             return { kind: 'drop', faultId: fault.faultId };
+        }
+        if (fault === undefined || typeof fault.action === 'string') {
+            return { kind: 'pass' };
         }
         this.consumeFault(fault, 'delay');
         return { kind: 'delay', faultId: fault.faultId, delayMs: fault.action.delayMs };
     }
 
+    decideBackpressure(carrier: TransportFaultCarrier, message: ALMessage): boolean {
+        const fault = this.findMatchingFault(carrier, decodeSerializedFrameFacts(message), 'backpressure');
+        if (fault === undefined) {
+            return false;
+        }
+        this.consumeFault(fault, 'backpressure');
+        return true;
+    }
+
     private findMatchingFault(
         carrier: TransportFaultCarrier,
-        serialized: string,
-        stage: 'readiness' | 'frame'
+        facts: SerializedFrameFacts | undefined,
+        stage: TransportFaultStage
     ): ScriptedTransportFault | undefined {
-        const facts = toSerializedFrameFacts(serialized);
         if (facts === undefined) {
             return undefined;
         }
         for (const fault of this.faults.values()) {
             if (
                 fault.carrier === carrier && (fault.remaining === 'until-cleared' || fault.remaining > 0) &&
-                (fault.action === 'not-ready') === (stage === 'readiness') && matchesFault(fault.match, facts)
+                toTransportFaultStage(fault.action) === stage && matchesFault(fault.match, facts)
             ) {
                 return fault;
             }
@@ -141,6 +155,17 @@ class ScriptedTransportFaults implements ScriptedTransportFaultPort {
             this.faults.set(fault.faultId, { ...fault, remaining: fault.remaining - 1 });
         }
         this.observations.push({ faultId: fault.faultId, carrier: fault.carrier, decision });
+    }
+}
+
+function toTransportFaultStage(action: ScriptedTransportFault['action']): TransportFaultStage {
+    switch (action) {
+        case 'not-ready':
+            return 'readiness';
+        case 'backpressure':
+            return 'backpressure';
+        default:
+            return 'frame';
     }
 }
 

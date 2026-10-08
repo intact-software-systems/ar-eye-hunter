@@ -113,6 +113,22 @@ describe('the durable work claim a connect hands its carriers', () => {
     });
 });
 
+describe('the transport faults a connect hands its RTC overlay', () => {
+    it('gives the RTC overlay the session\'s transport fault port, which its data channels decide frames by', () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+        const input = createBrowserTransportInput(SESSION, OPTIONS);
+
+        const rtc = toRtcOverlayMulticastManagerInput(input, {
+            qboxEngine,
+            webRtcConnectionService: createConnectionService()
+        });
+
+        expect(rtc.faultPort).toBe(OPTIONS.diagnosticsPorts.transportFaultPort);
+    });
+});
+
 describe('the checkpoint stores a connect hands its carriers', () => {
     it('gives the WS client and the RTC overlay each the checkpoint pair of its own store', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
@@ -160,3 +176,22 @@ function createConnectionService(): WebRtcConnectionService {
         createOfferId: new DeterministicRtcOfferIds().createOfferId
     });
 }
+
+describe('the outbound diagnostics sink a connect hands its middleware', () => {
+    it('gives the middleware the connect\'s own sink, which its carriers report to', () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+
+        const ws = toBrowserWebSocketQueueBoxInput(input, {
+            qboxEngine,
+            socket: new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort()),
+            serverPeerId: 'server'
+        });
+        const middleware = toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware);
+
+        expect(middleware.outboundDiagnostics).toBe(OPTIONS.diagnosticsPorts.outboundDiagnostics);
+        expect(ws.outboundDiagnostics).toBe(middleware.outboundDiagnostics);
+    });
+});

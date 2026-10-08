@@ -617,6 +617,7 @@ class RtcReceiveFixture {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: shared.toCircuitBreaker(),
             rateLimiter: shared.toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         this.service = shared.createDefaultWebRtcRxStreamerService({

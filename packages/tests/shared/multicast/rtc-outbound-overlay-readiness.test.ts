@@ -846,6 +846,7 @@ function createManager(fixture: Omit<OverlayFixture, 'manager'>): WebRtcOverlayM
         outboundRuntime: fixture.resources,
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
+        faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
     onTestFinished(() => manager.dispose());

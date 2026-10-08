@@ -147,17 +147,20 @@ function toStartedCells(entry: ReturnType<typeof createAlmConformance2AgentEntry
 }
 
 describe('ALM conformance hosted lane families', () => {
-    it('withholds exactly the named cells: both checkpoint cells, the exhausted repair and the age and track bound cells everywhere, the gap repair where it runs', () => {
+    it('withholds exactly the named cells: both checkpoint cells, the exhausted repair and the age and track bound cells everywhere, the gap repair and the congestion cells where they run', () => {
         const defined = toFamilyCells(['two-agent', 'addressed']);
-        // Removing a withheld cell from hosted manifest 18 is a deliberate act: the checkpoint, repair and volatile
-        // bound cells keep manifest 18 as recorded.
+        // Removing a withheld cell from hosted manifest 18 is a deliberate act: the checkpoint, repair, volatile
+        // bound and congestion cells keep manifest 18 as recorded.
         const withheld = [
             ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
                 ['checkpoint-recovery', 'checkpoint-lag', 'repair-exhausted', 'capacity-age', 'capacity-tracks'].map((
                     key
                 ) => `alm-${carrier}-${key}`)
             ),
-            ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-ordering-gap-repair`)
+            ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-ordering-gap-repair`),
+            'alm-rtc-with-ws-fallback-backpressure-hands-over',
+            'alm-rtc-backpressure-refused',
+            ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-backpressure-deferred`)
         ];
         const cells = toStartedCells(createAlmConformance2AgentEntry());
 

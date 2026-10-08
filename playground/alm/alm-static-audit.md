@@ -50,25 +50,25 @@ PR #521 merged as `a28e61b61` on 2026-09-08. The
 [code assessment](pr-521-code-assessment.md) records how it was verified. Releases are the
 roadmap's [release map](alm-improvement-plan.md#release-map).
 
-| Finding | State on `a28e61b61`                                                                                                                                           | Remainder owned by |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| F1      | Open. Transport settlement is truthful, but the public send result is an admission snapshot and `receiver` normalizes to `hop`.                                | S1, S2, S3         |
-| F2      | Resolved. One decoder, resource ceilings with UTF-8 accounting, validated control payloads, advisory NACK as a value.                                          | done               |
-| F3      | Partial. Snapshot floors and server no-floor authorization exist; frozen audience and membership fencing remain.                                               | S2, R2             |
-| F4      | Open. One envelope is reused across carriers, but inbound stores stay carrier-scoped.                                                                          | S2, S3             |
-| F5      | Partly closed: the volatile default and the per-session bound (S3), the age and track bounds and the usage metric (V1a); fairness and backpressure open (V1b). | S3, V1             |
-| F6      | Partial. Exact observation compare-and-set exists; two dequeue owners and whole-store reads remain.                                                            | F2, R1             |
-| F7      | Partial. Outbound has one canonical envelope; inbound effects still copy envelopes; the server has two consumers on one work queue.                            | F2                 |
-| F8      | Partial. An indexed page reader exists; seven `getAll()` call sites and a full-range cleanup scan remain.                                                      | F2                 |
-| F9      | Partial. Per-session queue databases are gone; one fixed-schema database exists; no reset mechanism; multi-tab and quota untested.                             | F2, I2             |
-| F10     | Resolved for wakes and readiness; polling bounds are measured in V1.                                                                                           | V1                 |
-| F11     | Partial. Outbound one copy; inbound copies.                                                                                                                    | F2                 |
-| F12     | Resolved for bounds (256-sequence window, `resync-required`); range repair remains.                                                                            | R1                 |
-| F13     | Resolved for ceilings and the per-session count, byte, age and track budgets (V1a); the scale evidence remains (V1c, V1d).                                     | S3, V1             |
-| F14     | Mechanism present in both directions; cross-backend proof remains.                                                                                             | R1                 |
-| F15     | Resolved for the first release's scope; roadmap decision D8 governs the series.                                                                                | every PR           |
-| F16     | Partly closed: fencing (R2), audiences (A1), the leader ACK (A2a) and exclusive ownership (A2b) delivered; correlation open.                                   | R2, A1, A2, I1     |
-| F17     | Partial. Settlement truthful; handle and disposal outcomes remain.                                                                                             | S1, I2             |
+| Finding | State on `a28e61b61`                                                                                                                                                                                 | Remainder owned by |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| F1      | Open. Transport settlement is truthful, but the public send result is an admission snapshot and `receiver` normalizes to `hop`.                                                                      | S1, S2, S3         |
+| F2      | Resolved. One decoder, resource ceilings with UTF-8 accounting, validated control payloads, advisory NACK as a value.                                                                                | done               |
+| F3      | Partial. Snapshot floors and server no-floor authorization exist; frozen audience and membership fencing remain.                                                                                     | S2, R2             |
+| F4      | Open. One envelope is reused across carriers, but inbound stores stay carrier-scoped.                                                                                                                | S2, S3             |
+| F5      | Partly closed: the volatile default and the per-session bound (S3), the age and track bounds and the usage metric (V1a), channel backpressure as a congestion input (V1b-i); fairness open (V1b-ii). | S3, V1             |
+| F6      | Partial. Exact observation compare-and-set exists; two dequeue owners and whole-store reads remain.                                                                                                  | F2, R1             |
+| F7      | Partial. Outbound has one canonical envelope; inbound effects still copy envelopes; the server has two consumers on one work queue.                                                                  | F2                 |
+| F8      | Partial. An indexed page reader exists; seven `getAll()` call sites and a full-range cleanup scan remain.                                                                                            | F2                 |
+| F9      | Partial. Per-session queue databases are gone; one fixed-schema database exists; no reset mechanism; multi-tab and quota untested.                                                                   | F2, I2             |
+| F10     | Resolved for wakes and readiness; polling bounds are measured in V1.                                                                                                                                 | V1                 |
+| F11     | Partial. Outbound one copy; inbound copies.                                                                                                                                                          | F2                 |
+| F12     | Resolved for bounds (256-sequence window, `resync-required`); range repair remains.                                                                                                                  | R1                 |
+| F13     | Resolved for ceilings and the per-session count, byte, age and track budgets (V1a); the scale evidence remains (V1c, V1d).                                                                           | S3, V1             |
+| F14     | Mechanism present in both directions; cross-backend proof remains.                                                                                                                                   | R1                 |
+| F15     | Resolved for the first release's scope; roadmap decision D8 governs the series.                                                                                                                      | every PR           |
+| F16     | Partly closed: fencing (R2), audiences (A1), the leader ACK (A2a) and exclusive ownership (A2b) delivered; correlation open.                                                                         | R2, A1, A2, I1     |
+| F17     | Partial. Settlement truthful; handle and disposal outcomes remain.                                                                                                                                   | S1, I2             |
 
 ## Scope and evidence
 

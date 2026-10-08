@@ -1,20 +1,36 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
-import type {
-    ALOutboundMessageRuntime,
-    ALOutboundPreparedSendResult,
-    ALOutboundSettledSendResult
+import type { ALQosInputProvider } from '../al-contracts/al-policy.ts';
+import {
+    AL_SUBMISSION_NOT_READY_RETRY_MS,
+    writeALOutboundCongestionDeferral,
+    type ALOutboundMessageRuntime,
+    type ALOutboundPreparedSendResult,
+    type ALOutboundRuntimeDiagnosticsSink,
+    type ALOutboundSettledSendResult
 } from '../alm/outbound/al-outbound-message-runtime.ts';
-import type { QRtcDataChannel } from '../webrtc/qrtc-data-channel.ts';
+import type { TransportFaultPort } from '../transport-faults/transport-fault-port.ts';
+import type { QRtcDataChannel, RtcDataChannelHealth } from '../webrtc/qrtc-data-channel.ts';
+import { computeRtcBackpressure } from './compute-rtc-backpressure.ts';
 import type { WebRtcOverlayMulticastManager } from './web-rtc-overlay-multicast-manager.ts';
+
+export namespace RtcOutboundSubmission {
+    export interface Dependencies {
+        readonly connectionService: WebRtcOverlayMulticastManager.Connection;
+        readonly clock: ALOutboundMessageRuntime.Clock;
+        readonly faultPort: TransportFaultPort;
+        /** The overlay's provider, whose priority a deferral names. */
+        readonly qosProvider: ALQosInputProvider;
+        /** The overlay's outbound diagnostics, where a send held back by backpressure reports it (D186). */
+        readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+    }
+}
 
 /** Translates an authorized next hop into native RTC submission and its settlement. */
 export class RtcOutboundSubmission {
-    private readonly connectionService: WebRtcOverlayMulticastManager.Connection;
-    private readonly clock: ALOutboundMessageRuntime.Clock;
+    private readonly dependencies: RtcOutboundSubmission.Dependencies;
 
-    constructor(connectionService: WebRtcOverlayMulticastManager.Connection, clock: ALOutboundMessageRuntime.Clock) {
-        this.connectionService = connectionService;
-        this.clock = clock;
+    constructor(dependencies: RtcOutboundSubmission.Dependencies) {
+        this.dependencies = dependencies;
     }
 
     send(msg: ALMessage, lifecycle: ALOutboundMessageRuntime.SendLifecycle): ALOutboundPreparedSendResult {
@@ -27,13 +43,13 @@ export class RtcOutboundSubmission {
             };
         }
 
-        const peer = this.connectionService.readPeer(peerId);
+        const peer = this.dependencies.connectionService.readPeer(peerId);
         if (!peer?.channel) {
             return {
                 status: 'not-ready',
                 submissionAttempted: false,
                 reason: `No RTC channel for peer ${peerId}`,
-                retryAfterMs: 50
+                retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS
             };
         }
 
@@ -43,14 +59,42 @@ export class RtcOutboundSubmission {
                 status: 'not-ready',
                 submissionAttempted: false,
                 reason: `RTC channel for peer ${peerId} is ${health.readyState}`,
-                retryAfterMs: 50
+                retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS
             };
         }
+        if (this.dependencies.faultPort.decideBackpressure('rtc', msg)) {
+            return this.deferBackpressuredSend(msg, peerId);
+        }
 
-        return this.submitPreparedMessage(peer.channel, msg, lifecycle);
+        return this.submitPreparedMessage(
+            { peerId, channel: peer.channel, flowControl: health.flowControl },
+            msg,
+            lifecycle
+        );
     }
+
+    /**
+     * A send the channel cannot take now, which its `drop-new` overflow drops at the high watermark, waits for its
+     * next attempt and reports the deferral (D186).
+     */
+    private deferBackpressuredSend(msg: ALMessage, peerId: string): ALOutboundPreparedSendResult {
+        writeALOutboundCongestionDeferral({
+            diagnostics: this.dependencies.diagnostics,
+            carrier: 'rtc',
+            message: msg,
+            selfPeerId: this.dependencies.connectionService.input.sessionId,
+            qosProvider: this.dependencies.qosProvider
+        });
+        return {
+            status: 'not-ready',
+            submissionAttempted: false,
+            reason: `RTC channel for peer ${peerId} is backpressured`,
+            retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS
+        };
+    }
+
     private submitPreparedMessage(
-        channel: WebRtcOverlayMulticastManager.Channel,
+        hop: RtcSubmissionHop,
         msg: ALMessage,
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): ALOutboundPreparedSendResult {
@@ -60,7 +104,7 @@ export class RtcOutboundSubmission {
             resolveSettlement = resolve;
         });
         const expiresAtEpochMs = Math.min(lifecycle.expiresAtMs ?? Infinity, lifecycle.leaseUntilMs ?? Infinity);
-        const result = channel.sendJson(msg, {
+        const result = hop.channel.sendJson(msg, {
             signal: lifecycle.signal,
             expiresAtEpochMs: Number.isFinite(expiresAtEpochMs) ? expiresAtEpochMs : undefined,
             onSettled: resolveSettlement
@@ -74,19 +118,29 @@ export class RtcOutboundSubmission {
                         submissionAttempted: value.submissionAttempted,
                         reason: value.reason,
                         messageExpiresAtMs: lifecycle.expiresAtMs,
-                        observedAtMs: this.clock.nowMs()
+                        observedAtMs: this.dependencies.clock.nowMs()
                     })
                 )
             };
+        }
+        if (result.status === 'dropped' && computeRtcBackpressure([{ ...result, flowControl: hop.flowControl }])) {
+            return this.deferBackpressuredSend(msg, hop.peerId);
         }
         return toALOutboundRtcSettlement({
             status: result.status,
             submissionAttempted: result.status === 'sent',
             reason: result.reason,
             messageExpiresAtMs: lifecycle.expiresAtMs,
-            observedAtMs: this.clock.nowMs()
+            observedAtMs: this.dependencies.clock.nowMs()
         });
     }
+}
+
+/** The next hop a submission writes to, with the flow control its channel drops an overflowing send by. */
+interface RtcSubmissionHop {
+    readonly peerId: string;
+    readonly channel: WebRtcOverlayMulticastManager.Channel;
+    readonly flowControl: RtcDataChannelHealth['flowControl'];
 }
 
 interface ALOutboundRtcSettlementInput {
@@ -104,14 +158,14 @@ function toALOutboundRtcSettlement(input: ALOutboundRtcSettlementInput): ALOutbo
             status: 'not-ready',
             submissionAttempted,
             reason: 'RTC attempt lease elapsed before native submission.',
-            retryAfterMs: 50
+            retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS
         };
     }
     if (status === 'failed' && submissionAttempted) {
         return { status: 'failed', submissionAttempted, reason, retryAfterMs: 50 };
     }
     if (status === 'dropped' || status === 'closed' || status === 'failed') {
-        return { status: 'not-ready', submissionAttempted, reason, retryAfterMs: 50 };
+        return { status: 'not-ready', submissionAttempted, reason, retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS };
     }
     return { status, submissionAttempted, reason };
 }

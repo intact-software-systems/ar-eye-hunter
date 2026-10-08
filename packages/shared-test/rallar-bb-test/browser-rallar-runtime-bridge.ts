@@ -35,6 +35,7 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
         injectFault: async (input) => await (await readBrowserRallarRuntime()).injectFault(input),
         readStorageCounters: async (input) => await (await readBrowserRallarRuntime()).readStorageCounters(input),
         readAlmUsage: async () => await readBrowserWindow().__blackBoxRallar?.readAlmUsage(),
+        readCongestionCounters: async () => await readBrowserWindow().__blackBoxRallar?.readCongestionCounters(),
         refreshRoom: async (options) => await (await readBrowserRallarRuntime()).refreshRoom(options),
         waitForRoom: async (options) => await (await readBrowserRallarRuntime()).waitForRoom(options),
         director: createSpaBrowserRallarDirectorRuntime(),

@@ -62,6 +62,7 @@ function createRtcOwner(settlements: ALDeliverySettlement[]) {
         outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
+        faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
     const service = createDefaultWebRtcRxStreamerService({ multicast, sessionId: 'self' });

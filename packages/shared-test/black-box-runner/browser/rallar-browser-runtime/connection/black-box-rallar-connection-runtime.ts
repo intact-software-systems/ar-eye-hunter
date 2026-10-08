@@ -160,6 +160,8 @@ export class BlackBoxRallarConnectionRuntime {
             waitForRoom: async (options) => await this.#waitForRoom(options),
             readRtcMessageNacks: (messageId) => rallar.readRtcMessageNacks(messageId),
             readAlmUsage: async () => rallar.isConnected() ? rallar.messages.readUsage() : undefined,
+            readCongestionCounters: async () =>
+                rallar.isConnected() ? rallar.diagnostics.congestion.getCounters() : undefined,
             crdt,
             director,
             formation,

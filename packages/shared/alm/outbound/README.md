@@ -182,7 +182,7 @@ every server message keeps its one backend.
   durabilities is split between the lanes; no caller declares one that way.
 - **A volatile admission never leaves the caller's turn.** It reads no IndexedDB and takes no Web Lock,
   so it completes within the caller's microtask chain, and a loop of awaited volatile sends yields no
-  task turn until it ends (R-S3a-7). A burst loop should yield or batch; fairness is V1b's.
+  task turn until it ends (R-S3a-7). A burst loop should yield or batch; fairness is V1b-ii's.
 - **Every lane-emitted diagnostic names its lane.** `commit-phases`, `effect-drain` and
   `readiness-probe` carry a required `lane` (`ALStoreDurability`: `durable`, `checkpoint` or
   `volatile`) (R-S3a-15), so a reader of the runner's storage speed can leave the memory lanes out.
@@ -801,16 +801,35 @@ deadline) has its own volatile sends refused. The bound is also shared with the 
 WS inbound runtime admits on the volatile pair (`group-state.event`, `client-state.snapshot`, `client-state.event`,
 R-S3c-ii-7): a lane agent that leaves and rejoins a room holds about 26 KB of it, under one per cent of the
 production limits. Whether platform topics leave the application's bound is an open decision for the maintainer.
-While the budget is at or over its count or byte limit the session's QoS provider reports `overloaded` for the session's own outbound
-data originations only: never for a control, a receipt, an acknowledgement, a repair, a relay forward or an inbound
-plan (R-S3c-ii-8), so a session at its bound still acknowledges, forwards and delivers for other sessions. Under the
-default policy the RTC origin drops a best-effort room send that reads it, and that drop reads `capacity` as the
+While the budget is at or over its count or byte limit the session's QoS provider reports `overloaded` for the session's
+own outbound data originations only: never for a control, a receipt, an acknowledgement, a repair, a relay forward or an
+inbound plan (R-S3c-ii-8), so a session at its bound still acknowledges, forwards and delivers for other sessions. Under
+the default policy the RTC origin drops a best-effort room send that reads it, and that drop reads `capacity` as the
 admission bound's refusal does: at the bound every send, best-effort or not, on either carrier, ends `rejected` with
 `{ kind: 'refused', reason: 'capacity' }` and is never handed to a fallback. That drop names no `limit`, because
-`overloaded` names none; only the ledger's own refusal does. The WS outbound path does not consult
-`overloaded`; its admission bound refuses the same sends. The RTC rate limiter spends its token before the plan, so a
-refused send still spends one: a burst of refused sends can push a later send inside the bound to `rate-limited`,
-which hands it to WS, where the shared budget admits it.
+`overloaded` names none; only the ledger's own refusal does. The WS client runs the same congestion planning on its own
+new data admissions but never reads `overloaded`: its session bound refuses a send `capacity`, naming the limit, after
+the plan; a send the plan already dropped `congested` never reaches the bound. The RTC rate limiter spends its token
+before the plan, so a refused send still spends one: a burst of refused sends can push a later send inside the bound to
+`rate-limited`, which hands it to WS, where the shared budget admits it.
+
+Channel backpressure is the policy's second live input (D184). A carrier reads it only when it first plans one of the
+session's own new data admissions: the RTC overlay for a room send when the reliable channel of every ready next hop
+holds at least its `flowControl.highWatermarkBytes` buffered (`computeRtcBackpressure`), the WS client when the socket's
+`bufferedAmount` is at least `AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES` (256 KiB). A control, a receipt, a relay forward,
+a retransmission, a replan, an inbound plan, an RTC unicast and an unaddressed RTC send never read it, and a scripted
+transport fault's `backpressure` action holds a carrier backpressured for the frames it matches. The congestion policy
+applies when the live state is `overloaded` or `backpressured`, and the drop names its cause (D185): `overloaded` first,
+its drop the `capacity` refusal above; a backpressure drop is the drop code and refusal reason `congested`, which
+`AL_DELIVERY_FALLBACK_REFUSAL_REASONS` lists, so an `rtc-with-ws-fallback` send refused `congested` on RTC is handed to
+WS at admission with a refused RTC attempt row and no `carrierFallback`, and a send with no fallback ends `rejected`
+with `{ kind: 'refused', reason: 'congested' }` and no attempt. `drop-low` drops a priority-0 (or lower) send only,
+`reject` every send, `defer` none; a kept send waits at submission, where backpressure is a `not-ready` on both
+carriers. Each decision is one `congestion` diagnostic, `{ carrier, cause, action, priority, msgId }` with `action`
+`drop` (the outbound admission), `defer` (the submission, for every message the page holds there, relay forwards and
+controls included) or `hand-over` (the browser's message dispatch, which hands a congested RTC leg to WS at admission
+and names the message's own normalized congestion priority, not the one the carrier's QoS provider planned with) (D186);
+the black-box harness counts them as `ALCongestionCounters`.
 
 The age limit bounds the admissions the ledger counts, not the ordering state the pairs keep (D181): the volatile
 pairs keep an ordering track for the repository's hour (`orderingTrackTtlMs`), because a receiver that forgot a track
@@ -930,9 +949,16 @@ attempt expires at the earlier of the message deadline and its durable claim lea
 An attempt lease ending before the message deadline permits another attempt with
 the same identity; it does not expire the logical message. Settlement carries factual
 per-message evidence of whether native submission was attempted. Closed or unavailable
-channels, backpressure rejection, and untouched queued siblings cleared by a channel
+channels, backpressure, and untouched queued siblings cleared by a channel
 error return readiness. A native send that throws remains an attempted failure with
 an uncertain delivery outcome.
+
+Every `not-ready` either carrier returns names `retryAfterMs`
+`AL_SUBMISSION_NOT_READY_RETRY_MS` (50 ms). Backpressure is one of them: on RTC the
+channel's synchronous `dropped` result at or above its high watermark (a lane that
+queues on overflow keeps queueing), on WS a socket at or above
+`AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES`, which holds every message, controls
+included. Each such deferral states a `congestion` `defer` diagnostic.
 
 Readiness uses the existing `RETRY` and future `nextTs`: release refunds only the
 current reservation's attempt, preserving earlier failed attempts. It records neither

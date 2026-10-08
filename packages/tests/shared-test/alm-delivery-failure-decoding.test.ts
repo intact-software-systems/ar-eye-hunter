@@ -16,6 +16,7 @@ const OBSERVATION = {
     attempts: 1,
     attemptOutcomes: ['sent'],
     attemptCarriers: ['rtc'],
+    attemptRefusalReasons: [],
     reason: 'Hop relay-session refused the message: stale.'
 };
 
@@ -24,6 +25,7 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
         [
             { kind: 'refused', reason: 'capacity' },
             { kind: 'refused', reason: 'capacity', limit: 'tracks' },
+            { kind: 'refused', reason: 'congested' },
             {
                 kind: 'relay-rejected',
                 rejection: { relay: 'trusted-server', reason: 'unauthorized' }
@@ -60,6 +62,7 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
         { failure: { kind: 'refused', reason: 'busy' }, field: 'failure.reason' },
         { failure: { kind: 'refused', reason: 'capacity', limit: 'rate' }, field: 'failure.limit' },
         { failure: { kind: 'refused', reason: 'unsupported', limit: 'bytes' }, field: 'failure.limit' },
+        { failure: { kind: 'refused', reason: 'congested', limit: 'bytes' }, field: 'failure.limit' },
         {
             failure: {
                 kind: 'relay-rejected',

@@ -171,6 +171,39 @@ describe('rallar-bb-test extended assert operators', () => {
         ).toBe(false);
     });
 
+    it('passes matches on an array only when it is non-empty and the pattern matches every member', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'room.assert.rows',
+            payload: {
+                data: {
+                    allSent: ['sent', 'sent', 'sent'],
+                    lastNotReady: ['sent', 'not-ready'],
+                    none: [],
+                    numbers: [1, 2]
+                }
+            }
+        });
+        const matchesSent = async (field: string) =>
+            (await evaluateAssert(runtime, {
+                source: `messages.0.payload.data.${field}`,
+                operator: 'matches',
+                expected: '^sent$'
+            })).ok;
+
+        expect(await matchesSent('allSent')).toBe(true);
+        expect(await matchesSent('lastNotReady')).toBe(false);
+        expect(await matchesSent('none')).toBe(false);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.numbers',
+                operator: 'matches',
+                expected: '^[0-9]$'
+            })).ok
+        ).toBe(false);
+    });
+
     it('evaluates shape operators on lastResult and resultCache roots', async () => {
         const runtime = createDeterministicRuntime();
         await runtime.execute({

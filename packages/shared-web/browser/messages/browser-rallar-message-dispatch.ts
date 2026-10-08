@@ -6,6 +6,7 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALAckAlgo, ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
+import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryCarrier,
@@ -16,7 +17,10 @@ import {
     isALDeliveryAdmissionFallbackVerdict,
     isALDeliveryFallbackPastDeadline
 } from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
-import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    writeALOutboundRuntimeDiagnostic,
+    type ALOutboundEnqueueResult
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALStorageUnavailable } from '@shared/alm/storage/al-storage-unavailable.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -119,6 +123,7 @@ export class BrowserRallarMessageDispatch {
         sink(toCarrierAdmissionSettlement(admission, this.input.nowMs()));
         wakeQueueBoxEngineIfQueued(delivery.context.middleware.qboxEngine, result);
         if (admission.fallback === 'retry') {
+            writeCongestionHandOverDiagnostic(delivery, result);
             await this.writeCapturedMessage({
                 ...delivery,
                 carrier: delivery.carrier === 'rtc' ? 'ws' : 'rtc',
@@ -203,6 +208,28 @@ export class BrowserRallarMessageDispatch {
             return toUnadmittedAdmission(message, { kind: 'failed', detail: toError(caught).message });
         }
     }
+}
+
+/**
+ * A leg refused for its carrier's backpressure that the strategy hands to the other carrier is a congestion
+ * decision of its own (D186); the carrier already reported its drop. The priority is the message's own
+ * effective one: the dispatch holds no QoS provider.
+ */
+function writeCongestionHandOverDiagnostic(
+    delivery: BrowserRallarMessageDispatch.Delivery,
+    result: CapturedMessageAdmission
+): void {
+    if (result.verdict.kind !== 'refused' || result.verdict.reason !== 'congested') {
+        return;
+    }
+    writeALOutboundRuntimeDiagnostic(delivery.context.middleware.outboundDiagnostics, {
+        kind: 'congestion',
+        carrier: delivery.carrier,
+        cause: 'backpressured',
+        action: 'hand-over',
+        priority: normalizeALQosPolicy(result.message).effective.congestion.opts.priority,
+        msgId: result.message.id.msgId
+    });
 }
 
 function toUnadmittedAdmission(message: ALMessage, verdict: ALDeliveryAdmissionVerdict): CapturedMessageAdmission {

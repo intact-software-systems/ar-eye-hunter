@@ -50,8 +50,8 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         title: 'Observe ALM Send',
         description: 'Waits for a prior messages.send handle to reach one of the given delivery states. ' +
             `The shared states are ${AL_DELIVERY_STATES.join(', ')}. ` +
-            'The in-page handle projects admission, carrier attempts with their attemptOutcomes and attemptCarriers, a relayRejection, a carrierFallback, ' +
-            'the typed failure of a send that ended rejected, failed or expired, and the ' +
+            'The in-page handle projects admission, carrier attempts with their attemptOutcomes, attemptCarriers and attemptRefusalReasons, a relayRejection, ' +
+            'a carrierFallback, the typed failure of a send that ended rejected, failed or expired, and the ' +
             'latest receipt: its receiptMode, the hop lists, and expectedRecipientPeerIds, confirmedRecipientPeerIds and ' +
             'unconfirmedRecipientPeerIds beside them; a lost handle is unobservable.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
@@ -104,8 +104,8 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         title: 'Read ALM Receipts',
         description: 'Reads the in-page lifecycle observation for a messages.send handle, including receiptMode, ' +
             'confirmedHopPeerIds, unconfirmedHopPeerIds, expectedRecipientPeerIds, confirmedRecipientPeerIds, ' +
-            'unconfirmedRecipientPeerIds, attempts, attemptOutcomes, attemptCarriers, relayRejection, carrierFallback, failure, submission facts and reason. ' +
-            'Unknown handles are unobservable.',
+            'unconfirmedRecipientPeerIds, attempts, attemptOutcomes, attemptCarriers, attemptRefusalReasons, relayRejection, carrierFallback, failure, ' +
+            'submission facts and reason. Unknown handles are unobservable.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
@@ -139,6 +139,9 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         kind: 'fault.inject',
         title: 'Inject Transport or Storage Fault',
         description: 'Schedules a drop for matching WS/RTC traffic, or WS-only delay or not-ready submission faults. ' +
+            'backpressure, on either carrier, makes the carrier read its channel as at its high watermark when it ' +
+            'plans each matching origination, so the send meets its congestion policy: a best-effort send is refused ' +
+            'congested or handed to WS under rtc-with-ws-fallback, an at-least-once send settles not-ready and retries. ' +
             'match.msgId may name a {resultCache.<commandId>.<path>} token, such as the msgId an earlier ' +
             'messages.send returned, so one message is held while every other frame of its type passes. ' +
             'carrier storage instead faults the IndexedDB operations of match.owner (al-admission or al-work) and ' +

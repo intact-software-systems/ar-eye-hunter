@@ -162,7 +162,8 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'server-command',
         'capacity',
         'capacity-age',
-        'capacity-tracks'
+        'capacity-tracks',
+        'backpressure-deferred'
     ],
     rtc: [
         'volatile-default',
@@ -182,7 +183,9 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'ws-unicast-receipt',
         'capacity',
         'capacity-age',
-        'capacity-tracks'
+        'capacity-tracks',
+        'backpressure-refused',
+        'backpressure-deferred'
     ],
     'rtc-with-ws-fallback': [
         'volatile-default',
@@ -207,7 +210,8 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'unicast-fallback',
         'capacity',
         'capacity-age',
-        'capacity-tracks'
+        'capacity-tracks',
+        'backpressure-hands-over'
     ]
 } as const;
 
@@ -508,6 +512,7 @@ describe('alm-conformance recipe family', () => {
             'ws-unicast-receipt',
             'unicast-fallback',
             ...VOLATILE_BOUND_KEYS,
+            'backpressure-hands-over',
             'receipted-audience',
             'receipted-audience',
             'receipted-audience',
@@ -526,6 +531,8 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],
