@@ -212,6 +212,8 @@ export interface ALQosNormalizationResult {
 export interface ALMessagePlanningObservations {
     readonly nowMs: number;
     readonly dedupSeen?: boolean;
+    /** The session holding a live claim on the message's resource key; present only where an admission read one. */
+    readonly claimHolderPeerId?: string;
     readonly orderingObservation?: ALOrderingObservation;
     readonly supersedenceObservation?: ALSupersedenceObservation;
 }
@@ -238,7 +240,8 @@ export type ALMessageDropReasonCode =
     | 'overloaded'
     | 'not-yet-in-sync'
     | 'unauthorized'
-    | 'membership-fenced';
+    | 'membership-fenced'
+    | 'held-by-other';
 
 export const AL_MESSAGE_DROP_REASON_CODES: readonly ALMessageDropReasonCode[] = Object.freeze([
     'unmet-requirements',
@@ -250,7 +253,8 @@ export const AL_MESSAGE_DROP_REASON_CODES: readonly ALMessageDropReasonCode[] = 
     'overloaded',
     'not-yet-in-sync',
     'unauthorized',
-    'membership-fenced'
+    'membership-fenced',
+    'held-by-other'
 ]);
 
 export interface ALMessageHandlingPlan {
@@ -489,6 +493,9 @@ function resolveMessageDrop(
     if (context.dedupSeen) {
         return { code: 'duplicate', reason: `Duplicate message for dedup key ${dedupKey}` };
     }
+    if (isHeldByOtherSession(result.effective, context)) {
+        return { code: 'held-by-other', reason: 'Exclusive resource is held by another session' };
+    }
     if (supersedenceRuntime.status === 'superseded') {
         return {
             code: 'superseded',
@@ -517,6 +524,11 @@ function resolveMessageDrop(
         };
     }
     return undefined;
+}
+
+function isHeldByOtherSession(effective: ALQosEffectivePolicy, context: ALMessagePlanningContext): boolean {
+    return effective.ownership.algo === 'exclusive' && context.claimHolderPeerId !== undefined &&
+        context.claimHolderPeerId !== context.fromPeerId;
 }
 
 function computeMessageDelivery(
@@ -602,20 +614,11 @@ function planNack(
         };
     }
 
-    if (drop?.code === 'expired') {
+    if (drop?.code === 'expired' || drop?.code === 'overloaded' || drop?.code === 'held-by-other') {
         return {
             enabled: true,
             toPeerId: context.fromPeerId,
-            reason: 'expired',
-            missingRanges: []
-        };
-    }
-
-    if (drop?.code === 'overloaded') {
-        return {
-            enabled: true,
-            toPeerId: context.fromPeerId,
-            reason: 'overloaded',
+            reason: drop.code,
             missingRanges: []
         };
     }

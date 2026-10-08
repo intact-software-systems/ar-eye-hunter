@@ -6,6 +6,8 @@ import type {
     ALInboundResyncRequired
 } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
+import { AL_VOLATILE_SESSION_MAX_AGE_MS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 export namespace BrowserResyncRecovery {
@@ -13,18 +15,20 @@ export namespace BrowserResyncRecovery {
         readonly owners: BrowserChannelRecoveryOwners;
         /** The browser's ALM diagnostics port, where every invocation is stated. */
         readonly storage: ALStorageEventSink;
+        readonly nowMs: () => number;
     }
 }
 
 /**
- * Invokes a channel's recovery owner once per ordering track for the life of this runtime: the
- * runtime resets no track after a resynchronization, and the sender's new epoch is a new track. The
- * set of invoked tracks is unbounded on purpose, as once per track for the runtime's life is the
- * contract. A message whose route declared no owner is dropped as before, and nothing is stated for it.
+ * Invokes a channel's recovery owner once per ordering track while the track goes on resynchronizing:
+ * the runtime resets no track after a resynchronization, and the sender's new epoch is a new track. A
+ * track is remembered for the session's age budget after its last resynchronization (D181), so one that
+ * fell silent is forgotten and a later resynchronization of it invokes the owner again. A message whose
+ * route declared no owner is dropped as before, and nothing is stated for it.
  */
 export class BrowserResyncRecovery {
     private readonly input: BrowserResyncRecovery.Input;
-    private readonly invokedTrackKeys = new Set<string>();
+    private readonly invokedTrackKeys = new LatestRepository<string, true>({ ttlMs: AL_VOLATILE_SESSION_MAX_AGE_MS });
 
     constructor(input: BrowserResyncRecovery.Input) {
         this.input = input;
@@ -37,10 +41,15 @@ export class BrowserResyncRecovery {
         }
         // A resynchronization's message is ordered, so its track is always named; the undefined branch is the type's.
         const trackKey = toALOrderingTrackKey(resync.msg);
-        if (trackKey === undefined || this.invokedTrackKeys.has(trackKey)) {
+        if (trackKey === undefined) {
             return;
         }
-        this.invokedTrackKeys.add(trackKey);
+        const nowMs = this.input.nowMs();
+        const invoked = this.invokedTrackKeys.readAt(trackKey, nowMs) !== undefined;
+        this.invokedTrackKeys.acceptAt({ key: trackKey, value: true, nowEpochMs: nowMs });
+        if (invoked) {
+            return;
+        }
         invokeRecoveryOwner(owner, resync.cursor);
         this.input.storage({ kind: 'recovery-owner-invoked', ...resync.cursor });
     }

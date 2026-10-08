@@ -12,9 +12,16 @@ import {
     type WebRtcConnectionService
 } from '@shared/services/web-rtc-connection-service.ts';
 
-export type MiddlewareTestOverrides = {
-    readonly [K in keyof RallarBrowserMiddleware]?: Partial<RallarBrowserMiddleware[K]>;
-};
+import { createDefaultVolatileSessionBudget } from './default-volatile-session-budget.ts';
+
+/** The volatile ledger is replaced whole: a partial ledger would read a report no session holds. */
+export type MiddlewareTestOverrides =
+    & {
+        readonly [K in Exclude<keyof RallarBrowserMiddleware, 'volatileBudget'>]?: Partial<RallarBrowserMiddleware[K]>;
+    }
+    & {
+        readonly volatileBudget?: RallarBrowserMiddleware['volatileBudget'];
+    };
 
 export interface ApiMiddlewareTestOverrides {
     readonly session?: Partial<AuthSession>;
@@ -53,7 +60,8 @@ export function createDefaultApiMiddlewareTestDouble(
                 session.sessionId,
                 middlewareOverrides.heartbeat
             ),
-            storageAvailability: createStorageAvailabilityDouble(middlewareOverrides.storageAvailability)
+            storageAvailability: createStorageAvailabilityDouble(middlewareOverrides.storageAvailability),
+            volatileBudget: middlewareOverrides.volatileBudget ?? createDefaultVolatileSessionBudget()
         }
     };
 }

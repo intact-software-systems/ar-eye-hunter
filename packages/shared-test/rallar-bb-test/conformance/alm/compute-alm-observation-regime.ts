@@ -8,6 +8,7 @@ import type {
     ALMObservationInboundClaim,
     ALMObservationInboundDrain,
     ALMObservationInboundOutcome,
+    ALMObservationLedgerReading,
     ALMObservationRtcLifecycle,
     ALMObservationSnapshot,
     ALMObservationStorageCounters
@@ -115,6 +116,23 @@ export type ALMObservationPageDiagnostics =
     }>
     | Readonly<{ outcome: 'not-captured'; }>;
 
+/**
+ * The cell's session ledgers at their fullest (D180): each maximum is over every `stats` reading of every
+ * agent, so it reads the most any one page held, not a sum across pages. `no-readings` is a cell whose
+ * agents read no ledger at all, not an idle one.
+ */
+export type ALMObservationLedger =
+    | Readonly<{
+        outcome: 'measured';
+        readingCount: number;
+        maxAdmissions: number;
+        maxBytes: number;
+        maxOldestAgeMs: number;
+        maxTracks: number;
+        overloadedReadings: number;
+    }>
+    | Readonly<{ outcome: 'no-readings'; }>;
+
 export interface ALMObservationRegime {
     readonly runId: string;
     readonly carrier: string;
@@ -130,6 +148,7 @@ export interface ALMObservationRegime {
     readonly inbound: readonly ALMObservationInboundDirection[];
     readonly pageDiagnostics: ALMObservationPageDiagnostics;
     readonly pageRegime: ALMObservationPageRegime;
+    readonly ledger: ALMObservationLedger;
     readonly snapshotIssues: readonly string[];
 }
 
@@ -178,6 +197,7 @@ export function computeALMObservationRegime(input: ALMObservationRegimeInput): A
         inbound: computeInboundDirections(input.snapshot),
         pageDiagnostics: computePageDiagnostics(input.pageDiagnosticsFile),
         pageRegime,
+        ledger: computeLedger(input.snapshot.ledgerReadings),
         snapshotIssues: []
     };
 }
@@ -201,6 +221,7 @@ export function createUnreadableALMObservationRegime(
         inbound: [],
         pageDiagnostics: computePageDiagnostics(input.pageDiagnosticsFile),
         pageRegime: { outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' },
+        ledger: { outcome: 'no-readings' },
         snapshotIssues: input.snapshotIssues
     };
 }
@@ -327,6 +348,22 @@ function toPeerReadiness(
     return readyAtEpochMs === undefined
         ? { outcome: 'never-ready', sessionId, peerId, observedMs: lastAtEpochMs - knownAtEpochMs }
         : { outcome: 'ready', sessionId, peerId, readinessMs: readyAtEpochMs - knownAtEpochMs };
+}
+
+function computeLedger(readings: readonly ALMObservationLedgerReading[]): ALMObservationLedger {
+    if (readings.length === 0) {
+        return { outcome: 'no-readings' };
+    }
+    const usages = readings.map((reading) => reading.usage);
+    return {
+        outcome: 'measured',
+        readingCount: readings.length,
+        maxAdmissions: usages.reduce((max, usage) => Math.max(max, usage.admissions), 0),
+        maxBytes: usages.reduce((max, usage) => Math.max(max, usage.bytes), 0),
+        maxOldestAgeMs: usages.reduce((max, usage) => Math.max(max, usage.oldestAgeMs), 0),
+        maxTracks: usages.reduce((max, usage) => Math.max(max, usage.tracks), 0),
+        overloadedReadings: readings.filter((reading) => reading.overloaded).length
+    };
 }
 
 function computeWorkPageRate(

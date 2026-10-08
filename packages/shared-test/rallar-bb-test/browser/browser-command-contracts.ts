@@ -3,6 +3,7 @@ import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browse
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+
 import type {
     RallarBlackBoxRtcCaptureSupport,
     RallarBlackBoxTestCommand,
@@ -82,6 +83,8 @@ export interface RallarBlackBoxBrowserRallarRuntime {
     submitControl: RallarBlackBoxBrowserRallarRuntimeMethod;
     injectFault: RallarBlackBoxBrowserRallarRuntimeMethod;
     readStorageCounters: RallarBlackBoxBrowserRallarRuntimeMethod;
+    /** The page's session ledger report, read by the `stats` command; `undefined` before the page connects. */
+    readAlmUsage(): Promise<unknown>;
     refreshRoom(options: RallarBlackBoxBrowserRoomRefreshOptions): Promise<unknown>;
     waitForRoom: BlackBoxRallarRuntime['waitForRoom'];
     readonly crdt?: RallarBlackBoxBrowserRallarCrdtRuntime;
@@ -157,7 +160,7 @@ export type RallarBlackBoxBrowserTestRuntime =
     }>;
 
 export type CreateRallarBlackBoxBrowserTestRuntimeOptions =
-    & Omit<CreateRallarBlackBoxTestRuntimeOptions, 'commandExecutor' | 'cleanup'>
+    & Omit<CreateRallarBlackBoxTestRuntimeOptions, 'commandExecutor' | 'cleanup' | 'readAlmUsage'>
     & Readonly<{
         rallarRuntime?: RallarBlackBoxBrowserRallarRuntime;
         fetch?: typeof fetch;

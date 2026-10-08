@@ -405,14 +405,14 @@ application's QoS provider, whose own capabilities override the carrier's. The
 
 **PARTIAL — S3c-ii, the first live provider:** the browser installs a
 per-session QoS provider that reports `overloaded` while the session's volatile
-budget is at or over a limit (D78), for the session's own outbound data
+budget is at or over its count or byte limit (D78), for the session's own outbound data
 originations only: a control, a receipt, an acknowledgement, a repair, a relay
 forward and an inbound plan never read it, so a session at its bound still
 acknowledges, forwards and delivers for other sessions (R-S3c-ii-8). At the
 bound every send, best-effort or not, on either carrier, reads `capacity`: it
 ends `rejected` with `{ kind: 'refused', reason: 'capacity' }` and is never
-handed to a fallback. Transport-aware authorization, the other budgets and
-fairness are V1's.
+handed to a fallback. The age and track budgets joined in V1a (D179, below);
+fairness is V1b's, and transport-aware authorization stays planned.
 
 ## Reliability and acknowledgement
 
@@ -666,7 +666,7 @@ congestion/fanout/supersedence concepts.
 volatile budget is the first `overloaded` producer (D78), reported for the
 session's own outbound data originations only, so at the bound every send
 reads `capacity` and controls, forwards and arrivals flow on (R-S3c-ii-8).
-Channel backpressure as a policy input is V1's.
+Channel backpressure as a policy input is V1b's.
 
 ## Durability and browser-local storage
 
@@ -783,11 +783,12 @@ and RTC alternate-parent repair exist.
 refuses a message `resync-required` at admission, or can no longer order a
 buffered release, it hands the channel's owner the cursor `{ orderingKey,
 senderId, epoch, lastContiguousSeq, expectedSeq, observedSeq, carrier }` once per
-ordering track per runtime, after its NACK to the sender committed, and states
+ordering track while it goes on resynchronizing, after its NACK to the sender committed, and states
 `recovery-owner-invoked` on the storage diagnostics port
 ([`browser-resync-recovery.ts`](../../packages/shared-web/browser/messages/browser-resync-recovery.ts),
-D142). ALM resets no track; the sender's new epoch re-arms the owner, and a
-reload invokes it once more. Without an owner the message is dropped as before.
+D142). ALM resets no track; the sender's new epoch re-arms the owner, as does a
+track's next resynchronization after 5 minutes without one, and a reload invokes
+it once more. Without an owner the message is dropped as before.
 The WS server declares no owner and keeps NACKing `resync-required`. The
 conformance lane's `ordering-resync` cell observes the owner over the RTC
 carriers; over `ws` the relay refuses the gapped send before the receiver sees
@@ -796,21 +797,37 @@ it, so no owner is invoked there.
 ## Ownership
 
 `shared` means every matching local subscriber may observe the message.
-`exclusive` means exactly one registered consumer in the declared ownership
-scope may claim it. The scope is explicit: local process, browser session,
-principal, group, or server consumer group. Durable exclusive claims use leases
-and redelivery from existing QueueBox/ResourceInbox; volatile exclusive selection
-is deterministic and observable. Distributed ownership reuses the existing
-ResourceInbox reservation with lease, expiry, and redelivery; no generic claim
-system is added.
+`exclusive` means exactly one sending session holds the message's resource key
+in its room at a time. The room is the only ownership scope defined. The exclusive
+claim is an admission-store row with an expiry, read and guarded at the commit as
+the dedup key is; no generic claim system is added.
 
-**PARTIAL:** Current services use `exclusive` to select one local callback.
-
-**PLANNED — A2b, ownership scope:** The contract does not say whether exclusive
-is local or distributed, and no distributed exclusive-consumer claim exists. A2
-defines `exclusive` as a claim on the message's resource key backed by the
-existing ResourceInbox reservation with lease, expiry, and redelivery, surfaced
-as `claimed`, `held-by-other`, or `expired`.
+**CURRENT — A2b, the claim on the resource key:** an `exclusive` send the WS
+server admits from a client claims the room-scoped resource key (the room's
+`GroupRef` scope with the route `topicId`, `contextId` and `resourceId`) for the
+sending session (D171). The first claimant is admitted and delivered, which is
+`claimed`; another session's exclusive send on a live claim is dropped
+`held-by-other` and NACKed, a trusted-server `relay-rejected` on its handle and
+no fallback trigger; the holder's re-send is admitted and moves the expiry
+(D175). The lease is the message's lifetime: the claim expires with the
+message's `constraints.expiresAtMs`, an expired claim frees the key for the next
+claimant, and an unconfirmed claimed message ends `expired`; there is no lease
+constant, renewal call or release call (D172); a send with no expiry of its own
+holds the key for the WS server's retention default, and every browser send
+carries a `ttlMs`. The claim lives in the WS
+server's admission store beside dedup, read with the message and decided in the
+planner as the drop code `held-by-other`, so it holds across every API process;
+browsers never read one (D173). Exclusive is WS-only: the browser sends it over
+WS under every strategy but `rtc`, the RTC origin refuses it `unsupported`, and
+the browser validator refuses an exclusive send without a `resourceId` or
+without a room audience (D174). `shared` sends neither read nor take a claim,
+and receivers still select one local callback for an `exclusive` message. AR
+Eye Hunter's pickup intents claim the pickup: the loser reads `held-by-other`
+before its intent reaches the director, and the arena shows the loss (D176).
+The conformance lane's `claim` family proves one winner over `ws` and
+`rtc-with-ws-fallback`, the reclaim after expiry over `ws` and the refusal over
+`rtc`; manifests 18 and 22 are unchanged (D177). Server publications claim
+nothing, and scopes other than the room are not defined (D178).
 
 ## Observability and privacy
 
@@ -873,15 +890,40 @@ elements per protocol collection/page, 64 visited peers or hops, a 256-sequence
 repair window, and 256 messages and 1 MiB per ordering track. The additional
 ceilings are planned requirements, not current guarantees.
 
-**CURRENT — S3c-ii, the volatile bound:** one session holds at most 1 000
-volatile messages and 4 MiB of envelopes at a time, sent and received together.
-A sent message is counted until its deadline, a received one until the earlier
-of its deadline and 30 s after its arrival; a message whose sender named no
-deadline is not counted. Over the bound the next send is refused `capacity`, and
-a received message is counted, never refused (D74, D78). The bound is shared
-with the platform's own state sync received on the volatile pair: a lane agent
-that leaves and rejoins a room holds about 26 KB of it, under one per cent of
-the production limits (R-S3c-ii-6, R-S3c-ii-7).
+**CURRENT — S3c-ii and V1a, the volatile bound:** one session holds at most
+1 000 volatile messages and 4 MiB of envelopes at a time, sent and received
+together; it sends no volatile message whose deadline lies more than 5 minutes
+ahead; and its own ordered sends hold at most 64 live ordering tracks (D179).
+A sent message is counted until its deadline, and its track until the last
+counted send on it reaches its deadline; a received one until the earlier of
+its deadline and 30 s after its arrival, and it never opens a counted track; a
+message whose sender named no deadline is not counted. A send that would pass a
+limit is refused `capacity` with the `limit` it would pass (`admissions`,
+`bytes`, `age` or `tracks`), and a received message is counted, never refused
+(D74, D78). A best-effort RTC room send that the RTC carrier's congestion drop
+sheds while the session is at or over the count or byte limit is refused
+`capacity` with no `limit`. The bound is shared with the platform's own state sync received on
+the volatile pair: a lane agent that leaves and rejoins a room holds about
+26 KB of it, under one per cent of the production limits (R-S3c-ii-6,
+R-S3c-ii-7).
+
+**CURRENT — V1a, the bound as a metric:** `rallar.messages.readUsage()` reads
+the session's usage (messages, bytes, the age of the oldest counted message,
+tracks), its limits and whether it is `overloaded`, and the black-box `stats`
+command records the same report as `rallar.alm`, so every run that reads
+`stats` measures the bound over time; the ALM lane's observation records each
+page's one end-of-cell reading, and the `capacity-tracks` cell's reading at the
+track bound (D180). The age limit bounds the messages the bound counts, not ordering
+state: an ordering track stays known for an hour after its last message, so a
+resumed track is not read as a gap. What a session keeps per message, track or
+peer is bounded rather than held for its lifetime: the ids of cancelled and
+handed-over sends for 60 minutes, the browser's record of resynchronized tracks
+for 5 minutes (a track that has not resynchronized for 5 minutes calls its
+recovery handler again when it next resyncs), and RTC round-trip measurements
+share one counter for all peers
+(D181). **Limit:** a long session plateaus rather than empties: an idle ordering
+track keeps two inbound rows for an hour, and each sending origin one outbound
+version row.
 
 These are work limits, not a 256-session room limit. Large audiences and system
 snapshots use bounded producer/consumer pages without truncation; incomplete
@@ -895,8 +937,8 @@ buffers retain their separate responsibilities.
 route identifier, 128 KiB envelope, 256-entry collection or page, 64 hops,
 256-sequence repair window, 256 messages and 1 MiB per ordered track) live in one
 contract and apply to live and persisted envelopes and to control payloads.
-Aggregate per-session budgets (count, bytes, age, active tracks) land in S3 and
-V1.
+Aggregate per-session budgets (count, bytes, age, active tracks) are current:
+count and bytes since S3, age and active tracks since V1a (D179).
 
 **PLANNED — P1 and I2b, storage budgets:** Each durability tier has a recorded
 storage budget (D87):

@@ -44,6 +44,11 @@ interface RoomMessageIdentity {
     readonly roomRef?: GroupRef;
 }
 
+/** Exclusive as the policy normalizes it: a `qos.ownership` request wins over the `ownership` option (D174). */
+export function isExclusiveSendInput(send: Pick<RallarMessageSendBase<never>, 'ownership' | 'qos'>): boolean {
+    return (send.qos?.ownership?.algo ?? send.ownership) === 'exclusive';
+}
+
 export namespace BrowserMessageInputValidator {
     export interface Input {
         readonly readMaxPayloadBytes: () => number;
@@ -85,6 +90,7 @@ export class BrowserMessageInputValidator {
         this.pushScopeIssue(scope, 'RTC', issues);
         this.pushAudienceIssues(input, scope, issues);
         issues.push(...validateLeaderAudience(input.ack, scope));
+        issues.push(...validateExclusiveClaim(input, scope));
         if (roomId !== undefined) {
             this.pushOptionalRouteId({
                 value: roomId,
@@ -114,6 +120,7 @@ export class BrowserMessageInputValidator {
         }
         this.pushAudienceIssues(input, scope, issues);
         issues.push(...validateLeaderAudience(input.ack, scope));
+        issues.push(...validateExclusiveClaim(input, scope));
         return issues;
     }
 
@@ -420,4 +427,33 @@ function validateLeaderAudience(
             message: 'A group-leader send addresses its room\'s leader: it names a room audience, never the world.'
         }]
         : [];
+}
+
+/**
+ * An exclusive send claims the resource it names in its room (D174): a fresh resource id per send would claim nothing,
+ * and the world has no room to hold the claim. A principal send without a room is already refused as roomless.
+ */
+function validateExclusiveClaim(
+    send: Pick<RallarMessageSendBase<never>, 'ownership' | 'qos' | 'resourceId'>,
+    scope: RallarMessageScope
+): readonly RallarValidationIssue[] {
+    if (!isExclusiveSendInput(send)) {
+        return [];
+    }
+    const issues: RallarValidationIssue[] = [];
+    if (send.resourceId === undefined) {
+        issues.push({
+            path: '$.ownership',
+            code: 'exclusive-requires-resource',
+            message: 'An exclusive send claims a resource: it names its resourceId.'
+        });
+    }
+    if (scope === 'world') {
+        issues.push({
+            path: '$.ownership',
+            code: 'exclusive-requires-room-audience',
+            message: 'An exclusive send claims a resource in its room: it names a room.'
+        });
+    }
+    return issues;
 }

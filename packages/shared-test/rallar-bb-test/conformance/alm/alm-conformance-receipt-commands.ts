@@ -24,7 +24,7 @@ import {
 } from './alm-conformance-message-commands.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
-import { toCommandId, toScenarioTypeId } from './alm-conformance-step-identities.ts';
+import { toCommandId, toConnectionName, toScenarioTypeId } from './alm-conformance-step-identities.ts';
 
 /** The recipient roles the receipt of a send confirms and leaves unconfirmed once its scenario has run. */
 export interface AlmConformanceReceiptRoles {
@@ -55,6 +55,14 @@ interface AlmConformanceAudienceSendInput {
     readonly ack: Extract<RallarBlackBoxTestMessagesSendCommand['ack'], 'all-logical-recipients' | 'group-leader'>;
     /** Absent, every live session of the room. */
     readonly audience?: AlmConformanceSendAudience;
+    /** Absent, the send claims nothing: it is `shared` on a resource the product mints. */
+    readonly claim?: AlmConformanceSendClaim;
+}
+
+/** An exclusive send claims its named resource for the sending session. */
+export interface AlmConformanceSendClaim {
+    readonly ownership: 'exclusive';
+    readonly resourceId: string;
 }
 
 /** The first send of an addressed scenario, admitted and observed until its addressee acknowledges it. */
@@ -81,7 +89,7 @@ export function toAddressedSendCommands(
 
 /** The first send of an audience scenario: one room send, its audience frozen at its admission. */
 export function toAudienceSendCommand(
-    { sender, ttlMs, ack, audience }: AlmConformanceAudienceSendInput
+    { sender, ttlMs, ack, audience, claim }: AlmConformanceAudienceSendInput
 ): RallarBlackBoxTestCommand {
     return toSendCommand({
         ...sender,
@@ -92,7 +100,8 @@ export function toAudienceSendCommand(
             reliability: 'at-least-once',
             ttlMs,
             commandTimeoutMs: Math.min(ttlMs, NON_EXPIRING_SEND_TIMEOUT_MS),
-            ...audience
+            ...audience,
+            ...claim
         }
     });
 }
@@ -129,6 +138,17 @@ export function toServerReceiptCommands(sender: AlmConformanceStepInput): readon
  */
 export function toReceiptWindowCommands(
     sender: AlmConformanceStepInput,
+    window: AlmConformanceReceiptWindow
+): readonly RallarBlackBoxTestCommand[] {
+    return [toSelfAbsenceCommand(sender), ...toReceiptReadCommands(sender, window)];
+}
+
+/**
+ * The origin reads the receipt of its first send once its own window has passed: the state the handle ended in, the
+ * receipt mode and the length of each recipient list.
+ */
+export function toReceiptReadCommands(
+    origin: AlmConformanceStepInput,
     { roles, ending, mode }: AlmConformanceReceiptWindow
 ): readonly RallarBlackBoxTestCommand[] {
     const lists = [
@@ -137,11 +157,10 @@ export function toReceiptWindowCommands(
         ['unconfirmedRecipientPeerIds', roles.unconfirmed.length]
     ] as const;
     return [
-        toSelfAbsenceCommand(sender),
-        toReceiptsCommand({ ...sender, index: 1 }),
-        toReceiptAssertion(sender, 'state', ending),
-        toReceiptAssertion(sender, 'receiptMode', mode),
-        ...lists.map(([field, expected]) => toReceiptAssertion(sender, `${field}.length`, expected))
+        toReceiptsCommand({ ...origin, index: 1 }),
+        toReceiptAssertion(origin, 'state', ending),
+        toReceiptAssertion(origin, 'receiptMode', mode),
+        ...lists.map(([field, expected]) => toReceiptAssertion(origin, `${field}.length`, expected))
     ];
 }
 
@@ -150,7 +169,7 @@ export function toSelfAbsenceCommand(sender: AlmConformanceStepInput): RallarBla
     return {
         kind: 'messages.received',
         commandId: toCommandId(sender, 'received-self-1'),
-        connection: sender.input.senderConnection,
+        connection: toConnectionName(sender),
         typeId: toScenarioTypeId(sender),
         count: 1,
         absent: true,

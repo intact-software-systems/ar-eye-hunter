@@ -25,7 +25,7 @@ import type { ALBrowserLocks } from '../storage/al-browser-locks.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
-import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
+import type { ALVolatileSessionBudget, ALVolatileSessionLimit } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
 import type {
@@ -156,6 +156,8 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly dropReason?: string;
     /** Required so every planner states its drop code; `undefined` means the plan is not dropping the message. */
     readonly dropReasonCode: ALOutboundDropReasonCode | undefined;
+    /** The session volatile bound a `capacity` drop passed (D179); absent on a congestion drop the planner made. */
+    readonly capacityLimit?: ALVolatileSessionLimit;
     /** The store lane the admission runs in: the message's durability, or `volatile` for a dropping plan. */
     readonly lane: ALStoreDurability;
     readonly preparedMessages: readonly TPrepared[];
@@ -451,7 +453,7 @@ export namespace ALOutboundMessageRuntime {
  *   send its storage refused: that admission committed nothing, so the memory lane holds the only copy.
  */
 export class ALOutboundMessageRuntime<TPrepared> {
-    private readonly sendControls = new ALOutboundSendControls();
+    private readonly sendControls: ALOutboundSendControls;
     private readonly durable: ALOutboundStoreLane<TPrepared>;
     private readonly volatile: ALOutboundStoreLane<TPrepared> | undefined;
     private readonly checkpoint: ALOutboundStoreLane<TPrepared> | undefined;
@@ -460,6 +462,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     constructor(dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>) {
         this.dependencies = dependencies;
+        this.sendControls = new ALOutboundSendControls({ nowMs: () => dependencies.clock.nowMs() });
         this.durable = new ALOutboundStoreLane({
             lane: 'durable',
             stores: dependencies,
@@ -523,10 +526,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     /**
-     * Cancels one message for this owner's lifetime. A message the owner never admitted is still
-     * remembered, so a row later claimed for it completes without sending; a message with a live
-     * attempt has that attempt's transport signal aborted. Idempotent: only the first call states the
-     * `cancelled` settlement.
+     * Cancels one message for the durable row retention (`DEFAULT_AL_REPOSITORY_TTL_MS`). A message the owner never
+     * admitted is still remembered, so a row later claimed for it completes without sending; a message with a live
+     * attempt has that attempt's transport signal aborted. Idempotent within the retention: only the first call
+     * states the `cancelled` settlement.
      */
     cancel(msgId: string): ALOutboundCancelOutcome {
         const outcome = this.sendControls.cancel(msgId);

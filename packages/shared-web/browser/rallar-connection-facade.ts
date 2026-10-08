@@ -8,6 +8,7 @@ import type {
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
     ApplicationId,
@@ -46,6 +47,11 @@ export interface RallarBrowserMiddleware {
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
     readonly heartbeat: RallarSessionHeartbeat;
     readonly storageAvailability: BrowserALStorageAvailability;
+    /**
+     * The report of the session's volatile ledger, which both carriers' runtimes count against (D74); its admissions
+     * stay the carriers' own, so no caller can count into the bound that refuses sends.
+     */
+    readonly volatileBudget: Pick<ALVolatileSessionBudget, 'readReport'>;
 }
 
 /** Authenticated browser connection returned by setup and connect operations. */

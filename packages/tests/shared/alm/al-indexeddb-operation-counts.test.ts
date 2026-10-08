@@ -22,8 +22,7 @@ import {
     type ALOutboundWorkDeferral
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import {
-    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-    AL_VOLATILE_SESSION_MAX_BYTES,
+    AL_VOLATILE_SESSION_LIMITS,
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
@@ -294,7 +293,7 @@ describe('outbound volatile send IndexedDB volume', () => {
         );
         expect(computeNonProbeWorkOperations(counts), 'no non-probe al-work operation').toBe(0);
         // S3c-ii (D74): the session budget counts the send in memory and moves no IndexedDB counter.
-        expect(budget.readUsage(Date.now()).admissions, 'the bounded send is counted once').toBe(1);
+        expect(budget.readReport(Date.now()).usage.admissions, 'the bounded send is counted once').toBe(1);
         runtime.dispose();
     });
 });
@@ -730,7 +729,7 @@ async function readAdmittedInboundDelivery(
         delivered: fixture.delivered,
         admissionOperations: counts.byOwner['al-admission'],
         nonProbeWorkOperations: computeNonProbeWorkOperations(counts),
-        budgetAdmissions: budget.readUsage(Date.now()).admissions
+        budgetAdmissions: budget.readReport(Date.now()).usage.admissions
     };
 }
 
@@ -777,10 +776,7 @@ function createManualCheckpointTimers(): ALCheckpointWriter.Timers & { armed(): 
 
 /** The production bound over one session's memory pairs (D74). */
 function createDefaultSessionBudget(): ALVolatileSessionBudget {
-    return new ALVolatileSessionBudget({
-        maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-        maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-    });
+    return new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
 }
 
 /** The durable owners' idle probes (`work-page`, `work-probe`) are reported beside the zero, never in it. */

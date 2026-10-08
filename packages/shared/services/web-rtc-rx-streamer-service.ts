@@ -111,11 +111,15 @@ export class WebRtcRxStreamerService {
     };
 
     private readonly heartbeatByPeerId = new Map<PeerId, WebRtcHeartbeatService>();
-    private readonly rttVersionByPeerId = new Map<PeerId, number>();
     private readonly peersByPeerId = new Map<PeerId, WebRtcConnectionService.Peer>();
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private disposed = false;
     private rttReportingPeerIds: ReadonlySet<PeerId> | undefined;
+    /**
+     * One counter for every peer's measurements, so each pair's versions only rise across a heartbeat restart
+     * or a peer's replacement and nothing is kept per peer (D181).
+     */
+    private lastRttVersion = 0;
 
     public readonly multicast: WebRtcOverlayMulticastManager;
     public readonly sessionId: string;
@@ -371,9 +375,8 @@ export class WebRtcRxStreamerService {
     }
 
     private publishRttMeasurement(peerId: PeerId, result: PingResult): void {
-        const previousVersion = this.rttVersionByPeerId.get(peerId) ?? 0;
-        const version = Math.max(previousVersion + 1, result.version);
-        this.rttVersionByPeerId.set(peerId, version);
+        const version = Math.max(this.lastRttVersion + 1, result.version);
+        this.lastRttVersion = version;
         const rtt: RttMeasurementInfo = {
             sessionIdFrom: this.sessionId,
             sessionIdTo: peerId,

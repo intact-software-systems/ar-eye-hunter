@@ -55,6 +55,16 @@ const LEADER_ACK_KEYS_BY_CARRIER = {
     'rtc-with-ws-fallback': ['leader-confirms']
 } as const;
 
+/** The claim cells run on the three agents: the two WS cells where a strategy allows WS, the refusal on rtc alone. */
+const CLAIM_KEYS_BY_CARRIER = {
+    ws: ['claim-first-wins', 'claim-expires-reclaims'],
+    rtc: ['claim-refused-on-rtc'],
+    'rtc-with-ws-fallback': ['claim-first-wins']
+} as const;
+
+/** The volatile-bound cells run in the addressed family on every carrier, under the full tag only. */
+const VOLATILE_BOUND_KEYS = ['capacity', 'capacity-age', 'capacity-tracks'] as const;
+
 /** The audiences run on every carrier, on the sender's principal twice and another principal once. */
 const AUDIENCE_KEYS = ['principal-delivery', 'fixed-list-delivery', 'world-routing'] as const;
 
@@ -150,7 +160,9 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'repair-exhausted',
         'ws-unicast-receipt',
         'server-command',
-        'capacity'
+        'capacity',
+        'capacity-age',
+        'capacity-tracks'
     ],
     rtc: [
         'volatile-default',
@@ -168,7 +180,9 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'repair-exhausted',
         'not-yet-in-sync-expires',
         'ws-unicast-receipt',
-        'capacity'
+        'capacity',
+        'capacity-age',
+        'capacity-tracks'
     ],
     'rtc-with-ws-fallback': [
         'volatile-default',
@@ -191,7 +205,9 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'no-fallback-after-deadline',
         'ws-unicast-receipt',
         'unicast-fallback',
-        'capacity'
+        'capacity',
+        'capacity-age',
+        'capacity-tracks'
     ]
 } as const;
 
@@ -217,10 +233,10 @@ describe('alm-conformance recipe family', () => {
         expect(scenarios.filter((scenario) => scenario.laneFamily === 'addressed').map(({ scenarioId }) => scenarioId))
             .toEqual(
                 carrier === 'ws'
-                    ? ['ws-unicast-receipt', 'server-command', 'capacity']
+                    ? ['ws-unicast-receipt', 'server-command', ...VOLATILE_BOUND_KEYS]
                     : carrier === 'rtc'
-                    ? ['ws-unicast-receipt', 'capacity']
-                    : ['ws-unicast-receipt', 'unicast-fallback', 'capacity']
+                    ? ['ws-unicast-receipt', ...VOLATILE_BOUND_KEYS]
+                    : ['ws-unicast-receipt', 'unicast-fallback', ...VOLATILE_BOUND_KEYS]
             );
     });
 
@@ -233,7 +249,7 @@ describe('alm-conformance recipe family', () => {
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     ),
                     ...AUDIENCE_KEYS.flatMap((key) => ['sender', 'receiver', 'sibling'].map((role) => `alm-${carrier}-${key}-${role}`)),
-                    ...LEADER_ACK_KEYS_BY_CARRIER[carrier].flatMap((key) =>
+                    ...[...LEADER_ACK_KEYS_BY_CARRIER[carrier], ...CLAIM_KEYS_BY_CARRIER[carrier]].flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     ),
                     ...['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-durable-takeover-${role}`),
@@ -244,7 +260,7 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('declares recipient-b on the receipted-audience, membership fence and leader scenarios, successor on durable-takeover and flush-on-hide and sibling on the audiences only; every other scenario keeps one sender and one receiver', () => {
+    it('declares recipient-b on the receipted-audience, membership fence, leader and claim scenarios, successor on durable-takeover and flush-on-hide and sibling on the audiences only; every other scenario keeps one sender and one receiver', () => {
         const threeAgentIds = [
             'receipted-audience',
             'fenced-delivery',
@@ -252,7 +268,10 @@ describe('alm-conformance recipe family', () => {
             'fenced-rejection',
             'leader-confirms',
             'no-leader-refused',
-            'leader-outside-list'
+            'leader-outside-list',
+            'claim-first-wins',
+            'claim-expires-reclaims',
+            'claim-refused-on-rtc'
         ];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
@@ -387,8 +406,9 @@ describe('alm-conformance recipe family', () => {
                     command.commandId?.includes('frozen-audience-membership-recipient-b') === true;
                 // R-S3b-20: durable-opt-in's received-1 carries the durable path's own budget; pinned separately below.
                 const durableOptInReceived1 = command.commandId?.endsWith('durable-opt-in-receiver-received-1') === true;
-                // The capacity sender reconnects before it sends; that wait is pinned in alm-conformance-addressed-scenarios.
-                const capacityReceived1 = command.commandId?.endsWith('capacity-receiver-received-1') === true;
+                // The capacity and capacity-tracks senders reconnect before they send; those waits are pinned in
+                // alm-conformance-addressed-scenarios.
+                const capacityReceived1 = /-capacity(-tracks)?-receiver-received-1$/.test(command.commandId ?? '');
                 if (durableOptInReceived1 || capacityReceived1) {
                     continue;
                 }
@@ -487,13 +507,14 @@ describe('alm-conformance recipe family', () => {
             'no-fallback-after-deadline',
             'ws-unicast-receipt',
             'unicast-fallback',
-            'capacity',
+            ...VOLATILE_BOUND_KEYS,
             'receipted-audience',
             'receipted-audience',
             'receipted-audience',
             'receipted-audience',
             ...AUDIENCE_KEYS,
             ...LEADER_ACK_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
+            ...CLAIM_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
             'durable-takeover'
         ]);
         expect(
@@ -505,6 +526,9 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
+            ['full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],

@@ -147,13 +147,15 @@ function toStartedCells(entry: ReturnType<typeof createAlmConformance2AgentEntry
 }
 
 describe('ALM conformance hosted lane families', () => {
-    it('withholds exactly the named cells: both checkpoint cells and the exhausted repair everywhere, the gap repair where it runs', () => {
+    it('withholds exactly the named cells: both checkpoint cells, the exhausted repair and the age and track bound cells everywhere, the gap repair where it runs', () => {
         const defined = toFamilyCells(['two-agent', 'addressed']);
-        // Removing a withheld cell from hosted manifest 18 is a deliberate act: the checkpoint and repair cells keep
-        // manifest 18 as recorded.
+        // Removing a withheld cell from hosted manifest 18 is a deliberate act: the checkpoint, repair and volatile
+        // bound cells keep manifest 18 as recorded.
         const withheld = [
             ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
-                ['checkpoint-recovery', 'checkpoint-lag', 'repair-exhausted'].map((key) => `alm-${carrier}-${key}`)
+                ['checkpoint-recovery', 'checkpoint-lag', 'repair-exhausted', 'capacity-age', 'capacity-tracks'].map((
+                    key
+                ) => `alm-${carrier}-${key}`)
             ),
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-ordering-gap-repair`)
         ];
@@ -168,14 +170,18 @@ describe('ALM conformance hosted lane families', () => {
         ]);
     });
 
-    it('carries the three-agent family in the 3-agent entry, withholding the membership fence and leader cells wherever they run', () => {
+    it('carries the three-agent family in the 3-agent entry, withholding the membership fence, leader and claim cells wherever they run', () => {
         const withheld = [
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.flatMap((carrier) => ['fenced-delivery', 'fenced-catch-up'].map((key) => `alm-${carrier}-${key}`)),
             'alm-ws-fenced-rejection',
             ...ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-leader-confirms`),
             'alm-ws-no-leader-refused',
             'alm-rtc-no-leader-refused',
-            'alm-ws-leader-outside-list'
+            'alm-ws-leader-outside-list',
+            'alm-ws-claim-first-wins',
+            'alm-rtc-with-ws-fallback-claim-first-wins',
+            'alm-ws-claim-expires-reclaims',
+            'alm-rtc-claim-refused-on-rtc'
         ];
         const defined = toFamilyCells(['three-agent']);
 

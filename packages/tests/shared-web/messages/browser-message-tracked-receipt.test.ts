@@ -7,8 +7,18 @@ import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/brows
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
-import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALNackControlMessage, newALReceiptControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    newALUnicastMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
+import {
+    newALNackControlMessage,
+    newALReceiptControlMessage,
+    type ALNackReason,
+    type ALReceiptPayload
+} from '@shared/al-contracts/al-control.ts';
 import { resolveALChannelSendDefaults } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import {
@@ -44,6 +54,12 @@ interface DispatchHarness {
 }
 
 type CarrierAdmission = (message: ALMessage) => Promise<ALOutboundEnqueueResult>;
+
+/** The origin WS client and the browser's dispatch over it, so a test can hand the client the server's controls. */
+interface ExclusiveWsLeg {
+    readonly ws: WsQueueBoxClientService;
+    readonly harness: DispatchHarness;
+}
 
 describe('the receipt a WS send tracks reaches its handle (R-S3a-4)', () => {
     afterEach(() => {
@@ -270,8 +286,8 @@ describe('the leader receipt of a group-leader room send reaches its handle', ()
         const handle = harness.send(createLeaderSend(SESSION_ID, 'leader-acknowledged-ws'));
         await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
 
-        await ws.acceptIncomingMessage(toLeaderReceipt(handle.msgId, 'admitted', []));
-        await ws.acceptIncomingMessage(toLeaderReceipt(handle.msgId, 'complete', ['director']));
+        await ws.acceptIncomingMessage(toServerReceipt(handle.msgId, 'admitted', ['director'], []));
+        await ws.acceptIncomingMessage(toServerReceipt(handle.msgId, 'complete', ['director'], ['director']));
 
         await expect.poll(() => handle.lifecycle().state).toBe('acknowledged');
         expect(handle.lifecycle()).toMatchObject({
@@ -297,6 +313,59 @@ describe('the leader receipt of a group-leader room send reaches its handle', ()
             kind: 'relay-rejected',
             rejection: { relay: 'trusted-server', reason: 'no-leader' }
         });
+    });
+});
+
+describe('the claim of an exclusive room send reaches its handle', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        TestWebSocket.instances.length = 0;
+    });
+
+    it('ends an exclusive send on ws acknowledged when the server\'s receipt confirms every recipient', async () => {
+        const { ws, harness } = await createExclusiveWsLeg();
+        const handle = harness.send(createExclusiveSend('receiver'));
+        await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
+
+        await ws.acceptIncomingMessage(toServerReceipt(handle.msgId, 'admitted', ['b', 'c'], []));
+        await ws.acceptIncomingMessage(toServerReceipt(handle.msgId, 'complete', ['b', 'c'], ['b', 'c']));
+
+        await expect.poll(() => handle.lifecycle().state).toBe('acknowledged');
+        expect(handle.lifecycle().evidence).toMatchObject({
+            confirmedRecipientPeerIds: ['b', 'c'],
+            carrierFallback: undefined,
+            failure: undefined
+        });
+    });
+
+    it('ends a receipted exclusive send on ws rejected by the server\'s held-by-other refusal, as its relay rejection', async () => {
+        const { ws, harness } = await createExclusiveWsLeg();
+        const handle = harness.send(createExclusiveSend('receiver'));
+        await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
+
+        await ws.acceptIncomingMessage(toServerNack(handle.msgId, 'held-by-other'));
+
+        await expect.poll(() => handle.lifecycle().state).toBe('rejected');
+        expect(handle.lifecycle().evidence.attempts).toHaveLength(1);
+        expect(handle.lifecycle().evidence.failure).toEqual({
+            kind: 'relay-rejected',
+            rejection: { relay: 'trusted-server', reason: 'held-by-other' }
+        });
+    });
+
+    it('keeps a receipt-less exclusive send transport-accepted and carries the server\'s held-by-other refusal as evidence', async () => {
+        const { ws, harness } = await createExclusiveWsLeg();
+        const handle = harness.send(createExclusiveSend('none'));
+        await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
+
+        await ws.acceptIncomingMessage(toServerNack(handle.msgId, 'held-by-other'));
+
+        await expect.poll(() => handle.lifecycle().evidence.relayRejection).toEqual({
+            relay: 'trusted-server',
+            reason: 'held-by-other'
+        });
+        expect(handle.lifecycle().state).toBe('transport-accepted');
+        expect(handle.lifecycle().evidence.failure).toBeUndefined();
     });
 });
 
@@ -345,13 +414,42 @@ function createLeaderSend(senderId: string, resourceId: string): ALMessage {
     });
 }
 
-function toLeaderReceipt(msgId: string, phase: ALReceiptPayload['phase'], confirmedRecipientPeerIds: readonly string[]): ALMessage {
+async function createExclusiveWsLeg(): Promise<ExclusiveWsLeg> {
+    const registry = createRegistry();
+    const ws = await createWsClient(registry, SESSION_ID, SERVER_PEER_ID);
+    return { ws, harness: createDispatchHarness(registry, 'ws', { ws: (message) => ws.enqueueOutboxIfAbsent(message) }) };
+}
+
+/** A room broadcast claiming the one resource every exclusive send here names. */
+function createExclusiveSend(ack: 'receiver' | 'none'): ALMessage {
+    return newALBroadcastMessage(SESSION_ID, toRoute('pickup-1'), 'room', 'chat.message.v1', { text: 'mine' }, {
+        groupRef: ORIGIN_ROOM,
+        reliability: 'at-least-once',
+        ack,
+        ownership: 'exclusive',
+        ttlMs: TTL_MS
+    });
+}
+
+function toServerNack(msgId: string, reason: ALNackReason): ALMessage {
+    return newALNackControlMessage(
+        { v: 3, msgId: `nack-${reason}-${msgId}`, senderId: SERVER_PEER_ID, ts: Date.now() },
+        { msgId, fromPeerId: SERVER_PEER_ID, toPeerId: SESSION_ID, reason, observedAtEpochMs: Date.now() }
+    );
+}
+
+function toServerReceipt(
+    msgId: string,
+    phase: ALReceiptPayload['phase'],
+    expectedRecipientPeerIds: readonly string[],
+    confirmedRecipientPeerIds: readonly string[]
+): ALMessage {
     return newALReceiptControlMessage(
         { v: 3, msgId: `receipt-${phase}-${msgId}`, senderId: SERVER_PEER_ID, ts: Date.now() },
         {
             msgId,
             originPeerId: SESSION_ID,
-            expectedRecipientPeerIds: ['director'],
+            expectedRecipientPeerIds,
             confirmedRecipientPeerIds,
             snapshotVersion: 4,
             phase,

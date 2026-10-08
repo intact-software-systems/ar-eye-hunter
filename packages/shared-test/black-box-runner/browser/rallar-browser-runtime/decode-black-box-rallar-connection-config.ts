@@ -1,10 +1,15 @@
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import { toRallarRtcCaptureContext } from '@shared-web/browser/rallar-operation-options.ts';
-import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import {
+    AL_VOLATILE_SESSION_MAX_AGE_MS,
+    AL_VOLATILE_SESSION_MAX_TRACKS,
+    type ALVolatileSessionLimits
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 import type { RtcDataChannelFlowControlPolicy } from '@shared/webrtc/qrtc-data-channel.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import type { BlackBoxRallarConfig, BlackBoxRallarConnectionConfig } from './black-box-rallar-operation-contracts.ts';
 import { decodeBlackBoxCommandRoomRef, isBlackBoxCommandRecord } from './decode-black-box-rallar-command-input.ts';
 
@@ -199,21 +204,29 @@ function dataChannelLanes(value: unknown): readonly RtcDataChannelLaneConfig[] |
     });
 }
 
+/** The wire names the count and byte bounds; a lane that lowers no age or track bound reads the constants (D179). */
 function decodeAlmVolatileLimits(value: unknown): ALVolatileSessionLimits | undefined {
     if (value === undefined) {
         return undefined;
     }
     const record = configRecord(value);
-    const { maxAdmissions, maxBytes } = record;
+    const {
+        maxAdmissions,
+        maxBytes,
+        maxAgeMs = AL_VOLATILE_SESSION_MAX_AGE_MS,
+        maxTracks = AL_VOLATILE_SESSION_MAX_TRACKS,
+        ...unknownFields
+    } = record;
     if (
-        !isPositiveInteger(maxAdmissions) || !isPositiveInteger(maxBytes) ||
-        Object.keys(record).length !== 2
+        !isPositiveInteger(maxAdmissions) || !isPositiveInteger(maxBytes) || !isPositiveInteger(maxAgeMs) ||
+        !isPositiveInteger(maxTracks) || Object.keys(unknownFields).length > 0
     ) {
         throw new TypeError(
-            'rallar.almVolatileLimits must name maxAdmissions and maxBytes, each a positive integer.'
+            'rallar.almVolatileLimits must name maxAdmissions and maxBytes and may name maxAgeMs and maxTracks, ' +
+                'each a positive integer.'
         );
     }
-    return { maxAdmissions, maxBytes };
+    return { maxAdmissions, maxBytes, maxAgeMs, maxTracks };
 }
 
 function isPositiveInteger(value: unknown): value is number {

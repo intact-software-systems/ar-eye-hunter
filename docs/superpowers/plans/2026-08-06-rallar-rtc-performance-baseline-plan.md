@@ -40,17 +40,48 @@ are preserved. Local 18 runtime/lifecycle and 88 disposition controls pass; nati
 checking and a mandatory-field negative type oracle remain meaningful. Scoped Node
 typing still reports only the unchanged external Temporal declaration mismatch.
 Independent SPEC and complete QUALITY approve the corrected source after
-precisely bound import-only closure. Full hosted default-concurrency acceptance is pending.
+precisely bound import-only closure. It is published at `6711b160`;
+full hosted default-concurrency acceptance is pending.
 No timeout, retry, workload, cache warmup or worker-limit change is selected.
 
 PR633's nine real conflicts with pinned main `09a3b431` are independently reviewed,
 locally validated and published in feature merge `e71db5f0a`,
-tree `12d5caa36e6d1fb577fd21143c0de0501d38506b`. GitHub reports PR633 MERGEABLE;
-fresh hosted correctness and GitHub review remain pending. The repair preserves
-canonical current routing/volatile bounds and capture/admission/lifetime paths.
-Publishing that parent exposes an actual conflict in the stacked continuation
-PR645. The next two concrete slices are to publish the reviewed native correction,
-then repair that actual child conflict while preserving both branches' contracts.
+tree `12d5caa36e6d1fb577fd21143c0de0501d38506b`. GitHub reports PR633 MERGEABLE.
+Fresh Branch validation fails one cross-carrier duplicate-outcome test while
+14,070 unit cases pass; Formation, Medium and the other selected lanes succeed.
+The unchanged wait selects a later `dispatch-decision` for the same scenario,
+then its outcome assertion fails because that record has no admission outcome.
+An actual local receipt reproduces the wrong selection. This is a selector
+failure, not a timeout or evidence that the message was delivered twice.
+The proposed structured admission-kind/scenario match awaits bounded design approval;
+deadlines, both carrier orders and independent outcome assertions remain required.
+
+The stacked PR645's six conflicts are resolved in a reviewed seven-owner repair.
+Its integration preserves canonical routing/volatile bounds, HOST capture and
+mandatory/default input factories. Semantic TDD catches a delayed page-ledger read
+writing into a successor assignment; the correction fences writes after the await.
+Independent SPEC approves the first candidate. Complete QUALITY finds an earlier
+Health await can return successor B statistics to admitted A, without writing B
+state. Authentic held page-health TDD reproduces that failure (one failed,
+17 controls passed); the existing context now captures A's accepted observation
+and derives stale caller stats from it without reading B's ledger. All 18 cases
+then pass, including current-owner and rejection controls. The exact multiline
+import correction closes the remaining standards finding. Independent scoped SPEC
+and original QUALITY approve both corrections with no remaining findings.
+Final runtime/bridge controls pass 205 tests; the first candidate's unchanged
+public/routing controls pass 55. The maintained final packaging workload measures
+324.794 KiB, within the minimum whole-KiB headless cap of 325.
+Package/headless/operator typing and the maintained recursive native app check pass;
+affected test typing retains only the known external Temporal declaration error.
+The corrected source passes the canonical `6711b160` working-tree style gate.
+The committed gate against actual parent `e71db5f0a` fails one aggregate runtime
+complexity warning: measured 109 exceeds its existing reviewed disposition cap
+of 106. Complete owner reviews judge the runtime cohesive; classification against
+the current cohesion-warning tier and exact registry boundary remains required.
+No arbitrary split, broad suppression or new standards exception is selected.
+The next two useful slices are to correct the parent evidence selector after
+design approval and semantic TDD, then complete the approved worker/Actions intent
+forwarding and actual default headless application witness.
 
 After source correctness and integration, complete HOST/operator RUN forwarding
 and actual application through existing workers and Actions. The former exact

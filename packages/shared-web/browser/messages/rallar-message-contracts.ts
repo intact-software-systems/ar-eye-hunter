@@ -131,8 +131,9 @@ export type RallarStorageUnavailablePolicy = 'refuse' | 'volatile';
 /** A typed channel's owner of resynchronization: what the application does when the receiver can no longer order a sender's messages. */
 export interface RallarChannelRecovery {
     /**
-     * Invoked once per ordering track (ordering key, sender, epoch) per runtime, after the sender was
-     * NACKed. The sender's new epoch is a new track and invokes it again.
+     * Invoked once per ordering track (ordering key, sender, epoch) after the sender was NACKed, while the track goes
+     * on resynchronizing: each resynchronization renews it, and a track forgotten 5 minutes after its last one invokes
+     * it again. The sender's new epoch is a new track and invokes it again.
      */
     onResyncRequired(cursor: ALInboundResyncCursor): void;
 }

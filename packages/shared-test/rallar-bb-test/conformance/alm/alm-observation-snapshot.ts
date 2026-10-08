@@ -1,12 +1,15 @@
 import type { ALStoreDurability } from '../../../../shared/alm/al-runtime-stores.ts';
 import type { ALDeliveryCarrier } from '../../../../shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALVolatileSessionUsage } from '../../../../shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { Either } from '../../../../shared/resilience/Either.ts';
+import { decodeALVolatileSessionReport } from '../../alm/decode-al-volatile-session-report.ts';
 import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';
 
 const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
 const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
 const RTC_LIFECYCLE_TOPIC = 'rallar.browser.rtc.lifecycle';
 const STORAGE_COUNTERS_TOPIC = 'rallar.bb.storage.counters';
+const STATS_TOPIC = 'rallar.bb.stats';
 const COMMIT_PHASES_DIAGNOSTIC_KIND = 'commit-phases';
 const READINESS_PROBE_DIAGNOSTIC_KIND = 'readiness-probe';
 const ADMISSION_OUTCOME_DIAGNOSTIC_KIND = 'admission-outcome';
@@ -41,6 +44,17 @@ export interface ALMObservationStorageCounters {
     readonly workPageCount: number;
     /** The reading reset the page's counter, so that page's next reading counts from zero. */
     readonly reset: boolean;
+}
+
+/**
+ * One `stats` reading of an agent's session ledger (D180). The control client's periodic stats read no page and
+ * carry no ledger, so only the `stats` command's readings appear.
+ */
+export interface ALMObservationLedgerReading {
+    readonly atEpochMs: number;
+    readonly agentId: string;
+    readonly usage: ALVolatileSessionUsage;
+    readonly overloaded: boolean;
 }
 
 export type ALMObservationCommandResult =
@@ -129,6 +143,7 @@ export interface ALMObservationSnapshot {
     readonly inboundDrains: readonly ALMObservationInboundDrain[];
     readonly inboundClaims: readonly ALMObservationInboundClaim[];
     readonly readinessProbes: readonly ALMObservationReadinessProbe[];
+    readonly ledgerReadings: readonly ALMObservationLedgerReading[];
 }
 
 interface ALMObservationDiagnostic {
@@ -177,7 +192,8 @@ export function decodeALMObservationSnapshot(
         ),
         readinessProbes: toTopicDiagnostics(diagnostics, OUTBOUND_DIAGNOSTICS_TOPIC).map(toReadinessProbe).filter(
             isPresent
-        )
+        ),
+        ledgerReadings: events.map(toLedgerReading).filter(isPresent)
     });
 }
 
@@ -354,6 +370,20 @@ function toReadinessProbe(
             cause,
             durationMs
         };
+}
+
+function toLedgerReading(event: RallarBlackBoxTestRecord): ALMObservationLedgerReading | undefined {
+    const envelope = decodeRecord(event.payload);
+    const atEpochMs = decodeFiniteNumber(event.atEpochMs);
+    const agentId = decodeText(event.agentId);
+    const report = decodeRecord(decodeRecord(envelope?.payload)?.rallar)?.alm;
+    if (envelope?.topic !== STATS_TOPIC || atEpochMs === undefined || agentId === undefined || report === undefined) {
+        return undefined;
+    }
+    return decodeALVolatileSessionReport(report).fold(
+        () => undefined,
+        ({ usage, overloaded }) => ({ atEpochMs, agentId, usage, overloaded })
+    );
 }
 
 /**

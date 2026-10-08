@@ -1,13 +1,3 @@
-import * as connectionHttp from '@shared-web/browser/connection/connection-http-api.ts';
-import { createBrowserRtcCapture } from '@shared-web/browser/rtc/create-browser-rtc-capture.ts';
-import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
-import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
-import * as stateSnapshots from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
-import * as websocketFactory from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
-import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
-import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
-import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
-import '../../setup-browser-indexeddb.ts';
 import {
     describe,
     expect,
@@ -20,21 +10,33 @@ import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browse
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { BrowserALSessionChannel } from '@shared-web/browser/al-runtime/browser-al-session-channel.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
+import * as connectionHttp from '@shared-web/browser/connection/connection-http-api.ts';
 import {
     createBrowserTransportInput,
     initialiseMiddleware,
+    toBrowserMiddleware,
     toBrowserWebSocketQueueBoxInput,
     toRtcOverlayMulticastManagerInput,
     type BrowserConnectOptions
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { createBrowserRtcCapture } from '@shared-web/browser/rtc/create-browser-rtc-capture.ts';
+import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
+import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import * as stateSnapshots from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
+import * as websocketFactory from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
+import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
+import '../../setup-browser-indexeddb.ts';
 import { DeterministicRtcOfferIds } from '../../shared/webrtc/deterministic-rtc-offer-ids.ts';
+import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 const SESSION: AuthSession = {
     clientId: 'client-1',
@@ -47,7 +49,7 @@ const SESSION: AuthSession = {
 const OPTIONS: BrowserConnectOptions = {
     rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
     qosProvider: undefined,
-    readVolatileSessionLimits: () => ({ maxAdmissions: 3, maxBytes: 4_096 }),
+    readVolatileSessionLimits: () => ({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3, maxBytes: 4_096 }),
     deliverySettlements: { ws: () => {}, rtc: () => {} },
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},
@@ -136,7 +138,7 @@ describe('browser connection construction identity', () => {
 });
 
 describe('the one volatile bound a browser session hands its carriers (D74)', () => {
-    it('gives the inbound pair, the WS client and the RTC overlay the same budget and provider', () => {
+    it('gives the inbound pair, the WS client, the RTC overlay and the middleware the same budget and provider', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
@@ -159,6 +161,8 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
         expect(ws.qosProvider).toBe(qosProvider);
         expect(rtc.volatileBudget).toBe(budget);
         expect(rtc.qosProvider).toBe(qosProvider);
+        // The carriers stand in with a ledger of their own, which the session's must replace.
+        expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).volatileBudget).toBe(budget);
     });
 
     it('bounds the budget by the limits the session reads', () => {
@@ -167,7 +171,7 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
         const nowMs = Date.now();
 
         const admissions = [1, 2, 3, 4].map((index) =>
-            budget.tryAdmit({ msgId: `sent-${index}`, bytes: 1, deadlineAtMs: nowMs + 30_000, nowMs }).left !== undefined
+            budget.tryAdmit({ msgId: `sent-${index}`, bytes: 1, deadlineAtMs: nowMs + 30_000, nowMs, trackKey: undefined }).left !== undefined
         );
 
         expect(admissions).toEqual([false, false, false, true]);

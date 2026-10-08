@@ -23,6 +23,7 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
     it.each(
         [
             { kind: 'refused', reason: 'capacity' },
+            { kind: 'refused', reason: 'capacity', limit: 'tracks' },
             {
                 kind: 'relay-rejected',
                 rejection: { relay: 'trusted-server', reason: 'unauthorized' }
@@ -57,6 +58,8 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
         { failure: 'refused', field: 'failure.kind' },
         { failure: { kind: 'lost' }, field: 'failure.kind' },
         { failure: { kind: 'refused', reason: 'busy' }, field: 'failure.reason' },
+        { failure: { kind: 'refused', reason: 'capacity', limit: 'rate' }, field: 'failure.limit' },
+        { failure: { kind: 'refused', reason: 'unsupported', limit: 'bytes' }, field: 'failure.limit' },
         {
             failure: {
                 kind: 'relay-rejected',

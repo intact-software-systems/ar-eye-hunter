@@ -5,8 +5,7 @@ import { normalizeALQosPolicy, resolveALQosNormalizationInput } from '@shared/al
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
-    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-    AL_VOLATILE_SESSION_MAX_BYTES,
+    AL_VOLATILE_SESSION_LIMITS,
     type ALVolatileSessionLimits
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import {
@@ -131,7 +130,7 @@ describe('browser runtime construction', () => {
 
         volatileLimits.set({
             ...config,
-            rallar: { ...config.rallar, almVolatileLimits: { maxAdmissions: 3, maxBytes: 4_096 } }
+            rallar: { ...config.rallar, almVolatileLimits: { ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3, maxBytes: 4_096 } }
         });
         await blackBox.connect();
         await blackBox.disconnect();
@@ -140,11 +139,8 @@ describe('browser runtime construction', () => {
         await blackBox.disconnect();
 
         expect(read).toEqual([
-            { maxAdmissions: 3, maxBytes: 4_096 },
-            {
-                maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-                maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-            }
+            { ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3, maxBytes: 4_096 },
+            AL_VOLATILE_SESSION_LIMITS
         ]);
     });
 

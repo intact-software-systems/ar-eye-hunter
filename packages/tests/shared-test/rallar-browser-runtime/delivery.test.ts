@@ -512,6 +512,26 @@ it('passes a stated QoS request to the typed send as given, and none without one
         .rejects.toThrow('messages.send names qos beside replayOnCarrier; a replay names only the handle and its carrier.');
 });
 
+it('passes an exclusive claim on a named resource to the typed send as given, and neither without one', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect(connection);
+    await runtime.sendMessage({ ...send, handleId: 'h-claim', ownership: 'exclusive', resourceId: 'pickup-7' });
+    await runtime.sendMessage({ ...send, handleId: 'h-shared' });
+
+    expect(facade.records.typedSends.map(([, options]) => [options?.ownership, options?.resourceId])).toEqual([
+        ['exclusive', 'pickup-7'],
+        [undefined, undefined]
+    ]);
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-queue', ownership: 'queue' }))
+        .rejects.toThrow('messages.send.ownership must be shared or exclusive.');
+    expect(facade.records.typedSends).toHaveLength(2);
+    const replay = { connection: 'aliceAlm', timeoutMs: 100, replayOnCarrier: { handleId: 'h-claim', carrier: 'ws' } };
+    await expect(runtime.sendMessage({ ...replay, ownership: 'exclusive', resourceId: 'pickup-7' }))
+        .rejects.toThrow(
+            'messages.send names ownership, resourceId beside replayOnCarrier; a replay names only the handle and its carrier.'
+        );
+});
+
 it('addresses a lane role through the page: the server by its peer id, the receiver as the room\'s one other session', async () => {
     const runtime = await loadRuntime();
     await runtime.connect(connection);

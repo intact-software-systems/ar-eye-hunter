@@ -1,8 +1,13 @@
-import type { ALAckAlgo, ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
+import type {
+    ALAckAlgo,
+    ALDurabilityAlgo,
+    ALOwnershipAlgo
+} from '@shared/al-contracts/al-policy.ts';
 import type {
     ALDeliveryCarrier,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type {
     IndexedDbOperationKind,
@@ -341,6 +346,10 @@ export type RallarBlackBoxTestMessagesSendCommand =
          * that is not the room's leader. Absent, the send names no list.
          */
         recipientPeer?: 'receiver' | 'recipient-b';
+        /** `exclusive` claims the send's resource for the sending session; absent, the send is `shared`. */
+        ownership?: ALOwnershipAlgo;
+        /** The route's resource, which an exclusive send claims; absent, the product mints a fresh one per send. */
+        resourceId?: string;
         reliability?: 'best-effort' | 'at-least-once';
         ack?: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
         durability?: ALDurabilityAlgo;
@@ -1077,6 +1086,12 @@ export interface RallarBlackBoxTestStatsSnapshot {
         transport?: RallarBlackBoxTestTransport;
         peerCount?: number;
         laneHealth?: unknown;
+        /**
+         * The page's session ledger, read by the `stats` command through `rallar.messages.readUsage()` (D180).
+         * Absent before the page connects, on a runtime that drives no Rallar page, and in the control client's
+         * periodic stats and final report, which read no page.
+         */
+        alm?: ALVolatileSessionReport;
     }>;
     readonly load?: Readonly<{
         loopCount: number;
@@ -1132,7 +1147,7 @@ export interface RallarBlackBoxTestCommandContext {
     config(): RallarBlackBoxTestConfig | undefined;
     abortSignal?(): AbortSignal | undefined;
     recordEvent(event: RallarBlackBoxTestRuntimeEventInput): void;
-    updateStats(commandId?: string): RallarBlackBoxTestStatsSnapshot;
+    updateStats(commandId?: string): Promise<RallarBlackBoxTestStatsSnapshot>;
 }
 
 export type RallarBlackBoxTestCommandExecutor = (

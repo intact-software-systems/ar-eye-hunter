@@ -9,6 +9,7 @@ import type {
     ALDeliveryUnroutableReason
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALStorageUnavailableCause } from '@shared/alm/storage/al-storage-unavailable.ts';
+import type { ALVolatileSessionLimit } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
@@ -26,6 +27,13 @@ const ALM_REFUSAL_REASONS: Readonly<Record<ALDeliveryRefusalReason, true>> = {
     unsupported: true,
     capacity: true,
     'no-leader': true
+};
+
+const ALM_VOLATILE_SESSION_LIMIT_NAMES: Readonly<Record<ALVolatileSessionLimit, true>> = {
+    admissions: true,
+    bytes: true,
+    age: true,
+    tracks: true
 };
 
 const ALM_SKIPPED_REASONS: Readonly<Record<ALDeliverySkippedReason, true>> = {
@@ -75,14 +83,13 @@ const ALM_NACK_REASONS: Readonly<Record<ALNackReason, true>> = {
     stale: true,
     'not-yet-in-sync': true,
     'membership-fenced': true,
-    'no-leader': true
+    'no-leader': true,
+    'held-by-other': true
 };
 
 /** Keyed by every failure kind, so a new kind fails to compile here instead of decoding as invalid. */
 const ALM_FAILURE_DECODERS: Readonly<Record<ALDeliveryFailure['kind'], AlmFailureDecoder>> = {
-    refused: (failure) =>
-        decodeAlmFailureKey(ALM_REFUSAL_REASONS, failure.reason, 'reason')
-            .mapRight((reason): ALDeliveryFailure => ({ kind: 'refused', reason })),
+    refused: decodeAlmRefusedFailure,
     'relay-rejected': (failure) =>
         decodeAlmRelayRejection(failure.rejection, 'failure.rejection')
             .mapRight((rejection): ALDeliveryFailure => ({ kind: 'relay-rejected', rejection })),
@@ -114,7 +121,7 @@ export function decodeAlmDeliveryFailure(value: unknown): Either<string, ALDeliv
 
 /**
  * A trusted server relay is never named, so an id on one is refused. A trusted server refuses with `resync-required`
- * after admission, `unauthorized` or `no-leader` before it, or `membership-fenced`; a peer relay with
+ * after admission, `unauthorized`, `no-leader` or `held-by-other` before it, or `membership-fenced`; a peer relay with
  * `resync-required` or `membership-fenced`.
  */
 export function decodeAlmRelayRejection(
@@ -124,7 +131,8 @@ export function decodeAlmRelayRejection(
     const rejection = decodeAlmRuntimeRecord(value);
     if (
         (rejection.reason === 'resync-required' || rejection.reason === 'unauthorized' ||
-            rejection.reason === 'membership-fenced' || rejection.reason === 'no-leader') &&
+            rejection.reason === 'membership-fenced' || rejection.reason === 'no-leader' ||
+            rejection.reason === 'held-by-other') &&
         rejection.relay === 'trusted-server' && rejection.peerId === undefined
     ) {
         return Either.ofRight<string, ALDeliveryRelayRejection>({
@@ -143,6 +151,19 @@ export function decodeAlmRelayRejection(
         });
     }
     return Either.ofLeft(field);
+}
+
+/** Only a `capacity` refusal may name the volatile bound it passed (D179). */
+function decodeAlmRefusedFailure(failure: RallarBlackBoxTestRecord): Either<string, ALDeliveryFailure> {
+    const reason = decodeAlmFailureKey(ALM_REFUSAL_REASONS, failure.reason, 'reason');
+    if (reason.left !== undefined || failure.limit === undefined) {
+        return reason.mapRight((decoded): ALDeliveryFailure => ({ kind: 'refused', reason: decoded }));
+    }
+    if (reason.right !== 'capacity') {
+        return Either.ofLeft('failure.limit');
+    }
+    return decodeAlmFailureKey(ALM_VOLATILE_SESSION_LIMIT_NAMES, failure.limit, 'limit')
+        .mapRight((limit): ALDeliveryFailure => ({ kind: 'refused', reason: 'capacity', limit }));
 }
 
 function decodeAlmReceiptExhaustedFailure(

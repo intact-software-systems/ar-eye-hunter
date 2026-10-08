@@ -127,20 +127,62 @@ export interface ToCreateWsUrlInput {
 
 export const BROWSER_RTT_HEARTBEAT_TTL_MS = 15_000;
 
-export function toCreateWsUrl(
-    input: ToCreateWsUrlInput
-): string {
-    const path = input.apiConfig.endpoints.createWs.replace(
-        ':id',
-        encodeURIComponent(input.session.sessionId)
-    );
-    const url = new URL(path, input.apiConfig.wsBaseUrl);
-    url.searchParams.set('ticket', input.ticket);
-    if (input.scope) {
-        url.searchParams.set('applicationId', input.scope.applicationId);
-        url.searchParams.set('workspaceId', input.scope.workspaceId);
-    }
-    return url.toString();
+export type BrowserWebSocketCarrier = Pick<
+    CreateBrowserWebSocketQueueBox.Input,
+    'qboxEngine' | 'socket' | 'serverPeerId'
+>;
+
+export type BrowserRtcOverlayCarrier = Pick<
+    rtcEngine.InitialiseRtcOverlayMulticastManagerInput,
+    'webRtcConnectionService' | 'qboxEngine'
+>;
+
+export interface BrowserMiddlewareCreation {
+    readonly createMessage: typeof newALUntargetedMessage;
+    newConnectionRequestId(): string;
+}
+
+export interface InitialiseBrowserTransportInput {
+    readonly connectionId: RtcSignalingDiagnostics.Readout<string>;
+    readonly creation: BrowserMiddlewareCreation;
+    readonly session: AuthSession;
+    readonly clientData: ClientInfo;
+    readonly inboundStores: ALInboundRuntimeStores;
+    readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
+    readonly volatileBound: BrowserSessionVolatileBound;
+    /** Built once per connect, under its claim; the WS client and the RTC overlay each take their own. */
+    readonly checkpointStores: BrowserALCheckpointStores;
+    readonly options: BrowserConnectOptions;
+}
+
+interface BrowserWebSocketTransport {
+    readonly qboxEngine: InboxOutboxEngine;
+    readonly webSocketQueueBox: WsQueueBoxClientService;
+}
+
+interface BrowserRtcTransport {
+    readonly rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt;
+    readonly webRtcConnectionService: WebRtcConnectionService;
+    readonly rtcRxStreamer: WebRtcRxStreamerService;
+    readonly webRtcGroupManager: WebRtcGroupManager;
+    readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
+}
+
+interface InitialiseBrowserRtcTransportInput extends InitialiseBrowserTransportInput {
+    readonly rtcSignalingTopicId: string;
+    readonly webSocketTransport: BrowserWebSocketTransport;
+}
+
+interface InitialiseBrowserStateTransportInput extends InitialiseBrowserTransportInput {
+    readonly webSocketQueueBox: WsQueueBoxClientService;
+    readonly webRtcGroupManager: WebRtcGroupManager;
+    readonly bootstrapDegree: number;
+}
+
+interface BrowserRtcGroupSnapshotRequest {
+    readonly roomRef: GroupRef;
+    readonly minSnapshotVersion: number;
+    readonly signal: AbortSignal;
 }
 
 export function createBrowserRttHeartbeatMessage(
@@ -177,58 +219,6 @@ export function configureBrowserRtcPeerCreationPolicies(
             ? { decision: 'allow' }
             : { decision: 'deny', reason: 'stage-layout-mismatch' }
     );
-}
-
-interface BrowserWebSocketTransport {
-    readonly qboxEngine: InboxOutboxEngine;
-    readonly webSocketQueueBox: WsQueueBoxClientService;
-}
-
-export type BrowserWebSocketCarrier = Pick<
-    CreateBrowserWebSocketQueueBox.Input,
-    'qboxEngine' | 'socket' | 'serverPeerId'
->;
-
-export type BrowserRtcOverlayCarrier = Pick<
-    rtcEngine.InitialiseRtcOverlayMulticastManagerInput,
-    'webRtcConnectionService' | 'qboxEngine'
->;
-
-interface BrowserRtcTransport {
-    readonly rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt;
-    readonly webRtcConnectionService: WebRtcConnectionService;
-    readonly rtcRxStreamer: WebRtcRxStreamerService;
-    readonly webRtcGroupManager: WebRtcGroupManager;
-    readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
-}
-
-export interface BrowserMiddlewareCreation {
-    readonly createMessage: typeof newALUntargetedMessage;
-    newConnectionRequestId(): string;
-}
-
-export interface InitialiseBrowserTransportInput {
-    readonly connectionId: RtcSignalingDiagnostics.Readout<string>;
-    readonly creation: BrowserMiddlewareCreation;
-    readonly session: AuthSession;
-    readonly clientData: ClientInfo;
-    readonly inboundStores: ALInboundRuntimeStores;
-    readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
-    readonly volatileBound: BrowserSessionVolatileBound;
-    /** Built once per connect, under its claim; the WS client and the RTC overlay each take their own. */
-    readonly checkpointStores: BrowserALCheckpointStores;
-    readonly options: BrowserConnectOptions;
-}
-
-interface InitialiseBrowserRtcTransportInput extends InitialiseBrowserTransportInput {
-    readonly rtcSignalingTopicId: string;
-    readonly webSocketTransport: BrowserWebSocketTransport;
-}
-
-interface InitialiseBrowserStateTransportInput extends InitialiseBrowserTransportInput {
-    readonly webSocketQueueBox: WsQueueBoxClientService;
-    readonly webRtcGroupManager: WebRtcGroupManager;
-    readonly bootstrapDegree: number;
 }
 
 export async function initialiseMiddleware(
@@ -270,7 +260,12 @@ export async function initialiseMiddleware(
         const { checkpointStores } = transportInput;
         return {
             rtcCaptureReceipt: rtcTransport.rtcCaptureReceipt,
-            middleware: { ...webSocketTransport, ...rtcTransport, heartbeat: heartbeatHandle, storageAvailability },
+            middleware: toBrowserMiddleware(transportInput, {
+                ...webSocketTransport,
+                ...rtcTransport,
+                heartbeat: heartbeatHandle,
+                storageAvailability
+            }),
             checkpoints: [checkpointStores.wsClient.checkpoint, checkpointStores.rtcOverlay.checkpoint]
         };
     }
@@ -313,6 +308,103 @@ export function createBrowserTransportInput(
     };
 }
 
+export function registerBrowserRttEgress(
+    input: InitialiseBrowserRtcTransportInput,
+    rtcRxStreamer: WebRtcRxStreamerService
+): void {
+    rtcRxStreamer.onRttMeasurementDo(AppTopics.rtt, {
+        onHeartbeat: (rtt: RttMeasurementInfo): Promise<void> => {
+            input.webSocketTransport.webSocketQueueBox.sendLive(
+                createBrowserRttHeartbeatMessage(input.clientData.sessionId, rtt, input.creation.createMessage)
+            );
+            return Promise.resolve();
+        }
+    });
+}
+
+export function toCreateWsUrl(
+    input: ToCreateWsUrlInput
+): string {
+    const path = input.apiConfig.endpoints.createWs.replace(
+        ':id',
+        encodeURIComponent(input.session.sessionId)
+    );
+    const url = new URL(path, input.apiConfig.wsBaseUrl);
+    url.searchParams.set('ticket', input.ticket);
+    if (input.scope) {
+        url.searchParams.set('applicationId', input.scope.applicationId);
+        url.searchParams.set('workspaceId', input.scope.workspaceId);
+    }
+    return url.toString();
+}
+
+/** The facade reads the one ledger the connect's carriers count against, never one of its own. */
+export function toBrowserMiddleware(
+    input: InitialiseBrowserTransportInput,
+    carriers: Omit<RallarBrowserMiddleware, 'volatileBudget'>
+): RallarBrowserMiddleware {
+    return { ...carriers, volatileBudget: input.volatileBound.budget };
+}
+
+export function toBrowserWebSocketQueueBoxInput(
+    input: InitialiseBrowserTransportInput,
+    carrier: BrowserWebSocketCarrier
+): CreateBrowserWebSocketQueueBox.Input {
+    return {
+        ...carrier,
+        qosProvider: input.volatileBound.qosProvider,
+        volatileBudget: input.volatileBound.budget,
+        checkpointStores: input.checkpointStores.wsClient,
+        submissionReadinessFaultPort: input.options.diagnosticsPorts.submissionReadinessFaultPort,
+        clientData: input.clientData,
+        inboundStores: input.inboundStores,
+        inboundVolatileStores: input.inboundVolatileStores,
+        durableWorkOwnership: input.options.durableWorkOwnership,
+        signal: input.options.signal,
+        connectTimeoutMs: input.options.timeoutMs ??
+            DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
+        newConnectionRequestId: input.creation.newConnectionRequestId,
+        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
+        outboundSettlements: input.options.deliverySettlements.ws,
+        inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics,
+        onResyncRequired: input.options.onResyncRequired
+    };
+}
+
+export function toRtcOverlayMulticastManagerInput(
+    input: InitialiseBrowserTransportInput,
+    carrier: BrowserRtcOverlayCarrier
+): rtcEngine.InitialiseRtcOverlayMulticastManagerInput {
+    return {
+        ...carrier,
+        qosProvider: input.volatileBound.qosProvider,
+        volatileBudget: input.volatileBound.budget,
+        checkpointStores: input.checkpointStores.rtcOverlay,
+        durableWorkOwnership: input.options.durableWorkOwnership,
+        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
+        outboundSettlements: input.options.deliverySettlements.rtc
+    };
+}
+
+function assertRtcGroupSnapshotRefreshIsCurrent(
+    input: InitialiseBrowserRtcTransportInput,
+    signal: AbortSignal
+): void {
+    signal.throwIfAborted();
+    if (readSession()?.sessionId !== input.clientData.sessionId) {
+        throw new Error('RTC group-snapshot refresh belongs to an inactive browser session.');
+    }
+}
+
+function toCommandOptions<T>(
+    options: MiddlewareInitOptions
+): CommandOptions<T> {
+    return {
+        signal: options.signal,
+        timeoutMs: options.timeoutMs
+    };
+}
+
 function initialiseBrowserRuntimeStores(
     sessionId: string,
     scope: StateScope,
@@ -343,31 +435,6 @@ async function initialiseBrowserWebSocketTransport(
         throw error;
     });
     return { qboxEngine, webSocketQueueBox };
-}
-
-export function toBrowserWebSocketQueueBoxInput(
-    input: InitialiseBrowserTransportInput,
-    carrier: BrowserWebSocketCarrier
-): CreateBrowserWebSocketQueueBox.Input {
-    return {
-        ...carrier,
-        qosProvider: input.volatileBound.qosProvider,
-        volatileBudget: input.volatileBound.budget,
-        checkpointStores: input.checkpointStores.wsClient,
-        submissionReadinessFaultPort: input.options.diagnosticsPorts.submissionReadinessFaultPort,
-        clientData: input.clientData,
-        inboundStores: input.inboundStores,
-        inboundVolatileStores: input.inboundVolatileStores,
-        durableWorkOwnership: input.options.durableWorkOwnership,
-        signal: input.options.signal,
-        connectTimeoutMs: input.options.timeoutMs ??
-            DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
-        newConnectionRequestId: input.creation.newConnectionRequestId,
-        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
-        outboundSettlements: input.options.deliverySettlements.ws,
-        inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics,
-        onResyncRequired: input.options.onResyncRequired
-    };
 }
 
 function createBrowserWebSocketClient(
@@ -455,21 +522,6 @@ async function initialiseBrowserRtcTransport(
     }
 }
 
-export function toRtcOverlayMulticastManagerInput(
-    input: InitialiseBrowserTransportInput,
-    carrier: BrowserRtcOverlayCarrier
-): rtcEngine.InitialiseRtcOverlayMulticastManagerInput {
-    return {
-        ...carrier,
-        qosProvider: input.volatileBound.qosProvider,
-        volatileBudget: input.volatileBound.budget,
-        checkpointStores: input.checkpointStores.rtcOverlay,
-        durableWorkOwnership: input.options.durableWorkOwnership,
-        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
-        outboundSettlements: input.options.deliverySettlements.rtc
-    };
-}
-
 function createBrowserRtcGroupSnapshotRefresh(
     input: InitialiseBrowserRtcTransportInput
 ): RtcGroupSnapshotRefresh {
@@ -477,12 +529,6 @@ function createBrowserRtcGroupSnapshotRefresh(
         refreshGroupSnapshot: async (roomRef, minSnapshotVersion, signal) =>
             await refreshBrowserRtcGroupSnapshot(input, { roomRef, minSnapshotVersion, signal })
     });
-}
-
-interface BrowserRtcGroupSnapshotRequest {
-    readonly roomRef: GroupRef;
-    readonly minSnapshotVersion: number;
-    readonly signal: AbortSignal;
 }
 
 async function refreshBrowserRtcGroupSnapshot(
@@ -553,16 +599,6 @@ async function rereadBrowserRtcGroups(
     return groups;
 }
 
-function assertRtcGroupSnapshotRefreshIsCurrent(
-    input: InitialiseBrowserRtcTransportInput,
-    signal: AbortSignal
-): void {
-    signal.throwIfAborted();
-    if (readSession()?.sessionId !== input.clientData.sessionId) {
-        throw new Error('RTC group-snapshot refresh belongs to an inactive browser session.');
-    }
-}
-
 function initialiseBrowserRtcConnection(
     input: InitialiseBrowserRtcTransportInput,
     iceCandidates: IceConfig
@@ -581,20 +617,6 @@ function initialiseBrowserRtcConnection(
         maxPeerConnections: input.options.maxPeerConnections,
         faultPort: input.options.diagnosticsPorts.transportFaultPort,
         signalingDiagnostics: input.options.diagnosticsPorts.signalingDiagnostics
-    });
-}
-
-export function registerBrowserRttEgress(
-    input: InitialiseBrowserRtcTransportInput,
-    rtcRxStreamer: WebRtcRxStreamerService
-): void {
-    rtcRxStreamer.onRttMeasurementDo(AppTopics.rtt, {
-        onHeartbeat: (rtt: RttMeasurementInfo): Promise<void> => {
-            input.webSocketTransport.webSocketQueueBox.sendLive(
-                createBrowserRttHeartbeatMessage(input.clientData.sessionId, rtt, input.creation.createMessage)
-            );
-            return Promise.resolve();
-        }
     });
 }
 
@@ -726,15 +748,6 @@ function runMiddlewareCommand<T>(
     options: MiddlewareInitOptions
 ): Promise<T> {
     return new Command<T>(supplier, toCommandOptions(options)).run();
-}
-
-function toCommandOptions<T>(
-    options: MiddlewareInitOptions
-): CommandOptions<T> {
-    return {
-        signal: options.signal,
-        timeoutMs: options.timeoutMs
-    };
 }
 
 function readBrowserConnectionIdentity(): RtcSignalingDiagnostics.Readout<string> {

@@ -1,7 +1,9 @@
 import type {
     RallarDirectorOutputOptions,
+    RallarDirectorRelayClaim,
     RallarDirectorRelayEnvelope,
     RallarDirectorRelaySendResult,
+    RallarDirectorRelaySendStatus,
     RallarDirectorStatus
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
@@ -33,6 +35,8 @@ export namespace BrowserDirectorRelayTransport {
         readonly topicId: string;
         readonly typeId: string;
         readonly payload: T;
+        /** The resource an intent claims; undefined for a shared intent and every sync request. */
+        readonly claim: RallarDirectorRelayClaim | undefined;
     }
 
     export interface SendRoomEnvelopeInput<T> {
@@ -73,9 +77,12 @@ export class BrowserDirectorRelayTransport {
                 })
                 .send(createEnvelope(input), {
                     ack: 'group-leader',
-                    strategy: 'rtc-with-ws-fallback'
+                    strategy: 'rtc-with-ws-fallback',
+                    ...(input.claim === undefined
+                        ? {}
+                        : { ownership: 'exclusive', resourceId: input.claim.resourceId, ttlMs: input.claim.ttlMs })
                 });
-            return await readDirectorReceipt(receipt);
+            return await readDirectorReceipt(receipt, toDirectorReceiptWaitMs(input.claim));
         }
         catch (error) {
             if (!isRallarValidationError(error)) {
@@ -199,31 +206,45 @@ export class BrowserDirectorRelayTransport {
     }
 }
 
-/** The room's leader confirms a command; a room without one refuses it `no-leader` on either carrier (D167). */
-async function readDirectorReceipt(receipt: RallarMessageHandle): Promise<RallarDirectorRelaySendResult> {
-    const outcome = await receipt.wait({
-        until: ['acknowledged'],
-        timeoutMs: AL_CHANNEL_SEND_DEFAULTS.command.ttlMs
-    });
+/** A claiming intent lives no longer than its claim, so its confirmation is awaited no longer either. */
+function toDirectorReceiptWaitMs(claim: RallarDirectorRelayClaim | undefined): number {
+    const commandTtlMs = AL_CHANNEL_SEND_DEFAULTS.command.ttlMs;
+    return claim === undefined ? commandTtlMs : Math.min(claim.ttlMs, commandTtlMs);
+}
+
+/**
+ * The room's leader confirms a command; a room without one refuses it `no-leader` on either carrier (D167), and the
+ * server refuses an intent claiming a resource another session holds `held-by-other` (D176).
+ */
+async function readDirectorReceipt(
+    receipt: RallarMessageHandle,
+    timeoutMs: number
+): Promise<RallarDirectorRelaySendResult> {
+    const outcome = await receipt.wait({ until: ['acknowledged'], timeoutMs });
     const lifecycle = outcome.lifecycle;
     if (lifecycle.state === 'acknowledged') {
         return { status: 'sent', receipt };
     }
     return {
-        status: isNoLeaderFailure(lifecycle.evidence.failure) ? 'no-director' : 'failed',
+        status: toDirectorCommandFailureStatus(lifecycle.evidence.failure),
         receipt,
         reason: lifecycle.evidence.reason ?? DIRECTOR_COMMAND_UNCONFIRMED_REASON
     };
 }
 
-function isNoLeaderFailure(failure: ALDeliveryFailure | undefined): boolean {
+function toDirectorCommandFailureStatus(
+    failure: ALDeliveryFailure | undefined
+): Extract<RallarDirectorRelaySendStatus, 'no-director' | 'held-by-other' | 'failed'> {
     switch (failure?.kind) {
         case 'refused':
-            return failure.reason === 'no-leader';
+            return failure.reason === 'no-leader' ? 'no-director' : 'failed';
         case 'relay-rejected':
-            return failure.rejection.reason === 'no-leader';
+            if (failure.rejection.reason === 'no-leader') {
+                return 'no-director';
+            }
+            return failure.rejection.reason === 'held-by-other' ? 'held-by-other' : 'failed';
         default:
-            return false;
+            return 'failed';
     }
 }
 

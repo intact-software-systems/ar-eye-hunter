@@ -25,6 +25,8 @@ export interface ALInboundPlannerSnapshot {
     readonly bufferedSnapshots: readonly ALBufferedOrderedMessageSnapshot[];
     readonly orderingTrackTtlMs: number;
     readonly dedupExpiresAt: number | undefined;
+    /** The session holding a live claim on an exclusive message's resource key; never read for any other message. */
+    readonly claimHolderPeerId: string | undefined;
     readonly supersedence: ALInboundSupersedenceReadState;
     readonly supersedenceTrackTtlMs: number;
     /** Replays have already committed deduplication and ordering admission. */
@@ -43,6 +45,7 @@ export function computeALInboundPlanningObservations(read: ALInboundPlannerSnaps
     return {
         nowMs: read.nowMs,
         dedupSeen: !read.admitted && read.dedupExpiresAt !== undefined && read.dedupExpiresAt > read.nowMs,
+        claimHolderPeerId: read.admitted ? undefined : read.claimHolderPeerId,
         orderingObservation: read.admitted
             ? undefined
             : computeALInboundOrderingAcceptance(read, false).observation,

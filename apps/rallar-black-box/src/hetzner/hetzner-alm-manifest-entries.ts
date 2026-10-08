@@ -13,10 +13,15 @@ import {
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { claimExpiresReclaims } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/claim/claim-expires-reclaims.ts';
+import { claimFirstWins } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/claim/claim-first-wins.ts';
+import { claimRefusedOnRtc } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/claim/claim-refused-on-rtc.ts';
 import { leaderConfirms } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-confirms.ts';
 import { leaderOutsideList } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-outside-list.ts';
 import { noLeaderRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/no-leader-refused.ts';
 import { fencedRejection } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/membership-fence/fenced-rejection.ts';
+import { capacityAge } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/volatile-bound/capacity-age.ts';
+import { capacityTracks } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/volatile-bound/capacity-tracks.ts';
 import {
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
     type RallarBlackBoxRtcMessagesMulticastRecipeOptions
@@ -75,7 +80,14 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     // The leader cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
     { scenarioKey: 'leader-confirms', carriers: leaderConfirms.carriers },
     { scenarioKey: 'no-leader-refused', carriers: noLeaderRefused.carriers },
-    { scenarioKey: 'leader-outside-list', carriers: leaderOutsideList.carriers }
+    { scenarioKey: 'leader-outside-list', carriers: leaderOutsideList.carriers },
+    // The claim cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
+    { scenarioKey: 'claim-first-wins', carriers: claimFirstWins.carriers },
+    { scenarioKey: 'claim-expires-reclaims', carriers: claimExpiresReclaims.carriers },
+    { scenarioKey: 'claim-refused-on-rtc', carriers: claimRefusedOnRtc.carriers },
+    // The age and track bound cells' lane evidence is local and the hosted full read's; manifest 18 stays as recorded.
+    { scenarioKey: 'capacity-age', carriers: capacityAge.carriers },
+    { scenarioKey: 'capacity-tracks', carriers: capacityTracks.carriers }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {
