@@ -35,6 +35,9 @@ import { principalDelivery } from './scenarios/audiences/principal-delivery.ts';
 import { worldRouting } from './scenarios/audiences/world-routing.ts';
 import { boundedRejection } from './scenarios/bounded-rejection.ts';
 import { capacity } from './scenarios/capacity.ts';
+import { claimExpiresReclaims } from './scenarios/claim/claim-expires-reclaims.ts';
+import { claimFirstWins } from './scenarios/claim/claim-first-wins.ts';
+import { claimRefusedOnRtc } from './scenarios/claim/claim-refused-on-rtc.ts';
 import { crossCarrierDuplicate } from './scenarios/cross-carrier-duplicate.ts';
 import { deadlineExpiry } from './scenarios/deadline-expiry.ts';
 import { deliveryBaseline } from './scenarios/delivery-baseline.ts';
@@ -135,6 +138,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     leaderConfirms,
     noLeaderRefused,
     leaderOutsideList,
+    claimFirstWins,
+    claimExpiresReclaims,
+    claimRefusedOnRtc,
     durableTakeover,
     flushOnHide
 ];

@@ -306,6 +306,8 @@ function toTypedSendOptions(
         ...(peerId === undefined ? {} : { peerId }),
         ...(recipientPeerIds === undefined ? {} : { recipientPeerIds }),
         ...(send.principalId === undefined ? {} : { principalId: send.principalId }),
+        ...(send.ownership === undefined ? {} : { ownership: send.ownership }),
+        ...(send.resourceId === undefined ? {} : { resourceId: send.resourceId }),
         ...(send.reliability === undefined ? {} : { reliability: send.reliability }),
         ...(send.ack === undefined ? {} : { ack: send.ack }),
         ...(send.ttlMs === undefined ? {} : { ttlMs: send.ttlMs }),

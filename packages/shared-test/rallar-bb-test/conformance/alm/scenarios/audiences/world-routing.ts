@@ -20,14 +20,17 @@ import {
  * RTC carries no world audience: the RTC carrier refuses the send at admission, a carrier-unsupported rejection that
  * no carrier attempt follows, so no WS leg carries it either.
  */
-const RTC_REFUSAL_FACTS: readonly AlmConformanceVerdictFact[] = [
+export const RTC_REFUSAL_FACTS: readonly AlmConformanceVerdictFact[] = [
     ['refused', 'failure.kind', 'equals', 'refused'],
     ['unsupported', 'failure.reason', 'equals', 'unsupported'],
     ['no-attempt', 'attempts', 'equals', 0]
 ];
 
-/** A strategy that allows WS sends a world send there at once: one WS attempt and no hand-over from an RTC leg. */
-const WS_ROUTE_FACTS: readonly AlmConformanceVerdictFact[] = [
+/**
+ * A strategy that allows WS sends a world send there at once: one WS attempt and no hand-over from an RTC leg. An
+ * exclusive send takes the same route.
+ */
+export const WS_ROUTE_FACTS: readonly AlmConformanceVerdictFact[] = [
     ['one-attempt', 'attempts', 'equals', 1],
     ['ws-attempt', 'attemptCarriers.0', 'equals', 'ws'],
     ['no-fallback', 'carrierFallback', 'exists', false]

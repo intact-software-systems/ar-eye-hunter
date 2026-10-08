@@ -1,5 +1,5 @@
 import { AL_DURABILITY_ALGOS } from '@shared/al-contracts/al-policy.ts';
-import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
+import type { ALAckAlgo, ALOwnershipAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
@@ -38,6 +38,7 @@ const MESSAGE_RELIABILITIES: readonly NonNullable<BlackBoxRallarMessageSendInput
     'at-least-once'
 ];
 const QOS_ACK_ALGOS: readonly ALAckAlgo[] = ['none', 'hop', 'subtree', 'receiver'];
+const MESSAGE_OWNERSHIPS: readonly ALOwnershipAlgo[] = ['shared', 'exclusive'];
 const ON_STORAGE_UNAVAILABLE: readonly NonNullable<BlackBoxRallarMessageSendInput['onStorageUnavailable']>[] = [
     'refuse',
     'volatile'
@@ -61,6 +62,8 @@ const REPLAY_REFUSED_FIELDS = [
     'scope',
     'principalId',
     'recipientPeer',
+    'ownership',
+    'resourceId',
     'reliability',
     'ack',
     'durability',
@@ -114,6 +117,14 @@ function decodeOrdinarySend(
     if (!('payload' in value) || !isRallarMessagePayload(payload)) {
         return Either.ofLeft({ message: 'messages.send.payload is required.' });
     }
+    const ownership = decodeKnownSendOption(
+        value.ownership,
+        MESSAGE_OWNERSHIPS,
+        'ownership must be shared or exclusive'
+    );
+    if (isInputIssue(ownership)) {
+        return Either.ofLeft(ownership);
+    }
     return decodeMessageAudience(value).flatMap(
         (issue) => Either.ofLeft(issue),
         (peer) =>
@@ -125,6 +136,8 @@ function decodeOrdinarySend(
                         ...options,
                         ...peer,
                         payload,
+                        ownership,
+                        resourceId: decodeBlackBoxCommandString(value.resourceId),
                         topicId: decodeBlackBoxCommandString(value.topicId),
                         ttlMs: decodeBlackBoxCommandNumber(value.ttlMs),
                         orderingKey: decodeBlackBoxCommandString(value.orderingKey),
