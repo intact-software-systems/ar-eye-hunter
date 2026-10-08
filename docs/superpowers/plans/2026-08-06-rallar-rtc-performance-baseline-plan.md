@@ -216,6 +216,23 @@ configuration failure and subsequent test-construction failures are retained; no
 RED or delivery acceptance. The existing healthy canonical Postgres already has all required
 migrations; supplying its process environment changes no database or environment file.
 
+The executed Copy fixture now reaches a genuine Manual native receive and observes that
+original channel close. Test-first correction of the existing login helper preserves authored
+leaveRoomOnClose:false, room membership and both auth sessions. The unchanged test verifies
+that correction, then its first copied Local Send still fails RALLAR_BB_RTC_NO_PEERS.
+Full copied delivery remains RED. Connect returns with no ready peers; the copied command
+has no authored readiness. The exact Send-side room snapshot/layout subreason is unobserved,
+so this does not establish an enduring SDK or transport defect.
+
+Local JSON command/recipe authoring already supports canonical rtc.connect.readiness.
+Structured Manual Rallar has no corresponding value, control, command projection or draft
+persistence; Local execution does not enter its separate Copy history. Complete the smallest
+explicit authoring path in those current owners, preserving omitted readiness and submitted
+history, before repeating the native witness. Reuse the existing bounded readiness contract;
+add no implicit SDK wait, copied-text edit, new retry, timeout expansion or readiness policy.
+The touched helper also requires canonical snapshot/auth/artifact boundary closure; remove
+its duplicate permissive contracts rather than retaining them because advisory checks pass.
+
 The bounded worker/Actions audit finds three concrete gaps: controller09 drops the HOST env
 input; general Actions/helpers expose no finite operator RUN override; and generic room
 rewriting can corrupt authored capture modes. A pure existing-scope-owner invocation changes
@@ -6972,9 +6989,11 @@ attribute an identical-payload same-session repeat. An existing Close/logout/log
 could prove a distinct auth-lifecycle path; it does not replace ordinary same-session
 repeat acceptance. The existing real realtime.onJson port carries the original native
 MessageEvent, so a test-owned observer can associate the literal payload with its native
-channel object. This is an unexecuted candidate, not a drain guarantee. Require complete
-preceding-send observations, actual old-target closure after Close, a distinct open target
-for the repeated receiving effect, and unchanged auth sessions within current budgets.
+channel object. The executed public-SDK receiver observes the original Manual native MessageEvent and
+channel closure; copied delivery remains unaccepted. Require complete preceding-send
+observations, actual old-target closure after Close, a distinct open target for each repeated
+receiving effect, and unchanged auth sessions within current budgets. This is not a drain
+guarantee.
 The Manual browser-rallar provider creates its own facade; loading the UI's public facade
 cannot observe that private receiver. An existing public-SDK receiver can supply the owned
 port while preserving the actual UI Copy/Load/Run sender; do not claim its private Manual
