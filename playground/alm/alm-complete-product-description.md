@@ -405,15 +405,16 @@ application's QoS provider, whose own capabilities override the carrier's. The
 
 **PARTIAL — S3c-ii, the first live provider:** the browser installs a
 per-session QoS provider that reports `overloaded` while the session's volatile
-budget is at or over its count or byte limit (D78), for the session's own outbound data
+budget would refuse its next own send at its count or byte limit (D78; since
+V1b-ii the total and the own pool both at their bounds, D189), for the session's own outbound data
 originations only: a control, a receipt, an acknowledgement, a repair, a relay
 forward and an inbound plan never read it, so a session at its bound still
 acknowledges, forwards and delivers for other sessions (R-S3c-ii-8). At the
 bound every send, best-effort or not, on either carrier, reads `capacity`: it
 ends `rejected` with `{ kind: 'refused', reason: 'capacity' }` and is never
 handed to a fallback. The age and track budgets joined in V1a (D179, below);
-channel backpressure joined in V1b-i (D184, below); fairness is V1b-ii's, and
-transport-aware authorization stays planned.
+channel backpressure joined in V1b-i (D184, below); fairness joined in V1b-ii
+(D189–D191, below), and transport-aware authorization stays planned.
 
 ## Reliability and acknowledgement
 
@@ -689,11 +690,31 @@ them as `stats.rallar.congestion { dropped, deferred, handedOver }` (D186);
 `deferred` counts every message the page held at submission, relay forwards and
 controls included. Channel health stays on `rallar.rtc.status()`.
 
+**CURRENT — V1b-ii, fairness under many tracks and churn:** the session's
+volatile ledger keeps two pools, its own sends and its arrivals, under the same
+limits, and an own send is refused `capacity` only when the own pool would pass
+its share, half of the count and byte limits (500 messages, 2 MiB), and the
+total would pass the limit (D189); arrivals are never refused, so a session
+keeps its share whatever arrives, where one pool refused every own send of a
+once-a-second sender at 34 arrivals a second. `readUsage()` and the harness's
+`stats.rallar.alm` report both pools. A receiver that delivers a buffered
+release runs the same track's next release in the same batch, read by its key,
+up to 16 claims a batch (D190): a 64-message buffer drains in 5 batches instead
+of 65 engine rounds, and a 255-message one no longer outlives the 30 s default
+lifetime. Departed-sender state is bounded by count (D191): at most 256
+ordering snapshots per receiver store, the least recently updated evicted; the
+browser's resync record holds at most 256 tracks; the WS server holds at most
+4 096 receipt aggregates, ending the oldest at the cap as its deadline would.
+Three two-agent lane cells prove the share, the promotion and the snapshot cap
+(D192).
+
 **PLANNED:** `replace-latest` by semantic key and a bounded queue on the
 reliable lane (the realtime lane keeps its own `replace-by-key`); relay fanout
 reduction and alternate routes under congestion; routing around one
 backpressured peer; congestion on RTC unicasts; server-side WS backpressure;
-fairness under many tracks and churn (V1b-ii).
+an outbound claim order that rotates across senders or tracks (V1b-ii measured
+the insertion order and kept it); a count bound on a track's delivered marker,
+which lives for the hour after its snapshot is evicted.
 
 ## Durability and browser-local storage
 
@@ -928,7 +949,7 @@ message whose sender named no deadline is not counted. A send that would pass a
 limit is refused `capacity` with the `limit` it would pass (`admissions`,
 `bytes`, `age` or `tracks`), and a received message is counted, never refused
 (D74, D78). A best-effort RTC room send that the RTC carrier's congestion drop
-sheds while the session is at or over the count or byte limit is refused
+sheds while the session would refuse its next own send at the count or byte limit is refused
 `capacity` with no `limit`. The bound is shared with the platform's own state sync received on
 the volatile pair: a lane agent that leaves and rejoins a room holds about
 26 KB of it, under one per cent of the production limits (R-S3c-ii-6,

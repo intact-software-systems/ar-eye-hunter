@@ -546,6 +546,13 @@ are the sync points of a paired `agent.reload`.
   lane-only `rtc.connect.rallar.recoveryOwner: 'record'`, states the same cursor
   as a `rallar.browser.messages.recovery_owner_invoked` diagnostic.
 
+- `ordering-tracks`: `storeId` and `tracks`, the number of ordering snapshots an
+  inbound store holds right after the eviction a newly opened track runs (D191):
+  at most 256 unless a removal found its snapshot changed or conflicted, which leaves it to the next new track.
+  The session's IndexedDB store states it under its store id, its memory pair as
+  `<store id>/volatile`; a known track's next message states nothing. The harness
+  keeps each store's latest count and reads their sum as `stats.rallar.alm.orderingTracks`.
+
 - `persist`: `outcome` (`granted`, `denied` or `unsupported`), once per connect
   after its first durable admission: `granted` when the origin already
   persisted or the browser granted the request, `denied` when it refused or the

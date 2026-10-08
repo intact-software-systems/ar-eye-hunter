@@ -517,6 +517,26 @@ counter, not `attemptOutcomes`, shows the `not-ready` submissions. Under `rtc-wi
 hand the send to WS, so the cell runs on single carriers. Hosted manifest 18 withholds all three, so it stays as
 recorded. The cells live in `conformance/alm/scenarios/congestion/`.
 
+The fairness cells run last in the two-agent family, in the full scope, after the congestion cells (D192). `own-share-under-inbound` (every carrier) closes the receiver and reconnects it with
+`rallar.almVolatileLimits` `{ maxAdmissions: 20, maxBytes: 4194304 }`, so its own share is 10 (D189); the receiver
+sends a ready message, which the sender waits for with one readiness budget in its window, and the sender then sends
+20 at-least-once room sends with `ack: 'none'` and a 30 s `ttlMs` in a `loop`, back to back, each naming its own
+handle by `{loop.index}`; they ask for no receipt, so all 20 arrive within the arrivals' own 30 s counted lifetime
+instead of each waiting out an ACK. Arrivals alone then hold the receiver's total at the bound, so its own room
+send, which asks for a receiver receipt, is admitted only under the share: it is `acknowledged`, and its `stats`,
+read once the receiver has counted all 20 arrivals, reads `rallar.alm.inbound.admissions`
+`gte` 20, `rallar.alm.own.admissions` `lt` 10 and `rallar.alm.overloaded` false; it then reconnects without the
+field. `buffered-track-drains` (`ws`, `rtc`) sends seq 2 to 65 on one ordering key as 64 commands (a loop index counts
+from 0 and cannot name them) and then seq 1, all with `ack: 'none'` since the receiver cannot acknowledge a buffered
+sequence before seq 1 arrives, and the receiver receives all 65 within one 30 s lifetime. Over`rtc`the
+receiver buffered the track, so it also waits for an inbound`effect-drain`whose`promoted`count is above zero
+(D190): a`loop`with`until: 'first-success'`tries`"promoted":1`to`"promoted":9`, one leading digit per
+iteration. Over`ws`the relay buffers and releases the track out of the page's sight, as in`ordering-gap-repair`.`churn-bounded-tracks`(`rtc`, where the receiver is the one hop that orders a track) closes the sender and reconnects
+it with the production count and byte limits and`maxTracks: 600`, since each of its tracks counts in its own ledger,
+sends seq 1 on 300 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`) in a`loop`, observes the
+last one`transport-accepted`and closes; the receiver receives the 300, holds one second, and its`stats`reads`rallar.alm.orderingTracks`both`lte`and`gte`256 (D191). Hosted manifest 18 withholds all three, so manifests 18
+and 22 stay as recorded. The cells live in`conformance/alm/scenarios/fairness/`.
+
 The addressed family runs on two agents, in the full scope, as its own Playwright test per carrier (R-S3c-ii-2,
 R-S3c-ii-5); each scenario declares it as its `laneFamily`. The lane proves the addressee's receipt, not the
 addressing: on two agents a room send yields the same receipt, so the addressing is pinned by unit tests.
@@ -548,7 +568,7 @@ naming the four production limits but `maxTracks: 2` and sends three at-least-on
 its own (`alm-<carrier>-capacity-tracks-<index>`), so each would open one track: the third ends `rejected` with
 `limit: 'tracks'` and `attempts` 0; right after the refusal, while both sends still hold their tracks, it reads
 `stats` and asserts `rallar.alm.usage.tracks` 2, `rallar.alm.limits.maxTracks` 2 and `rallar.alm.overloaded` false
-(the only ledger reading a lane cell asserts at a bound); the first two are acknowledged; then it reconnects without
+(a ledger reading at a bound, as `own-share-under-inbound` reads its pools); the first two are acknowledged; then it reconnects without
 the field. A
 received message never opens a counted track, so it needs no wait for the rejoin's state sync, and its receiver's
 window adds only the readiness budget. The three cells live in `conformance/alm/scenarios/volatile-bound/`.
@@ -1099,8 +1119,15 @@ artifact summaries.
 
 A browser agent's `stats` result also carries its page's session ledger under
 `stats.rallar.alm`: `{ usage: { admissions, bytes, oldestAgeMs, tracks },
-limits: { maxAdmissions, maxBytes, maxAgeMs, maxTracks }, overloaded }`, read at
-the command from `rallar.messages.readUsage()` (D180) — the same block reaches
+own: { admissions, bytes }, inbound: { admissions, bytes },
+limits: { maxAdmissions, maxBytes, maxAgeMs, maxTracks }, overloaded,
+orderingTracks }`. All but the last are read at the command from
+`rallar.messages.readUsage()` (D180): `usage` holds the totals of the ledger's
+two pools, `own` and `inbound` each pool (D189), and `overloaded` says the
+smallest next own send would be refused at the count or byte limit.
+`orderingTracks` is the page's own, not the facade's: the sum of the latest
+`ordering-tracks` count each inbound store stated on the `storage` diagnostics
+port since the page's last `close` (D191; 0 before a store opened a track) — the same block reaches
 `health`'s `stats`, the `rallar.bb.stats` event and `latestStats`, so an
 `assert` reads it as `latestStats.rallar.alm.usage.admissions`. The block is
 absent before the page's connect completes, on a runtime that drives no Rallar

@@ -182,7 +182,10 @@ every server message keeps its one backend.
   durabilities is split between the lanes; no caller declares one that way.
 - **A volatile admission never leaves the caller's turn.** It reads no IndexedDB and takes no Web Lock,
   so it completes within the caller's microtask chain, and a loop of awaited volatile sends yields no
-  task turn until it ends (R-S3a-7). A burst loop should yield or batch; fairness is V1b-ii's.
+  task turn until it ends (R-S3a-7). A burst loop should yield or batch: the outbound claim order is
+  the queue's own order, not a rotation across senders or tracks, so a backlog admitted ahead puts
+  a later sender's send behind it. V1b-ii measured this and kept the order, since concurrent
+  admissions interleave through the per-sender commit queue.
 - **Every lane-emitted diagnostic names its lane.** `commit-phases`, `effect-drain` and
   `readiness-probe` carry a required `lane` (`ALStoreDurability`: `durable`, `checkpoint` or
   `volatile`) (R-S3a-15), so a reader of the runner's storage speed can leave the memory lanes out.
@@ -545,7 +548,12 @@ one expected recipient, the director session, so the `admitted` receipt names th
 director's ACK completes it. Each recipient's ACK stays addressed to the origin (`toPeerId` is the
 message's `senderId`); the server admits it at ingress as the aggregating relay hop and counts it in
 [`WsQueueBoxServerReceiptAggregation`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts),
-an in-memory map on the instance whose socket admitted the message. The server answers the origin
+held in memory on the instance whose socket admitted the message: a `LatestRepository` of at most
+`WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES` (4 096) aggregates (D191). Its TTL is the 30 min receipt window plus
+the receipt deadline grace, strictly above every aggregate's deadline, so the deadline sweep is the one path that ends
+an aggregate by time and the repository never drops one before its `timed-out` receipt is written. An admission that
+finds the cap reached ends the oldest admitted aggregate as its deadline would, with a `timed-out` receipt naming the
+recipients confirmed so far, so sessions that leave and rejoin cannot grow the set within the window. The server answers the origin
 with `al.control.receipt.v1` controls, each written as one durable `WS_OUTBOX` row that reaches the
 origin's socket on this instance or, through the cluster publisher, on another: `admitted` at once
 with the frozen audience, then `complete` when every expected recipient has acknowledged, or
@@ -780,9 +788,15 @@ and choice. Controls, receipts, acknowledgements, repairs, retransmissions and r
 neither is a message whose sender named no deadline (RTC signalling). An outbound data admission is refused
 `capacity` when it would pass one of four limits (D179): `AL_VOLATILE_SESSION_MAX_ADMISSIONS` (1 000) admissions,
 `AL_VOLATILE_SESSION_MAX_BYTES` (4 MiB) of envelopes, a deadline further than `AL_VOLATILE_SESSION_MAX_AGE_MS`
-(5 minutes) from now, or a new ordering track while `AL_VOLATILE_SESSION_MAX_TRACKS` (64) are counted. The handle
+(5 minutes) from now, or a new ordering track while `AL_VOLATILE_SESSION_MAX_TRACKS` (64) are counted. The count and
+byte limits hold two pools (D189): `own`, the admissions `tryAdmit` counts, and `inbound`, the arrivals `record`
+counts. An own admission passes the count or byte limit only when it would take both the total past the limit and
+the own pool past its share, `floor(limit * AL_VOLATILE_SESSION_OWN_SHARE)` with the share 0.5 (500 admissions,
+2 MiB at the constants); arrivals are never refused, so the total may exceed the limit. The handle
 ends `rejected` with `evidence.failure` `{ kind: 'refused', reason: 'capacity', limit }`, `limit` naming the limit
-the ledger's refusal names (`'admissions'`, `'bytes'`, `'age'` or `'tracks'`), and no fallback is tried, because the
+the ledger's refusal names (`'admissions'`, `'bytes'`, `'age'` or `'tracks'`; only the own pool is ever refused, so
+the name says which pool too, and the refusal carries the own pool's figures beside the totals), and no fallback is
+tried, because the
 other carrier shares the budget. The RTC circuit breaker does not count a `capacity` refusal as a failure. A counted
 send whose commit then admits nothing stays counted until its deadline: the ledger has no release call.
 
@@ -791,18 +805,23 @@ A track is the ordering track key of a send that states an ordering key and a se
 that does not state both names none. A track is counted while the ledger holds
 at least one counted admission on it, so it leaves the count when the last of them reaches its deadline. A received
 message never opens a counted track. The ledger answers its state in one read, `readReport(nowMs)`
-(`ALVolatileSessionReport`: the usage with `oldestAgeMs`, 0 when nothing is counted, and `tracks`; the limits; and
-`overloaded`), which the browser exposes as `rallar.messages.readUsage()` and the black-box `stats` result as
-`rallar.alm` (D180).
+(`ALVolatileSessionReport`: the usage, the totals of both pools, with `oldestAgeMs`, 0 when nothing is counted, and
+`tracks`; `own` and `inbound`, each pool's `admissions` and `bytes`; the limits; and `overloaded`), which the browser
+exposes as `rallar.messages.readUsage()` and the black-box `stats` result as `rallar.alm` (D180, D189).
 
 An inbound admission is counted and never refused, and it counts toward the same limits as the session's own sends
-(R-S3c-ii-3): a session whose volatile traffic in and out stays above about 33 messages a second (at the 30 s default
-deadline) has its own volatile sends refused. The bound is also shared with the platform's own state sync that the
+(R-S3c-ii-3), in the inbound pool. Under one shared pool arrivals alone refused own sends: refusal began where
+`30 * inbound rate + own deadline * own rate` reached the 1 000 count, so 33 arrivals a second refused two thirds of a
+once-a-second own stream and 34 refused all of it, and 8.5 KB envelopes reached the byte limit at 16 a second. With
+the share (D189) an own send is refused only once the own pool holds its 500, so a session keeps that many counted own
+sends, about 16 a second at the 30 s default deadline, whatever arrives; arrivals holding the total at 1 000 still let
+500 own sends through and refuse the 501st. The bound is also shared with the platform's own state sync that the
 WS inbound runtime admits on the volatile pair (`group-state.event`, `client-state.snapshot`, `client-state.event`,
 R-S3c-ii-7): a lane agent that leaves and rejoins a room holds about 26 KB of it, under one per cent of the
 production limits. Whether platform topics leave the application's bound is an open decision for the maintainer.
-While the budget is at or over its count or byte limit the session's QoS provider reports `overloaded` for the session's
-own outbound data originations only: never for a control, a receipt, an acknowledgement, a repair, a relay forward or an
+While the smallest next own send would be refused at the count or byte limit (the total and the own pool both at their
+bounds, D189) the session's QoS provider reports `overloaded` for the session's own outbound data originations only,
+so arrivals alone no longer set it: never for a control, a receipt, an acknowledgement, a repair, a relay forward or an
 inbound plan (R-S3c-ii-8), so a session at its bound still acknowledges, forwards and delivers for other sessions. Under
 the default policy the RTC origin drops a best-effort room send that reads it, and that drop reads `capacity` as the
 admission bound's refusal does: at the bound every send, best-effort or not, on either carrier, ends `rejected` with
@@ -840,13 +859,15 @@ handed-over message ids are [`LatestRepository`](../../cache/LatestRepository.ts
 message a worker picks up after 5 minutes still does not send. The browser's resync recovery keeps the tracks it has
 invoked a recovery owner for in a `LatestRepository` with `AL_VOLATILE_SESSION_MAX_AGE_MS` as its TTL, renewed by
 each of the track's resynchronizations, so a track that resyncs again after that long without one invokes the owner
-again. `WebRtcRxStreamerService` numbers every peer's
+again; it remembers at most `AL_INBOUND_MAX_ORDERING_TRACKS` (256) tracks, the first remembered leaving first, even
+one that resynchronized again since (D191). `WebRtcRxStreamerService` numbers every peer's
 round-trip measurements from one counter and keeps no version per peer. None of them adds a timer or a sweep of its
 own: a repository forgets an expired entry it reads, and an accept may sweep the rest, at the repository's eviction
 rate.
 
 **Limit:** the memory pairs plateau rather than empty: an idle inbound ordering track keeps two rows for the hour after
-its last message, and each sending origin keeps one outbound version row (`versionTtlMs`, 1 h). The long-run test
+its last message, its ordering snapshot while it is one of the store's 256 (D191, inbound README) and its delivered
+marker, which the cap leaves, and each sending origin keeps one outbound version row (`versionTtlMs`, 1 h). The long-run test
 sends on the application's own sequences, as the browser does: only the browser builds the volatile outbound pair, and
 the browser never mints. A volatile pair that did mint would drop a track's ordering head with its last sent row, after
 the deadline plus the receipt grace, while a receiver keeps the track for the hour, so a track silent for longer than
