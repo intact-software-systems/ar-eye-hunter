@@ -455,6 +455,20 @@ describe('WS server receipt aggregates at their cap', () => {
     });
 });
 
+describe('WS server receipt aggregates past their deadline', () => {
+    it('leaves a deadline at the window to the sweep, which a late read must not pre-empt', () => {
+        const clock = { nowMs: 1_000 };
+        const aggregation = createAggregation([], () => clock.nowMs);
+        const deadlineAtMs = clock.nowMs + WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS;
+        aggregation.recordAdmission({ ...admission(), deadlineAtMs });
+        clock.nowMs = deadlineAtMs + 2;
+
+        aggregation.recordAck(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }));
+
+        expect(aggregation.sweep(clock.nowMs)).toMatchObject([{ msgId: 'room-message-1', phase: 'timed-out' }]);
+    });
+});
+
 /** Admits `count` aggregates numbered from `first + 1`, and returns what each admission evicted. */
 function admitAggregates(
     aggregation: WsQueueBoxServerReceiptAggregation,
@@ -471,10 +485,13 @@ function admitAggregates(
     return evicted;
 }
 
-function createAggregation(enqueued: ALMessage[] = []): WsQueueBoxServerReceiptAggregation {
+function createAggregation(
+    enqueued: ALMessage[] = [],
+    nowMs: () => number = () => 1_000
+): WsQueueBoxServerReceiptAggregation {
     const aggregation = new WsQueueBoxServerReceiptAggregation({
         serverPeerId: 'server',
-        clock: { nowMs: () => 1_000 },
+        clock: { nowMs },
         newControlId: () => 'receipt',
         qosProvider: undefined,
         queueEngine: new InboxOutboxEngine(),

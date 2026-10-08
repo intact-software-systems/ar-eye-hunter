@@ -676,7 +676,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             await this.backend.write(async (transaction) => {
                 for (const track of evicted) {
                     const current = await transaction.read(track.key, decodeALInboundOrderingSnapshot);
-                    if (current?.updatedAtMs === track.value.updatedAtMs) {
+                    if (current !== undefined && jsonEquals(current, track.value)) {
                         await transaction.remove(track.key);
                     }
                 }

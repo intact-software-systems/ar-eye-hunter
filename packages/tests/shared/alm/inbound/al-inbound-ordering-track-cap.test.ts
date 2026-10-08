@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
@@ -20,6 +21,7 @@ import {
 const START_MS = Date.UTC(2026, 9, 8, 12);
 const NAMESPACE = 'ordering-cap';
 const ORDERING_PREFIX = `${NAMESPACE}:ordering:`;
+const DELIVERED_PREFIX = `${NAMESPACE}:delivered:`;
 const CHURNED_TRACKS = 300;
 /** Three hundred IndexedDB admissions, each opening a track, take about five seconds under a loaded machine. */
 const CHURN_TIMEOUT_MS = 30_000;
@@ -64,6 +66,67 @@ describe('the inbound store\'s ordering tracks', () => {
         expect({ ...evicted, trackKey: undefined }).toEqual({ ...fresh, trackKey: undefined });
         expect(held).toMatchObject({ status: 'in-order', expectedSeq: 3 });
     });
+
+    it('keeps a track a same-millisecond update reached after the eviction read it', async () => {
+        const fixture = await createOrderingCapFixture('memory');
+        await admitFirstSequences(fixture, AL_INBOUND_MAX_ORDERING_TRACKS);
+        const sharedMs = START_MS + 1;
+        const readWithin = fixture.backend.readWithin.bind(fixture.backend);
+        let interleaved = false;
+        vi.spyOn(fixture.backend, 'readWithin').mockImplementation(async (read) => {
+            const result = await readWithin(read);
+            if (!interleaved && Array.isArray(result) && result.length > AL_INBOUND_MAX_ORDERING_TRACKS) {
+                interleaved = true;
+                const openedAtMs = Date.now();
+                vi.setSystemTime(sharedMs);
+                await fixture.inbound.runtime.admitIncomingMessage(createTrackMessage(0, 2), INBOUND_TEST_SOURCE);
+                vi.setSystemTime(openedAtMs);
+            }
+            return result;
+        });
+
+        await admitAtNextMs(fixture, createTrackMessage(AL_INBOUND_MAX_ORDERING_TRACKS, 1));
+
+        expect(interleaved).toBe(true);
+        expect(await readHeldTracks(fixture.backend)).toContain('track-0');
+        expect(await readOrderingObservation(fixture, createTrackMessage(0, 3)))
+            .toMatchObject({ status: 'in-order', expectedSeq: 4 });
+    });
+
+    it('keeps the evicted track\'s delivered marker', async () => {
+        const fixture = await createOrderingCapFixture('memory');
+        const trackKey = toALOrderingTrackKey(createTrackMessage(0, 1))!;
+        await admitAtNextMs(fixture, createTrackMessage(0, 1));
+        await expect.poll(async () => (await fixture.inbound.stores.admissionStore.readOrderedDelivery(trackKey, 2)).completedThrough)
+            .toBe(1);
+
+        await admitFirstSequences(fixture, AL_INBOUND_MAX_ORDERING_TRACKS + 1, 1);
+
+        expect(await readHeldTracks(fixture.backend)).not.toContain('track-0');
+        expect(await readDeliveredTracks(fixture.backend)).toContain(trackKey);
+    });
+
+    it('reads a gap\'s release on an evicted track as resync-required', async () => {
+        const fixture = await createOrderingCapFixture('memory');
+        const trackKey = toALOrderingTrackKey(createTrackMessage(0, 1))!;
+        const store = fixture.inbound.stores.admissionStore;
+        await admitAtNextMs(fixture, createTrackMessage(0, 1));
+        await expect.poll(async () => (await fixture.inbound.stores.admissionStore.readOrderedDelivery(trackKey, 2)).completedThrough)
+            .toBe(1);
+        await admitAtNextMs(fixture, createTrackMessage(0, 3));
+        expect(await store.readOrderedDelivery(trackKey, 3)).toEqual({
+            completedThrough: 1,
+            predecessor: { kind: 'effect' }
+        });
+
+        await admitFirstSequences(fixture, AL_INBOUND_MAX_ORDERING_TRACKS + 1, 1);
+
+        expect(await readHeldTracks(fixture.backend)).not.toContain('track-0');
+        expect(await store.readOrderedDelivery(trackKey, 3)).toEqual({
+            completedThrough: 1,
+            predecessor: { kind: 'resync-required' }
+        });
+    });
 });
 
 describe.each<InboundTestStorage>(['memory', 'indexeddb'])('the %s inbound pair under track churn', (storage) => {
@@ -96,8 +159,8 @@ async function createOrderingCapFixture(storage: InboundTestStorage): Promise<Or
 }
 
 /** One first sequence on each of `count` tracks, a millisecond apart, so each track's update time is its own. */
-async function admitFirstSequences(fixture: OrderingCapFixture, count: number): Promise<void> {
-    for (let track = 0; track < count; track += 1) {
+async function admitFirstSequences(fixture: OrderingCapFixture, count: number, first = 0): Promise<void> {
+    for (let track = first; track < first + count; track += 1) {
         await admitAtNextMs(fixture, createTrackMessage(track, 1));
     }
 }
@@ -117,6 +180,12 @@ function createTrackMessage(track: number, seq: number): ALMessage {
 async function readHeldTracks(backend: ALAdmissionWorkBackend): Promise<readonly string[]> {
     const held = await backend.list(ORDERING_PREFIX, (value) => value);
     return held.map((entry) => entry.key.slice(ORDERING_PREFIX.length).split(':')[0]);
+}
+
+/** The track key of every ordered delivery marker the store holds. */
+async function readDeliveredTracks(backend: ALAdmissionWorkBackend): Promise<readonly string[]> {
+    const held = await backend.list(DELIVERED_PREFIX, (value) => value);
+    return held.map((entry) => entry.key.slice(DELIVERED_PREFIX.length));
 }
 
 async function readOrderingObservation(fixture: OrderingCapFixture, message: ALMessage) {

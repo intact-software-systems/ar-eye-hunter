@@ -123,10 +123,11 @@ interface WsQueueBoxServerReceiptAggregate extends WsQueueBoxServerReceiptAggreg
 export class WsQueueBoxServerReceiptAggregation {
     /**
      * The deadline sweep ends an aggregate on time, and an admission at the cap takes the oldest itself to answer
-     * it, so the repository never drops one on its own.
+     * it, so the repository never drops one on its own: its TTL is above every deadline (the window), or a read
+     * after a deadline and before the sweep would drop the aggregate without its `timed-out` receipt.
      */
     readonly #aggregates = new LatestRepository<string, WsQueueBoxServerReceiptAggregate>({
-        ttlMs: WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS,
+        ttlMs: WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS + AL_RECEIPT_DEADLINE_GRACE_MS,
         maxEntries: WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES,
         evictsPerWindow: 0
     });
