@@ -196,7 +196,22 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
 ## 1. Current Outcome And Evidence
 
-The latest completed code slice is general-worker HOST capture, published in draft
+The latest code checkpoint consolidates ordinary and distributed artifact envelope validation
+in one shared-test incoming schema owner, published in draft
+[PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645). The decoders validate
+mandatory identity, finite version/time and required string files, plus supplied optional
+distributed files. Existing readers retain content and version-specific policy. Independent
+SPEC/QUALITY review approves the complete four-file correction; all38 behavioral assertions
+remain unchanged and pass after final normalization. The affected 2,636-test shared-test
+suite passed on the preceding consolidation. The final correction confines unknown input
+to direct validation parameters and returns a validation issue, preserving all admission
+decisions while removing opaque record propagation. Both newly added predecessor modules
+are deleted without compatibility shims or checker waivers. The original hosted directory
+and prefix failures, their exact local reproduction and a subsequent broader helper gate
+failure remain retained. Helper adoption and lifecycle closure are separate and pending.
+This does not supply copied native delivery, live-worker or E3 acceptance.
+
+The preceding general-worker HOST capture slice remains accepted, published in draft
 [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645) at
 `46de97d91e30c9beb6215d68a6fe2d8ceb8dec04`, tree
 `939c2fa9b53d139b97c5ccbc7ab20ecb106165dc`. Semantic TDD and independent complete-owner
@@ -232,6 +247,37 @@ history, before repeating the native witness. Reuse the existing bounded readine
 add no implicit SDK wait, copied-text edit, new retry, timeout expansion or readiness policy.
 The touched helper also requires canonical snapshot/auth/artifact boundary closure; remove
 its duplicate permissive contracts rather than retaining them because advisory checks pass.
+
+Tests-first fixture checks now reproduce seven resource/failure ownership defects: failed
+page creation or navigation leaves an owned context open; borrowed-context setup leaves its
+new page open; a partially opened second participant leaks; successor registration failure
+leaves its new page open in the shared context; and recipient enqueue/barrier failures leave
+unobserved work. Real Chromium objects and existing request ports establish those failures.
+Two results-only synthetic fixture failures are separate contract-closure findings. These
+are test-fixture defects, not evidence identifying the original RTC stall. The seven
+lifecycle regressions and all20 distributed artifact cases now pass in a frozen59-test,
+five-file run. The decoder's initial RED was an honestly missing callable capability,
+not a reproduced historical malformed-consumer bug. The helper/caller checkpoint uses
+canonical contracts and named inputs without compatibility shims. Its focused validation
+passes, but independent full-owner review identified four corrections: own result
+polling throughout later setup/failure; close the Local Native case's manually owned context
+after acquisition, attachment or cleanup failure; use issued auth facts or the genuine narrow
+request-auth capability; and remove the fallback for already validated mandatory events.
+Six additional actual-port tests reproduce the post-barrier lifetime failures before the fix.
+The bounded correction passes all 65 focused checks, and the exact existing Local Native
+case passes once under unchanged budgets. Its passing buffered observation attachment was
+not retained by the list reporter; acceptance is limited to the executed assertions and
+frozen source/command/exit evidence. Scoped re-review closes recipient observation lifetime,
+auth capability, mandatory events and context disposal. One remaining cleanup correction
+must keep the originating failure reachable if subsequent disposal also fails. The broader
+changed-style gate also records28 helper/caller boundary signals requiring source review
+and focused closure; they are not waived or treated as28 confirmed code defects. These
+pending helper owners are excluded from the separate envelope publication checkpoint.
+Local pass counts alone do not close the remaining findings.
+The original receiver/result deadlines and warning-and-release policy are preserved.
+Publish this coherent helper checkpoint with updated existing callers; keep the unfinished
+Copy witness pending for the subsequent readiness slice. Local helper acceptance does not
+complete actual Copy/repeat, live-worker, Actions, distributed or E3 acceptance.
 
 The bounded worker/Actions audit finds three concrete gaps: controller09 drops the HOST env
 input; general Actions/helpers expose no finite operator RUN override; and generic room

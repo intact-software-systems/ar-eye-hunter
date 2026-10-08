@@ -10,8 +10,10 @@ import type {
     ControlRunArtifactBundle,
     ControlRunSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { decodeControlDistributedRunArtifactBundle } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-artifact-bundle.ts';
-import { decodeControlRunArtifactBundle } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-artifact-bundle.ts';
+import {
+    decodeControlDistributedRunArtifactBundle,
+    decodeControlRunArtifactBundle
+} from '@shared-test/rallar-bb-test/schema/control-artifact-envelope.ts';
 
 const ordinaryArtifact = {
     artifactSchemaVersion: 1,
