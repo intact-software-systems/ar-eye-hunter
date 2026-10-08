@@ -123,3 +123,17 @@ platform topics from the bound; D87's "10 plus 15" text which the pins show as 1
 
 Fairness and backpressure as policy inputs; the scale manifests and their metrics; the 60-minute run; a server-side
 ledger; exempting platform topics from the bound; receipt-latency percentiles; browser memory as a metric.
+
+## 6. As applied (#649, `c37bda7`)
+
+- D181's inbound clause did not land as written: the volatile pairs' ordering-track TTL stays one hour, because a
+  receiver that forgets a track inside a session reads the sender's next sequence as a gap and stalls any track
+  quiet for five minutes; the age budget bounds counted admissions, not ordering state, and the per-track hour is a
+  bounded plateau the 60-minute run (V1d) will measure against.
+- The send-control sets took the 60-minute repository default as their TTL rather than the age budget (a cancelled
+  durable message must stay recognised for its row's retention), and the RTC receiver's per-peer RTT version table
+  became one counter instead of a per-peer deletion.
+- A track is counted while the ledger holds a counted admission with its key, not until its head's row expires;
+  only a send with both an ordering key and a sequence number opens one; `overloaded` still means the count or
+  byte bound.
+- The lane cells live in the `addressed` family (where `capacity` already was) under `scenarios/volatile-bound/`.
