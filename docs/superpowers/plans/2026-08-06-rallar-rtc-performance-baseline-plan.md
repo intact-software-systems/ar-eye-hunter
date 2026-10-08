@@ -192,11 +192,43 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
 **Created:** 2026-08-06
 
-**Updated:** 2026-10-07
+**Updated:** 2026-10-08
 
 ## 1. Current Outcome And Evidence
 
-The published corrective checkpoint is `9d683b3ba00cc0a450a8a940ecdd2eab4c55bbed`, tree
+The latest completed code slice is general-worker HOST capture, published in draft
+[PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645) at
+`46de97d91e30c9beb6215d68a6fe2d8ceb8dec04`, tree
+`939c2fa9b53d139b97c5ccbc7ab20ecb106165dc`. Semantic TDD and independent complete-owner
+SPEC/QUALITY review accept env/query/bootstrap forwarding, sparse SDK host defaults,
+invalid-input refusal and actual SDK mode/origin readback. Local checks and fresh hosted
+Branch37714910111, Formation37714909898 and Medium37714909915 pass. Root verifies all eight
+original archive digests, the published receipt and equivalent synthetic merge tree/parents.
+Actual hosted native/refusal/Manual cases and RTC integrity are skipped. This accepts the
+carrier slice and its stated local boundaries; real launched-worker/Actions/native and
+B01–B06/E3 acceptance remain open.
+
+The next two useful outcomes are actual Manual Copy and ordinary same-session Local repeat,
+then existing worker/Actions capture propagation and application. Copy uses the same payload
+and sessions, retained native receive objects, successful canonical Close, actual old-target
+closure and distinct open receiving targets within unchanged budgets. Its first database
+configuration failure and subsequent test-construction failures are retained; none is product
+RED or delivery acceptance. The existing healthy canonical Postgres already has all required
+migrations; supplying its process environment changes no database or environment file.
+
+The bounded worker/Actions audit finds three concrete gaps: controller09 drops the HOST env
+input; general Actions/helpers expose no finite operator RUN override; and generic room
+rewriting can corrupt authored capture modes. A pure existing-scope-owner invocation changes
+literal `off` to the effective room ID when the source room is `off`. This is a reproduced
+translation defect, not full schema-valid materializer/worker acceptance. Prepare semantic
+RED through the existing real materializer and owned outbound effects before choosing a fix.
+Preserve the canonical mode parser/precedence and full scoped room identity; add no migration,
+legacy path, duplicate policy, configuration store or transport/retry change.
+
+The following WS checkpoint is historical evidence for its exact source, followed by the
+current parent-integration status and retained diagnostic history.
+
+The published WS corrective checkpoint is `9d683b3ba00cc0a450a8a940ecdd2eab4c55bbed`, tree
 `061cd4d527f7c642b0f9c75f34607294bc81c081`. The bounded WS observer-fixture correction has
 independent SPEC and QUALITY acceptance. Fresh [Branch Release Gate37557532249](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37557532249)
 passes its selected correctness gates, with13638 passing unit tests and12 skips; the eleven
@@ -214,21 +246,17 @@ Wait/Set/Parallel rows overlap and are not136 independent incidents. Bounded res
 views disclose omitted successful history. These are correctness gates, not B01–B06
 performance cohorts or full diagnostic-receipt acceptance.
 
-[PR633](https://github.com/intact-software-systems/ar-eye-hunter/pull/633) remains open with
-native review required. Its earlier five-conflict repair is published and independently
-accepted at15eff against pinned main d5db. Remote main has since advanced to
-`94e72f4828e9db5111dc06e4746f1ce09f68ead2`; fresh GitHub state is CONFLICTING.
-The current read-only dry merge exits1 with two conflicted owners:
-`packages/shared-web/bundle-budgets.json` and
-`packages/tests/shared-web/rooms/update-room.test.ts`. The clean feature integration
-worktree remains at15eff and preserves independently held work. Preserve accepted capture
-behavior and current main consumer contracts, and measure actual combined bundles before
-choosing minimum adjustable caps. The next two concrete slices are prompt publication of
-the independently approved Local Load/remount source and this new feature conflict repair.
-Full Task65 remains active. The prior exact main proposal is stale; after repair,
-validation and review, prepare a fresh exact proposal and obtain just-in-time approval.
-No main operation or
-accepted E3 cohort is claimed. Task61 and Task62 are locally accepted in the separate
+[PR633](https://github.com/intact-software-systems/ar-eye-hunter/pull/633) is open and
+MERGEABLE with native review required. Its two real conflicts against main
+`94e72f4828e9db5111dc06e4746f1ce09f68ead2` have been repaired, independently reviewed,
+validated and published in feature merge `979edba87020bb9e97c9130218c2d3d4020a0aeb`, tree
+`f5c9cf3805051f8392306cb5eef34537cf9000ff`. Fresh actual checkout/artifact/receipt evidence
+accepts its correctness gates. The exact administrator squash proposal against this
+main/head/tree remains pending explicit human approval. No conflict repair, branch refresh,
+main commit/push or E3 fallback run is currently selected. PR645 intentionally stacks on the
+parent feature branch; the delivery helper's STOP_WRONG_BASE reflects that stack and does
+not authorize retargeting or a default-branch operation. Full Task65 remains active.
+Task61 and Task62 are locally accepted in the separate
 continuation worktree, preserving the proposed integration source. The human-approved
 required-input/default-composition/client-clock correction adapts verified callers directly,
 with no migration path or retained predecessor. Two scoped review rounds close the admission
@@ -6954,10 +6982,10 @@ inbox was observed. Recover this boundary without a new protocol field, placehol
 freshness discriminator, provider, harness or policy.
 
 Actual UI unavailable-Native refusal and successful Local Native delivery remain accepted
-within their stated limits. The next two concrete outcomes are general-worker host capture
-from env/query through bootstrap and actual SDK readback, then actual Copy/repeat receiving
-effects across the existing lifecycle. Worker/Actions run selection and all remaining
-storage/recipe paths stay required. Recover only existing paths; invent no saved recipe
+within their stated limits. General-worker host capture is now locally implemented and
+published after semantic TDD and independent review, as recorded below. The next two concrete
+outcomes are actual Copy/repeat receiving effects across the existing lifecycle, then
+worker/Actions propagation and real application. All remaining storage/recipe paths stay required. Recover only existing paths; invent no saved recipe
 store or corresponding API, migration or duplicate policy. Publish each coherent
 tested/reviewed slice promptly while independent unfinished outcomes remain in progress.
 
@@ -7006,6 +7034,31 @@ The hosted app suite explicitly skips the actual Full native receiving-browser, 
 capture and Manual capture/export/reload/reset cases. Their local acceptance cannot be
 inferred from this gate. This evidence does not certify the later worker carrier, distributed
 capture forwarding, B01–B06, E3 or a performance baseline.
+
+**Current worker/Actions acceptance gaps:** The next-outcome audit is bound to the published
+worker carrier and all 67 inspected source/context owners. Controller09's optional env
+allowlist omits `RALLAR_BLACK_BOX_RTC_CAPTURE_MODE`; general manual/reusable/GitHub-free
+workflows and dispatch/world-fleet helpers have no executable finite operator RUN choice.
+The existing manifest `rtcCaptureMode` remains the canonical run carrier; HOST and RUN
+must retain their separate ownership and actual SDK receipt origins.
+
+The pure `toEffectiveHetznerRunManifestScope` reproduction changes capture literal `off`
+at manifest, recipe, operation and nested HOST fields into the effective room ID when
+source groupId is `off`. Its generic string `replaceAll` reaches every such leaf. Preserve
+that original invocation/output. The fragment is not a full schema-valid manifest, and no
+real materializer, launched worker or Actions application is accepted from it. Meaningful
+TDD must exercise the existing complete materializer/request boundary with independent
+literal modes and valid scoped room identities, then prove actual command/receipt application.
+Worker registration alone, a selected input, an applied native receipt or absent log rows
+cannot prove native channel attachment, delivery or Off allocation behavior.
+
+**Hosted acceptance of the published worker carrier:** Fresh original-attempt
+Branch37714910111, Formation37714909898 and Medium37714909915 succeed. Eight original
+archive digests and the validation-evidence-v2 receipt bind head46de; the actual synthetic
+merge ed0eaa5b has parents979/46de and the reviewed tree939c2. Actual reuse=false telemetry
+is retained. The hosted app suite skips actual Native delivery, unavailable capture and
+Manual capture/export/reload/reset; RTC integrity is skipped. These correctness gates do
+not supply real worker/Actions capture, native attachment, distributed, B01–B06 or E3 evidence.
 
 Full Task65, Console, existing Load/Copy/storage/restore/repeat outcomes, workers, Actions
 and B01–B06/E3 remain required. No retry, recovery, CRDT or RTC transport behavior changes.
