@@ -620,10 +620,12 @@ an active member is `membership-fenced` instead. A `group-leader` room send is r
 `no-leader` NACK when the snapshot the room authorizer reads appoints no director present in the room, when the
 sender is the director, or when the send's exclusions, fixed list or principal leave the director out; the
 origin states it as a trusted-server `relay-rejected` with that reason and the handle reads `rejected` (D165).
-An exclusive send whose resource key another session's live exclusive claim holds is dropped at the server's admission with a
-`held-by-other` NACK, which the origin states the same way, a trusted-server `relay-rejected` with that reason, so a
-receipted send reads `rejected` and a receipt-less one names it in `relayRejection` alone (D171, D175; the
-exclusive claim itself is [the inbound README's](../inbound/README.md)).
+An exclusive send whose resource key another session's live exclusive claim holds is dropped at the server's
+admission with a `held-by-other` NACK, which the origin states the same way, a trusted-server `relay-rejected` with
+that reason, so a receipted send reads `rejected` and a receipt-less one names it in `relayRejection` alone (D171,
+D175; the exclusive claim itself is [the inbound README's](../inbound/README.md)). Unlike the pre-admission refusals
+it refuses the whole send whatever the receipt, and it ends the receipt as `resync-required` does: a claim the server
+retained on a conflict has its `admitted` receipt before its replay drops it.
 A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
 aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
 audience verbatim, so a session that left since reads unconfirmed (D73).

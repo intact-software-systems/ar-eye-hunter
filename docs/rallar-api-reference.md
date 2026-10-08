@@ -1068,8 +1068,10 @@ outcomes, none of them a new handle state (D175):
   key is admitted too and moves the claim's expiry to its own.
 - **Held by another.** An exclusive send from another session on a key whose
   claim is live is dropped at the server's admission and NACKed
-  `held-by-other`; it reaches no one and writes no `admitted` receipt. The
-  handle reads it as it reads `no-leader` over WS: with a receipt-bearing `ack`
+  `held-by-other`; it reaches no one. A dropped claim starts no receipt; a
+  claim retained on a conflict may have started one, which the `held-by-other`
+  NACK then ends. The handle reads it as it reads `no-leader` over WS, whatever
+  receipt it already holds: with a receipt-bearing `ack`
   it ends `rejected` with `failure: { kind: 'relay-rejected', rejection }` and
   `evidence.relayRejection` reading
   `{ relay: 'trusted-server', reason: 'held-by-other' }`; with `ack: 'none'` it

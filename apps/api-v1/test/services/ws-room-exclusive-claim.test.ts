@@ -47,6 +47,37 @@ Deno.test('a second session\'s exclusive send on a claimed resource is NACKed he
     }
 });
 
+Deno.test('two sessions claiming one free resource at once: the loser is retained on the conflict, NACKed held-by-other on its replay and reaches no one', async () => {
+    const { runtime, room } = await createClaimRuntime();
+    try {
+        const first = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
+        const second = createPickupSend({ room, senderId: 'session-2', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
+
+        const [firstAcceptance, secondAcceptance] = await Promise.all([
+            runtime.service.acceptIncomingMessage(first, 'session-1'),
+            runtime.service.acceptIncomingMessage(second, 'session-2')
+        ]);
+        await waitForRoomSends(() => readNackReasons(runtime.sent, 'session-2').length > 0);
+        await waitForRoomSends(() => false);
+
+        assert.deepEqual(firstAcceptance.right, { kind: 'admitted' });
+        assert.deepEqual(secondAcceptance.right, { kind: 'pending-admission' });
+        assert.deepEqual(readNackReasons(runtime.sent, 'session-2'), ['held-by-other']);
+        assert.deepEqual(readNackReasons(runtime.sent, 'session-1'), []);
+        assert.deepEqual(readPickupSends(runtime.sent), [
+            ['session-2', first.id.msgId],
+            ['session-3', first.id.msgId]
+        ]);
+        // The retained claim started its receipt before the replay judged it; the NACK is what ends it at the origin.
+        assert.deepEqual(readReceiptPhases(runtime.sent, 'session-2'), [[second.id.msgId, 'admitted']]);
+        assert.deepEqual(readReceiptPhases(runtime.sent, 'session-1'), [[first.id.msgId, 'admitted']]);
+    }
+    finally {
+        runtime.service.dispose();
+        await runtime.manager.clear();
+    }
+});
+
 Deno.test('the holder\'s exclusive re-send on its claimed resource is admitted, delivered and moves the claim\'s expiry to its own', async () => {
     const { runtime, room } = await createClaimRuntime();
     try {

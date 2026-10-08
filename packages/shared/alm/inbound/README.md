@@ -488,14 +488,17 @@ reads the exclusive-claim row at `<namespace>:claim:<key>` beside the dedup key,
 commit: its value is the holder's peer id and its liveness is the row's own expiry, which every backend applies on
 read. The planning observation `claimHolderPeerId` carries the holder, and `resolveMessageDrop`, right after the
 duplicate check, drops an exclusive message whose key another peer holds with the code `held-by-other`; `planNack`
-answers it with a NACK of that reason to the sender, so nothing is delivered and no admitted receipt is written. An
+answers it with a NACK of that reason to the sender, so nothing is delivered and a dropped claim starts no receipt. An
 admitted exclusive message writes the `set-claim` mutation, its sender as holder and its own deadline as expiry, in
 the transaction that commits its dedup, ordering and ACK rows: the holder's re-send moves the expiry, and an exclusive
 claim past its message's deadline leaves the key free for the next claimant. A message with no deadline of its
 own (no `expiresAtMs`, no expiry policy) holds the key until the deadline its admission implies (`durableEffectTtlMs`,
 the store's retention default); every browser send carries a `ttlMs`. Two claimants that both read a free key
-conflict at the commit, and the loser's retained admission is replayed and planned against the winner. A `shared` message neither reads nor writes an exclusive claim, and an
-`rtc-peer` or `trusted-server` admission never reads or writes one, so a browser never drops a message for it.
+conflict at the commit, and the loser's retained admission is replayed and planned against the winner. A claim
+retained on a conflict may have started its `admitted` receipt at the WS server; the `held-by-other` NACK of its
+replay then ends it, because the origin reads that NACK as a refusal of the whole send whatever its receipt. A
+`shared` message neither reads nor writes an exclusive claim, and an `rtc-peer` or `trusted-server` admission never
+reads or writes one, so a browser never drops a message for it.
 
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce

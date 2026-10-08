@@ -4,9 +4,10 @@ import type { ALOutboundSettlementFact } from '../al-outbound-message-runtime.ts
 import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
 
 /**
- * A NACK that refuses the whole send rather than one receipt: a relay's `resync-required` whatever the receipt,
- * and before any receipt row exists a `membership-fenced` refusal or the trusted server's `unauthorized`,
- * `no-leader` or `held-by-other` one.
+ * A NACK that refuses the whole send rather than one receipt: a relay's `resync-required` and the trusted
+ * server's `held-by-other` whatever the receipt, and before any receipt row exists a `membership-fenced`
+ * refusal or the trusted server's `unauthorized` or `no-leader` one. A claim the server retained on a
+ * conflict may already have its `admitted` receipt when the replay drops it (D175).
  * Only the trusted server speaks without being a peer the send owes, so only its rejection waives that check.
  */
 export function resolveALOutboundRelayRejection(read: ALControlAdmissionRead): ALDeliveryRelayRejection | undefined {
@@ -16,7 +17,7 @@ export function resolveALOutboundRelayRejection(read: ALControlAdmissionRead): A
     const nack = read.parsed.payload;
     const beforeReceipt = read.sent !== undefined && read.pending === undefined;
     if (read.source === 'trusted-server') {
-        return nack.reason === 'resync-required' ||
+        return nack.reason === 'resync-required' || nack.reason === 'held-by-other' ||
                 (beforeReceipt && isTrustedServerAdmissionRefusal(nack.reason))
             ? { relay: 'trusted-server', reason: nack.reason }
             : undefined;
@@ -28,9 +29,8 @@ export function resolveALOutboundRelayRejection(read: ALControlAdmissionRead): A
 
 function isTrustedServerAdmissionRefusal(
     reason: ALNackReason
-): reason is 'unauthorized' | 'membership-fenced' | 'no-leader' | 'held-by-other' {
-    return reason === 'unauthorized' || reason === 'membership-fenced' || reason === 'no-leader' ||
-        reason === 'held-by-other';
+): reason is 'unauthorized' | 'membership-fenced' | 'no-leader' {
+    return reason === 'unauthorized' || reason === 'membership-fenced' || reason === 'no-leader';
 }
 
 export function toALOutboundRelayRejectedFact(
