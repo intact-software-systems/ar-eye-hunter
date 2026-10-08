@@ -118,7 +118,10 @@ function createCommandTransport(sender: BrowserRallarMessageSender): BrowserDire
             rtc: { send: rejectLaneSend, onMessage: () => () => {} },
             ws: { send: rejectLaneSend, onMessage: () => () => {} },
             channel: <T>(definition: RallarTypedMessageChannelDefinition) => channels.channel<T>(definition),
-            room: <T>(definition: RallarRoomMessageChannelDefinition) => channels.room<T>(definition)
+            room: <T>(definition: RallarRoomMessageChannelDefinition) => channels.room<T>(definition),
+            readUsage: () => {
+                throw new Error('A director command reads no ledger.');
+            }
         },
         readSession: () => ({
             clientId: 'client',

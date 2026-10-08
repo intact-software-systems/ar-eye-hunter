@@ -173,6 +173,16 @@ records what the runner was doing while the cell ran:
   `dropped` is how many more the lane's 200-per-page cap discarded; `first` is the earliest 20 records
   across the agent pages, each `{ agentId, role, atMs, kind, message, stack? }` with `atMs` relative
   to the cell's first control event when the snapshot decoded, else the earlier page's own creation.
+- `ledger` — the session ledgers' fullest reading (D180), from the `rallar.alm` block of each `stats`
+  command's result: every ALM recipe ends with one, so each page reads its ledger once per cell. The
+  decoded snapshot keeps each reading as `ledgerReadings`, `{ atEpochMs, agentId, usage, overloaded }`
+  per agent; the control client's periodic stats read no page, carry no `alm`, and are skipped, as is
+  a reading whose report does not decode. `{ outcome: 'measured', readingCount, maxAdmissions,
+  maxBytes, maxOldestAgeMs, maxTracks, overloadedReadings }`: each maximum is the most any one page
+  held at one reading, not a sum across pages, and `overloadedReadings` counts the readings that
+  found their page at its count or byte bound. `{ outcome: 'no-readings' }` when no agent read a
+  ledger: an artifact from before the block existed, or a cell whose recipes stopped before their
+  `stats` step. No threshold reads it; the observation stays non-blocking.
 - `snapshotIssues` — non-empty only when the control snapshot could not be decoded at all.
 
 ## Reading a red

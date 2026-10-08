@@ -518,11 +518,13 @@ for the intent (D176, see Exclusive Ownership): the intent goes out as
 `ownership: 'exclusive'` on that `resourceId` with that `ttlMs`, over WS, and an
 intent whose resource another session holds returns `status: 'held-by-other'`
 before it reaches the director; without the claim the intent is shared, as
-before. A claim outlives the receiver's verdict until its ttl: an intent the
-director refuses, or whose sender leaves, still holds the resource until its
-`ttlMs` has passed, so a claim names the few seconds the director needs, not
-the 30 s command default, and the relay waits for the director's confirmation
-no longer than the claim lives.
+before. The claim's `ttlMs` is its lease and may be at most 5 minutes: a longer
+one passes the session's volatile age limit, so the intent is refused before
+any attempt and returns `status: 'failed'`. A claim outlives the receiver's
+verdict until its ttl: an intent the director refuses, or whose sender leaves,
+still holds the resource until its `ttlMs` has passed, so a claim names the few
+seconds the director needs, not the 30 s command default, and the relay waits
+for the director's confirmation no longer than the claim lives.
 A claiming intent goes over WS only: one server hop where an intent is
 RTC-first, and no RTC path while WS reconnects. A director's own intent is
 routed locally and claims nothing, so a remote claimant that loses to the
@@ -664,6 +666,70 @@ track no receipt unless the send states `ack` (or `qos.ack`); without one,
 `transport-accepted` is terminal. Opt in to browser storage with
 `qos: { durability: { algo: 'local-outbox' } }`, or to a checkpointed memory
 send with `qos: { durability: { algo: 'local-checkpoint' } }`.
+
+Every volatile message a session sends or receives counts against the session's
+volatile bound, on both carriers and for lane and typed channel sends alike
+(D74, D179). The bound has four limits. The count and byte limits, 1 000
+messages and 4 MiB of envelopes, hold sent and received messages together. The
+age limit admits a deadline at most 5 minutes ahead
+(`AL_VOLATILE_SESSION_MAX_AGE_MS`). The track limit holds 64 live ordering
+tracks of the session's own ordered sends (`AL_VOLATILE_SESSION_MAX_TRACKS`).
+A send opens a track when it states a `seq`: on its `orderingKey`, or, for an
+RTC room send that names none, on the room's default ordering key. A send
+without a `seq` opens none. A sent message counts until its deadline, and its
+track until the last counted send on it reaches its deadline. A received
+message counts until the earlier of its deadline and 30 s after it arrives; it
+never opens a counted track and is never refused.
+
+A send that would pass a limit is refused before any carrier attempt: the
+handle ends `rejected` with `evidence.failure`
+`{ kind: 'refused', reason: 'capacity', limit }`, where `limit` names the
+limit it would pass (`'admissions'`, `'bytes'`, `'age'` or `'tracks'`), and no
+fallback is tried, because both carriers share the bound. While the session is
+`overloaded`, at or over the count or the byte limit, the RTC carrier's
+congestion drop also sheds a best-effort RTC room send; that refusal is
+`{ kind: 'refused', reason: 'capacity' }` with no `limit`, so code that
+switches on `failure.limit` handles `undefined` as the count or byte limit. An
+`age` refusal is decided by the send's own `ttlMs` alone, so the same send is
+refused again on every retry: shorten the `ttlMs`, or send it durable with
+`qos: { durability: { algo: 'local-outbox' } }`, which the bound does not
+count. A message whose sender named no deadline, a control, a receipt, a relay
+forward and a retransmission count nothing.
+
+`rallar.messages.readUsage()` reads the bound synchronously, with no event
+(D180): `usage` (`admissions`, `bytes`, `oldestAgeMs`, the age of the oldest
+counted message, 0 when none is counted, and `tracks`), `limits` (`maxAdmissions`,
+`maxBytes`, `maxAgeMs`, `maxTracks`) and `overloaded`, true while the usage is at
+or over the count or the byte limit. It throws while the session is not
+connected, before `connect` and again after `disconnect`, so a poll guards it
+with `rallar.isConnected()`.
+
+```ts
+if (rallar.isConnected()) {
+    const { usage, limits, overloaded } = rallar.messages.readUsage();
+    if (overloaded || usage.tracks >= limits.maxTracks) {
+        showSlowDown();
+    }
+}
+```
+
+The age limit bounds the messages the bound counts, not the ordering state a
+session keeps (D181). An ordering track stays known for an hour after its last
+message, so a sender that resumes a track within the hour is read in order
+rather than as a gap. What the session keeps per message, track or peer is
+bounded rather than held for its lifetime: the ids of cancelled and handed-over
+sends for 60 minutes, as long as a durable message's own rows, so a cancelled
+message picked up late within that hour still does not send; the browser's
+record of the tracks it has resynchronized for 5 minutes after the track's last
+resynchronization, so a track that needs a resync again after longer than that
+calls the channel's recovery handler again; and RTC round-trip measurements are
+numbered from one counter for all peers, with no entry per peer.
+
+**Limit:** an idle volatile ordering track still holds two inbound rows for the
+hour after its last message, and each sending origin one outbound version row
+for an hour. Received tracks have no count limit, so a long session plateaus at
+two inbound rows per track it received on in the last hour rather than
+returning to empty within the age limit.
 
 `messages.room<T>(definition)` creates a room channel directly;
 `roomSession.message(...)` delegates to it. A typed channel exposes `send`,
@@ -811,8 +877,8 @@ every `ALStorageEvent`:
 - `persist`: the outcome of the connect's one persistence request
   (`ALStoragePersistOutcome`);
 - `recovery-owner-invoked`: the `ALInboundResyncCursor` the browser handed a
-  typed channel's recovery owner (below), once per ordering track per runtime,
-  stated even when the owner throws. It names no store.
+  typed channel's recovery owner (below), once per ordering track while it goes
+  on resynchronizing, stated even when the owner throws. It names no store.
 
 Room channels add room defaults and default `send(...)` to the existing
 `rtc-with-ws-fallback` strategy. This scopes sends; `onWs(...)` and
@@ -1091,9 +1157,14 @@ outcomes, none of them a new handle state (D175):
   decision, not a carrier failure.
 - **Expired.** The claim's lease is the message's lifetime (D172): its
   `constraints.expiresAtMs`, which the send's `ttlMs` or the channel default
-  sets. There is no lease constant, no renewal call and no release call: a
-  holder renews by sending again, and once the claim has expired the key is
-  free, so the next exclusive send on it is admitted and delivered. A claimed
+  sets. There is no renewal call and no release call: a holder renews by
+  sending again, and once the claim has expired the key is free, so the next
+  exclusive send on it is admitted and delivered. A volatile claim's lease is
+  at most 5 minutes, the session's volatile age limit (see WS And RTC
+  Messages): a claiming send whose `ttlMs` is longer is refused before any
+  attempt with `failure: { kind: 'refused', reason: 'capacity', limit: 'age' }`.
+  Hold a key longer by sending again within the lease, or claim it with a
+  durable send (`qos: { durability: { algo: 'local-outbox' } }`). A claimed
   send that expires without its receipt ends `expired`, as any send does. A
   send with no expiry of its own holds the key for the WS server's retention
   default; every browser send carries a `ttlMs`. A claim outlives the
@@ -1203,7 +1274,8 @@ const rounds = rallar.messages.channel<RoundState>({
 ```
 
 `RallarChannelRecovery.onResyncRequired(cursor)` is invoked once per ordering
-track (ordering key, sender, epoch) for the life of the browser runtime, after
+track (ordering key, sender, epoch) while it goes on resynchronizing (a track
+that resynchronizes again after 5 minutes without one invokes it again), after
 the receiver refused a message of that track `resync-required` -- at admission,
 or at an ordered release it can no longer complete -- and after its NACK to the
 sender committed. The cursor (`ALInboundResyncCursor`, exported with

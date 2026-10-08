@@ -51,3 +51,4 @@ export type {
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 export type { ALInboundResyncCursor } from '@shared/alm/inbound/al-inbound-resync-required.ts';
+export type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';

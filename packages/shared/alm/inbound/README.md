@@ -105,6 +105,11 @@ WS server and Node keep the always-owned default.
   the deadline its admission implies (`durableEffectTtlMs`, 30 min). The durable pair keeps
   the owner row for the repository's 1 h. Both inbound lanes sweep the shared pair on their
   own 60 s schedule; this is idempotent.
+- **The age limit bounds counted admissions, not tracks.** Every pair keeps an ordering
+  track's snapshot for `orderingTrackTtlMs`, the repository's 1 h, the volatile pair too
+  (D181): a receiver that forgot a track would read the sender's next sequence as a gap
+  from 1 and stall the track on a repair. **Limit:** an idle track therefore holds two rows
+  for the hour after its last message.
 - **Diagnostics name the lane.** `effect-drain`, `claim-settled` and `rotation-alive`
   carry a required `lane: 'durable' | 'volatile'` (R-S3a-15).
 
@@ -129,7 +134,8 @@ An inbound data admission on the volatile pair is recorded in the session's vola
 ([`admitALInboundVolatileBudget`](./lane/admit-al-inbound-volatile-budget.ts)) and released at the earlier of the
 message deadline and 30 s after its arrival (`AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS`, R-S3c-ii-6); it is
 never refused for capacity (D74, D78). It raises the usage the session's own volatile sends are refused against and
-the usage `overloaded` reads (R-S3c-ii-3). A duplicate, a rejected arrival and a message whose sender named no
+the usage `overloaded` reads (R-S3c-ii-3): its count, its bytes and the age of the oldest counted admission, but
+never the track count, since the ledger records it with no ordering track (D179). A duplicate, a rejected arrival and a message whose sender named no
 deadline count nothing. The platform's own state sync admitted on the volatile pair counts as well (R-S3c-ii-7). An
 inbound plan never reads `overloaded` (R-S3c-ii-8): at its bound a session still delivers a best-effort arrival at
 once, still forwards it to the children it owns and still sends its ACKs and NACKs.

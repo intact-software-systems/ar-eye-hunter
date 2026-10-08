@@ -2,6 +2,10 @@ import type {
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarHealthInput
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import {
+    AL_VOLATILE_SESSION_MAX_AGE_MS,
+    AL_VOLATILE_SESSION_MAX_TRACKS
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     createBrowserWebSocketFactory,
@@ -10,13 +14,50 @@ import {
 } from '../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import type {
     RallarBlackBoxBrowserRallarEvent,
-    RallarBlackBoxBrowserTestRuntime
+    RallarBlackBoxBrowserTestRuntime,
+    RallarBlackBoxBrowserWebSocketEvent
 } from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { SimulatedWebSocket } from '../shared/native-websocket-fixture.ts';
+
+const runtimeModuleLoads = vi.hoisted(() => ({ count: 0 }));
+
+// Stands in for the page's runtime module: loading it installs the runtime and reports the load, as the real one does.
+vi.mock('@shared-test/black-box-runner/browser/rallar-browser-runtime.ts', () => {
+    runtimeModuleLoads.count += 1;
+    const targetWindow = window as {
+        __blackBoxRallar?: { readAlmUsage(): Promise<undefined>; };
+        __blackBoxRallarEmit?: (event: RallarBlackBoxBrowserRallarEvent) => void;
+    };
+    targetWindow.__blackBoxRallarEmit?.({ kind: 'diagnostic', topic: 'rallar.browser.runtime_loaded' });
+    targetWindow.__blackBoxRallar = { readAlmUsage: async () => undefined };
+    return {};
+});
 
 describe('browser Rallar runtime bridge', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
+    });
+
+    it('reads no volatile session usage from a page that never used Rallar, and loads no runtime to read it', async () => {
+        const emitted: RallarBlackBoxBrowserRallarEvent[] = [];
+        const fakeWindow: {
+            __blackBoxRallar?: { readAlmUsage(): Promise<undefined>; };
+            __blackBoxRallarEmit: (event: RallarBlackBoxBrowserRallarEvent) => void;
+        } = { __blackBoxRallarEmit: (event) => emitted.push(event) };
+        vi.stubGlobal('window', fakeWindow);
+
+        expect(await createSpaBrowserRallarRuntime().readAlmUsage()).toBeUndefined();
+
+        expect(runtimeModuleLoads.count).toBe(0);
+        expect(emitted).toEqual([]);
+        expect(fakeWindow.__blackBoxRallar).toBeUndefined();
+    });
+
+    it('reads the volatile session usage through the runtime a page already installed', async () => {
+        const report = { overloaded: false };
+        vi.stubGlobal('window', { __blackBoxRallar: { readAlmUsage: async () => report } });
+
+        expect(await createSpaBrowserRallarRuntime().readAlmUsage()).toBe(report);
     });
 
     it('normalizes the optional health diagnostics request at the page boundary', async () => {
@@ -68,7 +109,7 @@ describe('browser Rallar runtime bridge', () => {
         expect(connect).toHaveBeenCalledTimes(1);
     });
 
-    it('decodes the lane-only volatile limits of a connect and refuses a partial or non-positive pair', async () => {
+    it('decodes the lane-only volatile limits of a connect, reading the age and track bounds the connect leaves out as the constants', async () => {
         const forwarded: BlackBoxRallarConnectionConfig[] = [];
         vi.stubGlobal('window', {
             __blackBoxRallar: {
@@ -86,23 +127,36 @@ describe('browser Rallar runtime bridge', () => {
                 almVolatileLimits: { maxAdmissions: 2, maxBytes: 4_096 }
             }
         };
+        const lowered = { maxAdmissions: 2, maxBytes: 4_096, maxAgeMs: 60_000, maxTracks: 2 };
 
-        await expect(bridge.connect(input)).resolves.toEqual(input);
+        await bridge.connect(input);
+        await bridge.connect({ ...input, rallar: { ...input.rallar, almVolatileLimits: lowered } });
         for (
             const almVolatileLimits of [
                 { maxAdmissions: 0, maxBytes: 4_096 },
                 { maxAdmissions: 2 },
                 { maxAdmissions: 2, maxBytes: 1.5 },
-                { maxAdmissions: 2, maxBytes: 4_096, maxAgeMs: 1 }
+                { maxAdmissions: 2, maxBytes: 4_096, maxAgeMs: 0 },
+                { maxAdmissions: 2, maxBytes: 4_096, maxTracks: 1.5 },
+                { maxAdmissions: 2, maxBytes: 4_096, maxWindowMs: 1 }
             ]
         ) {
             await expect(bridge.connect({ ...input, rallar: { ...input.rallar, almVolatileLimits } }))
                 .rejects.toThrow(
-                    'rallar.almVolatileLimits must name maxAdmissions and maxBytes, each a positive integer.'
+                    'rallar.almVolatileLimits must name maxAdmissions and maxBytes and may name maxAgeMs and maxTracks, ' +
+                        'each a positive integer.'
                 );
         }
-        // Only the well-formed pair reached the native runtime.
-        expect(forwarded).toEqual([input]);
+        // Only the well-formed limits reached the native runtime.
+        expect(forwarded.map((config) => config.rallar.almVolatileLimits)).toEqual([
+            {
+                maxAdmissions: 2,
+                maxBytes: 4_096,
+                maxAgeMs: AL_VOLATILE_SESSION_MAX_AGE_MS,
+                maxTracks: AL_VOLATILE_SESSION_MAX_TRACKS
+            },
+            lowered
+        ]);
     });
 
     it('installs and restores the SPA browser event bridge', async () => {
@@ -156,7 +210,7 @@ describe('browser Rallar runtime bridge', () => {
         expect(constructed[0].protocols).toEqual(['control.v1']);
         expect(socket.url).toBe('wss://control.example.test/agent');
         const received: string[] = [];
-        const receive = (event: unknown) => {
+        const receive = (event: RallarBlackBoxBrowserWebSocketEvent) => {
             if (!(event instanceof MessageEvent) || typeof event.data !== 'string') {
                 throw new TypeError('Expected a native text message');
             }

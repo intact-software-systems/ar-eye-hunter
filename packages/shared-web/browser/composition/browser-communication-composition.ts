@@ -69,6 +69,7 @@ export interface BrowserMediaComposition {
 
 export interface CreateBrowserResyncRecoveryCompositionInput {
     readonly connectionRuntime: RallarConnectionRuntimePort;
+    readonly nowMs: () => number;
 }
 
 export interface CreateBrowserMessagingCompositionInput {
@@ -99,7 +100,8 @@ export function createBrowserResyncRecoveryComposition(
         owners: recoveryOwners,
         // Read per event: `rallar.setup()` may replace the diagnostics ports after the facade is created.
         storage: (event) =>
-            toRallarDiagnosticsPorts(input.connectionRuntime.readDefaults()?.diagnosticsPorts).storage(event)
+            toRallarDiagnosticsPorts(input.connectionRuntime.readDefaults()?.diagnosticsPorts).storage(event),
+        nowMs: input.nowMs
     });
     return { recoveryOwners, resyncRecovery };
 }
@@ -122,6 +124,7 @@ export function createBrowserMessagingComposition(
         recoveryOwners: input.recoveryOwners,
         connect: async () => await input.session.connect(),
         readMiddleware: input.session.readMiddleware,
+        requireMiddleware: input.session.requireMiddleware,
         requireSession: input.session.requireSession,
         resolveDefaultRoom: input.state.resolveDefaultRoom,
         resolveCurrentRoomRef: () => input.state.roomStateStore.resolveCurrentRoomRef(),

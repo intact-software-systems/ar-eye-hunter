@@ -1,5 +1,9 @@
 import { isALControlTypeId } from '../../../al-contracts/al-control-type-ids.ts';
-import type { ALVolatileSessionBudget } from '../../volatile-budget/al-volatile-session-budget.ts';
+import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
+import type {
+    ALVolatileSessionBudget,
+    ALVolatileSessionLimit
+} from '../../volatile-budget/al-volatile-session-budget.ts';
 import { toALVolatileSessionAdmission } from '../../volatile-budget/to-al-volatile-session-admission.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 
@@ -32,9 +36,21 @@ function toCapacityRefusedPlan<TPrepared>(
     const { usage, limits } = refusal;
     return {
         ...plan,
-        dropReason: `The session's volatile bound is full (${refusal.limit}): ${usage.admissions} of ` +
-            `${limits.maxAdmissions} admissions, ${usage.bytes} of ${limits.maxBytes} bytes.`,
+        dropReason: `The session's volatile bound refused the send (${refusal.limit}): ${usage.admissions} of ` +
+            `${limits.maxAdmissions} admissions, ${usage.bytes} of ${limits.maxBytes} bytes, ${usage.tracks} of ` +
+            `${limits.maxTracks} tracks, a deadline at most ${limits.maxAgeMs} ms ahead.`,
         dropReasonCode: 'capacity',
+        capacityLimit: refusal.limit,
         preparedMessages: []
     };
+}
+
+/** The refusal of a `capacity` drop; a congestion drop translated to `capacity` names no limit (D179). */
+export function toALCapacityRefusedVerdict(
+    limit: ALVolatileSessionLimit | undefined,
+    detail: string
+): ALDeliveryAdmissionVerdict {
+    return limit === undefined
+        ? { kind: 'refused', reason: 'capacity', detail }
+        : { kind: 'refused', reason: 'capacity', limit, detail };
 }

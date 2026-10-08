@@ -560,7 +560,10 @@ function createTransport(
             },
             room: channels?.room ?? (() => {
                 throw new Error('Not a room test');
-            })
+            }),
+            readUsage: () => {
+                throw new Error('Not a ledger test');
+            }
         },
         readSession: () => ({ clientId: 'client', sessionId: 'session', username: 'user', accessToken: 'test', expiresAtEpochMs: 60_000 })
     });

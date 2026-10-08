@@ -2,6 +2,7 @@ import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-m
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import type {
@@ -78,6 +79,8 @@ export interface BlackBoxRallarRuntime {
     submitControl(input: unknown): Promise<BlackBoxRallarControlSubmitDiagnostics>;
     injectFault(input: unknown): Promise<void>;
     readStorageCounters(input: unknown): Promise<IndexedDbOperationCounts>;
+    /** The facade's `rallar.messages.readUsage()`; `undefined` until the facade's connect completes. */
+    readAlmUsage(): Promise<ALVolatileSessionReport | undefined>;
     refreshRoom(options: BlackBoxRallarRoomRefreshOptions): Promise<void>;
     waitForRoom(
         options: BlackBoxRallarRoomWaitOptions

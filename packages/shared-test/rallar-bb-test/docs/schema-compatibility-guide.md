@@ -762,3 +762,37 @@ schema-and-capabilities.md describes the field in its lane-only section.
 Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts
 ```
+
+```text
+Title: rtc.connect may lower the age and track limits of the volatile bound
+Date: 2026-10-08
+Owner: ALM V1a
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- Other: none; rallar is a free record in the recipe schema and the control validator
+
+Old shape:
+rtc.connect.rallar.almVolatileLimits named maxAdmissions and maxBytes, each a positive integer, and nothing else.
+
+New shape:
+rtc.connect.rallar.almVolatileLimits names maxAdmissions and maxBytes and may name maxAgeMs and maxTracks, each a
+positive integer, and nothing else. The page reads an age or track limit the field leaves out as its constant. Any
+other shape fails that rtc.connect with a typed command failure, not at recipe validation: "rallar.almVolatileLimits
+must name maxAdmissions and maxBytes and may name maxAgeMs and maxTracks, each a positive integer."
+
+Migration:
+None: a two-field value reads as before, with the age and track limits at their constants.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the four limits in its lane-only section and the capacity-age and
+capacity-tracks cells beside capacity.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts
+```
