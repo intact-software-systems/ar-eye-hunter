@@ -23,12 +23,13 @@ export interface ALVolatileSessionLimits {
     readonly maxTracks: number;
 }
 
-export const AL_VOLATILE_SESSION_LIMITS: ALVolatileSessionLimits = {
+/** Frozen: every session's ledger shares it, and each report returns it to the facade's readers. */
+export const AL_VOLATILE_SESSION_LIMITS: ALVolatileSessionLimits = Object.freeze({
     maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
     maxBytes: AL_VOLATILE_SESSION_MAX_BYTES,
     maxAgeMs: AL_VOLATILE_SESSION_MAX_AGE_MS,
     maxTracks: AL_VOLATILE_SESSION_MAX_TRACKS
-};
+});
 
 export interface ALVolatileSessionUsage {
     readonly admissions: number;

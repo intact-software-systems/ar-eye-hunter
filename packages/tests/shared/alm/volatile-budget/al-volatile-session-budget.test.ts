@@ -59,6 +59,16 @@ describe('the per-session volatile budget (D74)', () => {
         });
     });
 
+    it('shares one frozen set of limits that no ledger reader can change', () => {
+        const report = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS).readReport(NOW_MS);
+
+        expect(Object.isFrozen(AL_VOLATILE_SESSION_LIMITS)).toBe(true);
+        expect(() => {
+            (report.limits as { maxTracks: number; }).maxTracks = 1_000;
+        }).toThrow(TypeError);
+        expect(AL_VOLATILE_SESSION_LIMITS.maxTracks).toBe(AL_VOLATILE_SESSION_MAX_TRACKS);
+    });
+
     it('counts outbound and inbound admissions and their bytes together', () => {
         const budget = createBudget({ maxAdmissions: 10, maxBytes: 1_000 });
 

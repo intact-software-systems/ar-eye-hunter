@@ -19,9 +19,45 @@ import type {
 } from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { SimulatedWebSocket } from '../shared/native-websocket-fixture.ts';
 
+const runtimeModuleLoads = vi.hoisted(() => ({ count: 0 }));
+
+// Stands in for the page's runtime module: loading it installs the runtime and reports the load, as the real one does.
+vi.mock('@shared-test/black-box-runner/browser/rallar-browser-runtime.ts', () => {
+    runtimeModuleLoads.count += 1;
+    const targetWindow = window as {
+        __blackBoxRallar?: { readAlmUsage(): Promise<undefined>; };
+        __blackBoxRallarEmit?: (event: RallarBlackBoxBrowserRallarEvent) => void;
+    };
+    targetWindow.__blackBoxRallarEmit?.({ kind: 'diagnostic', topic: 'rallar.browser.runtime_loaded' });
+    targetWindow.__blackBoxRallar = { readAlmUsage: async () => undefined };
+    return {};
+});
+
 describe('browser Rallar runtime bridge', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
+    });
+
+    it('reads no volatile session usage from a page that never used Rallar, and loads no runtime to read it', async () => {
+        const emitted: RallarBlackBoxBrowserRallarEvent[] = [];
+        const fakeWindow: {
+            __blackBoxRallar?: { readAlmUsage(): Promise<undefined>; };
+            __blackBoxRallarEmit: (event: RallarBlackBoxBrowserRallarEvent) => void;
+        } = { __blackBoxRallarEmit: (event) => emitted.push(event) };
+        vi.stubGlobal('window', fakeWindow);
+
+        expect(await createSpaBrowserRallarRuntime().readAlmUsage()).toBeUndefined();
+
+        expect(runtimeModuleLoads.count).toBe(0);
+        expect(emitted).toEqual([]);
+        expect(fakeWindow.__blackBoxRallar).toBeUndefined();
+    });
+
+    it('reads the volatile session usage through the runtime a page already installed', async () => {
+        const report = { overloaded: false };
+        vi.stubGlobal('window', { __blackBoxRallar: { readAlmUsage: async () => report } });
+
+        expect(await createSpaBrowserRallarRuntime().readAlmUsage()).toBe(report);
     });
 
     it('normalizes the optional health diagnostics request at the page boundary', async () => {
