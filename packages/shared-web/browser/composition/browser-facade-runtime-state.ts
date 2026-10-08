@@ -153,7 +153,7 @@ export class BrowserFacadeRuntimeState implements RallarBrowserFacadeRuntimeCont
         this.runtimeDefaults = defaults
             ? cloneRallarRuntimeDefaults(defaults)
             : undefined;
-        this.defaultScope = defaults
+        this.defaultScope = defaults?.applicationId
             ? {
                 applicationId: defaults.applicationId,
                 workspaceId: defaults.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID
@@ -255,7 +255,7 @@ export function cloneRallarRuntimeDefaults(
         throw new Error(parsed.left[0].message);
     }
     return {
-        applicationId: defaults.applicationId,
+        ...(defaults.applicationId === undefined ? {} : { applicationId: defaults.applicationId }),
         ...(defaults.workspaceId !== undefined
             ? { workspaceId: defaults.workspaceId }
             : {}),

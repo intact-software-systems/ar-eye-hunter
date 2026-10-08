@@ -6961,15 +6961,40 @@ storage/recipe paths stay required. Recover only existing paths; invent no saved
 store or corresponding API, migration or duplicate policy. Publish each coherent
 tested/reviewed slice promptly while independent unfinished outcomes remain in progress.
 
-**Verified host-admission failure:** New semantic startup-to-SDK tests produce15 failures
-and10 passes without setup timeouts. Worker Off/Signaling/Native disappear, so actual
-construction reports Signaling/product-default; even matching Signaling exposes the wrong
-origin. Invalid query/environment values reach Configure and a control connection, and
-invalid worker input produces launch configuration. Existing omission/run controls pass.
-Independent review accepts this RED and the whole changed test owner's quality, but requires
-separate no-application host coverage before GREEN. The selected wire host input is
-rallar.rtc.captureMode, distinct from operation rallar.rtcCaptureMode. No production
-forwarding, second settings store, scope relaxation, alias or migration is yet selected.
+**Local host carrier after semantic TDD:** The original startup-to-SDK RED exposed lost
+Off/Signaling/Native host intent and invalid-input Configure/control effects. Separate
+no-application HOST coverage closes the original review gap: revised RED has 18 failures
+and 11 passes. Sparse-defaults witnesses independently fail on invented application
+properties/scope, with two runtime failures and four unsuppressed public-type diagnostics.
+Original failures and omission/scoped controls remain preserved.
+
+The implementation carries `RALLAR_BLACK_BOX_RTC_CAPTURE_MODE` through generated query
+`rtcCaptureMode`, or matching `VITE_RALLAR_RTC_CAPTURE_MODE`, into nested wire HOST
+`rallar.rtc.captureMode` and canonical SDK `rtc.captureMode`. Operation
+`rallar.rtcCaptureMode` retains its separate step meaning. One canonical finite parser
+owns mode validation; invalid selected input refuses before Configure/control effects,
+with sanitized issues, and invalid worker input refuses before browser launch configuration.
+Nonempty query wins matching environment, blank query falls back, and omission inherits.
+
+Capture-only settings use the existing single SDK defaults store. Sparse `RallarDefaults`
+permits application omission; Setup explicitly retains its required application. No scope
+is manufactured, clone preserves omission, and authoritative StateScope/GroupRef/room
+contracts remain mandatory. Explicit no-application host capture independently installs
+the existing diagnostics ports and applies the requested mode or reports typed inability.
+Off retains host origin; omission still installs no application defaults or capture ports.
+Existing active/pending receipt ownership and run precedence remain intact. No migration,
+mode alias, duplicate policy/provider/store, CRDT edit or transport/retry change is selected.
+
+The unchanged RED test inputs now pass 36 focused tests; maintained controls pass 110,
+and public API/entry/bundle-boundary checks pass 32. Package/app typing, both consuming
+builds and measured browser budgets pass; builds retain their existing chunk warnings.
+The wider tests-project compiler still exits 1 with the exact same 27 outside-owner
+diagnostic headers and no changed-test diagnostics. These are local fixture/compile/build
+results: no live launched-worker, Actions capture execution, real native attachment,
+distributed cohort, B01–B06 or E3 acceptance follows. Full owner review and prompt
+publication govern this coherent slice; the next behavioral witness remains actual
+Manual Copy and ordinary same-session repeat with unchanged payload and observed
+native receive-target retirement, as specified above.
 
 **Hosted acceptance of the published Local Native checkpoint:** Branch Release Gate,
 Formation and Medium attempt1 are completed/success, including the optional ALM smoke.
@@ -6979,7 +7004,7 @@ has101 passing child runs, with its observed/nonblocking and preflight skips pre
 Main unit counts are14,047 passed/12 skipped; app-browser counts are48 passed/69 skipped.
 The hosted app suite explicitly skips the actual Full native receiving-browser, unavailable
 capture and Manual capture/export/reload/reset cases. Their local acceptance cannot be
-inferred from this gate. This evidence does not certify the dirty worker tests, distributed
+inferred from this gate. This evidence does not certify the later worker carrier, distributed
 capture forwarding, B01–B06, E3 or a performance baseline.
 
 Full Task65, Console, existing Load/Copy/storage/restore/repeat outcomes, workers, Actions

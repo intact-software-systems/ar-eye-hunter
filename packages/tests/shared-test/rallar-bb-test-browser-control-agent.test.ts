@@ -1,8 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { decodeBlackBoxRallarConnectionConfig } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts';
+import type { RallarBlackBoxBootstrapEnvironment } from '@shared-test/rallar-bb-test/browser-control-agent/resolve-launch-value.ts';
+import * as sessionHttp from '@shared-web/browser/auth/session-http-api.ts';
+import * as connectionHttp from '@shared-web/browser/connection/connection-http-api.ts';
+import * as auth from '@shared/api/auth.ts';
+
 import { resolveRallarBlackBoxBootstrapConfig } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import {
     createRallarBlackBoxBrowserControlAgent,
-    toInitialControlSnapshot,
     type RallarBlackBoxBrowserControlAgent
 } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent.ts';
 import type {
@@ -12,6 +18,37 @@ import type {
     RallarBlackBoxControlSnapshotListener
 } from '../../../packages/shared-test/rallar-bb-test/control-client.ts';
 import { createRallarBlackBoxTestRuntime } from '../../../packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+
+import { readHeadlessWorkerConfig } from '../../../apps/rallar-black-box/src/headless-worker-config.ts';
+import {
+    createCaptureApplicationRuntime,
+    installCaptureApplicationTestEnvironment,
+    type CaptureApplicationRuntime
+} from './rallar-browser-runtime/capture-application-test-runtime.ts';
+
+interface LaunchCaptureAgent {
+    readonly application: CaptureApplicationRuntime;
+    readonly agent: RallarBlackBoxBrowserControlAgent;
+    readonly controlClient: FakeAgentControlClient;
+}
+
+interface TestControlAgent {
+    readonly agent: RallarBlackBoxBrowserControlAgent;
+    readonly controlClient: FakeAgentControlClient;
+}
+
+const WORKER_HOST_ENVIRONMENT = {
+    RALLAR_BLACK_BOX_SPA_URL: 'https://test.invalid',
+    RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.invalid/control',
+    RALLAR_API_BASE_URL: 'https://test.invalid',
+    RALLAR_BLACK_BOX_RUN_ID: 'host-launch-run',
+    RALLAR_BLACK_BOX_ROOM_ID: 'host-launch-room',
+    RALLAR_BLACK_BOX_USERNAME: 'tester',
+    RALLAR_BLACK_BOX_PASSWORD: 'test-fixture',
+    RALLAR_APPLICATION_ID: 'app',
+    RALLAR_WORKSPACE_ID: 'main'
+};
+const HOST_AGENT_SEARCH = '?mode=control&provider=browser-rallar&autoConnect=0&apiBaseUrl=https%3A%2F%2Ftest.invalid&applicationId=app';
 
 class FakeAgentControlClient implements RallarBlackBoxAgentControlClient {
     readonly connections: RallarBlackBoxControlConnectOptions[] = [];
@@ -38,11 +75,6 @@ class FakeAgentControlClient implements RallarBlackBoxAgentControlClient {
     }
 }
 
-interface TestControlAgent {
-    readonly agent: RallarBlackBoxBrowserControlAgent;
-    readonly controlClient: FakeAgentControlClient;
-}
-
 function createTestControlAgent(search: string): TestControlAgent {
     const controlClient = new FakeAgentControlClient();
     const agent = createRallarBlackBoxBrowserControlAgent({
@@ -53,6 +85,26 @@ function createTestControlAgent(search: string): TestControlAgent {
     return { agent, controlClient };
 }
 
+function createLaunchCaptureAgent(search: string, env: RallarBlackBoxBootstrapEnvironment): LaunchCaptureAgent {
+    const bootstrap = resolveRallarBlackBoxBootstrapConfig(search, env, '');
+    const session = auth.readSession();
+    if (session === undefined) {
+        throw new Error('Capture application fixture must provide an authenticated session.');
+    }
+    vi.mocked(auth.readSession).mockReturnValue({ ...session, sessionId: bootstrap.sessionId });
+    vi.spyOn(sessionHttp, 'loginToApi').mockResolvedValue({ ...session, sessionId: bootstrap.sessionId });
+    const application = createCaptureApplicationRuntime();
+    const controlClient = new FakeAgentControlClient();
+    const agent = createRallarBlackBoxBrowserControlAgent({
+        bootstrap,
+        agentRuntime: { runtime: application.runtime },
+        controlClient
+    });
+    return { application, agent, controlClient };
+}
+
+installCaptureApplicationTestEnvironment();
+
 describe('browser control-agent lifecycle', () => {
     it('creates an idle snapshot before startup', () => {
         const { agent } = createTestControlAgent('?mode=control&provider=simulated&autoConnect=0&runId=run-1&agentId=agent-1');
@@ -61,7 +113,13 @@ describe('browser control-agent lifecycle', () => {
         expect(snapshot.bootstrap.mode).toBe('control-agent');
         expect(snapshot.bootstrap.runId).toBe('run-1');
         expect(snapshot.bootstrap.agentId).toBe('agent-1');
-        expect(snapshot.control).toEqual(toInitialControlSnapshot(snapshot.bootstrap));
+        expect(snapshot.control).toEqual({
+            state: 'idle',
+            url: 'ws://localhost:5180/control',
+            reconnectAttempt: 0,
+            sentCount: 0,
+            receivedCount: 0
+        });
         expect(snapshot.runState).toBe('waiting');
 
         agent.dispose();
@@ -200,5 +258,218 @@ describe('browser control-agent lifecycle', () => {
         expect((await agent.start()).left).toBe('Browser control agent is disposed.');
 
         expect(controlClient.connections).toEqual([]);
+    });
+});
+
+describe('host capture through worker launch and real SDK application', () => {
+    it.each(
+        [
+            { host: undefined, run: undefined, mode: 'signaling', origin: 'product-default' },
+            { host: 'off', run: undefined, mode: 'off', origin: 'host' },
+            { host: 'signaling', run: undefined, mode: 'signaling', origin: 'host' },
+            { host: 'native', run: undefined, mode: 'native', origin: 'host' },
+            { host: 'off', run: 'native', mode: 'native', origin: 'run' },
+            { host: 'native', run: 'off', mode: 'off', origin: 'run' }
+        ] as const
+    )('applies generated worker host $host and run $run as $mode/$origin', async (selection) => {
+        const worker = readHeadlessWorkerConfig({
+            env: {
+                ...WORKER_HOST_ENVIRONMENT,
+                ...(selection.host === undefined ? {} : { RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: selection.host })
+            }
+        });
+        const url = new URL(worker.agents[0].url);
+        const { application, agent, controlClient } = createLaunchCaptureAgent(url.search, {});
+        try {
+            expect.soft(url.searchParams.get('rtcCaptureMode')).toBe(selection.host ?? null);
+            expect((await agent.start()).right).toBe('connecting');
+            expect(controlClient.connections).toHaveLength(1);
+            const command = selection.run === undefined
+                ? { kind: 'rtc.connect' as const, commandId: 'worker-host-connect', roomId: '', applicationId: 'app', workspaceId: 'main' }
+                : {
+                    kind: 'recipe.run' as const,
+                    commandId: 'worker-host-run',
+                    rtcCaptureMode: selection.run,
+                    recipe: {
+                        schemaVersion: 1 as const,
+                        recipeId: 'worker-host',
+                        commands: [{ kind: 'rtc.connect' as const, commandId: 'worker-host-connect', roomId: '', applicationId: 'app', workspaceId: 'main' }]
+                    }
+                };
+            const result = await application.runtime.execute(command);
+            expect(result.ok, result.error?.code).toBe(true);
+            expect(application.facade.rtcCapture()).toMatchObject({
+                configuration: { mode: selection.mode, origin: selection.origin },
+                application: { status: 'applied', mode: selection.mode },
+                connectionId: { status: 'observed', value: expect.any(String) }
+            });
+        }
+        finally {
+            agent.dispose();
+            await application.page.close();
+        }
+    });
+
+    it.each(
+        [
+            { query: 'off', environment: 'native', mode: 'off' },
+            { query: 'native', environment: 'off', mode: 'native' },
+            { query: '', environment: 'native', mode: 'native' },
+            { query: '  ', environment: 'off', mode: 'off' },
+            { query: undefined, environment: 'signaling', mode: 'signaling' }
+        ] as const
+    )('applies query $query over matching environment $environment as host $mode', async (selection) => {
+        const search = new URLSearchParams(HOST_AGENT_SEARCH);
+        if (selection.query !== undefined) {
+            search.set('rtcCaptureMode', selection.query);
+        }
+        const { application, agent } = createLaunchCaptureAgent(search.toString(), { VITE_RALLAR_RTC_CAPTURE_MODE: selection.environment });
+        try {
+            expect((await agent.start()).right).toBe('configured');
+            expect(
+                (await application.runtime.execute({
+                    kind: 'rtc.connect',
+                    commandId: 'launch-host-connect',
+                    roomId: '',
+                    applicationId: 'app',
+                    workspaceId: 'main'
+                })).ok
+            )
+                .toBe(true);
+            expect(application.facade.rtcCapture()).toMatchObject({
+                configuration: { mode: selection.mode, origin: 'host' },
+                application: { status: 'applied', mode: selection.mode }
+            });
+        }
+        finally {
+            agent.dispose();
+            await application.page.close();
+        }
+    });
+
+    it.each([
+        { query: 'not-a-capture-mode', environment: 'native', launchKey: 'rtcCaptureMode' },
+        { query: undefined, environment: 'not-a-capture-mode', launchKey: 'VITE_RALLAR_RTC_CAPTURE_MODE' }
+    ])('refuses invalid $launchKey before Configure and control effects without retaining raw input', async (selection) => {
+        const search = new URLSearchParams(HOST_AGENT_SEARCH);
+        search.set('autoConnect', '1');
+        if (selection.query !== undefined) {
+            search.set('rtcCaptureMode', selection.query);
+        }
+        const { application, agent, controlClient } = createLaunchCaptureAgent(search.toString(), { VITE_RALLAR_RTC_CAPTURE_MODE: selection.environment });
+        try {
+            const started = await agent.start();
+            expect.soft(started.left).toBeDefined();
+            expect.soft(agent.getSnapshot().bootstrap.issues).toEqual([
+                expect.objectContaining({ launchKey: selection.launchKey, message: expect.any(String) })
+            ]);
+            expect.soft(JSON.stringify(agent.getSnapshot().bootstrap.issues)).not.toContain('not-a-capture-mode');
+            expect.soft(controlClient.connections).toHaveLength(0);
+            expect.soft(application.runtime.state().currentConfig === undefined).toBe(true);
+            expect.soft(application.runtime.state().commandHistory.map((command) => command.kind)).toEqual([]);
+            expect(application.facade.rtcCapture()).toBeUndefined();
+        }
+        finally {
+            agent.dispose();
+            await application.page.close();
+        }
+    });
+
+    it('rejects invalid worker capture before producing any browser launch config', () => {
+        const read = () => readHeadlessWorkerConfig({ env: { ...WORKER_HOST_ENVIRONMENT, RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'not-a-capture-mode' } });
+        expect(read).toThrow(/RALLAR_BLACK_BOX_RTC_CAPTURE_MODE/);
+    });
+
+    it.each(['active', 'pending'] as const)('retains the worker host receipt when desired defaults change during a %s connection', async (state) => {
+        const worker = readHeadlessWorkerConfig({ env: { ...WORKER_HOST_ENVIRONMENT, RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'native' } });
+        const { application, agent } = createLaunchCaptureAgent(new URL(worker.agents[0].url).search, {});
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        vi.mocked(connectionHttp.readIceCandidates).mockImplementation(async () => {
+            entered.resolve();
+            await release.promise;
+            return { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 };
+        });
+        try {
+            expect((await agent.start()).right).toBe('connecting');
+            const connecting = application.runtime.execute({
+                kind: 'rtc.connect',
+                commandId: 'immutable-worker-host',
+                roomId: '',
+                applicationId: 'app',
+                workspaceId: 'main'
+            });
+            await entered.promise;
+            if (state === 'active') {
+                release.resolve();
+                expect((await connecting).ok).toBe(true);
+            }
+            const before = application.facade.rtcCapture();
+            application.facade.setDefaults({ applicationId: 'app', rtc: { captureMode: 'off' } });
+            if (state === 'pending') {
+                expect(before).toBeUndefined();
+                release.resolve();
+                expect((await connecting).ok).toBe(true);
+            }
+            const receipt = application.facade.rtcCapture();
+            expect.soft(receipt).toMatchObject({
+                configuration: { mode: 'native', origin: 'host' },
+                application: { status: 'applied', mode: 'native' }
+            });
+            if (state === 'active') {
+                expect(receipt).toEqual(before);
+            }
+        }
+        finally {
+            release.resolve();
+            agent.dispose();
+            await application.page.close();
+        }
+    });
+});
+
+describe('unscoped host capture through the page decoder and real SDK', () => {
+    it.each(
+        [
+            { host: undefined, mode: 'off', origin: 'product-default' },
+            { host: 'off', mode: 'off', origin: 'host' },
+            { host: 'signaling', mode: 'signaling', origin: 'host' },
+            { host: 'native', mode: 'native', origin: 'host' }
+        ] as const
+    )('retains no-application host $host as $mode/$origin without inventing application defaults', async (selection) => {
+        const application = createCaptureApplicationRuntime();
+        const setDefaults = vi.spyOn(application.facade, 'setDefaults');
+        const decoded = decodeBlackBoxRallarConnectionConfig({
+            connection: 'default',
+            rallar: {
+                apiBaseUrl: 'https://test.invalid',
+                ...(selection.host === undefined ? {} : { rtc: { captureMode: selection.host } })
+            }
+        });
+        try {
+            const connected = await application.page.connect(decoded);
+            expect(connected.status).toBe('connected');
+            expect(connected.applicationId).toBeUndefined();
+            expect(connected.workspaceId).toBeUndefined();
+            expect(connected.scope).toBeUndefined();
+            expect(setDefaults.mock.calls.flatMap(([defaults]) => defaults?.applicationId === undefined ? [] : [defaults.applicationId])).toEqual([]);
+            const receipt = application.facade.rtcCapture();
+            expect.soft(receipt?.configuration).toEqual({ mode: selection.mode, origin: selection.origin });
+            expect(connected.rtcCapture).toEqual({ status: 'observed', value: receipt });
+            expect(receipt?.connectionId).toMatchObject({ status: 'observed', value: expect.any(String) });
+            if (selection.mode === 'off') {
+                expect(receipt?.application).toEqual({ status: 'applied', mode: 'off' });
+            }
+            else if (receipt?.application.status === 'applied') {
+                expect(receipt.application.mode).toBe(selection.mode);
+            }
+            else {
+                expect(receipt?.application).toMatchObject({ status: 'unavailable', reason: expect.any(String) });
+                expect(['sink-unavailable', 'unsupported', 'initialization-failed']).toContain(receipt?.application.reason);
+            }
+        }
+        finally {
+            await application.page.close();
+        }
     });
 });

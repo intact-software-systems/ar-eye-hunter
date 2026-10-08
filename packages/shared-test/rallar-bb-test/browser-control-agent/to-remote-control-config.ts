@@ -56,6 +56,7 @@ export function toRallarBlackBoxRallarConfig(input: ToRemoteControlConfigInput):
         ...(bootstrap.rallarRegister ? { register: bootstrap.rallarRegister } : {}),
         ...(bootstrap.rallarRestoreSession || input.hasStoredAuthSession ? { restoreSession: true } : {}),
         ...(bootstrap.rallarLogoutOnClose ? { logoutOnClose: true } : {}),
+        ...(bootstrap.rtcCaptureMode === undefined ? {} : { rtc: { captureMode: bootstrap.rtcCaptureMode } }),
         leaveRoomOnClose: bootstrap.rallarLeaveRoomOnClose
     };
 }

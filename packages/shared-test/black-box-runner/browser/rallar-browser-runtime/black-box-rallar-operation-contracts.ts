@@ -6,6 +6,7 @@ import type { RallarOperationOptions } from '@shared-web/browser/rallar-operatio
 import type { RallarRtcRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type {
     RallarConnectStatus,
+    RallarDefaults,
     RallarDirectorRelaySendResult,
     RallarDirectorStatus,
     RallarMessageSelectorInput,
@@ -81,6 +82,8 @@ export interface BlackBoxRallarRoomRef {
 
 export interface BlackBoxRallarConfig extends Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'> {
     readonly apiBaseUrl: string;
+    /** Host settings are distinct from the per-operation rtcCaptureMode above. */
+    readonly rtc?: Pick<NonNullable<RallarDefaults['rtc']>, 'captureMode'>;
     readonly applicationId?: string;
     readonly workspaceId?: string;
     readonly scope?: BlackBoxRallarScope;

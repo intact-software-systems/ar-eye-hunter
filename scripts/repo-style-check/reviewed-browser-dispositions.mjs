@@ -43,15 +43,6 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
-    // Recipe command/result contracts deliberately carry opaque application
-    // payloads across adapter boundaries. Capture fields are separately typed;
-    // infrastructure must not invent a schema for caller-owned payload values.
-    // The checker reports these declarations at the module owner only.
-    Object.freeze({
-        path: 'packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
     // Process rejection reasons have no required shape. These tests capture them
     // only to prove observer failures never escape into the process boundary.
     Object.freeze({
@@ -401,6 +392,15 @@ export const reviewedBrowserDispositions = Object.freeze([
             'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
         rule: 'boundary.unknown',
         symbol: 'decodeBlackBoxRallarWsSendInput'
+    }),
+    // The canonical finite parser accepts only Off, Signaling, Native or absence.
+    // Its Left becomes a sanitized TypeError; only the parsed mode leaves this
+    // decoder. The scanner's narrowing vocabulary omits the parse prefix.
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeRtcCaptureMode'
     }),
     Object.freeze({
         path:

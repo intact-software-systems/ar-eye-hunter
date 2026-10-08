@@ -13,8 +13,8 @@ export interface ConfigureBlackBoxRallarConnectionInput {
 }
 
 /**
- * A connection that names no application has no defaults, so it also carries no scripted diagnostics ports. Its
- * volatile limits reach only the session the facade initialises next: a facade already connected keeps its own.
+ * An unscoped connection inherits no application defaults. Explicit host capture settings independently carry
+ * diagnostics ports; omission carries neither. Volatile limits reach only the session initialised next.
  */
 export function configureBlackBoxRallarConnection(
     input: ConfigureBlackBoxRallarConnectionInput
