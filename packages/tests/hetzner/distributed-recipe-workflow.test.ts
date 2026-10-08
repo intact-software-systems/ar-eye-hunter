@@ -1,15 +1,31 @@
 import { load as loadYaml } from 'js-yaml';
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+    chmod,
+    mkdir,
+    mkdtemp,
+    readFile,
+    rm,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
+import type { TestContext } from 'vitest';
+
 import { decodeDistributedRunManifest, toDistributedRunManifestValidationText } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
+import type { RallarBlackBoxDistributedGroupRef } from '../../shared-test/rallar-bb-test/distributed-run.ts';
 import {
     formatJsonSchemaValidationErrors,
     validateJsonSchema,
     type JsonSchema
 } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
-import { runOwnedTestProcess } from './owned-test-process.ts';
+
+import { runOwnedTestProcess, type OwnedTestProcessOutcome } from './owned-test-process.ts';
 
 interface GhDispatchFixtureInput {
     readonly label: string;
@@ -28,7 +44,8 @@ interface GhDispatchFixture {
 interface WorkflowConcurrency {
     readonly group: string;
     readonly 'cancel-in-progress': boolean;
-    readonly queue: string;
+    /** Absent for independent callers using the native Actions queue policy. */
+    readonly queue?: string;
 }
 
 interface WorkflowStep {
@@ -37,6 +54,8 @@ interface WorkflowStep {
     readonly name?: string;
     readonly if?: string;
     readonly run?: string;
+    readonly uses?: string;
+    readonly with?: Readonly<Record<string, string | number | boolean>>;
 }
 
 interface WorkflowJob {
@@ -48,12 +67,19 @@ interface WorkflowJob {
 }
 
 interface WorkflowMatrixStrategy {
-    readonly matrix: { readonly include: readonly { readonly manifest_id: string; readonly manifest_path: string; }[]; };
+    readonly matrix: { readonly include: readonly { readonly manifest_id: string; readonly manifest_path: string; }[]; } | { readonly shard: string; };
     readonly 'fail-fast': boolean;
-    readonly 'max-parallel': number;
+    readonly 'max-parallel': number | string;
+}
+
+interface WorkflowInput {
+    /** Native Actions input defaults apply when these declarations are absent. */
+    readonly default?: string | number | boolean;
+    readonly required?: boolean;
 }
 
 interface WorkflowDocument {
+    readonly on: { readonly workflow_dispatch?: { readonly inputs?: Readonly<Record<string, WorkflowInput>>; } | null; };
     readonly concurrency?: WorkflowConcurrency;
     readonly jobs: Readonly<Record<string, WorkflowJob>>;
 }
@@ -83,11 +109,28 @@ const supportedMainlineManifestPaths = [
 
 const workflowDocumentSchema: JsonSchema = {
     type: 'object',
-    required: ['jobs'],
+    required: ['jobs', 'on'],
     properties: {
+        on: {
+            type: 'object',
+            properties: {
+                workflow_dispatch: {
+                    type: ['object', 'null'],
+                    properties: {
+                        inputs: {
+                            type: 'object',
+                            additionalProperties: {
+                                type: 'object',
+                                properties: { default: { type: ['string', 'number', 'boolean'] }, required: { type: 'boolean' } }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         concurrency: {
             type: 'object',
-            required: ['group', 'cancel-in-progress', 'queue'],
+            required: ['group', 'cancel-in-progress'],
             properties: { group: { type: 'string' }, 'cancel-in-progress': { type: 'boolean' }, queue: { type: 'string' } }
         },
         jobs: {
@@ -104,20 +147,25 @@ const workflowDocumentSchema: JsonSchema = {
                         required: ['matrix', 'fail-fast', 'max-parallel'],
                         properties: {
                             'fail-fast': { type: 'boolean' },
-                            'max-parallel': { type: 'number' },
+                            'max-parallel': { type: ['number', 'string'] },
                             matrix: {
-                                type: 'object',
-                                required: ['include'],
-                                properties: {
-                                    include: {
-                                        type: 'array',
-                                        items: {
-                                            type: 'object',
-                                            required: ['manifest_id', 'manifest_path'],
-                                            properties: { manifest_id: { type: 'string' }, manifest_path: { type: 'string' } }
+                                oneOf: [
+                                    { type: 'object', required: ['shard'], properties: { shard: { type: 'string' } } },
+                                    {
+                                        type: 'object',
+                                        required: ['include'],
+                                        properties: {
+                                            include: {
+                                                type: 'array',
+                                                items: {
+                                                    type: 'object',
+                                                    required: ['manifest_id', 'manifest_path'],
+                                                    properties: { manifest_id: { type: 'string' }, manifest_path: { type: 'string' } }
+                                                }
+                                            }
                                         }
                                     }
-                                }
+                                ]
                             }
                         }
                     },
@@ -130,6 +178,8 @@ const workflowDocumentSchema: JsonSchema = {
                                 id: { type: 'string' },
                                 if: { type: 'string' },
                                 run: { type: 'string' },
+                                uses: { type: 'string' },
+                                with: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } },
                                 env: { type: 'object', additionalProperties: { type: 'string' } }
                             }
                         }
@@ -145,31 +195,6 @@ const repositorySecretNames = ['HETZNER_HOST', 'HETZNER_USER', 'HETZNER_SSH_PRIV
 const authSecretNames = ['RALLAR_BLACK_BOX_USERNAME', 'RALLAR_BLACK_BOX_PASSWORD'];
 
 const completeSecretResponses = { repository: [...repositorySecretNames, ...authSecretNames], environment: [...repositorySecretNames, ...authSecretNames] };
-
-const workflowDispatchInputNames = (workflow: string): string[] => {
-    const inputNames: string[] = [];
-    let inInputs = false;
-
-    for (const line of workflow.split(/\r?\n/)) {
-        if (line === '    inputs:') {
-            inInputs = true;
-            continue;
-        }
-        if (inInputs && line.length > 0 && !line.startsWith(' ')) {
-            break;
-        }
-        if (!inInputs) {
-            continue;
-        }
-
-        const match = line.match(/^      ([A-Za-z0-9_]+):$/);
-        if (match) {
-            inputNames.push(match[1]);
-        }
-    }
-
-    return inputNames;
-};
 
 async function createGhDispatchFixture(input: GhDispatchFixtureInput): Promise<GhDispatchFixture> {
     const directory = await mkdtemp(path.join(input.parentDirectory ?? tmpdir(), input.label));
@@ -192,7 +217,7 @@ async function createGhDispatchFixture(input: GhDispatchFixtureInput): Promise<G
     return {
         directory,
         argsFile,
-        environment: { ...process.env, FAKE_GH_ARGS_FILE: argsFile, PATH: `${directory}${path.delimiter}${process.env.PATH ?? ''}` }
+        environment: { TMPDIR: directory, FAKE_GH_ARGS_FILE: argsFile, PATH: `${directory}${path.delimiter}${process.env.PATH ?? ''}` }
     };
 }
 
@@ -205,22 +230,488 @@ async function readWorkflow(workflowPath: string): Promise<WorkflowDocument> {
     return value as WorkflowDocument;
 }
 
-describe('Hetzner workflow contracts and effects', () => {
-    it('keeps workflow_dispatch inputs within the GitHub Actions limit', async () => {
-        const workflowPaths = [
-            distributedWorkflowPath,
-            '.github/workflows/hetzner-headless-browsers.yml'
-        ];
+interface WorkflowMaterializationInput {
+    readonly directory: string;
+    readonly sourcePath: string;
+    readonly group: RallarBlackBoxDistributedGroupRef;
+    /** Absent when no operator input was supplied. */
+    readonly rtcCaptureMode?: string;
+}
 
-        for (const workflowPath of workflowPaths) {
-            const workflow = await readFile(path.join(repoRoot, workflowPath), 'utf8');
-            const inputNames = workflowDispatchInputNames(workflow);
-
-            expect(
-                inputNames.length,
-                `${workflowPath} workflow_dispatch inputs: ${inputNames.join(', ')}`
-            ).toBeLessThanOrEqual(25);
+async function runWorkflowMaterialization(context: TestContext, input: WorkflowMaterializationInput): Promise<OwnedTestProcessOutcome> {
+    const workflow = await readWorkflow(distributedRunnerWorkflowPath);
+    const step = workflow.jobs.run.steps?.find((candidate) => candidate.name === 'Materialize run manifest');
+    if (!step?.run) {
+        throw new Error('Workflow must own its complete materializer body.');
+    }
+    return await runOwnedTestProcess(context, {
+        executable: 'bash',
+        args: ['-c', step.run],
+        options: {
+            cwd: repoRoot,
+            env: {
+                PATH: process.env.PATH,
+                TMPDIR: input.directory,
+                RUNNER_TEMP: input.directory,
+                GITHUB_OUTPUT: path.join(input.directory, 'outputs.txt'),
+                SOURCE_MANIFEST_PATH: input.sourcePath,
+                INPUT_AGENT_SOURCE: 'external',
+                INPUT_OPERATOR_PHASE: 'prepare',
+                INPUT_ROOM_ID: '',
+                ...(input.rtcCaptureMode === undefined ? {} : { INPUT_RTC_CAPTURE_MODE: input.rtcCaptureMode }),
+                EFFECTIVE_APPLICATION_ID: input.group.applicationId,
+                EFFECTIVE_WORKSPACE_ID: input.group.workspaceId,
+                CONTROL_RUN_ID: 'owned-control',
+                DISTRIBUTED_RUN_ID: 'owned-distributed',
+                GITHUB_REPOSITORY: 'literal/owned',
+                GITHUB_RUN_ID: 'owned-run',
+                GITHUB_RUN_ATTEMPT: '1'
+            }
         }
+    });
+}
+
+interface WorkflowDefaultsInput {
+    readonly directory: string;
+    readonly manifest: unknown;
+    /** Absent when exercising manifest-derived/default inputs. */
+    readonly overrides?: Readonly<Record<string, string>>;
+}
+
+interface RemoteRecipeFixture {
+    readonly directory: string;
+    readonly controllerDirectory: string;
+    readonly effectsPath: string;
+    readonly markerPath: string;
+    readonly manifestPath: string;
+}
+
+interface RemoteRecipeScenario {
+    readonly phase: 'full' | 'prepare' | 'run';
+    readonly agentSource: 'hetzner' | 'external' | 'mixed';
+    readonly rollout: boolean;
+    readonly sourceHash: string;
+    readonly topology: Readonly<Record<string, string>>;
+    readonly recipeExit: number;
+}
+
+async function runWorkflowDefaults(context: TestContext, input: WorkflowDefaultsInput): Promise<OwnedTestProcessOutcome> {
+    const step = (await readWorkflow(distributedRunnerWorkflowPath)).jobs.run.steps?.find((candidate) => candidate.name === 'Resolve manifest defaults');
+    if (!step?.run) {
+        throw new Error('Workflow must own its complete default resolution body.');
+    }
+    const manifestPath = path.join(input.directory, 'defaults-source.json');
+    await writeFile(manifestPath, JSON.stringify(input.manifest));
+    return await runOwnedTestProcess(context, {
+        executable: 'bash',
+        args: ['-c', step.run],
+        options: {
+            cwd: repoRoot,
+            env: {
+                PATH: process.env.PATH,
+                GITHUB_OUTPUT: path.join(input.directory, 'defaults-output.txt'),
+                MANIFEST_PATH: manifestPath,
+                INPUT_AGENT_COUNT: '',
+                INPUT_ROOM_ID: '',
+                INPUT_APPLICATION_ID: '',
+                INPUT_WORKSPACE_ID: '',
+                INPUT_TERMINAL_TIMEOUT_SECONDS: '',
+                INPUT_ROLLOUT_BEFORE_RUN: 'true',
+                INPUT_AGENT_SOURCE: 'hetzner',
+                INPUT_OPERATOR_PHASE: 'full',
+                ...input.overrides
+            }
+        }
+    });
+}
+
+async function createRemoteRecipeFixture(context: TestContext): Promise<RemoteRecipeFixture> {
+    const directory = await mkdtemp(path.join(tmpdir(), 'rallar-owned-remote-recipe-'));
+    context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const controllerDirectory = path.join(directory, 'controller');
+    await mkdir(controllerDirectory);
+    const fixture = {
+        directory,
+        controllerDirectory,
+        effectsPath: path.join(directory, 'effects.txt'),
+        markerPath: path.join(directory, 'prepare.json'),
+        manifestPath: path.join(directory, 'materialized.json')
+    };
+    await writeFile(fixture.manifestPath, '{"materializedIdentity":"prepare"}\n');
+    await writeRemoteRecipeControllerPorts(fixture);
+    await writeFile(
+        path.join(directory, 'remote-boundaries.sh'),
+        [
+            'cd() { if [[ "$1" == "${HOME}/rallar-controller" ]]; then builtin cd "${OWNED_CONTROLLER_DIRECTORY}"; else builtin cd "$@"; fi; }',
+            'source() { if [[ "$1" == /tmp/rallar-distributed-recipe.env ]]; then builtin source "${OWNED_REMOTE_ENV}"; else builtin source "$@"; fi; }',
+            'rm() { if [[ "$*" == "-f /tmp/rallar-distributed-recipe.env" ]]; then command rm -f "${OWNED_REMOTE_ENV}"; else command rm "$@"; fi; }'
+        ].join('\n')
+    );
+    const sshPath = path.join(directory, 'ssh');
+    await writeFile(
+        sshPath,
+        [
+            '#!/usr/bin/env bash',
+            'set -euo pipefail',
+            'cat > "${OWNED_REMOTE_BODY}"',
+            'bash --noprofile --norc -c \'source "${OWNED_REMOTE_BOUNDARIES}"; source "${OWNED_REMOTE_BODY}"\''
+        ].join('\n')
+    );
+    await chmod(sshPath, 0o755);
+    return fixture;
+}
+
+async function writeRemoteRecipeControllerPorts(fixture: RemoteRecipeFixture): Promise<void> {
+    const scripts = {
+        '10-stop-headless-workers.sh': 'printf "stop\\n" >> "${OWNED_EFFECTS}"',
+        '08-rollout-controller.sh':
+            'printf "rollout|%s|%s|%s|%s\\n" "${RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT}" "${RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE}" "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE}" "${RALLAR_RTC_TOPOLOGY_MESH_PARAM_K}" >> "${OWNED_EFFECTS}"',
+        '09-start-headless-workers.sh': 'printf "start|%s|%s\\n" "${RALLAR_WRITE_HEADLESS_ENV}" "${RALLAR_INSTALL_PLAYWRIGHT}" >> "${OWNED_EFFECTS}"',
+        '16-wait-for-control-agents.sh': 'printf "wait\\n" >> "${OWNED_EFFECTS}"',
+        '14-run-distributed-recipe.sh': 'printf "recipe\\n" >> "${OWNED_EFFECTS}"; exit "${OWNED_RECIPE_EXIT}"',
+        'rallar-deployment-readiness.sh': 'validate_rallar_deployment_readiness() { printf "deployment|%s\\n" "$2" >> "${OWNED_EFFECTS}"; }'
+    };
+    for (const [name, body] of Object.entries(scripts)) {
+        await writeFile(path.join(fixture.controllerDirectory, name), `#!/usr/bin/env bash\nset -euo pipefail\n${body}\n`);
+    }
+}
+
+async function runRemoteRecipe(context: TestContext, fixture: RemoteRecipeFixture, scenario: RemoteRecipeScenario): Promise<OwnedTestProcessOutcome> {
+    const step = (await readWorkflow(distributedRunnerWorkflowPath)).jobs.run.steps?.find((candidate) => candidate.name === 'Run distributed recipe');
+    if (!step?.run) {
+        throw new Error('Workflow must own its complete remote execution body.');
+    }
+    const remoteEnvironment = {
+        RALLAR_BLACK_BOX_AGENT_SOURCE: scenario.agentSource,
+        RALLAR_HETZNER_OPERATOR_PHASE: scenario.phase,
+        RALLAR_ROLLOUT_BEFORE_RUN: String(scenario.rollout),
+        RALLAR_SOURCE_MANIFEST_SHA256: scenario.sourceHash,
+        RALLAR_DISTRIBUTED_RUN_ID: 'owned-distributed',
+        RALLAR_REPO_REF: 'owned-ref',
+        RALLAR_INSTALL_PLAYWRIGHT: 'true',
+        RALLAR_WAIT_FOR_HEADLESS_WORKERS: 'true',
+        RALLAR_DISTRIBUTED_PREPARE_MARKER: fixture.markerPath,
+        RALLAR_DISTRIBUTED_MANIFEST_PATH: fixture.manifestPath,
+        RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: '',
+        RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '',
+        RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '',
+        RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: '',
+        ...scenario.topology
+    };
+    const remoteEnvPath = path.join(fixture.directory, 'remote.env');
+    await writeFile(remoteEnvPath, Object.entries(remoteEnvironment).map(([name, value]) => `${name}='${value}'`).join('\n'));
+    return await runOwnedTestProcess(context, {
+        executable: 'bash',
+        args: ['-c', step.run],
+        options: {
+            cwd: repoRoot,
+            env: {
+                ...process.env,
+                PATH: `${fixture.directory}${path.delimiter}${process.env.PATH ?? ''}`,
+                RUNNER_TEMP: fixture.directory,
+                GITHUB_OUTPUT: path.join(fixture.directory, 'run-output.txt'),
+                HETZNER_USER: 'owned-user',
+                HETZNER_HOST: 'owned-host',
+                OWNED_CONTROLLER_DIRECTORY: fixture.controllerDirectory,
+                OWNED_EFFECTS: fixture.effectsPath,
+                OWNED_REMOTE_ENV: remoteEnvPath,
+                OWNED_REMOTE_BODY: path.join(fixture.directory, 'remote-body.sh'),
+                OWNED_REMOTE_BOUNDARIES: path.join(fixture.directory, 'remote-boundaries.sh'),
+                OWNED_RECIPE_EXIT: String(scenario.recipeExit)
+            }
+        }
+    });
+}
+
+describe('Hetzner workflow contracts and effects', () => {
+    it.for(['manifest', 'override'] as const)('complete defaults body resolves %s values and every topology field', async (mode, context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-owned-defaults-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const manifest = {
+            targetPolicy: { expectedParticipantCount: 7 },
+            group: { groupId: 'authored-room', applicationId: 'authored-app', workspaceId: 'authored-workspace' },
+            metadata: {
+                recommendedTerminalTimeoutSeconds: 3900,
+                rtcTopologyEnv: {
+                    RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: '2',
+                    RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '3',
+                    RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '4',
+                    RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: '5'
+                }
+            }
+        };
+        await runWorkflowDefaults(context, {
+            directory,
+            manifest,
+            overrides: mode === 'override'
+                ? {
+                    INPUT_AGENT_COUNT: '9',
+                    INPUT_APPLICATION_ID: 'operator-app',
+                    INPUT_WORKSPACE_ID: 'operator-workspace',
+                    INPUT_TERMINAL_TIMEOUT_SECONDS: '90'
+                }
+                : undefined
+        });
+        const outputs = Object.fromEntries(
+            (await readFile(path.join(directory, 'defaults-output.txt'), 'utf8')).trim().split('\n').map((line) => line.split('='))
+        );
+        expect(outputs).toEqual({
+            agent_count: mode === 'override' ? '9' : '7',
+            source_room_id: 'authored-room',
+            application_id: mode === 'override' ? 'operator-app' : 'authored-app',
+            workspace_id: mode === 'override' ? 'operator-workspace' : 'authored-workspace',
+            terminal_timeout_seconds: mode === 'override' ? '90' : '3900',
+            rtc_topology_degree_limit: '2',
+            rtc_topology_tree_min_size: '3',
+            rtc_topology_mesh_min_size: '4',
+            rtc_topology_mesh_param_k: '5'
+        });
+    });
+
+    it.for(['DEGREE_LIMIT', 'TREE_MIN_SIZE', 'MESH_MIN_SIZE', 'MESH_PARAM_K'])('complete defaults body refuses invalid topology %s', async (key, context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-owned-topology-refusal-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        await expect(runWorkflowDefaults(context, {
+            directory,
+            manifest: {
+                targetPolicy: { expectedParticipantCount: 2 },
+                group: { groupId: 'room', applicationId: 'app', workspaceId: 'workspace' },
+                metadata: { rtcTopologyEnv: { [`RALLAR_RTC_TOPOLOGY_${key}`]: '0' } }
+            }
+        })).rejects.toMatchObject({ stderr: expect.stringContaining(`metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_${key} must be a positive integer`) });
+    });
+
+    it.for(['full', 'prepare', 'run'])('complete defaults body requires topology preparation for %s', async (phase, context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-owned-rollout-fence-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const result = runWorkflowDefaults(context, {
+            directory,
+            manifest: {
+                targetPolicy: { expectedParticipantCount: 2 },
+                group: { groupId: 'room', applicationId: 'app', workspaceId: 'workspace' },
+                metadata: { rtcTopologyEnv: { RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '2' } }
+            },
+            overrides: { INPUT_ROLLOUT_BEFORE_RUN: 'false', INPUT_OPERATOR_PHASE: phase }
+        });
+        if (phase === 'run') {
+            await expect(result).resolves.toMatchObject({ stderr: '' });
+        }
+        else {
+            await expect(result).rejects.toMatchObject({ stderr: expect.stringContaining('requires rollout_before_run=true') });
+        }
+    });
+
+    it('complete remote body applies topology and stops old workers before fresh startup', async (context) => {
+        const fixture = await createRemoteRecipeFixture(context);
+        await runRemoteRecipe(context, fixture, {
+            phase: 'full',
+            agentSource: 'hetzner',
+            rollout: true,
+            sourceHash: 'owned-source-hash',
+            recipeExit: 0,
+            topology: {
+                RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: '2',
+                RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '3',
+                RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '4',
+                RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: '5'
+            }
+        });
+        expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual(['stop', 'rollout|2|3|4|5', 'stop', 'start|1|0', 'recipe']);
+        expect(await readFile(path.join(fixture.directory, 'run-output.txt'), 'utf8')).toContain('exit_code=0\n');
+        await expect(readFile(path.join(fixture.directory, 'remote.env'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('complete remote body preserves prepare-source identity through changed materialization and refuses a different source', async (context) => {
+        const fixture = await createRemoteRecipeFixture(context);
+        const scenario: RemoteRecipeScenario = {
+            phase: 'prepare',
+            agentSource: 'external',
+            rollout: true,
+            sourceHash: 'owned-source-hash',
+            recipeExit: 0,
+            topology: { RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '2' }
+        };
+        await runRemoteRecipe(context, fixture, scenario);
+        expect(JSON.parse(await readFile(fixture.markerPath, 'utf8'))).toEqual({
+            runId: 'owned-distributed',
+            ref: 'owned-ref',
+            manifestSha: 'owned-source-hash',
+            rtcTopologyEnv: {
+                RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: '',
+                RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '2',
+                RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '',
+                RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: ''
+            }
+        });
+        await writeFile(fixture.manifestPath, '{"materializedIdentity":"run"}\n');
+        await runRemoteRecipe(context, fixture, { ...scenario, phase: 'run', rollout: false });
+        const successfulEffects = ['stop', 'rollout||2||', 'wait', 'recipe'];
+        expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual(successfulEffects);
+        await runRemoteRecipe(context, fixture, { ...scenario, phase: 'run', rollout: false, sourceHash: 'different-source-hash' });
+        expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual(successfulEffects);
+        expect((await readFile(path.join(fixture.directory, 'run-output.txt'), 'utf8')).match(/exit_code=\d+/g)).toEqual([
+            'exit_code=0',
+            'exit_code=0',
+            'exit_code=1'
+        ]);
+    });
+
+    it('complete remote body records a failed recipe exit and preserves its operation evidence', async (context) => {
+        const fixture = await createRemoteRecipeFixture(context);
+        await runRemoteRecipe(context, fixture, {
+            phase: 'run',
+            agentSource: 'external',
+            rollout: false,
+            sourceHash: 'owned-source-hash',
+            recipeExit: 17,
+            topology: {}
+        });
+        expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).toEqual(['wait', 'recipe']);
+        expect(await readFile(path.join(fixture.directory, 'run-output.txt'), 'utf8')).toContain('exit_code=17\n');
+        expect(await readFile(path.join(fixture.directory, 'hetzner-operation.log'), 'utf8')).toContain('RALLAR_OPERATION_STAGE=agent-readiness');
+        const steps = (await readWorkflow(distributedRunnerWorkflowPath)).jobs.run.steps;
+        expect(steps?.find((step) => step.name === 'Generate Hetzner operation diagnostics')?.if).toBe('always()');
+        expect(steps?.find((step) => step.name === 'Upload Hetzner operation diagnostics')).toMatchObject({
+            if: 'always()',
+            uses: expect.stringContaining('actions/upload-artifact@')
+        });
+        await expect(readFile(path.join(fixture.directory, 'remote.env'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it.for(['bogus', 'OFF', ' native '])('RUN forwarding complete workflow refuses %s before output effects', async (mode, context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-invalid-run-workflow-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const sourceText = await readFile(path.join(repoRoot, supportedMainlineManifestPaths[2]), 'utf8');
+        const authored = decodeDistributedRunManifest(JSON.parse(sourceText))
+            .fold((issues) => {
+                throw new Error(toDistributedRunManifestValidationText(issues));
+            }, (manifest) => manifest);
+        const sourcePath = path.join(directory, 'source.json');
+        await writeFile(sourcePath, sourceText);
+        const result = await runWorkflowMaterialization(context, { directory, sourcePath, group: authored.group, rtcCaptureMode: mode })
+            .then((output) => ({ output, error: undefined }), (error: unknown) => ({ output: undefined, error }));
+        console.info('RUN-workflow-refusal-evidence', JSON.stringify({ mode, result }));
+        expect.soft(result.error).toBeInstanceOf(Error);
+        for (const file of ['rallar-distributed-manifest.json', 'rallar-manifest-materialization.json', 'outputs.txt']) {
+            await expect.soft(readFile(path.join(directory, file))).rejects.toMatchObject({ code: 'ENOENT' });
+        }
+        expect(await readFile(sourcePath, 'utf8')).toBe(sourceText);
+    });
+
+    it.for([
+        { label: 'omitted', mode: undefined, expected: undefined },
+        { label: 'blank', mode: '', expected: undefined },
+        { label: 'whitespace', mode: ' \t ', expected: undefined },
+        { label: 'off', mode: 'off', expected: 'off' },
+        { label: 'signaling', mode: 'signaling', expected: 'signaling' },
+        { label: 'native', mode: 'native', expected: 'native' }
+    ])('RUN forwarding dispatch $label reaches real gh argv', async (input, context) => {
+        const fixture = await createGhDispatchFixture({ label: 'rallar-run-dispatch-', secretResponses: completeSecretResponses });
+        const args = [dispatchScriptPath, 'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json', '--run-id', 'run-capture'];
+        if (input.mode !== undefined) {
+            args.push('--rtc-capture-mode', input.mode);
+        }
+        await runOwnedTestProcess(context, { executable: 'bash', args, options: { cwd: repoRoot, env: fixture.environment } });
+        const emitted = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
+        console.info('RUN-dispatch-evidence', JSON.stringify({ input, emitted }));
+        expect(emitted.filter((value) => value.startsWith('rtc_capture_mode='))).toEqual(
+            input.expected === undefined ? [] : [`rtc_capture_mode=${input.expected}`]
+        );
+        expect(emitted).toContain('run_id=run-capture');
+    });
+
+    it.for(['bogus', 'OFF', ' native '])('RUN forwarding dispatch refuses %s before any gh effect', async (mode, context) => {
+        const fixture = await createGhDispatchFixture({ label: 'rallar-run-refusal-gh-' });
+        await expect(runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [dispatchScriptPath, 'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json', '--rtc-capture-mode', mode],
+            options: { cwd: repoRoot, env: fixture.environment }
+        })).rejects.toBeInstanceOf(Error);
+        await expect(readFile(fixture.argsFile)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('RUN forwarding dispatch refuses option-shaped mode before any gh effect', async (context) => {
+        const fixture = await createGhDispatchFixture({ label: 'rallar-run-option-refusal-gh-' });
+        await expect.soft(runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [dispatchScriptPath, 'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json', '--rtc-capture-mode', '--version'],
+            options: { cwd: repoRoot, env: fixture.environment }
+        })).rejects.toMatchObject({
+            stderr: expect.stringContaining('RTC capture mode must be off, signaling or native.')
+        });
+        await expect.soft(readFile(fixture.argsFile)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('RUN forwarding declared bindings and loader order preserve the workflow contracts', async () => {
+        const manual = await readWorkflow(distributedWorkflowPath);
+        const github = await readWorkflow('.github/workflows/github-free-distributed-recipe.yml');
+        const runner = await readWorkflow(distributedRunnerWorkflowPath);
+        expect.soft(manual.jobs.run?.with?.rtc_capture_mode).toBe('${{ inputs.rtc_capture_mode }}');
+        expect.soft(github.jobs['prepare-hetzner']?.with?.rtc_capture_mode).toBe('${{ inputs.rtc_capture_mode }}');
+        expect.soft(github.jobs.operator?.with?.rtc_capture_mode).toBe('${{ inputs.rtc_capture_mode }}');
+        const steps = runner.jobs.run.steps;
+        if (!steps) {
+            throw new Error('Runner requires complete execution steps.');
+        }
+        const materializationIndex = steps.findIndex((step) => step.name === 'Materialize run manifest');
+        const setupIndices = steps.flatMap((step, index) => step.uses?.startsWith('actions/setup-node@') ? [index] : []);
+        const installIndices = steps.flatMap((step, index) => step.run === 'npm ci' ? [index] : []);
+        expect(setupIndices).toHaveLength(1);
+        expect(installIndices).toHaveLength(1);
+        expect.soft(setupIndices[0]).toBeLessThan(materializationIndex);
+        expect.soft(installIndices[0]).toBeLessThan(materializationIndex);
+        expect.soft(setupIndices[0]).toBeLessThan(installIndices[0]);
+        expect.soft(steps[setupIndices[0]].if).toBeUndefined();
+        expect.soft(steps[installIndices[0]].if).toBeUndefined();
+        expect(steps[setupIndices[0]].with).toEqual({ 'node-version': 20, cache: 'npm' });
+        expect.soft(steps[materializationIndex].env?.INPUT_RTC_CAPTURE_MODE).toBe('${{ inputs.rtc_capture_mode }}');
+        for (
+            const [file, count] of [[distributedWorkflowPath, 24], ['.github/workflows/github-free-distributed-recipe.yml', 21], [
+                '.github/workflows/hetzner-headless-browsers.yml',
+                25
+            ]] as const
+        ) {
+            const names = Object.keys((await readWorkflow(file)).on.workflow_dispatch?.inputs ?? {});
+            expect.soft(names).toHaveLength(count);
+            if (file.endsWith('hetzner-headless-browsers.yml')) {
+                expect(names).not.toContain('rtc_capture_mode');
+            }
+            else {
+                expect.soft(names).toContain('rtc_capture_mode');
+            }
+        }
+    });
+
+    it.for(
+        [
+            { label: 'omitted', mode: undefined, expected: 'native', authored: 'native' },
+            { label: 'blank', mode: '', expected: 'native', authored: 'native' },
+            { label: 'whitespace', mode: ' \t ', expected: 'native', authored: 'native' },
+            { label: 'off', mode: 'off', expected: 'off', authored: 'native' },
+            { label: 'signaling', mode: 'signaling', expected: 'signaling', authored: 'off' },
+            { label: 'native', mode: 'native', expected: 'native', authored: 'off' }
+        ] as const
+    )('RUN forwarding complete workflow materialization body $label', async (input, context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-run-workflow-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const authored = decodeDistributedRunManifest(JSON.parse(await readFile(path.join(repoRoot, supportedMainlineManifestPaths[2]), 'utf8')))
+            .fold((issues) => {
+                throw new Error(toDistributedRunManifestValidationText(issues));
+            }, (manifest) => manifest);
+        const source = { ...authored, rtcCaptureMode: input.authored };
+        const sourceText = `${JSON.stringify(source)}\n`;
+        const sourcePath = path.join(directory, 'source.json');
+        await writeFile(sourcePath, sourceText);
+        await runWorkflowMaterialization(context, { directory, sourcePath, group: source.group, rtcCaptureMode: input.mode });
+        const output = decodeDistributedRunManifest(JSON.parse(await readFile(path.join(directory, 'rallar-distributed-manifest.json'), 'utf8')))
+            .fold((issues) => {
+                throw new Error(toDistributedRunManifestValidationText(issues));
+            }, (manifest) => manifest);
+        console.info('RUN-workflow-body-evidence', JSON.stringify({ input, output }));
+        expect.soft(output.rtcCaptureMode).toBe(input.expected);
+        expect(output.recipes).toEqual(source.recipes);
+        expect(output.group).toEqual(source.group);
+        expect(await readFile(sourcePath, 'utf8')).toBe(sourceText);
     });
 
     it('keeps the distributed recipe workflow as a manual dispatch wrapper', async () => {
@@ -249,8 +740,6 @@ describe('Hetzner workflow contracts and effects', () => {
             id: 'manifest_materialization',
             name: 'Materialize run manifest'
         });
-        expect(materialization?.run).toContain('materialize-hetzner-run-manifest.mjs');
-        expect(materialization?.run).toContain('RALLAR_OPERATION_STAGE=manifest-materialization');
         expect(copy?.env?.MANIFEST_PATH).toBe(
             '${{ steps.manifest_materialization.outputs.manifest_path }}'
         );
@@ -274,10 +763,6 @@ describe('Hetzner workflow contracts and effects', () => {
 
         expect(workflow).toContain('workflow_call:');
         expect(workflow).toContain('name: Resolve manifest defaults');
-        expect(workflow).toContain('jq -r \'.targetPolicy.expectedParticipantCount // empty\'');
-        expect(workflow).toContain('jq -r \'.group.groupId // empty\'');
-        expect(workflow).toContain('jq -r \'.group.applicationId // empty\'');
-        expect(workflow).toContain('jq -r \'.group.workspaceId // empty\'');
         expect(workflow).toContain('name: Configure SSH');
         expect(workflow).toContain('name: Copy controller scripts and manifest');
         expect(workflow).toContain('name: Run distributed recipe');
@@ -304,160 +789,39 @@ describe('Hetzner workflow contracts and effects', () => {
         expect(runnerJob?.steps?.at(-1)).toEqual(failureStep);
     });
 
-    it('captures and always publishes human-readable Hetzner operation evidence', async () => {
-        const workflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
-
-        expect(workflow).toContain('operation_log="${RUNNER_TEMP}/hetzner-operation.log"');
-        expect(workflow).toContain('operation_exit_code="${PIPESTATUS[0]}"');
-        expect(workflow).toContain('name: Generate Hetzner operation diagnostics');
-        expect(workflow).toContain('node scripts/hosted-rallar/actions/write-hetzner-operation-report.mjs');
-        expect(workflow).toContain('cat "${diagnostics_dir}/summary.md" >> "${GITHUB_STEP_SUMMARY}"');
-        expect(workflow).toContain('name: Upload Hetzner operation diagnostics');
-        expect(workflow).toContain('if: always()');
-        expect(workflow).toContain('operation-report.json');
+    it('declares blank manifest-derived count and timeout inputs at the manual boundary', async () => {
+        const manual = await readWorkflow(distributedWorkflowPath);
+        expect(manual.on.workflow_dispatch?.inputs?.agent_count).toMatchObject({ required: false, default: '' });
+        expect(manual.on.workflow_dispatch?.inputs?.terminal_timeout_seconds).toMatchObject({ required: false, default: '' });
+        expect(manual.jobs.run.with?.agent_count).toBe('${{ inputs.agent_count }}');
     });
 
-    it('applies manifest-requested RTC topology env during distributed recipe rollout', async () => {
-        const workflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
-        const rolloutScript = await readFile(
-            path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh'),
-            'utf8'
-        );
-
-        expect(workflow).toContain(
-            'manifest_rtc_topology_mesh_min_size="$(jq -r \'.metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE // empty\''
-        );
-        expect(workflow).toContain(
-            'printf \'rtc_topology_mesh_min_size=%s\\n\' "${manifest_rtc_topology_mesh_min_size}" >> "${GITHUB_OUTPUT}"'
-        );
-        expect(workflow).toContain(
-            'RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: ${{ steps.manifest_defaults.outputs.rtc_topology_mesh_min_size }}'
-        );
-        expect(workflow).toContain(
-            'printf \'RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=%s\\n\' "$(quote "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE}")"'
-        );
-        expect(workflow).toContain('validate_rtc_topology_env');
-        expect(workflow).toContain(
-            'validate_positive_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT "${manifest_rtc_topology_degree_limit}"'
-        );
-        expect(workflow).toContain(
-            'validate_positive_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE "${manifest_rtc_topology_tree_min_size}"'
-        );
-        expect(workflow).toContain(
-            'validate_positive_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE "${manifest_rtc_topology_mesh_min_size}"'
-        );
-        expect(workflow).toContain(
-            'validate_positive_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_PARAM_K "${manifest_rtc_topology_mesh_param_k}"'
-        );
-        expect(rolloutScript).toContain('update_api_rtc_topology_env');
-        expect(rolloutScript).toContain('RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE');
-        expect(rolloutScript).toContain('update_env_value "/etc/rallar/api-v1.env" "${key}" "${!key}"');
-    });
-
-    it('applies manifest-recommended terminal timeout during direct workflow dispatch', async () => {
-        const manualWorkflow = await readFile(path.join(repoRoot, distributedWorkflowPath), 'utf8');
-        const runnerWorkflow = await readFile(
-            path.join(repoRoot, distributedRunnerWorkflowPath),
-            'utf8'
-        );
-
-        expect(manualWorkflow).toMatch(/terminal_timeout_seconds:[\s\S]*?default: ''/);
-        expect(runnerWorkflow).toContain(
-            'manifest_terminal_timeout_seconds="$(jq -r \'.metadata.recommendedTerminalTimeoutSeconds // empty\''
-        );
-        expect(runnerWorkflow).toContain(
-            'resolve_optional_value terminal_timeout_seconds "${INPUT_TERMINAL_TIMEOUT_SECONDS}" "${manifest_terminal_timeout_seconds}" "300"'
-        );
-        expect(runnerWorkflow).toContain(
-            'RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS: ${{ steps.manifest_defaults.outputs.terminal_timeout_seconds }}'
-        );
-    });
-
-    it('allows manifest-derived agent count during direct workflow dispatch', async () => {
-        const manualWorkflow = await readFile(path.join(repoRoot, distributedWorkflowPath), 'utf8');
-        const runnerWorkflow = await readFile(
-            path.join(repoRoot, distributedRunnerWorkflowPath),
-            'utf8'
-        );
-
-        expect(manualWorkflow).toMatch(/agent_count:[\s\S]*?required: false[\s\S]*?default: ''/);
-        expect(manualWorkflow).toContain('agent_count: ${{ inputs.agent_count }}');
-        expect(manualWorkflow).not.toContain('agent_count: ${{ format(\'{0}\', inputs.agent_count) }}');
-        expect(runnerWorkflow).toContain(
-            'description: Number of headless browser agents to run; blank derives from manifest targetPolicy.expectedParticipantCount'
-        );
-    });
-
-    it('supports external-agent and split prepare/run operator modes', async () => {
-        const manualWorkflow = await readFile(path.join(repoRoot, distributedWorkflowPath), 'utf8');
-        const runnerWorkflow = await readFile(
-            path.join(repoRoot, distributedRunnerWorkflowPath),
-            'utf8'
-        );
-
-        expect(manualWorkflow).toContain('agent_source:');
-        expect(manualWorkflow).toContain('operator_phase:');
-        expect(manualWorkflow).toContain('agent_source: ${{ inputs.agent_source }}');
-        expect(manualWorkflow).toContain('operator_phase: ${{ inputs.operator_phase }}');
-        expect(runnerWorkflow).toContain('agent_source:');
-        expect(runnerWorkflow).toContain('operator_phase:');
-        expect(runnerWorkflow).toContain('ref: ${{ inputs.ref }}');
-        expect(runnerWorkflow).toContain('control_url:');
-        expect(runnerWorkflow).toContain('control_http_url:');
-        expect(runnerWorkflow).toContain('RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}');
-        expect(runnerWorkflow).toContain('RALLAR_CONTROL_HTTP_URL: ${{ inputs.control_http_url }}');
-        expect(runnerWorkflow).toContain(
-            'RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}'
-        );
-        expect(runnerWorkflow).toContain(
-            'printf \'RALLAR_BLACK_BOX_CONTROL_URL=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_CONTROL_URL}")"'
-        );
-        expect(runnerWorkflow).toContain(
-            'printf \'RALLAR_BLACK_BOX_CONTROL_READ_TOKEN=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN}")"'
-        );
-        expect(manualWorkflow).toContain('control_url: ${{ inputs.control_url }}');
-        expect(manualWorkflow).toContain('control_http_url: ${{ inputs.control_http_url }}');
-        expect(runnerWorkflow).toContain('RALLAR_BLACK_BOX_AGENT_SOURCE');
-        expect(runnerWorkflow).toContain('RALLAR_HETZNER_OPERATOR_PHASE');
-        expect(runnerWorkflow).toContain('RALLAR_DISTRIBUTED_PREPARE_MARKER');
-        expect(runnerWorkflow).toContain('./16-wait-for-control-agents.sh');
-        expect(runnerWorkflow).toContain('case "${RALLAR_BLACK_BOX_AGENT_SOURCE}" in');
-        expect(runnerWorkflow).toContain('case "${RALLAR_HETZNER_OPERATOR_PHASE}" in');
-        expect(runnerWorkflow).toContain('inputs.operator_phase != \'prepare\'');
-        expect(runnerWorkflow).toContain('RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh');
-    });
-
-    it('fences topology preparation with the stable source manifest hash', async () => {
-        const workflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
-
-        expect(workflow).toContain(
-            'RALLAR_SOURCE_MANIFEST_SHA256: ${{ steps.manifest_materialization.outputs.source_manifest_sha256 }}'
-        );
-        expect(workflow).toContain('manifestSha="${RALLAR_SOURCE_MANIFEST_SHA256}"');
-        expect(workflow).toContain('expected_manifest_sha="${RALLAR_SOURCE_MANIFEST_SHA256}"');
-        expect(workflow).not.toContain(
-            'sha256sum "${RALLAR_DISTRIBUTED_MANIFEST_PATH}" | awk'
-        );
-    });
-
-    it('rejects topology-specific manifests in the reusable workflow when rollout is disabled', async () => {
-        const runnerWorkflow = await readFile(
-            path.join(repoRoot, distributedRunnerWorkflowPath),
-            'utf8'
-        );
-
-        expect(runnerWorkflow).toContain('INPUT_ROLLOUT_BEFORE_RUN: ${{ inputs.rollout_before_run }}');
-        expect(runnerWorkflow).toContain('topology_env_requires_rollout');
-        expect(runnerWorkflow).toContain(
-            'requires rollout_before_run=true unless operator_phase=run validates a prepare marker'
-        );
+    it('binds external-agent and split prepare/run operator modes at their public workflow fields', async () => {
+        const manual = await readWorkflow(distributedWorkflowPath);
+        const runner = await readWorkflow(distributedRunnerWorkflowPath);
+        expect(manual.jobs.run.with).toMatchObject({
+            agent_source: '${{ inputs.agent_source }}',
+            operator_phase: '${{ inputs.operator_phase }}',
+            control_url: '${{ inputs.control_url }}',
+            control_http_url: '${{ inputs.control_http_url }}'
+        });
+        expect(runner.jobs.run.steps?.find((step) => step.name === 'Render remote run env')?.env).toMatchObject({
+            RALLAR_REPO_REF: '${{ inputs.ref }}',
+            RALLAR_BLACK_BOX_AGENT_SOURCE: '${{ inputs.agent_source }}',
+            RALLAR_HETZNER_OPERATOR_PHASE: '${{ inputs.operator_phase }}',
+            RALLAR_BLACK_BOX_CONTROL_URL: '${{ inputs.control_url }}',
+            RALLAR_CONTROL_HTTP_URL: '${{ inputs.control_http_url }}',
+            RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: '${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}',
+            RALLAR_SOURCE_MANIFEST_SHA256: '${{ steps.manifest_materialization.outputs.source_manifest_sha256 }}'
+        });
+        expect(runner.jobs.run.steps?.find((step) => step.name === 'Copy distributed artifacts')?.if).toContain('inputs.operator_phase != \'prepare\'');
     });
 
     it('keeps risk-selected main pushes and manual dispatch on the serial matrix', async () => {
         const workflow = await readFile(path.join(repoRoot, supportedManifestsWorkflowPath), 'utf8');
         const parsedWorkflow = await readWorkflow(supportedManifestsWorkflowPath);
         const matrix = parsedWorkflow.jobs.run?.strategy?.matrix;
-        if (!matrix) {
+        if (!matrix || !('include' in matrix)) {
             throw new Error('Supported-suite workflow requires its authored matrix.');
         }
         const matrixPaths = matrix.include.map((entry) => entry.manifest_path);
@@ -470,12 +834,6 @@ describe('Hetzner workflow contracts and effects', () => {
         expect(workflow).toContain('fail-fast: false');
         expect(parsedWorkflow.jobs.run?.strategy?.['max-parallel']).toBe(1);
         expect(matrixPaths).toEqual(supportedMainlineManifestPaths);
-        expect(workflow).not.toContain(
-            'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json'
-        );
-        expect(workflow).not.toContain(
-            'apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json'
-        );
         expect(workflow).toContain('uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml');
         expect(workflow).toContain('secrets: inherit');
         expect(workflow).toContain('ref: ${{ github.sha }}');
@@ -562,24 +920,19 @@ describe('Hetzner workflow contracts and effects', () => {
         ).toBe(true);
     });
 
-    it('stops headless browsers by default after distributed artifacts and analysis are uploaded', async () => {
-        const manualWorkflow = await readFile(path.join(repoRoot, distributedWorkflowPath), 'utf8');
-        const runnerWorkflow = await readFile(
-            path.join(repoRoot, distributedRunnerWorkflowPath),
-            'utf8'
-        );
-
-        expect(manualWorkflow).toMatch(/stop_after_run:[\s\S]*?default: true/);
-        expect(runnerWorkflow).toMatch(
-            /name: Upload distributed analysis[\s\S]*name: Stop headless browsers[\s\S]*if: always\(\) && inputs\.stop_after_run/
-        );
-    });
-
-    it('stops existing headless browsers before starting fresh workers for every distributed recipe run', async () => {
-        const workflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
-
-        expect(workflow).toMatch(
-            /if bool_enabled "\$\{RALLAR_ROLLOUT_BEFORE_RUN:-0\}"; then[\s\S]*\.\/08-rollout-controller\.sh[\s\S]*fi[\s\S]*\.\/10-stop-headless-workers\.sh \|\| true[\s\S]*RALLAR_WRITE_HEADLESS_ENV=1 \.\/09-start-headless-workers\.sh/
+    it('stops headless browsers by default after artifact analysis publication', async () => {
+        const manual = await readWorkflow(distributedWorkflowPath);
+        const steps = (await readWorkflow(distributedRunnerWorkflowPath)).jobs.run.steps;
+        if (!steps) {
+            throw new Error('Runner requires its complete phase sequence.');
+        }
+        expect(manual.on.workflow_dispatch?.inputs?.stop_after_run?.default).toBe(true);
+        const uploadIndex = steps.findIndex((step) => step.name === 'Upload distributed analysis');
+        const stopIndex = steps.findIndex((step) => step.name === 'Stop headless browsers');
+        expect(uploadIndex).toBeGreaterThanOrEqual(0);
+        expect(stopIndex).toBeGreaterThan(uploadIndex);
+        expect(steps[stopIndex].if).toBe(
+            'always() && inputs.stop_after_run && inputs.agent_source != \'external\' && steps.manifest_materialization.outcome == \'success\''
         );
     });
 
@@ -598,9 +951,6 @@ describe('Hetzner workflow contracts and effects', () => {
             expect(workflow).toContain('default: warning');
             expect(workflow).toContain(
                 'RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: ${{ inputs.browser_log_level }}'
-            );
-            expect(workflow).toContain(
-                'printf \'RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL}")"'
             );
         }
     });

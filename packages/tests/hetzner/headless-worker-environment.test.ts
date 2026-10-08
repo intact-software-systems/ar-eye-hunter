@@ -361,6 +361,8 @@ describe.each(workflowPorts)('$step Actions transport', ({ file, step, output })
             RALLAR_BLACK_BOX_USERNAME: 'synthetic workflow user',
             RALLAR_BLACK_BOX_PASSWORD: 'synthetic "password" $HOME `literal` $(literal) \\',
             RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: 'synthetic-control-token',
+            RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.synthetic.invalid/control',
+            RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: 'debug',
             RALLAR_BLACK_BOX_RUN_ID: 'actions-run',
             RALLAR_BLACK_BOX_AGENT_PREFIX: 'actions-agent',
             RALLAR_BLACK_BOX_AGENT_COUNT: '2',
@@ -377,7 +379,8 @@ describe.each(workflowPorts)('$step Actions transport', ({ file, step, output })
                 RALLAR_BLACK_BOX_AGENT_START_INDEX: '1',
                 RALLAR_HETZNER_OPERATOR_PHASE: 'full',
                 RALLAR_DISTRIBUTED_PREPARE_MARKER: '/tmp/rallar-distributed-prepare-dist-actions-run.json',
-                RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: '4'
+                RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: '4',
+                RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '5'
             });
         }
         else {
@@ -397,6 +400,9 @@ describe.each(workflowPorts)('$step Actions transport', ({ file, step, output })
         expect(await readEnvironmentFile(context, fixture.destination)).toMatchObject({
             RALLAR_BLACK_BOX_USERNAME: 'synthetic workflow user',
             RALLAR_BLACK_BOX_PASSWORD: 'synthetic "password" $HOME `literal` $(literal) \\',
+            RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.synthetic.invalid/control',
+            RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: 'debug',
+            RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: 'synthetic-control-token',
             RALLAR_BLACK_BOX_ROOM_ID: file === 'hetzner-distributed-recipe-runner.yml' ? 'materialized-room' : 'input-room'
         });
     });

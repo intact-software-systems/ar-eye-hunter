@@ -168,10 +168,6 @@ describe('ordinary control artifact boundary', () => {
     }
 });
 
-it('provides the canonical distributed artifact envelope decoder capability', () => {
-    expect(decodeControlDistributedRunArtifactBundle).toEqual(expect.any(Function));
-});
-
 describe(
     'distributed control artifact envelope boundary',
     () => {
@@ -232,3 +228,15 @@ describe(
         }
     }
 );
+
+it('RUN closure canonical envelope refuses unknown non-string file content', () => {
+    const value = { ...distributedArtifact, files: { ...distributedArtifact.files, 'unknown.txt': 7 } };
+    const decoded = decodeControlDistributedRunArtifactBundle(value);
+    expect.soft(decoded.right).toBeUndefined();
+    expect.soft(decoded.left).toContain('unknown.txt');
+});
+
+it('RUN closure canonical envelope preserves unknown string files without a filename policy', () => {
+    const value = { ...distributedArtifact, files: { ...distributedArtifact.files, 'unknown.txt': 'literal extra', '../escaped.txt': 'unsafe-name-control' } };
+    expect(decodeControlDistributedRunArtifactBundle(value).right).toEqual(value);
+});

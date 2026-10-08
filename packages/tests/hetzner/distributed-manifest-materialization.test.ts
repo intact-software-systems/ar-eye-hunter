@@ -1,14 +1,29 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+    chmod,
+    mkdir,
+    mkdtemp,
+    readdir,
+    readFile,
+    rm,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
 import type { TestContext } from 'vitest';
+
 import { decodeDistributedRunManifest, toDistributedRunManifestValidationText } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { RallarBlackBoxDistributedGroupRef, RallarBlackBoxDistributedRunManifest } from '../../shared-test/rallar-bb-test/distributed-run.ts';
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { isJsonRecordValue, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import type { RtcSignalingDiagnostics } from '../../shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import { runOwnedTestProcess, type OwnedTestProcessOutcome } from './owned-test-process.ts';
 
 interface MaterializerInvocationInput {
@@ -25,6 +40,8 @@ interface MaterializerInvocationInput {
     readonly applicationId: string;
     readonly workspaceId: string;
     readonly roomId: string;
+    /** Absent when the operator preserves the authored RUN selection. */
+    readonly rtcCaptureMode?: string;
 }
 
 interface MaterializerProcessResult extends OwnedTestProcessOutcome {
@@ -146,6 +163,8 @@ async function readManifest(filePath: string): Promise<RallarBlackBoxDistributed
 
 async function runMaterializer(context: TestContext, input: MaterializerInvocationInput): Promise<MaterializerProcessResult> {
     const argv = [
+        '--import',
+        'tsx',
         path.join(repoRoot, 'scripts/hosted-rallar/actions/materialize-hetzner-run-manifest.mjs'),
         '--source',
         input.sourcePath,
@@ -174,7 +193,14 @@ async function runMaterializer(context: TestContext, input: MaterializerInvocati
         '--room-id',
         input.roomId
     ];
-    const output = await runOwnedTestProcess(context, { executable: 'node', args: argv, options: { cwd: repoRoot } });
+    if (input.rtcCaptureMode !== undefined) {
+        argv.push('--rtc-capture-mode', input.rtcCaptureMode);
+    }
+    const output = await runOwnedTestProcess(context, {
+        executable: 'node',
+        args: argv,
+        options: { cwd: repoRoot, env: { PATH: process.env.PATH, TMPDIR: path.dirname(input.outputPath), TSX_DISABLE_CACHE: '1' } }
+    });
     return { argv, ...output };
 }
 
@@ -243,6 +269,267 @@ async function materializeCaptureManifest(context: TestContext, input: CaptureMa
 }
 
 describe('Hetzner materialization contracts and effects', () => {
+    it('refuses null source as validation before materialization effects', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-materializer-null-source-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const sourcePath = path.join(directory, 'source.json');
+        await writeFile(sourcePath, 'null\n');
+        await expect(runMaterializer(context, {
+            ...materializerInvocationDefaults,
+            sourcePath,
+            outputPath: path.join(directory, 'output.json'),
+            recordPath: path.join(directory, 'record.json')
+        })).rejects.toMatchObject({ stderr: expect.stringContaining('manifest.group must be an object.') });
+        await expect(readFile(path.join(directory, 'output.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+        await expect(readFile(path.join(directory, 'record.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+        expect((await readdir(directory)).sort()).toEqual(['source.json']);
+        expect(await readFile(sourcePath, 'utf8')).toBe('null\n');
+    });
+
+    it('removes its atomic temporary after rename refusal while preserving the existing destination', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-materializer-rename-failure-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const sourcePath = path.join(directory, 'source.json');
+        const outputPath = path.join(directory, 'destination');
+        const recordPath = path.join(directory, 'record.json');
+        const sourceText = `${JSON.stringify(await readCaptureManifestFixture({ groupId: 'owned-room', captureMode: 'off' }))}\n`;
+        await writeFile(sourcePath, sourceText);
+        await mkdir(outputPath);
+        await writeFile(path.join(outputPath, 'sentinel.txt'), 'owned-existing-destination\n');
+        await expect(runMaterializer(context, {
+            ...materializerInvocationDefaults,
+            sourcePath,
+            outputPath,
+            recordPath,
+            agentSource: 'external'
+        })).rejects.toBeInstanceOf(Error);
+        expect.soft(await readFile(path.join(outputPath, 'sentinel.txt'), 'utf8')).toBe('owned-existing-destination\n');
+        expect.soft(await readdir(outputPath)).toEqual(['sentinel.txt']);
+        expect.soft((await readdir(directory)).sort()).toEqual(['destination', 'source.json']);
+        await expect.soft(readFile(recordPath)).rejects.toMatchObject({ code: 'ENOENT' });
+        expect(await readFile(sourcePath, 'utf8')).toBe(sourceText);
+    });
+
+    it.for(['accepted', 'refused'] as const)('RUN forwarding actual controller create request is the exact manifest when %s', async (disposition, context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-controller-run-port-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const sourcePath = path.join(directory, 'source.json');
+        const outputPath = path.join(directory, 'materialized.json');
+        const recordPath = path.join(directory, 'record.json');
+        const sourceText = `${JSON.stringify(await readCaptureManifestFixture({ groupId: 'off', captureMode: 'native' }))}\n`;
+        await writeFile(sourcePath, sourceText);
+        await runMaterializer(context, {
+            ...materializerInvocationDefaults,
+            sourcePath,
+            outputPath,
+            recordPath,
+            agentSource: 'external',
+            rtcCaptureMode: 'off'
+        });
+        const materialized = await readManifest(outputPath);
+        const bin = path.join(directory, 'bin');
+        const temporaryPosts = path.join(directory, 'post-temporaries');
+        await mkdir(bin);
+        await mkdir(temporaryPosts);
+        const bodyPath = path.join(directory, 'actual-create-body.json');
+        const tempRecord = path.join(directory, 'temp-paths.txt');
+        const envPath = path.join(directory, 'control.env');
+        await writeFile(envPath, '');
+        const scripts = {
+            id: '#!/usr/bin/env bash\n[[ "$1" == "-u" ]] || exit 91\nprintf "0\\n"\n',
+            mktemp: [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                'template="$1"',
+                'case "$template" in /tmp/rallar-control-post*) template="${OWNED_POST_TEMP}/${template##*/}" ;; esac',
+                'created="$(/usr/bin/mktemp "$template")"',
+                'printf "%s\\n" "$created" >> "$OWNED_TEMP_RECORD"',
+                'printf "%s\\n" "$created"',
+                ''
+            ].join('\n'),
+            curl: [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                'output=""; body=""; method="GET"; url=""',
+                'while [[ $# -gt 0 ]]; do',
+                '  case "$1" in',
+                '    -o) output="$2"; shift 2 ;;',
+                '    --data-binary) body="${2#@}"; shift 2 ;;',
+                '    -X) method="$2"; shift 2 ;;',
+                '    -H|-w) shift 2 ;;',
+                '    -*) shift ;;',
+                '    *) url="$1"; shift ;;',
+                '  esac',
+                'done',
+                '[[ "$url" == http://127.0.0.1:5180/* ]] || exit 92',
+                'if [[ "$method" == "POST" && "$url" == http://127.0.0.1:5180/distributed-runs ]]; then',
+                '  [[ -r "$body" ]] || exit 93',
+                '  cp "$body" "$OWNED_CREATE_BODY"',
+                '  if [[ "$OWNED_CREATE_DISPOSITION" == "refused" ]]; then',
+                '    printf \'{"error":"owned create refusal"}\' > "$output"',
+                '    printf "400"',
+                '    exit 0',
+                '  fi',
+                'fi',
+                'reply=\'{"state":"passed","files":{}}\'',
+                'if [[ -n "$output" ]]; then printf "%s" "$reply" > "$output"; printf "200"; else printf "%s" "$reply"; fi',
+                ''
+            ].join('\n')
+        };
+        for (const [name, contents] of Object.entries(scripts)) {
+            await writeFile(path.join(bin, name), contents);
+            await chmod(path.join(bin, name), 0o755);
+        }
+        const result = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [path.join(repoRoot, 'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh')],
+            options: {
+                cwd: directory,
+                env: {
+                    PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`,
+                    TMPDIR: directory,
+                    RALLAR_CONTROL_HTTP_URL: 'http://127.0.0.1:5180',
+                    RALLAR_CONTROL_ENV_FILE: envPath,
+                    RALLAR_BLACK_BOX_ADMIN_TOKEN: 'owned-test-token',
+                    RALLAR_DISTRIBUTED_MANIFEST_PATH: outputPath,
+                    RALLAR_DISTRIBUTED_ARTIFACT_DIR: path.join(directory, 'artifacts'),
+                    RALLAR_DISTRIBUTED_RUN_ID: materialized.distributedRunId,
+                    RALLAR_DISTRIBUTED_CONTROL_RUN_ID: materialized.controlRunId,
+                    RALLAR_BLACK_BOX_APPLICATION_ID: materialized.group.applicationId,
+                    RALLAR_BLACK_BOX_WORKSPACE_ID: materialized.group.workspaceId,
+                    RALLAR_BLACK_BOX_ROOM_ID: materialized.group.groupId,
+                    RALLAR_DISTRIBUTED_READY_TIMEOUT_SECONDS: '1',
+                    RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS: '1',
+                    RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'signaling',
+                    OWNED_POST_TEMP: temporaryPosts,
+                    OWNED_TEMP_RECORD: tempRecord,
+                    OWNED_CREATE_BODY: bodyPath,
+                    OWNED_CREATE_DISPOSITION: disposition
+                }
+            }
+        }).then((output) => ({ output, error: undefined }), (error: unknown) => ({ output: undefined, error }));
+        const body: unknown = JSON.parse(await readFile(bodyPath, 'utf8'));
+        console.info('RUN-controller-request-evidence', JSON.stringify({ disposition, body, result, remainingPostTemporaries: await readdir(temporaryPosts) }));
+        expect.soft(body).toEqual({ manifest: materialized });
+        expect.soft(body).toHaveProperty('manifest.rtcCaptureMode', 'off');
+        if (disposition === 'accepted') {
+            expect.soft(result.error).toBeUndefined();
+        }
+        else {
+            expect.soft(result.error).toBeInstanceOf(Error);
+        }
+        expect(await readdir(temporaryPosts)).toEqual([]);
+        const createdTemporaries = (await readFile(tempRecord, 'utf8')).trim().split('\n');
+        for (const file of createdTemporaries) {
+            expect(file.startsWith(directory)).toBe(true);
+            await expect(readFile(file)).rejects.toMatchObject({ code: 'ENOENT' });
+        }
+        expect(await readFile(sourcePath, 'utf8')).toBe(sourceText);
+    });
+
+    it.for(
+        [
+            { label: 'omitted', transport: undefined, expected: 'native', authored: 'native' },
+            { label: 'blank', transport: '', expected: 'native', authored: 'native' },
+            { label: 'whitespace', transport: ' \t ', expected: 'native', authored: 'native' },
+            { label: 'off', transport: 'off', expected: 'off', authored: 'native' },
+            { label: 'signaling', transport: 'signaling', expected: 'signaling', authored: 'off' },
+            { label: 'native', transport: 'native', expected: 'native', authored: 'off' }
+        ] as const
+    )('RUN forwarding materializer $label preserves lower authored intent', async (input, context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-run-materializer-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const fixture = await readCaptureManifestFixture({ groupId: 'off', captureMode: 'native' });
+        const source = {
+            ...fixture,
+            rtcCaptureMode: input.authored,
+            recipes: fixture.recipes.map((selection) => {
+                if (!selection.recipe) {
+                    throw new Error('Capture fixture requires an inline recipe.');
+                }
+                return {
+                    ...selection,
+                    recipe: {
+                        ...selection.recipe,
+                        rtcCaptureMode: 'off' as const,
+                        commands: selection.recipe.commands.map((command) =>
+                            command.kind === 'configure'
+                                ? { ...command, config: { ...command.config, rallar: { rtc: { captureMode: 'signaling' as const } } } }
+                                : command
+                        )
+                    }
+                };
+            })
+        };
+        const sourcePath = path.join(directory, 'source.json');
+        const outputPath = path.join(directory, 'output.json');
+        const recordPath = path.join(directory, 'record.json');
+        const sourceText = `${JSON.stringify(source, null, 2)}\n`;
+        await writeFile(sourcePath, sourceText);
+        const result = await runMaterializer(context, {
+            ...materializerInvocationDefaults,
+            sourcePath,
+            outputPath,
+            recordPath,
+            agentSource: 'external',
+            rtcCaptureMode: input.transport
+        });
+        const output = await readManifest(outputPath);
+        const outputText = await readFile(outputPath, 'utf8');
+        console.info(
+            'RUN-materializer-evidence',
+            JSON.stringify({ label: input.label, argv: result.argv, output, record: JSON.parse(await readFile(recordPath, 'utf8')) })
+        );
+        expect.soft(output.rtcCaptureMode).toBe(input.expected);
+        expect(output.recipes).toEqual(source.recipes);
+        expect(output.group).toEqual(source.group);
+        expect(await readFile(sourcePath, 'utf8')).toBe(sourceText);
+        expect(JSON.parse(await readFile(recordPath, 'utf8'))).toMatchObject({
+            sourceManifestSha256: createHash('sha256').update(sourceText).digest('hex'),
+            materializedManifestSha256: createHash('sha256').update(outputText).digest('hex')
+        });
+    });
+
+    it.for([
+        { mode: 'bogus', destination: 'absent' },
+        { mode: 'OFF', destination: 'absent' },
+        { mode: ' native ', destination: 'absent' },
+        { mode: 'bogus', destination: 'existing' },
+        { mode: 'OFF', destination: 'existing' },
+        { mode: ' native ', destination: 'existing' }
+    ])('RUN forwarding materializer refuses $mode with $destination outputs', async (input, context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-invalid-run-materializer-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const sourcePath = path.join(directory, 'source.json');
+        const outputPath = path.join(directory, 'output.json');
+        const recordPath = path.join(directory, 'record.json');
+        const sourceText = `${JSON.stringify(await readCaptureManifestFixture({ groupId: 'native', captureMode: 'off' }))}\n`;
+        await writeFile(sourcePath, sourceText);
+        if (input.destination === 'existing') {
+            await writeFile(outputPath, 'owned-output-sentinel\n');
+            await writeFile(recordPath, 'owned-record-sentinel\n');
+        }
+        const result = await runMaterializer(context, {
+            ...materializerInvocationDefaults,
+            sourcePath,
+            outputPath,
+            recordPath,
+            rtcCaptureMode: input.mode
+        }).then((output) => ({ output, error: undefined }), (error: unknown) => ({ output: undefined, error }));
+        console.info('RUN-materializer-refusal-evidence', JSON.stringify({ input, result, files: await readdir(directory) }));
+        expect.soft(result.error).toBeInstanceOf(Error);
+        if (input.destination === 'existing') {
+            expect.soft(await readFile(outputPath, 'utf8')).toBe('owned-output-sentinel\n');
+            expect.soft(await readFile(recordPath, 'utf8')).toBe('owned-record-sentinel\n');
+        }
+        else {
+            await expect.soft(readFile(outputPath)).rejects.toMatchObject({ code: 'ENOENT' });
+            await expect.soft(readFile(recordPath)).rejects.toMatchObject({ code: 'ENOENT' });
+        }
+        expect(await readFile(sourcePath, 'utf8')).toBe(sourceText);
+        expect((await readdir(directory)).sort()).toEqual(input.destination === 'existing' ? ['output.json', 'record.json', 'source.json'] : ['source.json']);
+    });
+
     it.for(
         [
             { captureMode: 'off', groupId: 'off' },

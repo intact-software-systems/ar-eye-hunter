@@ -18,6 +18,7 @@ FAST_MODE="0"
 ALLOW_DIAGNOSTIC="0"
 RUN_ID=""
 ROOM_ID=""
+RTC_CAPTURE_MODE=""
 MANIFEST_INPUT=""
 SECRET_ENVIRONMENT="production"
 REQUIRED_GITHUB_SECRETS=(
@@ -43,6 +44,7 @@ Options:
   --ref <ref>                    Git ref to dispatch. Default: main.
   --run-id <id>                  Control run id. Default: manifest slug + UTC timestamp.
   --room-id <id>                 Explicit stable room id. Default: isolate each spawned Hetzner run.
+  --rtc-capture-mode <mode>      Optional RUN capture mode; blank preserves the authored manifest.
   --workflow <name>              Workflow file name. Default: hetzner-distributed-recipe.yml.
   --rollout-before-run <bool>    Pass rollout_before_run. Default: true.
   --install-playwright <bool>    Pass install_playwright. Default: true.
@@ -171,6 +173,11 @@ while [[ $# -gt 0 ]]; do
 		ROOM_ID="$2"
 		shift 2
 		;;
+	--rtc-capture-mode)
+		[[ $# -ge 2 ]] || fail "--rtc-capture-mode requires a value."
+		RTC_CAPTURE_MODE="$2"
+		shift 2
+		;;
 	--workflow)
 		[[ $# -ge 2 ]] || fail "--workflow requires a value."
 		WORKFLOW_NAME="$2"
@@ -283,6 +290,21 @@ require_command git
 require_command jq
 
 repo_root="$(git rev-parse --show-toplevel)"
+
+if [[ -n "${RTC_CAPTURE_MODE}" ]]; then
+	require_command node
+	RTC_CAPTURE_MODE="$(
+		cd "${repo_root}"
+		node --import tsx --input-type=module -e '
+			import { parseRtcCaptureMode } from "./packages/shared/webrtc/rtc-capture-configuration.ts";
+			const value = process.argv[1];
+			parseRtcCaptureMode(value.trim() === "" ? undefined : value).fold(
+				(issues) => { throw new Error(issues.map((issue) => issue.message).join("\n")); },
+				(capture) => { if (capture.mode !== undefined) process.stdout.write(capture.mode); }
+			);
+		' -- "${RTC_CAPTURE_MODE}"
+	)"
+fi
 
 if [[ -r "${MANIFEST_INPUT}" ]]; then
 	manifest_absolute="$(cd "$(dirname "${MANIFEST_INPUT}")" && pwd -P)/$(basename "${MANIFEST_INPUT}")"
@@ -400,6 +422,9 @@ workflow_args=(
 )
 if [[ -n "${ROOM_ID}" ]]; then
 	workflow_args+=(-f "room_id=${ROOM_ID}")
+fi
+if [[ -n "${RTC_CAPTURE_MODE}" ]]; then
+	workflow_args+=(-f "rtc_capture_mode=${RTC_CAPTURE_MODE}")
 fi
 workflow_args+=(
 	-f "application_id=${application_id}"
