@@ -6929,15 +6929,58 @@ reliability, performance or E3 result. This is tests-only existing behavior, wit
 manufactured semantic RED, production change or selected retention remedy. The original
 post-ICE cause remains unknown, and no retry algorithm change is justified here.
 
-**Next authored-intent outcomes:** Actual UI unavailable-Native refusal and successful
-Local Native delivery are independently accepted within their stated limits. Recover only
-existing storage/reload paths from code; invent no saved recipe store, API, migration or
-duplicate policy. The next two concrete outcomes are existing Copy/repeat execution with
-attributable fresh receiving effects after canonical Close, then the current worker/Actions
-capture controls and resulting execution/artifact paths. Applied receipts and fresh invocation
-IDs alone do not prove delivery; create no new placeholder or policy to manufacture a
-freshness discriminator. Publish each coherent tested/reviewed slice promptly while
-independent unfinished outcomes remain in progress.
+**Current source-derived next outcomes:** At the published Local Native checkpoint, the
+bounded worker/Actions refresh verifies all25 prior relevant owners unchanged. Generic worker environment, launch, bootstrap and
+Configure still omit capture. Actual SDK host defaults read rtc.captureMode, while the
+adapter's per-command rtcCaptureMode means step intent; forwarding only that operation
+field cannot establish host provenance. Test literal mode and origin through current
+actual composition before selecting production forwarding. Preserve absent application
+defaults; independently requested capture must apply or report why it could not.
+
+The copied-executable trace preserves complete authored history and child IDs, and fresh
+Local runs bypass child-result replay. Raw receiving events identify the transport sender
+session but carry no recipe-invocation identity. New event IDs or arrival time alone cannot
+attribute an identical-payload same-session repeat. An existing Close/logout/login fixture
+could prove a distinct auth-lifecycle path; it does not replace ordinary same-session
+repeat acceptance. The existing real realtime.onJson port carries the original native
+MessageEvent, so a test-owned observer can associate the literal payload with its native
+channel object. This is an unexecuted candidate, not a drain guarantee. Require complete
+preceding-send observations, actual old-target closure after Close, a distinct open target
+for the repeated receiving effect, and unchanged auth sessions within current budgets.
+The Manual browser-rallar provider creates its own facade; loading the UI's public facade
+cannot observe that private receiver. An existing public-SDK receiver can supply the owned
+port while preserving the actual UI Copy/Load/Run sender; do not claim its private Manual
+inbox was observed. Recover this boundary without a new protocol field, placeholder,
+freshness discriminator, provider, harness or policy.
+
+Actual UI unavailable-Native refusal and successful Local Native delivery remain accepted
+within their stated limits. The next two concrete outcomes are general-worker host capture
+from env/query through bootstrap and actual SDK readback, then actual Copy/repeat receiving
+effects across the existing lifecycle. Worker/Actions run selection and all remaining
+storage/recipe paths stay required. Recover only existing paths; invent no saved recipe
+store or corresponding API, migration or duplicate policy. Publish each coherent
+tested/reviewed slice promptly while independent unfinished outcomes remain in progress.
+
+**Verified host-admission failure:** New semantic startup-to-SDK tests produce15 failures
+and10 passes without setup timeouts. Worker Off/Signaling/Native disappear, so actual
+construction reports Signaling/product-default; even matching Signaling exposes the wrong
+origin. Invalid query/environment values reach Configure and a control connection, and
+invalid worker input produces launch configuration. Existing omission/run controls pass.
+Independent review accepts this RED and the whole changed test owner's quality, but requires
+separate no-application host coverage before GREEN. The selected wire host input is
+rallar.rtc.captureMode, distinct from operation rallar.rtcCaptureMode. No production
+forwarding, second settings store, scope relaxation, alias or migration is yet selected.
+
+**Hosted acceptance of the published Local Native checkpoint:** Branch Release Gate,
+Formation and Medium attempt1 are completed/success, including the optional ALM smoke.
+Original archives and the complete validation-evidence-v2 receipt establish fresh broad
+validation with reuse=false against the exact published tree. The configured recipe matrix
+has101 passing child runs, with its observed/nonblocking and preflight skips preserved.
+Main unit counts are14,047 passed/12 skipped; app-browser counts are48 passed/69 skipped.
+The hosted app suite explicitly skips the actual Full native receiving-browser, unavailable
+capture and Manual capture/export/reload/reset cases. Their local acceptance cannot be
+inferred from this gate. This evidence does not certify the dirty worker tests, distributed
+capture forwarding, B01–B06, E3 or a performance baseline.
 
 Full Task65, Console, existing Load/Copy/storage/restore/repeat outcomes, workers, Actions
 and B01–B06/E3 remain required. No retry, recovery, CRDT or RTC transport behavior changes.
