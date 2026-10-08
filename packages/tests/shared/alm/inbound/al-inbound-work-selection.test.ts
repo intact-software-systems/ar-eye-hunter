@@ -234,6 +234,7 @@ describe('ALInboundWorkSelector phase measurement', () => {
                 readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
                 readNextReadyAtMs: fixture.selector.readNextReadyAtMs,
                 selectReady: fixture.selector.selectReady,
+                claimSuccessor: undefined,
                 runClaim: async (claim) => {
                     runIds.push(decodeALInboundWorkEntry(claim.entry, fixture.namespace).effectId);
                     if (runIds.length === 1) {
