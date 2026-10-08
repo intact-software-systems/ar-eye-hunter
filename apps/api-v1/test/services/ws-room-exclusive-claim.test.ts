@@ -5,15 +5,14 @@ import {
     newALRoute,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
-import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
-import { decodeALNackPayload } from '@shared/al-contracts/al-control-value-codec.ts';
+import { AL_CONTROL_NACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { decodeALNackPayload, decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createGroupSnapshot } from '../../../../packages/tests/shared-server/rallar-system/group-state/snapshot/group-state-snapshot-test-fixtures.ts';
 import {
     createLiveRoomRuntime,
-    readOriginReceipts,
     waitForRoomSends,
     type LiveRoomTestRuntime,
     type RoomLiveSend
@@ -25,8 +24,8 @@ const HELD_BY_OTHER_DETAIL = 'Exclusive resource is held by another session';
 Deno.test('a second session\'s exclusive send on a claimed resource is NACKed held-by-other, reaches no one and starts no receipt', async () => {
     const { runtime, room } = await createClaimRuntime();
     try {
-        const claim = pickupSend(room, 'session-2', 'exclusive');
-        const contender = pickupSend(room, 'session-1', 'exclusive');
+        const claim = createPickupSend({ room, senderId: 'session-2', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
+        const contender = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
 
         assert.deepEqual((await runtime.service.acceptIncomingMessage(claim, 'session-2')).right, { kind: 'admitted' });
         await waitForRoomSends(() => readPickupSends(runtime.sent).length >= 2);
@@ -39,7 +38,8 @@ Deno.test('a second session\'s exclusive send on a claimed resource is NACKed he
             ['session-1', claim.id.msgId],
             ['session-3', claim.id.msgId]
         ]);
-        assert.deepEqual(readOriginReceipts(runtime.sent), []);
+        assert.deepEqual(readReceiptPhases(runtime.sent, 'session-1'), []);
+        assert.deepEqual(readReceiptPhases(runtime.sent, 'session-2'), [[claim.id.msgId, 'admitted']]);
     }
     finally {
         runtime.service.dispose();
@@ -50,14 +50,15 @@ Deno.test('a second session\'s exclusive send on a claimed resource is NACKed he
 Deno.test('the holder\'s exclusive re-send on its claimed resource is admitted, delivered and moves the claim\'s expiry to its own', async () => {
     const { runtime, room } = await createClaimRuntime();
     try {
-        const claim = pickupSend(room, 'session-1', 'exclusive', CLAIM_TTL_MS);
-        const renewal = pickupSend(room, 'session-1', 'exclusive');
+        const claim = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: CLAIM_TTL_MS });
+        const renewal = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
 
         assert.deepEqual((await runtime.service.acceptIncomingMessage(claim, 'session-1')).right, { kind: 'admitted' });
         assert.deepEqual((await runtime.service.acceptIncomingMessage(renewal, 'session-1')).right, { kind: 'admitted' });
         await waitForRoomSends(() => readPickupSends(runtime.sent).length >= 4);
         await waitPastExpiry(claim);
-        const contender = await runtime.service.acceptIncomingMessage(pickupSend(room, 'session-2', 'exclusive'), 'session-2');
+        const contenderSend = createPickupSend({ room, senderId: 'session-2', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
+        const contender = await runtime.service.acceptIncomingMessage(contenderSend, 'session-2');
         await waitForRoomSends(() => false);
 
         assert.deepEqual(readPickupSends(runtime.sent).filter(([sessionId]) => sessionId === 'session-2'), [
@@ -77,15 +78,16 @@ Deno.test('the holder\'s exclusive re-send on its claimed resource is admitted, 
 Deno.test('a claim lapses with its message: the next session\'s exclusive send is admitted, delivered and holds the resource', async () => {
     const { runtime, room } = await createClaimRuntime();
     try {
-        const claim = pickupSend(room, 'session-1', 'exclusive', CLAIM_TTL_MS);
+        const claim = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: CLAIM_TTL_MS });
 
         assert.deepEqual((await runtime.service.acceptIncomingMessage(claim, 'session-1')).right, { kind: 'admitted' });
         await waitForRoomSends(() => readPickupSends(runtime.sent).length >= 2);
         await waitPastExpiry(claim);
-        const reclaim = pickupSend(room, 'session-2', 'exclusive');
+        const reclaim = createPickupSend({ room, senderId: 'session-2', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
         assert.deepEqual((await runtime.service.acceptIncomingMessage(reclaim, 'session-2')).right, { kind: 'admitted' });
         await waitForRoomSends(() => readPickupSends(runtime.sent).length >= 4);
-        const formerHolder = await runtime.service.acceptIncomingMessage(pickupSend(room, 'session-1', 'exclusive'), 'session-1');
+        const formerHolderSend = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
+        const formerHolder = await runtime.service.acceptIncomingMessage(formerHolderSend, 'session-1');
         await waitForRoomSends(() => false);
 
         assert.deepEqual(readPickupSends(runtime.sent).filter(([, msgId]) => msgId === reclaim.id.msgId), [
@@ -104,13 +106,13 @@ Deno.test('a claim lapses with its message: the next session\'s exclusive send i
 Deno.test('a shared send on a claimed resource neither consults nor takes the claim, and is delivered', async () => {
     const { runtime, room } = await createClaimRuntime();
     try {
-        const claim = pickupSend(room, 'session-1', 'exclusive');
-        const shared = pickupSend(room, 'session-2', 'shared');
+        const claim = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
+        const shared = createPickupSend({ room, senderId: 'session-2', ownership: 'shared', ttlMs: SEND_TTL_MS });
 
         assert.deepEqual((await runtime.service.acceptIncomingMessage(claim, 'session-1')).right, { kind: 'admitted' });
         assert.deepEqual((await runtime.service.acceptIncomingMessage(shared, 'session-2')).right, { kind: 'admitted' });
         await waitForRoomSends(() => readPickupSends(runtime.sent).length >= 4);
-        const renewal = pickupSend(room, 'session-1', 'exclusive');
+        const renewal = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
         assert.deepEqual((await runtime.service.acceptIncomingMessage(renewal, 'session-1')).right, { kind: 'admitted' });
         await waitForRoomSends(() => false);
 
@@ -128,6 +130,7 @@ Deno.test('a shared send on a claimed resource neither consults nor takes the cl
 });
 
 const CLAIM_TTL_MS = 300;
+const SEND_TTL_MS = 30_000;
 
 interface ClaimRuntime {
     readonly runtime: LiveRoomTestRuntime;
@@ -144,8 +147,15 @@ async function createClaimRuntime(): Promise<ClaimRuntime> {
     return { runtime, room: snapshot.group };
 }
 
+interface PickupSendInput {
+    readonly room: GroupRef;
+    readonly senderId: string;
+    readonly ownership: 'shared' | 'exclusive';
+    readonly ttlMs: number;
+}
+
 /** A receiver-acknowledged room broadcast from `senderId` on the one pickup resource every case contends for. */
-function pickupSend(room: GroupRef, senderId: string, ownership: 'shared' | 'exclusive', ttlMs = 30_000): ALMessage {
+function createPickupSend({ room, senderId, ownership, ttlMs }: PickupSendInput): ALMessage {
     return newALBroadcastMessage(
         senderId,
         newALRoute('room.pickup', room.groupId, 'pickup-1'),
@@ -180,4 +190,13 @@ function readNackReasons(sent: readonly RoomLiveSend[], sessionId: string): read
         .map((send) => decodePersistedALMessage(send.encoded))
         .filter((message) => message.payload.typeId === AL_CONTROL_NACK_TYPE_ID)
         .map((message) => decodeALNackPayload(JSON.parse(message.payload.resource)).reason);
+}
+
+function readReceiptPhases(sent: readonly RoomLiveSend[], sessionId: string): readonly (readonly [string, string])[] {
+    return sent
+        .filter((send) => send.sessionId === sessionId)
+        .map((send) => decodePersistedALMessage(send.encoded))
+        .filter((message) => message.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
+        .map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)))
+        .map((receipt) => [receipt.msgId, receipt.phase] as const);
 }

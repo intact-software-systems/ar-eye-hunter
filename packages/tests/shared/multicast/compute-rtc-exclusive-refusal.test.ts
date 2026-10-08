@@ -7,6 +7,7 @@ import {
     newALUnicastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import type { RtcCarrierGapAdmission } from '@shared/multicast/compute-rtc-outbound-carrier-availability.ts';
 
 import {
     createOriginPrincipalSnapshot,
@@ -43,7 +44,7 @@ describe('the RTC origin of an exclusive send', () => {
             const fixture = createRoomFixture();
             const message = createPickupSend(audience, { ownership: 'exclusive' });
 
-            const admitted = await enqueueLegAndDrain(fixture, message);
+            const admitted = await enqueueLegAndDrain(fixture, message, 'hold');
 
             expect(admitted.verdict).toEqual({ kind: 'refused', reason: 'unsupported', detail: EXCLUSIVE_DETAIL });
             expect(admitted.message.targets).toEqual(message.targets);
@@ -57,9 +58,20 @@ describe('the RTC origin of an exclusive send', () => {
         const fixture = createRoomFixture();
         const message = createPickupSend('room multicast', { qos: { ownership: { algo: 'exclusive' } } });
 
-        const admitted = await enqueueLegAndDrain(fixture, message);
+        const admitted = await enqueueLegAndDrain(fixture, message, 'hold');
 
         expect(admitted.verdict).toEqual({ kind: 'refused', reason: 'unsupported', detail: EXCLUSIVE_DETAIL });
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
+    });
+
+    it('refuses an exclusive room send on a hand-over leg with RTC available as unsupported with the targets its sender gave', async () => {
+        const fixture = createRoomFixture();
+        const message = createPickupSend('room multicast', { ownership: 'exclusive' });
+
+        const handedOver = await enqueueLegAndDrain(fixture, message, 'hand-over');
+
+        expect(handedOver.verdict).toEqual({ kind: 'refused', reason: 'unsupported', detail: EXCLUSIVE_DETAIL });
+        expect(handedOver.message.targets).toEqual(message.targets);
         expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
     });
 
@@ -67,7 +79,7 @@ describe('the RTC origin of an exclusive send', () => {
         const fixture = createRoomFixture();
         const message = createPickupSend('room multicast', { ownership: 'shared' });
 
-        const admitted = await enqueueLegAndDrain(fixture, message);
+        const admitted = await enqueueLegAndDrain(fixture, message, 'hold');
 
         expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
         expect(readSentTargets(fixture.channels.b!)).toEqual([toOriginFrozenTargets(['b', 'c', 'd'], 4)]);
@@ -107,8 +119,12 @@ function createPickupSend(audience: ExclusiveAudience, ownership: SendOwnership)
     }
 }
 
-async function enqueueLegAndDrain(fixture: RtcOriginOverlayFixture, message: ALMessage) {
-    const result = await fixture.manager.enqueueLegIfAbsent(message, 'hold');
+async function enqueueLegAndDrain(
+    fixture: RtcOriginOverlayFixture,
+    message: ALMessage,
+    carrierGap: RtcCarrierGapAdmission
+) {
+    const result = await fixture.manager.enqueueLegIfAbsent(message, carrierGap);
     await vi.advanceTimersByTimeAsync(0);
     return result;
 }
