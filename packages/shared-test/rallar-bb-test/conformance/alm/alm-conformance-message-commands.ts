@@ -66,7 +66,7 @@ interface AlmConformanceResultAssertionInput {
     readonly name: string;
     readonly resultName: string;
     readonly field: string;
-    readonly operator: 'equals' | 'matches' | 'gt' | 'contains' | 'exists';
+    readonly operator: 'equals' | 'notEquals' | 'matches' | 'gt' | 'length' | 'contains' | 'exists';
     readonly expected: string | number | boolean;
 }
 
@@ -74,7 +74,7 @@ interface AlmConformanceResultAssertionInput {
 export type AlmConformanceVerdictFact = readonly [
     name: string,
     field: string,
-    operator: 'exists' | 'equals',
+    operator: 'exists' | 'equals' | 'length',
     expected: string | number | boolean
 ];
 

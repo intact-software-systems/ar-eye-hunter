@@ -296,11 +296,29 @@ it('projects the reason of a refused admission leg the fallback carrier took ove
         reason: 'congested',
         detail: 'Carrier backpressure dropped the send'
     });
+    delivery.registry.record({
+        kind: 'attempt-started',
+        msgId: delivery.msgId,
+        carrier: 'ws',
+        atMs: Date.now(),
+        attemptId: 'ws-attempt'
+    });
+    delivery.registry.record({
+        kind: 'attempt-settled',
+        msgId: delivery.msgId,
+        carrier: 'ws',
+        atMs: Date.now(),
+        attemptId: 'ws-attempt',
+        outcome: 'sent',
+        submissionAttempted: true,
+        detail: undefined,
+        willRetry: false
+    });
 
     expect(await runtime.readReceipts(query)).toMatchObject({
-        attempts: 1,
-        attemptOutcomes: ['refused'],
-        attemptCarriers: ['rtc'],
+        attempts: 2,
+        attemptOutcomes: ['refused', 'sent'],
+        attemptCarriers: ['rtc', 'ws'],
         attemptRefusalReasons: ['congested'],
         carrierFallback: undefined
     });

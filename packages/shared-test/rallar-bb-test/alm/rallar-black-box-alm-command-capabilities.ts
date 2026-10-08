@@ -51,8 +51,7 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         description: 'Waits for a prior messages.send handle to reach one of the given delivery states. ' +
             `The shared states are ${AL_DELIVERY_STATES.join(', ')}. ` +
             'The in-page handle projects admission, carrier attempts with their attemptOutcomes, attemptCarriers and attemptRefusalReasons, a relayRejection, ' +
-            'a carrierFallback, ' +
-            'the typed failure of a send that ended rejected, failed or expired, and the ' +
+            'a carrierFallback, the typed failure of a send that ended rejected, failed or expired, and the ' +
             'latest receipt: its receiptMode, the hop lists, and expectedRecipientPeerIds, confirmedRecipientPeerIds and ' +
             'unconfirmedRecipientPeerIds beside them; a lost handle is unobservable.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
@@ -106,8 +105,7 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         description: 'Reads the in-page lifecycle observation for a messages.send handle, including receiptMode, ' +
             'confirmedHopPeerIds, unconfirmedHopPeerIds, expectedRecipientPeerIds, confirmedRecipientPeerIds, ' +
             'unconfirmedRecipientPeerIds, attempts, attemptOutcomes, attemptCarriers, attemptRefusalReasons, relayRejection, carrierFallback, failure, ' +
-            'submission facts and reason. ' +
-            'Unknown handles are unobservable.',
+            'submission facts and reason. Unknown handles are unobservable.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],

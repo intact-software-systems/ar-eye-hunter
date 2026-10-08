@@ -52,13 +52,16 @@ function isCongestionScenario(scenario: AlmConformanceScenario): boolean {
     return (CONGESTION_SCENARIO_IDS as readonly string[]).includes(scenario.scenarioId);
 }
 
-/** Runs the named handle read and the assertions that follow it, answering the read with one observation. */
+/** Runs the named handle read or receipts read and the assertions that follow it, answering the read with one observation. */
 async function readTail(recipe: RallarBlackBoxTestRecipe, from: string, observation: object): Promise<boolean> {
     const start = recipe.commands.findIndex((command) => command.commandId === `${recipe.recipeId}-${from}`);
     const following = recipe.commands.slice(start + 1);
     const end = following.findIndex((command) => command.kind !== 'assert');
     const runtime = createRallarBlackBoxTestRuntime({
-        commandExecutor: (command) => command.kind === 'messages.observe' ? { status: 'ok', value: observation } : undefined
+        commandExecutor: (command) =>
+            command.kind === 'messages.observe' || command.kind === 'messages.receipts'
+                ? { status: 'ok', value: observation }
+                : undefined
     });
     const commands = [recipe.commands[start], ...following.slice(0, end === -1 ? following.length : end)];
     return (await runtime.execute({ kind: 'recipe.run', recipe: { ...recipe, commands } })).ok;
@@ -258,9 +261,13 @@ describe('backpressure-deferred', () => {
                 'hold-backpressure',
                 'send-1',
                 'backpressure-held',
+                'receipts-1',
+                'assert-unacknowledged-held',
                 'release-backpressure',
                 'observe-acknowledged-1',
                 'assert-acknowledged-1',
+                'assert-sent-only-1',
+                'assert-one-row-1',
                 'stats-congestion',
                 'assert-congestion-deferred',
                 'stats'
@@ -281,9 +288,24 @@ describe('backpressure-deferred', () => {
                 ttlMs: 30_000
             });
             // One attempt row per send-prepared row, overwritten on each retry: the deferral is the counter's to show.
-            expect(await readTail(scenario.sender, 'observe-acknowledged-1', { state: 'acknowledged', attemptOutcomes: ['sent'] }))
-                .toBe(true);
-            expect(await readTail(scenario.sender, 'observe-acknowledged-1', { state: 'rejected' })).toBe(false);
+            const settled = { state: 'acknowledged', attemptOutcomes: ['sent'] };
+            expect(await readTail(scenario.sender, 'observe-acknowledged-1', settled)).toBe(true);
+            expect(
+                await readTailForEachChange(scenario.sender, 'observe-acknowledged-1', settled, [
+                    { state: 'rejected' },
+                    { attemptOutcomes: ['refused', 'sent'] },
+                    { attemptOutcomes: ['not-ready'] },
+                    { attemptOutcomes: [] }
+                ])
+            ).toEqual([false, false, false, false]);
+            expect(findCommand(scenario.sender, 'assert-unacknowledged-held')).toMatchObject({
+                kind: 'assert',
+                source: `resultCache.${scenario.sender.recipeId}-receipts-1.value.state`,
+                operator: 'notEquals',
+                expected: 'acknowledged'
+            });
+            expect(await readTail(scenario.sender, 'receipts-1', { state: 'queued' })).toBe(true);
+            expect(await readTail(scenario.sender, 'receipts-1', { state: 'acknowledged' })).toBe(false);
             expect(findCommand(scenario.sender, 'assert-congestion-deferred')).toMatchObject(toCounterRead(scenario.sender, 'deferred'));
             expect(toCommandNames(scenario.receiver)).toEqual([...RECEIVER_PROLOGUE, 'received-1', 'stats']);
             expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 1, absent: false, windowMs: 27_000 });
