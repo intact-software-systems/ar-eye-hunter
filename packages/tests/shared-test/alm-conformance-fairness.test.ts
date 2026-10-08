@@ -191,6 +191,7 @@ describe('own-share-under-inbound', () => {
             expect(toCommandNames(scenario.sender)).toEqual([...SENDER_PROLOGUE, 'received-1', 'flood', 'stats']);
             // The ready send arrives only after the receiver's reconnect, so the wait owns one readiness budget.
             expect(findCommand(scenario.sender, 'received-1')).toMatchObject({ count: 1, absent: false, windowMs: 57_000, timeoutMs: 58_000 });
+            // The flood asks for no receipt, so the sender's 20 sends are on the wire within seconds, not one ACK apart.
             expect(findCommand(scenario.sender, 'flood')).toEqual({
                 kind: 'loop',
                 commandId: `${scenario.sender.recipeId}-flood`,
@@ -199,7 +200,7 @@ describe('own-share-under-inbound', () => {
                     kind: 'messages.send',
                     commandId: `${scenario.sender.recipeId}-flood-send`,
                     carrier,
-                    ack: 'receiver',
+                    ack: 'none',
                     reliability: 'at-least-once',
                     ttlMs: 30_000,
                     handleId: `alm-${carrier}-own-share-under-inbound-send-0-{loop.index}`
@@ -221,9 +222,11 @@ describe('buffered-track-drains', () => {
                 ...orderedSeqs.flatMap((seq) => [`send-${seq}`, `observe-admitted-${seq}`, `assert-admitted-${seq}`]),
                 'stats'
             ]);
+            // No receipt is asked for: the receiver cannot acknowledge seq 2 to 65 before seq 1 arrives.
             for (const seq of orderedSeqs) {
                 expect(findCommand(scenario.sender, `send-${seq}`)).toMatchObject({
                     reliability: 'at-least-once',
+                    ack: 'none',
                     orderingKey: `alm-${carrier}-buffered-track-drains`,
                     seq
                 });

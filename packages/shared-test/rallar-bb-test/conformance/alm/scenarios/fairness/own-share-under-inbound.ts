@@ -30,9 +30,11 @@ const OWN_SHARE_LIMITS = { maxAdmissions: 20, maxBytes: AL_VOLATILE_SESSION_MAX_
 /** The receiver's own pool is refused only once it holds this many of its own admissions (D189): 10. */
 const OWN_SHARE_ADMISSIONS = Math.floor(OWN_SHARE_LIMITS.maxAdmissions * AL_VOLATILE_SESSION_OWN_SHARE);
 /**
- * Arrivals alone fill the lowered total. An arrival counts for at most 30 s, so the total stays full while
- * 30 * rate >= 20, that is above 0.7 arrivals a second; the sender sends back to back, and the receiver sends its
- * own once all of them arrived, inside the first arrival's 30 s.
+ * Arrivals alone fill the lowered total. An arrival counts for `min(ttl, 30 s)` from the moment it arrives, so the
+ * total stays full only while all 20 arrivals are younger than that. The flood therefore asks for no receipt: a
+ * receipted send waits for its ACK (about 1.5 s over `ws`), twenty of them in a row span the whole window, and the
+ * first arrivals have left it before the receiver reads its stats. Unreceipted, the 20 are on the wire within
+ * seconds, and the receiver reads its stats once it has seen all of them and its own send is acknowledged.
  */
 const FLOOD_COUNT = OWN_SHARE_LIMITS.maxAdmissions;
 const READY_INDEX = 1;
@@ -54,7 +56,7 @@ export const ownShareUnderInbound: AlmConformanceScenarioDefinition = {
     laneFamily: 'two-agent',
     toSenderCommands: (sender) => [
         toReconnectedArrivalsCommand(sender, READY_INDEX, 0),
-        toSendLoopCommand({ step: sender, name: 'flood', count: FLOOD_COUNT, send: toRoomSend(sender, 0) })
+        toSendLoopCommand({ step: sender, name: 'flood', count: FLOOD_COUNT, send: toRoomSend(sender, 0, 'none') })
     ],
     toRecipientCommands: toOwnShareReceiverCommands
 };
@@ -64,9 +66,9 @@ function toOwnShareReceiverCommands(
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toBoundReconnectCommands(receiver, 'lowered', OWN_SHARE_LIMITS),
-        toRoomSend(receiver, READY_INDEX),
+        toRoomSend(receiver, READY_INDEX, 'receiver'),
         toReceivedCommand({ ...receiver, index: 1, count: FLOOD_COUNT, absent: false }),
-        toRoomSend(receiver, OWN_INDEX),
+        toRoomSend(receiver, OWN_INDEX, 'receiver'),
         ...toAcknowledgedCommands(receiver, OWN_INDEX),
         ...toOwnShareLedgerCommands(receiver),
         ...toBoundReconnectCommands(receiver, 'restored', undefined)
@@ -95,14 +97,18 @@ function toOwnShareLedgerCommands(receiver: AlmConformanceStepInput): readonly R
     ];
 }
 
-/** An acknowledged at-least-once room send that outlives the cell, so each one counts for the whole window. */
-function toRoomSend(step: AlmConformanceStepInput, index: number): RallarBlackBoxTestMessagesSendCommand {
+/** An at-least-once room send that outlives the cell, so each one counts for the whole window; `ack` names its receipt. */
+function toRoomSend(
+    step: AlmConformanceStepInput,
+    index: number,
+    ack: 'none' | 'receiver'
+): RallarBlackBoxTestMessagesSendCommand {
     return toSendCommand({
         ...step,
         index,
         payload: { marker: step.scenarioId, carrier: step.input.carrier, index },
         delivery: {
-            ack: 'receiver',
+            ack,
             reliability: 'at-least-once',
             ttlMs: NON_EXPIRING_TTL_MS,
             commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS

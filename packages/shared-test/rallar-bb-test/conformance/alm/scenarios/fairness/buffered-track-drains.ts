@@ -23,7 +23,8 @@ const NONZERO_LEADING_DIGITS = 9;
 
 /**
  * D190: the sender sends seq 2 to 65 on one ordering key, then seq 1; the receiver delivers all 65 within one default
- * lifetime. Over `rtc` the receiver is the hop that buffered them, so one of its inbound batches states a release it
+ * lifetime. The sends ask for no receipt: the receiver cannot acknowledge seq 2 to 65 before seq 1 arrives, so a
+ * receipted send would wait out its ACK retries one after the other and seq 1 would come after the receiver's window. Over `rtc` the receiver is the hop that buffered them, so one of its inbound batches states a release it
  * ran by promotion. Over `ws` the relay buffers and releases them out of the page's sight, as in `ordering-gap-repair`.
  */
 export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
@@ -34,8 +35,8 @@ export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: (sender) => [
-        ...BUFFERED_SEQS.flatMap((seq) => toOrderedSendCommands(sender, seq)),
-        ...toOrderedSendCommands(sender, 1)
+        ...BUFFERED_SEQS.flatMap((seq) => toOrderedSendCommands(sender, seq, 'none')),
+        ...toOrderedSendCommands(sender, 1, 'none')
     ],
     toRecipientCommands: (receiver) => [
         toTrackArrivalsCommand(receiver),
@@ -55,7 +56,9 @@ function toTrackArrivalsCommand(receiver: AlmConformanceStepInput): RallarBlackB
 /**
  * An inbound `effect-drain` whose `promoted` count is above zero. A substring cannot exclude zero, so the loop reads
  * one leading digit per iteration and stops at the first a drain states. Only a release that completed promotes its
- * successor, and no earlier cell buffers two consecutive sequences, so the drain is this cell's.
+ * successor. The wait scans the agent's whole event buffer, so an earlier cell's drain would match too; none states
+ * one, because the earlier cells' buffered sequences never complete a release (`repair-exhausted` buffers seq 3 and 4
+ * over `rtc` and the repair never arrives). The loop runs after the arrivals and reads that history.
  */
 function toPromotionWait(receiver: AlmConformanceStepInput): RallarBlackBoxTestCommand {
     return {

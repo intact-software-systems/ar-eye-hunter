@@ -419,9 +419,9 @@ describe('alm-conformance recipe family', () => {
                 // The capacity and capacity-tracks senders reconnect before they send; those waits are pinned in
                 // alm-conformance-addressed-scenarios.
                 const capacityReceived1 = /-capacity(-tracks)?-receiver-received-1$/.test(command.commandId ?? '');
-                // The fairness cells' reconnect, lifetime and dropped-probe windows are pinned in alm-conformance-fairness.
+                // The fairness cells' reconnect and lifetime windows are pinned in alm-conformance-fairness.
                 const fairnessWindow =
-                    /-(own-share-under-inbound-sender-received-1|buffered-track-drains-receiver-received-1|churn-bounded-tracks-receiver-received-[13])$/
+                    /-(own-share-under-inbound-sender-received-1|buffered-track-drains-receiver-received-1|churn-bounded-tracks-receiver-received-1)$/
                         .test(command.commandId ?? '');
                 if (durableOptInReceived1 || capacityReceived1 || fairnessWindow) {
                     continue;

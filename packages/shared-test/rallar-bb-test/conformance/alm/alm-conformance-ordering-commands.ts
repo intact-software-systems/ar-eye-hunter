@@ -1,6 +1,9 @@
 import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 
-import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestMessagesSendCommand
+} from '../../rallar-black-box-test-contracts.ts';
 
 import { toControlAdmissionWait } from './alm-conformance-diagnostic-waits.ts';
 import { toHeldFaultCommands, toHeldMessageFaultCommands } from './alm-conformance-fault-commands.ts';
@@ -12,17 +15,26 @@ import {
 } from './alm-conformance-message-commands.ts';
 import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 
-/** One at-least-once send on the scenario's ordering key, admitted; the sequence names the send and its payload. */
+/**
+ * One at-least-once send on the scenario's ordering key, admitted; the sequence names the send and its payload.
+ * `ack` is the channel's default unless named.
+ */
 export function toOrderedSendCommands(
     sender: AlmConformanceStepInput,
-    seq: number
+    seq: number,
+    ack?: RallarBlackBoxTestMessagesSendCommand['ack']
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         toSendCommand({
             ...sender,
             index: seq,
             payload: { marker: sender.scenarioId, seq },
-            delivery: { reliability: 'at-least-once', orderingKey: toOrderingKey(sender), seq }
+            delivery: {
+                reliability: 'at-least-once',
+                orderingKey: toOrderingKey(sender),
+                seq,
+                ...(ack === undefined ? {} : { ack })
+            }
         }),
         ...toAdmissionCommands({ ...sender, index: seq })
     ];

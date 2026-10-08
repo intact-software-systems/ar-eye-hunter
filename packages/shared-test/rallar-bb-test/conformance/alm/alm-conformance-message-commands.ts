@@ -29,7 +29,8 @@ interface AlmConformanceSendDelivery {
     readonly ttlMs?: number;
     /** Command budget when it must stay independent of `ttlMs`. */
     readonly commandTimeoutMs?: number;
-    readonly ack?: 'receiver' | 'all-logical-recipients' | 'group-leader';
+    /** Absent, the channel's purpose decides; `none` asks for no receipt, so the send is done at transport acceptance. */
+    readonly ack?: RallarBlackBoxTestMessagesSendCommand['ack'];
     /** Absent, the channel's purpose decides: at-least-once for both. */
     readonly reliability?: RallarBlackBoxTestMessagesSendCommand['reliability'];
     readonly durability?: Exclude<ALDurabilityAlgo, 'volatile'>;

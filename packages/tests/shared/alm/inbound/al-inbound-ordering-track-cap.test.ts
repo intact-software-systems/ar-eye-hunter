@@ -93,6 +93,33 @@ describe('the inbound store\'s ordering tracks', () => {
             .toMatchObject({ status: 'in-order', expectedSeq: 4 });
     });
 
+    it('counts a snapshot a rival pass already removed as gone, so the count never reads past the cap', async () => {
+        const stated: number[] = [];
+        const fixture = await createOrderingCapFixture('memory', (tracks) => stated.push(tracks));
+        await admitFirstSequences(fixture, AL_INBOUND_MAX_ORDERING_TRACKS);
+        const oldest = (await fixture.backend.list(ORDERING_PREFIX, (value) => value))
+            .find((entry) => entry.key.slice(ORDERING_PREFIX.length).split(':')[0] === 'track-0')!;
+        const readWithin = fixture.backend.readWithin.bind(fixture.backend);
+        let removedByRival = false;
+        vi.spyOn(fixture.backend, 'readWithin').mockImplementation(async (read) => {
+            const result = await readWithin(read);
+            if (!removedByRival && Array.isArray(result) && result.length > AL_INBOUND_MAX_ORDERING_TRACKS) {
+                removedByRival = true;
+                await fixture.backend.write(async (transaction) => {
+                    await transaction.remove(oldest.key);
+                });
+            }
+            return result;
+        });
+        stated.length = 0;
+
+        await admitAtNextMs(fixture, createTrackMessage(AL_INBOUND_MAX_ORDERING_TRACKS, 1));
+
+        expect(removedByRival).toBe(true);
+        expect(stated).toEqual([AL_INBOUND_MAX_ORDERING_TRACKS]);
+        expect(await readHeldTracks(fixture.backend)).toHaveLength(AL_INBOUND_MAX_ORDERING_TRACKS);
+    });
+
     it('keeps the evicted track\'s delivered marker', async () => {
         const fixture = await createOrderingCapFixture('memory');
         const trackKey = toALOrderingTrackKey(createTrackMessage(0, 1))!;

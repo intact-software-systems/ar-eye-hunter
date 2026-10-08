@@ -23,7 +23,7 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
-import { toCommandId } from '../../alm-conformance-step-identities.ts';
+import { toCommandId, toSendHandleId } from '../../alm-conformance-step-identities.ts';
 import { toBoundReconnectCommands, toReconnectedArrivalsCommand } from '../volatile-bound/volatile-bound-commands.ts';
 import { toSendLoopCommand } from './to-send-loop-command.ts';
 
@@ -65,7 +65,6 @@ export const churnBoundedTracks: AlmConformanceScenarioDefinition = {
 };
 
 function toChurnSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    const lastTrack = toTrackSend(sender, `${CHURN_TRACK_COUNT - 1}`);
     return [
         ...toBoundReconnectCommands(sender, 'raised', CHURN_SENDER_LIMITS),
         toSendLoopCommand({
@@ -77,7 +76,7 @@ function toChurnSenderCommands(sender: AlmConformanceStepInput): readonly Rallar
         {
             ...toObserveCommand({ ...sender, index: 0, state: 'transport-accepted' }),
             commandId: toCommandId(sender, 'observe-last-track'),
-            handleId: `${lastTrack.handleId}-${CHURN_TRACK_COUNT - 1}`
+            handleId: `${toSendHandleId({ ...sender, index: 0 })}-${CHURN_TRACK_COUNT - 1}`
         },
         toResultAssertion({
             step: sender,

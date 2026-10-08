@@ -693,20 +693,24 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         return evicted.length === 0 ? held.length : held.length - await this.removeUnchangedTracks(evicted);
     }
 
+    /** Answers how many of `evicted` the store no longer holds: those it removed and those a rival pass already had. */
     private async removeUnchangedTracks(
         evicted: readonly ALAdmissionBackendEntry<ALOrderingTrackSnapshot>[]
     ): Promise<number> {
         try {
             return await this.backend.write(async (transaction) => {
-                let removed = 0;
+                let gone = 0;
                 for (const track of evicted) {
                     const current = await transaction.read(track.key, decodeALInboundOrderingSnapshot);
-                    if (current !== undefined && jsonEquals(current, track.value)) {
+                    const unchanged = current !== undefined && jsonEquals(current, track.value);
+                    if (unchanged) {
                         await transaction.remove(track.key);
-                        removed += 1;
+                    }
+                    if (unchanged || current === undefined) {
+                        gone += 1;
                     }
                 }
-                return removed;
+                return gone;
             });
         }
         catch (error) {
