@@ -679,7 +679,7 @@ The congestion policy applies to either flag and its drop names the cause
 (D185): an `overloaded` drop stays `capacity`; a backpressure drop is the refusal
 `congested`, a fallback trigger that hands an `rtc-with-ws-fallback` RTC leg to
 WS at admission and otherwise ends the send `rejected` with no attempt.
-`drop-low` drops priority 0 only, `reject` every send and `defer` none; a kept
+`drop-low` drops a priority-0 (or lower) send only, `reject` every send and `defer` none; a kept
 send waits at submission, where backpressure is a `not-ready` retried after
 50 ms on both carriers, so a held send is not acknowledged until its carrier takes it.
 Every decision is a `congestion` diagnostic, and the black-box harness counts

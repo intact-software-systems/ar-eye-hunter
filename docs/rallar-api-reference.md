@@ -734,9 +734,9 @@ returning to empty within the age limit.
 **Congestion.** A send's QoS names a congestion policy and a priority,
 `qos: { congestion: { algo, opts: { priority } } }`: `algo` is `'drop-low'`
 (the default), `'reject'` or `'defer'`, and the priority defaults to 5 for an
-at-least-once send and 0 otherwise. A lane send is at-least-once, and a typed
-channel send is at-least-once under either purpose unless it names
-`reliability: 'best-effort'`. The policy applies only while the carrier reads
+at-least-once send and 0 otherwise. A lane send defaults to at-least-once, and a typed
+channel send is at-least-once under either purpose; either is best-effort only
+when it names `reliability: 'best-effort'`. The policy applies only while the carrier reads
 congestion when it plans one of the session's own new data sends: `overloaded`,
 the session at its count or byte limit (above), or `backpressured` (D184). The
 RTC carrier reads `backpressured` when the reliable channel of every ready next
@@ -750,7 +750,7 @@ an RTC send reads them only as a room send: an RTC unicast (a send naming
 `peerId`) reads neither. Only a send's first plan at admission reads
 `backpressured`: a send already admitted waits at submission instead.
 
-Under `drop-low` only a priority-0 send is dropped, `reject` drops every send
+Under `drop-low` only a send of priority 0 or lower (`priority <= 0`) is dropped, `reject` drops every send
 and `defer` drops none. A drop for `overloaded` is the `capacity` refusal above.
 A drop for backpressure is refused `congested` before any carrier attempt
 (D185); when both hold, `overloaded` names the cause. `congested` is a fallback

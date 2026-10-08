@@ -823,7 +823,7 @@ when the live state is `overloaded` or `backpressured`, and the drop names its c
 drop the `capacity` refusal above; a backpressure drop is the drop code and refusal reason `congested`, which
 `AL_DELIVERY_FALLBACK_REFUSAL_REASONS` lists, so an `rtc-with-ws-fallback` send refused `congested` on RTC is handed
 to WS at admission with a refused RTC attempt row and no `carrierFallback`, and a send with no fallback ends
-`rejected` with `{ kind: 'refused', reason: 'congested' }` and no attempt. `drop-low` drops priority 0 only, `reject`
+`rejected` with `{ kind: 'refused', reason: 'congested' }` and no attempt. `drop-low` drops a priority-0 (or lower) send only, `reject`
 every send, `defer` none; a kept send waits at submission, where backpressure is a `not-ready` on both carriers. Each
 decision is one `congestion` diagnostic, `{ carrier, cause, action, priority, msgId }` with `action` `drop` (the
 outbound admission), `defer` (the submission) or `hand-over` (the browser's message dispatch, which hands a congested

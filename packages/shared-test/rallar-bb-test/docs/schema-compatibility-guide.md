@@ -815,7 +815,8 @@ and no congestion block; a delivery observation named no refusal reason per atte
 
 New shape:
 A transport fault.inject may also name action "backpressure" on either carrier: the carrier reads its channel at its
-high watermark for each matching origination it plans, and each such read consumes one of remaining. A browser
+high watermark for each matching origination it plans and each matching frame it submits, and each such read
+consumes one of remaining. A browser
 agent's stats result carries rallar.congestion { dropped, deferred, handedOver } beside rallar.alm while the page is
 connected, and a delivery observation carries attemptRefusalReasons, the reason of every refused attempt row.
 

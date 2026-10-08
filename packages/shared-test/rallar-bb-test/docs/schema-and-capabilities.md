@@ -649,9 +649,10 @@ a distinct `typeId` to say which occurrence it means. A presence claim settles
 as soon as `count` is reached; `absent: true` holds the full `windowMs` and then
 passes only when fewer than `max(count, 1)` messages arrived.
 
-`fault.inject` schedules a scripted `drop` or `{ delayMs }` for the next
-`remaining` matching frames on the `ws` or `rtc` carrier; `not-ready` (`ws` only)
-answers a matching submission not ready. `backpressure` (either transport carrier)
+`fault.inject` schedules a scripted `drop` for the next `remaining` matching
+frames on the `ws` or `rtc` carrier; `{ delayMs }` and `not-ready` are `ws` only
+(the `rtc` carrier accepts `drop` and `backpressure`), and `not-ready` answers a
+matching submission not ready. `backpressure` (either transport carrier)
 makes the carrier read its channel at its high watermark when it plans a
 matching origination and when it submits a matching frame; each such read
 consumes one of `remaining`. The matcher reads the

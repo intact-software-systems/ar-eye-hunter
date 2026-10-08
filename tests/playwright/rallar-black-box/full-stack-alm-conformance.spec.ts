@@ -110,10 +110,10 @@ const skippedScenarioIds = (process.env.RALLAR_BLACK_BOX_ALM_SKIP ?? '')
 
 const CONFORMANCE_TYPE_ID = 'alm.conformance';
 const CONFORMANCE_DEADLINE_MS = 18_000;
-// Finite carrier ceiling covers the conformance recipes and connection readiness: the next whole minute above the
-// widest cell, rtc-with-ws-fallback in the full scope, measured at 7.0, 7.0 and 7.1 minutes with the fallback family,
-// to which checkpoint-recovery and checkpoint-lag add about 90 s: an estimate, pending the measured full-lane cell.
-const CARRIER_TEST_TIMEOUT_MS = 540_000;
+// Finite carrier ceiling covers the conformance recipes and connection readiness: the next five minutes above the
+// widest carrier, rtc-with-ws-fallback in the full scope, measured at 10.3 minutes once the volatile-bound and
+// congestion cells joined the two-agent family (rtc 8.0, ws 6.7 minutes on the same machine).
+const CARRIER_TEST_TIMEOUT_MS = 900_000;
 
 /**
  * Playwright clears the output root once at the start of a run and deletes each passing test's own
