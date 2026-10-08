@@ -29,10 +29,10 @@ export class ALOutboundSendControls {
     private readonly input: ALOutboundSendControls.Input;
     private readonly sendAbortController = new AbortController();
     /**
-     * Held for the durable lane's row retention, in memory, never persisted (D181): the controls span every
-     * lane, so a durable row first claimed within the hour still completes without sending; one the next owner
-     * drains sends. A read forgets the id it finds expired; an accept sweeps every expired id, as often as the
-     * repository's eviction rate allows.
+     * Held for the durable lane's row retention (`DEFAULT_AL_REPOSITORY_TTL_MS`), in memory, never persisted (D181):
+     * the controls span every lane, so a durable row first claimed within the retention still completes without
+     * sending; one the next owner drains sends. A read forgets the id it finds expired; an accept sweeps every
+     * expired id, as often as the repository's eviction rate allows.
      */
     private readonly cancelledMsgIds = new LatestRepository<string, true>({ ttlMs: DEFAULT_AL_REPOSITORY_TTL_MS });
     /** Held as cancellations are: another carrier's owner took these messages (D56). */

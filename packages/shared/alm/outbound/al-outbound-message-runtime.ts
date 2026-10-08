@@ -526,10 +526,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     /**
-     * Cancels one message for the durable row retention (60 minutes). A message the owner never admitted is still
-     * remembered, so a row later claimed for it completes without sending; a message with a live
-     * attempt has that attempt's transport signal aborted. Idempotent within the retention: only the first
-     * call states the `cancelled` settlement.
+     * Cancels one message for the durable row retention (`DEFAULT_AL_REPOSITORY_TTL_MS`). A message the owner never
+     * admitted is still remembered, so a row later claimed for it completes without sending; a message with a live
+     * attempt has that attempt's transport signal aborted. Idempotent within the retention: only the first call
+     * states the `cancelled` settlement.
      */
     cancel(msgId: string): ALOutboundCancelOutcome {
         const outcome = this.sendControls.cancel(msgId);

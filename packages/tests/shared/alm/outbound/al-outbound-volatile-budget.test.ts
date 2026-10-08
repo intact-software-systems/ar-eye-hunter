@@ -280,7 +280,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
             createOutboundMessage('too-far-ahead', { ttlMs: AL_VOLATILE_SESSION_MAX_AGE_MS + 1_000 })
         );
         const admitted = await runtime.enqueueIfAbsent(
-            createOutboundMessage('at-the-age-bound', { ttlMs: AL_VOLATILE_SESSION_MAX_AGE_MS - 1_000 })
+            createOutboundMessage('inside-the-age-bound', { ttlMs: AL_VOLATILE_SESSION_MAX_AGE_MS - 1_000 })
         );
 
         expect(refused.verdict).toEqual({

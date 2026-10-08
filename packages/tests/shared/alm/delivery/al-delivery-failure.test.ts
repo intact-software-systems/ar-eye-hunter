@@ -290,7 +290,7 @@ describe('the typed failure of a send that ended (D75, C2)', () => {
             const ended = toEnded(settlements);
 
             expect(ended.state).toBe(state);
-            expect(ended.evidence.failure).toEqual(failure);
+            expect(ended.evidence.failure).toStrictEqual(failure);
             expect(ended.evidence.reason).toBe(reason);
         }
     );

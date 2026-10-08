@@ -108,13 +108,21 @@ describe('the per-session volatile budget (D74)', () => {
         expect(budget.tryAdmit(toAdmission('fits', { bytes: 100 })).right?.bytes).toBe(300);
     });
 
-    it('counts one msgId once, however many carriers admit it', () => {
+    it('counts one ordered msgId once, with its bytes and its track, however many carriers admit it', () => {
         const budget = createBudget({ maxAdmissions: 1, maxBytes: 1_000 });
+        const held = { admissions: 1, bytes: 100, oldestAgeMs: 0, tracks: 1 };
 
-        expect(budget.tryAdmit(toAdmission('fallback')).right?.admissions).toBe(1);
+        expect(budget.tryAdmit(toAdmission('fallback', { trackKey: 'track-a' })).right).toEqual(held);
         // The WS leg of an rtc-with-ws-fallback send re-admits the RTC envelope while the bound is full.
-        expect(budget.tryAdmit(toAdmission('fallback')).right?.admissions).toBe(1);
-        expect(budget.record(toAdmission('fallback')).admissions).toBe(1);
+        expect(budget.tryAdmit(toAdmission('fallback', { trackKey: 'track-a' })).right).toEqual(held);
+        // A received copy of the same msgId names no track; it must neither double the bytes nor strand the track.
+        expect(budget.record(toAdmission('fallback'))).toEqual(held);
+        expect(budget.readReport(NOW_MS + 30_000).usage).toEqual({
+            admissions: 0,
+            bytes: 0,
+            oldestAgeMs: 0,
+            tracks: 0
+        });
     });
 
     it('releases each admission at its own deadline, read without a timer', () => {
@@ -247,6 +255,68 @@ describe('the per-session volatile budget (D74)', () => {
 
         expect(budget.record(toAdmission('received', { trackKey: 'their-track' })).tracks).toBe(0);
         expect(budget.tryAdmit(toAdmission('sent', { trackKey: 'my-track' })).right?.tracks).toBe(1);
+    });
+
+    it('keeps a track counted while a later-admitted, earlier-due admission on it is released first', () => {
+        const budget = createBudget({ maxTracks: 1 });
+        budget.tryAdmit(toAdmission('a-late', { trackKey: 'track-a', deadlineAtMs: NOW_MS + 2_000 }));
+        budget.tryAdmit(toAdmission('a-early', { trackKey: 'track-a', deadlineAtMs: NOW_MS + 1_000 }));
+
+        expect(budget.readReport(NOW_MS + 1_000).usage).toEqual({
+            admissions: 1,
+            bytes: 100,
+            oldestAgeMs: 1_000,
+            tracks: 1
+        });
+        expect(budget.tryAdmit(toAdmission('b-1', { trackKey: 'track-b', nowMs: NOW_MS + 1_500 })).left?.limit)
+            .toBe('tracks');
+        expect(budget.tryAdmit(toAdmission('b-2', { trackKey: 'track-b', nowMs: NOW_MS + 2_000 })).right?.tracks)
+            .toBe(1);
+    });
+
+    it('opens 64 tracks under the production limits and refuses the 65th', () => {
+        const budget = createBudget({});
+        for (let track = 1; track <= AL_VOLATILE_SESSION_MAX_TRACKS; track += 1) {
+            expect(budget.tryAdmit(toAdmission(`sent-${track}`, { trackKey: `track-${track}` })).right?.tracks)
+                .toBe(track);
+        }
+
+        expect(budget.tryAdmit(toAdmission('sent-65', { trackKey: 'track-65' })).left).toEqual({
+            limit: 'tracks',
+            usage: { admissions: 64, bytes: 6_400, oldestAgeMs: 0, tracks: 64 },
+            limits: AL_VOLATILE_SESSION_LIMITS
+        });
+    });
+
+    it('names the first bound a send passes in the order age, admissions, bytes, tracks', () => {
+        const tight = { maxAgeMs: 60_000, maxAdmissions: 1, maxBytes: 150, maxTracks: 1 };
+        const lifted = { maxAgeMs: AL_VOLATILE_SESSION_MAX_AGE_MS, maxAdmissions: 10, maxBytes: 1_000, maxTracks: 2 };
+        const readVerdict = (limits: Partial<ALVolatileSessionLimits>) => {
+            const budget = createBudget(limits);
+            budget.tryAdmit(toAdmission('held', { trackKey: 'track-a' }));
+            const passesAllFour = toAdmission('next', { trackKey: 'track-b', deadlineAtMs: NOW_MS + 60_001 });
+            return budget.tryAdmit(passesAllFour).fold((refusal) => refusal.limit, () => 'admitted');
+        };
+
+        expect([
+            readVerdict(tight),
+            readVerdict({ ...tight, maxAgeMs: lifted.maxAgeMs }),
+            readVerdict({ ...tight, maxAgeMs: lifted.maxAgeMs, maxAdmissions: lifted.maxAdmissions }),
+            readVerdict({ ...lifted, maxTracks: tight.maxTracks }),
+            readVerdict(lifted)
+        ]).toEqual(['age', 'admissions', 'bytes', 'tracks', 'admitted']);
+    });
+
+    it('reads no negative age when the clock steps back behind the oldest admission', () => {
+        const budget = createBudget({});
+        budget.tryAdmit(toAdmission('sent'));
+
+        expect(budget.readReport(NOW_MS - 1_000).usage).toEqual({
+            admissions: 1,
+            bytes: 100,
+            oldestAgeMs: 0,
+            tracks: 0
+        });
     });
 
     it('reads the age of the oldest counted admission, and 0 when nothing is counted', () => {

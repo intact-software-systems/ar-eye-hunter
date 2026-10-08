@@ -29,7 +29,7 @@ const ALM_REFUSAL_REASONS: Readonly<Record<ALDeliveryRefusalReason, true>> = {
     'no-leader': true
 };
 
-const ALM_VOLATILE_SESSION_LIMITS: Readonly<Record<ALVolatileSessionLimit, true>> = {
+const ALM_VOLATILE_SESSION_LIMIT_NAMES: Readonly<Record<ALVolatileSessionLimit, true>> = {
     admissions: true,
     bytes: true,
     age: true,
@@ -162,7 +162,7 @@ function decodeAlmRefusedFailure(failure: RallarBlackBoxTestRecord): Either<stri
     if (reason.right !== 'capacity') {
         return Either.ofLeft('failure.limit');
     }
-    return decodeAlmFailureKey(ALM_VOLATILE_SESSION_LIMITS, failure.limit, 'limit')
+    return decodeAlmFailureKey(ALM_VOLATILE_SESSION_LIMIT_NAMES, failure.limit, 'limit')
         .mapRight((limit): ALDeliveryFailure => ({ kind: 'refused', reason: 'capacity', limit }));
 }
 

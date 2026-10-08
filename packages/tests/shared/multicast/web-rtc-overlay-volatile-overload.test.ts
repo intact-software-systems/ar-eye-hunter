@@ -111,8 +111,10 @@ describe('the session volatile bound as the RTC origin\'s overloaded signal (D78
     it('names no limit on that refusal, which congestion made before the session ledger was asked', async () => {
         const fixture = createBoundOriginFixture(true);
 
-        expect((await enqueueAndDrain(fixture.manager, createBestEffortMulticast('shed'))).verdict)
-            .not.toHaveProperty('limit');
+        const verdict = (await enqueueAndDrain(fixture.manager, createBestEffortMulticast('shed'))).verdict;
+
+        expect(verdict).toMatchObject({ kind: 'refused', reason: 'capacity' });
+        expect(verdict).not.toHaveProperty('limit');
     });
 
     it('leaves an at-least-once send to the admission bound: default congestion drops only low priority', async () => {

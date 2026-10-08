@@ -189,7 +189,7 @@ describe('outbound admission verdict', () => {
             options: {}
         });
 
-        expect(computed.verdict).toEqual({
+        expect(computed.verdict).toStrictEqual({
             kind: 'refused',
             reason: 'capacity',
             detail: 'The session is over its volatile bound.'
