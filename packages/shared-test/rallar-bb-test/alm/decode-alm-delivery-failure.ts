@@ -26,7 +26,8 @@ const ALM_REFUSAL_REASONS: Readonly<Record<ALDeliveryRefusalReason, true>> = {
     oversized: true,
     unsupported: true,
     capacity: true,
-    'no-leader': true
+    'no-leader': true,
+    congested: true
 };
 
 const ALM_VOLATILE_SESSION_LIMIT_NAMES: Readonly<Record<ALVolatileSessionLimit, true>> = {

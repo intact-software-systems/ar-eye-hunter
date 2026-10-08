@@ -29,12 +29,14 @@ import type {
     ALOutboundRuntimeDiagnosticsSink
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
+    AL_SUBMISSION_NOT_READY_RETRY_MS,
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
     ALOutboundRepairRequest,
     ALOutboundRepairTrackingPlan,
     ALOutboundRetryTrackingPlan,
     ALOutboundSupersedenceTrackingPlan,
+    toALOutboundCongestionDrop,
     type ALOutboundDropReasonCode
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
@@ -706,6 +708,7 @@ export class WebRtcOverlayMulticastManager {
             return {
                 dropReason: `Skipping planned RTC dispatch: ${plan.handlingPlan.dropReason}`,
                 dropReasonCode: toALOutboundDropReasonCodeFromHandlingPlan(plan.handlingPlan.dropReasonCode),
+                congestionDrop: toALOutboundCongestionDrop(plan.handlingPlan),
                 lane: 'volatile',
                 msg,
                 preparedMessages: []
@@ -804,7 +807,12 @@ export class WebRtcOverlayMulticastManager {
                 ingressPeerId === null &&
                 lifecycle.canonicalMessage.id.senderId === this.connectionService.input.sessionId)
         ) {
-            return { status: 'not-ready', submissionAttempted: false, reason: admission.reason, retryAfterMs: 50 };
+            return {
+                status: 'not-ready',
+                submissionAttempted: false,
+                reason: admission.reason,
+                retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS
+            };
         }
         if (admission.kind === 'unauthorized') {
             return { status: 'no-targets', submissionAttempted: false, reason: admission.reason };
@@ -979,7 +987,7 @@ export class WebRtcOverlayMulticastManager {
     }
 }
 
-/** The five codes shared with inbound handling carry over; an inbound-only code has no outbound route concept. */
+/** The six codes shared with inbound handling carry over; an inbound-only code has no outbound route concept. */
 function toALOutboundDropReasonCodeFromHandlingPlan(
     code: ALMessageDropReasonCode | undefined
 ): ALOutboundDropReasonCode {
@@ -989,6 +997,7 @@ function toALOutboundDropReasonCodeFromHandlingPlan(
         case 'expired':
         case 'not-yet-in-sync':
         case 'unauthorized':
+        case 'congested':
             return code;
         case 'overloaded':
             return 'capacity';

@@ -1,8 +1,9 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
-import type {
-    ALOutboundMessageRuntime,
-    ALOutboundPreparedSendResult,
-    ALOutboundSettledSendResult
+import {
+    AL_SUBMISSION_NOT_READY_RETRY_MS,
+    type ALOutboundMessageRuntime,
+    type ALOutboundPreparedSendResult,
+    type ALOutboundSettledSendResult
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type { QRtcDataChannel } from '../webrtc/qrtc-data-channel.ts';
 import type { WebRtcOverlayMulticastManager } from './web-rtc-overlay-multicast-manager.ts';
@@ -33,7 +34,7 @@ export class RtcOutboundSubmission {
                 status: 'not-ready',
                 submissionAttempted: false,
                 reason: `No RTC channel for peer ${peerId}`,
-                retryAfterMs: 50
+                retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS
             };
         }
 
@@ -43,7 +44,7 @@ export class RtcOutboundSubmission {
                 status: 'not-ready',
                 submissionAttempted: false,
                 reason: `RTC channel for peer ${peerId} is ${health.readyState}`,
-                retryAfterMs: 50
+                retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS
             };
         }
 
@@ -104,14 +105,14 @@ function toALOutboundRtcSettlement(input: ALOutboundRtcSettlementInput): ALOutbo
             status: 'not-ready',
             submissionAttempted,
             reason: 'RTC attempt lease elapsed before native submission.',
-            retryAfterMs: 50
+            retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS
         };
     }
     if (status === 'failed' && submissionAttempted) {
         return { status: 'failed', submissionAttempted, reason, retryAfterMs: 50 };
     }
     if (status === 'dropped' || status === 'closed' || status === 'failed') {
-        return { status: 'not-ready', submissionAttempted, reason, retryAfterMs: 50 };
+        return { status: 'not-ready', submissionAttempted, reason, retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS };
     }
     return { status, submissionAttempted, reason };
 }

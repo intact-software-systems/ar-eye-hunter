@@ -9,6 +9,7 @@ import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-life
 import type {
     ALOutboundEnqueueResult,
     ALOutboundMessageRuntime,
+    ALOutboundRuntimeDiagnosticsEvent,
     ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -50,6 +51,7 @@ export interface RtcOriginOverlayFixture {
     readonly channels: Readonly<Record<string, CapturedChannel>>;
     readonly ready: { peerIds: readonly string[]; };
     readonly settlements: readonly ALDeliverySettlement[];
+    readonly diagnostics: readonly ALOutboundRuntimeDiagnosticsEvent[];
 }
 
 export interface RtcOriginOverlayFixtureInput {
@@ -90,13 +92,14 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         volatileStores: input.volatileStores
     });
     const settlements: ALDeliverySettlement[] = [];
+    const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     const manager = new WebRtcOverlayMulticastManager({
         connectionService: connection,
         groupCache: groups,
         overlayCache: overlays,
         multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),
         qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
-        outboundDiagnostics: undefined,
+        outboundDiagnostics: (event) => diagnostics.push(event),
         outboundSettlements: (settlement) => settlements.push(settlement),
         outboundRuntime: resources,
         circuitBreaker: input.circuitBreaker ?? toCircuitBreaker(),
@@ -104,7 +107,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
     onTestFinished(() => manager.dispose());
-    return { manager, resources, groups, overlays, channels, ready, settlements };
+    return { manager, resources, groups, overlays, channels, ready, settlements, diagnostics };
 }
 
 export function createOriginReceiverMulticast(resourceId: string): ALMessage {

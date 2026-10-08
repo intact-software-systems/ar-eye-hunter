@@ -79,7 +79,7 @@ describe('the declared retryable outcomes (D56)', () => {
 
     it('keeps capacity out of the refusals that hand over: a send over the bound ends rejected (D78, C1)', () => {
         expectTypeOf<Extract<ALDeliveryRefusalReason, 'capacity'>>().toEqualTypeOf<'capacity'>();
-        expect(AL_DELIVERY_FALLBACK_REFUSAL_REASONS).toEqual(['unsupported']);
+        expect(AL_DELIVERY_FALLBACK_REFUSAL_REASONS).toEqual(['unsupported', 'congested']);
     });
 
     it('keeps a claim held by another session out of the hand-over: the server decided, the carrier did not fail', () => {
@@ -103,6 +103,7 @@ describe('the declared retryable outcomes (D56)', () => {
             [{ kind: 'unroutable', reason: 'circuit-open', detail: 'open' }, true],
             [{ kind: 'unroutable', reason: 'rate-limited', detail: 'limited' }, true],
             [{ kind: 'refused', reason: 'unsupported', detail: 'receiver over rtc' }, true],
+            [{ kind: 'refused', reason: 'congested', detail: 'carrier backpressure' }, true],
             [{ kind: 'refused', reason: 'unauthorized', detail: 'denied' }, false],
             [{ kind: 'refused', reason: 'capacity', detail: 'over the volatile bound' }, false],
             [{ kind: 'admitted', durable: false, queuedAttempts: 1 }, false],

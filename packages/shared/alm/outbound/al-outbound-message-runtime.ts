@@ -2,6 +2,8 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../al-contracts/al-control.ts';
 import type {
     ALAckAlgo,
+    ALCongestionCause,
+    ALMessageHandlingPlan,
     ALReceiptMode,
     ALRepairAlgo,
     ALSupersedenceAlgo
@@ -67,6 +69,9 @@ export type ALOutboundDequeueAuthorityReader = (
     message: ALMessage,
     entry: ResourceEntry
 ) => Promise<ALOutboundDequeueAuthority | undefined>;
+
+/** The delay a carrier names on a `not-ready` submission, on both carriers: a full channel or socket may drain within it (D185). */
+export const AL_SUBMISSION_NOT_READY_RETRY_MS = 50;
 
 export interface ALOutboundSettledSendResult {
     readonly status: 'sent' | 'no-targets' | 'not-ready' | 'failed' | 'cancelled' | 'expired' | 'superseded';
@@ -143,6 +148,7 @@ export type ALOutboundDropReasonCode =
     | 'unauthorized'
     | 'unsupported'
     | 'capacity'
+    | 'congested'
     | 'no-leader'
     | 'not-yet-in-sync'
     | 'no-route'
@@ -158,6 +164,8 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly dropReasonCode: ALOutboundDropReasonCode | undefined;
     /** The session volatile bound a `capacity` drop passed (D179); absent on a congestion drop the planner made. */
     readonly capacityLimit?: ALVolatileSessionLimit;
+    /** The congestion decision behind a `capacity` or `congested` drop the planner made (D186); absent on every other plan. */
+    readonly congestionDrop?: ALOutboundCongestionDrop;
     /** The store lane the admission runs in: the message's durability, or `volatile` for a dropping plan. */
     readonly lane: ALStoreDurability;
     readonly preparedMessages: readonly TPrepared[];
@@ -211,6 +219,54 @@ export interface ALVolatileOutboundRuntimeStores<TPrepared> extends ALOutboundRu
 export interface ALCheckpointOutboundRuntimeStores<TPrepared> extends ALOutboundRuntimeStores<TPrepared> {
     evictExpired(): void;
     readonly checkpoint: ALCheckpointPort;
+}
+
+/** The congestion decision behind a drop: its cause and the message's priority (D186). */
+export interface ALOutboundCongestionDrop {
+    readonly cause: ALCongestionCause;
+    readonly priority: number;
+}
+
+/**
+ * One congestion decision on this session's own send (D186): `drop` at its admission, `defer` at a submission its
+ * channel or socket could not take, `hand-over` by a fallback strategy that moved a congested leg to its other carrier.
+ */
+export interface ALOutboundCongestionDiagnostic {
+    readonly kind: 'congestion';
+    readonly carrier: ALDeliveryCarrier;
+    readonly cause: ALCongestionCause;
+    readonly action: 'drop' | 'defer' | 'hand-over';
+    readonly priority: number;
+    readonly msgId: string;
+}
+
+/** The congestion decisions of one session, counted from its `congestion` diagnostics by action (D186). */
+export interface ALCongestionCounters {
+    readonly dropped: number;
+    readonly deferred: number;
+    readonly handedOver: number;
+}
+
+/** The congestion decision behind a handling plan's `overloaded` or `congested` drop; `undefined` for every other plan. */
+export function toALOutboundCongestionDrop(
+    plan: Pick<ALMessageHandlingPlan, 'dropReasonCode' | 'congestion'>
+): ALOutboundCongestionDrop | undefined {
+    const { cause, priority } = plan.congestion;
+    const congestionDropped = plan.dropReasonCode === 'overloaded' || plan.dropReasonCode === 'congested';
+    return congestionDropped && cause !== undefined ? { cause, priority } : undefined;
+}
+
+/** A throwing sink changes no admission, submission or hand-over: the decision is already made. */
+export function writeALOutboundCongestionDiagnostic(
+    diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined,
+    decision: ALOutboundCongestionDiagnostic
+): void {
+    try {
+        diagnostics?.(decision);
+    }
+    catch (error) {
+        console.error('AL outbound runtime diagnostics sink failed', error);
+    }
 }
 
 /** The call path that asked for a commit, so its wait and its hold are charged to the work behind it. */
@@ -297,7 +353,8 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         readyAtMs: number | 'none';
         /** What that storage read cost: the page read the batch behind a "due now" answer then reuses. */
         durationMs: number;
-    }>;
+    }>
+    | ALOutboundCongestionDiagnostic;
 
 export type ALOutboundRuntimeDiagnosticsSink = (
     event: ALOutboundRuntimeDiagnosticsEvent
@@ -647,8 +704,9 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     /**
-     * Plans the message once, for the lane its plan names. A planner that throws is left to the durable
-     * lane's admission, which plans it again and states that failure where a single send always has.
+     * Plans the message once, for the lane its plan names, and states a congestion drop of that plan. A planner
+     * that throws is left to the durable lane's admission, which plans it again and states that failure where a
+     * single send always has.
      */
     private planAdmission(msg: ALMessage): ALOutboundPlannedAdmission<TPrepared> {
         const planOutgoingMessage = this.dependencies.planOutgoingMessage;
@@ -658,6 +716,16 @@ export class ALOutboundMessageRuntime<TPrepared> {
         }
         catch {
             return { lane: this.durable, planner: planOutgoingMessage };
+        }
+        if (plan.congestionDrop !== undefined) {
+            writeALOutboundCongestionDiagnostic(this.dependencies.diagnostics, {
+                kind: 'congestion',
+                carrier: this.dependencies.carrier,
+                cause: plan.congestionDrop.cause,
+                action: 'drop',
+                priority: plan.congestionDrop.priority,
+                msgId: msg.id.msgId
+            });
         }
         const lane = this.resolveLaneForPlan(plan);
         const bounded = lane === this.volatile

@@ -18,9 +18,13 @@ export const AL_DELIVERY_FALLBACK_UNROUTABLE_REASONS: readonly ALDeliveryUnrouta
     'rate-limited'
 ];
 
-/** The refusals that do the same: a carrier that cannot honour the ack algorithm keeps the algorithm, not the carrier (D42). */
+/**
+ * The refusals that do the same: a carrier that cannot honour the ack algorithm keeps the algorithm, not the carrier
+ * (D42); a carrier whose channel is congested hands the send to the other one (D185).
+ */
 export const AL_DELIVERY_FALLBACK_REFUSAL_REASONS: readonly ALDeliveryRefusalReason[] = [
-    'unsupported'
+    'unsupported',
+    'congested'
 ];
 
 export interface ResolveALDeliveryFallbackTriggerInput {

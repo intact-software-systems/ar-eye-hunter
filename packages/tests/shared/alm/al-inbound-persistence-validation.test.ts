@@ -442,6 +442,7 @@ describe('inbound admission persisted values', () => {
         { repair: { enabled: true, algo: 'unknown' } },
         { supersedence: { enabled: true, algo: 'latest-wins', status: 'unknown' } },
         { congestion: { overloaded: false, action: 'none', priority: Number.NaN } },
+        { congestion: { overloaded: true, action: 'drop-low', priority: 0, cause: 'busy' } },
         { ownership: { algo: 'shared', exclusive: 1 } },
         { orderingRuntime: { status: 'gap', missingRanges: [{ from: 1, to: 1 }], releasableSeqs: ['2'] } }
     ])('rejects malformed persisted handling-plan sections before buffered release', async (corruption) => {
