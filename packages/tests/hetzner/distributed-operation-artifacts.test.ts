@@ -10,8 +10,14 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
 import type { TestContext } from 'vitest';
+
 import { writeDistributedRunArtifactAnalysis } from '../../../apps/rallar-black-box/scripts/write-distributed-run-artifact-analysis.ts';
 import operationReportSchema from '../../../scripts/hosted-rallar/actions/hetzner-operation-report.schema.json' with { type: 'json' };
 import {
@@ -60,83 +66,6 @@ const operationEffectiveGroupRef = {
 const healthManifestPath = 'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json';
 
 const distributedRunnerWorkflowPath = '.github/workflows/hetzner-distributed-recipe-runner.yml';
-
-const atomicSnapshotProgram = `
-import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
-import { createControlSnapshotPersistence } from ${
-    JSON.stringify(pathToFileURL(path.join(repoRoot, 'apps/rallar-black-box-control-server/src/control-snapshot-persistence.ts')).href)
-};
-const directory = Deno.args[0];
-const finalPath = directory + '/control-snapshot.json';
-const priorText = JSON.stringify({ schemaVersion: 1, savedAtEpochMs: 1, snapshot: { runs: [], distributedRuns: [], fleetReports: [] } });
-const snapshot: ControlServerSnapshot = {
-    runs: [{ runId: 'replacement-run', createdAtEpochMs: 10, updatedAtEpochMs: 20,
-        agents: [], commands: [], results: [], events: [], stats: [], reports: [], heartbeats: [] }],
-    distributedRuns: [], fleetReports: []
-};
-let restoredSnapshot: ControlServerSnapshot | undefined;
-const controlService = {
-    applyRunRetention: () => [],
-    snapshotForPersistence: () => snapshot,
-    restoreSnapshot: (value: ControlServerSnapshot) => { restoredSnapshot = value; }
-};
-const persistence = createControlSnapshotPersistence({
-    storageDir: directory, retentionMaxRuns: 50, snapshotBounds: {}, controlService, deleteRuns: () => undefined
-});
-const rename = Deno.rename;
-const warn = console.warn;
-const log = console.log;
-let rejectRename = true;
-let failedWarning = '';
-let attemptedText = '';
-Deno.rename = async (source, destination) => {
-    if (rejectRename) {
-        attemptedText = await Deno.readTextFile(source);
-        throw new Error('controlled snapshot rename refusal');
-    }
-    return rename(source, destination);
-};
-console.warn = (message: string) => { failedWarning = message; };
-console.log = () => undefined;
-try {
-    await Deno.writeTextFile(finalPath, priorText);
-    persistence.persist();
-    await waitFor(async () => failedWarning.length > 0);
-    const afterFailureText = await Deno.readTextFile(finalPath);
-    await waitFor(async () => (await fileNames()).length === 2);
-    rejectRename = false;
-    persistence.persist();
-    await waitFor(async () => (await Deno.readTextFile(finalPath)) !== priorText);
-    const replacementText = await Deno.readTextFile(finalPath);
-    await persistence.restore();
-    const attempted: unknown = JSON.parse(attemptedText);
-    const replacement: unknown = JSON.parse(replacementText);
-    if (!isJsonRecordValue(attempted) || !isJsonRecordValue(replacement)) {
-        throw new Error('Persistence must emit snapshot envelopes.');
-    }
-    log(JSON.stringify({ priorText, afterFailureText, attemptedSnapshot: attempted.snapshot,
-        replacementSnapshot: replacement.snapshot, restoredSnapshot, remainingFiles: await fileNames(), failedWarning }));
-}
-finally {
-    Deno.rename = rename;
-    console.warn = warn;
-    console.log = log;
-}
-async function fileNames(): Promise<string[]> {
-    const names: string[] = [];
-    for await (const entry of Deno.readDir(directory)) names.push(entry.name);
-    return names.sort();
-}
-async function waitFor(predicate: () => Promise<boolean>): Promise<void> {
-    const deadline = Date.now() + 1_000;
-    while (Date.now() < deadline) {
-        if (await predicate()) return;
-        await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    throw new Error('Native snapshot effect did not settle within the 1s observation budget.');
-}
-`;
 
 async function writeControlPostFailureCurl(directory: string): Promise<void> {
     const curlPath = path.join(directory, 'curl');
@@ -576,14 +505,25 @@ describe('Hetzner artifacts contracts and effects', () => {
         const storageDirectory = path.join(directory, 'snapshots');
         await mkdir(storageDirectory);
         const scriptPath = path.join(storageDirectory, 'atomic-snapshot.ts');
-        await writeFile(scriptPath, atomicSnapshotProgram);
+        await writeFile(
+            scriptPath,
+            `import { runControlSnapshotAtomicReplacementFixture } from ${
+                JSON.stringify(
+                    pathToFileURL(path.join(
+                        repoRoot,
+                        'apps/rallar-black-box-control-server/test/support/run-control-snapshot-atomic-replacement-fixture.ts'
+                    )).href
+                )
+            };
+await runControlSnapshotAtomicReplacementFixture(Deno.args[0]);
+`
+        );
         const { stdout } = await runOwnedTestProcess(context, {
             executable: 'deno',
             args: [
                 'run',
                 '--cached-only',
                 '--node-modules-dir=manual',
-                '--check',
                 '--no-lock',
                 '--allow-read',
                 '--allow-write',

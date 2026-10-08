@@ -21,27 +21,43 @@ source, environment, exact attempts, raw samples, and checksums. Tooling is
 implemented; capture and ranking acceptance remain separate outcomes.
 
 **Current checkpoint, 2026-10-08:** Manual readiness, actual native Copy/repeat,
-and the reviewed materializer correction are published in PR645. The correction
-preserves authored capture and unrelated strings while translating executable
-scope; one shared boundary owns child cancellation and physical cleanup.
+and the reviewed materializer and README-fixture corrections are published in
+PR645. The materializer preserves authored capture and unrelated strings while
+translating executable scope; one existing test-process owner joins cancellation
+and physical cleanup.
 
-Fresh source CI completes the selected correctness/static lanes except tooling:
-two assertions identify the moved README fixture's stale owner, and the native
-atomic-snapshot case exceeds its existing 5000ms budget. The exact fixture-owner
-correction has semantic RED (two failures/eight controls), GREEN (all 10 cases),
-and independent SPEC/QUALITY approval. The original failed hosted run remains
-retained. Local alternating measurements attribute almost all native-case time
-to cold graph/type checking before filesystem effects; the remote deadline phase
-was not directly observed. The proposed compile/execution separation must retain
-the actual typed fixture, native effects, owned artifacts and every assertion.
-No timeout, retry, workload or cache-warmup change is selected.
+Fresh hosted source correctness at `4c6d03` confirms the README fixture correction:
+1516 tooling tests pass and only the native atomic-snapshot case exceeds its
+unchanged 5000 ms budget. Every other selected correctness/static lane, Formation
+and Medium succeeds; RTC observation integrity is skipped. Both original hosted
+timeouts remain retained. Local alternating measurements identify cold graph/type
+checking as the dominant local cost; the remote deadline phase remains unobserved.
 
-PR633 has nine conflicts against newly fetched current main. A repair on its feature branch
-is locally validated and awaits independent review/publication. The old
-exact integration proposal is stale. Complete source correctness and the parent
-repair before broad integration validation, then complete HOST/operator RUN
-forwarding and actual application through existing workers and Actions. Governed
-E3 still has zero accepted cohorts; no default-branch operation is selected.
+The bounded correction now has one directly typed native fixture selected by the
+existing recursive app check, and the timed case executes its tiny owned launcher.
+Its original assertions, artifact files, fresh cache, permissions and 5000 ms budget
+are preserved. Local 18 runtime/lifecycle and 88 disposition controls pass; native
+checking and a mandatory-field negative type oracle remain meaningful. Scoped Node
+typing still reports only the unchanged external Temporal declaration mismatch.
+Independent SPEC and complete QUALITY approve the corrected source after
+precisely bound import-only closure. Full hosted default-concurrency acceptance is pending.
+No timeout, retry, workload, cache warmup or worker-limit change is selected.
+
+PR633's nine real conflicts with pinned main `09a3b431` are independently reviewed,
+locally validated and published in feature merge `e71db5f0a`,
+tree `12d5caa36e6d1fb577fd21143c0de0501d38506b`. GitHub reports PR633 MERGEABLE;
+fresh hosted correctness and GitHub review remain pending. The repair preserves
+canonical current routing/volatile bounds and capture/admission/lifetime paths.
+Publishing that parent exposes an actual conflict in the stacked continuation
+PR645. The next two concrete slices are to publish the reviewed native correction,
+then repair that actual child conflict while preserving both branches' contracts.
+
+After source correctness and integration, complete HOST/operator RUN forwarding
+and actual application through existing workers and Actions. The former exact
+integration proposal is stale; no default-branch operation is selected. Governed
+E3 still has zero accepted cohorts. Its unchanged protocol is three warmups plus
+11 retained primary attempts, 100 retention cycles and zero retries; the conditional
+repeat remains three warmups plus 22 attempts. All failed attempts remain retained.
 
 **Tech Stack:** TypeScript, Deno, Vitest, Node.js, Playwright Chromium, Git,
 GitHub Actions, ignored evidence under `tmp/perf/`, and immutable observation ZIPs.

@@ -5,6 +5,14 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Actual attempted/replacement snapshot envelopes are record-guarded before
+    // their snapshot values are emitted only as opaque assertion evidence. The
+    // caller independently checks complete DTOs; no raw value feeds domain logic.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/test/support/run-control-snapshot-atomic-replacement-fixture.ts',
+        rule: 'boundary.unknown',
+        symbol: 'runControlSnapshotAtomicReplacementFixture'
+    }),
     // The native execFile rejection is immediately narrowed for captured stdout;
     // every other rejection is normalized through canonical toError, preserving
     // Error identity. No rejected value becomes trusted state or process input.
