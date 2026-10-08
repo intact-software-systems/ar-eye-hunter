@@ -40,8 +40,10 @@ are preserved. Local 18 runtime/lifecycle and 88 disposition controls pass; nati
 checking and a mandatory-field negative type oracle remain meaningful. Scoped Node
 typing still reports only the unchanged external Temporal declaration mismatch.
 Independent SPEC and complete QUALITY approve the corrected source after
-precisely bound import-only closure. It is published at `6711b160`;
-full hosted default-concurrency acceptance is pending.
+precisely bound import-only closure. It is published at `6711b160`. Fresh hosted
+validation at `de77443ee` passes all 115 tooling files and 1517 cases; the native
+atomic-snapshot case takes 525 ms within its unchanged 5000 ms budget. This closes
+that hosted timing gate; actual worker application and E3 remain separate outcomes.
 No timeout, retry, workload, cache warmup or worker-limit change is selected.
 
 PR633's nine real conflicts with pinned main `09a3b431` are independently reviewed,
@@ -57,7 +59,8 @@ The proposed structured admission-kind/scenario match awaits bounded design appr
 deadlines, both carrier orders and independent outcome assertions remain required.
 
 The stacked PR645's six conflicts are resolved in a reviewed seven-owner repair,
-published at `de77443ee`; GitHub reports it MERGEABLE and fresh validation runs.
+published at `de77443ee`; GitHub reports it MERGEABLE. Fresh Branch validation
+retains the selector failure and the original aggregate style adversity described below.
 Its integration preserves canonical routing/volatile bounds, HOST capture and
 mandatory/default input factories. Semantic TDD catches a delayed page-ledger read
 writing into a successor assignment; the correction fences writes after the await.
@@ -85,9 +88,30 @@ unchanged. Independent SPEC and original QUALITY approve the bounded correction.
 The corrected actual-parent working-tree gate and all 88 maintained disposition
 controls pass; sensitivity still rejects 110 and wrong-owner findings. Executable
 owners remain byte-identical. No arbitrary split or new standards exception is selected.
-The next two useful slices are to correct the parent evidence selector after
-design approval and semantic TDD, then complete the approved worker/Actions intent
-forwarding and actual default headless application witness.
+The exact review-record correction is published at `be076354`; fresh Branch
+validation now passes static, tooling and every other selected correctness lane.
+Unit retains only the known selector assertion: 14342 cases pass, one fails and
+12 skip. RTC observation integrity and publication remain skipped. No all-green
+source or E3 claim follows from these results.
+
+The actual default headless worker witness is under semantic test development.
+Three distinct attempts remain retained: missing database configuration; restore
+Configure before authentication; then an isolated-database run with genuine
+authentication whose extra full replacement Configure removes launch HOST before
+SDK construction. The last Connect preserves its issued session but correctly
+reports Signaling/product-default after that replacement. This is an introduced
+test-composition failure, not an established production capture defect. The approved
+Configure replacement semantics remain authoritative. The test-only correction
+removes the redundant replacement and reuses one room creation followed by both
+canonical member additions; capture stays supplied only through the actual worker
+environment/query/bootstrap. Native receipt, matching current initialized scope,
+exact scoped RTC delivery, independent Off facts and stable issued sessions still
+require actual acceptance. No production repair is selected from these failures.
+
+The next two useful slices are to close this actual HOST witness, then complete
+the approved operator RUN/Actions forwarding and adapter application. The parent
+evidence selector correction separately awaits its bounded design answer and
+semantic TDD; its deadlines and independent outcome assertions stay unchanged.
 
 After source correctness and integration, complete HOST/operator RUN forwarding
 and actual application through existing workers and Actions. The former exact
