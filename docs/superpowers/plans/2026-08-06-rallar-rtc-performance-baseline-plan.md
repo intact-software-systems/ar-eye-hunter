@@ -264,6 +264,20 @@ every prior disposition and matcher remains unchanged. All 99 focused cases and 
 disposition controls pass with no skips. The original failed gate remains retained; no real
 standards violation, threshold relaxation or legacy-retention exception is authorized.
 
+The Manual slice is published at `f89a666d`, followed by its reviewed result-contract
+and JSON-boundary correction at `4147728a6`. Fresh original-attempt
+[Branch37747984192](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37747984192),
+[Formation37747983962](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37747983962)
+and [Medium37747983933](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37747983933)
+pass. Eight original archive digests, the canonical published receipt and18 checkout
+proofs bind the exact reviewed tree87604549; synthetic mergeba82bad0 has ordered
+parents979edba8/4147728a6 and the same tree. Executed selection is broad with reuse=false.
+Unit results are14,180 passed/12 skipped; app-browser results are48 passed/69 skipped,
+then7 memory full-stack passes. Hosted Native refusal, delivery and Manual capture cases
+remain skipped, as does RTC integrity. This accepts current hosted correctness for the
+Manual source, without inheriting acceptance to the separately changing browser witness,
+live worker/Actions application, B01–B06 or E3.
+
 The preceding envelope checkpoint consolidates ordinary and distributed artifact validation
 in one shared-test incoming schema owner. Mandatory identity, finite version/time and required
 string files, plus supplied optional distributed files, are validated at admission. Existing
@@ -286,8 +300,8 @@ Actual hosted native/refusal/Manual cases and RTC integrity are skipped. This ac
 carrier slice and its stated local boundaries; real launched-worker/Actions/native and
 B01–B06/E3 acceptance remain open.
 
-The next two useful outcomes are actual browser Manual readiness/Copy and ordinary same-session
-Local repeat, then existing worker/Actions propagation. Copy uses the same payload and sessions,
+Actual browser Manual readiness/Copy and ordinary same-session Local repeat now have
+independent acceptance below. Copy uses the same payload and sessions,
 retained native receive objects, successful canonical Close, actual old-target
 closure and distinct open receiving targets within unchanged budgets. Its first database
 configuration failure and subsequent test-construction failures are retained; none is product
@@ -298,16 +312,51 @@ The executed Copy fixture now reaches a genuine Manual native receive and observ
 original channel close. Test-first correction of the existing login helper preserves authored
 leaveRoomOnClose:false, room membership and both auth sessions. The unchanged test verifies
 that correction, then its first copied Local Send still fails RALLAR_BB_RTC_NO_PEERS.
-Full copied delivery remains RED. Connect returns with no ready peers; the copied command
-has no authored readiness. The exact Send-side room snapshot/layout subreason is unobserved,
+That original copied-delivery attempt remains adverse evidence. Connect returned with no
+ready peers; the copied command had no authored readiness. The exact Send-side room snapshot/layout subreason is unobserved,
 so this does not establish an enduring SDK or transport defect.
 
-Local JSON and the current Manual source now both author canonical rtc.connect.readiness.
-Local execution still does not enter Manual's separate Copy history. Publish the reviewed
-Manual source checkpoint, then operate its visible editor in the actual
-native Copy/repeat witness. Preserve omitted readiness and submitted history; reuse the
-existing bounded readiness contract. Add no implicit SDK wait, copied-text edit, new retry,
-timeout expansion or readiness policy.
+Local JSON and the published Manual source both author canonical rtc.connect.readiness.
+Local execution still does not enter Manual's separate Copy history. The real-browser
+checkpoint operates the visible editor and retains omitted readiness in previously
+submitted history; it reuses the existing bounded readiness contract. No implicit SDK
+wait, copied-text edit, new retry, timeout expansion or readiness policy is added.
+
+**Independently accepted browser checkpoint:** Actual Copy/repeat passes one maintained
+Postgres case in19.4s with workers1/retries0. It copies complete authored history once,
+then runs those unchanged bytes twice with identical payload and auth sessions. Canonical
+Close preserves membership/auth and retires the original receive target. Genuine native
+callbacks receive the literal payload on targets0/1/2, each open at callback; preceding
+targets are closed before each repeated run. Five retained original/attached files are
+checksum-bound to the exact executed source. This proves the fixture's fresh channel
+delivery, without a universal drain, exactly-once or omission-readiness guarantee.
+
+The existing capture/export/reload/reset case passes one maintained case in14.4s on the
+same source. Both original single-browser Connects keep blank readiness; later valid and
+malformed raw edits survive reload, preserve submitted history, refuse Connect-producing
+actions and clear on Reset. Send/NACK remain independent. Its background403 diagnostics
+remain retained; no service-health or performance claim follows. The preceding attempt08
+stopped at expected JSON property order after genuine baseline delivery; its original
+failure is preserved separately from successful09. Original07 remains unchanged.
+
+Independent SPEC/TDD then separate QUALITY approve the complete browser owner. All49
+executed/frozen/current inputs match; all eight published cases and their original
+assertions survive. Focused typing, formatting and coupling pass; current-parent
+WORKTREE style passes. The test owns actual native references and finalization through
+the existing receiver scope, preserving every evidence/cleanup failure. No production,
+SDK, CRDT, protocol, policy, environment-file or database change is selected. Worker,
+Actions, distributed, B01–B06/E3 acceptance and the original post-ICE cause remain open.
+
+The next two useful slices are full valid-manifest materialization preserving literal
+capture modes under colliding room identities, then existing HOST/operator RUN forwarding
+and application through workers/Actions. The refreshed audit finds64 of67 earlier inputs
+unchanged; only plan/progress context and the separately accepted browser helper changed.
+Controller09 still drops HOST input, general operator adapters still omit finite RUN
+choice, and generic room replacement still reaches capture literals. Witness each real
+boundary's semantic RED before selecting its minimum correction. Keep existing scope,
+canonical precedence, omission and fixture-isolation semantics; use existing commands
+and owned effects without adding a policy/store/harness or silently expanding workflow
+input contracts. Publish each coherent reviewed slice promptly.
 The helper's canonical snapshot/auth/artifact boundary closure is now independently approved.
 No duplicate permissive contract or compatibility path is retained.
 

@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test, type JSHandle } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,6 +9,8 @@ import type {
     RallarBlackBoxTestResult
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { decodeNonBlankText, decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import type { RallarRealtimeMessage } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 import { validateSchemaAuthoringText } from '../../../apps/rallar-black-box/src/schema-authoring.ts';
 import {
@@ -17,10 +19,34 @@ import {
     expectNoSecrets,
     loginUser,
     openTab,
+    readBrowserAuthSession,
     readExhaustivePostgresConfig,
     runWithRallarReceiverPage,
     uniqueGroupId
 } from './full-stack-helpers.ts';
+
+interface CopyRepeatPayload {
+    readonly topic: string;
+    readonly marker: string;
+    readonly value: number;
+    readonly roomRef: GroupRef;
+}
+
+interface NativeReceiveRecord {
+    readonly peerId: string;
+    readonly laneId: string;
+    readonly data: CopyRepeatPayload;
+    readonly nativeMessageEvent: boolean;
+    readonly nativeTarget: boolean;
+    readonly targetIndex: number;
+    readonly readyStateAtCallback: string;
+}
+
+interface NativeReceiveObserver {
+    readonly records: NativeReceiveRecord[];
+    readonly targets: RTCDataChannel[];
+    unsubscribe(): void;
+}
 
 const config = readExhaustivePostgresConfig();
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -811,6 +837,495 @@ test.describe('exhaustive runner workbench tabs', () => {
         });
     });
 
+    test('copies complete Manual history and repeats Local native delivery on new receive channels', async ({
+        page,
+        context,
+        browser,
+        request
+    }, testInfo) => {
+        await expectFullStackApiReady(request, config);
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        const groupId = uniqueGroupId(testInfo);
+        const roomRef = { applicationId: config.applicationId, workspaceId: config.workspaceId, groupId };
+        const scope = { applicationId: config.applicationId, workspaceId: config.workspaceId };
+        const expectedPayload = { topic: 'local.copy.repeat', marker: 'actual-copy-repeat', value: 61, roomRef };
+        const connection = `${groupId}-copy-sender`;
+        const moduleUrl = `/@fs${path.join(REPO_ROOT, 'packages/shared-web/browser/rallar.ts')}`;
+        let retainedObserver: JSHandle<NativeReceiveObserver> | undefined;
+        await runWithRallarReceiverPage({
+            browser,
+            sender: page,
+            run: async (receiver) => {
+                const receiverSession = await loginUser({
+                    page: receiver,
+                    config,
+                    user: config.userB,
+                    groupId,
+                    sessionId: `${groupId}-receiver-session`,
+                    tab: 'manual-rallar',
+                    workspace: 'black-box-runner'
+                });
+                const created = await receiver.evaluate(async ({ moduleUrl, apiBaseUrl, roomRef }) => {
+                    const { rallar } = await import(moduleUrl);
+                    rallar.configure({ apiBaseUrl });
+                    rallar.setDefaults({ applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId });
+                    await rallar.connect({ timeoutMs: 5_000 });
+                    const snapshot = await rallar.rooms.create({
+                        groupId: roomRef.groupId,
+                        displayName: roomRef.groupId,
+                        joinMode: 'open',
+                        timeoutMs: 5_000
+                    });
+                    return {
+                        roomRef: rallar.rooms.state().currentRoomRef,
+                        sessionId: rallar.session()?.sessionId,
+                        activeSessionIds: snapshot.activeSessions.map((entry: { sessionId: string; }) =>
+                            entry.sessionId
+                        )
+                    };
+                }, { moduleUrl, apiBaseUrl: config.apiBaseUrl, roomRef });
+                expect(created).toMatchObject({
+                    roomRef,
+                    sessionId: receiverSession.sessionId,
+                    activeSessionIds: [receiverSession.sessionId]
+                });
+
+                const observer = await receiver.evaluateHandle(async (moduleUrl) => {
+                    const { rallar } = await import(moduleUrl);
+                    const records: NativeReceiveRecord[] = [];
+                    const targets: RTCDataChannel[] = [];
+                    const unsubscribe = rallar.realtime.onJson(
+                        'realtime',
+                        (message: RallarRealtimeMessage<CopyRepeatPayload>) => {
+                            const target = message.event.target;
+                            const nativeTarget = target instanceof RTCDataChannel;
+                            if (nativeTarget && !targets.includes(target)) {
+                                targets.push(target);
+                            }
+                            records.push({
+                                peerId: message.peerId,
+                                laneId: message.laneId,
+                                data: message.data,
+                                nativeMessageEvent: message.event instanceof MessageEvent,
+                                nativeTarget,
+                                targetIndex: nativeTarget ? targets.indexOf(target) : -1,
+                                readyStateAtCallback: nativeTarget ? target.readyState : 'unavailable'
+                            });
+                        }
+                    );
+                    return { records, targets, unsubscribe };
+                }, moduleUrl);
+
+                retainedObserver = observer;
+                const senderSession = await loginUser({
+                    page,
+                    config,
+                    user: config.userA,
+                    groupId,
+                    sessionId: `${groupId}-sender-session`,
+                    tab: 'manual-rallar',
+                    workspace: 'black-box-runner',
+                    rallarLeaveRoomOnClose: false
+                });
+                expect(senderSession.sessionId).not.toBe(receiverSession.sessionId);
+                const manual = page.locator('#panel-manual-rallar');
+                for (
+                    const [label, value] of [
+                        ['Environment', 'actual-copy-repeat'],
+                        ['API Base URL', config.apiBaseUrl],
+                        ['Application', config.applicationId],
+                        ['Workspace', config.workspaceId],
+                        ['Group', groupId],
+                        ['Actor', senderSession.clientId],
+                        ['Session', senderSession.sessionId],
+                        ['Connection', connection],
+                        ['Target Client', receiverSession.sessionId],
+                        ['Scope JSON', JSON.stringify(scope)],
+                        ['Room Ref JSON', JSON.stringify(roomRef)],
+                        ['Min Snapshot', '0'],
+                        ['Timeout', '5000'],
+                        ['Topic', 'local.copy.repeat']
+                    ]
+                ) {
+                    await manual.getByLabel(label, { exact: true }).fill(value);
+                }
+                await manual.getByRole('combobox', { name: 'Transport', exact: true }).selectOption('realtime');
+                await manual.getByRole('textbox', { name: 'RTC readiness JSON', exact: true })
+                    .fill('{"minReadyPeers":1,"timeoutMs":5000,"intervalMs":100}');
+                await manual.getByRole('group', { name: 'Delivery mode', exact: true })
+                    .getByRole('button', { name: 'direct', exact: true }).click();
+                await manual.getByRole('combobox', { name: 'RTC capture', exact: true }).selectOption('off');
+                await manual.getByRole('textbox', { name: 'Payload JSON', exact: true }).fill(
+                    JSON.stringify(expectedPayload)
+                );
+                for (
+                    const [action, kind, commandId] of [
+                        ['Configure group', 'configure', 'manual-configure-1'],
+                        ['Connect', 'rtc.connect', 'manual-rtc-connect-3'],
+                        ['Send payload', 'rtc.send', 'manual-rtc-send-direct-5']
+                    ]
+                ) {
+                    await manual.getByRole('button', { name: action, exact: true }).click();
+                    await expect(manual.getByRole('button', { name: action, exact: true })).toBeEnabled();
+                    await expect.poll(() =>
+                        page.evaluate(async () => {
+                            const modulePath = '/src/runtime-store.ts';
+                            const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                            return rallarBlackBoxRuntimeStore.getSnapshot().state.commandHistory.at(-1);
+                        })
+                    ).toMatchObject({
+                        commandId,
+                        kind,
+                        ok: true,
+                        status: 'ok',
+                        ...(kind === 'configure'
+                            ? { value: { config: { rallar: { leaveRoomOnClose: false } } } }
+                            : {})
+                    });
+                }
+                await expect.poll(() => observer.evaluate(({ records }) => records), {
+                    timeout: 5_000,
+                    intervals: [100]
+                }).toEqual(expect.arrayContaining([expect.objectContaining({
+                    peerId: senderSession.sessionId,
+                    laneId: 'realtime',
+                    data: expectedPayload,
+                    nativeMessageEvent: true,
+                    nativeTarget: true,
+                    readyStateAtCallback: 'open'
+                })]));
+
+                const scopedFields = { ...scope, scope, roomRef };
+                const expectedRecipe = {
+                    schemaVersion: 1,
+                    recipeId: 'manual-workbench-recipe',
+                    name: 'Manual workbench recipe',
+                    continueOnFailure: false,
+                    commands: [
+                        {
+                            kind: 'configure',
+                            commandId: 'manual-configure-1',
+                            label: 'Configure manual group',
+                            config: {
+                                runId: 'manual-workbench-1',
+                                agentId: 'visible-agent-local',
+                                environment: 'actual-copy-repeat',
+                                apiBaseUrl: config.apiBaseUrl,
+                                actor: senderSession.clientId,
+                                sessionId: senderSession.sessionId,
+                                roomId: groupId,
+                                transport: 'realtime',
+                                control: {
+                                    mode: 'manual-workbench',
+                                    providerMode: 'browser-rallar',
+                                    protocolVersion: 1,
+                                    connected: false
+                                },
+                                defaults: {
+                                    timeoutMs: 5_000,
+                                    connection,
+                                    providerMode: 'browser-rallar',
+                                    ...scopedFields
+                                },
+                                rallar: {
+                                    username: config.userA.username,
+                                    restoreSession: true,
+                                    leaveRoomOnClose: false,
+                                    rtcCaptureMode: 'off',
+                                    ...scopedFields
+                                }
+                            }
+                        },
+                        {
+                            kind: 'rtc.connect',
+                            readiness: { minReadyPeers: 1, timeoutMs: 5_000, intervalMs: 100 },
+                            commandId: 'manual-rtc-connect-3',
+                            label: 'Connect manual RTC client',
+                            connection,
+                            actor: senderSession.clientId,
+                            roomId: groupId,
+                            ...scopedFields,
+                            transport: 'realtime',
+                            timeoutMs: 5_000,
+                            rallar: { sessionId: senderSession.sessionId, rtcCaptureMode: 'off' },
+                            metadata: {
+                                manual: { deliveryMode: 'direct', expectedClients: [receiverSession.sessionId] }
+                            }
+                        },
+                        {
+                            kind: 'rtc.send',
+                            commandId: 'manual-rtc-send-direct-5',
+                            label: 'RTC direct',
+                            connection,
+                            transport: 'realtime',
+                            ...scopedFields,
+                            send: { data: expectedPayload, roomId: groupId, peerIds: [receiverSession.sessionId] },
+                            timeoutMs: 5_000,
+                            metadata: {
+                                manual: {
+                                    groupId,
+                                    topic: 'local.copy.repeat',
+                                    deliveryMode: 'direct',
+                                    targets: [receiverSession.sessionId],
+                                    ...scopedFields
+                                }
+                            }
+                        }
+                    ]
+                } satisfies RallarBlackBoxTestRecipe;
+                await manual.getByRole('button', { name: 'Copy Recipe', exact: true }).click();
+                await expect.poll(() => page.evaluate(() => navigator.clipboard.readText()))
+                    .toBe(JSON.stringify(expectedRecipe, null, 2));
+                const copiedText = await page.evaluate(() => navigator.clipboard.readText());
+                expect(JSON.parse(copiedText)).toEqual(expectedRecipe);
+                await openTab(page, 'local-workbench');
+                const local = page.locator('#panel-local-workbench');
+                const editor = local.getByRole('textbox', { name: 'Recipe JSON', exact: true });
+                await editor.fill(copiedText);
+                await local.getByRole('button', { name: 'Load', exact: true }).click();
+                await expect(editor).toHaveValue(copiedText);
+                const invocations: string[] = [];
+                const phases = [];
+                for (const phase of [1, 2]) {
+                    const before = await observer.evaluate(({ records, targets }) => ({
+                        records,
+                        targetStates: targets.map((target) => target.readyState)
+                    }));
+                    const matchingBefore = before.records.filter((record) => record.data.topic === 'local.copy.repeat');
+                    expect(matchingBefore.length).toBeGreaterThanOrEqual(phase);
+                    for (const record of matchingBefore) {
+                        expect(record).toMatchObject({
+                            data: expectedPayload,
+                            peerId: senderSession.sessionId,
+                            laneId: 'realtime',
+                            nativeMessageEvent: true,
+                            nativeTarget: true,
+                            readyStateAtCallback: 'open'
+                        });
+                        expect(record.targetIndex).toBeGreaterThanOrEqual(0);
+                    }
+                    const precedingSends = await page.evaluate(async () => {
+                        const modulePath = '/src/runtime-store.ts';
+                        const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                        return rallarBlackBoxRuntimeStore.getSnapshot().state.commandHistory
+                            .filter((result: RallarBlackBoxTestResult) => result.kind === 'rtc.send');
+                    });
+                    expect(precedingSends).toHaveLength(phase);
+                    for (const send of precedingSends) {
+                        expect(send).toMatchObject({
+                            commandId: 'manual-rtc-send-direct-5',
+                            kind: 'rtc.send',
+                            ok: true
+                        });
+                    }
+                    await openTab(page, 'manual-rallar');
+                    await manual.getByRole('button', { name: 'Close connections', exact: true }).click();
+                    await expect.poll(() =>
+                        page.evaluate(async () => {
+                            const modulePath = '/src/runtime-store.ts';
+                            const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                            return rallarBlackBoxRuntimeStore.getSnapshot().state.commandHistory
+                                .filter((result: RallarBlackBoxTestResult) => result.kind === 'close').at(-1);
+                        })
+                    ).toMatchObject({
+                        commandId: phase === 1 ? 'manual-close-7' : 'manual-close-9',
+                        kind: 'close',
+                        ok: true,
+                        status: 'ok',
+                        value: {
+                            closed: true,
+                            rallar: { leftRoom: false, logout: false, disconnected: true, cleanupErrors: [] }
+                        }
+                    });
+                    await expect.poll(
+                        () =>
+                            observer.evaluate(({ targets }) =>
+                                targets.length > 0 && targets.every((target) => target.readyState === 'closed')
+                            ),
+                        { timeout: 5_000, intervals: [100] }
+                    ).toBe(true);
+                    const retired = await observer.evaluate(({ records, targets }) => ({
+                        recordCount: records.length,
+                        targetCount: targets.length,
+                        targetStates: targets.map((target) => target.readyState)
+                    }));
+                    expect((await readBrowserAuthSession(page)).sessionId).toBe(senderSession.sessionId);
+                    expect((await readBrowserAuthSession(receiver)).sessionId).toBe(receiverSession.sessionId);
+                    await openTab(page, 'local-workbench');
+                    await local.getByRole('combobox', { name: 'Run RTC capture', exact: true })
+                        .selectOption({ label: 'Full native' });
+                    await expect(editor).toHaveValue(copiedText);
+                    await local.getByRole('button', { name: 'Run', exact: true }).click();
+                    await expect(local.locator('.workbench-panel .panel-heading .pill')).toHaveText('passed');
+                    await expect.poll(() =>
+                        observer.evaluate(({ records, targets }, retired) => ({
+                            records: records.slice(retired.recordCount).filter((record) =>
+                                record.targetIndex >= retired.targetCount
+                            ),
+                            precedingTargetsClosed: targets.slice(0, retired.targetCount)
+                                .every((target) => target.readyState === 'closed')
+                        }), retired), { timeout: 5_000, intervals: [100] }).toMatchObject({
+                            precedingTargetsClosed: true,
+                            records: expect.arrayContaining([
+                                expect.objectContaining({
+                                    data: expectedPayload,
+                                    peerId: senderSession.sessionId,
+                                    laneId: 'realtime',
+                                    nativeMessageEvent: true,
+                                    nativeTarget: true,
+                                    readyStateAtCallback: 'open'
+                                })
+                            ])
+                        });
+                    const observed = await page.evaluate(async () => {
+                        const modulePath = '/src/runtime-store.ts';
+                        const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                        const state = rallarBlackBoxRuntimeStore.getSnapshot().state;
+                        return {
+                            loadedRecipe: state.loadedRecipe,
+                            latestRun: state.commandHistory.filter((result: RallarBlackBoxTestResult) =>
+                                result.kind === 'recipe.run'
+                            ).at(-1)
+                        };
+                    });
+                    expect(observed.loadedRecipe).toEqual(expectedRecipe);
+                    expect(observed.latestRun).toMatchObject({
+                        kind: 'recipe.run',
+                        ok: true,
+                        status: 'ok',
+                        value: {
+                            recipeId: 'manual-workbench-recipe',
+                            invocation: {
+                                invocationId: expect.stringMatching(/\S/),
+                                recipeBodyId: expect.stringMatching(/\S/),
+                                run: 'native'
+                            },
+                            results: [
+                                { commandId: 'manual-configure-1', kind: 'configure', ok: true },
+                                {
+                                    commandId: 'manual-rtc-connect-3',
+                                    kind: 'rtc.connect',
+                                    ok: true,
+                                    value: {
+                                        sessionId: senderSession.sessionId,
+                                        rtcCapture: {
+                                            status: 'observed',
+                                            value: {
+                                                configuration: { mode: 'native', origin: 'run' },
+                                                application: { status: 'applied', mode: 'native' }
+                                            }
+                                        }
+                                    }
+                                },
+                                { commandId: 'manual-rtc-send-direct-5', kind: 'rtc.send', ok: true }
+                            ]
+                        }
+                    });
+                    expect(observed.latestRun?.replayed).not.toBe(true);
+                    const invocationId = decodeNonBlankText(
+                        decodeRecord(decodeRecord(observed.latestRun?.value).invocation).invocationId
+                    );
+                    if (!invocationId) {
+                        throw new Error('Copied Local run did not publish an invocation identity.');
+                    }
+                    expect(invocations).not.toContain(invocationId);
+                    invocations.push(invocationId);
+                    expect((await readBrowserAuthSession(page)).sessionId).toBe(senderSession.sessionId);
+                    expect((await readBrowserAuthSession(receiver)).sessionId).toBe(receiverSession.sessionId);
+                    await expect(editor).toHaveValue(copiedText);
+                    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(copiedText);
+                    phases.push({ phase, before, precedingSends, retired, observed });
+                }
+                const evidencePath = testInfo.outputPath('actual-copy-repeat-observations.json');
+                await writeFile(
+                    evidencePath,
+                    JSON.stringify(
+                        {
+                            groupId,
+                            roomRef,
+                            expectedPayload,
+                            copiedText,
+                            senderSessionId: senderSession.sessionId,
+                            receiverSessionId: receiverSession.sessionId,
+                            phases,
+                            received: await observer.evaluate(({ records, targets }) => ({
+                                records,
+                                targetStates: targets.map((target) => target.readyState)
+                            }))
+                        },
+                        null,
+                        2
+                    )
+                );
+                await testInfo.attach('actual-copy-repeat-observations', {
+                    path: evidencePath,
+                    contentType: 'application/json'
+                });
+            },
+            captureEvidence: async (receiver) => {
+                const observer = retainedObserver;
+                const failures: PromiseRejectedResult[] = [];
+                const finalizationSteps = [
+                    async () => {
+                        const senderState = await page.evaluate(async () => {
+                            const modulePath = '/src/runtime-store.ts';
+                            const { rallarBlackBoxRuntimeStore } = await import(modulePath);
+                            const state = rallarBlackBoxRuntimeStore.getSnapshot().state;
+                            return {
+                                loadedRecipe: state.loadedRecipe,
+                                commandHistory: state.commandHistory,
+                                events: state.events
+                            };
+                        });
+                        const received = observer === undefined ? undefined : await observer.evaluate(
+                            ({ records, targets }) => ({
+                                records,
+                                targetStates: targets.map((target) => target.readyState)
+                            })
+                        );
+                        const evidencePath = testInfo.outputPath('actual-copy-repeat-final-state.json');
+                        await writeFile(
+                            evidencePath,
+                            JSON.stringify({ groupId, expectedPayload, senderState, received }, null, 2)
+                        );
+                        await testInfo.attach('actual-copy-repeat-final-state', {
+                            path: evidencePath,
+                            contentType: 'application/json'
+                        });
+                    },
+                    () => observer?.evaluate(({ unsubscribe }) => unsubscribe()),
+                    () => observer?.dispose(),
+                    async () => {
+                        if (receiver !== undefined) {
+                            await receiver.evaluate(async (moduleUrl) => {
+                                const { rallar } = await import(moduleUrl);
+                                await rallar.disconnect();
+                            }, moduleUrl);
+                        }
+                    }
+                ];
+                for (const finalize of finalizationSteps) {
+                    const [result] = await Promise.allSettled([Promise.resolve().then(finalize)]);
+                    if (result.status === 'rejected') {
+                        failures.push(result);
+                    }
+                }
+                if (failures.length === 1) {
+                    throw failures[0].reason;
+                }
+                if (failures.length > 1) {
+                    throw new AggregateError(
+                        failures.map((failure) => failure.reason),
+                        'Copy observer finalization failed.',
+                        {
+                            cause: failures[0].reason
+                        }
+                    );
+                }
+            }
+        });
+    });
+
     test('runs Manual Rallar actions, history, matrix exports, and cleanup', async ({
         page,
         request
@@ -915,6 +1430,8 @@ test.describe('exhaustive runner workbench tabs', () => {
             );
             const initialDraft = decodeRecord(JSON.parse(initialDraftText ?? 'null'));
             expect(decodeRecord(initialDraft.values).rtcCaptureMode).toBeUndefined();
+            const readiness = panel.getByRole('textbox', { name: 'RTC readiness JSON', exact: true });
+            await expect(readiness).toHaveValue('');
 
             const capture = panel.getByRole('combobox', { name: /RTC capture/i });
             await expect(capture).toBeVisible();
@@ -1013,9 +1530,49 @@ test.describe('exhaustive runner workbench tabs', () => {
                 ])
             });
 
+            const retainedRecipeText = await panel.locator('.manual-recipe-output').inputValue();
+            const retainedCommands = decodeRecord(retainedExport.parsed).commands;
+            if (!Array.isArray(retainedCommands)) {
+                throw new Error('Manual history export did not contain its command array.');
+            }
+            for (const command of retainedCommands) {
+                const authored = decodeRecord(command);
+                if (authored.kind === 'rtc.connect') {
+                    expect(authored.readiness).toBeUndefined();
+                }
+            }
+            const readinessText = '{"minReadyPeers":1,"timeoutMs":5000,"intervalMs":100}';
+            await readiness.fill(readinessText);
+            await expect(readiness).toHaveAttribute('aria-invalid', 'false');
+            await expect(panel.locator('.manual-recipe-output')).toHaveValue(retainedRecipeText);
+            await expect(panel.locator('.manual-action-row')).toHaveCount(3);
             await page.reload();
             await expect(capture).toHaveValue('signaling');
+            await expect(readiness).toHaveValue(readinessText);
+            await readiness.fill('{"minReadyPeers":');
+            await expect(readiness).toHaveAttribute('aria-invalid', 'true');
+            for (
+                const name of [
+                    'Connect',
+                    'Create and join group',
+                    'Run Realtime Matrix',
+                    'Run Messages Matrix',
+                    'Copy Matrix Recipe',
+                    'Copy Negative Recipe'
+                ]
+            ) {
+                await expect(panel.getByRole('button', { name, exact: true })).toBeDisabled();
+            }
+            await expect(panel.getByRole('button', { name: 'Send payload', exact: true })).toBeEnabled();
+            await expect(panel.getByRole('button', { name: 'NACK Probe', exact: true })).toBeEnabled();
+            await page.reload();
+            await expect(readiness).toHaveValue('{"minReadyPeers":');
+            await expect(readiness).toHaveAttribute('aria-invalid', 'true');
+            await expect(panel.getByRole('button', { name: 'Connect', exact: true })).toBeDisabled();
             await panel.getByRole('button', { name: 'Reset runtime', exact: true }).click();
+            await expect(readiness).toHaveValue('');
+            await expect(readiness).toHaveAttribute('aria-invalid', 'false');
+            await expect(panel.getByRole('button', { name: 'Connect', exact: true })).toBeEnabled();
             await expect.poll(async () => {
                 const text = await page.evaluate(() =>
                     window.localStorage.getItem('rallar-black-box.ui.manual-draft.v1')
