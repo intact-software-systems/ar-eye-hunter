@@ -154,6 +154,7 @@ describe('how long the send controls remember an ended message', () => {
         controls.cancel('msg-1');
 
         nowMs += DEFAULT_AL_REPOSITORY_TTL_MS;
+        expect(controls.isEnded('msg-1')).toBe(true);
         expect(controls.cancel('msg-1')).toBe('already-cancelled');
 
         nowMs += 1;

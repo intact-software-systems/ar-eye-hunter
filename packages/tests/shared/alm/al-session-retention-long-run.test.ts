@@ -51,7 +51,8 @@ const TRACK_ROW_KEY = /:(ordering|delivered):track-\d+:/;
 describe('a volatile session over a simulated hour', () => {
     it('returns the outbound memory pair, the ledger and the send controls to their baseline', async () => {
         useFakeDate();
-        const repositories = captureAcceptingRepositories();
+        const endedMsgIds = new Set<string>();
+        const repositories = captureRepositoriesAcceptingEndedIds(endedMsgIds);
         const budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
         const volatileStores = createVolatileALOutboundRuntimeStores(
             { namespace: 'long-run', decodePrepared: decodeOutboundTestPayload },
@@ -74,8 +75,10 @@ describe('a volatile session over a simulated hour', () => {
             }
             await runOutboundWorkTask(runtime);
             for (const message of sends) {
+                endedMsgIds.add(message.id.msgId);
                 await runtime.handOver(message.id.msgId);
             }
+            endedMsgIds.add(`never-sent-${step}`);
             runtime.cancel(`never-sent-${step}`);
         }
         expect(budget.readReport(Date.now()).usage.admissions).toBeGreaterThan(0);
@@ -91,10 +94,17 @@ describe('a volatile session over a simulated hour', () => {
             toALOutboundVersionKey(volatileStores.admissionStore.namespace, 'self')
         ]);
         expect(backend.workQueue.peekKeys()).toEqual([]);
+        // Every hand-over and every cancel is still held: the row retention outlasts the age budget.
+        expect(repositories.map((repository) => repository.size())).toEqual([
+            SIMULATED_STEPS * SENDS_PER_STEP,
+            SIMULATED_STEPS
+        ]);
 
         vi.setSystemTime(lastStepAtMs + DEFAULT_AL_REPOSITORY_TTL_MS + 1);
         volatileStores.evictExpired();
+        endedMsgIds.add('after-the-hour');
         await runtime.handOver('after-the-hour');
+        endedMsgIds.add('after-the-hour-cancelled');
         runtime.cancel('after-the-hour-cancelled');
 
         expect(backend.peekKeys()).toEqual([]);
@@ -137,9 +147,10 @@ describe('a volatile session over a simulated hour', () => {
 
         expect(budget.readReport(Date.now()).usage).toEqual(EMPTY_LEDGER_USAGE);
         expect(backend.workQueue.peekKeys()).toEqual([]);
-        // Only the tracks are left, two rows each, and none of them grows with the messages it carried.
+        // Only the tracks are left, two rows each, and none of them grows with the messages it carried; the
+        // tracks whose last arrival is older than the repository hour are already gone.
         expect(backend.peekKeys().filter((key) => !TRACK_ROW_KEY.test(key))).toEqual([]);
-        expect(backend.peekKeys().length).toBeLessThanOrEqual(2 * ORDERED_TRACKS);
+        expect(backend.peekKeys()).toHaveLength(2 * computeTrackCountWithinTheHour(Date.now()));
 
         vi.setSystemTime(lastArrivalAtMs + DEFAULT_AL_REPOSITORY_TTL_MS + 1);
         volatileStores.evictExpired();
@@ -184,15 +195,17 @@ function useFakeDate(): void {
     });
 }
 
-/** Every repository that accepts an entry from here on, in the order of its first acceptance. */
-function captureAcceptingRepositories(): readonly LatestRepository<string, true>[] {
+/** Every repository that accepts an id the test has ended, in the order of its first such acceptance. */
+function captureRepositoriesAcceptingEndedIds(
+    endedMsgIds: ReadonlySet<string>
+): readonly LatestRepository<string, true>[] {
     const repositories: LatestRepository<string, true>[] = [];
     const acceptAt = LatestRepository.prototype.acceptAt;
     vi.spyOn(LatestRepository.prototype, 'acceptAt').mockImplementation(function (
         this: LatestRepository<string, true>,
         input
     ) {
-        if (!repositories.includes(this)) {
+        if (endedMsgIds.has(input.key) && !repositories.includes(this)) {
             repositories.push(this);
         }
         return acceptAt.call(this, input);
@@ -239,6 +252,19 @@ function createStepArrivals(step: number): readonly ALMessage[] {
     const opened = [2 * step, 2 * step + 1].map((track) => createTrackArrival(track, 1));
     const continued = step === 0 ? [] : [2 * step - 2, 2 * step - 1].map((track) => createTrackArrival(track, 2));
     return [...opened, ...continued, createInboundTestMessage({ msgId: `unordered-${step}` })];
+}
+
+/** The tracks whose last arrival lies within the repository hour before `nowMs`. */
+function computeTrackCountWithinTheHour(nowMs: number): number {
+    return Array.from({ length: ORDERED_TRACKS }, (_, track) => track)
+        .filter((track) => computeLastTrackArrivalAtMs(track) + DEFAULT_AL_REPOSITORY_TTL_MS > nowMs)
+        .length;
+}
+
+/** A track's second sequence arrives the step after it opened; the last step's tracks never get one. */
+function computeLastTrackArrivalAtMs(track: number): number {
+    const lastStep = Math.min(Math.floor(track / 2) + 1, SIMULATED_STEPS - 1);
+    return SESSION_START_MS + lastStep * STEP_MS;
 }
 
 function createTrackArrival(track: number, seq: number): ALMessage {

@@ -31,7 +31,8 @@ export class ALOutboundSendControls {
     /**
      * Held for the durable lane's row retention, in memory, never persisted (D181): the controls span every
      * lane, so a durable row first claimed within the hour still completes without sending; one the next owner
-     * drains sends. Each access sweeps the expired ids.
+     * drains sends. A read forgets the id it finds expired; an accept sweeps every expired id, as often as the
+     * repository's eviction rate allows.
      */
     private readonly cancelledMsgIds = new LatestRepository<string, true>({ ttlMs: DEFAULT_AL_REPOSITORY_TTL_MS });
     /** Held as cancellations are: another carrier's owner took these messages (D56). */
