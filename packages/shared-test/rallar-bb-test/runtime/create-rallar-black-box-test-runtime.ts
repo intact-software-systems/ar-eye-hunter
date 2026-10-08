@@ -1,4 +1,5 @@
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
+import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { computeAssertCommandOutcome } from '../assert/compute-assert-command-outcome.ts';
@@ -46,6 +47,8 @@ export interface CreateRallarBlackBoxTestRuntimeOptions {
     readonly cleanup?: RallarBlackBoxTestRuntimeCleanup;
     /** Reads the page's session ledger for `stats`; absent on a runtime that drives no Rallar page. */
     readonly readAlmUsage?: () => Promise<ALVolatileSessionReport | undefined>;
+    /** Reads the page's congestion counters for `stats`; absent on a runtime that drives no Rallar page. */
+    readonly readCongestionCounters?: () => Promise<ALCongestionCounters | undefined>;
 }
 
 type CommandWithId = RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>;
@@ -69,6 +72,7 @@ namespace InMemoryRallarBlackBoxTestRuntime {
         readonly commandExecutor: RallarBlackBoxTestCommandExecutor | undefined;
         readonly cleanup: RallarBlackBoxTestRuntimeCleanup | undefined;
         readonly readAlmUsage: (() => Promise<ALVolatileSessionReport | undefined>) | undefined;
+        readonly readCongestionCounters: (() => Promise<ALCongestionCounters | undefined>) | undefined;
     }
 }
 
@@ -543,8 +547,12 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
 
     private async updateStats(commandId?: string): Promise<RallarBlackBoxTestStatsSnapshot> {
         const alm = await this.dependencies.readAlmUsage?.();
-        const stats = toRuntimeStats(this.currentState, this.dependencies.now());
-        const latestStats = alm === undefined ? stats : { ...stats, rallar: { ...stats.rallar, alm } };
+        const congestion = await this.dependencies.readCongestionCounters?.();
+        const latestStats = toStatsWithPageReadings(
+            toRuntimeStats(this.currentState, this.dependencies.now()),
+            alm,
+            congestion
+        );
         this.currentState = { ...this.currentState, latestStats };
         this.appendEvent({
             kind: 'stats',
@@ -602,7 +610,27 @@ function toRuntimeDependencies(
         idFactory: options.idFactory ?? createSequentialIdFactory(),
         commandExecutor: options.commandExecutor,
         cleanup: options.cleanup,
-        readAlmUsage: options.readAlmUsage
+        readAlmUsage: options.readAlmUsage,
+        readCongestionCounters: options.readCongestionCounters
+    };
+}
+
+/** The page's readings join the runtime's own stats only where the page answered them, so absence stays absence. */
+function toStatsWithPageReadings(
+    stats: RallarBlackBoxTestStatsSnapshot,
+    alm: ALVolatileSessionReport | undefined,
+    congestion: ALCongestionCounters | undefined
+): RallarBlackBoxTestStatsSnapshot {
+    if (alm === undefined && congestion === undefined) {
+        return stats;
+    }
+    return {
+        ...stats,
+        rallar: {
+            ...stats.rallar,
+            ...(alm === undefined ? {} : { alm }),
+            ...(congestion === undefined ? {} : { congestion })
+        }
     };
 }
 

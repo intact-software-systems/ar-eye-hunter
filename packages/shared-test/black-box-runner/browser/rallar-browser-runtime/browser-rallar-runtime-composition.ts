@@ -68,6 +68,10 @@ import {
     createScriptedTransportFaultPort,
     type ScriptedTransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
+import {
+    createBlackBoxRallarCongestionCounters,
+    type BlackBoxRallarCongestionCounters
+} from './black-box-rallar-congestion-counters.ts';
 import type {
     BlackBoxRallarControlSubmitInput,
     BlackBoxRallarDirectorOutputRecord,
@@ -149,6 +153,7 @@ export interface BlackBoxBrowserDiagnosticsDependency {
     readonly storage: CountingIndexedDbOperationObserver;
     /** Decides each IndexedDB operation after `storage` has counted it. */
     readonly storageFaults: ScriptedStorageFaultPort;
+    readonly congestion: BlackBoxRallarCongestionCounters;
 }
 
 export interface BlackBoxBrowserRealtimeDependency
@@ -194,6 +199,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
     const faults = createScriptedTransportFaultPort();
     const storage = createCountingIndexedDbOperationObserver();
     const storageFaults = createScriptedStorageFaultPort();
+    const congestion = createBlackBoxRallarCongestionCounters();
     const { foundation, state, session, stateEvents, messaging, realtime } = createBlackBoxBrowserTransportComposition(
         input.readVolatileSessionLimits
     );
@@ -229,7 +235,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
         realtime,
         crdt,
         director,
-        diagnostics: { faults, storage, storageFaults },
+        diagnostics: { faults, storage, storageFaults, congestion },
         ...toBlackBoxBrowserMessagingPorts({ session, state })
     });
 }

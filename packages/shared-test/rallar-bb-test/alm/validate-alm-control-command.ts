@@ -321,17 +321,19 @@ function validateStorageFaultActionField(command: RallarBlackBoxTestRecord): rea
 function validateFaultActionField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
     const action = command.action;
     const path = 'fault.inject.action';
-    if (action === undefined || action === 'drop') {
+    if (action === undefined || action === 'drop' || action === 'backpressure') {
         return [];
     }
     if (command.carrier === 'rtc') {
-        return [toControlCommandIssue(`${path} must be "drop" on the rtc carrier.`)];
+        return [toControlCommandIssue(`${path} must be "drop" or "backpressure" on the rtc carrier.`)];
     }
     if (action === 'not-ready') {
         return [];
     }
     if (!isJsonRecordValue(action)) {
-        return [toControlCommandIssue(`${path} must be "drop", "not-ready" or an object with delayMs.`)];
+        return [
+            toControlCommandIssue(`${path} must be "drop", "not-ready", "backpressure" or an object with delayMs.`)
+        ];
     }
     return validateFaultDelayAction(action, path);
 }

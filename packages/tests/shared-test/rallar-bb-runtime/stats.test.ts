@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
     type ALVolatileSessionReport
@@ -36,6 +37,25 @@ function createPageRuntime(
             connect: async () => ({ connected: true }),
             send: async () => ({ sent: true }),
             readAlmUsage: async () => readings[Math.min(index++, readings.length - 1)],
+            refreshRoom: async () => undefined,
+            close: async () => ({ closed: true }),
+            health: async () => ({ connected: true })
+        }
+    });
+}
+
+/** A connected page whose ledger reads the first report and whose congestion reads answer the next value, holding the last. */
+function createCongestionPageRuntime(
+    readings: readonly (ALCongestionCounters | RallarBlackBoxTestRecord | undefined)[]
+): RallarBlackBoxBrowserTestRuntime {
+    let index = 0;
+    return createRallarBlackBoxBrowserTestRuntime({
+        rallarRuntime: {
+            ...createBrowserRallarRequiredMethodsTestDouble(),
+            connect: async () => ({ connected: true }),
+            send: async () => ({ sent: true }),
+            readAlmUsage: async () => FIRST_REPORT,
+            readCongestionCounters: async () => readings[Math.min(index++, readings.length - 1)],
             refreshRoom: async () => undefined,
             close: async () => ({ closed: true }),
             health: async () => ({ connected: true })
@@ -110,6 +130,46 @@ describe('the stats result rallar.alm block', () => {
         expect(result.error?.message).toBe(
             'The page\'s session ledger report is not valid: usage.admissions is not a count; ' +
                 'usage.tracks is not a count; overloaded is not a boolean'
+        );
+    });
+});
+
+describe('the stats result rallar.congestion block', () => {
+    const DEFERRED: ALCongestionCounters = { dropped: 0, deferred: 3, handedOver: 0 };
+    const HANDED_OVER: ALCongestionCounters = { dropped: 1, deferred: 3, handedOver: 1 };
+
+    it('reads the page congestion counters afresh at every stats command, beside the ledger', async () => {
+        const runtime = createCongestionPageRuntime([DEFERRED, HANDED_OVER]);
+
+        const first = await readStats(runtime, 'stats-1');
+        const second = await readStats(runtime, 'stats-2');
+
+        expect(first.rallar).toMatchObject({ alm: FIRST_REPORT, congestion: DEFERRED });
+        expect(second.rallar?.congestion).toEqual(HANDED_OVER);
+        expect(runtime.state().latestStats?.rallar?.congestion).toEqual(HANDED_OVER);
+        const statsEvents = runtime.state().events.filter((event) => event.topic === 'rallar.bb.stats');
+        expect(statsEvents.map((event) => (event.payload as RallarBlackBoxTestStatsSnapshot).rallar?.congestion)).toEqual([
+            DEFERRED,
+            HANDED_OVER
+        ]);
+    });
+
+    it('leaves the block absent while the page has not connected, and on a runtime that drives no Rallar page', async () => {
+        const unconnected = await readStats(createPageRuntime([undefined]), 'stats-1');
+        const pageless = await readStats(createRallarBlackBoxBrowserTestRuntime(), 'stats-2');
+
+        expect(unconnected.rallar).not.toHaveProperty('congestion');
+        expect(pageless.rallar).not.toHaveProperty('congestion');
+    });
+
+    it('fails the stats command when the page answers counters that are not counts, naming each bad field', async () => {
+        const runtime = createCongestionPageRuntime([{ dropped: -1, deferred: 2.5, handedOver: 0 }]);
+
+        const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toBe(
+            'The page\'s congestion counters are not valid: dropped is not a count; deferred is not a count'
         );
     });
 });

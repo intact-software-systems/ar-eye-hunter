@@ -176,3 +176,22 @@ function createConnectionService(): WebRtcConnectionService {
         createOfferId: new DeterministicRtcOfferIds().createOfferId
     });
 }
+
+describe('the outbound diagnostics sink a connect hands its middleware', () => {
+    it('gives the middleware the connect\'s own sink, which its carriers report to', () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+
+        const ws = toBrowserWebSocketQueueBoxInput(input, {
+            qboxEngine,
+            socket: new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort()),
+            serverPeerId: 'server'
+        });
+        const middleware = toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware);
+
+        expect(middleware.outboundDiagnostics).toBe(OPTIONS.diagnosticsPorts.outboundDiagnostics);
+        expect(ws.outboundDiagnostics).toBe(middleware.outboundDiagnostics);
+    });
+});

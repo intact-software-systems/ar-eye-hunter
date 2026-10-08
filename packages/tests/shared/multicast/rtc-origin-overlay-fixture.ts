@@ -70,6 +70,8 @@ export interface RtcOriginOverlayFixtureInput {
     readonly qosProvider?: ALQosInputProvider;
     /** The session's transport faults; absent, a pass-through port. */
     readonly faultPort?: TransportFaultPort;
+    /** Also told every settlement the fixture records, as a browser session's delivery feed is; absent, only recorded. */
+    readonly onSettlement?: (settlement: ALDeliverySettlement) => void;
 }
 
 export interface OriginAcknowledgementInput {
@@ -105,7 +107,10 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),
         qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
         outboundDiagnostics: (event) => diagnostics.push(event),
-        outboundSettlements: (settlement) => settlements.push(settlement),
+        outboundSettlements: (settlement) => {
+            settlements.push(settlement);
+            input.onSettlement?.(settlement);
+        },
         outboundRuntime: resources,
         circuitBreaker: input.circuitBreaker ?? toCircuitBreaker(),
         rateLimiter: toRateLimiter(),

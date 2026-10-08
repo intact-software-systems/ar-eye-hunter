@@ -139,6 +139,9 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         kind: 'fault.inject',
         title: 'Inject Transport or Storage Fault',
         description: 'Schedules a drop for matching WS/RTC traffic, or WS-only delay or not-ready submission faults. ' +
+            'backpressure, on either carrier, makes the carrier read its channel as at its high watermark when it ' +
+            'plans each matching origination, so the send meets its congestion policy: a best-effort send is refused ' +
+            'congested or handed to WS under rtc-with-ws-fallback, an at-least-once send settles not-ready and retries. ' +
             'match.msgId may name a {resultCache.<commandId>.<path>} token, such as the msgId an earlier ' +
             'messages.send returned, so one message is held while every other frame of its type passes. ' +
             'carrier storage instead faults the IndexedDB operations of match.owner (al-admission or al-work) and ' +

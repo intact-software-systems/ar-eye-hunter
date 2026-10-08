@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { createBlackBoxRallarCongestionCounters } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-congestion-counters.ts';
 import {
     BlackBoxRallarRuntimeDiagnostics,
     createBlackBoxRallarDiagnosticsPorts
@@ -77,7 +78,8 @@ async function runDuplicateOutcomeCommands(
     const ports = createBlackBoxRallarDiagnosticsPorts(pageDiagnostics, {
         faults: createScriptedTransportFaultPort(),
         storage: createCountingIndexedDbOperationObserver(),
-        storageFaults: createScriptedStorageFaultPort()
+        storageFaults: createScriptedStorageFaultPort(),
+        congestion: createBlackBoxRallarCongestionCounters()
     });
     const { runtime, diagnostics } = createInboundTestRuntime({
         carrier: 'rtc',

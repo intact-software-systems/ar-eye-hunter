@@ -158,6 +158,7 @@ function createAlmBrowserRuntimeFake(
             return STORAGE_COUNTS;
         },
         readAlmUsage: async () => undefined,
+        readCongestionCounters: async () => undefined,
         waitForRoom: async () => {
             throw new Error('This ALM command test does not exercise room readiness.');
         },
