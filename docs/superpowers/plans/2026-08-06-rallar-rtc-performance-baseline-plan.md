@@ -20,17 +20,28 @@ finalization, repeat selection, and archive verification preserve each run's
 source, environment, exact attempts, raw samples, and checksums. Tooling is
 implemented; capture and ranking acceptance remain separate outcomes.
 
-**Current checkpoint, 2026-10-08:** Manual readiness and actual native Copy/repeat
-are reviewed and published in PR645. The materializer correction now preserves authored
-capture and unrelated strings while translating executable scope. Semantic TDD and
-independent complete-owner specification/quality review approve this slice. Child-process cancellation and physical cleanup are owned through one shared boundary.
-The latest documentation checkpoint's hosted Branch workflow reused existing validation;
-Formation and Medium actually executed. This adds no new native or E3 acceptance.
-PR633 has real conflicts with current main while its parent head remains unchanged.
-The prior exact integration proposal is stale. Repair those conflicts before broad
-integration validation, then complete HOST/operator RUN forwarding and actual application
-through existing workers and Actions. Governed E3 still has zero accepted cohorts;
-no default-branch operation is selected.
+**Current checkpoint, 2026-10-08:** Manual readiness, actual native Copy/repeat,
+and the reviewed materializer correction are published in PR645. The correction
+preserves authored capture and unrelated strings while translating executable
+scope; one shared boundary owns child cancellation and physical cleanup.
+
+Fresh source CI completes the selected correctness/static lanes except tooling:
+two assertions identify the moved README fixture's stale owner, and the native
+atomic-snapshot case exceeds its existing 5000ms budget. The exact fixture-owner
+correction has semantic RED (two failures/eight controls), GREEN (all 10 cases),
+and independent SPEC/QUALITY approval. The original failed hosted run remains
+retained. Local alternating measurements attribute almost all native-case time
+to cold graph/type checking before filesystem effects; the remote deadline phase
+was not directly observed. The proposed compile/execution separation must retain
+the actual typed fixture, native effects, owned artifacts and every assertion.
+No timeout, retry, workload or cache-warmup change is selected.
+
+PR633 has nine conflicts against newly fetched current main. A repair on its feature branch
+is locally validated and awaits independent review/publication. The old
+exact integration proposal is stale. Complete source correctness and the parent
+repair before broad integration validation, then complete HOST/operator RUN
+forwarding and actual application through existing workers and Actions. Governed
+E3 still has zero accepted cohorts; no default-branch operation is selected.
 
 **Tech Stack:** TypeScript, Deno, Vitest, Node.js, Playwright Chromium, Git,
 GitHub Actions, ignored evidence under `tmp/perf/`, and immutable observation ZIPs.
