@@ -513,7 +513,28 @@ within 30 s; a send the carrier refuses `no-leader` returns
 `status: 'no-director'`. Before it sends, the relay itself returns
 `no-director` when no director is appointed, `stale-director` when the
 appointed director is not fresh, and `not-director` when the local session is
-the director. The director's own outputs go to the whole room: with
+the director. `sendIntent(intent, { resourceId, ttlMs })` claims that resource
+for the intent (D176, see Exclusive Ownership): the intent goes out as
+`ownership: 'exclusive'` on that `resourceId` with that `ttlMs`, over WS, and an
+intent whose resource another session holds returns `status: 'held-by-other'`
+before it reaches the director; without the claim the intent is shared, as
+before. The claim's `ttlMs` is its lease and may be at most 5 minutes: a longer
+one passes the session's volatile age limit, so the intent is refused before
+any attempt and returns `status: 'failed'`. A claim outlives the receiver's
+verdict until its ttl: an intent the director refuses, or whose sender leaves,
+still holds the resource until its `ttlMs` has passed, so a claim names the few
+seconds the director needs, not the 30 s command default, and the relay waits
+for the director's confirmation no longer than the claim lives.
+A claiming intent goes over WS only: one server hop where an intent is
+RTC-first, and no RTC path while WS reconnects. A director's own intent is
+routed locally and claims nothing, so a remote claimant that loses to the
+director's local action is refused by the director's rules, never
+`held-by-other`.
+Rallar Game's `match.sendIntent(intent, { resourceId, ttlMs })` passes the claim to
+the relay and returns the same `held-by-other` status; when the local session
+is the director, the match routes the intent locally and it claims nothing.
+Outputs, heartbeats, snapshots and sync requests claim nothing. The director's
+own outputs go to the whole room: with
 `ack: 'all-logical-recipients'` when the output states it, best effort
 otherwise. While the local session is the director, its relay acts on an intent
 or sync request stamped with its own appointment epoch or an earlier one, since
@@ -645,6 +666,70 @@ track no receipt unless the send states `ack` (or `qos.ack`); without one,
 `transport-accepted` is terminal. Opt in to browser storage with
 `qos: { durability: { algo: 'local-outbox' } }`, or to a checkpointed memory
 send with `qos: { durability: { algo: 'local-checkpoint' } }`.
+
+Every volatile message a session sends or receives counts against the session's
+volatile bound, on both carriers and for lane and typed channel sends alike
+(D74, D179). The bound has four limits. The count and byte limits, 1 000
+messages and 4 MiB of envelopes, hold sent and received messages together. The
+age limit admits a deadline at most 5 minutes ahead
+(`AL_VOLATILE_SESSION_MAX_AGE_MS`). The track limit holds 64 live ordering
+tracks of the session's own ordered sends (`AL_VOLATILE_SESSION_MAX_TRACKS`).
+A send opens a track when it states a `seq`: on its `orderingKey`, or, for an
+RTC room send that names none, on the room's default ordering key. A send
+without a `seq` opens none. A sent message counts until its deadline, and its
+track until the last counted send on it reaches its deadline. A received
+message counts until the earlier of its deadline and 30 s after it arrives; it
+never opens a counted track and is never refused.
+
+A send that would pass a limit is refused before any carrier attempt: the
+handle ends `rejected` with `evidence.failure`
+`{ kind: 'refused', reason: 'capacity', limit }`, where `limit` names the
+limit it would pass (`'admissions'`, `'bytes'`, `'age'` or `'tracks'`), and no
+fallback is tried, because both carriers share the bound. While the session is
+`overloaded`, at or over the count or the byte limit, the RTC carrier's
+congestion drop also sheds a best-effort RTC room send; that refusal is
+`{ kind: 'refused', reason: 'capacity' }` with no `limit`, so code that
+switches on `failure.limit` handles `undefined` as the count or byte limit. An
+`age` refusal is decided by the send's own `ttlMs` alone, so the same send is
+refused again on every retry: shorten the `ttlMs`, or send it durable with
+`qos: { durability: { algo: 'local-outbox' } }`, which the bound does not
+count. A message whose sender named no deadline, a control, a receipt, a relay
+forward and a retransmission count nothing.
+
+`rallar.messages.readUsage()` reads the bound synchronously, with no event
+(D180): `usage` (`admissions`, `bytes`, `oldestAgeMs`, the age of the oldest
+counted message, 0 when none is counted, and `tracks`), `limits` (`maxAdmissions`,
+`maxBytes`, `maxAgeMs`, `maxTracks`) and `overloaded`, true while the usage is at
+or over the count or the byte limit. It throws while the session is not
+connected, before `connect` and again after `disconnect`, so a poll guards it
+with `rallar.isConnected()`.
+
+```ts
+if (rallar.isConnected()) {
+    const { usage, limits, overloaded } = rallar.messages.readUsage();
+    if (overloaded || usage.tracks >= limits.maxTracks) {
+        showSlowDown();
+    }
+}
+```
+
+The age limit bounds the messages the bound counts, not the ordering state a
+session keeps (D181). An ordering track stays known for an hour after its last
+message, so a sender that resumes a track within the hour is read in order
+rather than as a gap. What the session keeps per message, track or peer is
+bounded rather than held for its lifetime: the ids of cancelled and handed-over
+sends for 60 minutes, as long as a durable message's own rows, so a cancelled
+message picked up late within that hour still does not send; the browser's
+record of the tracks it has resynchronized for 5 minutes after the track's last
+resynchronization, so a track that needs a resync again after longer than that
+calls the channel's recovery handler again; and RTC round-trip measurements are
+numbered from one counter for all peers, with no entry per peer.
+
+**Limit:** an idle volatile ordering track still holds two inbound rows for the
+hour after its last message, and each sending origin one outbound version row
+for an hour. Received tracks have no count limit, so a long session plateaus at
+two inbound rows per track it received on in the last hour rather than
+returning to empty within the age limit.
 
 `messages.room<T>(definition)` creates a room channel directly;
 `roomSession.message(...)` delegates to it. A typed channel exposes `send`,
@@ -792,8 +877,8 @@ every `ALStorageEvent`:
 - `persist`: the outcome of the connect's one persistence request
   (`ALStoragePersistOutcome`);
 - `recovery-owner-invoked`: the `ALInboundResyncCursor` the browser handed a
-  typed channel's recovery owner (below), once per ordering track per runtime,
-  stated even when the owner throws. It names no store.
+  typed channel's recovery owner (below), once per ordering track while it goes
+  on resynchronizing, stated even when the owner throws. It names no store.
 
 Room channels add room defaults and default `send(...)` to the existing
 `rtc-with-ws-fallback` strategy. This scopes sends; `onWs(...)` and
@@ -1043,6 +1128,105 @@ if (noLeader) {
 }
 ```
 
+### Exclusive Ownership
+
+A send's `ownership` is `'shared'`, the default, or `'exclusive'`. A `shared`
+send reaches its audience and takes nothing. An `exclusive` send claims its
+resource key for the sending session (D171): the key is the room's `GroupRef`
+scope (application, workspace and group, since the same group id can exist in
+another scope) with the send's `topicId`, `contextId` and `resourceId`. The
+exclusive claim is decided where the WS server admits the send, and it has three
+outcomes, none of them a new handle state (D175):
+
+- **Claimed.** The first exclusive send on a free key is admitted and delivered
+  exactly as the same `shared` send would be: its admission is the claim, and
+  no separate claim event exists. The holder's own later exclusive send on the
+  key is admitted too and moves the claim's expiry to its own.
+- **Held by another.** An exclusive send from another session on a key whose
+  claim is live is dropped at the server's admission and NACKed
+  `held-by-other`; it reaches no one. A dropped claim starts no receipt; a
+  claim retained on a conflict may have started one, which the `held-by-other`
+  NACK then ends. The handle reads it as a trusted-server relay rejection
+  whatever receipt it already holds (unlike `no-leader`, which counts only
+  before a receipt): with a receipt-bearing `ack`
+  it ends `rejected` with `failure: { kind: 'relay-rejected', rejection }` and
+  `evidence.relayRejection` reading
+  `{ relay: 'trusted-server', reason: 'held-by-other' }`; with `ack: 'none'` it
+  keeps `transport-accepted` and the rejection is evidence only.
+  `held-by-other` is no fallback trigger: a claim another session holds is a
+  decision, not a carrier failure.
+- **Expired.** The claim's lease is the message's lifetime (D172): its
+  `constraints.expiresAtMs`, which the send's `ttlMs` or the channel default
+  sets. There is no renewal call and no release call: a holder renews by
+  sending again, and once the claim has expired the key is free, so the next
+  exclusive send on it is admitted and delivered. A volatile claim's lease is
+  at most 5 minutes, the session's volatile age limit (see WS And RTC
+  Messages): a claiming send whose `ttlMs` is longer is refused before any
+  attempt with `failure: { kind: 'refused', reason: 'capacity', limit: 'age' }`.
+  Hold a key longer by sending again within the lease, or claim it with a
+  durable send (`qos: { durability: { algo: 'local-outbox' } }`). A claimed
+  send that expires without its receipt ends `expired`, as any send does. A
+  send with no expiry of its own holds the key for the WS server's retention
+  default; every browser send carries a `ttlMs`. A claim outlives the
+  receiver's verdict until then: a receiver that refuses the claiming message,
+  or a sender that leaves, frees nothing, so a claiming send names the lifetime
+  its decision needs, not a long default.
+
+The holder is the sending session: the authenticated session the WS connection
+signed in with. Two tabs that share one auth session are one holder, a second
+sign-in on another tab or device is another session and competes, and a WS
+reconnect of the holder's session keeps its claim. First means first admitted
+at the WS server: an exclusive send the server holds `not-yet-in-sync` is
+judged when it is replayed, so a later claimant already in sync can win.
+
+An exclusive send with `ack: 'none'` learns a loss only by reading
+`lifecycle.evidence.relayRejection` later: no wait condition or state change
+reports it, and with no receipt it cannot learn that it holds the claim either.
+A sender that acts on the outcome sends its claim with a receipted `ack`.
+
+A `shared` send neither reads nor takes an exclusive claim, so a shared send on a
+claimed key is delivered: ownership is decided between exclusive senders. The claim
+lives in the WS server's admission store, beside the message's dedup key, and
+every API process shares it, so it holds across the cluster (D173). Server
+publications claim nothing, and neither does a non-browser WS client's
+exclusive send that names no room: the server admits it with no claim and no
+signal, a shape the browser validator refuses. A receiver's local callback
+selection is unchanged: an exclusive message reaches its typed callback or,
+failing that, the wildcard, never both.
+
+Exclusive is WS-only (D174). No server stands on the RTC path, so nothing there
+can arbitrate two claimants: an exclusive send takes WS under every strategy
+but `rtc`, with no RTC leg and no `carrierFallback` evidence, as a `world` send
+does; on `rtc` the RTC origin refuses it before any attempt, and the handle
+ends `rejected` with `failure: { kind: 'refused', reason: 'unsupported' }`.
+Every room audience the WS server admits may be exclusive: a room, principal
+or fixed-list send, a `group-leader` send and a room unicast. The browser
+validator refuses two shapes before either carrier admits them:
+`exclusive-requires-resource` when the send names no `resourceId`, since a
+send that names none takes a fresh one and so claims nothing, and
+`exclusive-requires-room-audience` for `scope: 'world'`, which has no room to
+hold the claim. A principal send that names no room is refused as roomless, as
+any principal send is.
+
+```ts
+interface PickupIntent {
+    readonly pickupId: string;
+}
+
+const pickups = rallar.messages.room<PickupIntent>({
+    topicId: 'room.match.pickup',
+    typeId: 'match.pickup.v1',
+    purpose: 'command'
+});
+
+const handle = await pickups.send({ pickupId }, { ownership: 'exclusive', resourceId: pickupId });
+const outcome = await handle.wait({ until: ['acknowledged'], timeoutMs: 30_000 });
+const failure = outcome.lifecycle.evidence.failure;
+if (failure?.kind === 'relay-rejected' && failure.rejection.reason === 'held-by-other') {
+    console.warn('Another session claimed this pickup first.');
+}
+```
+
 ### Ordering, Repair And Resynchronization
 
 A browser send states its position with `orderingKey` and `seq` together, or
@@ -1090,7 +1274,8 @@ const rounds = rallar.messages.channel<RoundState>({
 ```
 
 `RallarChannelRecovery.onResyncRequired(cursor)` is invoked once per ordering
-track (ordering key, sender, epoch) for the life of the browser runtime, after
+track (ordering key, sender, epoch) while it goes on resynchronizing (a track
+that resynchronizes again after 5 minutes without one invokes it again), after
 the receiver refused a message of that track `resync-required` -- at admission,
 or at an ordered release it can no longer complete -- and after its NACK to the
 sender committed. The cursor (`ALInboundResyncCursor`, exported with

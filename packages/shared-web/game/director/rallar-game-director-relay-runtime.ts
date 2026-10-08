@@ -1,5 +1,6 @@
 import type {
     RallarDirectorOutputOptions,
+    RallarDirectorRelayClaim,
     RallarDirectorRelayHandle,
     RallarDirectorRelayMessage,
     RallarDirectorRelaySendResult
@@ -75,7 +76,8 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
         this.relay = undefined;
     }
 
-    async sendIntent(intent: TIntent): Promise<RallarGameSendResult> {
+    /** The director's own intent is routed here and claims nothing: only the WS server arbitrates a claim. */
+    async sendIntent(intent: TIntent, claim?: RallarDirectorRelayClaim): Promise<RallarGameSendResult> {
         if (this.input.isStopped()) {
             return stoppedResult();
         }
@@ -93,7 +95,7 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
             return { status: 'sent', transport: 'local' };
         }
 
-        return toRelaySendResult(await this.ensureRelay().sendIntent(envelope));
+        return toRelaySendResult(await this.ensureRelay().sendIntent(envelope, claim));
     }
 
     async publishEvent(event: TEvent, options?: RallarDirectorOutputOptions): Promise<RallarGameSendResult> {

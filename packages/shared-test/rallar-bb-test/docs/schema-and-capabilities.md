@@ -151,9 +151,12 @@ browser-only: the in-process runner adapter refuses them with the
 that refusal fails the step.
 
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
-and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`,
-`reliability`, `ack`, `durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
-`minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason? }`.
+and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`, `principalId`, `recipientPeer`,
+`reliability`, `ack`, `ownership`, `resourceId`, `durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`,
+`seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason? }`.
+`ownership` (`shared`, `exclusive`) and `resourceId` pass unchanged to the product's typed send options of the same
+names; absent, the send is `shared` on a fresh resource id, as a product send is. A recipe that names a
+`resourceId` lets two agents' sends meet on one resource key, which an exclusive claim needs.
 `durability` (`volatile`, `local-checkpoint`, `local-outbox`, `local-inbox`) declares the typed
 channel's durability; absent, the send is volatile. `onStorageUnavailable`
 (`refuse`, `volatile`) is the channel's choice when its storage cannot hold a
@@ -206,8 +209,9 @@ logical algorithm.
 A replay is the other shape of `messages.send`: it names `replayOnCarrier:
 { handleId, carrier }` (`carrier` is `ws` or `rtc`), optionally `connection`, and
 nothing else a send would. `carrier`, `typeId`, `topicId`, `payload`, `roomRef`,
-`scope`, `reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
-`minSnapshotVersion`, `qos` and `toPeer` are each refused beside it, by the control validator and by
+`scope`, `principalId`, `recipientPeer`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`,
+`onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`
+are each refused beside it, by the control validator and by
 the page, because the replayed envelope already fixes them. It is a harness
 capability, not a product path: the product falls back to its second carrier only
 after an `unroutable` verdict or a `refused` `unsupported` one (an ack algorithm the
@@ -375,6 +379,33 @@ it sends the sender polls `director.status` with `refresh: true` until
 
 The hosted manifest 22 withholds the leader cells too, so it stays as recorded.
 
+The `claim` conformance scenarios (`scenarios/claim/`) run on the same three agents, in
+the full scope, and prove an exclusive send's claim on its resource key. Each cell
+names the resource `claim-<carrier>-<scenarioKey>`, so every send of the cell meets on one
+key and no cell meets a key another carrier's cell may still hold. A recipient role may
+send: `recipient-b` sends on its own connection, and its handle id names the role.
+
+- `claim-first-wins` (`ws`, `rtc-with-ws-fallback`): the sender's exclusive room
+  broadcast with `ack: 'all-logical-recipients'` is confirmed by `receiver` and
+  `recipient-b` in the receipt window, and its `attemptCarriers` reads `['ws']` on both
+  carriers, since an exclusive send takes WS under every strategy but `rtc`. Once
+  `recipient-b` has received that message, it sends its own exclusive broadcast on the
+  same resource and reads the verdict `rejected`: `failure.kind: 'relay-rejected'`,
+  `failure.rejection.relay: 'trusted-server'`, `failure.rejection.reason:
+  'held-by-other'`, one attempt. `recipient-b` then reads that no second copy arrives for
+  the rest of its window, so its page stays until its ACK of the exclusive claim has left.
+- `claim-expires-reclaims` (`ws` only): the sender holds an exclusive claim with `ttlMs: 3000` and pins
+  no receipt, since its short exclusive claim may end `acknowledged` or `expired`; its evidence is
+  its admission and receiving the reclaim. `recipient-b` receives that send, holds
+  3500 ms past it as a `messages.received` absence (no second copy arrives), and its own
+  exclusive send on the resource is admitted and delivered to the sender and the receiver;
+  it reads its receipt `acknowledged` after its own absence window.
+- `claim-refused-on-rtc` (`rtc` only): the RTC origin refuses the sender's exclusive
+  send, which ends `rejected` with `failure.kind: 'refused'`, `failure.reason:
+  'unsupported'` and no carrier attempt.
+
+The hosted manifests 18 and 22 withhold the claim cells, so they stay as recorded.
+
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
 `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that
 refuses the second copy as `not-handled`/`duplicate`. Both orders prove that
@@ -486,6 +517,19 @@ lane, larger in a long-lived hosted room) for at most 30 s; the 31 s wait lets i
 send (R-S3c-ii-9). The limit is three fillers, so the two counted sends alone refuse the third, and the second keeps
 at least 9 180 bytes of headroom. Its receiver's window adds one readiness budget and the 31 s wait, since the sender
 reconnects and waits before it sends. In manifest 18 the three `capacity` blocks run after every other block.
+Two more cells of the family prove the age and track limits over every carrier, and manifest 18
+withholds both, so it stays as recorded. `capacity-age` keeps the sender's connection and constants and sends one
+message with `ttlMs` `AL_VOLATILE_SESSION_MAX_AGE_MS + 1_000` (301 000): it ends `rejected` with
+`failure: { kind: 'refused', reason: 'capacity', limit: 'age' }` and `attempts` 0, and the receiver proves for the
+whole window that nothing reaches it. `capacity-tracks` closes, reconnects with `rallar.almVolatileLimits`
+naming the four production limits but `maxTracks: 2` and sends three at-least-once messages with `ack: 'receiver'`, each `seq` 1 on an ordering key of
+its own (`alm-<carrier>-capacity-tracks-<index>`), so each would open one track: the third ends `rejected` with
+`limit: 'tracks'` and `attempts` 0; right after the refusal, while both sends still hold their tracks, it reads
+`stats` and asserts `rallar.alm.usage.tracks` 2, `rallar.alm.limits.maxTracks` 2 and `rallar.alm.overloaded` false
+(the only ledger reading a lane cell asserts at a bound); the first two are acknowledged; then it reconnects without
+the field. A
+received message never opens a counted track, so it needs no wait for the rejoin's state sync, and its receiver's
+window adds only the readiness budget. The three cells live in `conformance/alm/scenarios/volatile-bound/`.
 
 The same-context family runs, in the full scope, as the `same-context family over <carrier>` Playwright test. Its
 scenarios declare a fourth role, `successor`: a second page opened in the sender's own browser context, so it shares
@@ -691,14 +735,18 @@ a connect-only transport: `rtc.send` accepts `realtime` and `messages.rtc` only.
 
 ### The lane-only `rallar.almVolatileLimits` connect field
 
-`rtc.connect.rallar.almVolatileLimits` is `{ maxAdmissions, maxBytes }`, each a positive integer, and nothing else;
-any other shape fails the connect. It is validated in the page only: the recipe schema and the control validator treat
-`rallar` as a free record, so a malformed value fails its `rtc.connect` rather than the recipe. It lowers the ALM volatile bound (D74) of the session this connect initialises: the
-page holds it and hands the browser session a read port that the session reads once, when it initialises. It is a
-harness capability, never a `rallar.connect` option. A facade that is already connected keeps the bound its session
-read, and a connect that names the field on a live facade has no effect until its next session, so a recipe closes
-the connection before a connect that names the field, and closes and reconnects without it
-to restore the constants (`AL_VOLATILE_SESSION_MAX_ADMISSIONS`, `AL_VOLATILE_SESSION_MAX_BYTES`).
+`rtc.connect.rallar.almVolatileLimits` names `maxAdmissions` and `maxBytes` and may name `maxAgeMs` and `maxTracks`,
+each a positive integer, and nothing else; any other shape fails the connect with
+`rallar.almVolatileLimits must name maxAdmissions and maxBytes and may name maxAgeMs and maxTracks, each a positive integer.`
+An age or track limit the field leaves out reads its constant (`AL_VOLATILE_SESSION_MAX_AGE_MS`,
+`AL_VOLATILE_SESSION_MAX_TRACKS`), so a two-field value lowers the count or byte limit alone. It is validated in
+the page only: the recipe schema and the control validator treat `rallar` as a free record, so a malformed value fails
+its `rtc.connect` rather than the recipe. It lowers the ALM volatile bound (D74) of the session this connect
+initialises: the page holds it and hands the browser session a read port that the session reads once, when it
+initialises. It is a harness capability, never a `rallar.connect` option. A facade that is already connected keeps the
+bound its session read, and a connect that names the field on a live facade has no effect until its next session, so a
+recipe closes the connection before a connect that names the field, and closes and reconnects without it to restore
+the constants (`AL_VOLATILE_SESSION_LIMITS`).
 
 ### The lane-only `rallar.recoveryOwner` connect field
 
@@ -1016,6 +1064,18 @@ rate, drift, jitter, send success ratio, or backpressure evidence misses the
 configured limits. The `stats` command mirrors the latest loop under
 `stats.load` without raw iteration or send observation arrays for SPA and
 artifact summaries.
+
+A browser agent's `stats` result also carries its page's session ledger under
+`stats.rallar.alm`: `{ usage: { admissions, bytes, oldestAgeMs, tracks },
+limits: { maxAdmissions, maxBytes, maxAgeMs, maxTracks }, overloaded }`, read at
+the command from `rallar.messages.readUsage()` (D180) — the same block reaches
+`health`'s `stats`, the `rallar.bb.stats` event and `latestStats`, so an
+`assert` reads it as `latestStats.rallar.alm.usage.admissions`. The block is
+absent before the page's connect completes, on a runtime that drives no Rallar
+page, and in the control client's periodic stats envelopes and final report,
+which read no page. A page answer that is not a whole report fails the `stats`
+command, naming each bad field. No command kind is added: a manifest's
+existing stats loops record the ledger over time.
 
 `rtc.stream` is the high-rate RTC traffic primitive. Use it when a recipe wants
 to model a realtime stream, such as 100 frames at 20 Hz, without expanding that

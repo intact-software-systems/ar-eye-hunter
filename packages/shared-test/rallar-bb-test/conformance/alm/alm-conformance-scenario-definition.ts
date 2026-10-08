@@ -25,8 +25,13 @@ export interface CreateAlmConformanceRecipesInput {
 export type AlmConformanceScenarioId =
     | 'bounded-rejection'
     | 'capacity'
+    | 'capacity-age'
+    | 'capacity-tracks'
     | 'checkpoint-lag'
     | 'checkpoint-recovery'
+    | 'claim-expires-reclaims'
+    | 'claim-first-wins'
+    | 'claim-refused-on-rtc'
     | 'cross-carrier-duplicate'
     | 'deadline-expiry'
     | 'delivery-baseline'

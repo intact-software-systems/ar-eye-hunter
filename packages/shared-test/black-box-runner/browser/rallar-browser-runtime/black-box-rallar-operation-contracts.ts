@@ -17,7 +17,7 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomLayout } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
-import type { ALDurabilityAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import type { ALDurabilityAlgo, ALOwnershipAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryAttemptOutcome,
@@ -304,6 +304,10 @@ export interface BlackBoxRallarMessageSendInput {
     readonly principalId: string | undefined;
     /** Absent, the send names no fixed audience. */
     readonly recipientPeer: 'receiver' | 'recipient-b' | undefined;
+    /** Absent, the send is `shared`. */
+    readonly ownership: ALOwnershipAlgo | undefined;
+    /** Absent, the product mints a fresh resource per send. */
+    readonly resourceId: string | undefined;
     readonly reliability: 'best-effort' | 'at-least-once' | undefined;
     readonly ack: ALAckMode | undefined;
     /** Absent, the send is volatile. */

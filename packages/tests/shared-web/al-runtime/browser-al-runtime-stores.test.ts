@@ -40,8 +40,7 @@ import {
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import {
-    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-    AL_VOLATILE_SESSION_MAX_BYTES,
+    AL_VOLATILE_SESSION_LIMITS,
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -783,10 +782,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
     });
 
     it('carries the one session budget it is handed on every memory pair (C3)', () => {
-        const budget = new ALVolatileSessionBudget({
-            maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-            maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-        });
+        const budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
         const outbound = createBrowserALVolatileOutboundRuntimeStores(
             'browser-ws-client:session-budget',
             budget

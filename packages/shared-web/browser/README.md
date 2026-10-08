@@ -299,7 +299,8 @@ Message ownership is concentrated under [`messages/`](./messages/):
   When an inbound runtime can no longer order a sender's messages it hands the
   sink the refused message and its `ALInboundResyncCursor`; the sink invokes the
   message's route owner once per ordering track (ordering key, sender, epoch)
-  for the life of the runtime, states `recovery-owner-invoked` with that cursor
+  while the track goes on resynchronizing (the sink forgets a track 5 minutes
+  after its last resynchronization), states `recovery-owner-invoked` with that cursor
   on the `storage` diagnostics port even when the owner throws (the error is
   logged), and states nothing for a route without an owner, whose message is
   dropped as before. A new epoch is a new track; a reload invokes the owner

@@ -34,7 +34,9 @@ import { fixedListDelivery } from './scenarios/audiences/fixed-list-delivery.ts'
 import { principalDelivery } from './scenarios/audiences/principal-delivery.ts';
 import { worldRouting } from './scenarios/audiences/world-routing.ts';
 import { boundedRejection } from './scenarios/bounded-rejection.ts';
-import { capacity } from './scenarios/capacity.ts';
+import { claimExpiresReclaims } from './scenarios/claim/claim-expires-reclaims.ts';
+import { claimFirstWins } from './scenarios/claim/claim-first-wins.ts';
+import { claimRefusedOnRtc } from './scenarios/claim/claim-refused-on-rtc.ts';
 import { crossCarrierDuplicate } from './scenarios/cross-carrier-duplicate.ts';
 import { deadlineExpiry } from './scenarios/deadline-expiry.ts';
 import { deliveryBaseline } from './scenarios/delivery-baseline.ts';
@@ -62,6 +64,9 @@ import { receiptedAudience } from './scenarios/receipted-audience.ts';
 import { serverCommand } from './scenarios/server-command.ts';
 import { storageUnavailable } from './scenarios/storage-unavailable.ts';
 import { unicastFallback } from './scenarios/unicast-fallback.ts';
+import { capacityAge } from './scenarios/volatile-bound/capacity-age.ts';
+import { capacityTracks } from './scenarios/volatile-bound/capacity-tracks.ts';
+import { capacity } from './scenarios/volatile-bound/capacity.ts';
 import { volatileDefault } from './scenarios/volatile-default.ts';
 import { wsUnicastReceipt } from './scenarios/ws-unicast-receipt.ts';
 
@@ -125,6 +130,8 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     unicastFallback,
     serverCommand,
     capacity,
+    capacityAge,
+    capacityTracks,
     ...receiptedAudience,
     fencedDelivery,
     fencedCatchUp,
@@ -135,6 +142,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     leaderConfirms,
     noLeaderRefused,
     leaderOutsideList,
+    claimFirstWins,
+    claimExpiresReclaims,
+    claimRefusedOnRtc,
     durableTakeover,
     flushOnHide
 ];
@@ -219,7 +229,7 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
             toConnectCommand(recipe),
             ...toConnectedStorageCountersCommands(recipe),
             ...recipe.commands,
-            toStatsCommand(recipe)
+            toStatsCommand(recipe, 'stats')
         ]
     };
 }

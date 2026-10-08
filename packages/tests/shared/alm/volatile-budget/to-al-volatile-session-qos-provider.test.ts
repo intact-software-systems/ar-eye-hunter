@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALQosInputProvider, ALQosMessageContext } from '@shared/al-contracts/al-policy.ts';
-import { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import {
+    AL_VOLATILE_SESSION_LIMITS,
+    ALVolatileSessionBudget
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { toALVolatileSessionQosProvider } from '@shared/alm/volatile-budget/to-al-volatile-session-qos-provider.ts';
 
 const NOW_MS = 1_700_000_000_000;
@@ -24,8 +27,8 @@ const APPLICATION: ALQosInputProvider = {
 };
 
 function createFullBudget(): ALVolatileSessionBudget {
-    const budget = new ALVolatileSessionBudget({ maxAdmissions: 1, maxBytes: 1_000 });
-    budget.record({ msgId: 'received', bytes: 10, deadlineAtMs: NOW_MS + 1_000, nowMs: NOW_MS });
+    const budget = new ALVolatileSessionBudget({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 1, maxBytes: 1_000 });
+    budget.record({ msgId: 'received', bytes: 10, deadlineAtMs: NOW_MS + 1_000, nowMs: NOW_MS, trackKey: undefined });
     return budget;
 }
 
@@ -45,7 +48,7 @@ const ACK = newALAckControlMessage(
 
 describe('the session QoS provider over the volatile budget (D78)', () => {
     it('answers the application\'s live fields while the session is under its bound', () => {
-        const budget = new ALVolatileSessionBudget({ maxAdmissions: 1, maxBytes: 1_000 });
+        const budget = new ALVolatileSessionBudget({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 1, maxBytes: 1_000 });
         const provider = toALVolatileSessionQosProvider(APPLICATION, budget, () => NOW_MS);
 
         expect(provider.liveForMessage?.(MESSAGE, CONTEXT)).toEqual({ connectedNeighborCount: 3 });

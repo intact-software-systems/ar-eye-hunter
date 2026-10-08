@@ -23,7 +23,9 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'recipient-b) names a fixed audience of one inside the room by lane role, which the page resolves at send ' +
             'time among the room\'s other live sessions whose principal is not the sender\'s: receiver to the one such ' +
             'session, recipient-b to the one that is not the room\'s leader; a role it cannot resolve fails the send ' +
-            'and opens no handle. ' +
+            'and opens no handle. ownership (shared, exclusive) passes the send\'s ownership to the product as given; ' +
+            'resourceId names the route\'s resource, which an exclusive send claims for the sending session; absent, ' +
+            'the product mints a fresh resource per send. ' +
             'A replay names only replayOnCarrier (and connection): a ' +
             'harness capability the product never exercises, it re-admits the envelope an earlier handle\'s first ' +
             'carrier captured on the other carrier, opens no handle, and returns that admission verdict.',

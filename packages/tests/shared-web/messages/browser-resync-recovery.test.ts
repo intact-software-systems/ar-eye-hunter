@@ -11,6 +11,7 @@ import type {
     ALInboundResyncRequired
 } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
+import { AL_VOLATILE_SESSION_MAX_AGE_MS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { createBrowserMessageSenderFixture } from './browser-message-sender-fixture.ts';
 
@@ -62,6 +63,8 @@ interface RecoveryFixture {
     readonly owner: RallarChannelRecovery;
     /** Every cursor the owner was handed, in order. */
     readonly invocations: ALInboundResyncCursor[];
+    /** Moves the recovery's clock forward. */
+    readonly advance: (ms: number) => void;
 }
 
 function createRecoveryFixture(): RecoveryFixture {
@@ -69,11 +72,22 @@ function createRecoveryFixture(): RecoveryFixture {
     const storage: ALStorageEvent[] = [];
     const invocations: ALInboundResyncCursor[] = [];
     const owner: RallarChannelRecovery = { onResyncRequired: (cursor) => invocations.push(cursor) };
+    let nowMs = 1_000;
     const recovery = new BrowserResyncRecovery({
         owners,
-        storage: (event) => storage.push(event)
+        storage: (event) => storage.push(event),
+        nowMs: () => nowMs
     });
-    return { owners, recovery, storage, owner, invocations };
+    return {
+        owners,
+        recovery,
+        storage,
+        owner,
+        invocations,
+        advance: (ms) => {
+            nowMs += ms;
+        }
+    };
 }
 
 describe('the browser resync recovery', () => {
@@ -106,6 +120,33 @@ describe('the browser resync recovery', () => {
 
         expect(fixture.invocations).toEqual([first.cursor, nextEpoch.cursor]);
         expect(fixture.storage.map((event) => event.kind === 'recovery-owner-invoked' ? event.epoch : event.kind)).toEqual([0, 1]);
+    });
+
+    it('keeps a track that goes on resynchronizing invoked once', () => {
+        const fixture = createRecoveryFixture();
+        fixture.owners.setOwner(CHAT_ROUTE, fixture.owner);
+        const first = toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 300 }));
+
+        fixture.recovery.onResyncRequired(first);
+        fixture.advance(AL_VOLATILE_SESSION_MAX_AGE_MS);
+        fixture.recovery.onResyncRequired(toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 301 })));
+        fixture.advance(AL_VOLATILE_SESSION_MAX_AGE_MS);
+        fixture.recovery.onResyncRequired(toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 302 })));
+
+        expect(fixture.invocations).toEqual([first.cursor]);
+    });
+
+    it('invokes the owner again for a track it has not seen resynchronize for the session age budget', () => {
+        const fixture = createRecoveryFixture();
+        fixture.owners.setOwner(CHAT_ROUTE, fixture.owner);
+        const first = toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 300 }));
+        const later = toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 900 }));
+
+        fixture.recovery.onResyncRequired(first);
+        fixture.advance(AL_VOLATILE_SESSION_MAX_AGE_MS + 1);
+        fixture.recovery.onResyncRequired(later);
+
+        expect(fixture.invocations).toEqual([first.cursor, later.cursor]);
     });
 
     it('invokes nothing and states nothing for a route without an owner', () => {

@@ -35,6 +35,10 @@ import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALDeliveryAdmissionVerdict, ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import {
+    AL_VOLATILE_SESSION_LIMITS,
+    type ALVolatileSessionReport
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtOperationBatch } from '@shared/crdt/mod.ts';
@@ -137,6 +141,13 @@ export const facadeRecords: BrowserRuntimeFacadeRecords = {
 
 const QUEUED_ADMISSION: ALDeliveryAdmissionVerdict = { kind: 'admitted', durable: true, queuedAttempts: 1 };
 
+/** The ledger of a connected session that holds nothing, at the production limits. */
+const IDLE_SESSION_REPORT: ALVolatileSessionReport = {
+    usage: { admissions: 0, bytes: 0, oldestAgeMs: 0, tracks: 0 },
+    limits: AL_VOLATILE_SESSION_LIMITS,
+    overloaded: false
+};
+
 export const facadeSession: AuthSession = {
     clientId: 'client-1',
     accessToken: 'access-token-1',
@@ -154,6 +165,8 @@ export const facadeBehavior = {
     restore: vi.fn<BlackBoxBrowserAuthDependency['restore']>(),
     connect: vi.fn<(options?: RallarScopedOperationOptions) => Promise<void>>(),
     disconnect: vi.fn<BlackBoxBrowserRallarRuntimeDependency['disconnect']>(),
+    isConnected: vi.fn<BlackBoxBrowserRallarRuntimeDependency['isConnected']>(),
+    readUsage: vi.fn<BlackBoxBrowserMessagesDependency['readUsage']>(),
     roomStateRefresh: vi.fn<BlackBoxBrowserRallarRuntimeDependency['refreshRoomState']>(),
     roomJoin: vi.fn<BlackBoxBrowserRoomsDependency['join']>(),
     roomLeave: vi.fn<BlackBoxBrowserRoomsDependency['leave']>(),
@@ -305,7 +318,8 @@ const messages: BlackBoxBrowserMessagesDependency = {
                 unsubscribe();
             };
         }
-    }
+    },
+    readUsage: () => facadeBehavior.readUsage()
 };
 
 const rtc: BlackBoxBrowserRtcDependency = {
@@ -416,7 +430,7 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
         await facadeBehavior.roomStateRefresh(roomRef, options);
     },
     status: () => 'connected',
-    isConnected: () => true,
+    isConnected: () => facadeBehavior.isConnected(),
     session: () => facadeSession,
     auth,
     rooms,
@@ -444,6 +458,8 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     facadeBehavior.restore.mockReturnValue(undefined);
     facadeBehavior.connect.mockResolvedValue(undefined);
     facadeBehavior.disconnect.mockResolvedValue(undefined);
+    facadeBehavior.isConnected.mockReturnValue(true);
+    facadeBehavior.readUsage.mockReturnValue(IDLE_SESSION_REPORT);
     facadeBehavior.roomStateRefresh.mockResolvedValue(undefined);
     facadeBehavior.roomJoin.mockResolvedValue(undefined);
     facadeBehavior.roomLeave.mockResolvedValue(undefined);

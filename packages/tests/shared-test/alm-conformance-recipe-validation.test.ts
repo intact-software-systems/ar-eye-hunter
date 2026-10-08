@@ -46,6 +46,8 @@ const CARRIER_SCENARIO_IDS = {
         'ws-unicast-receipt',
         'server-command',
         'capacity',
+        'capacity-age',
+        'capacity-tracks',
         ...Array.from({ length: 3 }, () => 'receipted-audience' as const),
         'fenced-delivery',
         'fenced-catch-up',
@@ -56,6 +58,8 @@ const CARRIER_SCENARIO_IDS = {
         'leader-confirms',
         'no-leader-refused',
         'leader-outside-list',
+        'claim-first-wins',
+        'claim-expires-reclaims',
         'durable-takeover',
         'flush-on-hide'
     ],
@@ -76,6 +80,8 @@ const CARRIER_SCENARIO_IDS = {
         'not-yet-in-sync',
         'ws-unicast-receipt',
         'capacity',
+        'capacity-age',
+        'capacity-tracks',
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const),
         'fenced-delivery',
         'fenced-catch-up',
@@ -84,6 +90,7 @@ const CARRIER_SCENARIO_IDS = {
         'world-routing',
         'leader-confirms',
         'no-leader-refused',
+        'claim-refused-on-rtc',
         'durable-takeover',
         'flush-on-hide'
     ],
@@ -109,11 +116,14 @@ const CARRIER_SCENARIO_IDS = {
         'ws-unicast-receipt',
         'unicast-fallback',
         'capacity',
+        'capacity-age',
+        'capacity-tracks',
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const),
         'principal-delivery',
         'fixed-list-delivery',
         'world-routing',
         'leader-confirms',
+        'claim-first-wins',
         'durable-takeover'
     ]
 } as const;

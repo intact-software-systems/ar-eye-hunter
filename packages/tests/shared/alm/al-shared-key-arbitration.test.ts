@@ -8,7 +8,11 @@ import {
 } from 'vitest';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
-import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALUnicastMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -148,6 +152,25 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('shared-key arbitratio
         const recomputed = await readInboundDecision(store, a);
         expect(recomputed.plan.orderingRuntime.releasableSeqs).toEqual([2]);
         expect(await store.commitBundle(recomputed.bundle)).toBe('committed');
+    });
+
+    it('decides on the inbound claim key: one exclusive resource, two senders', async () => {
+        const fixture = await createArbitrationFixture(storage);
+        const store = createInboundStore(fixture);
+        const a = createClaimingInboundMessage('sender-a');
+        const b = createClaimingInboundMessage('sender-b');
+
+        await runStaleReadThenSequentialCommit({
+            fixture,
+            arbitratedKey: `${fixture.namespace}:claim:app/workspace/room-1/arena.intent/room/pickup-1`,
+            keyOnlyAWrites: toALInboundMessageOwnerKey(fixture.namespace, a.id.msgId, a.id.senderId),
+            readA: () => readInboundDecision(store, a),
+            readB: () => readInboundDecision(store, b),
+            commitB: (decision) => store.commitBundle(decision.bundle),
+            commitA: (decision) => store.commitBundle(decision.bundle)
+        });
+
+        expect((await readInboundDecision(store, a)).plan.dropReasonCode).toBe('held-by-other');
     });
 
     it('decides on the outbound supersedence latest: one supersedence key, two senders', async () => {
@@ -328,6 +351,18 @@ function createInboundMessage(senderId: string, version: number, supersedenceKey
     );
     const createdTs = Date.now() - 1_000 + version;
     return { ...message, id: { ...message.id, ts: createdTs }, audit: { ...message.audit, createdTs } };
+}
+
+/** An exclusive room broadcast on the one resource every message this helper builds names. */
+function createClaimingInboundMessage(senderId: string): ALMessage {
+    return newALBroadcastMessage(
+        senderId,
+        { topicId: 'arena.intent', resourceId: 'pickup-1', contextId: 'room' },
+        'room',
+        'pickup-intent.v1',
+        {},
+        { groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' }, ownership: 'exclusive', ttlMs: 60_000 }
+    );
 }
 
 function toInboundDedupKey(message: ALMessage): string {

@@ -1,5 +1,6 @@
 import type {
     RallarDirectorOutputOptions,
+    RallarDirectorRelayClaim,
     RallarDirectorRelayConfig,
     RallarDirectorRelayEnvelope,
     RallarDirectorRelayHandle,
@@ -76,14 +77,16 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
     public readonly status = (): RallarDirectorStatus => this.input.status.read(this.roomTarget);
 
     public readonly sendIntent = async (
-        intent: TIntent
+        intent: TIntent,
+        claim?: RallarDirectorRelayClaim
     ): Promise<RallarDirectorRelaySendResult> => {
         const guarded = this.guardSend();
         return guarded ?? await this.input.transport.sendCommand({
             current: this.status(),
             topicId: this.topicId,
             typeId: this.input.config.intentTypeId,
-            payload: intent
+            payload: intent,
+            claim
         });
     };
 
@@ -151,7 +154,8 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
             current: this.status(),
             topicId: this.topicId,
             typeId: this.syncRequestTypeId,
-            payload: payload ?? {}
+            payload: payload ?? {},
+            claim: undefined
         });
     };
 

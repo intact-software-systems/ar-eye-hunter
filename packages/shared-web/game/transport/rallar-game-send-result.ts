@@ -12,6 +12,7 @@ export interface RallarGameSendResult {
         | 'failed'
         | 'no-director'
         | 'not-director'
+        | 'held-by-other'
         | 'not-ready'
         | 'stopped';
     readonly transport?: 'local' | 'ws' | 'rtc' | 'realtime' | 'director-relay';

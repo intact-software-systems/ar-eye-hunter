@@ -25,6 +25,7 @@ import {
     toALOutboundDispatchCompletionReceipt,
     type ALOutboundDispatchCompletionRead
 } from './control/to-al-outbound-dispatch-completion-receipt.ts';
+import { toALCapacityRefusedVerdict } from './lane/admit-al-outbound-volatile-budget.ts';
 import { toALOutboundAckTimeoutEffectId, toALOutboundSendEffectId } from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
@@ -279,15 +280,16 @@ function toDuplicateDispatchResult<TPrepared>(
 
 /** Keyed on the planner's drop code, never the human-readable `dropReason` string. */
 function toALOutboundAdmissionVerdict<TPrepared>(
-    plan: Pick<ALOutboundDispatchPlan<TPrepared>, 'dropReason' | 'dropReasonCode'>
+    plan: Pick<ALOutboundDispatchPlan<TPrepared>, 'dropReason' | 'dropReasonCode' | 'capacityLimit'>
 ): ALDeliveryAdmissionVerdict {
     const detail = plan.dropReason ?? '';
     switch (plan.dropReasonCode) {
         case 'unauthorized':
         case 'unsupported':
-        case 'capacity':
         case 'no-leader':
             return { kind: 'refused', reason: plan.dropReasonCode, detail };
+        case 'capacity':
+            return toALCapacityRefusedVerdict(plan.capacityLimit, detail);
         case 'not-yet-in-sync':
             return { kind: 'deferred', reason: 'not-yet-in-sync', detail };
         case 'no-route':

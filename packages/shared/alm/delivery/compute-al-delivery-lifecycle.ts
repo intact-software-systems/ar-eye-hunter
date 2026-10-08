@@ -166,7 +166,7 @@ function toAdmissionLifecycle(
         case 'deferred':
             return { ...previous, state: 'pending-authority' };
         case 'refused':
-            return toFailureLifecycle(previous, { kind: 'refused', reason: verdict.reason }, verdict.detail);
+            return toFailureLifecycle(previous, toRefusedFailure(verdict), verdict.detail);
         case 'unroutable':
             return toAdmissionAttemptLifecycle(previous, {
                 outcome: 'unroutable',
@@ -318,6 +318,14 @@ function toReasonedLifecycle(
     reason: string | undefined
 ): ALDeliveryLifecycle {
     return { ...previous, state, evidence: { ...previous.evidence, reason } };
+}
+
+function toRefusedFailure(
+    verdict: Extract<ALDeliveryAdmissionVerdict, Readonly<{ kind: 'refused'; }>>
+): ALDeliveryFailure {
+    return verdict.limit === undefined
+        ? { kind: 'refused', reason: verdict.reason }
+        : { kind: 'refused', reason: verdict.reason, limit: verdict.limit };
 }
 
 function toReceiptExhaustedFailure(

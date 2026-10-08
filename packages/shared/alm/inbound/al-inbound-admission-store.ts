@@ -1,4 +1,4 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALAckPayload, ALPendingAckSnapshot } from '../../al-contracts/al-control.ts';
 import type { ALMessageHandlingPlan, ALMessagePlanningObservations } from '../../al-contracts/al-policy.ts';
 import type {
@@ -13,7 +13,11 @@ import {
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { type ALAdmissionBackend, type ALAdmissionWriteContext } from '../al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
-import { decodeALAdmissionNumber, decodeALAdmissionSupersedenceValue } from '../al-admission-value-validation.ts';
+import {
+    decodeALAdmissionNumber,
+    decodeALAdmissionString,
+    decodeALAdmissionSupersedenceValue
+} from '../al-admission-value-validation.ts';
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
@@ -107,6 +111,8 @@ export interface ALInboundAdmissionObservations {
     readonly senderId: string;
     readonly messageOwner: ALInboundMessageOwner | undefined;
     readonly dedup: Readonly<{ key: string; expiresAtTimestamp: number | undefined; }> | undefined;
+    /** Read only for an exclusive room message from a WS client: the session holding its resource key, if any. */
+    readonly claim: Readonly<{ key: string; holderPeerId: string | undefined; }> | undefined;
     readonly ordering:
         | Readonly<{
             trackKey: string;
@@ -220,6 +226,12 @@ export type ALInboundAdmissionMutation =
     | Readonly<{
         kind: 'set-dedup';
         dedupKey: string;
+        expireAtTimestamp: number;
+    }>
+    | Readonly<{
+        kind: 'set-claim';
+        claimKey: string;
+        holderPeerId: string;
         expireAtTimestamp: number;
     }>
     | Readonly<{
@@ -422,6 +434,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 senderId: msg.id.senderId
             });
             const dedupExpiresAt = await session.read(this.toDedupKey(prePlan.dedupKey), decodeALAdmissionNumber);
+            const claim = await this.readClaim(session, toALInboundClaimKey(input));
             const ordering = await this.readOrderingState(session, toALOrderingTrackKey(msg));
             const supersedence = await this.readSupersedenceState(session, prePlan.supersedence.key, msg.id.msgId);
             const deliveryProgress = await this.readDeliveryProgress(session, ordering.trackKey);
@@ -437,6 +450,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 request: input,
                 messageOwner,
                 dedupExpiresAt,
+                claim,
                 ordering,
                 supersedence,
                 deliveryProgress,
@@ -472,24 +486,41 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         return { trackKey, snapshot, buffered: buffered.sort((left, right) => left.seq - right.seq) };
     }
 
+    /** The session holding the exclusive claim on `claimKey`, read beside the dedup key and guarded at the commit. */
+    private async readClaim(
+        database: Pick<ALAdmissionBackend, 'read'>,
+        claimKey: string | undefined
+    ): Promise<ALInboundAdmissionObservations['claim']> {
+        return claimKey === undefined ? undefined : {
+            key: claimKey,
+            holderPeerId: await database.read(this.toClaimStoreKey(claimKey), decodeALAdmissionString)
+        };
+    }
+
+    private async readBufferedMessage(
+        database: Pick<ALAdmissionBackend, 'read'>,
+        trackKey: string,
+        seq: number
+    ): Promise<ALInboundResolvedDeliverySnapshot | undefined> {
+        const prefix = this.toBufferedTrackPrefix(trackKey);
+        const stored = await database.read(
+            this.toBufferedKey(trackKey, seq),
+            (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
+        );
+        return stored === undefined
+            ? undefined
+            : await readALInboundBufferedMessage({ database, namespace: this.namespace, stored });
+    }
+
     async readBufferedRelease(
         input: ReadALInboundBufferedReleaseInput
     ): Promise<ALInboundBufferedReleaseReadDto | undefined> {
         const { trackKey, seq, nowMs } = input;
-        const prefix = this.toBufferedTrackPrefix(trackKey);
         return await this.backend.readWithin(async (session): Promise<ALInboundBufferedReleaseReadDto | undefined> => {
-            const stored = await session.read(
-                this.toBufferedKey(trackKey, seq),
-                (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
-            );
-            if (!stored) {
+            const snapshot = await this.readBufferedMessage(session, trackKey, seq);
+            if (snapshot === undefined) {
                 return undefined;
             }
-            const snapshot = await readALInboundBufferedMessage({
-                database: session,
-                namespace: this.namespace,
-                stored
-            });
             const { msgId, senderId } = snapshot.msg.id;
             const messageOwner = await this.readMessageOwner(session, snapshot.msg);
             const deliveryProgress = await this.readDeliveryProgress(session, trackKey);
@@ -646,33 +677,14 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             key: observed.dedup.key,
             expiresAtTimestamp: await transaction.read(this.toDedupKey(observed.dedup.key), decodeALAdmissionNumber)
         };
+        const claim = await this.readClaim(transaction, observed.claim?.key);
         const ordering = observed.ordering === undefined
             ? undefined
             : await this.readOrderingState(transaction, observed.ordering.trackKey);
-        const deliveryProgress = observed.deliveryProgress === undefined ? undefined : {
-            trackKey: observed.deliveryProgress.trackKey,
-            value: await transaction.read(
-                `${this.namespace}:delivered:${observed.deliveryProgress.trackKey}`,
-                decodeALInboundDeliveryProgress
-            )
-        };
-        const observedBuffered = observed.buffered;
-        const storedBuffered = observedBuffered === undefined ? undefined : await transaction.read(
-            this.toBufferedKey(observedBuffered.trackKey, observedBuffered.seq),
-            (value, key) =>
-                decodeALInboundBufferedSnapshot(value, {
-                    trackKey: observedBuffered.trackKey,
-                    prefix: this.toBufferedTrackPrefix(observedBuffered.trackKey),
-                    key
-                })
-        );
-        const buffered = storedBuffered === undefined
+        const deliveryProgress = await this.readDeliveryProgress(transaction, observed.deliveryProgress?.trackKey);
+        const buffered = observed.buffered === undefined
             ? undefined
-            : await readALInboundBufferedMessage({
-                database: transaction,
-                namespace: this.namespace,
-                stored: storedBuffered
-            });
+            : await this.readBufferedMessage(transaction, observed.buffered.trackKey, observed.buffered.seq);
         if (
             !jsonEquals(observed, {
                 ...observed,
@@ -682,6 +694,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 controlOwners,
                 supersedence,
                 dedup,
+                claim,
                 ordering,
                 buffered,
                 deliveryProgress
@@ -737,6 +750,12 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 const dedupKey = this.toDedupKey(mutation.dedupKey);
                 return await tx.set(dedupKey, mutation.expireAtTimestamp, mutation.expireAtTimestamp);
             }
+            case 'set-claim':
+                return await tx.set(
+                    this.toClaimStoreKey(mutation.claimKey),
+                    mutation.holderPeerId,
+                    mutation.expireAtTimestamp
+                );
             case 'set-ordering':
                 return await tx.set(
                     this.toOrderingKey(mutation.trackKey),
@@ -811,6 +830,10 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         return `${this.namespace}:dedup:${dedupKey}`;
     }
 
+    private toClaimStoreKey(claimKey: string): string {
+        return `${this.namespace}:claim:${claimKey}`;
+    }
+
     private toOrderingKey(trackKey: string): string {
         return `${this.namespace}:ordering:${trackKey}`;
     }
@@ -832,11 +855,33 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     }
 }
 
+/**
+ * The key an exclusive room message from a WS client claims: the room's scope and the route, each part encoded. Only
+ * the server arbitrates a claim, so no other source, no shared message and no roomless one claims anything. The same
+ * group id exists in other scopes, so the scope is part of the key.
+ */
+function toALInboundClaimKey(input: ReadALInboundMessageInput): string | undefined {
+    const { msg, source, prePlan } = input;
+    const groupRef = readALTargetGroupRef(msg);
+    if (source.kind !== 'ws-client' || prePlan.effective.ownership.algo !== 'exclusive' || groupRef === undefined) {
+        return undefined;
+    }
+    return [
+        groupRef.applicationId,
+        groupRef.workspaceId,
+        groupRef.groupId,
+        msg.route.topicId,
+        msg.route.contextId,
+        msg.route.resourceId
+    ].map(encodeURIComponent).join('/');
+}
+
 interface ToALInboundAdmissionReadInput {
     readonly namespace: string;
     readonly request: ReadALInboundMessageInput;
     readonly messageOwner: ALInboundMessageOwner | undefined;
     readonly dedupExpiresAt: number | undefined;
+    readonly claim: ALInboundAdmissionObservations['claim'];
     readonly ordering: ProviderBackedALInboundAdmissionStore.OrderingRead;
     readonly supersedence: ALInboundSupersedenceReadState;
     readonly deliveryProgress: ALInboundAdmissionObservations['deliveryProgress'];
@@ -851,7 +896,7 @@ interface ToALInboundAdmissionReadInput {
 
 function toALInboundAdmissionRead(observed: ToALInboundAdmissionReadInput): ALInboundAdmissionRead {
     const { msg, source, nowMs, prePlan } = observed.request;
-    const { ordering, supersedence, dedupExpiresAt, pendingAck, acks, controlOwners } = observed;
+    const { ordering, supersedence, dedupExpiresAt, claim, pendingAck, acks, controlOwners } = observed;
     return {
         namespace: observed.namespace,
         msg,
@@ -864,6 +909,7 @@ function toALInboundAdmissionRead(observed: ToALInboundAdmissionReadInput): ALIn
             senderId: msg.id.senderId,
             messageOwner: observed.messageOwner,
             dedup: { key: prePlan.dedupKey, expiresAtTimestamp: dedupExpiresAt },
+            claim,
             ordering: ordering.trackKey === undefined
                 ? undefined
                 : { trackKey: ordering.trackKey, snapshot: ordering.snapshot, buffered: ordering.buffered },
@@ -879,6 +925,7 @@ function toALInboundAdmissionRead(observed: ToALInboundAdmissionReadInput): ALIn
         controlOwners,
         supersedence,
         dedupExpiresAt,
+        claimHolderPeerId: claim?.holderPeerId,
         orderingTrackKey: ordering.trackKey,
         orderingSnapshot: ordering.snapshot,
         orderingTrackTtlMs: observed.orderingTrackTtlMs,
@@ -921,6 +968,7 @@ function toALInboundBufferedReleaseReadDto(
             senderId: snapshot.msg.id.senderId,
             messageOwner,
             dedup: undefined,
+            claim: undefined,
             ordering: undefined,
             buffered: snapshot,
             deliveryProgress: observed.deliveryProgress,

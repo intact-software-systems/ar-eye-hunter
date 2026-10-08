@@ -1,3 +1,4 @@
+import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -6,6 +7,7 @@ import {
     type RallarBlackBoxAlmBrowserPort,
     type RallarBlackBoxAlmCommandWithId
 } from './alm/browser-adapter-alm-commands.ts';
+import { decodeALVolatileSessionReport } from './alm/decode-al-volatile-session-report.ts';
 import {
     createBrowserCommandAbortScope,
     sleep,
@@ -138,7 +140,7 @@ class BrowserCommandAdapter {
                         rallar: await this.environment.rallarRuntime?.health({
                             includeRtcDiagnostics: command.includeRtcDiagnostics === true
                         }),
-                        stats: context.updateStats(command.commandId),
+                        stats: await context.updateStats(command.commandId),
                         webSockets: this.sockets.connectionNames()
                     },
                     nextStatus: context.state().status
@@ -222,12 +224,16 @@ export function createRallarBlackBoxBrowserTestRuntime(
         readSession: readOptionalBrowserSession,
         requestId: () => crypto.randomUUID()
     });
+    const rallarRuntime = options.rallarRuntime;
     const runtime = createRallarBlackBoxTestRuntime({
         now: options.now,
         sleep: options.sleep,
         idFactory: options.idFactory,
         commandExecutor: (command, context) => adapter.dispatch(command, context),
-        cleanup: (input, context) => adapter.cleanupOwnedResources(input, context)
+        cleanup: (input, context) => adapter.cleanupOwnedResources(input, context),
+        readAlmUsage: rallarRuntime === undefined
+            ? undefined
+            : async () => decodeAlmUsageResultValue(await rallarRuntime.readAlmUsage())
     });
 
     return Object.assign(runtime, {
@@ -235,6 +241,19 @@ export function createRallarBlackBoxBrowserTestRuntime(
             runtime.recordEvent(toRallarBrowserEventInput(event));
         }
     });
+}
+
+/** `undefined` is the page before its connect; anything else the page returns must be a whole report. */
+function decodeAlmUsageResultValue(value: unknown): ALVolatileSessionReport | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    return decodeALVolatileSessionReport(value).fold(
+        (issues) => {
+            throw new TypeError(`The page's session ledger report is not valid: ${issues.join('; ')}`);
+        },
+        (report) => report
+    );
 }
 
 function toCommandLocalDelayMs(command: CommandWithId): number {

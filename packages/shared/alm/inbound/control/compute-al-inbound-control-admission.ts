@@ -107,6 +107,7 @@ function toALInboundControlObservations(
         senderId: read.owner.senderId,
         messageOwner: read.owner,
         dedup: undefined,
+        claim: undefined,
         ordering: undefined,
         buffered: undefined,
         deliveryProgress: undefined,

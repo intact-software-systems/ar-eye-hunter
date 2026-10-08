@@ -5,6 +5,7 @@ import { rallar } from '@shared-web/browser/rallar.ts';
 import { createArenaRallarGameMatch, type ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type { ArenaEvent, ArenaSnapshot, GameRealtimeMessage } from '../../types.ts';
 import type { ArenaPeerMessageHandlers } from '../messages/use-arena-peer-message-handlers.ts';
+import { resolveArenaActiveEvent } from '../state/resolve-arena-active-event.ts';
 import type { ArenaStateAcceptance } from '../state/use-arena-state-acceptance.ts';
 import { acceptArenaMatchInput } from './handlers/accept-arena-match-input.ts';
 import { acceptArenaMatchIntent } from './handlers/accept-arena-match-intent.ts';
@@ -51,7 +52,10 @@ export function createArenaMatchRuntime(
                 return;
             }
             input.setArenaSnapshot((previous) => isCurrent() ? envelope.payload : previous);
-            input.setActiveEvent((previous) => isCurrent() ? envelope.payload.activeEvent : previous);
+            const nowEpochMs = input.nowMs();
+            input.setActiveEvent((previous) =>
+                isCurrent() ? resolveArenaActiveEvent(previous, envelope.payload.activeEvent, nowEpochMs) : previous
+            );
             input.setRemoteEvents((previous) => isCurrent() ? envelope.payload.events : previous);
         },
         onSyncRequest: async () => {

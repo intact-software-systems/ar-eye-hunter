@@ -105,6 +105,11 @@ WS server and Node keep the always-owned default.
   the deadline its admission implies (`durableEffectTtlMs`, 30 min). The durable pair keeps
   the owner row for the repository's 1 h. Both inbound lanes sweep the shared pair on their
   own 60 s schedule; this is idempotent.
+- **The age limit bounds counted admissions, not tracks.** Every pair keeps an ordering
+  track's snapshot for `orderingTrackTtlMs`, the repository's 1 h, the volatile pair too
+  (D181): a receiver that forgot a track would read the sender's next sequence as a gap
+  from 1 and stall the track on a repair. **Limit:** an idle track therefore holds two rows
+  for the hour after its last message.
 - **Diagnostics name the lane.** `effect-drain`, `claim-settled` and `rotation-alive`
   carry a required `lane: 'durable' | 'volatile'` (R-S3a-15).
 
@@ -129,7 +134,8 @@ An inbound data admission on the volatile pair is recorded in the session's vola
 ([`admitALInboundVolatileBudget`](./lane/admit-al-inbound-volatile-budget.ts)) and released at the earlier of the
 message deadline and 30 s after its arrival (`AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS`, R-S3c-ii-6); it is
 never refused for capacity (D74, D78). It raises the usage the session's own volatile sends are refused against and
-the usage `overloaded` reads (R-S3c-ii-3). A duplicate, a rejected arrival and a message whose sender named no
+the usage `overloaded` reads (R-S3c-ii-3): its count, its bytes and the age of the oldest counted admission, but
+never the track count, since the ledger records it with no ordering track (D179). A duplicate, a rejected arrival and a message whose sender named no
 deadline count nothing. The platform's own state sync admitted on the volatile pair counts as well (R-S3c-ii-7). An
 inbound plan never reads `overloaded` (R-S3c-ii-8): at its bound a session still delivers a best-effort arrival at
 once, still forwards it to the children it owns and still sends its ACKs and NACKs.
@@ -477,6 +483,29 @@ alone. A `group-leader` send is the narrowest of these audiences: the room's dir
 frozen at the RTC origin and admitted by the WS server (D164). Only the director delivers it, and its
 ordinary ACK, sent at admission as any recipient's, is the one the `leader` receipt expects; a room
 peer that carries it over RTC only forwards it and ends its subtree with `subtree-complete`.
+
+**Exclusive claims.** The WS server's admission of a client's exclusive message decides an exclusive claim on
+the message's resource key (D171–D173); it is not the worker's claim on a work row. The admission store's private
+`toALInboundClaimKey` ([`al-inbound-admission-store.ts`](./al-inbound-admission-store.ts)) names the key
+`<applicationId>/<workspaceId>/<groupId>/<topicId>/<contextId>/<resourceId>`, each part URI-encoded, only when the
+admission source is `ws-client`, the message's effective ownership is `exclusive` and its targets name a room
+`groupRef`; the room scope is part of the key because the same group id exists in other scopes. `readIncomingMessage`
+reads the exclusive-claim row at `<namespace>:claim:<key>` beside the dedup key, as a guarded observation of the
+commit: its value is the holder's peer id and its liveness is the row's own expiry, which every backend applies on
+read. The planning observation `claimHolderPeerId` carries the holder, and `resolveMessageDrop`, right after the
+duplicate check, drops an exclusive message whose key another peer holds with the code `held-by-other`; `planNack`
+answers it with a NACK of that reason to the sender, so nothing is delivered and a dropped claim starts no receipt. An
+admitted exclusive message writes the `set-claim` mutation, its sender as holder and its own deadline as expiry, in
+the transaction that commits its dedup, ordering and ACK rows: the holder's re-send moves the expiry, and an exclusive
+claim past its message's deadline leaves the key free for the next claimant. A message with no deadline of its
+own (no `expiresAtMs`, no expiry policy) holds the key until the deadline its admission implies (`durableEffectTtlMs`,
+the store's retention default); every browser send carries a `ttlMs`. Two claimants that both read a free key
+conflict at the commit, and the loser's retained admission is replayed and planned against the winner. A claim
+retained on a conflict may have started its `admitted` receipt; the `held-by-other` NACK of its replay then ends
+the origin's receipt, because the origin reads that NACK as a refusal of the whole send whatever its receipt (the
+server's own aggregate runs to its deadline, and its late `timed-out` receipt changes nothing). A
+`shared` message neither reads nor writes an exclusive claim, and an `rtc-peer` or `trusted-server` admission never
+reads or writes one, so a browser never drops a message for it.
 
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce

@@ -82,6 +82,21 @@ describe('the declared retryable outcomes (D56)', () => {
         expect(AL_DELIVERY_FALLBACK_REFUSAL_REASONS).toEqual(['unsupported']);
     });
 
+    it('keeps a claim held by another session out of the hand-over: the server decided, the carrier did not fail', () => {
+        expect(resolveALDeliveryFallbackTrigger({
+            settlement: {
+                kind: 'relay-rejected',
+                msgId: MSG_ID,
+                carrier: 'ws',
+                atMs: 1,
+                relayRejection: { relay: 'trusted-server', reason: 'held-by-other' },
+                detail: 'The server relay refused the message: held-by-other.'
+            },
+            leg: 'ws',
+            notReadyRun: 0
+        })).toEqual({ kind: 'continue', notReadyRun: 0 });
+    });
+
     it.each(
         [
             [{ kind: 'unroutable', reason: 'no-route', detail: 'no route' }, true],

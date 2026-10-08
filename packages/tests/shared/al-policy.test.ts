@@ -380,6 +380,40 @@ describe('AL QoS policy', () => {
         expect(plan.ack.enabled).toBe(false);
     });
 
+    it('drops an exclusive message on a resource another session holds and NACKs the sender held-by-other', () => {
+        const plan = planALMessageHandling(roomBroadcast('exclusive'), {
+            nowMs: 0,
+            selfPeerId: 'server',
+            fromPeerId: 'claimant-b',
+            claimHolderPeerId: 'claimant-a'
+        });
+
+        expect(plan.dropReasonCode).toBe('held-by-other');
+        expect(plan.dropReason).toBe('Exclusive resource is held by another session');
+        expect(plan.localDelivery.enabled).toBe(false);
+        expect(plan.forwarding.enabled).toBe(false);
+        expect(plan.ack.enabled).toBe(false);
+        expect(plan.nack).toEqual({ enabled: true, toPeerId: 'claimant-b', reason: 'held-by-other', missingRanges: [] });
+    });
+
+    it.each(
+        [
+            { ownership: 'exclusive', claimHolderPeerId: 'claimant-b', name: 'the holder\'s own exclusive re-send' },
+            { ownership: 'shared', claimHolderPeerId: 'claimant-a', name: 'a shared send on a held resource' },
+            { ownership: 'exclusive', claimHolderPeerId: undefined, name: 'an exclusive send on a free resource' }
+        ] as const
+    )('admits $name', ({ ownership, claimHolderPeerId }) => {
+        const plan = planALMessageHandling(roomBroadcast(ownership), {
+            nowMs: 0,
+            selfPeerId: 'server',
+            fromPeerId: 'claimant-b',
+            claimHolderPeerId
+        });
+
+        expect(plan.dropReasonCode).toBeUndefined();
+        expect(plan.nack.enabled).toBe(false);
+    });
+
     it('keeps semantic dedup sender-scoped by default', () => {
         const first = newALUnicastMessage(
             'sender-semantic-1',
@@ -706,6 +740,17 @@ describe('AL QoS policy', () => {
         expect(plan.nack.reason).toBe('overloaded');
     });
 });
+
+function roomBroadcast(ownership: 'shared' | 'exclusive'): ALMessage {
+    return newALBroadcastMessage(
+        'claimant-b',
+        { topicId: 'arena.intent', contextId: 'room', resourceId: 'pickup-1' },
+        'room',
+        'pickup-intent.v1',
+        {},
+        { groupRef: groupRef('room'), ownership, ttlMs: 30_000 }
+    );
+}
 
 function groupRef(groupId: string) {
     return {
