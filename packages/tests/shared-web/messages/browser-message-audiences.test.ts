@@ -21,6 +21,12 @@ const UNSUPPORTED_VERDICT: ALDeliveryAdmissionVerdict = {
     detail: 'RTC carries room audiences only: a world broadcast is unsupported'
 };
 
+const EXCLUSIVE_UNSUPPORTED_VERDICT: ALDeliveryAdmissionVerdict = {
+    kind: 'refused',
+    reason: 'unsupported',
+    detail: 'RTC cannot arbitrate an exclusive claim: an exclusive send is unsupported'
+};
+
 const mocks = getRallarFacadeMocks();
 let rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
 let webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
@@ -314,6 +320,111 @@ describe('a group-leader send', () => {
         async (strategy) => {
             await expect(createRoomChannel().send({ text: 'lead' }, { strategy, peerId: 'peer-1', ack: 'group-leader' }))
                 .rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.ack', code: 'leader-requires-room-audience' })] });
+            expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+            expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        }
+    );
+});
+
+describe('an exclusive send', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        resetRallarFacadeTestRuntime();
+        rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
+        webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
+        setRallarFacadeRoomSnapshots([createGroupSnapshotFixture({ ...ROOM_REF, sessionIds: ['session-1', 'peer-1'] })]);
+    });
+
+    it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc-with-ws-fallback', 'ws-then-rtc'])(
+        'claims its resource over WS alone on %s, with no RTC leg and no fallback evidence',
+        async (strategy) => {
+            const handle = await createRoomChannel().send(
+                { text: 'mine' },
+                { strategy, ownership: 'exclusive', resourceId: 'pickup-1' }
+            );
+
+            const { lifecycle } = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+            expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+            expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0]![0]).toMatchObject({
+                route: { resourceId: 'pickup-1', contextId: ROOM_REF.groupId },
+                targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM_REF },
+                delivery: { ownership: 'exclusive' }
+            });
+            expect(lifecycle.evidence.carrierFallback).toBeUndefined();
+        }
+    );
+
+    it.each<RallarTypedMessageSendStrategy>(['rtc-with-ws-fallback', 'ws-then-rtc'])(
+        'claims its resource over WS alone on %s when only its qos asks for exclusive ownership',
+        async (strategy) => {
+            await createRoomChannel().send(
+                { text: 'mine' },
+                { strategy, qos: { ownership: { algo: 'exclusive' } }, resourceId: 'pickup-1' }
+            );
+
+            expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls).toEqual([]);
+            expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0]![0]).toMatchObject({
+                route: { resourceId: 'pickup-1' },
+                qos: { ownership: { algo: 'exclusive' } }
+            });
+        }
+    );
+
+    it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc-with-ws-fallback'])(
+        'claims its resource for a send addressed to one peer over WS alone on %s',
+        async (strategy) => {
+            await createRoomChannel().send(
+                { text: 'mine' },
+                { strategy, peerId: 'peer-1', ownership: 'exclusive', resourceId: 'pickup-1' }
+            );
+
+            expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+            expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0]![0]).toMatchObject({
+                route: { resourceId: 'pickup-1' },
+                targets: { mode: 'unicast', toPeerId: 'peer-1', groupRef: ROOM_REF },
+                delivery: { ownership: 'exclusive' }
+            });
+        }
+    );
+
+    it('admits an exclusive send on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal', async () => {
+        rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementationOnce(async (message) => toAdmission(message, EXCLUSIVE_UNSUPPORTED_VERDICT));
+
+        const handle = await createRoomChannel().send(
+            { text: 'mine' },
+            { strategy: 'rtc', ownership: 'exclusive', resourceId: 'pickup-1' }
+        );
+        const { lifecycle } = await handle.wait();
+
+        expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0]![0].delivery).toMatchObject({ ownership: 'exclusive' });
+        expect(lifecycle).toMatchObject({
+            state: 'rejected',
+            evidence: { attempts: [], carrierFallback: undefined, failure: { kind: 'refused', reason: 'unsupported' } }
+        });
+    });
+
+    it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc', 'rtc-with-ws-fallback', 'ws-then-rtc'])(
+        'refuses an exclusive send that names no resource on %s before either carrier admits it',
+        async (strategy) => {
+            await expect(createRoomChannel().send({ text: 'mine' }, { strategy, ownership: 'exclusive' }))
+                .rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.ownership', code: 'exclusive-requires-resource' })] });
+            await expect(createRoomChannel().send({ text: 'mine' }, { strategy, qos: { ownership: { algo: 'exclusive' } } }))
+                .rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.ownership', code: 'exclusive-requires-resource' })] });
+            expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+            expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each<RallarTypedMessageSendStrategy>(['ws', 'rtc', 'rtc-with-ws-fallback', 'ws-then-rtc'])(
+        'refuses an exclusive world send on %s before either carrier admits it',
+        async (strategy) => {
+            await expect(
+                createRoomChannel(createRallarTestFacade(), WORLD_TOPIC_ID).send(
+                    { text: 'mine' },
+                    { strategy, scope: 'world', ownership: 'exclusive', resourceId: 'pickup-1' }
+                )
+            ).rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.ownership', code: 'exclusive-requires-room-audience' })] });
             expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
             expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
         }

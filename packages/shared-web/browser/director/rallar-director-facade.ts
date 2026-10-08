@@ -59,12 +59,14 @@ export interface RallarDirectorRelayMessage<T> {
     readonly receivedAtEpochMs: number;
 }
 
+/** `held-by-other`: the intent claimed a resource another session holds, so the server refused it (D176). */
 export type RallarDirectorRelaySendStatus =
     | 'sent'
     | 'partial'
     | 'no-director'
     | 'not-director'
     | 'stale-director'
+    | 'held-by-other'
     | 'failed';
 
 export interface RallarDirectorRelaySendResult {
@@ -73,6 +75,14 @@ export interface RallarDirectorRelaySendResult {
     readonly ws?: RallarMessageHandle;
     readonly receipt?: RallarMessageHandle;
     readonly reason?: string;
+}
+
+/**
+ * The resource an intent claims in its room (D176): while the claim lives, which is as long as the intent's own
+ * deadline, another session's intent claiming it reads `held-by-other`. An intent without one claims nothing.
+ */
+export interface RallarDirectorRelayClaim {
+    readonly resourceId: string;
 }
 
 /** An output sent with these options asks every frozen room recipient to confirm it. */
@@ -106,7 +116,7 @@ export interface RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot = TOutput
 
 export interface RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot = TOutput> {
     status(): RallarDirectorStatus;
-    sendIntent(intent: TIntent): Promise<RallarDirectorRelaySendResult>;
+    sendIntent(intent: TIntent, claim?: RallarDirectorRelayClaim): Promise<RallarDirectorRelaySendResult>;
     sendOutput(output: TOutput, options?: RallarDirectorOutputOptions): Promise<RallarDirectorRelaySendResult>;
     sendHeartbeat(): Promise<RallarDirectorRelaySendResult>;
     sendSnapshot(snapshot?: TSnapshot): Promise<RallarDirectorRelaySendResult>;

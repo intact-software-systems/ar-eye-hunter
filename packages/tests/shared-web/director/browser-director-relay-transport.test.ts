@@ -43,7 +43,8 @@ const commandInput = {
     current: clientStatus,
     topicId: 'room.director',
     typeId: 'room.director.intent.v1',
-    payload: { revision: 7 }
+    payload: { revision: 7 },
+    claim: undefined
 };
 
 describe('director delivery admission', () => {
@@ -216,6 +217,54 @@ describe('director command', () => {
             expect(command.handle.lifecycle().state).toBe('rejected');
         }
     );
+
+    it('sends an intent that claims its resource as an exclusive command to the room\'s leader', async () => {
+        const command = createMessageDelivery('ws', { kind: 'admitted', durable: false, queuedAttempts: 1 }, 'group-leader');
+        const sentEnvelopes: RallarDirectorRelayEnvelope<OutputPayload>[] = [];
+        const room = createRoomChannel(async (envelope) => {
+            sentEnvelopes.push(envelope);
+            return command.handle;
+        });
+        const transport = createTransport(
+            createMessageDelivery('rtc', undefined),
+            rejectCarrierSend,
+            { room: toRoomOperation(room), rtcSend: rejectCarrierSend }
+        );
+
+        const sending = transport.sendCommand({ ...commandInput, claim: { resourceId: 'pickup-1' } });
+        await vi.waitFor(() => expect(sentEnvelopes).toHaveLength(1));
+        recordDirectorReceipt(command);
+
+        expect(await sending).toEqual({ status: 'sent', receipt: command.handle });
+        expect(room.send).toHaveBeenCalledWith(
+            expect.objectContaining({ typeId: 'room.director.intent.v1', payload: { revision: 7 } }),
+            { ack: 'group-leader', strategy: 'rtc-with-ws-fallback', ownership: 'exclusive', resourceId: 'pickup-1' }
+        );
+    });
+
+    it('reports an intent whose resource another session holds as held-by-other, with its receipt and reason', async () => {
+        const command = createMessageDelivery('ws', { kind: 'admitted', durable: false, queuedAttempts: 1 }, 'group-leader');
+        command.registry.record({
+            kind: 'relay-rejected',
+            msgId: command.handle.msgId,
+            carrier: 'ws',
+            atMs: Date.now(),
+            relayRejection: { relay: 'trusted-server', reason: 'held-by-other' },
+            detail: 'The server relay refused the message: held-by-other.'
+        });
+        const transport = createTransport(
+            createMessageDelivery('rtc', undefined),
+            rejectCarrierSend,
+            { room: toRoomOperation(createRoomChannel(async () => command.handle)), rtcSend: rejectCarrierSend }
+        );
+
+        expect(await transport.sendCommand({ ...commandInput, claim: { resourceId: 'pickup-1' } })).toEqual({
+            status: 'held-by-other',
+            receipt: command.handle,
+            reason: 'The server relay refused the message: held-by-other.'
+        });
+        expect(command.handle.lifecycle().state).toBe('rejected');
+    });
 
     it('reports a refused command as failed with its typed refusal, never as sent (correction 11)', async () => {
         const command = createMessageDelivery('ws', {

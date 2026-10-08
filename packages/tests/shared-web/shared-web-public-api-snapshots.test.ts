@@ -106,6 +106,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarDiagnosticsPortsInput',
                 'RallarDirectorAppointOptions',
                 'RallarDirectorOutputOptions',
+                'RallarDirectorRelayClaim',
                 'RallarDirectorRelayConfig',
                 'RallarDirectorRelayEnvelope',
                 'RallarDirectorRelayHandle',
