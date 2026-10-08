@@ -35,7 +35,14 @@ import {
     toArenaSnapshot,
     upsertPlayerPose
 } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
-import type { ArenaEvent, ArenaSnapshot, GameRealtimeMessage, PlayerPose } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
+import type {
+    ArenaEvent,
+    ArenaPickupState,
+    ArenaSnapshot,
+    GameRealtimeMessage,
+    PickupIntent,
+    PlayerPose
+} from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
 interface AcceptedIntentFixture {
     readonly nowEpochMs: number;
@@ -349,6 +356,56 @@ describe('arena game realtime acceptance and egress', () => {
                 ? arena.current?.remotePlayerHits[0]?.intent.shot.sessionId
                 : arena.current?.pickupAcceptances[0]?.player.sessionId
         ).toBe(session.sessionId);
+    });
+
+    it('sends a remote pickup intent claiming its pickup and shows a pickup another session claimed first as the activity headline', async () => {
+        await arena.render();
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        mockMatch.status.mockReturnValue(remoteDirectorMatchStatus());
+        const fixture = pickupSnapshotFixture(Date.now());
+        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        mockMatch.sendIntent.mockResolvedValueOnce({ status: 'held-by-other', transport: 'director-relay' });
+
+        await act(async () => arena.current?.sendPickupIntent(fixture.intent));
+
+        expect(mockMatch.sendIntent).toHaveBeenCalledWith(
+            {
+                protocol: 'ar-eye-hunter.v1',
+                kind: 'pickup-intent',
+                intent: { ...fixture.intent, sessionId: session.sessionId, sentAtEpochMs: expect.any(Number) }
+            },
+            { resourceId: fixture.pickup.id }
+        );
+        await waitForState(() => arena.current?.activeEvent?.kind === 'pickup-taken');
+        expect(arena.current?.activeEvent).toMatchObject({
+            id: `pickup-taken:${fixture.pickup.id}`,
+            kind: 'pickup-taken',
+            position: fixture.pickup.position,
+            revision: fixture.snapshot.revision,
+            source: 'local',
+            headline: `${fixture.pickup.label} was taken first`
+        });
+    });
+
+    it.each(['sent', 'no-director', 'failed'] as const)('records no loss for a pickup intent whose send reads %s', async (status) => {
+        await arena.render();
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        mockMatch.status.mockReturnValue(remoteDirectorMatchStatus());
+        const fixture = pickupSnapshotFixture(Date.now());
+        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        const sent = Promise.withResolvers<void>();
+        mockMatch.sendIntent.mockImplementationOnce(async () => {
+            sent.resolve();
+            return { status, transport: 'director-relay' };
+        });
+
+        await act(async () => {
+            arena.current?.sendPickupIntent(fixture.intent);
+            await sent.promise;
+        });
+
+        expect(mockMatch.sendIntent).toHaveBeenCalledWith(expect.anything(), { resourceId: fixture.pickup.id });
+        expect(arena.current?.activeEvent?.kind).not.toBe('pickup-taken');
     });
 
     it('awaits local match-start acceptance through the canonical intent receiver', async () => {
@@ -781,5 +838,23 @@ function peerShotMessage(roomRef: GroupRef | undefined) {
             revision: 3,
             acceptedAtEpochMs: 1000
         }
+    };
+}
+
+function remoteDirectorMatchStatus(): RallarGameMatchStatus {
+    return { ...localDirectorMatchStatus(), directorPeerId: 'director-session' };
+}
+
+function pickupSnapshotFixture(nowEpochMs: number): Readonly<{ snapshot: ArenaSnapshot; pickup: ArenaPickupState; intent: PickupIntent; }> {
+    const snapshot = toArenaSnapshot(
+        spawnWeaponPickup(createInitialArenaState(44, nowEpochMs), nowEpochMs, 'audit-pea-shooter'),
+        'arena-1',
+        nowEpochMs
+    );
+    const pickup = snapshot.pickups[0];
+    return {
+        snapshot,
+        pickup,
+        intent: { pickupId: pickup.id, sessionId: 'unset', position: pickup.position, seq: 1, sentAtEpochMs: 0 }
     };
 }
