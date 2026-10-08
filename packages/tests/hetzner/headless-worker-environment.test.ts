@@ -512,6 +512,23 @@ describe('GitHub Free headless shard process environment', () => {
     });
 });
 
+describe('Owned headless environment process startup', () => {
+    it('ignores an owned hostile Bash startup file while preserving the script result', async (context) => {
+        const fixture = await createHeadlessEnvironmentFixture(context);
+        await writeFile(path.join(fixture.directory, '.bashrc'), 'printf "owned-startup-marker\n" >&2\n: "${PS1}"\n');
+        const result = await runHeadlessEnvironmentProcess(context, {
+            directory: fixture.directory,
+            script: 'printf "fixture-body\n"',
+            args: [],
+            environment: { HOME: fixture.directory }
+        });
+
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe('fixture-body\n');
+        expect(result.stderr).toBe('');
+    });
+});
+
 async function createHeadlessEnvironmentFixture(context: TestContext): Promise<HeadlessEnvironmentFixture> {
     const directory = await mkdtemp(path.join(tmpdir(), 'rallar-headless-environment-'));
     context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
@@ -628,7 +645,7 @@ async function runHeadlessEnvironmentProcess(context: TestContext, input: Headle
     try {
         const result = await runOwnedTestProcess(context, {
             executable: '/bin/bash',
-            args: ['-Eeuo', 'pipefail', '-c', input.script, 'headless-environment-test', ...input.args],
+            args: ['--noprofile', '--norc', '-Eeuo', 'pipefail', '-c', input.script, 'headless-environment-test', ...input.args],
             options: { cwd: input.directory, env: { ...osEnvironment, ...input.environment }, timeout: 10000 }
         });
         return { status: 0, ...result };

@@ -165,12 +165,53 @@ covers 1,509 files with zero errors. Source and original RED/GREEN/correction ar
 are independently bound. These local writer/YAML/process results do not accept real
 Actions deployment, deployed worker application, operator RUN or E3.
 
-The next two useful slices are canonical operator RUN forwarding, then HOST/RUN
-application through existing deployed workers and actual Actions. The parent evidence
-selector correction separately awaits its bounded design answer and semantic TDD;
-its deadlines and independent outcome assertions stay unchanged. The separate hosted
-API admission refusal also needs its correctness contract resolved from the original
-correlated evidence before a repair is selected.
+Published Actions checkpoint `2f86e0f25` has terminal Formation and Medium success.
+Branch37831609034 passes static, all API lanes, Postgres, Deno, browser and ALM checks.
+Unit retains the known selector failure (14,444 pass, one fails, 12 skip). Tooling
+adds a distinct test-runtime failure: 24 new EnvironmentFile cases fail on Ubuntu's
+`/etc/bash.bashrc` PS1 error, while 1,526 cases pass. The original log is retained.
+Root reproduces the same status-0/body-success/unexpected-stderr behavior with an
+owned startup file and the actual Node child invocation; disabling startup files
+preserves the command body/status and eliminates that stderr. GNU's documented
+[noninteractive startup behavior](https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html)
+supports that boundary. No capture-producer or serializer defect is established.
+The owned regression first passes status/body controls and then fails on startup
+stderr. The existing test launcher now disables Bash profile/rc startup; the unchanged
+regression and all 33 original cases pass, 34 total. Exact source reconstruction
+preserves every original case body and assertion. Formatting and strict inherited
+single-owner typing pass; this does not repeat full-project typing over unfinished
+operator tests. Independent SPEC and QUALITY accept the correction for publication.
+The original hosted failure remains retained; fresh remote confirmation is pending.
+
+Canonical operator RUN forwarding now has a frozen genuine RED: 154 cases, 110 pass
+and 44 fail, with no setup failures or pending cases. All 93 maintained cases and
+17 new controls pass; 43 failures expose missing forwarding/admission behavior and
+one supplements them with workflow contracts. Real dispatch, materializer, complete
+YAML step, CLI and controller POST ports witness ignored valid selections or effects
+before malformed-input refusal. Canonical artifact admission also accepts an invalid
+extra file before the consumer crashes. Four test owners changed; production inputs
+remain bound to published `2f86e0f25`. Its archived 33-case startup dependency remains
+immutable; the separately accepted startup correction is the only newer dependency.
+GREEN follows publication of that correction, using the existing canonical capture
+parser and manifest/control/artifact decoders, with no duplicated policy or migration.
+
+The independent API contract audit finds a successful NEW presence mutation commits
+before a separate presence-summary worker. HTTP success then reads that summary-backed
+snapshot once; current source, convergence doctrine and active-write tests provide no
+visible-session/admission completion guarantee. The policy recipe sends after HTTP200
+without establishing exact sender/recipient presence. The bounded recipe proposal uses
+the existing read-only snapshot poll before one original send, requiring exact issued
+sessions, principals, requested generations and active memberships while retaining
+FORMING/flowing policy. No guessed revision floor, message retry or longer receive
+deadline is proposed. This design awaits human approval. The fresh successful API lane
+does not close that untested ordering precondition; the exact original authorizer read
+and summary commit timing remain unobserved. No public API strengthening is selected.
+
+The next two useful slices are canonical operator RUN forwarding after publishing
+the accepted startup correction, then actual HOST/RUN application through existing
+deployed workers and Actions. The parent evidence selector separately awaits its
+bounded design answer and semantic TDD; its deadlines and independent outcome
+assertions stay unchanged.
 
 After source correctness and integration, complete Actions HOST/operator RUN
 forwarding and actual application through existing deployed workers. The former exact
