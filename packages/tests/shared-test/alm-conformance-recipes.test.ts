@@ -62,6 +62,9 @@ const CLAIM_KEYS_BY_CARRIER = {
     'rtc-with-ws-fallback': ['claim-first-wins']
 } as const;
 
+/** The volatile-bound cells run in the addressed family on every carrier, under the full tag only. */
+const VOLATILE_BOUND_KEYS = ['capacity', 'capacity-age', 'capacity-tracks'] as const;
+
 /** The audiences run on every carrier, on the sender's principal twice and another principal once. */
 const AUDIENCE_KEYS = ['principal-delivery', 'fixed-list-delivery', 'world-routing'] as const;
 
@@ -157,7 +160,9 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'repair-exhausted',
         'ws-unicast-receipt',
         'server-command',
-        'capacity'
+        'capacity',
+        'capacity-age',
+        'capacity-tracks'
     ],
     rtc: [
         'volatile-default',
@@ -175,7 +180,9 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'repair-exhausted',
         'not-yet-in-sync-expires',
         'ws-unicast-receipt',
-        'capacity'
+        'capacity',
+        'capacity-age',
+        'capacity-tracks'
     ],
     'rtc-with-ws-fallback': [
         'volatile-default',
@@ -198,7 +205,9 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'no-fallback-after-deadline',
         'ws-unicast-receipt',
         'unicast-fallback',
-        'capacity'
+        'capacity',
+        'capacity-age',
+        'capacity-tracks'
     ]
 } as const;
 
@@ -224,10 +233,10 @@ describe('alm-conformance recipe family', () => {
         expect(scenarios.filter((scenario) => scenario.laneFamily === 'addressed').map(({ scenarioId }) => scenarioId))
             .toEqual(
                 carrier === 'ws'
-                    ? ['ws-unicast-receipt', 'server-command', 'capacity']
+                    ? ['ws-unicast-receipt', 'server-command', ...VOLATILE_BOUND_KEYS]
                     : carrier === 'rtc'
-                    ? ['ws-unicast-receipt', 'capacity']
-                    : ['ws-unicast-receipt', 'unicast-fallback', 'capacity']
+                    ? ['ws-unicast-receipt', ...VOLATILE_BOUND_KEYS]
+                    : ['ws-unicast-receipt', 'unicast-fallback', ...VOLATILE_BOUND_KEYS]
             );
     });
 
@@ -397,8 +406,9 @@ describe('alm-conformance recipe family', () => {
                     command.commandId?.includes('frozen-audience-membership-recipient-b') === true;
                 // R-S3b-20: durable-opt-in's received-1 carries the durable path's own budget; pinned separately below.
                 const durableOptInReceived1 = command.commandId?.endsWith('durable-opt-in-receiver-received-1') === true;
-                // The capacity sender reconnects before it sends; that wait is pinned in alm-conformance-addressed-scenarios.
-                const capacityReceived1 = command.commandId?.endsWith('capacity-receiver-received-1') === true;
+                // The capacity and capacity-tracks senders reconnect before they send; those waits are pinned in
+                // alm-conformance-addressed-scenarios.
+                const capacityReceived1 = /-capacity(-tracks)?-receiver-received-1$/.test(command.commandId ?? '');
                 if (durableOptInReceived1 || capacityReceived1) {
                     continue;
                 }
@@ -497,7 +507,7 @@ describe('alm-conformance recipe family', () => {
             'no-fallback-after-deadline',
             'ws-unicast-receipt',
             'unicast-fallback',
-            'capacity',
+            ...VOLATILE_BOUND_KEYS,
             'receipted-audience',
             'receipted-audience',
             'receipted-audience',
@@ -516,6 +526,8 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],
