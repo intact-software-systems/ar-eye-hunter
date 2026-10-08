@@ -51,10 +51,7 @@ function readFixtureRegime(
     fixtureName: string,
     cellOutcome: ALMObservationCellOutcome
 ): ALMObservationRegime {
-    const value = JSON.parse(
-        readFileSync(path.join(fixtureRoot, fixtureName), 'utf8')
-    ) as unknown;
-    return decodeALMObservationSnapshot(value).fold(
+    return decodeALMObservationSnapshot(JSON.parse(readFileSync(path.join(fixtureRoot, fixtureName), 'utf8'))).fold(
         (issues) => {
             throw new Error(`${fixtureName} did not decode: ${issues.join('; ')}`);
         },
@@ -188,6 +185,7 @@ function toInboundDrainEvent(
         runDurationMs: number;
         releaseDurationMs: number;
         queueWaitMs: number;
+        promoted?: number;
     }>
 ): RallarBlackBoxTestRecord {
     return {
@@ -197,7 +195,7 @@ function toInboundDrainEvent(
         payload: {
             topic: 'rallar.browser.alm.inbound_diagnostics',
             payload: {
-                data: { kind: 'effect-drain', workerId: INBOUND_WORKER_ID, ...phases }
+                data: { kind: 'effect-drain', workerId: INBOUND_WORKER_ID, promoted: 0, ...phases }
             }
         }
     };
@@ -607,7 +605,8 @@ describe('computeALMObservationRegime', () => {
                     drainMedianMs: 150,
                     drainCount: 2
                 },
-                claimWaits: NO_CLAIM_WAITS
+                claimWaits: NO_CLAIM_WAITS,
+                promotedReleases: 0
             },
             {
                 role: 'receiver',
@@ -622,7 +621,8 @@ describe('computeALMObservationRegime', () => {
                     drainMedianMs: 350,
                     drainCount: 2
                 },
-                claimWaits: NO_CLAIM_WAITS
+                claimWaits: NO_CLAIM_WAITS,
+                promotedReleases: 0
             },
             { role: 'unattributed', outcome: 'no-events' }
         ]);
@@ -685,7 +685,8 @@ describe('computeALMObservationRegime', () => {
                     drainMedianMs: 0,
                     drainCount: 0
                 },
-                claimWaits: NO_CLAIM_WAITS
+                claimWaits: NO_CLAIM_WAITS,
+                promotedReleases: 0
             },
             { role: 'receiver', outcome: 'no-events' },
             { role: 'unattributed', outcome: 'no-events' }
@@ -719,7 +720,8 @@ describe('computeALMObservationRegime', () => {
                     drainMedianMs: 100,
                     drainCount: 1
                 },
-                claimWaits: NO_CLAIM_WAITS
+                claimWaits: NO_CLAIM_WAITS,
+                promotedReleases: 0
             },
             { role: 'receiver', outcome: 'no-events' },
             { role: 'unattributed', outcome: 'no-events' }
@@ -778,8 +780,57 @@ describe('computeALMObservationRegime', () => {
                 dispatchClaimCount: 2,
                 sendControlClaimMedianMs: 0,
                 sendControlClaimCount: 0
-            }
+            },
+            promotedReleases: 0
         });
+    });
+
+    it('sums the releases a role ran by promotion over both lanes, and skips a drain that states no count', () => {
+        const drain = (atEpochMs: number, agentId: string, promoted: number) =>
+            toInboundDrainEvent(atEpochMs, agentId, {
+                durationMs: 4,
+                selectionDurationMs: 1,
+                claimDurationMs: 1,
+                runDurationMs: 1,
+                releaseDurationMs: 1,
+                queueWaitMs: 0,
+                promoted
+            });
+        const countless = {
+            kind: 'diagnostic',
+            atEpochMs: 1_001,
+            agentId: RECEIVER_AGENT_ID,
+            payload: {
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                payload: {
+                    data: {
+                        kind: 'effect-drain',
+                        workerId: INBOUND_WORKER_ID,
+                        durationMs: 4,
+                        selectionDurationMs: 1,
+                        claimDurationMs: 1,
+                        runDurationMs: 1,
+                        releaseDurationMs: 1,
+                        queueWaitMs: 0
+                    }
+                }
+            }
+        };
+        const regime = toSyntheticRegime([
+            ...toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+            drain(1_000, RECEIVER_AGENT_ID, 3),
+            countless,
+            ...toVolatileLaneEvents([drain(1_002, RECEIVER_AGENT_ID, 15), drain(1_003, RECEIVER_AGENT_ID, 0)]),
+            drain(1_004, SENDER_AGENT_ID, 2)
+        ]);
+
+        const directionOf = (role: string) => {
+            const direction = regime.inbound.find((candidate) => candidate.role === role);
+            return direction?.outcome === 'measured' ? direction : undefined;
+        };
+        expect(directionOf('receiver')?.promotedReleases).toBe(18);
+        expect(directionOf('receiver')?.phases.drainCount).toBe(1);
+        expect(directionOf('sender')?.promotedReleases).toBe(2);
     });
 
     it('summarizes a cell in one line for the job log', () => {

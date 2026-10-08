@@ -23,6 +23,7 @@ import { decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { AL_INBOUND_WORK_PAGE_SIZE } from '@shared/alm/inbound/read-al-inbound-work-selection.ts';
+import { createPassThroughALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
@@ -110,7 +111,8 @@ async function openBufferedTrackReceiver(): Promise<BufferedTrackReceiver> {
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-            budget
+            budget,
+            createPassThroughALStorageEventSink()
         ),
         volatileBudget: budget,
         checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,

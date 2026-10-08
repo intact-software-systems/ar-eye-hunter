@@ -77,6 +77,10 @@ import type {
     BlackBoxRallarDirectorOutputRecord,
     BlackBoxRallarEvent
 } from './black-box-rallar-operation-contracts.ts';
+import {
+    createBlackBoxRallarOrderingTracks,
+    type BlackBoxRallarOrderingTracks
+} from './black-box-rallar-ordering-tracks.ts';
 import { computeAlmConformanceQosDefaults } from './messaging/compute-alm-conformance-qos-defaults.ts';
 import {
     replayBlackBoxCapturedMessage,
@@ -154,6 +158,7 @@ export interface BlackBoxBrowserDiagnosticsDependency {
     /** Decides each IndexedDB operation after `storage` has counted it. */
     readonly storageFaults: ScriptedStorageFaultPort;
     readonly congestion: BlackBoxRallarCongestionCounters;
+    readonly orderingTracks: BlackBoxRallarOrderingTracks;
 }
 
 export interface BlackBoxBrowserRealtimeDependency
@@ -200,6 +205,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
     const storage = createCountingIndexedDbOperationObserver();
     const storageFaults = createScriptedStorageFaultPort();
     const congestion = createBlackBoxRallarCongestionCounters();
+    const orderingTracks = createBlackBoxRallarOrderingTracks();
     const { foundation, state, session, stateEvents, messaging, realtime } = createBlackBoxBrowserTransportComposition(
         input.readVolatileSessionLimits
     );
@@ -235,7 +241,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
         realtime,
         crdt,
         director,
-        diagnostics: { faults, storage, storageFaults, congestion },
+        diagnostics: { faults, storage, storageFaults, congestion, orderingTracks },
         ...toBlackBoxBrowserMessagingPorts({ session, state })
     });
 }

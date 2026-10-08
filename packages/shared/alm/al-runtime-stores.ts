@@ -17,6 +17,7 @@ import { ALCheckpoint, type ALCheckpointStorage } from './checkpoint/al-checkpoi
 import {
     createALInboundAdmissionStore,
     createVolatileALInboundAdmissionStore,
+    type ALInboundOrderingTracksReport,
     type CreateALInboundAdmissionStoreInput
 } from './inbound/al-inbound-admission-store.ts';
 import type {
@@ -71,6 +72,8 @@ export interface CreateInMemoryALRuntimeStoresInput {
     readonly orderingTrackTtlMs: number;
     readonly supersedenceTrackTtlMs: number;
     readonly retention: ALRuntimeStoreRetentionConfig | undefined;
+    /** Where an inbound pair states its ordering snapshots (D191); absent where nothing reads the count. */
+    readonly reportOrderingTracks?: ALInboundOrderingTracksReport;
 }
 
 export interface CreateInMemoryALOutboundRuntimeStoresInput<TPrepared> extends CreateInMemoryALRuntimeStoresInput {
@@ -112,6 +115,7 @@ export interface CreateDefaultALRuntimeStoresInput {
     readonly onStorageReset?: (event: ALStorageResetEvent) => void;
     readonly storageHealth?: ALStorageHealth;
     readonly connectOpenings?: ALStorageConnectOpenings;
+    readonly reportOrderingTracks?: ALInboundOrderingTracksReport;
 }
 
 const DEFAULT_NAMESPACE = 'al-runtime';
@@ -228,7 +232,8 @@ function toIndexedDbALInboundRuntimeStores(
             backend,
             orderingTrackTtlMs: input.orderingTrackTtlMs,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
-            retention: normalizeALRuntimeStoreRetention(input.retention)
+            retention: normalizeALRuntimeStoreRetention(input.retention),
+            reportOrderingTracks: input.reportOrderingTracks
         }),
         workQueue: backend.workQueue
     };
@@ -401,7 +406,8 @@ function toInMemoryALInboundAdmissionStoreInput(
         backend,
         orderingTrackTtlMs: input.orderingTrackTtlMs,
         supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
-        retention: normalizeALRuntimeStoreRetention(input.retention)
+        retention: normalizeALRuntimeStoreRetention(input.retention),
+        reportOrderingTracks: input.reportOrderingTracks
     };
 }
 
@@ -433,7 +439,8 @@ function toDefaultInMemoryInput(
         // a gap the sender can no longer repair.
         orderingTrackTtlMs: options.orderingTrackTtlMs ?? DEFAULT_AL_REPOSITORY_TTL_MS,
         supersedenceTrackTtlMs: options.supersedenceTrackTtlMs ?? 5 * 60_000,
-        retention: options.retention
+        retention: options.retention,
+        reportOrderingTracks: options.reportOrderingTracks
     };
 }
 

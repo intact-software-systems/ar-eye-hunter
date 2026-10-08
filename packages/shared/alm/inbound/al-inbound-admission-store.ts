@@ -340,7 +340,15 @@ export interface CreateALInboundAdmissionStoreInput {
     readonly orderingTrackTtlMs: number;
     readonly supersedenceTrackTtlMs: number;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    /**
+     * Hears how many ordering snapshots the store holds after each new track's eviction pass (D191); absent where
+     * nothing reads the count.
+     */
+    readonly reportOrderingTracks?: ALInboundOrderingTracksReport;
 }
+
+/** The ordering snapshots one store holds, stated after the eviction pass a new track runs. */
+export type ALInboundOrderingTracksReport = (tracks: number) => void;
 
 export interface ALInboundAdmissionStore extends ALReadyable {
     readonly namespace: string;
@@ -379,13 +387,21 @@ export interface ALInboundAdmissionStore extends ALReadyable {
 export function createALInboundAdmissionStore(
     input: CreateALInboundAdmissionStoreInput
 ): ALInboundAdmissionStore {
-    return new ProviderBackedALInboundAdmissionStore({ ...input, durability: 'durable' });
+    return new ProviderBackedALInboundAdmissionStore({
+        ...input,
+        durability: 'durable',
+        reportOrderingTracks: input.reportOrderingTracks
+    });
 }
 
 export function createVolatileALInboundAdmissionStore(
     input: CreateALInboundAdmissionStoreInput
 ): ALInboundAdmissionStore {
-    return new ProviderBackedALInboundAdmissionStore({ ...input, durability: 'volatile' });
+    return new ProviderBackedALInboundAdmissionStore({
+        ...input,
+        durability: 'volatile',
+        reportOrderingTracks: input.reportOrderingTracks
+    });
 }
 
 namespace ProviderBackedALInboundAdmissionStore {
@@ -403,6 +419,7 @@ namespace ProviderBackedALInboundAdmissionStore {
         readonly backend: ALAdmissionWorkBackend;
         readonly nowMs: () => number;
         readonly durability: ALStoreDurability;
+        readonly reportOrderingTracks: ALInboundOrderingTracksReport | undefined;
     }
 }
 
@@ -415,9 +432,11 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     private readonly backend: ALAdmissionWorkBackend;
     private readonly effects: ALInboundDurableEffectStore;
     private readonly nowMs: () => number;
+    private readonly reportOrderingTracks: ALInboundOrderingTracksReport | undefined;
 
     constructor(input: ProviderBackedALInboundAdmissionStore.Dependencies) {
         this.namespace = input.namespace;
+        this.reportOrderingTracks = input.reportOrderingTracks;
         this.orderingTrackTtlMs = input.orderingTrackTtlMs;
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
         this.retention = input.retention;
@@ -634,7 +653,8 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
         const status = await this.writeValidatedBundle(validated.right!);
         if (status === 'committed' && opensALInboundOrderingTrack(bundle)) {
-            await this.evictOrderingTracksPastCap();
+            const held = await this.evictOrderingTracksPastCap();
+            this.reportOrderingTracks?.(held);
         }
         return status;
     }
@@ -663,29 +683,37 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
      * Removes the least recently updated snapshots past the cap, each only if it is still the one read: a snapshot
      * updated in between is no longer the least recent, and its conflict leaves the eviction to the next new track.
      * Only the snapshot leaves; the track's delivered marker keeps the completion evidence its live work reads.
+     * Answers how many snapshots the store holds after the pass.
      */
-    private async evictOrderingTracksPastCap(): Promise<void> {
+    private async evictOrderingTracksPastCap(): Promise<number> {
         const held = await this.backend.readWithin((session) =>
             session.list(this.toOrderingPrefix(), decodeALInboundOrderingSnapshot)
         );
         const evicted = resolveLeastRecentlyUpdatedTracks(held, held.length - AL_INBOUND_MAX_ORDERING_TRACKS);
-        if (evicted.length === 0) {
-            return;
-        }
+        return evicted.length === 0 ? held.length : held.length - await this.removeUnchangedTracks(evicted);
+    }
+
+    private async removeUnchangedTracks(
+        evicted: readonly ALAdmissionBackendEntry<ALOrderingTrackSnapshot>[]
+    ): Promise<number> {
         try {
-            await this.backend.write(async (transaction) => {
+            return await this.backend.write(async (transaction) => {
+                let removed = 0;
                 for (const track of evicted) {
                     const current = await transaction.read(track.key, decodeALInboundOrderingSnapshot);
                     if (current !== undefined && jsonEquals(current, track.value)) {
                         await transaction.remove(track.key);
+                        removed += 1;
                     }
                 }
+                return removed;
             });
         }
         catch (error) {
             if (!(error instanceof ALAdmissionBackendConflictError)) {
                 throw error;
             }
+            return 0;
         }
     }
 

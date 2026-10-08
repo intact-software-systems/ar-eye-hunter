@@ -3,6 +3,10 @@ import {
     type BlackBoxRallarCongestionCounters
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-congestion-counters.ts';
 import {
+    createBlackBoxRallarOrderingTracks,
+    type BlackBoxRallarOrderingTracks
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-ordering-tracks.ts';
+import {
     type BlackBoxBrowserAuthDependency,
     type BlackBoxBrowserCrdtDependency,
     type BlackBoxBrowserDeliveriesDependency,
@@ -374,6 +378,7 @@ let scriptedFaults = createScriptedTransportFaultPort();
 let countingStorage = createCountingIndexedDbOperationObserver();
 let scriptedStorageFaults = createScriptedStorageFaultPort();
 let congestionCounters = createBlackBoxRallarCongestionCounters();
+let orderingTracks = createBlackBoxRallarOrderingTracks();
 let deliveryRegistry = createFacadeDeliveryRegistry();
 let deliverySequence = 0;
 
@@ -408,6 +413,9 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     },
     get congestion(): BlackBoxRallarCongestionCounters {
         return congestionCounters;
+    },
+    get orderingTracks(): BlackBoxRallarOrderingTracks {
+        return orderingTracks;
     }
 };
 
@@ -456,6 +464,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     countingStorage = createCountingIndexedDbOperationObserver();
     scriptedStorageFaults = createScriptedStorageFaultPort();
     congestionCounters = createBlackBoxRallarCongestionCounters();
+    orderingTracks = createBlackBoxRallarOrderingTracks();
     deliveryRegistry = createFacadeDeliveryRegistry();
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);

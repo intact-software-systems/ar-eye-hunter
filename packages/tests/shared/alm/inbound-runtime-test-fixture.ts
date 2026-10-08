@@ -78,6 +78,8 @@ export interface CreateInboundTestStoresInput {
     readonly observer: IndexedDbOperationObserver;
     /** A database another pair shares, as a second tab would; absent, the pair opens one of its own. */
     readonly dbName?: string;
+    /** Hears each count the store states after a new track; absent, the store states nothing. */
+    readonly reportOrderingTracks?: (tracks: number) => void;
 }
 
 export interface InboundTestBackendStores {
@@ -106,7 +108,8 @@ export function createInboundTestBackendStores(input: CreateInboundTestStoresInp
                 backend,
                 orderingTrackTtlMs: 60_000,
                 supersedenceTrackTtlMs: 60_000,
-                retention: normalizeALRuntimeStoreRetention()
+                retention: normalizeALRuntimeStoreRetention(),
+                reportOrderingTracks: input.reportOrderingTracks
             }),
             workQueue: backend.workQueue
         }

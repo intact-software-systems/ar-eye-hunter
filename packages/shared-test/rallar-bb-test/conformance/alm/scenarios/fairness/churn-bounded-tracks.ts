@@ -1,0 +1,143 @@
+import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import {
+    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+    AL_VOLATILE_SESSION_MAX_BYTES
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestMessagesSendCommand
+} from '../../../../rallar-black-box-test-contracts.ts';
+
+import {
+    NON_EXPIRING_SEND_TIMEOUT_MS,
+    NON_EXPIRING_TTL_MS,
+    RESPONSE_MARGIN_MS
+} from '../../alm-conformance-budgets.ts';
+import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
+import { toObserveCommand, toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
+import { toOrderingKey } from '../../alm-conformance-ordering-commands.ts';
+import {
+    FULL_TAGS,
+    type AlmConformanceScenarioDefinition,
+    type AlmConformanceStepInput
+} from '../../alm-conformance-scenario-definition.ts';
+import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
+import { toCommandId } from '../../alm-conformance-step-identities.ts';
+import { toBoundReconnectCommands, toReconnectedArrivalsCommand } from '../volatile-bound/volatile-bound-commands.ts';
+import { toSendLoopCommand } from './to-send-loop-command.ts';
+
+/** More tracks than a session store keeps ordering snapshots for (`AL_INBOUND_MAX_ORDERING_TRACKS`, D191). */
+const CHURN_TRACK_COUNT = 300;
+/**
+ * The sender's own ledger counts every live track of its own (64 by default, D179); each of these tracks lives as
+ * long as its one send, so the sender reconnects with room for all of them.
+ */
+const CHURN_SENDER_LIMITS = {
+    maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+    maxBytes: AL_VOLATILE_SESSION_MAX_BYTES,
+    maxTracks: 2 * CHURN_TRACK_COUNT
+};
+/**
+ * Only over `rtc` is the receiver the one hop that orders a track: over `ws` the WS server orders it first and keeps
+ * its own snapshots, and a hand-over moves a message to a relay that never saw its track (D56).
+ */
+const RECEIVER_ORDERED_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc'];
+const SNAPSHOT_SETTLE_TOPIC = 'rallar.black-box.alm.ordering-snapshots-settled';
+
+/**
+ * D191: the sender opens 300 tracks with one send each and leaves. The receiver delivers the 300, and its inbound
+ * stores then hold exactly the cap of ordering snapshots: each track past it evicted the least recently updated one.
+ */
+export const churnBoundedTracks: AlmConformanceScenarioDefinition = {
+    scenarioId: 'churn-bounded-tracks',
+    scenarioKey: 'churn-bounded-tracks',
+    tags: FULL_TAGS,
+    carriers: RECEIVER_ORDERED_CARRIERS,
+    roles: ['sender', 'receiver'],
+    laneFamily: 'two-agent',
+    toSenderCommands: toChurnSenderCommands,
+    toRecipientCommands: (receiver) => [
+        toReconnectedArrivalsCommand(receiver, CHURN_TRACK_COUNT, 0),
+        toSnapshotSettleWait(receiver),
+        ...toOrderingTracksCommands(receiver)
+    ]
+};
+
+function toChurnSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    const lastTrack = toTrackSend(sender, `${CHURN_TRACK_COUNT - 1}`);
+    return [
+        ...toBoundReconnectCommands(sender, 'raised', CHURN_SENDER_LIMITS),
+        toSendLoopCommand({
+            step: sender,
+            name: 'open-tracks',
+            count: CHURN_TRACK_COUNT,
+            send: toTrackSend(sender, '{loop.index}')
+        }),
+        {
+            ...toObserveCommand({ ...sender, index: 0, state: 'transport-accepted' }),
+            commandId: toCommandId(sender, 'observe-last-track'),
+            handleId: `${lastTrack.handleId}-${CHURN_TRACK_COUNT - 1}`
+        },
+        toResultAssertion({
+            step: sender,
+            name: 'assert-last-track-sent',
+            resultName: 'observe-last-track',
+            field: 'state',
+            operator: 'matches',
+            expected: '^(transport-accepted|acknowledged)$'
+        }),
+        { kind: 'close', commandId: toCommandId(sender, 'close-departs') }
+    ];
+}
+
+/** Seq 1, the first send, on the cell's track named `track`. */
+function toTrackSend(sender: AlmConformanceStepInput, track: string): RallarBlackBoxTestMessagesSendCommand {
+    return toSendCommand({
+        ...sender,
+        index: 0,
+        payload: { marker: sender.scenarioId, carrier: sender.input.carrier, track },
+        delivery: {
+            reliability: 'at-least-once',
+            ttlMs: NON_EXPIRING_TTL_MS,
+            commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS,
+            orderingKey: `${toOrderingKey(sender)}-${track}`,
+            seq: 1
+        }
+    });
+}
+
+/**
+ * A store states its count after the eviction pass that follows a new track's admission commit, before that track's
+ * delivery, so the count of the 300th is stated by its arrival; nothing emits the topic, the wait only holds a moment.
+ */
+function toSnapshotSettleWait(receiver: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    return {
+        kind: 'wait',
+        commandId: toCommandId(receiver, 'snapshots-settle'),
+        match: { kind: 'diagnostic', topic: SNAPSHOT_SETTLE_TOPIC },
+        absent: true,
+        timeoutMs: RESPONSE_MARGIN_MS
+    };
+}
+
+/** The receiver's ordering snapshots after the churn: at the cap, neither under it nor past it. */
+function toOrderingTracksCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    const facts = [
+        ['ordering-tracks-within-the-cap', 'lte'],
+        ['ordering-tracks-at-the-cap', 'gte']
+    ] as const;
+    return [
+        toStatsCommand(receiver, 'stats-ordering-tracks'),
+        ...facts.map(([name, operator]) =>
+            toResultAssertion({
+                step: receiver,
+                name: `assert-${name}`,
+                resultName: 'stats-ordering-tracks',
+                field: 'rallar.alm.orderingTracks',
+                operator,
+                expected: AL_INBOUND_MAX_ORDERING_TRACKS
+            })
+        )
+    ];
+}

@@ -127,22 +127,39 @@ describe('the inbound store\'s ordering tracks', () => {
             predecessor: { kind: 'resync-required' }
         });
     });
+
+    it('states how many snapshots it holds after each new track\'s eviction pass, and nothing for a known track', async () => {
+        const stated: number[] = [];
+        const fixture = await createOrderingCapFixture('memory', (tracks) => stated.push(tracks));
+
+        await admitFirstSequences(fixture, AL_INBOUND_MAX_ORDERING_TRACKS + 2);
+        await admitAtNextMs(fixture, createTrackMessage(AL_INBOUND_MAX_ORDERING_TRACKS + 1, 2));
+
+        expect(stated).toHaveLength(AL_INBOUND_MAX_ORDERING_TRACKS + 2);
+        expect(stated.slice(0, 3)).toEqual([1, 2, 3]);
+        expect(stated.slice(-3)).toEqual([256, 256, 256]);
+    });
 });
 
 describe.each<InboundTestStorage>(['memory', 'indexeddb'])('the %s inbound pair under track churn', (storage) => {
-    it('stays at the cap after one sender opens 300 tracks of one message each', async () => {
-        const fixture = await createOrderingCapFixture(storage);
+    it('stays at the cap, and states it, after one sender opens 300 tracks of one message each', async () => {
+        const stated: number[] = [];
+        const fixture = await createOrderingCapFixture(storage, (tracks) => stated.push(tracks));
 
         await admitFirstSequences(fixture, CHURNED_TRACKS);
 
         const held = await readHeldTracks(fixture.backend);
         expect(held).toHaveLength(AL_INBOUND_MAX_ORDERING_TRACKS);
+        expect(stated.at(-1)).toBe(AL_INBOUND_MAX_ORDERING_TRACKS);
         expect(held).toContain(`track-${CHURNED_TRACKS - 1}`);
         expect(held).not.toContain(`track-${CHURNED_TRACKS - AL_INBOUND_MAX_ORDERING_TRACKS - 1}`);
     }, CHURN_TIMEOUT_MS);
 });
 
-async function createOrderingCapFixture(storage: InboundTestStorage): Promise<OrderingCapFixture> {
+async function createOrderingCapFixture(
+    storage: InboundTestStorage,
+    reportOrderingTracks?: (tracks: number) => void
+): Promise<OrderingCapFixture> {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(START_MS);
     onTestFinished(() => {
@@ -151,7 +168,8 @@ async function createOrderingCapFixture(storage: InboundTestStorage): Promise<Or
     const { backend, stores } = createInboundTestBackendStores({
         namespace: NAMESPACE,
         storage,
-        observer: createPassThroughIndexedDbOperationObserver()
+        observer: createPassThroughIndexedDbOperationObserver(),
+        reportOrderingTracks
     });
     const inbound = createInboundTestRuntime({ carrier: 'ws', stores, effectWorkerId: 'al-inbound:ordering-cap' });
     await inbound.runtime.ready();

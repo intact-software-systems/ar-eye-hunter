@@ -20,6 +20,7 @@ import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/cr
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALCheckpointOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { createPassThroughALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
     ALVolatileSessionBudget
@@ -77,7 +78,8 @@ describe('createBrowserWebSocketQueueBox', () => {
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-                createDefaultVolatileSessionBudget()
+                createDefaultVolatileSessionBudget(),
+                createPassThroughALStorageEventSink()
             ),
             volatileBudget: createDefaultVolatileSessionBudget(),
             checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
@@ -134,7 +136,8 @@ describe('createBrowserWebSocketQueueBox', () => {
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-                createDefaultVolatileSessionBudget()
+                createDefaultVolatileSessionBudget(),
+                createPassThroughALStorageEventSink()
             ),
             volatileBudget: createDefaultVolatileSessionBudget(),
             checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
@@ -179,7 +182,8 @@ describe('createBrowserWebSocketQueueBox', () => {
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-                createDefaultVolatileSessionBudget()
+                createDefaultVolatileSessionBudget(),
+                createPassThroughALStorageEventSink()
             ),
             volatileBudget: createDefaultVolatileSessionBudget(),
             checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
@@ -238,7 +242,8 @@ describe('createBrowserWebSocketQueueBox', () => {
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-                createDefaultVolatileSessionBudget()
+                createDefaultVolatileSessionBudget(),
+                createPassThroughALStorageEventSink()
             ),
             volatileBudget: createDefaultVolatileSessionBudget(),
             checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
@@ -373,7 +378,8 @@ async function openWsClient(input: OpenWsClientInput): Promise<WsQueueBoxClientS
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-            input.budget
+            input.budget,
+            createPassThroughALStorageEventSink()
         ),
         volatileBudget: input.budget,
         checkpointStores: input.checkpointStores,

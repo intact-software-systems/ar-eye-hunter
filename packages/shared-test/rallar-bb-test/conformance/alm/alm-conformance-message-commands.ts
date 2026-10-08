@@ -4,6 +4,7 @@ import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryState } from '@shared/alm/d
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestJsonValue,
+    RallarBlackBoxTestMessagesObserveCommand,
     RallarBlackBoxTestMessagesSendCommand
 } from '../../rallar-black-box-test-contracts.ts';
 
@@ -66,7 +67,17 @@ interface AlmConformanceResultAssertionInput {
     readonly name: string;
     readonly resultName: string;
     readonly field: string;
-    readonly operator: 'equals' | 'notEquals' | 'matches' | 'gt' | 'length' | 'contains' | 'exists';
+    readonly operator:
+        | 'equals'
+        | 'notEquals'
+        | 'matches'
+        | 'gt'
+        | 'gte'
+        | 'lt'
+        | 'lte'
+        | 'length'
+        | 'contains'
+        | 'exists';
     readonly expected: string | number | boolean;
 }
 
@@ -103,7 +114,7 @@ export function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTest
     };
 }
 
-export function toObserveCommand(observe: AlmConformanceObserveInput): RallarBlackBoxTestCommand {
+export function toObserveCommand(observe: AlmConformanceObserveInput): RallarBlackBoxTestMessagesObserveCommand {
     return {
         kind: 'messages.observe',
         commandId: toCommandId(observe, `observe-${observe.state}-${observe.index}`),

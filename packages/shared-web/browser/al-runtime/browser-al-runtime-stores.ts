@@ -26,7 +26,11 @@ import {
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { ALStorageConnectOpenings } from '@shared/alm/storage/al-storage-connect-openings.ts';
-import { toALStorageResetSink, type ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
+import {
+    toALOrderingTracksReport,
+    toALStorageResetSink,
+    type ALStorageEventSink
+} from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -80,7 +84,10 @@ function toBrowserRuntimeStoreScopes(
     reporting: BrowserRuntimeStoreReporting
 ): readonly ALRuntimeStoreScope<ALOutboundTransportMessage>[] {
     const sessionInboundId = toBrowserSessionALInboundRuntimeStoreId(sessionId);
-    const inboundOptions = createBrowserStoreOptions(sessionInboundId, options, reporting.storage);
+    const inboundOptions: BrowserALRuntimeOptions = {
+        ...createBrowserStoreOptions(sessionInboundId, options, reporting.storage),
+        reportOrderingTracks: toALOrderingTracksReport(reporting.storage, sessionInboundId)
+    };
 
     return [
         {
@@ -182,13 +189,17 @@ export function createBrowserALVolatileOutboundRuntimeStores(
 /**
  * Always memory: the session's inbound pair for volatile messages, created once per middleware and
  * shared by both carriers (D20). Session cleanup and a storage reset never reach it; it dies with the
- * middleware.
+ * middleware. It states its ordering snapshots as the lane of the session's store, `<store id>/volatile`.
  */
 export function createBrowserALVolatileInboundRuntimeStores(
     name: string,
-    budget: ALVolatileSessionBudget
+    budget: ALVolatileSessionBudget,
+    storage: ALStorageEventSink
 ): ALVolatileInboundRuntimeStores {
-    return createVolatileALInboundRuntimeStores({ namespace: `browser:${name}:volatile` }, budget);
+    return createVolatileALInboundRuntimeStores({
+        namespace: `browser:${name}:volatile`,
+        reportOrderingTracks: toALOrderingTracksReport(storage, `${name}/volatile`)
+    }, budget);
 }
 
 export function configureBrowserALRuntimeStores(

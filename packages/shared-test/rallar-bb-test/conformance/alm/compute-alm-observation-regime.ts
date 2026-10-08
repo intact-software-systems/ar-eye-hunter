@@ -102,6 +102,8 @@ export type ALMObservationInboundDirection =
         pendingShare: ALMObservationInboundPendingShare;
         phases: ALMObservationInboundPhases;
         claimWaits: ALMObservationInboundClaimWaits;
+        /** Every release this role's batches ran by promotion (D190), on either lane. */
+        promotedReleases: number;
     }>
     | Readonly<{ role: ALMObservationAgentRole; outcome: 'no-events'; }>;
 
@@ -134,6 +136,8 @@ export type ALMObservationLedger =
         /** The most arrivals and arrival bytes one page's inbound pool held (D189). */
         maxInboundAdmissions: number;
         maxInboundBytes: number;
+        /** The most ordering snapshots one page's inbound stores held (D191). */
+        maxOrderingTracks: number;
         overloadedReadings: number;
     }>
     | Readonly<{ outcome: 'no-readings'; }>;
@@ -382,6 +386,7 @@ function computeLedger(readings: readonly ALMObservationLedgerReading[]): ALMObs
         maxTracks: usages.reduce((max, usage) => Math.max(max, usage.tracks), 0),
         maxInboundAdmissions: readings.reduce((max, reading) => Math.max(max, reading.inbound.admissions), 0),
         maxInboundBytes: readings.reduce((max, reading) => Math.max(max, reading.inbound.bytes), 0),
+        maxOrderingTracks: readings.reduce((max, reading) => Math.max(max, reading.orderingTracks), 0),
         overloadedReadings: readings.filter((reading) => reading.overloaded).length
     };
 }
@@ -491,7 +496,8 @@ interface ALMObservationInboundRoleEvents {
 /**
  * The drain phases and claim waits read the IndexedDB lane only, as the runner regime does (R-S3a-15):
  * F2c's acceptance figures were measured when every inbound owner was IndexedDB, and a memory lane's
- * single-digit drains would pull a slow receiver's medians into the normal band.
+ * single-digit drains would pull a slow receiver's medians into the normal band. The promoted releases
+ * count both lanes: a volatile track is released on the memory lane.
  */
 function toInboundDirection(
     role: ALMObservationAgentRole,
@@ -505,7 +511,8 @@ function toInboundDirection(
             outcome: 'measured',
             pendingShare: computeInboundPendingShare(outcomes),
             phases: computeInboundPhases(drains.filter((drain) => drain.lane === 'durable')),
-            claimWaits: computeInboundClaimWaits(claims.filter((claim) => claim.lane === 'durable'))
+            claimWaits: computeInboundClaimWaits(claims.filter((claim) => claim.lane === 'durable')),
+            promotedReleases: drains.reduce((total, drain) => total + drain.promoted, 0)
         };
 }
 

@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import {
-    AL_VOLATILE_SESSION_LIMITS,
-    type ALVolatileSessionReport
-} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import {
     createRallarBlackBoxBrowserTestRuntime,
@@ -12,27 +9,30 @@ import {
     type RallarBlackBoxTestRecord,
     type RallarBlackBoxTestStatsSnapshot
 } from '../../../shared-test/rallar-bb-test/mod.ts';
+import type { RallarBlackBoxTestAlmUsage } from '../../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from '../browser-rallar-required-methods-test-double.ts';
 import { createDeterministicRuntime } from './create-deterministic-runtime.ts';
 
-const FIRST_REPORT: ALVolatileSessionReport = {
+const FIRST_REPORT: RallarBlackBoxTestAlmUsage = {
     usage: { admissions: 3, bytes: 912, oldestAgeMs: 1_250, tracks: 2 },
     own: { admissions: 2, bytes: 600 },
     inbound: { admissions: 1, bytes: 312 },
     limits: AL_VOLATILE_SESSION_LIMITS,
-    overloaded: false
+    overloaded: false,
+    orderingTracks: 3
 };
-const SECOND_REPORT: ALVolatileSessionReport = {
+const SECOND_REPORT: RallarBlackBoxTestAlmUsage = {
     usage: { admissions: 1_500, bytes: 60_000, oldestAgeMs: 29_000, tracks: 64 },
     own: { admissions: 500, bytes: 20_000 },
     inbound: { admissions: 1_000, bytes: 40_000 },
     limits: AL_VOLATILE_SESSION_LIMITS,
-    overloaded: true
+    overloaded: true,
+    orderingTracks: 256
 };
 
 /** A page that answers each ledger read with the next value, holding the last one. */
 function createPageRuntime(
-    readings: readonly (ALVolatileSessionReport | RallarBlackBoxTestRecord | undefined)[]
+    readings: readonly (RallarBlackBoxTestAlmUsage | RallarBlackBoxTestRecord | undefined)[]
 ): RallarBlackBoxBrowserTestRuntime {
     let index = 0;
     return createRallarBlackBoxBrowserTestRuntime({
@@ -130,7 +130,8 @@ describe('the stats result rallar.alm block', () => {
             usage: { admissions: -1, bytes: 0, oldestAgeMs: 0 },
             own: { admissions: 0, bytes: -2 },
             limits: AL_VOLATILE_SESSION_LIMITS,
-            overloaded: 'no'
+            overloaded: 'no',
+            orderingTracks: 2.5
         }]);
 
         const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
@@ -139,7 +140,7 @@ describe('the stats result rallar.alm block', () => {
         expect(result.error?.message).toBe(
             'The page\'s session ledger report is not valid: usage.admissions is not a count; ' +
                 'usage.tracks is not a count; own.bytes is not a count; inbound.admissions is not a count; ' +
-                'inbound.bytes is not a count; overloaded is not a boolean'
+                'inbound.bytes is not a count; overloaded is not a boolean; orderingTracks is not a count'
         );
     });
 });

@@ -133,14 +133,18 @@ export function createBlackBoxRallarDiagnosticsPorts(
                 topic: 'rallar.browser.alm.inbound_diagnostics',
                 data: { ...event }
             }),
-        storage: (event) =>
-            event.kind === 'reset'
-                ? diagnostics.emit({
+        storage: (event) => {
+            effects.orderingTracks.observe(event);
+            if (event.kind === 'reset') {
+                diagnostics.emit({
                     kind: 'diagnostic',
                     topic: 'rallar.browser.alm.storage_reset',
                     data: { ...event.event }
-                })
-                : diagnostics.emit({ kind: 'diagnostic', topic: 'rallar.browser.alm.storage', data: { ...event } })
+                });
+                return;
+            }
+            diagnostics.emit({ kind: 'diagnostic', topic: 'rallar.browser.alm.storage', data: { ...event } });
+        }
     };
 }
 

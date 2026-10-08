@@ -7,7 +7,7 @@ import type {
 } from '../../../../shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { Either } from '../../../../shared/resilience/Either.ts';
 import { decodeALCongestionCounters } from '../../alm/decode-al-congestion-counters.ts';
-import { decodeALVolatileSessionReport } from '../../alm/decode-al-volatile-session-report.ts';
+import { decodeRallarBlackBoxTestAlmUsage } from '../../alm/decode-rallar-black-box-test-alm-usage.ts';
 import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';
 
 const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
@@ -62,6 +62,8 @@ export interface ALMObservationLedgerReading {
     readonly own: ALVolatileSessionPoolUsage;
     readonly inbound: ALVolatileSessionPoolUsage;
     readonly overloaded: boolean;
+    /** The ordering snapshots the page's inbound stores held (D191). */
+    readonly orderingTracks: number;
 }
 
 /** One `stats` reading of the congestion decisions an agent's page counted since its last `close` (D186). */
@@ -108,6 +110,8 @@ export interface ALMObservationInboundDrain {
     readonly runDurationMs: number;
     readonly releaseDurationMs: number;
     readonly queueWaitMs: number;
+    /** Releases the batch ran by promotion (D190). */
+    readonly promoted: number;
 }
 
 /** One `claim-settled`: what the claim cost, and the three instants its wait splits at. */
@@ -326,11 +330,13 @@ function toInboundDrain(
     const runDurationMs = decodeFiniteNumber(diagnostic.detail.runDurationMs);
     const releaseDurationMs = decodeFiniteNumber(diagnostic.detail.releaseDurationMs);
     const queueWaitMs = decodeFiniteNumber(diagnostic.detail.queueWaitMs);
+    const promoted = decodeFiniteNumber(diagnostic.detail.promoted);
     const lane = decodeLane(diagnostic.detail.lane);
     if (
         diagnostic.detail.kind !== EFFECT_DRAIN_DIAGNOSTIC_KIND || workerId === undefined || lane === undefined ||
         durationMs === undefined || selectionDurationMs === undefined || claimDurationMs === undefined ||
-        runDurationMs === undefined || releaseDurationMs === undefined || queueWaitMs === undefined
+        runDurationMs === undefined || releaseDurationMs === undefined || queueWaitMs === undefined ||
+        promoted === undefined
     ) {
         return undefined;
     }
@@ -344,7 +350,8 @@ function toInboundDrain(
         claimDurationMs,
         runDurationMs,
         releaseDurationMs,
-        queueWaitMs
+        queueWaitMs,
+        promoted
     };
 }
 
@@ -409,9 +416,17 @@ function toStatsEvent(event: RallarBlackBoxTestRecord): ALMObservationStatsEvent
 /** A `stats` event with no ledger, as the control client's periodic stats, decodes to a left and is skipped. */
 function toLedgerReading(stats: ALMObservationStatsEvent): ALMObservationLedgerReading | undefined {
     const { atEpochMs, agentId } = stats;
-    return decodeALVolatileSessionReport(stats.rallar.alm).fold(
+    return decodeRallarBlackBoxTestAlmUsage(stats.rallar.alm).fold(
         () => undefined,
-        ({ usage, own, inbound, overloaded }) => ({ atEpochMs, agentId, usage, own, inbound, overloaded })
+        ({ usage, own, inbound, overloaded, orderingTracks }) => ({
+            atEpochMs,
+            agentId,
+            usage,
+            own,
+            inbound,
+            overloaded,
+            orderingTracks
+        })
     );
 }
 
