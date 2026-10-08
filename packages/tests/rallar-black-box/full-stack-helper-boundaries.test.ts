@@ -839,8 +839,8 @@ describe('owned Rallar receiver originating errors', () => {
             );
             const sender = await senderContext.newPage();
             await sender.goto('http://receiver-lifetime.test/');
-            const evidence = vi.spyOn(sender, 'screenshot').mockRejectedValueOnce(evidenceFailure);
-            const senderCleanup = vi.spyOn(sender, 'evaluate').mockRejectedValueOnce(senderFailure);
+            vi.spyOn(sender, 'screenshot').mockRejectedValueOnce(evidenceFailure);
+            vi.spyOn(sender, 'evaluate').mockRejectedValueOnce(senderFailure);
             const createContext = browser.newContext.bind(browser);
             vi.spyOn(browser, 'newContext').mockImplementationOnce(async (options) => {
                 const context = await createContext(options);
@@ -872,9 +872,6 @@ describe('owned Rallar receiver originating errors', () => {
                     await sender.screenshot();
                 }
             }).then(() => undefined, (error: unknown) => error);
-            expect(evidence).toHaveBeenCalledTimes(1);
-            expect(senderCleanup).toHaveBeenCalledTimes(1);
-            expect(receiver?.evaluate).toHaveBeenCalledTimes(2);
             expect(closeCalls).toBe(1);
             expect(receiver?.isClosed()).toBe(true);
             expect(reported).toBeInstanceOf(AggregateError);

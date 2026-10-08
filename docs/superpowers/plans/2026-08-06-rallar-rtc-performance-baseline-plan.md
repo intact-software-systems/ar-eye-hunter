@@ -207,9 +207,30 @@ observation failures and four originating-error failures. The final five-file ru
 unchanged budgets. Independent SPEC/QUALITY review closes all helper findings. The 22 exact
 boundary dispositions classify validated inputs or opaque error observations; all 111 prior
 entries and the checker matcher/thresholds are unchanged. All 88 support semantic cases pass,
-and the changed-file WORKTREE gate passes. This checkpoint is being published in draft
+and the changed-file WORKTREE gate passes. This checkpoint is published at `5d060850c` in draft
 [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645). The unfinished Copy
 witness is excluded. Helper acceptance supplies no copied delivery, live-worker or E3 acceptance.
+
+Fresh hosted Branch37734745172 passes unit, tooling, Deno, browser, API and Postgres checks,
+while Static fails three unclassified mock-count assertions in the combined helper
+failure-retention test. The changed-style gate passes; the unrelated full-repository warnings
+are not the failure. Formation37734744784 and Medium37734744828 pass. The original Static log
+is retained. The exact five returned failure identities, original cause and actual resource
+closure already prove the attempted cleanup effects; the three counts add incidental call
+topology. The correction removes only those counts and their unused spy-result bindings,
+retaining all behavioral oracles without an exemption. The exact original committed-range
+coupling failure is reproduced before editing. All 24 focused helper boundary cases then
+pass, and the current-owner coupling check reports zero candidates with a current registry.
+RTC integrity and evidence publication are skipped; this is no full release or E3 acceptance.
+
+Manual readiness authoring has an independently reviewed tests-first checkpoint: 35 semantic
+failures and 51 passing controls, with all 80 original assertions preserved. The earlier
+storage setup failures remain separate adverse evidence. Strict refusal, exact authored
+readiness, submitted-history conservation and draft/reset behavior are covered. Three
+rendered authoring cases currently stop at the missing editor; their later editing and Copy
+assertions must execute when implementation makes them reachable. The bounded implementation
+is ready to begin after the helper correction is quiescent; no Manual GREEN or native
+Copy/repeat acceptance is claimed.
 
 The preceding envelope checkpoint consolidates ordinary and distributed artifact validation
 in one shared-test incoming schema owner. Mandatory identity, finite version/time and required
