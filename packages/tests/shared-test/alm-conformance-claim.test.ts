@@ -82,6 +82,32 @@ async function readTail(recipe: RallarBlackBoxTestRecipe, from: string, observat
     return (await runtime.execute({ kind: 'recipe.run', recipe: { ...recipe, commands } })).ok;
 }
 
+/** Each change alone, applied to an observation the read accepts, must fail it: no fact assertion goes unproven. */
+async function readTailForEachChange(
+    recipe: RallarBlackBoxTestRecipe,
+    from: string,
+    observation: object,
+    changes: readonly object[]
+): Promise<readonly boolean[]> {
+    const results: boolean[] = [];
+    for (const change of changes) {
+        results.push(await readTail(recipe, from, { ...observation, ...change }));
+    }
+    return results;
+}
+
+/** A change to the state, the mode and each recipient list length of an acknowledged receipt over two recipients. */
+function toReceiptChanges(expectedRecipientPeerIds: readonly string[]): readonly object[] {
+    const [first] = expectedRecipientPeerIds;
+    return [
+        { state: 'rejected' },
+        { receiptMode: 'leader' },
+        { expectedRecipientPeerIds: [first] },
+        { confirmedRecipientPeerIds: [first] },
+        { unconfirmedRecipientPeerIds: [first] }
+    ];
+}
+
 describe('claim conformance scenarios', () => {
     it.each(ALM_CONFORMANCE_CARRIERS)('catalogs the %s claim cells on the three agents, in the full tag only', (carrier) => {
         const cells = createAlmConformanceRecipes(toConformanceInput(carrier))
@@ -174,16 +200,17 @@ describe('claim-first-wins', () => {
                 }
             ]);
             expect(await readTail(scenario.sender, 'receipts-1', receipt)).toBe(true);
+            expect(await readTailForEachChange(scenario.sender, 'receipts-1', receipt, toReceiptChanges(receipt.expectedRecipientPeerIds)))
+                .toEqual([false, false, false, false, false]);
             expect(await readTail(scenario.sender, 'observe-acknowledged-1', receipt)).toBe(true);
             expect(
-                await readTail(scenario.sender, 'observe-acknowledged-1', {
-                    ...receipt,
-                    attempts: 2,
-                    attemptCarriers: ['rtc', 'ws'],
-                    carrierFallback: { from: 'rtc', to: 'ws' }
-                })
+                await readTailForEachChange(scenario.sender, 'observe-acknowledged-1', receipt, [
+                    { attempts: 2 },
+                    { attemptCarriers: ['rtc'] },
+                    { carrierFallback: { from: 'rtc', to: 'ws' } }
+                ])
             )
-                .toBe(false);
+                .toEqual([false, false, false]);
         }
     );
 
@@ -224,20 +251,14 @@ describe('claim-first-wins', () => {
             });
             expect(await readTail(recipientB, 'observe-rejected-1', heldByOther)).toBe(true);
             expect(
-                await readTail(recipientB, 'observe-rejected-1', {
-                    ...heldByOther,
-                    failure: { kind: 'relay-rejected', rejection: { relay: 'trusted-server', reason: 'no-leader' } }
-                })
+                await readTailForEachChange(recipientB, 'observe-rejected-1', heldByOther, [
+                    { failure: { ...heldByOther.failure, kind: 'refused' } },
+                    { failure: { ...heldByOther.failure, rejection: { relay: 'peer', reason: 'held-by-other' } } },
+                    { failure: { ...heldByOther.failure, rejection: { relay: 'trusted-server', reason: 'no-leader' } } },
+                    { attempts: 2 }
+                ])
             )
-                .toBe(false);
-            expect(
-                await readTail(recipientB, 'observe-rejected-1', {
-                    ...heldByOther,
-                    failure: { kind: 'refused', reason: 'unsupported' },
-                    attempts: 0
-                })
-            )
-                .toBe(false);
+                .toEqual([false, false, false, false]);
         }
     );
 
@@ -323,7 +344,8 @@ describe('claim-expires-reclaims', () => {
             unconfirmedRecipientPeerIds: []
         };
         expect(await readTail(recipientB, 'receipts-1', receipt)).toBe(true);
-        expect(await readTail(recipientB, 'receipts-1', { ...receipt, state: 'rejected' })).toBe(false);
+        expect(await readTailForEachChange(recipientB, 'receipts-1', receipt, toReceiptChanges(receipt.expectedRecipientPeerIds)))
+            .toEqual([false, false, false, false, false]);
     });
 
     it('has the receiver receive both claims and no third copy', () => {

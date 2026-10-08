@@ -2,7 +2,6 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 
 import { NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
-import { toAdmissionCommands } from '../../alm-conformance-message-commands.ts';
 import {
     toAudienceSendCommands,
     toReceiptReadCommands,
@@ -15,7 +14,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { toClaim, toClaimExpiryWait, toClaimSendCommand } from './claim-commands.ts';
+import { toClaim, toClaimExpiryWait } from './claim-commands.ts';
 
 /** The claim's lease is its message's lifetime; the cell runs where the WS server holds the claim. */
 const CLAIM_EXPIRES_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
@@ -62,8 +61,12 @@ function toReclaimCommands(reclaimer: AlmConformanceStepInput): readonly RallarB
     return [
         toReceivedCommand({ ...reclaimer, index: 1, count: 1, absent: false }),
         toClaimExpiryWait(reclaimer, CLAIM_EXPIRY_WAIT_MS),
-        toClaimSendCommand(reclaimer, NON_EXPIRING_TTL_MS),
-        ...toAdmissionCommands({ ...reclaimer, index: 1 }),
+        ...toAudienceSendCommands({
+            sender: reclaimer,
+            ttlMs: NON_EXPIRING_TTL_MS,
+            ack: 'all-logical-recipients',
+            claim: toClaim(reclaimer)
+        }),
         toReceivedCommand({ ...reclaimer, index: 2, count: 2, absent: true }),
         ...toReceiptReadCommands(reclaimer, {
             roles: SENDER_AND_RECEIVER_CONFIRMED,
