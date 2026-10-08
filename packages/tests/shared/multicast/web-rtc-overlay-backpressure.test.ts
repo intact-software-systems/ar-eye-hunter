@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     beforeEach,
@@ -8,6 +9,9 @@ import {
 } from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     createScriptedTransportFaultPort,
     type ScriptedTransportFault,
@@ -52,6 +56,25 @@ function createBestEffortMulticast(resourceId: string): ALMessage {
         { text: resourceId },
         { reliability: 'best-effort', ack: 'none', ttlMs: 30_000 }
     );
+}
+
+const REJECT_UNDER_CONGESTION: ALQosPolicyRequest = { congestion: { algo: 'reject', opts: { priority: 9 } } };
+
+function createRejectingMulticast(resourceId: string): ALMessage {
+    return newALMulticastMessage(
+        'a',
+        { topicId: 'chat', resourceId, contextId: 'room' },
+        ORIGIN_ROOM,
+        'chat.message.v1',
+        { text: resourceId },
+        { reliability: 'at-least-once', ack: 'none', ttlMs: 30_000, qos: REJECT_UNDER_CONGESTION }
+    );
+}
+
+/** Marks a hop's channel as not ready for sends, whatever it buffers. */
+function holdReadyState(captured: CapturedChannel, readyState: 'connecting' | 'closed'): void {
+    const health = captured.channel.readHealth();
+    vi.mocked(captured.channel.readHealth).mockReturnValue({ ...health, readyState });
 }
 
 function createChatFault(carrier: ScriptedTransportFault['carrier']): ScriptedTransportFault {
@@ -110,6 +133,33 @@ describe('the RTC origin\'s backpressure read of its ready next hops (D184, D185
         expect(verdict.kind).toBe('admitted');
         expect(fixture.channels.b!.sent).toEqual([]);
         expect(fixture.channels.c!.sent).toHaveLength(1);
+    });
+
+    it.each(['connecting', 'closed'] as const)(
+        'reads only the next hops that are ready: a %s hop does not keep a send from being refused',
+        async (readyState) => {
+            const fixture = createBackpressureOriginFixture();
+            holdReadyState(fixture.channels.b!, readyState);
+            holdAtHighWatermark(fixture.channels.c!);
+
+            const verdict = (await enqueueAndDrain(fixture.manager, createBestEffortMulticast(`${readyState}-hop`))).verdict;
+
+            expect(verdict).toMatchObject({ kind: 'refused', reason: 'congested' });
+            expect(fixture.channels.c!.sent).toEqual([]);
+        }
+    );
+
+    it('does not count a hop that is not ready as full: with the ready hop free, the send is admitted', async () => {
+        const fixture = createBackpressureOriginFixture();
+        holdReadyState(fixture.channels.b!, 'closed');
+        holdBuffered(fixture.channels.b!, 1_000_000);
+        const message = createBestEffortMulticast('ready-hop-free');
+
+        const verdict = (await enqueueAndDrain(fixture.manager, message)).verdict;
+
+        expect(verdict.kind).toBe('admitted');
+        expect(fixture.channels.c!.sent.map((sent) => sent.id.msgId)).toEqual([message.id.msgId]);
+        expect(readCongestion(fixture)).toEqual([]);
     });
 
     it('admits an at-least-once send through backpressure and defers its submission on each full hop', async () => {
@@ -177,6 +227,36 @@ describe('the RTC origin\'s backpressure read of its ready next hops (D184, D185
 });
 
 describe('what never reads backpressure (D184)', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('defers a reject-policy send that meets full hops when it is dequeued, never refusing it', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+        const fixture = createBackpressureOriginFixture();
+        await enqueueAndDrain(fixture.manager, createBestEffortMulticast('starts-the-queue-engine'));
+        holdAtHighWatermark(fixture.channels.b!);
+        holdAtHighWatermark(fixture.channels.c!);
+        const message = createRejectingMulticast('dequeued');
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_OUTBOX);
+
+        await fixture.manager.outbox.enqueueIfAbsent({
+            ...entry,
+            dequeueAudit: { ...entry.dequeueAudit, nextTs: Temporal.Instant.fromEpochMilliseconds(Date.now()) }
+        });
+        fixture.resources.queueEngine.wakeAfterExternalWrite();
+        await vi.advanceTimersByTimeAsync(100);
+        holdBuffered(fixture.channels.b!, 0);
+        holdBuffered(fixture.channels.c!, 0);
+        await vi.advanceTimersByTimeAsync(200);
+
+        expect(readCongestion(fixture).map((event) => event.action)).toContain('defer');
+        expect(readCongestion(fixture).map((event) => event.action)).not.toContain('drop');
+        expect(fixture.channels.b!.sent.map((sent) => sent.id.msgId)).toContain(message.id.msgId);
+    });
+
     it('forwards another session\'s best-effort message, leaving the full channel to its submission', async () => {
         const faults = createScriptedTransportFaultPort();
         faults.inject({ ...createChatFault('rtc'), remaining: 1 });
