@@ -21,7 +21,7 @@ interface AlmConformanceFaultCommandInput {
     readonly carrier: AlmConformanceFaultCarrier;
     /** The frames the fault meets: every frame of the scenario's type, or the one message a send returned. */
     readonly match: RallarBlackBoxTestTransportFaultInjectCommand['match'];
-    readonly action: 'drop' | 'not-ready';
+    readonly action: 'drop' | 'not-ready' | 'backpressure';
     readonly remaining: 'until-cleared' | 0;
 }
 
@@ -87,6 +87,27 @@ export function toRtcDropFaultCommand(
         carrier: 'rtc',
         match: { typeId: toScenarioTypeId(step) },
         action: 'drop',
+        remaining
+    });
+}
+
+/**
+ * Holds the first carrier of the cell's strategy at its high watermark for the frames of the scenario's type (D184):
+ * the RTC leg under `rtc-with-ws-fallback`, so its WS leg stays free. The same id with `remaining: 0` releases it.
+ */
+export function toBackpressureFaultCommand(
+    step: AlmConformanceStepInput,
+    name: string,
+    remaining: 'until-cleared' | 0
+): RallarBlackBoxTestTransportFaultInjectCommand {
+    const carrier = step.input.carrier === 'ws' ? 'ws' : 'rtc';
+    return toFaultCommand({
+        step,
+        name,
+        faultName: `backpressure-${carrier}`,
+        carrier,
+        match: { typeId: toScenarioTypeId(step) },
+        action: 'backpressure',
         remaining
     });
 }

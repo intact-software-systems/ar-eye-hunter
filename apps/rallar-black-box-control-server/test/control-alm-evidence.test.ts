@@ -405,6 +405,7 @@ function toReceiptsFabricatedValue(
         attempts: 1,
         attemptOutcomes: ['sent'],
         attemptCarriers: [send?.carrier === 'ws' ? 'ws' : 'rtc'],
+        attemptRefusalReasons: [],
         relayRejection: undefined,
         carrierFallback: undefined,
         durabilityDowngrade: undefined,

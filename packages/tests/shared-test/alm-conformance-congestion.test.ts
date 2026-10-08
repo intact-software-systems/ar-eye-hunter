@@ -1,0 +1,292 @@
+import { describe, expect, it } from 'vitest';
+
+import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import {
+    createAlmConformanceRecipes,
+    type AlmConformanceScenario
+} from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRecipe
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+
+import { toConformanceInput } from './alm-conformance-test-input.ts';
+
+const CONGESTION_SCENARIO_IDS = ['backpressure-hands-over', 'backpressure-refused', 'backpressure-deferred'] as const;
+const SENDER_PROLOGUE = ['ensure-group', 'ensure-member', 'connect', 'storage-counters-connected'] as const;
+const RECEIVER_PROLOGUE = ['ensure-group', 'ensure-member', 'connect'] as const;
+
+type CongestionScenarioId = (typeof CONGESTION_SCENARIO_IDS)[number];
+
+const CONGESTION_CARRIERS: Readonly<Record<CongestionScenarioId, readonly AlmConformanceCarrier[]>> = {
+    'backpressure-hands-over': ['rtc-with-ws-fallback'],
+    'backpressure-refused': ['rtc'],
+    'backpressure-deferred': ['ws', 'rtc']
+};
+
+function findScenario(carrier: AlmConformanceCarrier, scenarioId: CongestionScenarioId): AlmConformanceScenario {
+    const scenario = createAlmConformanceRecipes(toConformanceInput(carrier))
+        .find((candidate) => candidate.scenarioId === scenarioId);
+    if (scenario === undefined) {
+        throw new Error(`Missing ${scenarioId} over ${carrier}.`);
+    }
+    return scenario;
+}
+
+function toCommandNames(recipe: RallarBlackBoxTestRecipe): readonly string[] {
+    const prefix = `${recipe.recipeId}-`;
+    return recipe.commands.map((command) => (command.commandId ?? '').replace(prefix, ''));
+}
+
+function findCommand(recipe: RallarBlackBoxTestRecipe, name: string): RallarBlackBoxTestCommand {
+    const command = recipe.commands.find((candidate) => candidate.commandId === `${recipe.recipeId}-${name}`);
+    if (command === undefined) {
+        throw new Error(`${recipe.recipeId} has no ${name}.`);
+    }
+    return command;
+}
+
+function isCongestionScenario(scenario: AlmConformanceScenario): boolean {
+    return (CONGESTION_SCENARIO_IDS as readonly string[]).includes(scenario.scenarioId);
+}
+
+/** Runs the named handle read and the assertions that follow it, answering the read with one observation. */
+async function readTail(recipe: RallarBlackBoxTestRecipe, from: string, observation: object): Promise<boolean> {
+    const start = recipe.commands.findIndex((command) => command.commandId === `${recipe.recipeId}-${from}`);
+    const following = recipe.commands.slice(start + 1);
+    const end = following.findIndex((command) => command.kind !== 'assert');
+    const runtime = createRallarBlackBoxTestRuntime({
+        commandExecutor: (command) => command.kind === 'messages.observe' ? { status: 'ok', value: observation } : undefined
+    });
+    const commands = [recipe.commands[start], ...following.slice(0, end === -1 ? following.length : end)];
+    return (await runtime.execute({ kind: 'recipe.run', recipe: { ...recipe, commands } })).ok;
+}
+
+/** Each change alone, applied to an observation the read accepts, must fail it: no fact assertion goes unproven. */
+async function readTailForEachChange(
+    recipe: RallarBlackBoxTestRecipe,
+    from: string,
+    observation: object,
+    changes: readonly object[]
+): Promise<readonly boolean[]> {
+    const results: boolean[] = [];
+    for (const change of changes) {
+        results.push(await readTail(recipe, from, { ...observation, ...change }));
+    }
+    return results;
+}
+
+function toHold(carrier: 'ws' | 'rtc', remaining: 'until-cleared' | 0, cell: CongestionScenarioId, sendCarrier: AlmConformanceCarrier) {
+    const typeId = `alm.conformance.${sendCarrier}.${cell}`;
+    return {
+        kind: 'fault.inject',
+        faultId: `backpressure-${carrier}-${typeId}`,
+        carrier,
+        match: { typeId },
+        action: 'backpressure',
+        remaining
+    };
+}
+
+function toCounterRead(recipe: RallarBlackBoxTestRecipe, counter: string) {
+    return {
+        kind: 'assert',
+        source: `resultCache.${recipe.recipeId}-stats-congestion.value.rallar.congestion.${counter}`,
+        operator: 'gt',
+        expected: 0
+    };
+}
+
+describe('congestion conformance scenarios', () => {
+    it.each(ALM_CONFORMANCE_CARRIERS)('catalogs the %s congestion cells on the two agents, in the full tag only, after the volatile bound', (carrier) => {
+        const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
+        const cells = scenarios.filter(isCongestionScenario)
+            .map(({ scenarioId, laneFamily, roles, tags }) => ({ scenarioId, laneFamily, roles, tags }));
+
+        expect(cells).toEqual(
+            CONGESTION_SCENARIO_IDS.filter((scenarioId) => CONGESTION_CARRIERS[scenarioId].includes(carrier)).map((scenarioId) => ({
+                scenarioId,
+                laneFamily: 'two-agent',
+                roles: ['sender', 'receiver'],
+                tags: ['full']
+            }))
+        );
+        // The two-agent family runs them last on its pages, so the counter each one reads is its own.
+        const twoAgent = scenarios.filter((scenario) => scenario.laneFamily === 'two-agent').map(({ scenarioId }) => scenarioId);
+        expect(twoAgent.slice(twoAgent.length - cells.length)).toEqual(cells.map(({ scenarioId }) => scenarioId));
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('gives every %s congestion cell identities no other scenario of the run shares, each a valid command', (carrier) => {
+        const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
+        const toRecipes = (scenario: AlmConformanceScenario) =>
+            [scenario.sender, scenario.receiver, scenario.recipientB, scenario.successor, scenario.sibling]
+                .filter((recipe): recipe is RallarBlackBoxTestRecipe => recipe !== undefined);
+        const others = new Set(
+            scenarios.filter((scenario) => !isCongestionScenario(scenario)).flatMap(toRecipes)
+                .flatMap((recipe) => recipe.commands.map((command) => command.commandId))
+        );
+        const own = scenarios.filter(isCongestionScenario).flatMap(toRecipes).flatMap((recipe) => recipe.commands);
+
+        expect(own.map((command) => command.commandId).filter((commandId) => others.has(commandId))).toEqual([]);
+        expect(new Set(own.map((command) => command.commandId)).size).toBe(own.length);
+        for (const command of own) {
+            expect(validateRallarBlackBoxTestCommand(command), command.commandId).toEqual({ ok: true });
+        }
+    });
+});
+
+describe('backpressure-hands-over', () => {
+    const handedOver = {
+        state: 'acknowledged',
+        attempts: 2,
+        attemptOutcomes: ['refused', 'sent'],
+        attemptCarriers: ['rtc', 'ws'],
+        attemptRefusalReasons: ['congested']
+    };
+
+    it('holds the RTC leg at its watermark, so the best-effort send is refused congested there and handed to WS at admission', async () => {
+        const scenario = findScenario('rtc-with-ws-fallback', 'backpressure-hands-over');
+
+        expect(toCommandNames(scenario.sender)).toEqual([
+            ...SENDER_PROLOGUE,
+            'hold-backpressure',
+            'send-1',
+            'observe-acknowledged-1',
+            'assert-acknowledged-1',
+            'assert-rtc-refused-1',
+            'assert-ws-sent-1',
+            'assert-rtc-leg-1',
+            'assert-ws-leg-1',
+            'assert-congested-1',
+            'stats-congestion',
+            'assert-congestion-handed-over',
+            'release-backpressure',
+            'stats'
+        ]);
+        expect(findCommand(scenario.sender, 'hold-backpressure'))
+            .toMatchObject(toHold('rtc', 'until-cleared', 'backpressure-hands-over', 'rtc-with-ws-fallback'));
+        expect(findCommand(scenario.sender, 'release-backpressure'))
+            .toMatchObject(toHold('rtc', 0, 'backpressure-hands-over', 'rtc-with-ws-fallback'));
+        // Best effort, priority 0: the default drop-low policy drops it under backpressure.
+        expect(findCommand(scenario.sender, 'send-1')).toMatchObject({
+            kind: 'messages.send',
+            carrier: 'rtc-with-ws-fallback',
+            ack: 'receiver',
+            reliability: 'best-effort',
+            ttlMs: 30_000,
+            handleId: 'alm-rtc-with-ws-fallback-backpressure-hands-over-send-1'
+        });
+        expect(await readTail(scenario.sender, 'observe-acknowledged-1', handedOver)).toBe(true);
+        expect(
+            await readTailForEachChange(scenario.sender, 'observe-acknowledged-1', handedOver, [
+                { state: 'expired' },
+                { attemptOutcomes: ['not-ready', 'sent'] },
+                { attemptOutcomes: ['refused', 'not-ready'] },
+                { attemptCarriers: ['ws', 'ws'] },
+                { attemptCarriers: ['rtc', 'rtc'] },
+                { attemptRefusalReasons: ['unsupported'] }
+            ])
+        ).toEqual([false, false, false, false, false, false]);
+        expect(findCommand(scenario.sender, 'assert-congestion-handed-over')).toMatchObject(toCounterRead(scenario.sender, 'handedOver'));
+        expect(toCommandNames(scenario.receiver)).toEqual([...RECEIVER_PROLOGUE, 'received-1', 'received-2', 'ws-arrival', 'stats']);
+        expect(findCommand(scenario.receiver, 'received-2')).toMatchObject({ count: 2, absent: true });
+        const arrival = findCommand(scenario.receiver, 'ws-arrival');
+        expect(arrival.kind === 'wait' ? arrival.match.contains : undefined)
+            .toContain('"carrier":"ws","outcome":"committed","reason":"admitted"');
+    });
+});
+
+describe('backpressure-refused', () => {
+    const refused = {
+        state: 'rejected',
+        failure: { kind: 'refused', reason: 'congested' },
+        attempts: 0
+    };
+
+    it('holds RTC at its watermark with no fallback, so the best-effort send ends rejected congested with no attempt', async () => {
+        const scenario = findScenario('rtc', 'backpressure-refused');
+
+        expect(toCommandNames(scenario.sender)).toEqual([
+            ...SENDER_PROLOGUE,
+            'hold-backpressure',
+            'send-1',
+            'observe-rejected-1',
+            'assert-refused-1',
+            'assert-congested-1',
+            'assert-no-attempt-1',
+            'stats-congestion',
+            'assert-congestion-dropped',
+            'release-backpressure',
+            'stats'
+        ]);
+        expect(findCommand(scenario.sender, 'hold-backpressure'))
+            .toMatchObject(toHold('rtc', 'until-cleared', 'backpressure-refused', 'rtc'));
+        expect(findCommand(scenario.sender, 'release-backpressure'))
+            .toMatchObject(toHold('rtc', 0, 'backpressure-refused', 'rtc'));
+        expect(findCommand(scenario.sender, 'send-1')).toMatchObject({
+            kind: 'messages.send',
+            carrier: 'rtc',
+            ack: 'receiver',
+            reliability: 'best-effort',
+            ttlMs: 30_000
+        });
+        expect(await readTail(scenario.sender, 'observe-rejected-1', refused)).toBe(true);
+        expect(
+            await readTailForEachChange(scenario.sender, 'observe-rejected-1', refused, [
+                { failure: { kind: 'refused', reason: 'capacity' } },
+                { failure: { kind: 'unroutable', reason: 'congested' } },
+                { attempts: 1 }
+            ])
+        ).toEqual([false, false, false]);
+        expect(findCommand(scenario.sender, 'assert-congestion-dropped')).toMatchObject(toCounterRead(scenario.sender, 'dropped'));
+        expect(toCommandNames(scenario.receiver)).toEqual([...RECEIVER_PROLOGUE, 'received-1', 'stats']);
+        expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 1, absent: true, windowMs: 17_000 });
+    });
+});
+
+describe('backpressure-deferred', () => {
+    it.each(CONGESTION_CARRIERS['backpressure-deferred'])(
+        'holds %s at its watermark for 2 s, so the at-least-once send waits through not-ready submissions and is acknowledged',
+        async (carrier) => {
+            const scenario = findScenario(carrier, 'backpressure-deferred');
+            const held = carrier === 'ws' ? 'ws' : 'rtc';
+
+            expect(toCommandNames(scenario.sender)).toEqual([
+                ...SENDER_PROLOGUE,
+                'hold-backpressure',
+                'send-1',
+                'backpressure-held',
+                'release-backpressure',
+                'observe-acknowledged-1',
+                'assert-acknowledged-1',
+                'stats-congestion',
+                'assert-congestion-deferred',
+                'stats'
+            ]);
+            expect(findCommand(scenario.sender, 'hold-backpressure')).toMatchObject(toHold(held, 'until-cleared', 'backpressure-deferred', carrier));
+            expect(findCommand(scenario.sender, 'backpressure-held')).toMatchObject({
+                kind: 'wait',
+                match: { kind: 'diagnostic', topic: 'rallar.black-box.alm.backpressure-held' },
+                absent: true,
+                timeoutMs: 2_000
+            });
+            expect(findCommand(scenario.sender, 'release-backpressure')).toMatchObject(toHold(held, 0, 'backpressure-deferred', carrier));
+            expect(findCommand(scenario.sender, 'send-1')).toMatchObject({
+                kind: 'messages.send',
+                carrier,
+                ack: 'receiver',
+                reliability: 'at-least-once',
+                ttlMs: 30_000
+            });
+            // One attempt row per send-prepared row, overwritten on each retry: the deferral is the counter's to show.
+            expect(await readTail(scenario.sender, 'observe-acknowledged-1', { state: 'acknowledged', attemptOutcomes: ['sent'] }))
+                .toBe(true);
+            expect(await readTail(scenario.sender, 'observe-acknowledged-1', { state: 'rejected' })).toBe(false);
+            expect(findCommand(scenario.sender, 'assert-congestion-deferred')).toMatchObject(toCounterRead(scenario.sender, 'deferred'));
+            expect(toCommandNames(scenario.receiver)).toEqual([...RECEIVER_PROLOGUE, 'received-1', 'stats']);
+            expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 1, absent: false, windowMs: 27_000 });
+        }
+    );
+});

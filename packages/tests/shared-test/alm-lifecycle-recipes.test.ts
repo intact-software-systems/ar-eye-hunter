@@ -113,6 +113,7 @@ describe('ALM lifecycle recipe evidence', () => {
             attempts: 1,
             attemptOutcomes: [],
             attemptCarriers: [],
+            attemptRefusalReasons: [],
             relayRejection: undefined,
             carrierFallback: undefined,
             durabilityDowngrade: undefined,

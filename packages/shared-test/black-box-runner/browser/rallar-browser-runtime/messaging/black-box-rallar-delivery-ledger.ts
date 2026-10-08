@@ -67,13 +67,14 @@ export function toDeliveryObservation(
         attempts: attempts.length,
         attemptOutcomes: attempts.flatMap((attempt) => attempt.outcome === undefined ? [] : [attempt.outcome]),
         attemptCarriers: attempts.flatMap((attempt) => attempt.outcome === undefined ? [] : [attempt.carrier]),
+        attemptRefusalReasons: attempts.flatMap((attempt) => attempt.refusalReason ?? []),
         relayRejection: lifecycle?.evidence.relayRejection,
         carrierFallback: lifecycle?.evidence.carrierFallback,
         durabilityDowngrade: lifecycle?.evidence.durabilityDowngrade,
         failure: lifecycle?.evidence.failure,
         reason: lifecycle?.evidence.reason,
         backpressured: attempts.some((attempt) =>
-            attempt.unroutableReason !== undefined && BACKPRESSURE_ADMISSION_REASONS.includes(attempt.unroutableReason)
+            BACKPRESSURE_ADMISSION_REASONS.some((reason) => reason === attempt.unroutableReason)
         ),
         enqueued: lifecycle?.evidence.admittedDurable === true
     };

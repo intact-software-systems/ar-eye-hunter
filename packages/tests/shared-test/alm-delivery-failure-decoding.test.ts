@@ -16,6 +16,7 @@ const OBSERVATION = {
     attempts: 1,
     attemptOutcomes: ['sent'],
     attemptCarriers: ['rtc'],
+    attemptRefusalReasons: [],
     reason: 'Hop relay-session refused the message: stale.'
 };
 

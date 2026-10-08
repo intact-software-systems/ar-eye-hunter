@@ -96,6 +96,7 @@ const DELIVERY_OBSERVATION = {
     attempts: 2,
     attemptOutcomes: ['refused', 'sent'],
     attemptCarriers: ['rtc', 'ws'],
+    attemptRefusalReasons: ['congested'],
     relayRejection: { relay: 'peer', peerId: 'relay-session', reason: 'resync-required' },
     reason: 'hop evidence retained'
 };
@@ -643,6 +644,7 @@ describe('ALM browser adapter execution', () => {
             attempts: 2,
             attemptOutcomes: ['refused', 'sent'],
             attemptCarriers: ['rtc', 'ws'],
+            attemptRefusalReasons: ['congested'],
             relayRejection: { relay: 'peer', peerId: 'relay-session', reason: 'resync-required' },
             reason: 'hop evidence retained'
         });
@@ -1127,6 +1129,8 @@ describe('ALM browser adapter execution', () => {
         { field: 'attemptOutcomes', value: ['delivered'] },
         { field: 'attemptCarriers', value: ['server', 'ws'] },
         { field: 'attemptCarriers', value: ['ws'] },
+        { field: 'attemptRefusalReasons', value: ['busy'] },
+        { field: 'attemptRefusalReasons', value: undefined },
         { field: 'relayRejection', value: { relay: 'trusted-server' } },
         { field: 'relayRejection', value: { relay: 'trusted-server', peerId: 'server-1', reason: 'resync-required' } },
         { field: 'relayRejection', value: { relay: 'peer', reason: 'resync-required' } },

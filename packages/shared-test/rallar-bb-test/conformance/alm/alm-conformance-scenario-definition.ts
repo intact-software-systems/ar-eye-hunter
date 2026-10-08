@@ -23,6 +23,9 @@ export interface CreateAlmConformanceRecipesInput {
 }
 
 export type AlmConformanceScenarioId =
+    | 'backpressure-deferred'
+    | 'backpressure-hands-over'
+    | 'backpressure-refused'
     | 'bounded-rejection'
     | 'capacity'
     | 'capacity-age'
