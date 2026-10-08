@@ -798,8 +798,8 @@ it, so no owner is invoked there.
 `shared` means every matching local subscriber may observe the message.
 `exclusive` means exactly one sending session holds the message's resource key
 in its room at a time. The room is the only ownership scope defined. The exclusive
-claim is an admission-store key with the insert-if-absent-with-expiry semantics the
-dedup key already has; no generic claim system is added.
+claim is an admission-store row with an expiry, read and guarded at the commit as
+the dedup key is; no generic claim system is added.
 
 **CURRENT — A2b, the claim on the resource key:** an `exclusive` send the WS
 server admits from a client claims the room-scoped resource key (the room's

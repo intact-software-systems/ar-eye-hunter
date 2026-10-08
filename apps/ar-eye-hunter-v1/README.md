@@ -51,5 +51,11 @@ headline for its 2.8 s (`ARENA_EVENT_HEADLINE_MS`): a local event holds the
 headline until it expires, so the snapshot or director event that follows, usually
 the winner's own pickup, does not replace it. The director's own pickups are
 routed locally and claim nothing.
+Limits of the pickup claim: the loser still plays the pickup impact, sound and
+haptic at send time, before its result arrives; losing to a director-hunter
+shows nothing, since the director's local pickup claims nothing and the
+director refuses the remote intent `pickup-unavailable` with no headline; and
+pickup intents go over WS only, one server hop where they were RTC-first, with
+no RTC path while WS reconnects.
 The generic game envelope still identifies rooms by `roomId`; this app fallback
 repair does not claim full scope isolation for that separate shared protocol.

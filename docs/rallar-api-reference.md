@@ -523,6 +523,11 @@ director refuses, or whose sender leaves, still holds the resource until its
 `ttlMs` has passed, so a claim names the few seconds the director needs, not
 the 30 s command default, and the relay waits for the director's confirmation
 no longer than the claim lives.
+A claiming intent goes over WS only: one server hop where an intent is
+RTC-first, and no RTC path while WS reconnects. A director's own intent is
+routed locally and claims nothing, so a remote claimant that loses to the
+director's local action is refused by the director's rules, never
+`held-by-other`.
 Rallar Game's `match.sendIntent(intent, { resourceId, ttlMs })` passes the claim to
 the relay and returns the same `held-by-other` status; when the local session
 is the director, the match routes the intent locally and it claims nothing.
@@ -1090,15 +1095,32 @@ outcomes, none of them a new handle state (D175):
   free, so the next exclusive send on it is admitted and delivered. A claimed
   send that expires without its receipt ends `expired`, as any send does. A
   send with no expiry of its own holds the key for the WS server's retention
-  default; every browser send carries a `ttlMs`.
+  default; every browser send carries a `ttlMs`. A claim outlives the
+  receiver's verdict until then: a receiver that refuses the claiming message,
+  or a sender that leaves, frees nothing, so a claiming send names the lifetime
+  its decision needs, not a long default.
+
+The holder is the sending session: the authenticated session the WS connection
+signed in with. Two tabs that share one auth session are one holder, a second
+sign-in on another tab or device is another session and competes, and a WS
+reconnect of the holder's session keeps its claim. First means first admitted
+at the WS server: an exclusive send the server holds `not-yet-in-sync` is
+judged when it is replayed, so a later claimant already in sync can win.
+
+An exclusive send with `ack: 'none'` learns a loss only by reading
+`lifecycle.evidence.relayRejection` later: no wait condition or state change
+reports it, and with no receipt it cannot learn that it holds the claim either.
+A sender that acts on the outcome sends its claim with a receipted `ack`.
 
 A `shared` send neither reads nor takes an exclusive claim, so a shared send on a
 claimed key is delivered: ownership is decided between exclusive senders. The claim
 lives in the WS server's admission store, beside the message's dedup key, and
 every API process shares it, so it holds across the cluster (D173). Server
-publications claim nothing, and a receiver's local callback selection is
-unchanged: an exclusive message reaches its typed callback or, failing that,
-the wildcard, never both.
+publications claim nothing, and neither does a non-browser WS client's
+exclusive send that names no room: the server admits it with no claim and no
+signal, a shape the browser validator refuses. A receiver's local callback
+selection is unchanged: an exclusive message reaches its typed callback or,
+failing that, the wildcard, never both.
 
 Exclusive is WS-only (D174). No server stands on the RTC path, so nothing there
 can arbitrate two claimants: an exclusive send takes WS under every strategy

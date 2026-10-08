@@ -27,6 +27,12 @@ const EXCLUSIVE_UNSUPPORTED_VERDICT: ALDeliveryAdmissionVerdict = {
     detail: 'RTC cannot arbitrate an exclusive claim: an exclusive send is unsupported'
 };
 
+const ROOMLESS_EXCLUSIVE_ISSUE = {
+    path: '$.ownership',
+    code: 'exclusive-requires-room-audience',
+    message: 'An exclusive send claims a resource in its room: it names a room.'
+};
+
 const mocks = getRallarFacadeMocks();
 let rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
 let webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
@@ -443,11 +449,25 @@ describe('an exclusive send', () => {
                     { text: 'mine' },
                     { strategy, scope: 'world', ownership: 'exclusive', resourceId: 'pickup-1' }
                 )
-            ).rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.ownership', code: 'exclusive-requires-room-audience' })] });
+            ).rejects.toMatchObject({ issues: [ROOMLESS_EXCLUSIVE_ISSUE] });
             expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
             expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
         }
     );
+
+    it('refuses an exclusive WS send to one peer that names no room, saying it names a room', async () => {
+        await expect(
+            createRallarTestFacade().messages.ws.send({
+                topicId: 'app.chat',
+                typeId: 'chat.message.v1',
+                payload: { text: 'mine' },
+                peerId: 'peer-1',
+                ownership: 'exclusive',
+                resourceId: 'pickup-1'
+            })
+        ).rejects.toMatchObject({ issues: [ROOMLESS_EXCLUSIVE_ISSUE] });
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+    });
 });
 
 function createRoomChannel(facade = createRallarTestFacade(), topicId = 'room.chat') {

@@ -452,7 +452,7 @@ function validateExclusiveClaim(
         issues.push({
             path: '$.ownership',
             code: 'exclusive-requires-room-audience',
-            message: 'An exclusive send claims a resource in its room: it names a room audience, never the world.'
+            message: 'An exclusive send claims a resource in its room: it names a room.'
         });
     }
     return issues;
