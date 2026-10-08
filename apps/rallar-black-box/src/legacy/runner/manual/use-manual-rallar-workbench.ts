@@ -42,7 +42,7 @@ export function useManualRallarWorkbench(options: ManualRallarWorkbenchOptions):
     const [recipeVisible, setRecipeVisible] = useState(false);
     const lifetime = useManualWorkbenchLifetime();
     const recipes = useManualWorkbenchRecipes({ ...draft, sequence, history });
-    const actions = new ManualWorkbenchActions({
+    const input: ManualWorkbenchActions.Input = {
         ...options,
         ...draft,
         ...recipes,
@@ -54,10 +54,14 @@ export function useManualRallarWorkbench(options: ManualRallarWorkbenchOptions):
         nowMs: Date.now,
         createRequestId: () => crypto.randomUUID(),
         runManualCommands: (commands, label) => rallarBlackBoxRuntimeStore.runManualCommands(commands, label)
-    });
+    };
+    const currentInput = useRef(input);
+    currentInput.current = input;
+    const actions = new ManualWorkbenchActions(() => currentInput.current);
     const runManualAction: ManualWorkbenchActions['runManualAction'] = (action) => {
         if (lifetime.active && action === 'reset') {
             draft.updateValue('rtcCaptureMode', undefined);
+            draft.updateValue('rtcReadinessText', '');
         }
         return actions.runManualAction(action);
     };

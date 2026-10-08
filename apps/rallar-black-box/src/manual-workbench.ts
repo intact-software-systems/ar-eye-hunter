@@ -45,6 +45,7 @@ export interface ManualWorkbenchValues {
     readonly targetClient: string;
     readonly multicastClients: string;
     readonly transport: ManualWorkbenchTransport;
+    readonly rtcReadinessText: string;
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly deliveryMode: ManualDeliveryMode;
     readonly wsUrl: string;
@@ -125,6 +126,7 @@ export const DEFAULT_MANUAL_WORKBENCH_VALUES: ManualWorkbenchValues = {
     groupId: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.roomId,
     scopeText: '',
     roomRefText: '',
+    rtcReadinessText: '',
     minSnapshotVersion: 0,
     connection: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.connection,
     targetClient: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.targetClient,

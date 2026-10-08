@@ -196,7 +196,7 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
 ## 1. Current Outcome And Evidence
 
-The latest reviewed checkpoint adopts canonical snapshot, issued-auth and artifact contracts
+The preceding published helper checkpoint adopts canonical snapshot, issued-auth and artifact contracts
 in the existing browser helpers and callers. Named inputs replace positional compatibility
 paths; permissive duplicate decoders are removed. Each acquired browser resource and initiated
 recipe observation has explicit lifecycle ownership. Original errors remain reachable when
@@ -211,7 +211,7 @@ and the changed-file WORKTREE gate passes. This checkpoint is published at `5d06
 [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645). The unfinished Copy
 witness is excluded. Helper acceptance supplies no copied delivery, live-worker or E3 acceptance.
 
-Fresh hosted Branch37734745172 passes unit, tooling, Deno, browser, API and Postgres checks,
+Original hosted Branch37734745172 passes unit, tooling, Deno, browser, API and Postgres checks,
 while Static fails three unclassified mock-count assertions in the combined helper
 failure-retention test. The changed-style gate passes; the unrelated full-repository warnings
 are not the failure. Formation37734744784 and Medium37734744828 pass. The original Static log
@@ -223,14 +223,36 @@ coupling failure is reproduced before editing. All 24 focused helper boundary ca
 pass, and the current-owner coupling check reports zero candidates with a current registry.
 RTC integrity and evidence publication are skipped; this is no full release or E3 acceptance.
 
-Manual readiness authoring has an independently reviewed tests-first checkpoint: 35 semantic
-failures and 51 passing controls, with all 80 original assertions preserved. The earlier
-storage setup failures remain separate adverse evidence. Strict refusal, exact authored
-readiness, submitted-history conservation and draft/reset behavior are covered. Three
-rendered authoring cases currently stop at the missing editor; their later editing and Copy
-assertions must execute when implementation makes them reachable. The bounded implementation
-is ready to begin after the helper correction is quiescent; no Manual GREEN or native
-Copy/repeat acceptance is claimed.
+The reviewed correction is published at `c729f6e`. Fresh
+[Branch37738842047](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37738842047),
+[Formation37738841643](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37738841643)
+and [Medium37738841652](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37738841652)
+pass, including Static. All eight original archive digests and the published receipt match;
+the synthetic merge tree and both parents match the exact source. Executed selection is
+broad with reuse=false. Hosted Native refusal, delivery and Manual capture cases are skipped,
+as is RTC integrity. This resolves the helper Static failure within those correctness gates;
+native Copy/repeat and E3 remain separate required outcomes. Original failed attempts remain
+retained.
+
+Manual readiness authoring now has passing focused implementation evidence after its
+independently reviewed tests-first checkpoint: 35 semantic failures and 51 passing controls.
+The earlier storage setup failures remain separate adverse evidence. One optional JSON
+editor uses the existing canonical readiness schema and carries the exact accepted value
+through Connect, Join, matrix and negative recipes into submitted history. Blank omits the
+wait; explicit {} and valid partial objects retain their authored meaning. Invalid RTC
+input refuses before submission effects; WS and Send-only actions retain their independence.
+The draft restores raw text and Reset clears it through existing owners, without migration.
+All 80 original assertions remain preserved. The three rendered authoring cases now reach
+and pass their editing, repeated Copy, restored-error and reset checks. A separately retained
+callback RED proves that an uninvoked old handler must validate current input, while accepted
+history remains immutable. Final focused checks pass 87 Manual cases and 12 schema/Flow
+controls, app typing and formatting. Scoped test typing still fails solely on the external
+Temporal declaration error, reproduced byte-for-byte on the published baseline. SPEC/TDD
+and independent QUALITY review approve this source scope after bounded metadata/fixture
+consolidation and declaration placement. The final 99-case focused run passes; the affected
+Rallar black-box/shared-test suite passes 4,786 cases across 386 files, and the app build passes
+with its existing large-chunk warning. Actual browser/native Copy/repeat and E3 acceptance
+remain open.
 
 The preceding envelope checkpoint consolidates ordinary and distributed artifact validation
 in one shared-test incoming schema owner. Mandatory identity, finite version/time and required
@@ -254,8 +276,9 @@ Actual hosted native/refusal/Manual cases and RTC integrity are skipped. This ac
 carrier slice and its stated local boundaries; real launched-worker/Actions/native and
 B01–B06/E3 acceptance remain open.
 
-The next two useful outcomes are explicit Manual readiness authoring, then actual Manual Copy
-and ordinary same-session Local repeat. Existing worker/Actions propagation follows. Copy uses the same payload and sessions, retained native receive objects, successful canonical Close, actual old-target
+The next two useful outcomes are actual browser Manual readiness/Copy and ordinary same-session
+Local repeat, then existing worker/Actions propagation. Copy uses the same payload and sessions,
+retained native receive objects, successful canonical Close, actual old-target
 closure and distinct open receiving targets within unchanged budgets. Its first database
 configuration failure and subsequent test-construction failures are retained; none is product
 RED or delivery acceptance. The existing healthy canonical Postgres already has all required
@@ -269,12 +292,12 @@ Full copied delivery remains RED. Connect returns with no ready peers; the copie
 has no authored readiness. The exact Send-side room snapshot/layout subreason is unobserved,
 so this does not establish an enduring SDK or transport defect.
 
-Local JSON command/recipe authoring already supports canonical rtc.connect.readiness.
-Structured Manual Rallar has no corresponding value, control, command projection or draft
-persistence; Local execution does not enter its separate Copy history. Complete the smallest
-explicit authoring path in those current owners, preserving omitted readiness and submitted
-history, before repeating the native witness. Reuse the existing bounded readiness contract;
-add no implicit SDK wait, copied-text edit, new retry, timeout expansion or readiness policy.
+Local JSON and the current Manual source now both author canonical rtc.connect.readiness.
+Local execution still does not enter Manual's separate Copy history. Publish the reviewed
+Manual source checkpoint, then operate its visible editor in the actual
+native Copy/repeat witness. Preserve omitted readiness and submitted history; reuse the
+existing bounded readiness contract. Add no implicit SDK wait, copied-text edit, new retry,
+timeout expansion or readiness policy.
 The helper's canonical snapshot/auth/artifact boundary closure is now independently approved.
 No duplicate permissive contract or compatibility path is retained.
 

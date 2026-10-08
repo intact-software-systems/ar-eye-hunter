@@ -52,6 +52,7 @@ export function ManualRallarInputsPanel(props: ManualRallarInputsPanelProps) {
                     <ManualScopeFields {...props} />
                     <ManualConnectionFields {...props} />
                     <ManualRtcCapturePreference {...props} />
+                    <ManualRtcReadinessPreference {...props} />
                     <ManualDeliveryFields {...props} />
                 </div>
                 <ManualDeliveryToggle {...props} />
@@ -155,6 +156,29 @@ function ManualRtcCapturePreference({ busy, model }: ManualRallarInputsPanelProp
                     ? 'Inherited capture preference'
                     : `Explicit ${model.values.rtcCaptureMode} capture preference`}
             </p>
+        </div>
+    );
+}
+
+function ManualRtcReadinessPreference({ busy, model }: ManualRallarInputsPanelProps) {
+    const error = model.rtcReadinessResult.left;
+    return (
+        <div>
+            <label className="json-editor">
+                <span>RTC readiness JSON</span>
+                <textarea
+                    value={model.values.rtcReadinessText}
+                    onChange={(event) => model.updateValue('rtcReadinessText', event.target.value)}
+                    spellCheck={false}
+                    disabled={busy || model.values.transport === 'ws'}
+                    aria-invalid={error !== undefined}
+                />
+            </label>
+            <p>
+                Empty skips the readiness wait; {'{}'}{' '}
+                uses the existing runtime defaults. Counts ready peers; it does not guarantee a named target is ready.
+            </p>
+            {error !== undefined && <p role="alert">{error}</p>}
         </div>
     );
 }

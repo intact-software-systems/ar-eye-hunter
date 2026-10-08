@@ -1,5 +1,15 @@
-import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestRecord,
+    RallarBlackBoxTestRtcConnectCommand
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { decodeJsonValue, decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+
+import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
+import {
+    formatJsonSchemaValidationErrors,
+    validateJsonSchema
+} from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import type { ManualWorkbenchValues } from '../manual-workbench.ts';
 
@@ -93,4 +103,19 @@ function toDefaultRoomRef(values: ManualWorkbenchValues): RallarBlackBoxTestReco
     return applicationId && groupId
         ? { applicationId, ...(workspaceId ? { workspaceId } : {}), groupId }
         : undefined;
+}
+
+/** Validates authored intent without materializing runtime defaults. */
+export function decodeManualRtcReadinessText(text: string): Either<string, RallarBlackBoxTestRtcConnectCommand> {
+    try {
+        const parsed: unknown = text.trim() === '' ? undefined : JSON.parse(text);
+        const command = { kind: 'rtc.connect', ...(parsed === undefined ? {} : { readiness: parsed }) };
+        const validation = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command);
+        return validation.ok
+            ? Either.ofRight(command as RallarBlackBoxTestRtcConnectCommand)
+            : Either.ofLeft(formatJsonSchemaValidationErrors(validation.errors));
+    }
+    catch (error) {
+        return Either.ofLeft(error instanceof Error ? error.message : String(error));
+    }
 }

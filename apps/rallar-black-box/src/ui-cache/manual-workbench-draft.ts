@@ -135,6 +135,7 @@ function toStoredManualWorkbenchValues(values: ManualWorkbenchValues): ApiJsonOb
         groupId: values.groupId,
         scopeText: values.scopeText,
         roomRefText: values.roomRefText,
+        rtcReadinessText: values.rtcReadinessText,
         minSnapshotVersion: values.minSnapshotVersion,
         connection: values.connection,
         targetClient: values.targetClient,
@@ -162,8 +163,12 @@ function decodeManualWorkbenchValues(
     const scope = decodeManualScopeValues(record);
     const delivery = decodeManualDeliveryValues(record);
     const rallar = decodeManualRallarValues(record);
+    const rtcReadinessText = record.rtcReadinessText === undefined ? '' : decodeStoredText(record.rtcReadinessText);
     const capture = parseRtcCaptureMode(record.rtcCaptureMode).right;
-    if (scope === undefined || delivery === undefined || rallar === undefined || capture === undefined) {
+    if (
+        scope === undefined || delivery === undefined || rallar === undefined || capture === undefined ||
+        rtcReadinessText === undefined
+    ) {
         return undefined;
     }
 
@@ -171,6 +176,7 @@ function decodeManualWorkbenchValues(
         ...scope,
         ...delivery,
         ...rallar,
+        rtcReadinessText,
         ...(capture.mode === undefined ? {} : { rtcCaptureMode: capture.mode }),
         providerMode: sessionValues.providerMode,
         rallarPassword: sessionValues.rallarPassword

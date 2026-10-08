@@ -7,6 +7,7 @@ import {
 import type { RtcSignalingDiagnostics } from '../../shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
+import { decodeManualRtcReadinessText } from '../../../apps/rallar-black-box/src/manual-workbench/manual-command-fields.ts';
 import { toManualWorkbenchCommands } from '../../../apps/rallar-black-box/src/manual-workbench/manual-workbench-commands.ts';
 import {
     readStoredAppMode,
@@ -82,6 +83,47 @@ const REST_COLLECTION = {
 };
 
 describe('rallar-black-box UI persistence', () => {
+    it.each(['{"intervalMs":75}', '{}', '{'])('retains readiness authoring text %s in the single Manual draft', (rtcReadinessText) => {
+        const storage = new MemoryStorage();
+        const values = { ...DEFAULT_MANUAL_WORKBENCH_VALUES, rtcReadinessText };
+        writeStoredManualWorkbenchDraft(storage, { values, payloadPresetId: 'custom', payloadText: '{}' }, []);
+        expect(readStoredManualWorkbenchDraft(storage, SESSION_VALUES)).toMatchObject({
+            values: { rtcReadinessText }
+        });
+    });
+
+    it('reads an old valid Manual draft with missing readiness as blank next-Connect intent', () => {
+        const storage = new MemoryStorage();
+        const values = { ...DEFAULT_MANUAL_WORKBENCH_VALUES, groupId: 'old-draft-room' };
+        Reflect.deleteProperty(values, 'rtcReadinessText');
+        storage.setItem(UI_STORAGE_KEYS.manualDraft, JSON.stringify({ values, payloadPresetId: 'custom', payloadText: '{}' }));
+        const restored = readStoredManualWorkbenchDraft(storage, SESSION_VALUES);
+        const [command] = toManualWorkbenchCommands({
+            action: 'connect',
+            values: restored?.values ?? DEFAULT_MANUAL_WORKBENCH_VALUES,
+            payload: {},
+            sequence: 1,
+            requestId: 'old-draft-connect',
+            rtcReadinessResult: decodeManualRtcReadinessText((restored?.values ?? DEFAULT_MANUAL_WORKBENCH_VALUES).rtcReadinessText)
+        });
+        expect(command.kind).toBe('rtc.connect');
+        expect(command).not.toHaveProperty('readiness');
+        expect(restored?.values).toMatchObject({ groupId: 'old-draft-room', rtcReadinessText: '' });
+    });
+
+    it('discards the whole Manual draft when supplied readiness text is not a string', () => {
+        const storage = new MemoryStorage();
+        storage.setItem(
+            UI_STORAGE_KEYS.manualDraft,
+            JSON.stringify({
+                values: { ...DEFAULT_MANUAL_WORKBENCH_VALUES, groupId: 'corrupt-readiness-room', rtcReadinessText: 75 },
+                payloadPresetId: 'custom',
+                payloadText: '{}'
+            })
+        );
+        expect(readStoredManualWorkbenchDraft(storage, SESSION_VALUES)).toBeUndefined();
+    });
+
     it('stores the active tab as a small non-secret preference', () => {
         const storage = new MemoryStorage();
 
@@ -162,7 +204,8 @@ describe('rallar-black-box UI persistence', () => {
                 values: restored?.values ?? DEFAULT_MANUAL_WORKBENCH_VALUES,
                 payload: {},
                 sequence: 1,
-                requestId: 'restored-capture-connect'
+                requestId: 'restored-capture-connect',
+                rtcReadinessResult: decodeManualRtcReadinessText((restored?.values ?? DEFAULT_MANUAL_WORKBENCH_VALUES).rtcReadinessText)
             });
             expect(command).toMatchObject({ kind: 'rtc.connect', rallar: { rtcCaptureMode } });
         }
@@ -186,7 +229,8 @@ describe('rallar-black-box UI persistence', () => {
             values: restored?.values ?? DEFAULT_MANUAL_WORKBENCH_VALUES,
             payload: {},
             sequence: 1,
-            requestId: 'inherited-capture-connect'
+            requestId: 'inherited-capture-connect',
+            rtcReadinessResult: decodeManualRtcReadinessText((restored?.values ?? DEFAULT_MANUAL_WORKBENCH_VALUES).rtcReadinessText)
         });
         expect(command.kind).toBe('rtc.connect');
         if (command.kind === 'rtc.connect') {

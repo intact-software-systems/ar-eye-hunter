@@ -2,10 +2,12 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestConfig,
     RallarBlackBoxTestRecord,
+    RallarBlackBoxTestRtcConnectCommand,
     RallarBlackBoxTestRtcSendCommand
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../client-defaults.ts';
 import type { ManualWorkbenchAction, ManualWorkbenchValues } from '../manual-workbench.ts';
@@ -19,6 +21,7 @@ import {
 
 export interface ManualWorkbenchCommandInput {
     readonly action: ManualWorkbenchAction;
+    readonly rtcReadinessResult: Either<string, RallarBlackBoxTestRtcConnectCommand>;
     readonly values: ManualWorkbenchValues;
     readonly payload: RallarMessagePayload;
     readonly sequence: number;
@@ -66,7 +69,8 @@ export function toManualConfigureCommand(
 
 export function toManualConnectCommand(
     values: ManualWorkbenchValues,
-    sequence: number
+    sequence: number,
+    readiness: RallarBlackBoxTestRtcConnectCommand['readiness']
 ): RallarBlackBoxTestCommand {
     if (values.transport === 'ws') {
         return {
@@ -87,6 +91,7 @@ export function toManualConnectCommand(
 
     return {
         kind: 'rtc.connect',
+        ...(readiness === undefined ? {} : { readiness }),
         commandId: toManualCommandId('rtc-connect', sequence),
         label: 'Connect manual RTC client',
         connection: toOptionalText(values.connection),
@@ -156,15 +161,6 @@ export function toManualSendCommand(
     payload: RallarMessagePayload,
     sequence: number
 ): RallarBlackBoxTestCommand {
-    const targets = toTargets(values);
-    const manual = {
-        groupId: toOptionalText(values.groupId),
-        topic: toOptionalText(values.topic),
-        deliveryMode: values.deliveryMode,
-        targets,
-        ...toScopedRtcFields(values)
-    };
-
     if (values.transport === 'ws') {
         return {
             kind: 'ws.send',
@@ -174,7 +170,7 @@ export function toManualSendCommand(
             data: toPayloadEnvelope(values, payload),
             timeoutMs: toTimeoutMs(values),
             metadata: {
-                manual
+                manual: toManualSendMetadata(values)
             }
         };
     }
@@ -194,8 +190,16 @@ export function toManualSimpleCommand(
 }
 
 export function toManualWorkbenchCommands(
-    { action, values, payload, sequence, requestId }: ManualWorkbenchCommandInput
+    { action, values, payload, sequence, requestId, rtcReadinessResult }: ManualWorkbenchCommandInput
 ): readonly RallarBlackBoxTestCommand[] {
+    const readiness = (action === 'connect' || action === 'join') && values.transport !== 'ws'
+        ? rtcReadinessResult.fold(
+            (error) => {
+                throw new Error(error);
+            },
+            (command) => command.readiness
+        )
+        : undefined;
     switch (action) {
         case 'configure':
             return [toManualConfigureCommand(values, sequence)];
@@ -204,15 +208,15 @@ export function toManualWorkbenchCommands(
                 return [
                     toManualConfigureCommand(values, sequence),
                     toManualCreateGroupCommand(values, sequence + 1, requestId),
-                    toManualConnectCommand(values, sequence + 2)
+                    toManualConnectCommand(values, sequence + 2, readiness)
                 ];
             }
             return [
                 toManualConfigureCommand(values, sequence),
-                toManualConnectCommand(values, sequence + 1)
+                toManualConnectCommand(values, sequence + 1, readiness)
             ];
         case 'connect':
-            return [toManualConnectCommand(values, sequence)];
+            return [toManualConnectCommand(values, sequence, readiness)];
         case 'send':
             return [toManualSendCommand(values, payload, sequence)];
         case 'health':
@@ -220,6 +224,16 @@ export function toManualWorkbenchCommands(
         case 'reset':
             return [toManualSimpleCommand(action, sequence)];
     }
+}
+
+function toManualSendMetadata(values: ManualWorkbenchValues): RallarBlackBoxTestRecord {
+    return {
+        groupId: toOptionalText(values.groupId),
+        topic: toOptionalText(values.topic),
+        deliveryMode: values.deliveryMode,
+        targets: toTargets(values),
+        ...toScopedRtcFields(values)
+    };
 }
 
 function toRtcSendPayload(values: ManualWorkbenchValues, payload: RallarMessagePayload): RallarBlackBoxTestRecord {
@@ -246,15 +260,6 @@ export function toManualRtcSendCommand(
     payload: RallarMessagePayload,
     sequence: number
 ): RallarBlackBoxTestRtcSendCommand {
-    const targets = toTargets(values);
-    const manual = {
-        groupId: toOptionalText(values.groupId),
-        topic: toOptionalText(values.topic),
-        deliveryMode: values.deliveryMode,
-        targets,
-        ...toScopedRtcFields(values)
-    };
-
     const basePayload = toRtcSendPayload(values, payload);
     return {
         kind: 'rtc.send',
@@ -266,7 +271,7 @@ export function toManualRtcSendCommand(
         send: basePayload,
         timeoutMs: toTimeoutMs(values),
         metadata: {
-            manual
+            manual: toManualSendMetadata(values)
         }
     };
 }

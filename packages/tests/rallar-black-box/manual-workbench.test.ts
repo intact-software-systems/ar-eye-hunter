@@ -4,7 +4,7 @@ import {
     it
 } from 'vitest';
 
-import type { RallarBlackBoxTestEvent } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import type { RtcSignalingDiagnostics } from '../../shared/webrtc/rtc-signaling-diagnostics.ts';
@@ -17,6 +17,7 @@ import {
     type ManualActionHistoryEntry,
     type ManualWorkbenchValues
 } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
+import { decodeManualRtcReadinessText } from '../../../apps/rallar-black-box/src/manual-workbench/manual-command-fields.ts';
 import {
     toManualRtcDeliveryMatrixCommands,
     toManualRtcNegativeRecipeText
@@ -25,18 +26,102 @@ import { toManualWorkbenchCommands } from '../../../apps/rallar-black-box/src/ma
 import { validateSchemaAuthoringText } from '../../../apps/rallar-black-box/src/schema-authoring.ts';
 
 describe('rallar-black-box manual workbench helpers', () => {
+    it.each([
+        { text: '{"minReadyPeers":1,"timeoutMs":5000,"intervalMs":100}', readiness: { minReadyPeers: 1, timeoutMs: 5000, intervalMs: 100 } },
+        { text: '{}', readiness: {} },
+        { text: '{"intervalMs":75}', readiness: { intervalMs: 75 } }
+    ].flatMap((input) => (['connect', 'join'] as const).map((action) => ({ ...input, action }))))(
+        'preserves authored RTC readiness $text in $action',
+        ({ text, readiness, action }) => {
+            const values = { ...DEFAULT_MANUAL_WORKBENCH_VALUES, rtcReadinessText: text };
+            const commands = toManualWorkbenchCommands({
+                action,
+                values,
+                payload: {},
+                sequence: 1,
+                requestId: 'authored-readiness',
+                rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
+            });
+            expect(commands.find((command) => command.kind === 'rtc.connect')?.readiness).toEqual(readiness);
+        }
+    );
+
+    it('ignores malformed RTC readiness for WebSocket Connect and Join', () => {
+        const values = { ...DEFAULT_MANUAL_WORKBENCH_VALUES, transport: 'ws' as const, rtcReadinessText: '{' };
+        for (const action of ['connect', 'join'] as const) {
+            const commands = toManualWorkbenchCommands({
+                action,
+                values,
+                payload: {},
+                sequence: 1,
+                requestId: 'ws-no-rtc-readiness',
+                rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
+            });
+            expect(commands.at(-1)).toMatchObject({ kind: 'ws.open' });
+            expect(commands.at(-1)).not.toHaveProperty('readiness');
+        }
+    });
+
+    it('keeps blank readiness omitted from the current Connect command', () => {
+        const values = { ...DEFAULT_MANUAL_WORKBENCH_VALUES, rtcReadinessText: '  ' };
+        const [command] = toManualWorkbenchCommands({
+            action: 'connect',
+            values,
+            payload: {},
+            sequence: 1,
+            requestId: 'omitted-readiness',
+            rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
+        });
+        expect(command.kind).toBe('rtc.connect');
+        expect(command).not.toHaveProperty('readiness');
+    });
+
+    it.each(['realtime', 'messages.rtc'] as const)('carries exact partial readiness through the %s RTC delivery matrix', (transport) => {
+        const values = { ...DEFAULT_MANUAL_WORKBENCH_VALUES, rtcReadinessText: '{"intervalMs":75}' };
+        const commands = toManualRtcDeliveryMatrixCommands({
+            values,
+            payload: {},
+            sequence: 1,
+            transport,
+            requestId: 'matrix-readiness',
+            rtcConnect: decodeManualRtcReadinessText(values.rtcReadinessText).fold((error) => {
+                throw new Error(error);
+            }, (command) => command)
+        });
+        expect(commands.filter((command) => command.kind === 'rtc.connect').map((command) => command.readiness)).toEqual([{ intervalMs: 75 }]);
+    });
+
+    it('conserves exact authored readiness on both negative-recipe Connects', () => {
+        const values = { ...DEFAULT_MANUAL_WORKBENCH_VALUES, rtcReadinessText: '{"minReadyPeers":1}' };
+        const recipe: unknown = JSON.parse(
+            decodeManualRtcReadinessText(values.rtcReadinessText).fold((error) => error, (rtcConnect) => toManualRtcNegativeRecipeText(values, {}, rtcConnect))
+        );
+        const validation = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe);
+        expect(validation.ok).toBe(true);
+        if (!validation.ok) {
+            throw new Error('The generated negative recipe is not canonical.');
+        }
+        const commands = (recipe as RallarBlackBoxTestRecipe).commands;
+        expect(commands.filter((command) => command.kind === 'rtc.connect').map((command) => command.readiness)).toEqual([
+            { minReadyPeers: 1 },
+            { minReadyPeers: 1 }
+        ]);
+    });
+
     it('builds direct realtime sends with explicit peer targets', () => {
+        const values = {
+            ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+            transport: 'realtime',
+            deliveryMode: 'direct',
+            targetClient: 'bob-peer'
+        } satisfies ManualWorkbenchValues;
         const [command] = toManualWorkbenchCommands({
             action: 'send',
-            values: {
-                ...DEFAULT_MANUAL_WORKBENCH_VALUES,
-                transport: 'realtime',
-                deliveryMode: 'direct',
-                targetClient: 'bob-peer'
-            },
+            values,
             payload: { text: 'hello' },
             sequence: 7,
-            requestId: crypto.randomUUID()
+            requestId: crypto.randomUUID(),
+            rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
         });
 
         expect(command).toMatchObject({
@@ -61,19 +146,21 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('builds messages.rtc multicast sends with next hop targets', () => {
+        const values = {
+            ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+            transport: 'messages.rtc',
+            deliveryMode: 'multicast',
+            multicastClients: 'bob-peer, charlie-peer',
+            typeId: 'chat',
+            topicId: 'room-message'
+        } satisfies ManualWorkbenchValues;
         const [command] = toManualWorkbenchCommands({
             action: 'send',
-            values: {
-                ...DEFAULT_MANUAL_WORKBENCH_VALUES,
-                transport: 'messages.rtc',
-                deliveryMode: 'multicast',
-                multicastClients: 'bob-peer, charlie-peer',
-                typeId: 'chat',
-                topicId: 'room-message'
-            },
+            values,
             payload: { text: 'hello' },
             sequence: 8,
-            requestId: crypto.randomUUID()
+            requestId: crypto.randomUUID(),
+            rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
         });
 
         expect(command).toMatchObject({
@@ -105,17 +192,19 @@ describe('rallar-black-box manual workbench helpers', () => {
         } satisfies ManualWorkbenchValues;
         const commands = toManualWorkbenchCommands({
             action: 'join',
-            values: values,
+            values,
             payload: {},
             sequence: 20,
-            requestId: crypto.randomUUID()
+            requestId: crypto.randomUUID(),
+            rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
         });
         const [send] = toManualWorkbenchCommands({
             action: 'send',
-            values: values,
+            values,
             payload: { text: 'hello' },
             sequence: 30,
-            requestId: crypto.randomUUID()
+            requestId: crypto.randomUUID(),
+            rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
         });
 
         expect(commands[0]).toMatchObject({
@@ -176,7 +265,8 @@ describe('rallar-black-box manual workbench helpers', () => {
             values,
             payload: {},
             sequence: 40,
-            requestId: 'qualified-default-room'
+            requestId: 'qualified-default-room',
+            rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
         });
         const roomRef = {
             applicationId: 'visible-app',
@@ -192,16 +282,18 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('wraps WebSocket broadcast sends with group delivery metadata', () => {
+        const values = {
+            ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+            transport: 'ws',
+            deliveryMode: 'broadcast'
+        } satisfies ManualWorkbenchValues;
         const [command] = toManualWorkbenchCommands({
             action: 'send',
-            values: {
-                ...DEFAULT_MANUAL_WORKBENCH_VALUES,
-                transport: 'ws',
-                deliveryMode: 'broadcast'
-            },
+            values,
             payload: { text: 'hello' },
             sequence: 9,
-            requestId: crypto.randomUUID()
+            requestId: crypto.randomUUID(),
+            rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
         });
 
         expect(command).toMatchObject({
@@ -220,17 +312,19 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('builds join as configure plus transport connection command', () => {
+        const values = {
+            ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+            providerMode: 'browser-rallar',
+            transport: 'ws',
+            wsUrl: 'wss://control.example.test/group'
+        } satisfies ManualWorkbenchValues;
         const commands = toManualWorkbenchCommands({
             action: 'join',
-            values: {
-                ...DEFAULT_MANUAL_WORKBENCH_VALUES,
-                providerMode: 'browser-rallar',
-                transport: 'ws',
-                wsUrl: 'wss://control.example.test/group'
-            },
+            values,
             payload: {},
             sequence: 10,
-            requestId: crypto.randomUUID()
+            requestId: crypto.randomUUID(),
+            rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
         });
 
         expect(commands.map((command) => command.kind)).toEqual(['configure', 'ws.open']);
@@ -252,17 +346,19 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('builds real RTC join as configure, group create, and connect', () => {
+        const values = {
+            ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+            providerMode: 'browser-rallar',
+            transport: 'realtime',
+            groupId: 'room-from-manual'
+        } satisfies ManualWorkbenchValues;
         const commands = toManualWorkbenchCommands({
             action: 'join',
-            values: {
-                ...DEFAULT_MANUAL_WORKBENCH_VALUES,
-                providerMode: 'browser-rallar',
-                transport: 'realtime',
-                groupId: 'room-from-manual'
-            },
+            values,
             payload: {},
             sequence: 20,
-            requestId: crypto.randomUUID()
+            requestId: crypto.randomUUID(),
+            rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
         });
 
         expect(commands.map((command) => command.kind)).toEqual(['configure', 'http.request', 'rtc.connect']);
@@ -289,15 +385,11 @@ describe('rallar-black-box manual workbench helpers', () => {
         });
         const repeatedAction = toManualWorkbenchCommands({
             action: 'join',
-            values: {
-                ...DEFAULT_MANUAL_WORKBENCH_VALUES,
-                providerMode: 'browser-rallar',
-                transport: 'realtime',
-                groupId: 'room-from-manual'
-            },
+            values,
             payload: {},
             sequence: 20,
-            requestId: crypto.randomUUID()
+            requestId: crypto.randomUUID(),
+            rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
         });
         const firstGroupCreate = commands.find((command) => command.kind === 'http.request');
         const repeatedGroupCreate = repeatedAction.find((command) => command.kind === 'http.request');
@@ -315,7 +407,8 @@ describe('rallar-black-box manual workbench helpers', () => {
                 values,
                 payload: {},
                 sequence: 1,
-                requestId: 'manual-capture-connect'
+                requestId: 'manual-capture-connect',
+                rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
             });
 
             expect(commands).toMatchObject([
@@ -337,7 +430,8 @@ describe('rallar-black-box manual workbench helpers', () => {
             values,
             payload: {},
             sequence: 1,
-            requestId: 'manual-capture-join'
+            requestId: 'manual-capture-join',
+            rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
         });
 
         expect(commands.find((command) => command.kind === 'rtc.connect')).toMatchObject({
@@ -346,17 +440,21 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('builds RTC delivery matrix commands for direct, multicast, and broadcast', () => {
+        const values = {
+            ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+            transport: 'realtime',
+            targetClient: 'bob-peer',
+            multicastClients: 'bob-peer, charlie-peer'
+        } satisfies ManualWorkbenchValues;
         const commands = toManualRtcDeliveryMatrixCommands({
-            values: {
-                ...DEFAULT_MANUAL_WORKBENCH_VALUES,
-                transport: 'realtime',
-                targetClient: 'bob-peer',
-                multicastClients: 'bob-peer, charlie-peer'
-            },
+            values,
             payload: { text: 'matrix' },
             sequence: 40,
             transport: 'realtime',
-            requestId: crypto.randomUUID()
+            requestId: crypto.randomUUID(),
+            rtcConnect: decodeManualRtcReadinessText(values.rtcReadinessText).fold((error) => {
+                throw new Error(error);
+            }, (command) => command)
         });
 
         expect(commands.map((command) => command.commandId)).toEqual([
@@ -400,12 +498,18 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('generates RTC negative recipe entries for NACK and delivery failures', () => {
+        const values = {
+            ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+            transport: 'messages.rtc'
+        } satisfies ManualWorkbenchValues;
         const recipe = validateSchemaAuthoringText(
             'recipe',
-            toManualRtcNegativeRecipeText({
-                ...DEFAULT_MANUAL_WORKBENCH_VALUES,
-                transport: 'messages.rtc'
-            }, { text: 'negative' })
+            decodeManualRtcReadinessText(values.rtcReadinessText).fold((error) => error, (rtcConnect) =>
+                toManualRtcNegativeRecipeText(
+                    values,
+                    { text: 'negative' },
+                    rtcConnect
+                ))
         ).parsed;
 
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe)).toEqual({ ok: true, errors: [] });
@@ -425,20 +529,22 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('carries browser-rallar auth defaults into manual configure commands', () => {
+        const values = {
+            ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+            providerMode: 'browser-rallar',
+            rallarUsername: 'alice',
+            rallarPassword: 'secret',
+            rallarRegister: true,
+            rallarLogoutOnClose: true,
+            rallarLeaveRoomOnClose: false
+        } satisfies ManualWorkbenchValues;
         const [command] = toManualWorkbenchCommands({
             action: 'configure',
-            values: {
-                ...DEFAULT_MANUAL_WORKBENCH_VALUES,
-                providerMode: 'browser-rallar',
-                rallarUsername: 'alice',
-                rallarPassword: 'secret',
-                rallarRegister: true,
-                rallarLogoutOnClose: true,
-                rallarLeaveRoomOnClose: false
-            },
+            values,
             payload: {},
             sequence: 12,
-            requestId: crypto.randomUUID()
+            requestId: crypto.randomUUID(),
+            rtcReadinessResult: decodeManualRtcReadinessText(values.rtcReadinessText)
         });
 
         expect(command).toMatchObject({
