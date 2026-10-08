@@ -20,205 +20,58 @@ finalization, repeat selection, and archive verification preserve each run's
 source, environment, exact attempts, raw samples, and checksums. Tooling is
 implemented; capture and ranking acceptance remain separate outcomes.
 
-**Current checkpoint, 2026-10-08:** Manual readiness, actual native Copy/repeat,
-and the reviewed materializer and README-fixture corrections are published in
-PR645. The materializer preserves authored capture and unrelated strings while
-translating executable scope; one existing test-process owner joins cancellation
-and physical cleanup.
+**Current checkpoint, 2026-10-09:** Optional HOST capture and operator RUN forwarding have
+independent specification and complete quality acceptance. The canonical parser,
+manifest/control/artifact admission and existing RUN > STEP > RECIPE > HOST > default precedence
+remain authoritative. Omission preserves authored settings; malformed selections fail before launch
+or artifact effects. The owned Bash test launcher skips ambient startup files, and fresh hosted
+tooling passes.
 
-Fresh hosted source correctness at `4c6d03` confirms the README fixture correction:
-1516 tooling tests pass and only the native atomic-snapshot case exceeds its
-unchanged 5000 ms budget. Every other selected correctness/static lane, Formation
-and Medium succeeds; RTC observation integrity is skipped. Both original hosted
-timeouts remain retained. Local alternating measurements identify cold graph/type
-checking as the dominant local cost; the remote deadline phase remains unobserved.
+The approved admission selector matches exact event kind and scenario through the existing JSON
+path/equality owners. Both carrier orders, outcome assertions, negative controls and deadlines
+remain unchanged. Structured comparison operands are copied before asynchronous execution. Focused
+package evidence passes 2,701 cases with maintained typing of 1,510 test files.
 
-The bounded correction now has one directly typed native fixture selected by the
-existing recursive app check, and the timed case executes its tiny owned launcher.
-Its original assertions, artifact files, fresh cache, permissions and 5000 ms budget
-are preserved. Local 18 runtime/lifecycle and 88 disposition controls pass; native
-checking and a mandatory-field negative type oracle remain meaningful. Scoped Node
-typing still reports only the unchanged external Temporal declaration mismatch.
-Independent SPEC and complete QUALITY approve the corrected source after
-precisely bound import-only closure. It is published at `6711b160`. Fresh hosted
-validation at `de77443ee` passes all 115 tooling files and 1517 cases; the native
-atomic-snapshot case takes 525 ms within its unchanged 5000 ms budget. This closes
-that hosted timing gate; actual worker application and E3 remain separate outcomes.
-No timeout, retry, workload, cache warmup or worker-limit change is selected.
+The approved durable presence precondition is implemented in the API policy test recipe. Four
+read-only scoped snapshot polls require exact active memberships, issued principals/sessions and
+requested generations before the original sends. FORMING/flowing or the authored paused
+FORMING/halted state is preserved; no revision floor, GroupReady transition, message retry or longer
+receive deadline is added. All 48 original steps and eight sends are preserved. Genuine semantic RED
+precedes correction; the final 158 cases, 318 affected cases and maintained typing of 1,511 test
+files pass. Independent specification and full-file quality review approve the complete two-owner
+change.
 
-PR633's nine real conflicts with pinned main `09a3b431` are independently reviewed,
-locally validated and published in feature merge `e71db5f0a`,
-tree `12d5caa36e6d1fb577fd21143c0de0501d38506b`. GitHub reports PR633 MERGEABLE.
-Fresh Branch validation fails one cross-carrier duplicate-outcome test while
-14,070 unit cases pass; Formation, Medium and the other selected lanes succeed.
-The unchanged wait selects a later `dispatch-decision` for the same scenario,
-then its outcome assertion fails because that record has no admission outcome.
-An actual local receipt reproduces the wrong selection. This is a selector
-failure, not a timeout or evidence that the message was delivered twice.
-The proposed structured admission-kind/scenario match awaits bounded design approval;
-deadlines, both carrier orders and independent outcome assertions remain required.
+Fresh hosted correctness passes all 158 added presence cases and the selected tooling, API,
+Formation and Medium lanes. The only unit failure is deterministic generated-manifest drift; static
+fails the same 15 undisposed findings. Original complete failures remain retained. The maintained
+writer correction publishes 16 exact selector waits in two manifests while preserving every
+nonselector field and the other 65 manifests. Narrow reviewed dispositions retain existing rules,
+matcher and caps. Its focused publication/selector and disposition checks, consumer typing and
+actual-parent working-tree style gate pass; independent specification and complete quality review
+approve the correction. Fresh remote confirmation remains pending; no all-green source claim follows
+from local acceptance.
 
-The stacked PR645's six conflicts are resolved in a reviewed seven-owner repair,
-published at `de77443ee`; GitHub reports it MERGEABLE. Fresh Branch validation
-retains the selector failure and the original aggregate style adversity described below.
-Its integration preserves canonical routing/volatile bounds, HOST capture and
-mandatory/default input factories. Semantic TDD catches a delayed page-ledger read
-writing into a successor assignment; the correction fences writes after the await.
-Independent SPEC approves the first candidate. Complete QUALITY finds an earlier
-Health await can return successor B statistics to admitted A, without writing B
-state. Authentic held page-health TDD reproduces that failure (one failed,
-17 controls passed); the existing context now captures A's accepted observation
-and derives stale caller stats from it without reading B's ledger. All 18 cases
-then pass, including current-owner and rejection controls. The exact multiline
-import correction closes the remaining standards finding. Independent scoped SPEC
-and original QUALITY approve both corrections with no remaining findings.
-Final runtime/bridge controls pass 205 tests; the first candidate's unchanged
-public/routing controls pass 55. The maintained final packaging workload measures
-324.794 KiB, within the minimum whole-KiB headless cap of 325.
-Package/headless/operator typing and the maintained recursive native app check pass;
-affected test typing retains only the known external Temporal declaration error.
-The corrected source passes the canonical `6711b160` working-tree style gate.
-The first committed gate against actual parent `e71db5f0a` fails one aggregate
-runtime complexity warning: measured 109 exceeds the recorded reviewed cap of 106.
-That failed result remains retained. Complete runtime and support-owner reviews
-confirm one cohesive admitted invocation lifecycle at the current warning tier.
-The exact existing disposition now records 109 with its local ownership rationale;
-path, rule, module symbol, matchers, global thresholds and all other entries remain
-unchanged. Independent SPEC and original QUALITY approve the bounded correction.
-The corrected actual-parent working-tree gate and all 88 maintained disposition
-controls pass; sensitivity still rejects 110 and wrong-owner findings. Executable
-owners remain byte-identical. No arbitrary split or new standards exception is selected.
-The exact review-record correction is published at `be076354`; fresh Branch
-validation now passes static, tooling and every other selected correctness lane.
-Unit retains only the known selector assertion: 14342 cases pass, one fails and
-12 skip. RTC observation integrity and publication remain skipped. No all-green
-source or E3 claim follows from these results.
+[PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645) remains stacked on
+[PR633](https://github.com/intact-software-systems/ar-eye-hunter/pull/633). The parent has six real
+source conflicts with current main. The next useful slices are preservation repair of those
+conflicts, then integration of the accepted child source with fresh affected checks and canonical
+bundle measurements. Capture receipts/ownership guards and current congestion/overlay behavior must
+coexist through one construction path. Real conflict repair precedes broad final validation;
+harmless BEHIND alone does not create work.
 
-The actual default headless worker witness now has local correctness acceptance.
-Six distinct attempts are retained. The first three expose missing database
-configuration, restore Configure before authentication, and an extra full
-replacement Configure removing launch HOST before SDK construction. The approved
-Configure replacement semantics remain authoritative. The test-only correction
-removes the redundant replacement and uses one room creation followed by both
-canonical member additions; capture remains supplied through actual worker
-configuration, query and bootstrap.
+Actual local default-worker HOST acceptance remains three cases in 19.8 seconds with zero retries:
+native, off and malformed. Deployed HOST/RUN and actual Actions application are still unaccepted.
+Selected HOST proof requires a shared production configuration window because the existing workflow
+has no per-run HOST input; no production configuration or new remote run is selected yet. Previous
+remote smoke failed during group setup before Connect and establishes no RTC/TURN cause.
 
-Attempt04 then proves genuine stable issued identities and successful
-Native/HOST/applied Connect receipts with partial coverage. The old standalone
-reader cannot match the acknowledged recipe child, and the unbound recorder route
-serves the 200-event dashboard tail, which omits initialization. Those observations
-do not establish a capture-producer defect. A bounded attributed-recipe reader
-candidate passes 200 semantic and 19 baseline consumer tests, typing and discovery
-of all three worker cases; those checks do not accept its real worker behavior.
-
-Attempt05 binds the existing append recorder to a fresh owned directory and uses
-a fresh owned database. Its served route exactly equals the physical 642547-byte,
-378-row append file. Both canonical Connect children and their exact current
-initialized scopes are present. The first Native case still fails before payload;
-Off and malformed HOST do not run after the first failure. Root and independent
-SPEC/QUALITY review identify the exact defect: the new reader incorrectly requires
-resultEvidence metadata added by snapshot compaction. The append recorder correctly
-retains complete original recipe results without that metadata. The same matcher
-must accept complete raw results and validate any provided finite compaction
-metadata; identity, immediate-child, current-lifecycle, privacy and bounds remain
-mandatory. Same-author semantic RED precedes correction; prior candidate and
-actual-run packets remain immutable. Worker exit and service/database cleanup are
-verified. No production capture or retry correction is selected.
-
-Verified raw-shape RED reproduces five intended admission/lifecycle failures while
-200 still-valid controls pass. The existing optional-metadata guard is corrected;
-all 214 semantic cases and affected typing/formatting pass with unchanged RED tests.
-The same reviewer approves SPEC/QUALITY of the complete corrected source. Actual
-append-bound attempt06 then passes all three cases in 19.8 seconds, zero retries:
-Native with two exact current initialized scopes and scoped RTC delivery, Off with
-disabled/not-applicable receipts and scoped delivery, and invalid HOST refused before
-agent acquisition. Recorded current active scopes include open native channel
-snapshots. Both normal workers stop with exit 0, all service ports close and the
-owned database is removed. Native coverage remains partial; this is local default
-worker correctness, not homogeneous performance or Actions/operator acceptance.
-
-Published reader checkpoint `0f9fabb2b` has terminal Formation and Medium success;
-Branch37820467167 retains the known observation-selector failure and one separate
-API recipe failure (29 other recipes pass). Original group-data-policy artifacts
-confirm that the exact allowed message was refused with `membership-fenced`.
-Bob's preceding HTTP presence snapshot still contains only Alice at revision(2,1);
-a later delta adds Bob at(2,2). Bob's mutation transaction succeeds on attempt1,
-and the later delta is sent successfully to both recipients. The exact authorizer
-snapshot and summary commit timing remain absent: summary convergence is a strong
-inference, not an established production defect. Longer receiver waiting cannot
-recover this terminally refused send. No retry, timeout or repair contract is selected.
-
-Actions HOST forwarding now has independent SPEC and complete QUALITY acceptance.
-One canonical worker environment writer carries the optional HOST mode through the
-three real Actions environment maps; it preserves omission and propagates validation,
-write and rename failures without replacing prior bytes before successful rename.
-Genuine semantic RED has 17 passing controls and 16 intended failures: 12 lost-mode
-paths and four CR/LF refusal/replacement defects. The same 33 cases pass after the
-correction; 95 affected cases and both consumer builds pass. Review removes obsolete
-private serializer/source assertions while preserving every maintained case and its
-independent behavior requirements. The corrected existing owners pass 27 cases, and
-51 maintained review-disposition controls pass. Five exact schema-validated external
-boundaries use the maintained reviewed-false-positive route; no standards exception,
-legacy compatibility path, duplicate capture parser or new policy is introduced.
-The final actual-parent changed-style and current coupling checks pass; test typing
-covers 1,509 files with zero errors. Source and original RED/GREEN/correction artifacts
-are independently bound. These local writer/YAML/process results do not accept real
-Actions deployment, deployed worker application, operator RUN or E3.
-
-Published Actions checkpoint `2f86e0f25` has terminal Formation and Medium success.
-Branch37831609034 passes static, all API lanes, Postgres, Deno, browser and ALM checks.
-Unit retains the known selector failure (14,444 pass, one fails, 12 skip). Tooling
-adds a distinct test-runtime failure: 24 new EnvironmentFile cases fail on Ubuntu's
-`/etc/bash.bashrc` PS1 error, while 1,526 cases pass. The original log is retained.
-Root reproduces the same status-0/body-success/unexpected-stderr behavior with an
-owned startup file and the actual Node child invocation; disabling startup files
-preserves the command body/status and eliminates that stderr. GNU's documented
-[noninteractive startup behavior](https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html)
-supports that boundary. No capture-producer or serializer defect is established.
-The owned regression first passes status/body controls and then fails on startup
-stderr. The existing test launcher now disables Bash profile/rc startup; the unchanged
-regression and all 33 original cases pass, 34 total. Exact source reconstruction
-preserves every original case body and assertion. Formatting and strict inherited
-single-owner typing pass; this does not repeat full-project typing over unfinished
-operator tests. Independent SPEC and QUALITY accept the correction for publication.
-The original hosted failure remains retained; fresh remote confirmation is pending.
-
-Canonical operator RUN forwarding now has a frozen genuine RED: 154 cases, 110 pass
-and 44 fail, with no setup failures or pending cases. All 93 maintained cases and
-17 new controls pass; 43 failures expose missing forwarding/admission behavior and
-one supplements them with workflow contracts. Real dispatch, materializer, complete
-YAML step, CLI and controller POST ports witness ignored valid selections or effects
-before malformed-input refusal. Canonical artifact admission also accepts an invalid
-extra file before the consumer crashes. Four test owners changed; production inputs
-remain bound to published `2f86e0f25`. Its archived 33-case startup dependency remains
-immutable; the separately accepted startup correction is the only newer dependency.
-GREEN follows publication of that correction, using the existing canonical capture
-parser and manifest/control/artifact decoders, with no duplicated policy or migration.
-
-The independent API contract audit finds a successful NEW presence mutation commits
-before a separate presence-summary worker. HTTP success then reads that summary-backed
-snapshot once; current source, convergence doctrine and active-write tests provide no
-visible-session/admission completion guarantee. The policy recipe sends after HTTP200
-without establishing exact sender/recipient presence. The bounded recipe proposal uses
-the existing read-only snapshot poll before one original send, requiring exact issued
-sessions, principals, requested generations and active memberships while retaining
-FORMING/flowing policy. No guessed revision floor, message retry or longer receive
-deadline is proposed. This design awaits human approval. The fresh successful API lane
-does not close that untested ordering precondition; the exact original authorizer read
-and summary commit timing remain unobserved. No public API strengthening is selected.
-
-The next two useful slices are canonical operator RUN forwarding after publishing
-the accepted startup correction, then actual HOST/RUN application through existing
-deployed workers and Actions. The parent evidence selector separately awaits its
-bounded design answer and semantic TDD; its deadlines and independent outcome
-assertions stay unchanged.
-
-After source correctness and integration, complete Actions HOST/operator RUN
-forwarding and actual application through existing deployed workers. The former exact
-integration proposal is stale; no default-branch operation is selected. Governed
-E3 still has zero accepted cohorts. Its unchanged protocol is three warmups plus
-11 retained primary attempts, 100 retention cycles and zero retries; the conditional
-repeat remains three warmups plus 22 attempts. All failed attempts remain retained.
+Governed E3 has zero accepted cohorts. No diagnostic or measurement attempt has launched during this
+continuation. The user requested waiting before stopping unrelated host processes and launching E3.
+Readiness is preserved, and source/integration work continues. The unchanged protocol remains three
+warmups plus eleven retained primary attempts, 100 retention cycles and zero retries, with a
+conditional three-warmup/twenty-two-attempt repeat. Preserve every failed attempt. Direct
+diagnostics cannot substitute for governed acceptance; broader B01–B06 outcomes remain required and
+B07 remains held.
 
 **Tech Stack:** TypeScript, Deno, Vitest, Node.js, Playwright Chromium, Git,
 GitHub Actions, ignored evidence under `tmp/perf/`, and immutable observation ZIPs.
@@ -392,7 +245,7 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
 **Created:** 2026-08-06
 
-**Updated:** 2026-10-08
+**Updated:** 2026-10-09
 
 ## 1. Current Outcome And Evidence
 
