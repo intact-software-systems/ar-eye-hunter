@@ -251,7 +251,7 @@ describe('backpressure-refused', () => {
 
 describe('backpressure-deferred', () => {
     it.each(CONGESTION_CARRIERS['backpressure-deferred'])(
-        'holds %s at its watermark for 2 s, so the at-least-once send waits through not-ready submissions and is acknowledged',
+        'holds %s at its watermark until the page defers the at-least-once send, which then sends on every row and is acknowledged',
         async (carrier) => {
             const scenario = findScenario(carrier, 'backpressure-deferred');
             const held = carrier === 'ws' ? 'ws' : 'rtc';
@@ -260,24 +260,30 @@ describe('backpressure-deferred', () => {
                 ...SENDER_PROLOGUE,
                 'hold-backpressure',
                 'send-1',
-                'backpressure-held',
+                'deferral-1',
                 'receipts-1',
-                'assert-unacknowledged-held',
+                'assert-unsubmitted-held',
                 'release-backpressure',
                 'observe-acknowledged-1',
                 'assert-acknowledged-1',
                 'assert-sent-only-1',
-                'assert-one-row-1',
+                'assert-every-row-sent-1',
                 'stats-congestion',
                 'assert-congestion-deferred',
                 'stats'
             ]);
             expect(findCommand(scenario.sender, 'hold-backpressure')).toMatchObject(toHold(held, 'until-cleared', 'backpressure-deferred', carrier));
-            expect(findCommand(scenario.sender, 'backpressure-held')).toMatchObject({
+            // A positive wait on the page's own deferral of this send, so the release follows a written `defer`.
+            expect(findCommand(scenario.sender, 'deferral-1')).toEqual({
                 kind: 'wait',
-                match: { kind: 'diagnostic', topic: 'rallar.black-box.alm.backpressure-held' },
-                absent: true,
-                timeoutMs: 2_000
+                commandId: `${scenario.sender.recipeId}-deferral-1`,
+                match: {
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                    payloadPath: 'data',
+                    contains: `"cause":"backpressured","action":"defer","priority":5,"msgId":"{resultCache.${scenario.sender.recipeId}-send-1.value.msgId}"`
+                },
+                timeoutMs: 10_000
             });
             expect(findCommand(scenario.sender, 'release-backpressure')).toMatchObject(toHold(held, 0, 'backpressure-deferred', carrier));
             expect(findCommand(scenario.sender, 'send-1')).toMatchObject({
@@ -287,25 +293,27 @@ describe('backpressure-deferred', () => {
                 reliability: 'at-least-once',
                 ttlMs: 30_000
             });
-            // One attempt row per send-prepared row, overwritten on each retry: the deferral is the counter's to show.
-            const settled = { state: 'acknowledged', attemptOutcomes: ['sent'] };
+            // One attempt row per next hop of the carrier, each overwritten on its retry: the deferral is the counter's to show.
+            const settled = { state: 'acknowledged', attemptOutcomes: ['sent', 'sent', 'sent'] };
             expect(await readTail(scenario.sender, 'observe-acknowledged-1', settled)).toBe(true);
             expect(
                 await readTailForEachChange(scenario.sender, 'observe-acknowledged-1', settled, [
                     { state: 'rejected' },
                     { attemptOutcomes: ['refused', 'sent'] },
                     { attemptOutcomes: ['not-ready'] },
+                    { attemptOutcomes: ['sent', 'not-ready'] },
                     { attemptOutcomes: [] }
                 ])
-            ).toEqual([false, false, false, false]);
-            expect(findCommand(scenario.sender, 'assert-unacknowledged-held')).toMatchObject({
+            ).toEqual([false, false, false, false, false]);
+            expect(findCommand(scenario.sender, 'assert-unsubmitted-held')).toMatchObject({
                 kind: 'assert',
-                source: `resultCache.${scenario.sender.recipeId}-receipts-1.value.state`,
-                operator: 'notEquals',
-                expected: 'acknowledged'
+                source: `resultCache.${scenario.sender.recipeId}-receipts-1.value.submitted`,
+                operator: 'equals',
+                expected: false
             });
-            expect(await readTail(scenario.sender, 'receipts-1', { state: 'queued' })).toBe(true);
-            expect(await readTail(scenario.sender, 'receipts-1', { state: 'acknowledged' })).toBe(false);
+            expect(await readTail(scenario.sender, 'receipts-1', { state: 'queued', submitted: false })).toBe(true);
+            expect(await readTail(scenario.sender, 'receipts-1', { state: 'acknowledged', submitted: true })).toBe(false);
+            expect(await readTail(scenario.sender, 'receipts-1', { state: 'queued' })).toBe(false);
             expect(findCommand(scenario.sender, 'assert-congestion-deferred')).toMatchObject(toCounterRead(scenario.sender, 'deferred'));
             expect(toCommandNames(scenario.receiver)).toEqual([...RECEIVER_PROLOGUE, 'received-1', 'stats']);
             expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 1, absent: false, windowMs: 27_000 });

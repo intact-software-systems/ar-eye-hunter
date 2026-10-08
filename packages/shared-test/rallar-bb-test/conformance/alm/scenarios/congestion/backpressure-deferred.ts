@@ -8,8 +8,8 @@ import {
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
 import {
+    toBackpressureDeferralWait,
     toBackpressuredSendCommands,
-    toBackpressureHoldWait,
     toBackpressureReleaseCommand,
     toCongestionCounterCommands
 } from './congestion-commands.ts';
@@ -17,14 +17,14 @@ import {
 const DEFERRED_THEN_SENT_FACTS: readonly AlmConformanceVerdictFact[] = [
     ['acknowledged', 'state', 'equals', 'acknowledged'],
     ['sent-only', 'attemptOutcomes.0', 'equals', 'sent'],
-    ['one-row', 'attemptOutcomes', 'length', 1]
+    ['every-row-sent', 'attemptOutcomes', 'matches', '^sent$']
 ];
 
 /**
- * D185: the sender holds its carrier at the watermark for 2 s; the default `drop-low` keeps an at-least-once send
- * (priority 5), whose submission answers `not-ready` until the release. The send reads unacknowledged while held, then
- * acknowledged. The attempt row is overwritten on each retry, so the final rows show only `sent` and the deferral is
- * read from the counter.
+ * D185: the sender holds its carrier at the watermark; the default `drop-low` keeps an at-least-once send (priority 5),
+ * whose submissions answer `not-ready` until the release. Once the page wrote the send's `defer`, the send reads
+ * unsubmitted and the hold is released. Each retry overwrites the attempt rows, one per next hop of the carrier, so
+ * every row then reads `sent` and the deferral is read from the counter.
  */
 export const backpressureDeferred: AlmConformanceScenarioDefinition = {
     scenarioId: 'backpressure-deferred',
@@ -35,15 +35,15 @@ export const backpressureDeferred: AlmConformanceScenarioDefinition = {
     laneFamily: 'two-agent',
     toSenderCommands: (sender) => [
         ...toBackpressuredSendCommands(sender, 'at-least-once'),
-        toBackpressureHoldWait(sender),
+        toBackpressureDeferralWait(sender),
         toReceiptsCommand({ ...sender, index: 1 }),
         toResultAssertion({
             step: sender,
-            name: 'assert-unacknowledged-held',
+            name: 'assert-unsubmitted-held',
             resultName: 'receipts-1',
-            field: 'state',
-            operator: 'notEquals',
-            expected: 'acknowledged'
+            field: 'submitted',
+            operator: 'equals',
+            expected: false
         }),
         toBackpressureReleaseCommand(sender),
         ...toVerdictCommands(sender, 'acknowledged', DEFERRED_THEN_SENT_FACTS),

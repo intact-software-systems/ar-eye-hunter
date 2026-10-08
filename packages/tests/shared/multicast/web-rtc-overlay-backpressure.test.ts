@@ -9,6 +9,7 @@ import {
 } from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALNackControlMessage, newALReceiptControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -24,6 +25,7 @@ import {
     createRtcOriginOverlayFixture,
     enqueueAndDrain,
     ORIGIN_ROOM,
+    toOriginFrozenTargets,
     type CapturedChannel,
     type RtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
@@ -255,6 +257,56 @@ describe('what never reads backpressure (D184)', () => {
         expect(readCongestion(fixture).map((event) => event.action)).toContain('defer');
         expect(readCongestion(fixture).map((event) => event.action)).not.toContain('drop');
         expect(fixture.channels.b!.sent.map((sent) => sent.id.msgId)).toContain(message.id.msgId);
+    });
+
+    it('never refuses a control planned to the room as congested, with every ready next hop at its watermark', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+        const fixture = createBackpressureOriginFixture();
+        holdAtHighWatermark(fixture.channels.b!);
+        holdAtHighWatermark(fixture.channels.c!);
+        const receipt: ALMessage = {
+            ...newALReceiptControlMessage(
+                { v: 3, msgId: 'receipt-to-the-room', senderId: 'a', ts: Date.now() },
+                {
+                    msgId: 'origin-send',
+                    originPeerId: 'a',
+                    expectedRecipientPeerIds: ['b', 'c'],
+                    confirmedRecipientPeerIds: ['b', 'c'],
+                    snapshotVersion: 4,
+                    phase: 'complete',
+                    observedAtEpochMs: Date.now()
+                }
+            ),
+            targets: toOriginFrozenTargets(['b', 'c'], 4)
+        };
+
+        const verdict = (await enqueueAndDrain(fixture.manager, receipt)).verdict;
+
+        expect(verdict).not.toMatchObject({ kind: 'refused', reason: 'congested' });
+        expect(readCongestion(fixture).map((event) => event.action)).not.toContain('drop');
+    });
+
+    it('re-plans a repair of a reject-policy send through full next hops without refusing it', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+        const fixture = createBackpressureOriginFixture();
+        const receipted = createOriginReceiverMulticast('repaired');
+        const message = { ...receipted, qos: { ...receipted.qos, ...REJECT_UNDER_CONGESTION, repair: { algo: 'retransmit' } } } as const;
+        await enqueueAndDrain(fixture.manager, message);
+        holdAtHighWatermark(fixture.channels.b!);
+        holdAtHighWatermark(fixture.channels.c!);
+
+        await fixture.manager.acceptControlMessage(newALNackControlMessage(
+            { v: 3, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
+            { msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
+        ));
+        await vi.advanceTimersByTimeAsync(100);
+        holdBuffered(fixture.channels.b!, 0);
+        await vi.advanceTimersByTimeAsync(200);
+
+        expect(readCongestion(fixture).map((event) => event.action)).not.toContain('drop');
+        expect(fixture.channels.b!.sent.map((sent) => sent.id.msgId)).toEqual([message.id.msgId, message.id.msgId]);
     });
 
     it('forwards another session\'s best-effort message, leaving the full channel to its submission', async () => {

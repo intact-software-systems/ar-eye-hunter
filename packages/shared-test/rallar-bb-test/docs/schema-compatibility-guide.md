@@ -832,3 +832,34 @@ schema-and-capabilities.md describes the action, the stats block, the observatio
 Verification:
 npx vitest run packages/tests/shared-test/alm-conformance-congestion.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts
 ```
+
+```text
+Title: assert matches tests every member of a string array
+Date: 2026-10-08
+Owner: ALM V1b-i
+
+Change type:
+- Compatible widening of one operator's evaluation
+
+Affected schemas:
+- None: the assert operator enum is unchanged; assert/assert-value-operators.ts evaluates it
+
+Old shape:
+matches tested a string value; any other value, an array included, failed the assert.
+
+New shape:
+matches on an array passes when the array is non-empty and the pattern matches every member, each a string; a
+string reads as before, and anything else still fails.
+
+Migration:
+None: an assert that matched an array always failed before.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md and ai-recipe-prompt-guide.md describe the array form.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-assert-operators.test.ts
+```

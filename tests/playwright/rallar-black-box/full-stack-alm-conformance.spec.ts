@@ -111,8 +111,9 @@ const skippedScenarioIds = (process.env.RALLAR_BLACK_BOX_ALM_SKIP ?? '')
 const CONFORMANCE_TYPE_ID = 'alm.conformance';
 const CONFORMANCE_DEADLINE_MS = 18_000;
 // Finite carrier ceiling covers the conformance recipes and connection readiness: the next five minutes above the
-// widest carrier, rtc-with-ws-fallback in the full scope, measured at 10.3 minutes once the volatile-bound and
-// congestion cells joined the two-agent family (rtc 8.0, ws 6.7 minutes on the same machine).
+// widest carrier, rtc-with-ws-fallback in the full scope, measured at 10.3 minutes on a loaded machine (45 ms per
+// probe; rtc 8.0, ws 6.7 minutes on the same machine). Its two-agent family outgrew the nine-minute ceiling with the
+// checkpoint-recovery, checkpoint-lag and congestion cells; the volatile-bound cells run in the addressed family.
 const CARRIER_TEST_TIMEOUT_MS = 900_000;
 
 /**

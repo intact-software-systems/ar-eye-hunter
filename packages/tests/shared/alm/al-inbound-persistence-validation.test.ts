@@ -460,6 +460,30 @@ describe('inbound admission persisted values', () => {
         await expect(store.readBufferedRelease({ trackKey: snapshot.trackKey, seq: 2, nowMs: Date.now() })).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
+    it.each([
+        // A plan stored before the congestion cause existed reads back without migration.
+        { label: 'no cause', congestion: { overloaded: false, action: 'none', priority: 0 } },
+        { label: 'the backpressured cause', congestion: { overloaded: false, action: 'drop-low', priority: 0, cause: 'backpressured' } }
+    ])('reads back a stored congestion plan with $label before buffered release', async ({ congestion }) => {
+        const { backend, store } = createFixture();
+        const snapshot = createBufferedSnapshot();
+        await backend.write(async (transaction) => {
+            await writeCanonicalMessage(transaction);
+            await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
+            await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, { ...snapshot, plan: { ...snapshot.plan, congestion } });
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
+                supersedenceKey: null
+            });
+        });
+
+        const read = await store.readBufferedRelease({ trackKey: snapshot.trackKey, seq: 2, nowMs: Date.now() });
+
+        expect(read?.snapshot.plan.congestion).toEqual(congestion);
+    });
+
     it('rejects a buffered snapshot whose sequence disagrees with its storage slot on direct and list reads', async () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();

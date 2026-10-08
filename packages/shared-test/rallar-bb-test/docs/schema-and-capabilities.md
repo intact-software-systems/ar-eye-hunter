@@ -508,12 +508,14 @@ reads its `admission-outcome` `committed`/`admitted` on carrier `ws`. `backpress
 best-effort send, which ends `rejected` with `failure: { kind: 'refused', reason: 'congested' }` and `attempts` 0,
 with `dropped` above 0, and the receiver proves for the whole window that nothing reaches it.
 `backpressure-deferred` (`ws`, `rtc`) sends `reliability: 'at-least-once'` (priority 5, which `drop-low` keeps),
-holds the carrier for 2 s with an absent diagnostic wait, reads the send's receipt while it is held and asserts its
-`state` is not `acknowledged` (`notEquals`), releases the hold, and observes `acknowledged` with exactly one attempt
-row, `sent`, pinned by the `length` operator on `attemptOutcomes`, and `deferred` above 0: the attempt row is
-overwritten on each retry, so the counter, not `attemptOutcomes`, shows the `not-ready` submissions. Under
-`rtc-with-ws-fallback` three of them would hand the send to WS, so the cell runs on single carriers. Hosted manifest 18 withholds all three, so it stays as recorded. The cells live in
-`conformance/alm/scenarios/congestion/`.
+waits on the outbound diagnostics topic for the page's `congestion` `defer` of that send (`cause` `backpressured`,
+`priority` 5, the `msgId` the send returned), reads the send's receipt while it is held and asserts `submitted` is
+`false`, releases the hold, and observes `acknowledged` with `attemptOutcomes.0` `sent` and every row `sent`
+(`matches` `^sent$` on `attemptOutcomes`), and `deferred` above 0. There is one attempt row per next hop of the
+carrier (an RTC sender keeps the peers of earlier cells as ready hops), each overwritten on its retry, so the
+counter, not `attemptOutcomes`, shows the `not-ready` submissions. Under `rtc-with-ws-fallback` three of them would
+hand the send to WS, so the cell runs on single carriers. Hosted manifest 18 withholds all three, so it stays as
+recorded. The cells live in `conformance/alm/scenarios/congestion/`.
 
 The addressed family runs on two agents, in the full scope, as its own Playwright test per carrier (R-S3c-ii-2,
 R-S3c-ii-5); each scenario declares it as its `laneFamily`. The lane proves the addressee's receipt, not the
@@ -908,9 +910,9 @@ Operators:
   coerced with `Number(...)` and must be finite; `between` takes an inclusive
   `[low, high]` pair and fails on a malformed pair.
 - `length` — exact length of an array or string; anything else fails.
-- `matches` — regular-expression source tested against a string value; a
-  non-string value or an invalid pattern fails the assert instead of
-  throwing.
+- `matches` — regular-expression source tested against a string value, or
+  against every member of a non-empty array of strings; any other value or an
+  invalid pattern fails the assert instead of throwing.
 - `matchesShape` — `json-compare` `compatible` mode: the expected shape is a
   subset the actual value must satisfy with equal values; extra object keys
   and extra array elements in the actual value are allowed.
@@ -1110,9 +1112,10 @@ existing stats loops record the ledger over time.
 Beside it, `stats.rallar.congestion` carries the page's congestion counters,
 `{ dropped, deferred, handedOver }` (D186): one count per `congestion` outbound
 diagnostic of the page, `drop`, `defer` or `hand-over`, on either carrier and for
-either cause. The counters belong to the connection: a `close` resets them, and the
-block is absent while the page is not connected, in the same places `rallar.alm` is
-absent. An `assert` reads it as `latestStats.rallar.congestion.deferred`.
+either cause. `deferred` counts every message the page held at submission, relay
+forwards and controls included, not only its own sends. The counters belong to
+the connection: a `close` resets them, and the block is absent while the page is
+not connected, in the same places `rallar.alm` is absent. An `assert` reads it as `latestStats.rallar.congestion.deferred`.
 
 `rtc.stream` is the high-rate RTC traffic primitive. Use it when a recipe wants
 to model a realtime stream, such as 100 frames at 20 Hz, without expanding that

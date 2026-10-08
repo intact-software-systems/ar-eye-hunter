@@ -3,15 +3,12 @@ import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-mess
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
+import { ALM_OUTBOUND_DIAGNOSTICS_TOPIC, toSentMsgIdReference } from '../../alm-conformance-diagnostic-waits.ts';
 import { toBackpressureFaultCommand } from '../../alm-conformance-fault-commands.ts';
 import { toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
-
-/** About forty `not-ready` submissions, each retried 50 ms after the last. */
-const BACKPRESSURE_HOLD_MS = 2_000;
-const BACKPRESSURE_HOLD_TOPIC = 'rallar.black-box.alm.backpressure-held';
 
 const COUNTER_NAMES: Readonly<Record<keyof ALCongestionCounters, string>> = {
     dropped: 'dropped',
@@ -43,14 +40,23 @@ export function toBackpressuredSendCommands(
     ];
 }
 
-/** Holds the whole window: nothing emits the topic, so it only keeps the carrier at its watermark for that long. */
-export function toBackpressureHoldWait(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+/**
+ * The page's `defer` of the at-least-once send (D186, priority 5): a submission met the held carrier. The send is held
+ * at its carrier and retried on the runtime's drain cadence until the release, so the release waits for this
+ * deferral, whatever readiness check answered the submissions before it.
+ */
+export function toBackpressureDeferralWait(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    const msgId = toSentMsgIdReference({ ...sender, index: 1 });
     return {
         kind: 'wait',
-        commandId: toCommandId(sender, 'backpressure-held'),
-        match: { kind: 'diagnostic', topic: BACKPRESSURE_HOLD_TOPIC },
-        absent: true,
-        timeoutMs: BACKPRESSURE_HOLD_MS
+        commandId: toCommandId(sender, 'deferral-1'),
+        match: {
+            kind: 'diagnostic',
+            topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+            payloadPath: 'data',
+            contains: `"cause":"backpressured","action":"defer","priority":5,"msgId":"${msgId}"`
+        },
+        timeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
     };
 }
 

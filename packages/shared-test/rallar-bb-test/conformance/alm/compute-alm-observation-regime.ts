@@ -137,8 +137,9 @@ export type ALMObservationLedger =
 
 /**
  * The congestion decisions the cell's pages counted (D186). A page's counters only grow between its closes, so each
- * page contributes its largest reading of each count and the cell sums its pages. `no-readings` is a cell whose agents
- * read no counters at all, not an uncongested one.
+ * page contributes its largest reading of each count and the cell sums its pages. The sum is a lower bound when a page
+ * reconnects inside the cell: the counts of its earlier connection are lost at that close. `no-readings` is a cell
+ * whose agents read no counters at all, not an uncongested one.
  */
 export type ALMObservationCongestion =
     | Readonly<{ outcome: 'measured'; readingCount: number; dropped: number; deferred: number; handedOver: number; }>

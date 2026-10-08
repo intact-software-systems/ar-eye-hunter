@@ -28,7 +28,7 @@ describe('the fault.inject backpressure action', () => {
         });
     });
 
-    it('keeps a finite backpressure count as the number of originations it holds', () => {
+    it('keeps a finite backpressure count as the number of backpressure reads it answers', () => {
         const command = { ...COMMAND, carrier: 'rtc', remaining: 40 };
 
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(true);

@@ -231,8 +231,9 @@ export interface ALOutboundCongestionDrop {
 }
 
 /**
- * One congestion decision on this session's own send (D186): `drop` at its admission, `defer` at a submission its
- * channel or socket could not take, `hand-over` by a fallback strategy that moved a congested leg to its other carrier.
+ * One congestion decision (D186): `drop` at the admission of this session's own send, `defer` at a submission its
+ * channel or socket could not take, of any message the page holds there, relay forwards and controls included, and
+ * `hand-over` by a fallback strategy that moved a congested leg of its own send to the other carrier.
  */
 export interface ALOutboundCongestionDiagnostic {
     readonly kind: 'congestion';
@@ -259,19 +260,6 @@ export function toALOutboundCongestionDrop(
     return congestionDropped && cause !== undefined ? { cause, priority } : undefined;
 }
 
-/** A throwing sink changes no admission, submission or hand-over: the decision is already made. */
-export function writeALOutboundCongestionDiagnostic(
-    diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined,
-    decision: ALOutboundCongestionDiagnostic
-): void {
-    try {
-        diagnostics?.(decision);
-    }
-    catch (error) {
-        console.error('AL outbound runtime diagnostics sink failed', error);
-    }
-}
-
 export interface WriteALOutboundCongestionDeferralInput {
     readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
     readonly carrier: ALDeliveryCarrier;
@@ -281,7 +269,10 @@ export interface WriteALOutboundCongestionDeferralInput {
     readonly qosProvider: ALQosInputProvider;
 }
 
-/** A send its carrier holds back at submission because its channel or socket cannot take it now (D186). */
+/**
+ * A message its carrier holds back at submission because its channel or socket cannot take it now (D186): every held
+ * message of the page, relay forwards and controls included, not only this session's own sends.
+ */
 export function writeALOutboundCongestionDeferral(input: WriteALOutboundCongestionDeferralInput): void {
     const { message } = input;
     const policy = normalizeALQosPolicy(
@@ -292,7 +283,7 @@ export function writeALOutboundCongestionDeferral(input: WriteALOutboundCongesti
             input.qosProvider
         )
     );
-    writeALOutboundCongestionDiagnostic(input.diagnostics, {
+    writeALOutboundRuntimeDiagnostic(input.diagnostics, {
         kind: 'congestion',
         carrier: input.carrier,
         cause: 'backpressured',
@@ -392,6 +383,19 @@ export type ALOutboundRuntimeDiagnosticsEvent =
 export type ALOutboundRuntimeDiagnosticsSink = (
     event: ALOutboundRuntimeDiagnosticsEvent
 ) => void;
+
+/** A throwing sink changes nothing the runtime or its carrier decided: the diagnostic follows the decision. */
+export function writeALOutboundRuntimeDiagnostic(
+    diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined,
+    event: ALOutboundRuntimeDiagnosticsEvent
+): void {
+    try {
+        diagnostics?.(event);
+    }
+    catch (error) {
+        console.error('AL outbound runtime diagnostics sink failed', error);
+    }
+}
 
 /** Every settlement variant without the three fields the runtime stamps for its owners. */
 type ALOutboundUnstampedSettlement<TSettlement> = TSettlement extends ALDeliverySettlement ?
@@ -645,6 +649,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
         await (await this.readLaneForMessage(msgId)).endReceipt(msgId);
     }
 
+    /**
+     * Only a plan made here (`planAdmission`) states a congestion `drop`: an explicit `dispatchPlan` writes none, and
+     * its callers, the relay forwards and the WS server queue box, never set `congestionDrop`.
+     */
     async enqueueIfAbsent(
         msg: ALMessage,
         dispatchPlan?: ALOutboundDispatchPlan<TPrepared>
@@ -751,7 +759,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return { lane: this.durable, planner: planOutgoingMessage };
         }
         if (plan.congestionDrop !== undefined) {
-            writeALOutboundCongestionDiagnostic(this.dependencies.diagnostics, {
+            writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
                 kind: 'congestion',
                 carrier: this.dependencies.carrier,
                 cause: plan.congestionDrop.cause,

@@ -74,7 +74,7 @@ interface AlmConformanceResultAssertionInput {
 export type AlmConformanceVerdictFact = readonly [
     name: string,
     field: string,
-    operator: 'exists' | 'equals' | 'length',
+    operator: 'exists' | 'equals' | 'length' | 'matches',
     expected: string | number | boolean
 ];
 

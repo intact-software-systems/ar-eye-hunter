@@ -276,7 +276,7 @@ describe('an at-least-once send under backpressure, through the facade\'s admiss
         const handle = fixture.send('rtc', 'at-least-once');
         await vi.advanceTimersByTimeAsync(200);
 
-        // A retried attempt keeps its row, so the not-ready outcome is read while the hold lasts.
+        // A retried attempt overwrites its row, so the not-ready outcome is read while the hold lasts.
         expect(handle.lifecycle().state).toBe('queued');
         expect(handle.lifecycle().evidence.attempts.map((attempt) => attempt.outcome)).toEqual(['not-ready', 'not-ready']);
         expect(fixture.rtc.channels.b!.sent).toEqual([]);

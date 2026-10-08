@@ -630,7 +630,7 @@ export class WebRtcOverlayMulticastManager {
         const plan = multicaster.createOriginatingPlan(msg, context, qos);
         return this.planOutboundDispatch(
             msg,
-            stage === 'admission' && this.readBackpressure(msg, plan)
+            stage === 'admission' && this.decideBackpressure(msg, plan)
                 ? multicaster.createOriginatingPlan(msg, context, {
                     ...qos,
                     live: { ...qos.live, backpressured: true }
@@ -640,10 +640,11 @@ export class WebRtcOverlayMulticastManager {
     }
 
     /**
-     * A dispatchable data origination reads the reliable channels of its ready next hops, unless a scripted fault
-     * already holds the carrier backpressured for it; a control or a plan with nothing to send reads nothing.
+     * Whether a dispatchable data origination meets backpressure: a scripted fault holds the carrier for it, spending
+     * one of the fault's counts, or every ready next hop's reliable channel is full. A control or a plan with nothing
+     * to send reads neither.
      */
-    private readBackpressure(msg: ALMessage, plan: OverlayMulticastDispatchPlan): boolean {
+    private decideBackpressure(msg: ALMessage, plan: OverlayMulticastDispatchPlan): boolean {
         if (
             isALControlTypeId(msg.payload.typeId) || plan.handlingPlan.dropReason || plan.transportMessages.length === 0
         ) {

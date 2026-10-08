@@ -52,7 +52,10 @@ export interface RallarBrowserMiddleware {
      * stay the carriers' own, so no caller can count into the bound that refuses sends.
      */
     readonly volatileBudget: Pick<ALVolatileSessionBudget, 'readReport'>;
-    /** The connect's outbound diagnostics sink, which both carriers' runtimes report to; the dispatch reports its hand-overs there (D186). */
+    /**
+     * The connect's outbound diagnostics sink, which both carriers' runtimes report to; the dispatch reports its
+     * hand-overs there (D186).
+     */
     readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink;
 }
 

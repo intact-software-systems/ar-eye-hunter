@@ -734,31 +734,34 @@ returning to empty within the age limit.
 **Congestion.** A send's QoS names a congestion policy and a priority,
 `qos: { congestion: { algo, opts: { priority } } }`: `algo` is `'drop-low'`
 (the default), `'reject'` or `'defer'`, and the priority defaults to 5 for an
-at-least-once send and 0 otherwise. A lane send defaults to at-least-once, and a typed
-channel send is at-least-once under either purpose; either is best-effort only
-when it names `reliability: 'best-effort'`. The policy applies only while the carrier reads
-congestion when it plans one of the session's own new data sends: `overloaded`,
-the session at its count or byte limit (above), or `backpressured` (D184). The
-RTC carrier reads `backpressured` when the reliable channel of every ready next
+at-least-once send and 0 otherwise. A lane send defaults to at-least-once, and
+a typed channel send is at-least-once under either purpose; either is
+best-effort only when it names `reliability: 'best-effort'`. The policy
+applies only while the carrier reads congestion when it plans the session's own
+data: `overloaded`, the session at its count or byte limit (above), on every
+plan of the session's own outbound data, dequeue and repair plans included, and
+`backpressured` (D184) only on a new send's first plan at admission. The RTC
+carrier reads `backpressured` when the reliable channel of every ready next
 hop holds at least its high watermark of buffered bytes (64 KiB by default);
 the WS carrier when the browser socket's `bufferedAmount` is at least
-`AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES` (256 KiB). The WS carrier reads
-`backpressured` alone: a WS send at the count or byte limit is refused
-`capacity` by the bound before it is planned. A control, a receipt, a relay
-forward, a retransmission and an inbound plan read neither, and in this release
-an RTC send reads them only as a room send: an RTC unicast (a send naming
-`peerId`) reads neither. Only a send's first plan at admission reads
-`backpressured`: a send already admitted waits at submission instead.
+`AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES` (256 KiB). The WS carrier never reads
+`overloaded`: its session bound refuses a send `capacity`, naming the limit,
+after the plan; a send the plan already dropped `congested` never reaches the
+bound. A control, a receipt, a relay forward and an inbound plan read neither,
+and in this release an RTC send reads them only as a room send: an RTC unicast
+(a send naming `peerId`) reads neither. A send already admitted never reads
+`backpressured`: it waits at submission instead.
 
-Under `drop-low` only a send of priority 0 or lower (`priority <= 0`) is dropped, `reject` drops every send
-and `defer` drops none. A drop for `overloaded` is the `capacity` refusal above.
-A drop for backpressure is refused `congested` before any carrier attempt
-(D185); when both hold, `overloaded` names the cause. `congested` is a fallback
-trigger. Under `rtc-with-ws-fallback` the refused RTC leg hands the send to WS
-at admission, as `rate-limited` does: the handle keeps a `refused` attempt row
-whose `refusalReason` is `'congested'` before the WS attempt, and no
-`carrierFallback`, which only a hand-over of an admitted message writes. With no
-fallback, a send on `rtc` or `ws` alone, the handle ends `rejected` with
+Under `drop-low` only a send of priority 0 or lower (`priority <= 0`) is
+dropped, `reject` drops every send and `defer` drops none. A drop for
+`overloaded` is the `capacity` refusal above. A drop for backpressure is
+refused `congested` before any carrier attempt (D185); when both hold,
+`overloaded` names the cause. `congested` is a fallback trigger. Under
+`rtc-with-ws-fallback` the refused RTC leg hands the send to WS at admission,
+as `rate-limited` does: the handle keeps a `refused` attempt row whose
+`refusalReason` is `'congested'` before the WS attempt, and no
+`carrierFallback`, which only a hand-over of an admitted message writes. With
+no fallback, a send on `rtc` or `ws` alone, the handle ends `rejected` with
 `evidence.failure` `{ kind: 'refused', reason: 'congested' }` and no attempt. A
 send the policy keeps waits at submission: while its carrier is at the
 watermark each attempt settles `not-ready` and retries 50 ms later
@@ -770,10 +773,14 @@ holds every message, controls included.
 Each decision, a drop, a deferral or a hand-over, is stated as a `congestion`
 outbound diagnostic naming its carrier, cause, action, priority and message
 (D186), which the black-box harness counts per connection; no facade method
-reads it. Channel health itself is `rallar.rtc.status()`: each lane's `channel`
-reports its `bufferedAmount`, its `flowControl` watermarks and overflow policy,
-its `queuedItemCount` and its send `counters` (see RTC Status And Readiness
-below).
+reads it. A deferral is stated for every message the page holds at submission,
+relay forwards and controls included, not only for the session's own sends,
+so the harness's `deferred` counts them all. A hand-over names the message's
+own normalized congestion priority, not the one the carrier's QoS provider
+planned with. Channel health itself is `rallar.rtc.status()`: each lane's
+`channel` reports its `bufferedAmount`, its `flowControl` watermarks and
+overflow policy, its `queuedItemCount` and its send `counters` (see RTC Status
+And Readiness below).
 
 **Limit:** a backpressured RTC room send is refused or held as a whole: the
 carrier does not route around one backpressured peer, reduce a relay's fanout

@@ -674,17 +674,20 @@ new data sends are planned with a live `backpressured` flag beside `overloaded`
 every ready next hop holds at least its high watermark, the WS client when the
 socket's `bufferedAmount` is at least 256 KiB
 (`AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES`), and the WS client reads it alone.
-Controls, forwards, retransmissions, replans and inbound plans never read it.
-The congestion policy applies to either flag and its drop names the cause
-(D185): an `overloaded` drop stays `capacity`; a backpressure drop is the refusal
-`congested`, a fallback trigger that hands an `rtc-with-ws-fallback` RTC leg to
-WS at admission and otherwise ends the send `rejected` with no attempt.
-`drop-low` drops a priority-0 (or lower) send only, `reject` every send and `defer` none; a kept
-send waits at submission, where backpressure is a `not-ready` retried after
-50 ms on both carriers, so a held send is not acknowledged until its carrier takes it.
+Controls, forwards, retransmissions, replans, inbound plans, RTC unicasts and
+unaddressed RTC sends never read it. The congestion policy applies to either
+flag and its drop names the cause (D185): an `overloaded` drop stays `capacity`;
+a backpressure drop is the refusal `congested`, a fallback trigger that hands an
+`rtc-with-ws-fallback` RTC leg to WS at admission and otherwise ends the send
+`rejected` with no attempt. `drop-low` drops a priority-0 (or lower) send only,
+`reject` every send and `defer` none; a kept send waits at submission, where
+backpressure is a `not-ready` retried after 50 ms on both carriers, so a held
+send is not acknowledged until its carrier takes it. WS submission backpressure
+holds every message, controls included: an ACK waits 50 ms on a full socket.
 Every decision is a `congestion` diagnostic, and the black-box harness counts
 them as `stats.rallar.congestion { dropped, deferred, handedOver }` (D186);
-channel health stays on `rallar.rtc.status()`.
+`deferred` counts every message the page held at submission, relay forwards and
+controls included. Channel health stays on `rallar.rtc.status()`.
 
 **PLANNED:** `replace-latest` by semantic key and a bounded queue on the
 reliable lane (the realtime lane keeps its own `replace-by-key`); relay fanout

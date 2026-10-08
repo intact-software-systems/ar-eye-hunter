@@ -18,7 +18,7 @@ import {
     isALDeliveryFallbackPastDeadline
 } from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
 import {
-    writeALOutboundCongestionDiagnostic,
+    writeALOutboundRuntimeDiagnostic,
     type ALOutboundEnqueueResult
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALStorageUnavailable } from '@shared/alm/storage/al-storage-unavailable.ts';
@@ -222,7 +222,7 @@ function writeCongestionHandOverDiagnostic(
     if (result.verdict.kind !== 'refused' || result.verdict.reason !== 'congested') {
         return;
     }
-    writeALOutboundCongestionDiagnostic(delivery.context.middleware.outboundDiagnostics, {
+    writeALOutboundRuntimeDiagnostic(delivery.context.middleware.outboundDiagnostics, {
         kind: 'congestion',
         carrier: delivery.carrier,
         cause: 'backpressured',
