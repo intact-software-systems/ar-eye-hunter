@@ -66,6 +66,7 @@ test('report disclosure follows workbench visibility, preserves drafts, and reve
     await recordDiagnostic(page, 'closed');
     await expect(output).toHaveCount(0);
     await report.getByRole('button', { name: 'Show', exact: true }).click();
+    await expect.poll(() => output.inputValue()).toContain('rallar.browser.observer.closed');
     const snapshot = JSON.parse(await output.inputValue());
     expect(snapshot.events.filter((event: { topic: string; }) => event.topic.startsWith('rallar.browser.observer.')))
         .toHaveLength(5);
