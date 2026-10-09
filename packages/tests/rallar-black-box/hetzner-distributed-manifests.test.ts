@@ -1,89 +1,21 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
 import {
     describe,
     expect,
     it
 } from 'vitest';
 
+import { decodeStringLeaves } from '@shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
+import { decodeDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
+
 import {
     createHetznerDistributedManifestCatalog,
     HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER
 } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
-import { deriveDistributedRunMonitor, distributedRecipePreflight } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
-import {
-    computeRtcDiagnostics,
-    computeRtcPerformanceView,
-    DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
-} from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
-import { toDistributedArtifactSnapshots } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import type {
-    RallarBlackBoxDistributedRunManifest
-} from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import { decodeStringLeaves } from '../../shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
-import { validateDistributedRunManifestContract } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
-import type {
-    RallarBlackBoxTestEvent,
-    RallarBlackBoxTestRecord,
-    RallarBlackBoxTestState,
-    RallarBlackBoxTestWaitMatch
-} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
-import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
-
-interface ManifestCommand {
-    readonly kind?: string;
-    readonly commandId?: string;
-    readonly transport?: string;
-    readonly rallar?: RallarBlackBoxTestRecord;
-    readonly commands?: readonly ManifestCommand[];
-    readonly groups?: readonly Readonly<{
-        commands?: readonly ManifestCommand[];
-    }>[];
-    readonly readiness?: Readonly<{
-        minReadyPeers?: number;
-        timeoutMs?: number;
-        intervalMs?: number;
-    }>;
-    readonly count?: number;
-    readonly ack?: string;
-    readonly request?: Readonly<{ method?: string; path?: string; }>;
-    readonly handleId?: string;
-    readonly qos?: Readonly<{ ack?: Readonly<{ algo?: string; }>; }>;
-    readonly durationMs?: number;
-    readonly intervalMs?: number;
-    readonly maxInFlight?: number;
-    readonly maxCommands?: number;
-    readonly continueOnSendFailure?: boolean;
-    readonly metadata?: RallarBlackBoxTestRecord;
-    readonly thresholds?: RallarBlackBoxTestRecord;
-}
-
-interface ControlCommandInput {
-    readonly runId: string;
-    readonly agentId: string;
-    readonly commandId: string;
-    readonly queuedAtEpochMs: number;
-    readonly durationMs: number;
-}
-
-interface ControlResultInput {
-    readonly runId: string;
-    readonly agentId: string;
-    readonly commandId: string;
-    readonly endedAtEpochMs: number;
-    readonly durationMs: number;
-}
-
-interface ControlEventInput {
-    readonly runId: string;
-    readonly agentId: string;
-    readonly commandId: string;
-    readonly topic: string;
-    readonly atEpochMs: number;
-}
+import { distributedRecipePreflight } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
+import { toHetznerManifestCommands } from './hetzner-manifest-test-commands.ts';
 
 interface ExpectedStream {
     readonly rateHz: number;
@@ -97,32 +29,7 @@ interface ExpectedStream {
     readonly maxInFlight: number;
 }
 
-/** The clock each RTC diagnostics case reads, so the generated bundle time is deterministic. */
-const DIAGNOSTICS_NOW_EPOCH_MS = 100_000;
-
 const repoRoot = path.resolve(__dirname, '../../..');
-const MATRIX_AGENT_COUNTS = [10, 15, 20, 30] as const;
-const MATRIX_DURATION_SECONDS = [30, 300] as const;
-const MATRIX_RATE_HZ = [10, 20] as const;
-const MATRIX_PROFILES = ['principal', 'all-peer'] as const;
-
-function toDurationLabel(seconds: number): string {
-    return seconds % 60 === 0 ? `${seconds / 60}m` : `${seconds}s`;
-}
-
-function toExpectedMatrixDiagnosticPaths(): readonly string[] {
-    return MATRIX_AGENT_COUNTS.flatMap((agentCount) =>
-        MATRIX_DURATION_SECONDS.flatMap((durationSeconds) =>
-            MATRIX_RATE_HZ.flatMap((rateHz) =>
-                MATRIX_PROFILES.map((profile) =>
-                    `apps/rallar-black-box/manifests/hetzner/diagnostic/matrix/rtc-messages-${profile}-${agentCount}-agent-${
-                        toDurationLabel(durationSeconds)
-                    }-${rateHz}hz-tree.json`
-                )
-            )
-        )
-    );
-}
 
 // Every multi-agent Hetzner manifest must carry the standard barrier so agents start synchronized;
 // only these two are exempt, because neither drives RTC traffic between peers. A new manifest
@@ -131,31 +38,6 @@ const BARRIER_EXEMPT_MANIFEST_PATHS: ReadonlySet<string> = new Set([
     'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json'
 ]);
-
-function toManifestCommands(manifest: RallarBlackBoxDistributedRunManifest): readonly ManifestCommand[] {
-    const walk = (commands: readonly ManifestCommand[]): readonly ManifestCommand[] =>
-        commands.flatMap((command) => [
-            command,
-            ...walk(command.commands ?? []),
-            ...(command.groups ?? []).flatMap((group) => walk(group.commands ?? []))
-        ]);
-
-    return manifest.recipes.flatMap((selection) => walk((selection.recipe?.commands ?? []) as readonly ManifestCommand[]));
-}
-
-/**
- * `match` is shadowed when an event that satisfies `other` always satisfies it too: every other criterion is the same,
- * its `contains` is a substring of the other's, and its `equals` is the other's.
- */
-function isWaitMatchShadowedBy(match: RallarBlackBoxTestWaitMatch, other: RallarBlackBoxTestWaitMatch): boolean {
-    const otherFields = new Map(Object.entries(other));
-    return Object.entries(match).every(([field, value]) => {
-        const otherValue = otherFields.get(field);
-        return field === 'contains'
-            ? typeof otherValue === 'string' && otherValue.includes(String(value))
-            : otherValue !== undefined && isDeepStrictEqual(value, otherValue);
-    });
-}
 
 describe('Hetzner distributed manifest catalog', () => {
     it('defines the mainline green, extended, and diagnostic manifest groups separately', () => {
@@ -197,7 +79,7 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json',
             'apps/rallar-black-box/manifests/hetzner/22-alm-conformance-3-agent.json'
         ]);
-        expect(diagnosticPaths).toEqual([
+        expect(diagnosticPaths.filter((filePath) => !filePath.includes('/matrix/'))).toEqual([
             'apps/rallar-black-box/manifests/hetzner/diagnostic/barrier-health-2-agent.json',
             'apps/rallar-black-box/manifests/hetzner/diagnostic/expected-failure-1-agent.json',
             'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-realtime-2-agent-20hz-stress.json',
@@ -205,8 +87,7 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-principal-50-agent-60m-20hz-tree.json',
             'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-all-peer-50-agent-60m-5hz-tree.json',
             'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-all-peer-50-agent-60m-10hz-tree.json',
-            'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-all-peer-50-agent-60m-20hz-tree.json',
-            ...toExpectedMatrixDiagnosticPaths()
+            'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-all-peer-50-agent-60m-20hz-tree.json'
         ]);
     });
 
@@ -220,14 +101,12 @@ describe('Hetzner distributed manifest catalog', () => {
 
     it('validates every checked-in manifest against schema and contract', async () => {
         for (const entry of createHetznerDistributedManifestCatalog()) {
-            const manifest = JSON.parse(
-                await readFile(path.join(repoRoot, entry.filePath), 'utf8')
-            ) as RallarBlackBoxDistributedRunManifest;
-            const schemaResult = validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, manifest);
-            const contractResult = validateDistributedRunManifestContract(manifest);
-
-            expect(schemaResult, entry.filePath).toMatchObject({ ok: true });
-            expect(contractResult, entry.filePath).toEqual([]);
+            const decoded = decodeDistributedRunManifest(JSON.parse(await readFile(path.join(repoRoot, entry.filePath), 'utf8')));
+            expect(decoded.left, entry.filePath).toBeUndefined();
+            const manifest = decoded.right;
+            if (manifest === undefined) {
+                throw new Error(`Expected a valid checked-in manifest: ${entry.filePath}`);
+            }
             expect(manifest.group).toEqual({
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
@@ -328,10 +207,10 @@ describe('Hetzner distributed manifest catalog', () => {
         // The alm-conformance family intentionally connects messages.rtc with its own per-scenario
         // typeId and the room.alm-conformance topic, not the shared multicast-position selector.
         for (const entry of createHetznerDistributedManifestCatalog()) {
-            if (entry.manifest.metadata?.family === 'alm-conformance') {
+            if (['alm-conformance', 'alm-scale'].includes(String(entry.manifest.metadata?.family))) {
                 continue;
             }
-            for (const command of toManifestCommands(entry.manifest)) {
+            for (const command of toHetznerManifestCommands(entry.manifest)) {
                 if (command.kind !== 'rtc.connect' || command.transport !== 'messages.rtc') {
                     continue;
                 }
@@ -372,8 +251,11 @@ describe('Hetzner distributed manifest catalog', () => {
         ]);
 
         for (const entry of createHetznerDistributedManifestCatalog().filter((candidate) => !candidate.diagnostic)) {
-            const commands = toManifestCommands(entry.manifest);
-            const sendsRtc = commands.some((command) => command.kind === 'rtc.send' || command.kind === 'rtc.stream');
+            const commands = toHetznerManifestCommands(entry.manifest);
+            const sendsRtc = commands.some((command) =>
+                command.kind === 'rtc.send' || command.kind === 'rtc.stream' ||
+                (entry.manifest.metadata.family === 'alm-scale' && command.kind === 'messages.send')
+            );
             if (!sendsRtc) {
                 expect(expectedReadyPeers.has(entry.filePath)).toBe(false);
                 continue;
@@ -421,7 +303,7 @@ describe('Hetzner distributed manifest catalog', () => {
         for (const entry of createHetznerDistributedManifestCatalog()) {
             for (const selection of entry.manifest.recipes) {
                 const recipe = selection.recipe;
-                if (!recipe || !toManifestCommands(entry.manifest).some((command) => command.readiness)) {
+                if (!recipe || !toHetznerManifestCommands(entry.manifest).some((command) => command.kind === 'rtc.connect' && command.readiness)) {
                     continue;
                 }
 
@@ -521,7 +403,7 @@ describe('Hetzner distributed manifest catalog', () => {
                     !candidate.filePath.includes('alm-conformance')
                 )
         ) {
-            const commands = toManifestCommands(entry.manifest);
+            const commands = toHetznerManifestCommands(entry.manifest);
             const stream = commands.find((command) => command.kind === 'rtc.stream');
             const highRateLoop = commands.find((command) =>
                 command.kind === 'loop' &&
@@ -581,7 +463,7 @@ describe('Hetzner distributed manifest catalog', () => {
             expectedFailure: false
         });
 
-        const stream = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
+        const stream = toHetznerManifestCommands(entry!.manifest)
             .find((command) => command.kind === 'rtc.stream');
         expect(stream).toMatchObject({
             count: 100,
@@ -653,7 +535,7 @@ describe('Hetzner distributed manifest catalog', () => {
         const parity = createHetznerDistributedManifestCatalog().find((entry) =>
             entry.filePath === 'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json'
         );
-        const commands = parity?.manifest.recipes[0]?.recipe?.commands as readonly ManifestCommand[] | undefined;
+        const commands = parity?.manifest.recipes[0]?.recipe?.commands;
         const connectIndex = commands?.findIndex((command) => command.kind === 'rtc.connect') ?? -1;
         const holdIndex = commands?.findIndex((command) => command.commandId === 'parity-peer-overlap-hold') ?? -1;
         const closeIndex = commands?.findIndex((command) => command.kind === 'close') ?? -1;
@@ -683,667 +565,8 @@ describe('Hetzner distributed manifest catalog', () => {
                 }
             ]
         });
-        expect(hold?.durationMs).toBeGreaterThanOrEqual(
-            (connect?.readiness?.timeoutMs ?? 0) + 2_000
+        expect(hold?.kind === 'loop' ? hold.durationMs : undefined).toBeGreaterThanOrEqual(
+            (connect?.kind === 'rtc.connect' ? connect.readiness?.timeoutMs ?? 0 : 0) + 2_000
         );
-    });
-
-    it('feeds Hetzner CI artifacts into SPA monitor and RTC performance views', () => {
-        const entry = createHetznerDistributedManifestCatalog()
-            .find((candidate) => candidate.filePath.endsWith('/05-rtc-realtime-2-agent-5s.json'));
-        expect(entry).toBeDefined();
-        const manifest = entry?.manifest as RallarBlackBoxDistributedRunManifest;
-        const distributedRunId = 'dist-hetzner-ci-import';
-        const controlRunId = 'gh-ci-import';
-        const agentIds = ['controller-01', 'controller-02'];
-        const distributedRun = {
-            distributedRunId,
-            controlRunId,
-            state: 'passed',
-            createdAtEpochMs: 1_000,
-            updatedAtEpochMs: 5_500,
-            stagedAtEpochMs: 1_200,
-            startedAtEpochMs: 2_000,
-            completedAtEpochMs: 5_500,
-            targetAgentIds: agentIds,
-            manifest: {
-                ...manifest,
-                distributedRunId,
-                controlRunId
-            },
-            commandLinks: [
-                { phase: 'stage', agentId: 'controller-01', commandId: 'stage-controller-01', recipeId: 'rtc-realtime', queuedAtEpochMs: 1_210 },
-                { phase: 'stage', agentId: 'controller-02', commandId: 'stage-controller-02', recipeId: 'rtc-realtime', queuedAtEpochMs: 1_220 },
-                { phase: 'start', agentId: 'controller-01', commandId: 'start-controller-01', recipeId: 'rtc-realtime', queuedAtEpochMs: 2_010 },
-                { phase: 'start', agentId: 'controller-02', commandId: 'start-controller-02', recipeId: 'rtc-realtime', queuedAtEpochMs: 2_020 }
-            ],
-            rollup: {
-                state: 'passed',
-                ok: true,
-                summary: {
-                    participants: 2,
-                    readyParticipants: 2,
-                    passedParticipants: 2,
-                    failedParticipants: 0,
-                    recipes: 1,
-                    passedRecipes: 2,
-                    failedRecipes: 0,
-                    groupAssertions: 0,
-                    passedGroupAssertions: 0,
-                    failedGroupAssertions: 0,
-                    blockingFailures: 0
-                },
-                failures: []
-            }
-        };
-        const controlRun = {
-            runId: controlRunId,
-            createdAtEpochMs: 1_000,
-            updatedAtEpochMs: 5_500,
-            agents: agentIds.map((agentId) => ({
-                runId: controlRunId,
-                agentId,
-                connected: true,
-                status: 'connected',
-                lastSeenAtEpochMs: 5_500,
-                lastHeartbeatAtEpochMs: 5_500,
-                identity: {
-                    applicationId: 'rallar-server',
-                    workspaceId: 'default',
-                    groupId: 'hetzner-headless-room',
-                    sessionLabel: agentId,
-                    updatedAtEpochMs: 5_500
-                },
-                connectionSequence: 1,
-                reconnectCount: 0,
-                receivedResultCount: 2,
-                receivedEventCount: 1,
-                completedCommandIds: [],
-                resumeCompletedCommandIds: []
-            })),
-            commands: [
-                toControlCommand({ runId: controlRunId, agentId: 'controller-01', commandId: 'stage-controller-01', queuedAtEpochMs: 1_210, durationMs: 40 }),
-                toControlCommand({ runId: controlRunId, agentId: 'controller-02', commandId: 'stage-controller-02', queuedAtEpochMs: 1_220, durationMs: 60 }),
-                toControlCommand({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', queuedAtEpochMs: 2_010, durationMs: 180 }),
-                toControlCommand({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', queuedAtEpochMs: 2_020, durationMs: 420 })
-            ],
-            results: [
-                toControlResult({ runId: controlRunId, agentId: 'controller-01', commandId: 'stage-controller-01', endedAtEpochMs: 1_250, durationMs: 40 }),
-                toControlResult({ runId: controlRunId, agentId: 'controller-02', commandId: 'stage-controller-02', endedAtEpochMs: 1_280, durationMs: 60 }),
-                toControlResult({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', endedAtEpochMs: 2_190, durationMs: 180 }),
-                toControlResult({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', endedAtEpochMs: 2_440, durationMs: 420 })
-            ],
-            events: [
-                toControlEvent({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', topic: 'rtc.started', atEpochMs: 2_050 }),
-                toControlEvent({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', topic: 'rtc.started', atEpochMs: 2_060 })
-            ],
-            stats: [],
-            reports: [],
-            heartbeats: []
-        };
-        const files = {
-            'distributed-run.json': JSON.stringify(distributedRun),
-            'manifest.json': JSON.stringify(distributedRun.manifest),
-            'control-run.json': JSON.stringify(controlRun),
-            'results.jsonl': controlRun.results.map((result) => JSON.stringify(result)).join('\n'),
-            'events.jsonl': controlRun.events.map((event) => JSON.stringify(event)).join('\n')
-        };
-
-        const snapshots = toDistributedArtifactSnapshots(files, 6_000);
-        expect(snapshots.left).toBeUndefined();
-        const monitor = snapshots.right && deriveDistributedRunMonitor({
-            distributedRun: snapshots.right.distributedRun,
-            controlRun: snapshots.right.controlRun,
-            artifactBundle: snapshots.right.artifactBundle
-        });
-        const performance = computeRtcPerformanceView({
-            diagnostics: computeRtcDiagnostics(toEmptySpaState(), DIAGNOSTICS_NOW_EPOCH_MS),
-            state: toEmptySpaState(),
-            distributedMonitor: monitor,
-            histogramBucketCount: DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
-        });
-
-        expect(monitor?.state).toBe('passed');
-        expect(monitor?.artifact.status).toBe('valid');
-        expect(monitor?.agentProgress.map((row) => [row.agentId, row.execution, row.averageLatencyMs])).toEqual([
-            ['controller-01', 'passed', 110],
-            ['controller-02', 'passed', 240]
-        ]);
-        expect(monitor?.latency.p95Ms).toBe(420);
-        expect(performance.summary.commandCount).toBe(2);
-        expect(performance.summary.p99Ms).toBe(240);
-        expect(performance.scatter.map((point) => [point.source, point.agentId, point.durationMs])).toEqual([
-            ['distributed-agent', 'controller-01', 110],
-            ['distributed-agent', 'controller-02', 240]
-        ]);
-    });
-
-    it('adds 50-agent messages.rtc multicast manifests with tree, mesh, and long-run metadata', () => {
-        const catalog = createHetznerDistributedManifestCatalog();
-        const byId = new Map(catalog.map((entry) => [entry.manifest.distributedRunId, entry]));
-        const principalTree = byId.get('hetzner-rtc-messages-principal-50-agent-30s-20hz-tree');
-        const principalMesh = byId.get('hetzner-rtc-messages-principal-50-agent-30s-20hz-mesh');
-        const allPeerShort = byId.get('hetzner-rtc-messages-all-peer-50-agent-30s-5hz-tree');
-        const allPeerDiagnostic = byId.get('hetzner-diagnostic-rtc-messages-all-peer-50-agent-30s-20hz-tree');
-        const principalLong = byId.get('hetzner-diagnostic-rtc-messages-principal-50-agent-60m-20hz-tree');
-        const allPeerLong20 = byId.get('hetzner-diagnostic-rtc-messages-all-peer-50-agent-60m-20hz-tree');
-
-        expect(principalTree?.diagnostic).toBe(false);
-        expect(principalTree?.manifest.metadata).toMatchObject({
-            topologyProfile: 'tree',
-            expectedDurationSeconds: 30,
-            recommendedTerminalTimeoutSeconds: 330,
-            transport: 'messages.rtc',
-            participantCount: 50,
-            rateHz: 20,
-            receiverDelivery: {
-                expectedInboundMessages: 600,
-                minExpectedInboundMessages: 570,
-                minReceiveRatio: 0.95
-            },
-            loadEstimate: {
-                streamFrames: 600,
-                logicalFanoutMessages: 29400
-            },
-            rtcTopologyEnv: {
-                RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '51'
-            }
-        });
-        expect(principalMesh?.manifest.metadata).toMatchObject({
-            topologyProfile: 'mesh',
-            rtcTopologyEnv: {
-                RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '16'
-            }
-        });
-        expect(allPeerShort?.manifest.metadata).toMatchObject({
-            topologyProfile: 'tree',
-            expectedDurationSeconds: 30,
-            recommendedTerminalTimeoutSeconds: 330,
-            receiverDelivery: {
-                expectedInboundMessages: 7350,
-                minExpectedInboundMessages: 6615,
-                minReceiveRatio: 0.9
-            },
-            loadEstimate: {
-                streamFrames: 7500,
-                logicalFanoutMessages: 367500
-            }
-        });
-        expect(allPeerDiagnostic?.diagnostic).toBe(true);
-        expect(allPeerDiagnostic?.manifest.metadata).toMatchObject({
-            expectedDurationSeconds: 30,
-            recommendedTerminalTimeoutSeconds: 330,
-            receiverDelivery: {
-                expectedInboundMessages: 29400,
-                minExpectedInboundMessages: 23520,
-                minReceiveRatio: 0.8
-            }
-        });
-        expect(principalLong?.manifest.metadata).toMatchObject({
-            diagnostic: true,
-            expectedDurationSeconds: 3600,
-            recommendedTerminalTimeoutSeconds: 3900,
-            loadEstimate: {
-                streamFrames: 72000,
-                logicalFanoutMessages: 3528000
-            }
-        });
-        expect(allPeerLong20?.manifest.metadata).toMatchObject({
-            diagnostic: true,
-            expectedDurationSeconds: 3600,
-            recommendedTerminalTimeoutSeconds: 4200,
-            loadEstimate: {
-                streamFrames: 3600000,
-                logicalFanoutMessages: 176400000
-            }
-        });
-        expect(HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER).not.toContain(allPeerDiagnostic?.filePath);
-        expect(HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER).not.toContain(principalLong?.filePath);
-    });
-
-    it('labels the short 50-agent principal tree manifest as the GitHub Free smoke candidate', () => {
-        const entry = createHetznerDistributedManifestCatalog()
-            .find((candidate) => candidate.filePath.endsWith('/07-rtc-messages-principal-50-agent-30s-20hz-tree.json'));
-
-        expect(entry).toBeDefined();
-        expect(entry?.manifest.metadata?.catalogProfiles).toEqual(
-            expect.arrayContaining(['github-free-smoke', '50-agent', 'tree'])
-        );
-    });
-
-    it('adds 15- and 30-agent mainline alternatives for the three 50-agent multicast recipes', () => {
-        const byId = new Map(
-            createHetznerDistributedManifestCatalog().map((entry) => [entry.manifest.distributedRunId, entry])
-        );
-
-        for (const agentCount of [15, 30]) {
-            const principalTree = byId.get(
-                `hetzner-rtc-messages-principal-${agentCount}-agent-30s-20hz-tree`
-            );
-            const principalMesh = byId.get(
-                `hetzner-rtc-messages-principal-${agentCount}-agent-30s-20hz-mesh`
-            );
-            const allPeerTree = byId.get(
-                `hetzner-rtc-messages-all-peer-${agentCount}-agent-30s-5hz-tree`
-            );
-            const principalFrames = 30 * 20;
-            const allPeerFrames = (agentCount - 1) * 30 * 5;
-
-            expect(principalTree?.diagnostic).toBe(false);
-            expect(principalTree?.agentCount).toBe(agentCount);
-            expect(principalTree?.manifest.metadata).toMatchObject({
-                topologyProfile: 'tree',
-                participantCount: agentCount,
-                senderCount: 1,
-                receiverDelivery: {
-                    expectedInboundMessages: principalFrames,
-                    minExpectedInboundMessages: Math.floor(principalFrames * 0.95),
-                    minReceiveRatio: 0.95
-                },
-                loadEstimate: {
-                    streamFrames: principalFrames,
-                    logicalFanoutMessages: principalFrames * (agentCount - 1)
-                },
-                rtcTopologyEnv: {
-                    RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: String(agentCount + 1)
-                }
-            });
-            expect(principalTree?.manifest.recipes.map((selection) => selection.role)).toEqual([
-                'sender',
-                'receiver'
-            ]);
-
-            expect(principalMesh?.diagnostic).toBe(false);
-            expect(principalMesh?.agentCount).toBe(agentCount);
-            expect(principalMesh?.manifest.metadata).toMatchObject({
-                topologyProfile: 'mesh',
-                participantCount: agentCount,
-                senderCount: 1,
-                receiverDelivery: {
-                    expectedInboundMessages: principalFrames,
-                    minExpectedInboundMessages: Math.floor(principalFrames * 0.95),
-                    minReceiveRatio: 0.95
-                },
-                rtcTopologyEnv: {
-                    RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '16'
-                }
-            });
-
-            expect(allPeerTree?.diagnostic).toBe(false);
-            expect(allPeerTree?.agentCount).toBe(agentCount);
-            expect(allPeerTree?.manifest.metadata).toMatchObject({
-                topologyProfile: 'tree',
-                participantCount: agentCount,
-                senderCount: agentCount,
-                receiverDelivery: {
-                    expectedInboundMessages: allPeerFrames,
-                    minExpectedInboundMessages: Math.floor(allPeerFrames * 0.9),
-                    minReceiveRatio: 0.9
-                },
-                loadEstimate: {
-                    streamFrames: agentCount * 30 * 5,
-                    logicalFanoutMessages: agentCount * 30 * 5 * (agentCount - 1)
-                },
-                rtcTopologyEnv: {
-                    RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: String(agentCount + 1)
-                }
-            });
-        }
-    });
-
-    it('adds medium-scale messages.rtc multicast matrix manifests for 10 to 30 agents', () => {
-        const catalog = createHetznerDistributedManifestCatalog();
-        const matrix = catalog.filter((entry) => entry.filePath.includes('/diagnostic/matrix/rtc-messages-'));
-        const byId = new Map(catalog.map((entry) => [entry.manifest.distributedRunId, entry]));
-
-        expect(matrix.map((entry) => entry.filePath)).toEqual(toExpectedMatrixDiagnosticPaths());
-        expect(matrix).toHaveLength(
-            MATRIX_AGENT_COUNTS.length * MATRIX_DURATION_SECONDS.length * MATRIX_RATE_HZ.length * MATRIX_PROFILES.length
-        );
-
-        for (const agentCount of MATRIX_AGENT_COUNTS) {
-            for (const durationSeconds of MATRIX_DURATION_SECONDS) {
-                for (const rateHz of MATRIX_RATE_HZ) {
-                    const frameCount = durationSeconds * rateHz;
-                    const label = toDurationLabel(durationSeconds);
-                    const principal = byId.get(
-                        `hetzner-diagnostic-rtc-messages-principal-${agentCount}-agent-${label}-${rateHz}hz-tree`
-                    );
-                    const allPeer = byId.get(
-                        `hetzner-diagnostic-rtc-messages-all-peer-${agentCount}-agent-${label}-${rateHz}hz-tree`
-                    );
-
-                    expect(principal?.diagnostic, `${agentCount} principal ${label} ${rateHz}Hz`).toBe(true);
-                    expect(principal?.agentCount).toBe(agentCount);
-                    expect(principal?.manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
-                    expect(principal?.manifest.metadata).toMatchObject({
-                        topologyProfile: 'tree',
-                        transport: 'messages.rtc',
-                        participantCount: agentCount,
-                        senderCount: 1,
-                        expectedDurationSeconds: durationSeconds,
-                        rateHz,
-                        receiverDelivery: {
-                            expectedInboundMessages: frameCount,
-                            minExpectedInboundMessages: Math.floor(frameCount * 0.95),
-                            minReceiveRatio: 0.95
-                        },
-                        loadEstimate: {
-                            streamFrames: frameCount,
-                            logicalFanoutMessages: frameCount * (agentCount - 1)
-                        }
-                    });
-                    expect(HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER).not.toContain(principal?.filePath);
-
-                    const allPeerExpectedInbound = (agentCount - 1) * frameCount;
-                    const allPeerMinRatio = rateHz === 20 ? 0.8 : 0.85;
-                    expect(allPeer?.diagnostic, `${agentCount} all-peer ${label} ${rateHz}Hz`).toBe(true);
-                    expect(allPeer?.agentCount).toBe(agentCount);
-                    expect(allPeer?.manifest.recipes).toHaveLength(1);
-                    expect(allPeer?.manifest.metadata).toMatchObject({
-                        topologyProfile: 'tree',
-                        transport: 'messages.rtc',
-                        participantCount: agentCount,
-                        senderCount: agentCount,
-                        expectedDurationSeconds: durationSeconds,
-                        rateHz,
-                        receiverDelivery: {
-                            expectedInboundMessages: allPeerExpectedInbound,
-                            minExpectedInboundMessages: Math.floor(allPeerExpectedInbound * allPeerMinRatio),
-                            minReceiveRatio: allPeerMinRatio
-                        },
-                        loadEstimate: {
-                            streamFrames: agentCount * frameCount,
-                            logicalFanoutMessages: agentCount * frameCount * (agentCount - 1)
-                        }
-                    });
-                    expect(HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER).not.toContain(allPeer?.filePath);
-                }
-            }
-        }
-    });
-
-    it('adds the ALM conformance 3-agent manifest with one sender and two recipients, pinning each receipt (D45)', () => {
-        const entry = createHetznerDistributedManifestCatalog()
-            .find((candidate) => candidate.filePath.endsWith('/22-alm-conformance-3-agent.json'));
-
-        expect(entry?.agentCount).toBe(3);
-        expect(entry?.mainline).toBe(false);
-        expect(HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER).toContain(entry?.filePath);
-        expect(entry?.manifest.metadata).toMatchObject({ family: 'alm-conformance', scenarios: ['receipted-audience'] });
-        const sender = entry?.manifest.recipes.find((selection) => selection.role === 'sender')?.recipe;
-        // An empty checkpoint list would read as a paired reload run of two roots, which the control server refuses.
-        expect(sender?.metadata).not.toHaveProperty('almReloadCheckpoints');
-        const pinnedHandles = (sender?.metadata?.almReceiptRoles as readonly Readonly<{ handleId: string; }>[] | undefined)
-            ?.map((pin) => pin.handleId);
-        expect(pinnedHandles).toEqual([
-            'alm-ws-aggregated-receipt-send-1',
-            'alm-ws-missing-recipient-retry-send-1',
-            'alm-ws-frozen-audience-membership-send-1',
-            ...['rtc', 'rtc-with-ws-fallback'].flatMap((carrier) =>
-                ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership']
-                    .map((key) => `alm-${carrier}-${key}-send-1`)
-            )
-        ]);
-    });
-
-    it('leaves no positive wait of the 3-agent ALM recipes matchable by an event another wait awaits, since a wait also matches past events', () => {
-        const manifest = createHetznerDistributedManifestCatalog()
-            .find((candidate) => candidate.filePath.endsWith('/22-alm-conformance-3-agent.json'))!.manifest;
-        for (const selection of manifest.recipes) {
-            const matches = ((selection.recipe?.commands ?? []) as readonly (ManifestCommand & { absent?: boolean; match?: RallarBlackBoxTestWaitMatch; })[])
-                .filter((command) => command.kind === 'wait' && command.absent !== true)
-                .map((command) => command.match ?? {});
-            const shadowed = matches.filter((match, index) => matches.some((other, otherIndex) => otherIndex !== index && isWaitMatchShadowedBy(match, other)));
-
-            expect(shadowed, selection.role).toEqual([]);
-        }
-    });
-
-    it('reads a wait as shadowed when every event another wait awaits also satisfies it', () => {
-        const topic = 'rallar.browser.alm.inbound_diagnostics';
-        const refusal: RallarBlackBoxTestWaitMatch = { kind: 'diagnostic', topic, contains: '"carrier":"rtc","outcome":"rejected","reason":"unsupported"' };
-
-        expect(isWaitMatchShadowedBy({ ...refusal, contains: '"carrier":"rtc","outcome":"rejected"' }, refusal)).toBe(true);
-        expect(isWaitMatchShadowedBy({ kind: 'diagnostic', topic }, refusal)).toBe(true);
-        expect(isWaitMatchShadowedBy({ kind: 'event', equals: { n: [1] } }, { kind: 'event', equals: { n: [1] } })).toBe(true);
-        expect(isWaitMatchShadowedBy(refusal, { ...refusal, contains: '"carrier":"rtc","outcome":"rejected"' })).toBe(false);
-        expect(isWaitMatchShadowedBy({ ...refusal, topic: 'other' }, refusal)).toBe(false);
-        expect(isWaitMatchShadowedBy({ kind: 'event', equals: { n: [1] } }, { kind: 'event', equals: { n: [2] } })).toBe(false);
-        expect(isWaitMatchShadowedBy({ kind: 'event', equals: { n: [1] } }, { kind: 'event' })).toBe(false);
-    });
-
-    it('keeps every identity of the 3-agent ALM manifest apart from the 2-agent one, so both can run in one profile', () => {
-        const catalog = createHetznerDistributedManifestCatalog();
-        const identitiesOf = (fileName: string) => {
-            const manifest = catalog.find((candidate) => candidate.filePath.endsWith(fileName))!.manifest;
-            return new Set([
-                ...manifest.recipes.map((selection) => selection.recipe?.recipeId ?? ''),
-                ...toManifestCommands(manifest).flatMap((command) => [
-                    command.commandId ?? '',
-                    ...(command.kind === 'http.request' ? [JSON.stringify(command.request)] : []),
-                    ...(command.handleId === undefined ? [] : [command.handleId])
-                ])
-            ]);
-        };
-        const threeAgent = identitiesOf('/22-alm-conformance-3-agent.json');
-        const shared = [...identitiesOf('/18-alm-conformance-2-agent.json')].filter((identity) => threeAgent.has(identity));
-
-        expect(shared).toEqual([]);
-    });
-
-    it('adds the ALM conformance 2-agent manifest with sender/receiver roles across all three carriers', () => {
-        const entry = createHetznerDistributedManifestCatalog()
-            .find((candidate) => candidate.filePath.endsWith('/18-alm-conformance-2-agent.json'));
-
-        expect(entry).toBeDefined();
-        // Nothing has run this manifest on Hetzner yet, so it stays out of the required set.
-        expect(entry?.mainline).toBe(false);
-        expect(entry?.diagnostic).toBe(false);
-        expect(entry?.agentCount).toBe(2);
-        expect(HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER).not.toContain(entry?.filePath);
-        expect(HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER).toContain(entry?.filePath);
-        expect(entry?.manifest.targetPolicy).toMatchObject({
-            mode: 'role-map',
-            expectedParticipantCount: 2,
-            roles: { sender: ['controller-01'], receiver: ['controller-02'] }
-        });
-        expect(entry?.manifest.roleAssignments).toEqual([
-            { role: 'sender', agentId: 'controller-01', recipeIds: [], variables: {} },
-            { role: 'receiver', agentId: 'controller-02', recipeIds: [], variables: {} }
-        ]);
-        expect(entry?.manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
-        expect(entry?.manifest.metadata).toMatchObject({
-            family: 'alm-conformance',
-            carriers: ['ws', 'rtc', 'rtc-with-ws-fallback'],
-            scenarios: [
-                'delivery-reload',
-                'volatile-default',
-                'bounded-rejection',
-                'deadline-expiry',
-                'delivery-baseline',
-                'delivery-lifecycle',
-                'durable-opt-in',
-                'storage-unavailable',
-                'ordering-resync',
-                'ws-unicast-receipt',
-                'server-command',
-                'not-yet-in-sync',
-                'cross-carrier-duplicate',
-                'fallback-within-deadline',
-                'receipt-exhausted-fallback',
-                'no-fallback-after-deadline',
-                'unicast-fallback',
-                'capacity'
-            ]
-        });
-
-        const commandIds = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
-            .map((command) => command.commandId ?? '');
-        // Both cross-carrier orders run on Hetzner: api-v1 routes a WS-carried multicast room envelope (Task 7, R-S2b-1).
-        expect(commandIds.some((commandId) => commandId.includes('cross-carrier-duplicate-ws-then-rtc'))).toBe(true);
-        expect(commandIds).toContain('alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-duplicate-outcome-ws');
-        for (const carrier of ['rtc', 'rtc-with-ws-fallback']) {
-            expect(commandIds).toContain(`alm-${carrier}-not-yet-in-sync-expires-receiver-not-yet-in-sync-outcome`);
-        }
-        // The server is no RTC peer, so only the ws block addresses it.
-        expect(commandIds).toContain('alm-ws-server-command-sender-send-1');
-        expect(
-            commandIds.some((commandId) => /^alm-rtc(-with-ws-fallback)?-server-command-/.test(commandId))
-        ).toBe(false);
-        expect(entry?.manifest.metadata?.recommendedTerminalTimeoutSeconds).toBe(1_800);
-        // A capacity block closes and reconnects its sender, so only the other carriers' capacity blocks follow it.
-        for (const selection of entry?.manifest.recipes ?? []) {
-            const roleCommandIds = ((selection.recipe?.commands ?? []) as readonly ManifestCommand[])
-                .map((command) => command.commandId ?? '');
-            const firstCapacity = roleCommandIds.findIndex((commandId) => /^alm-[a-z-]+-capacity-/.test(commandId));
-            expect(firstCapacity, selection.role).toBeGreaterThan(0);
-            expect(roleCommandIds.slice(firstCapacity).filter((commandId) => !commandId.includes('-capacity-')), selection.role)
-                .toEqual([]);
-        }
-
-        const rtcConnects = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
-            .filter((command) => command.kind === 'rtc.connect' && command.transport === 'messages.rtc');
-        // Two prologues, three reload reconnects, and the capacity sender's lowered and restored connect per carrier.
-        expect(rtcConnects).toHaveLength(11);
-        expect(rtcConnects.every((command) => command.rallar?.messageSelector !== undefined)).toBe(true);
-        expect(rtcConnects.every((command) => command.rallar?.topicId === 'room.alm-conformance')).toBe(true);
-
-        // The RTC overlay tracks logical receipts, so every carrier's receiver send asks for receiver by its own name.
-        const receiverSends = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
-            .filter((command) => command.kind === 'messages.send' && command.ack === 'receiver');
-        const algoByCarrier = (carrier: string) => [
-            ...new Set(
-                receiverSends
-                    .filter((command) =>
-                        ['rtc-with-ws-fallback', 'rtc', 'ws'].find((candidate) => command.commandId?.startsWith(`alm-${candidate}-`)) === carrier
-                    )
-                    .map((command) => command.qos?.ack?.algo)
-            )
-        ];
-        for (const carrier of ['ws', 'rtc', 'rtc-with-ws-fallback']) {
-            expect(algoByCarrier(carrier), carrier).toEqual([undefined]);
-        }
-    });
-
-    it('adds ALM conformance storage-counters manifests at 15, 30, and 50 agents', () => {
-        const catalog = createHetznerDistributedManifestCatalog();
-
-        for (const agentCount of [15, 30, 50]) {
-            const entry = catalog.find((candidate) => candidate.filePath.endsWith(`-alm-conformance-${agentCount}-agent-30s.json`));
-
-            expect(entry, `${agentCount}-agent`).toBeDefined();
-            expect(entry?.diagnostic).toBe(false);
-            expect(entry?.mainline).toBe(false);
-            expect(entry?.agentCount).toBe(agentCount);
-            expect(HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER).toContain(entry?.filePath);
-            expect(entry?.manifest.metadata).not.toHaveProperty('almMetrics');
-            expect(entry?.manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
-            expect(entry?.manifest.recipes[0]?.recipe?.commands.at(-1)).toMatchObject({
-                kind: 'storage.counters',
-                commandId: 'alm-storage-counters-sender',
-                reset: false
-            });
-            expect(entry?.manifest.recipes[1]?.recipe?.commands.at(-1)).toMatchObject({
-                kind: 'storage.counters',
-                commandId: 'alm-storage-counters-receiver',
-                reset: false
-            });
-        }
     });
 });
-
-function toControlCommand({ runId, agentId, commandId, queuedAtEpochMs, durationMs }: ControlCommandInput) {
-    return {
-        envelope: {
-            kind: 'command',
-            protocolVersion: 1,
-            runId,
-            agentId,
-            commandId,
-            command: {
-                kind: 'recipe.run',
-                commandId,
-                recipe: { schemaVersion: 1, recipeId: 'rtc-realtime', commands: [{ kind: 'health' }] }
-            }
-        },
-        queuedAtEpochMs,
-        dispatchedAtEpochMs: queuedAtEpochMs + 10,
-        completedAtEpochMs: queuedAtEpochMs + durationMs,
-        dispatchCount: 1
-    };
-}
-
-function toControlResult({ runId, agentId, commandId, endedAtEpochMs, durationMs }: ControlResultInput) {
-    return {
-        kind: 'result',
-        protocolVersion: 1,
-        runId,
-        agentId,
-        commandId,
-        ok: true,
-        result: {
-            commandId,
-            kind: 'recipe.run',
-            ok: true,
-            status: 'ok',
-            startedAtEpochMs: endedAtEpochMs - durationMs,
-            endedAtEpochMs,
-            durationMs
-        },
-        receivedAtEpochMs: endedAtEpochMs
-    };
-}
-
-function toControlEvent({ runId, agentId, commandId, topic, atEpochMs }: ControlEventInput) {
-    return {
-        kind: 'event',
-        protocolVersion: 1,
-        runId,
-        agentId,
-        commandId,
-        eventId: `${agentId}-${topic}`,
-        atEpochMs,
-        payload: {
-            topic,
-            severity: 'info'
-        }
-    };
-}
-
-function toEmptySpaState(): RallarBlackBoxTestState {
-    const events: readonly RallarBlackBoxTestEvent[] = [];
-    return {
-        status: 'completed',
-        currentConfig: {
-            runId: 'local',
-            agentId: 'visible-agent-local',
-            actor: 'local',
-            sessionId: 'local-session',
-            roomId: 'hetzner-headless-room',
-            transport: 'realtime',
-            apiBaseUrl: 'https://api.rallar.intactss.com',
-            control: {
-                providerMode: 'browser-rallar'
-            },
-            defaults: {
-                connection: 'rtc'
-            }
-        },
-        commandHistory: [],
-        events,
-        failures: [],
-        resultCache: {},
-        latestStats: {
-            atEpochMs: 1,
-            status: 'completed',
-            counters: {
-                commands: 0,
-                events: 0,
-                failures: 0,
-                messages: 0,
-                diagnostics: 0
-            }
-        }
-    };
-}

@@ -17,7 +17,15 @@ workload boundary before counters reset. Tree topology and the existing
 The director sends a match-started event, each player sends six shot intents at
 five-second intervals, and the director sends a match-ended event after the
 workload completion barrier. A separate sampler runs on every page during this
-30-second window, taking seven readings at five-second intervals. Existing
+30-second window, taking seven readings at five-second intervals.
+
+The applied deadline encloses the complete workload: lifecycle sends and ACK reads,
+player shot sends and leader receipts, the completion barrier, and exact arrival
+checks must all complete strictly before 30,000 ms. A nested one-group `parallel`
+command owns this deadline; its timeout interrupts overdue work and native group
+assertions also reject a duration at or above the deadline. The sampler runs in
+parallel after the shared traffic-ready barrier and must complete all seven
+readings even when traffic finishes early. Existing
 `parallel`, `loop`, `stats`, `messages.send`, `messages.observe`,
 `messages.receipts`, and `messages.received` commands own execution.
 
@@ -42,21 +50,26 @@ Every shot handle must become acknowledged with one confirmed leader and no
 unconfirmed recipients. Each director lifecycle handle must become acknowledged
 with exactly N−1 expected and confirmed recipients and no unconfirmed recipients.
 Type-targeted received-message evidence must contain six shots per player at
-the director and both lifecycle messages at every player. Admission alone is
+the director and both lifecycle messages at every player. Counts alone do not
+prove arrivals: the director derives its exact player-session audience from the
+acknowledged start receipt, then requires distinct sequences 1–6 from each
+session with matching envelope and shot identities. Every player matches the
+exact started and ended specimens from the appointed director, including the
+coherent match baseline/results and revision facts. Admission alone is
 insufficient. Readiness and barriers fail the run if the complete audience is
 not ready.
 
 Every sampled reading and the final reading enforce the declared budgets:
 
-| Metric | Budget |
-| --- | ---: |
-| Own admissions | 1,000 |
-| Own bytes | 4,194,304 |
-| Counted oldest age | 300,000 ms |
-| Own tracks (`usage.tracks`) | 64 |
-| Browser ordering snapshots across both stores | 512 |
-| Overloaded | false |
-| Congestion dropped | 0 |
+| Metric                                        |     Budget |
+| --------------------------------------------- | ---------: |
+| Own admissions                                |      1,000 |
+| Own bytes                                     |  4,194,304 |
+| Counted oldest age                            | 300,000 ms |
+| Own tracks (`usage.tracks`)                   |         64 |
+| Browser ordering snapshots across both stores |        512 |
+| Overloaded                                    |      false |
+| Congestion dropped                            |          0 |
 
 These are observed bounds, not continuously measured peaks. Inbound count and
 bytes are recorded separately: outbound admission limits do not promise a hard
@@ -71,10 +84,30 @@ final stats, storage reading, and delivery evidence. They require all frozen
 participants, seven completed samples, zero sample failures, and no cancellation.
 Transient over-budget or absent readings fail even when final usage is zero.
 The existing evaluator emits exact `controller-NN` per-agent evidence plus
-missing/violating agent IDs. No controller-number role guessing or second
-assertion engine is added. Observation-event tails may be trimmed and are
+missing/violating agent IDs. The native all-match assertions also retain complete
+workload and arrival
+results, so incomplete nested commands fail even if final stats are healthy.
+No controller-number role guessing or second assertion engine is added.
+Observation-event tails may be trimmed and are
 diagnostic context; command results and group assertions are the acceptance
 surface.
+
+## Manifest ownership
+
+The catalog imports `createAlmScaleManifestEntries` directly. That app owner
+selects 15/30/50 frozen participants, the canonical group, tree topology with
+`meshMinSize = N + 1`, live execution, synchronized start and extended status.
+It consumes `createAlmScaleRecipes` from `packages/shared-test` for recipes,
+native assertions and authoritative metadata, exposed unchanged as `almMetrics`.
+The obsolete extended multicast/storage wrapper is removed; conformance
+manifests 18/22 and ordinary multicast manifests retain their workloads.
+
+The 330-second outer terminal allowance covers setup and explicit ACK waits;
+it does not relax the strict complete-workload deadline or receipt TTL. The
+manifest load estimate counts accepted logical messages: six leader-targeted
+shots per player plus two lifecycle fanouts, yielding 112/232/392 logical
+recipient deliveries at 15/30/50 participants. This is a match workload estimate;
+`streamFrames` and the former 20 Hz/600-frame metadata are absent.
 
 ## Validation and next boundary
 

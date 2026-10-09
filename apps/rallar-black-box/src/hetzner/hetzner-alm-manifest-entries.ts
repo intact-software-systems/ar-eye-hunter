@@ -28,10 +28,6 @@ import { noLeaderRefused } from '@shared-test/rallar-bb-test/conformance/alm/sce
 import { fencedRejection } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/membership-fence/fenced-rejection.ts';
 import { capacityAge } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/volatile-bound/capacity-age.ts';
 import { capacityTracks } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/volatile-bound/capacity-tracks.ts';
-import {
-    createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
-    type RallarBlackBoxRtcMessagesMulticastRecipeOptions
-} from '@shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
 import type {
     RallarBlackBoxTestBarrierCommand,
     RallarBlackBoxTestCommand,
@@ -44,10 +40,11 @@ import type { HetznerDistributedManifestEntry } from './hetzner-manifest-entry.t
 import {
     createManifestEntry,
     HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
-    HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-    toControllerAgentIds,
-    toMulticastManifestMetadata
+    HETZNER_DISTRIBUTED_MANIFEST_GROUP
 } from './hetzner-manifest-entry.ts';
+
+/** Long enough for the slowest role to finish the windows of the previous scenario while the others wait (D62). */
+export const ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS = 60_000;
 
 const ALM_CONFORMANCE_TYPE_ID = 'alm.conformance';
 
@@ -60,10 +57,19 @@ const ALM_CONFORMANCE_SENDER_CONNECTION = 'almConformanceSender';
 
 const ALM_CONFORMANCE_RECEIVER_CONNECTION = 'almConformanceReceiver';
 
-const ALM_CONFORMANCE_EXTENDED_AGENT_COUNTS = [15, 30, 50] as const;
+/** A three-role scenario runs on its own three agents, so each hosted entry combines into its own recipes. */
+type AlmConformanceFamily = 'two-agent' | 'three-agent';
 
-/** Long enough for the slowest role to finish the windows of the previous scenario while the others wait (D62). */
-export const ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS = 60_000;
+/**
+ * The lane families each hosted entry carries. The addressed sends ride the 2-agent entry; a same-context scenario
+ * needs two pages of one browser context, which no hosted agent has, so no entry carries it. The same-principal
+ * audience cells are withheld as the membership fence cells are: their lane evidence is local and the hosted full
+ * read's, so manifests 18 and 22 stay as recorded.
+ */
+const HOSTED_ALM_LANE_FAMILIES: Readonly<Record<AlmConformanceFamily, readonly AlmConformanceLaneFamily[]>> = {
+    'two-agent': ['two-agent', 'addressed'],
+    'three-agent': ['three-agent']
+};
 
 interface HetznerWithheldAlmScenario {
     readonly scenarioKey: string;
@@ -180,20 +186,6 @@ export function createAlmConformance3AgentEntry(): HetznerDistributedManifestEnt
         }
     });
 }
-
-/** A three-role scenario runs on its own three agents, so each hosted entry combines into its own recipes. */
-type AlmConformanceFamily = 'two-agent' | 'three-agent';
-
-/**
- * The lane families each hosted entry carries. The addressed sends ride the 2-agent entry; a same-context scenario
- * needs two pages of one browser context, which no hosted agent has, so no entry carries it. The same-principal
- * audience cells are withheld as the membership fence cells are: their lane evidence is local and the hosted full
- * read's, so manifests 18 and 22 stay as recorded.
- */
-const HOSTED_ALM_LANE_FAMILIES: Readonly<Record<AlmConformanceFamily, readonly AlmConformanceLaneFamily[]>> = {
-    'two-agent': ['two-agent', 'addressed'],
-    'three-agent': ['three-agent']
-};
 
 function toAlmConformanceScenariosForAllCarriers(family: AlmConformanceFamily): readonly AlmConformanceScenario[] {
     const scenarios = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
@@ -393,102 +385,4 @@ function toAlmConformanceScenarioIds(
     scenarios: readonly AlmConformanceScenario[]
 ): readonly string[] {
     return [...new Set(scenarios.map((scenario) => scenario.scenarioId))];
-}
-
-export function createAlmConformanceExtendedEntries(): readonly HetznerDistributedManifestEntry[] {
-    return ALM_CONFORMANCE_EXTENDED_AGENT_COUNTS.map((participantCount, index) =>
-        createAlmConformanceExtendedEntry({
-            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[18 + index]!,
-            participantCount
-        })
-    );
-}
-
-function createAlmConformanceExtendedEntry(
-    input: Readonly<{ filePath: string; participantCount: number; }>
-): HetznerDistributedManifestEntry {
-    const [sender, receiver] = createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes(
-        toAlmConformanceExtendedRecipeOptions(input.participantCount)
-    );
-
-    return createManifestEntry({
-        filePath: input.filePath,
-        title: `ALM conformance ${input.participantCount}-agent 30s`,
-        description: 'Layers an ALM storage-counters read onto a principal RTC messages ' +
-            `multicast tree run for ALM delivery-metric evidence at ${input.participantCount} agents.`,
-        distributedRunId: `hetzner-alm-conformance-${input.participantCount}-agent-30s`,
-        recipes: [
-            toRecipeWithStorageCounters(sender, 'sender'),
-            toRecipeWithStorageCounters(receiver, 'receiver')
-        ],
-        agentCount: input.participantCount,
-        profiles: toAlmConformanceExtendedProfiles(input.participantCount),
-        live: true,
-        targetAgentIds: toControllerAgentIds(input.participantCount),
-        targetPolicyMode: 'role-map',
-        rolePattern: 'one-sender-many-receivers',
-        mainline: false,
-        diagnostic: false,
-        expectedFailure: false,
-        stress: false,
-        barrier: true,
-        groupAssertions: [],
-        metadata: toAlmConformanceExtendedMetadata(input.participantCount)
-    });
-}
-
-function toAlmConformanceExtendedRecipeOptions(
-    participantCount: number
-): RallarBlackBoxRtcMessagesMulticastRecipeOptions {
-    return {
-        participantCount,
-        durationSeconds: 30,
-        rateHz: 20,
-        minReceiveRatio: 0.95,
-        group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-        readyTimeoutMs: 45_000,
-        stream: {
-            maxP95SendDurationMs: 2_500,
-            maxP99SendDurationMs: 4_000
-        }
-    };
-}
-
-function toAlmConformanceExtendedProfiles(participantCount: number): readonly string[] {
-    return ['alm', 'messages.rtc', 'multicast', 'tree', `${participantCount}-agent`, 'extended'];
-}
-
-function toAlmConformanceExtendedMetadata(
-    participantCount: number
-): ReturnType<typeof toMulticastManifestMetadata> {
-    return toMulticastManifestMetadata({
-        topologyProfile: 'tree',
-        treeMeshMinSize: participantCount + 1,
-        participantCount,
-        senderCount: 1,
-        durationSeconds: 30,
-        rateHz: 20,
-        minReceiveRatio: 0.95,
-        receiverExpectedFrames: 600,
-        recommendedTerminalTimeoutSeconds: 330,
-        catalogProfiles: []
-    });
-}
-
-function toRecipeWithStorageCounters(
-    recipe: RallarBlackBoxTestRecipe,
-    role: 'sender' | 'receiver'
-): RallarBlackBoxTestRecipe {
-    return {
-        ...recipe,
-        commands: [
-            ...recipe.commands,
-            {
-                kind: 'storage.counters',
-                commandId: `alm-storage-counters-${role}`,
-                reset: false,
-                timeoutMs: 5_000
-            }
-        ]
-    };
 }

@@ -34,11 +34,13 @@
 ### Task 1: Reusable scale workload and acceptance evidence
 
 **Files:**
+
 - Create owner: `packages/shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-recipes.ts`.
 - Create cohesive neighboring modules under `.../alm/scale/` only for real payload, setup, or acceptance responsibilities; do not add generic helpers or rename existing types.
 - Tests: `packages/tests/shared-test/alm-scale-recipes.test.ts` and, if needed for a meaningful runtime boundary, `packages/tests/shared-test/alm-scale-acceptance.test.ts`.
 
 **Interfaces:**
+
 - Consume existing `RallarBlackBoxTestRecipe`, `RallarBlackBoxTestCommand`, `RallarBlackBoxDistributedGroupAssertion`, `RallarBlackBoxDistributedGroupRef`, `RallarBlackBoxTestRecord`, group-assertion evaluator, runtime, and ensure-group commands.
 - Produce `createAlmScaleRecipes(input: AlmScaleRecipeInput): AlmScaleRecipes`.
 - `AlmScaleRecipeInput` has required readonly `participantCount: 15 | 30 | 50`, `group: RallarBlackBoxDistributedGroupRef`, and `readyTimeoutMs: number`.
@@ -56,13 +58,15 @@
 ### Task 2: Manifest ownership, generated artifacts, and current-candidate scale proof
 
 **Files:**
-- Create: `apps/rallar-black-box/src/hetzner/hetzner-alm-scale-manifest-entries.ts`.
+
+- Create: `apps/rallar-black-box/src/hetzner/create-alm-scale-manifest-entries.ts`.
 - Modify: `apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts`, `apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts` (remove obsolete extended workload owner and its now-unused imports/constants).
 - Generate: manifests 19/20/21 in `apps/rallar-black-box/manifests/hetzner/` using the canonical writer.
 - Tests: affected ALM/manifest catalog tests under `packages/tests/rallar-black-box/`; split cohesive tests only when full-file closure requires it.
 - Documentation: design and existing next-slice prose in `playground/alm/alm-improvement-plan.md`; no delivery ledger/catalog/status files.
 
 **Interfaces:**
+
 - Consume Task 1's exact `createAlmScaleRecipes` interface.
 - Produce `createAlmScaleManifestEntries(): readonly HetznerDistributedManifestEntry[]` in the new owner, imported directly by the catalog.
 - Reuse `createManifestEntry`, `toControllerAgentIds`, `HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER`, and the canonical manifest group. Preserve numbered paths, 15/30/50 participants, tree topology, live/barrier settings and mainline false; terminal budget may cover explicit ACK waits without hiding failures.
