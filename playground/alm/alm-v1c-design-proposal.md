@@ -138,6 +138,15 @@ quota. FINALIZATION keeps its existing first, separate recovery reservation;
 normal service stays NEW → FAIRNESS → RETRY → TIMEOUT. The controller owns no
 database pressure queries, cache, refresh timer, or additional rate limiter.
 
+Finalization recovery returns the queue key, independently of the domain
+computer's result type. Type the finalization computer as returning `K` and the
+aggregate success value as `T | K`; normal completion/release callbacks remain
+exactly `T`. Remove the factory's unchecked `key as V` claim. Runtime recovery
+results remain keys, and verified repository consumers need no different runtime
+behavior. This is a public type-contract correction: external callers that treated
+every aggregate result as `T` may need narrowing. Do not retain an unsafe cast,
+compatibility adapter or custom collection solely to preserve that false promise.
+
 `InboxQueueReader` owns the pressure state for its lifetime. Its callback travels
 through `QueueMessageReader`, `QueueBoxUtilities` and
 `createDefaultResourceInboxDequeuer` to the controller. Only the exact singleton
