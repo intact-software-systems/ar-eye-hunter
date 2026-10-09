@@ -13,11 +13,13 @@ import {
     it,
     onTestFinished
 } from 'vitest';
+
 import {
     runWorldFleetDistributedRecipe,
     type WorldFleetDistributedRecipeRunnerOptions
 } from '../../../apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts';
-import type { ControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlEventEnvelope, ControlResultEnvelope } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
+import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedTargetResolution
@@ -212,6 +214,145 @@ async function readArtifact(fixture: RunnerFixture, fileName: string): Promise<s
 }
 
 describe('manifest no-spawn distributed recipe runner', () => {
+    it.each(['passed', 'failed'] as const)('exports late result/event arrivals after caller completion for a %s operation', async (state) => {
+        const fixture = await createRunnerFixture();
+        fixture.server.pollStates = ['ready', state, state];
+        const result: ControlResultEnvelope = {
+            kind: 'result',
+            protocolVersion: 1,
+            runId: 'world-fleet-template-control-run',
+            agentId: 'agent-01',
+            commandId: 'same-command',
+            ok: true
+        };
+        const lateResult: ControlResultEnvelope = { ...result, ok: false, replayed: true };
+        const lateEvent: ControlEventEnvelope = {
+            kind: 'event',
+            protocolVersion: 1,
+            runId: 'world-fleet-template-control-run',
+            agentId: 'agent-01',
+            atEpochMs: 4_000,
+            commandId: 'same-command',
+            payload: { late: true }
+        };
+        const initialControl: ControlRunSnapshot = {
+            runId: 'world-fleet-template-control-run',
+            createdAtEpochMs: 1_000,
+            updatedAtEpochMs: 3_000,
+            agents: [{
+                runId: 'world-fleet-template-control-run',
+                agentId: 'agent-01',
+                connected: true,
+                connectionSequence: 1,
+                reconnectCount: 0,
+                receivedResultCount: 1,
+                receivedEventCount: 0,
+                completedCommandIds: ['same-command'],
+                resumeCompletedCommandIds: []
+            }],
+            commands: [],
+            results: [result],
+            events: [],
+            stats: [],
+            reports: [],
+            heartbeats: []
+        };
+        fixture.server.responses.set('GET /runs/world-fleet-template-control-run', jsonResponse(initialControl));
+        fixture.server.responses.set('GET /runs/world-fleet-template-control-run/results.jsonl', new Response(`${JSON.stringify(result)}\n`));
+        fixture.server.responses.set('GET /runs/world-fleet-template-control-run/events.jsonl', new Response(`${JSON.stringify(result)}\n`));
+        const operation = runFixture(fixture, {
+            prepareEvidenceExport: async () => {
+                // A terminal observation precedes a final producer arrival; awaiting completion makes it visible.
+                await Promise.resolve();
+                fixture.server.responses.set(
+                    'GET /runs/world-fleet-template-control-run',
+                    jsonResponse(
+                        {
+                            ...initialControl,
+                            updatedAtEpochMs: 4_000,
+                            agents: [{ ...initialControl.agents[0], connected: false, receivedResultCount: 2, receivedEventCount: 1 }],
+                            results: [lateResult],
+                            events: [lateEvent]
+                        } satisfies ControlRunSnapshot
+                    )
+                );
+                fixture.server.responses.set(
+                    'GET /runs/world-fleet-template-control-run/results.jsonl',
+                    new Response(`${JSON.stringify(result)}\n${JSON.stringify(lateResult)}\n`)
+                );
+                fixture.server.responses.set(
+                    'GET /runs/world-fleet-template-control-run/events.jsonl',
+                    new Response(`${JSON.stringify(result)}\n${JSON.stringify(lateResult)}\n${JSON.stringify(lateEvent)}\n`)
+                );
+            }
+        });
+        if (state === 'failed') {
+            await expect(operation).rejects.toThrow('Distributed run did not pass: failed.');
+        }
+        else {
+            await expect(operation).resolves.toBeUndefined();
+        }
+        const control = JSON.parse(await readArtifact(fixture, 'control-run.json'));
+        expect(control.agents[0]).toMatchObject({ connected: false, receivedResultCount: 2, receivedEventCount: 1 });
+        expect(control.results).toHaveLength(1);
+        expect(control.results[0]).toMatchObject({ commandId: 'same-command', ok: false, replayed: true });
+        expect(control.events).toHaveLength(1);
+        expect(control.events[0].payload).toEqual({ late: true });
+        const resultRows = (await readArtifact(fixture, 'results.jsonl')).trim().split('\n').map((row) => JSON.parse(row));
+        const eventRows = (await readArtifact(fixture, 'events.jsonl')).trim().split('\n').map((row) => JSON.parse(row));
+        expect(resultRows).toHaveLength(2);
+        expect(resultRows[1]).toMatchObject({ commandId: 'same-command', ok: false, replayed: true });
+        expect(eventRows).toHaveLength(3);
+        expect(eventRows[2].payload).toEqual({ late: true });
+        expect(JSON.parse(await readArtifact(fixture, 'distributed-run.json')).state).toBe(state);
+    });
+
+    it.each([200, 500])('rejects lifecycle preparation failure after success while retaining available evidence (stream HTTP %s)', async (status) => {
+        const fixture = await createRunnerFixture();
+        fixture.server.responses.set('GET /runs/world-fleet-template-control-run/events.jsonl', new Response('private-stream-body', { status }));
+        await expect(runFixture(fixture, {
+            prepareEvidenceExport: async () => {
+                throw new Error('private-lifecycle-credential');
+            }
+        })).rejects.toThrow('Completion lifecycle preparation failed.');
+        expect(await readArtifact(fixture, 'results.jsonl')).toBe('{"result":1}\n');
+        const metadata = await readArtifact(fixture, 'evidence-export.json');
+        expect(JSON.parse(metadata).operationFailure).toBeNull();
+        expect(JSON.parse(metadata).completionLifecycleFailure).toEqual({ code: 'operation-or-write-failed', method: null, pathname: null, httpStatus: null });
+        expect(JSON.parse(metadata).exports).toContainEqual(
+            expect.objectContaining({ fileName: 'events.jsonl', status: status === 200 ? 'written' : 'unavailable' })
+        );
+        expect(metadata).not.toContain('private-lifecycle-credential');
+        expect(metadata).not.toContain('private-stream-body');
+    });
+
+    it('keeps the original operation failure primary when caller completion and export also fail', async () => {
+        const fixture = await createRunnerFixture();
+        fixture.server.pollStates = ['ready', 'failed'];
+        fixture.server.responses.set('GET /runs/world-fleet-template-control-run/events.jsonl', new Response('private-stream-body', { status: 500 }));
+        await expect(runFixture(fixture, {
+            prepareEvidenceExport: async () => {
+                throw new Error('private-lifecycle-credential');
+            }
+        })).rejects.toThrow('Distributed run did not pass: failed.');
+        expect(await readArtifact(fixture, 'results.jsonl')).toBe('{"result":1}\n');
+        const metadata = await readArtifact(fixture, 'evidence-export.json');
+        expect(JSON.parse(metadata).operationFailure).not.toBeNull();
+        expect(JSON.parse(metadata).completionLifecycleFailure).toEqual({ code: 'operation-or-write-failed', method: null, pathname: null, httpStatus: null });
+        expect(metadata).not.toContain('private-lifecycle-credential');
+    });
+
+    it('keeps lifecycle failure primary over a completion metadata write failure after success', async () => {
+        const fixture = await createRunnerFixture();
+        await mkdir(path.join(fixture.artifactDir, 'evidence-export.json'), { recursive: true });
+        await expect(runFixture(fixture, {
+            prepareEvidenceExport: async () => {
+                throw new Error('private-lifecycle-credential');
+            }
+        })).rejects.toThrow('Completion lifecycle preparation failed.');
+        expect(await readArtifact(fixture, 'results.jsonl')).toBe('{"result":1}\n');
+    });
+
     it('applies a real controlRunId override to preflight, create and native exports', async () => {
         const fixture = await createRunnerFixture();
         const overridden = { ...manifest(), controlRunId: 'live-control-run' };

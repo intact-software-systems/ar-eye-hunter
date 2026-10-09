@@ -53,6 +53,8 @@ test('observes the unchanged 15-agent ALM manifest with complete native evidence
     let worker: ChildProcess | undefined;
     let stage = 'preflight';
     let accepted = false;
+    let observationFailed = false;
+    let producerCompletedBeforeExport = false;
     let cleanup = 'not-started';
     const harnessAbort = new AbortController();
     const harnessTimer = setTimeout(() => harnessAbort.abort(), 780_000);
@@ -123,6 +125,13 @@ test('observes the unchanged 15-agent ALM manifest with complete native evidence
             artifactDir,
             pollMs: 2_000,
             timeoutMs: 330_000,
+            prepareEvidenceExport: async () => {
+                cleanup = await stopOwnedWorker(worker!);
+                if (cleanup !== 'reaped') {
+                    throw new Error('Owned worker completion failed.');
+                }
+                producerCompletedBeforeExport = true;
+            },
             fetchFn: (url, init) => fetch(url, { ...init, signal: harnessAbort.signal })
         });
         stage = 'native-acceptance';
@@ -183,56 +192,73 @@ test('observes the unchanged 15-agent ALM manifest with complete native evidence
         }
         accepted = true;
     }
+    catch (error) {
+        observationFailed = true;
+        throw error;
+    }
     finally {
         clearTimeout(harnessTimer);
         harnessAbort.abort();
-        cleanup = worker ? await stopOwnedWorker(worker) : 'not-started';
-        await writeFile(
-            path.join(artifactDir, 'observation-result.json'),
-            JSON.stringify(
-                {
-                    accepted,
-                    stage,
-                    cleanup,
-                    failureCategory: accepted ? null : stage,
-                    distributedEvidence: stage === 'registration' || stage === 'preflight'
-                        ? 'not-created'
-                        : 'canonical-operator',
-                    workerExitCode: worker?.exitCode ?? null,
-                    workerSignal: worker?.signalCode ?? null
-                },
-                null,
-                2
-            )
-        );
-        // Before target resolution exists, the control snapshot and recorder are the available native evidence.
-        if (stage === 'registration' || stage === 'preflight') {
-            await retainAvailableControlSnapshot(controlBaseUrl, manifest.controlRunId, artifactDir);
-        }
-        else if (stage === 'manifest-operation') {
-            try {
-                const control = decodeControlRunSnapshot(
-                    JSON.parse(await readFile(path.join(artifactDir, 'control-run.json'), 'utf8'))
-                ).fold(() => {
-                    throw new Error('Native control snapshot unavailable.');
-                }, (decoded) => decoded);
-                await requireCompleteRecorder(artifactDir, storageDir!, control);
+        try {
+            if (cleanup !== 'reaped') {
+                cleanup = worker ? await stopOwnedWorker(worker) : 'not-started';
             }
-            catch {
-                await writeFile(
-                    path.join(artifactDir, 'recorder-completeness.json'),
-                    JSON.stringify(
-                        {
-                            verified: false,
-                            reason: 'Native recorder completeness checks failed or evidence was unavailable'
-                        },
-                        null,
-                        2
-                    )
-                );
+            await writeFile(
+                path.join(artifactDir, 'observation-result.json'),
+                JSON.stringify(
+                    {
+                        accepted,
+                        stage,
+                        cleanup,
+                        producerCompletedBeforeExport,
+                        failureCategory: accepted ? null : stage,
+                        distributedEvidence: stage === 'registration' || stage === 'preflight'
+                            ? 'not-created'
+                            : 'canonical-operator',
+                        workerExitCode: worker?.exitCode ?? null,
+                        workerSignal: worker?.signalCode ?? null
+                    },
+                    null,
+                    2
+                )
+            );
+            // Before target resolution exists, the control snapshot and recorder are the available native evidence.
+            if (stage === 'registration' || stage === 'preflight') {
+                await retainAvailableControlSnapshot(controlBaseUrl, manifest.controlRunId, artifactDir);
+            }
+            else if (stage === 'manifest-operation') {
+                try {
+                    if (!producerCompletedBeforeExport) {
+                        throw new Error('Native export lacked a completed producer boundary.');
+                    }
+                    const control = decodeControlRunSnapshot(
+                        JSON.parse(await readFile(path.join(artifactDir, 'control-run.json'), 'utf8'))
+                    ).fold(() => {
+                        throw new Error('Native control snapshot unavailable.');
+                    }, (decoded) => decoded);
+                    await requireCompleteRecorder(artifactDir, storageDir!, control);
+                }
+                catch {
+                    await writeFile(
+                        path.join(artifactDir, 'recorder-completeness.json'),
+                        JSON.stringify(
+                            {
+                                verified: false,
+                                reason: 'Native recorder completeness checks failed or evidence was unavailable'
+                            },
+                            null,
+                            2
+                        )
+                    );
+                }
+            }
+            expect(cleanup).not.toBe('unreaped');
+        }
+        catch {
+            if (!observationFailed) {
+                throw new Error('Observation completion failed; inspect available native evidence.');
             }
         }
-        expect(cleanup).not.toBe('unreaped');
     }
 });
 
@@ -304,6 +330,16 @@ async function stopOwnedWorker(worker: ChildProcess): Promise<string> {
         return 'not-started';
     }
     const closed = new Promise<void>((resolve) => worker.once('close', () => resolve()));
+    if (worker.exitCode === null && worker.signalCode === null) {
+        let naturalExitCeiling: NodeJS.Timeout | undefined;
+        await Promise.race([
+            closed,
+            new Promise<void>((resolve) => {
+                naturalExitCeiling = setTimeout(resolve, 20_000);
+            })
+        ]);
+        clearTimeout(naturalExitCeiling);
+    }
     const alreadyClosed = worker.exitCode !== null || worker.signalCode !== null;
     try {
         process.kill(-worker.pid, 'SIGTERM');
@@ -364,6 +400,7 @@ async function writeProvenance(artifactDir: string, source: Buffer): Promise<voi
                 measuredFiles: await Promise.all([
                     '.github/workflows/github-free-distributed-recipe.yml',
                     'apps/rallar-black-box/playwright.full-stack.config.ts',
+                    'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts',
                     'tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts'
                 ].map(async (file) => ({
                     file,

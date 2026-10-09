@@ -27,6 +27,8 @@ export interface WorldFleetDistributedRecipeRunnerOptions {
     readonly pollMs: number;
     readonly timeoutMs: number;
     readonly fetchFn?: typeof fetch;
+    /** Caller-owned producer completion runs after the operation and before final native export. */
+    readonly prepareEvidenceExport?: () => Promise<void>;
 }
 
 interface DistributedRunObservation {
@@ -49,6 +51,7 @@ interface ManifestCompletionDto {
     readonly manifest: RallarBlackBoxDistributedRunManifest;
     readonly artifactDir: string;
     readonly operationFailure: Error | undefined;
+    readonly completionLifecycleFailure: Error | undefined;
 }
 
 interface SafeFailureMetadata {
@@ -109,7 +112,20 @@ export async function runWorldFleetDistributedRecipe(
         operationFailure = error instanceof Error ? error : new Error('Manifest operation failed.');
     }
 
-    await writeManifestCompletionEvidence(runnerOptions, { manifest, artifactDir, operationFailure });
+    let completionLifecycleFailure: Error | undefined;
+    try {
+        await runnerOptions.prepareEvidenceExport?.();
+    }
+    catch {
+        // Caller failure text can contain private process configuration; retain only safe metadata.
+        completionLifecycleFailure = new Error('Completion lifecycle preparation failed.');
+    }
+    await writeManifestCompletionEvidence(runnerOptions, {
+        manifest,
+        artifactDir,
+        operationFailure,
+        completionLifecycleFailure
+    });
 }
 
 async function writeManifestCompletionEvidence(
@@ -121,12 +137,16 @@ async function writeManifestCompletionEvidence(
         completion.manifest,
         completion.artifactDir
     );
+    let completionMetadataFailure: Error | undefined;
     await writeFile(
         path.join(completion.artifactDir, 'evidence-export.json'),
         JSON.stringify(
             {
                 operationFailure: completion.operationFailure
                     ? toSafeFailureMetadata(completion.operationFailure)
+                    : null,
+                completionLifecycleFailure: completion.completionLifecycleFailure
+                    ? toSafeFailureMetadata(completion.completionLifecycleFailure)
                     : null,
                 exports: evidenceExport,
                 streamCompleteness: 'unverified',
@@ -137,12 +157,12 @@ async function writeManifestCompletionEvidence(
             2
         ) + '\n'
     ).catch(() => {
-        if (!completion.operationFailure) {
-            throw new Error('Required evidence export failed: evidence-export.json.');
-        }
+        completionMetadataFailure = new Error('Required evidence export failed: evidence-export.json.');
     });
-    if (completion.operationFailure) {
-        throw completion.operationFailure;
+    const completionFailure = completion.operationFailure ?? completion.completionLifecycleFailure ??
+        completionMetadataFailure;
+    if (completionFailure) {
+        throw completionFailure;
     }
     if (evidenceExport.some((result) => result.status === 'unavailable')) {
         throw new Error('Required evidence export failed.');
