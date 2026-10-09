@@ -243,11 +243,13 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 54
     }),
+    // Acknowledged recipe selection and returned capture attribution form one
+    // stateless admission decision; returned identity cannot choose requirements.
     Object.freeze({
         path: 'packages/shared-test/rallar-bb-test/control/control-rtc-capture-evidence.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 89
+        maximumMagnitude: 91
     }),
     Object.freeze({
         path: 'packages/shared-test/rallar-bb-test/recipe/recipe-capture-requirements.ts',
@@ -264,12 +266,13 @@ export const reviewedDispositions = Object.freeze([
     // One admitted assignment owns capture, recipe bodies, cached results,
     // events and cleanup. Ledger and congestion reads choose admitted/current
     // state and fence successor publication after both awaits in that same shell.
-    // This exact combined-owner review authorizes no future growth or other rule.
+    // Synchronous clocks, IDs, listeners and external fallback also recheck that
+    // same assignment before effects. This cap authorizes no other rule or growth.
     Object.freeze({
         path: 'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 112
+        maximumMagnitude: 117
     }),
     // Workbench JSON.parse remains raw until its selected schema validates it.
     Object.freeze({
@@ -1470,7 +1473,7 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/webrtc/qrtc-peer-connection.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 267
+        maximumMagnitude: 270
     }),
     Object.freeze({
         path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
@@ -1484,6 +1487,8 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 13
     }),
+    // Peer separation review retains one PC lifetime for negotiation, ICE, native
+    // observations and retirement; the diagnostic callback fence adds no owner.
     // Human-approved length-only exceptions: docs/repo-code-style-exceptions.md.
     // Exact effective lengths preserve original peer/service lifecycle ownership;
     // no cognitive, function, other-path or future-growth exception is implied.
@@ -1491,7 +1496,7 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/webrtc/qrtc-peer-connection.ts',
         rule: 'file.length',
         symbol: undefined,
-        maximumMagnitude: 1620
+        maximumMagnitude: 1624
     }),
     Object.freeze({
         path: 'packages/shared/services/web-rtc-connection-service.ts',

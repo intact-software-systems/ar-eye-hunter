@@ -69,6 +69,12 @@ export function isAdmissibleControlRtcCaptureResult(input: ControlRtcCaptureEvid
     ) {
         return false;
     }
+    if (
+        execution.kind === 'recipe.run' && execution.expectedRecipeBodyId !== undefined &&
+        decodeRecord(decodeRecord(result.value).invocation).recipeBodyId !== execution.expectedRecipeBodyId
+    ) {
+        return false;
+    }
     const entries = toRallarBlackBoxCompositeResultFlatEntries([result]);
     const authored = toAttributedCommands(execution, entries, requirements);
     if (
@@ -153,9 +159,12 @@ function toKnownExecutionCommand(input: ControlRtcCaptureEvidenceInput): RallarB
         commands: input.commands,
         results: input.results
     });
-    const invocation = decodeRecord(decodeRecord(input.envelope.result?.value).invocation);
-    return accepted?.recipeBodyId !== undefined && accepted.recipeBodyId === invocation.recipeBodyId
-        ? { ...command, recipe: accepted.recipe }
+    return accepted !== undefined
+        ? {
+            ...command,
+            recipe: accepted.recipe,
+            expectedRecipeBodyId: command.expectedRecipeBodyId ?? accepted.recipeBodyId
+        }
         : command;
 }
 

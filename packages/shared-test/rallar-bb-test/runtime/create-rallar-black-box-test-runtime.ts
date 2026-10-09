@@ -330,6 +330,14 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         admission: InMemoryRallarBlackBoxTestRuntime.CommandAdmission
     ): Promise<RallarBlackBoxTestResult> {
         const startedAtEpochMs = this.dependencies.now();
+        if (admission.cacheOwner !== this.cacheOwner) {
+            return this.commitResult({
+                command: commandWithId,
+                startedAtEpochMs,
+                outcome: toAssignmentChangedOutcome(),
+                ...admission
+            });
+        }
         this.setState({
             activeCommand: this.toRedacted(commandWithId),
             activeCommandStartedAtEpochMs: startedAtEpochMs,
@@ -349,6 +357,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         command: CommandWithId,
         admission: InMemoryRallarBlackBoxTestRuntime.CommandAdmission
     ): Promise<RallarBlackBoxTestCommandOutcome> {
+        if (admission.cacheOwner !== this.cacheOwner) {
+            return toAssignmentChangedOutcome();
+        }
         const captureIssues = validateExecutableCommand(command);
         if (captureIssues.length > 0) {
             return toInvalidRecipeOutcome(captureIssues);
@@ -401,6 +412,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             return toInvalidRecipeOutcome(issues);
         }
         const accepted = { recipe, recipeBodyId: this.dependencies.idFactory('recipe-body') };
+        if (ownership.cacheOwner !== this.cacheOwner) {
+            return toAssignmentChangedOutcome();
+        }
         this.loadedRecipe = accepted;
         this.setState({ loadedRecipe: this.toRedacted(recipe) });
         const summary = {
@@ -431,6 +445,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             ...sequence.get()
         });
         const deadlineEpochMs = computeCommandDeadlineEpochMs(command, this.dependencies.now());
+        if (admission.cacheOwner !== this.cacheOwner) {
+            return toAssignmentChangedOutcome();
+        }
         this.recipeExecutionDepth += 1;
         try {
             const outcome = await runRecipeCommands({
@@ -537,7 +554,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             this.toCommandContext(admission, admission.captureSequence)
         );
         if (admission.cacheOwner !== this.cacheOwner) {
-            return outcome ?? { status: 'ok', value: { reset: true }, nextStatus: 'idle' };
+            return outcome ?? toAssignmentChangedOutcome();
         }
         this.currentState = createInitialRuntimeState();
         this.currentConfig = undefined;
@@ -560,6 +577,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         );
         if (outcome) {
             return outcome;
+        }
+        if (admission.cacheOwner !== this.cacheOwner) {
+            return toAssignmentChangedOutcome();
         }
         switch (command.kind) {
             case 'loop':
@@ -903,4 +923,8 @@ function toStatsWithPageReadings(
 
 function createInitialRuntimeState(): RallarBlackBoxTestState {
     return { status: 'idle', commandHistory: [], events: [], failures: [], resultCache: {} };
+}
+
+function toAssignmentChangedOutcome(): RallarBlackBoxTestCommandOutcome {
+    return toInvalidRecipeOutcome(['Control assignment changed before this command could execute.']);
 }

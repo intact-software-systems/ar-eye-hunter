@@ -1150,6 +1150,7 @@ export class QRtcPeerConnection {
     }
 
     async handleSignal(signal: QRtcSignal): Promise<void> {
+        const lifetime = this.signalingLifetime.signal;
         const nativeBatch = this.createNativeOperationBatch();
         const pc = this.status.pc;
         const binding = this.nativeObservation?.pc === pc ? this.nativeObservation : undefined;
@@ -1161,6 +1162,10 @@ export class QRtcPeerConnection {
                     return;
                 }
                 this.observeNativeSignal('application-started', capture, signal);
+                if (this.status.pc !== pc || lifetime.aborted) {
+                    this.observeNativeSignal('retired-before-application', capture, signal);
+                    return;
+                }
                 try {
                     await this.processSignal({ ...capture, pc }, signal);
                     if (binding && !binding.retired) {
@@ -1173,7 +1178,6 @@ export class QRtcPeerConnection {
                     throw caught;
                 }
             });
-        const lifetime = this.signalingLifetime.signal;
         const run = new Promise<RtcSignalingDiagnostics.CallerRelease>((resolve, reject) => {
             const retire = () => resolve('lifetime-retired');
             lifetime.addEventListener('abort', retire, { once: true });
