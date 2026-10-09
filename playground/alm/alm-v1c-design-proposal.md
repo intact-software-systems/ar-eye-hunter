@@ -277,18 +277,51 @@ inconclusive for the deployed operation: actual cardinality, host load, GC and
 continuation scheduling are not reproduced. No excess operation or performance
 repair follows from the small result.
 
-Use Deno's existing CPU profiler and safe host/process resource observations
-during one further isolated hosted diagnostic before adding production
-instrumentation. An ignored entry wrapper imports the unchanged API entry and
-provides timestamp anchors and a controlled post-capture termination so Deno
-actually writes its profile. Existing HTTP/AppInbox phase events remain the
-correlation surface. Profile samples describe process stacks within matched
-phase windows, including possible other process work; they do not reveal exact
-digest CPU or native input cardinality by themselves. Preserve unknowns and
-capture a smaller missing boundary only if the profile cannot choose an owner.
-Profiling and logging may perturb setup, so final ordinary acceptance remains
-required. Restore normal service settings and remove exclusively created
-diagnostic files after capture.
+The subsequent native CPU/resource capture retains a valid process profile and
+exactly correlated phases. A 48-second WebSocket envelope has 99.739% host busy,
+33.545 seconds main-task runqueue wait and 88.886% CPU-pressure delta. Thirteen
+matched handlers spend 86.42% of elapsed handler time in compute/validation.
+PGlite occupies 82.171% of active profile samples, but 99.380% of its samples
+lack a repository caller. The awaited database boundary can lose caller context;
+presence in a phase window does not assign execution to that request. Profile
+delta weights exceed measured CPU under contention and cannot be charged as CPU
+time. Native cardinality, query ownership, primitive digest CPU and leaf CPU
+quota/throttle remain unknown.
+
+All 156 recorded transactions are NEW/one/ok. Six exact JOIN paths return HTTP503
+before their later handler/transaction succeeds; no final durable result fetch
+was retained. Two generic browser socket failures lack an exact server request
+identity bridge. All 15 setup recipes fail and zero of 73 group assertions are
+evaluated. This supports host contention and database execution presence while
+leaving the owning repair inconclusive. It does not justify changing lane
+weights, concurrency, complete validation or deadlines. Normal service settings
+were restored and all exclusively created capture files removed. Profiling and
+logging can perturb setup; ordinary acceptance remains required.
+
+### GitHub runner comparison
+
+The requested existing GitHub Free workflow placed all 15 browser agents on
+GitHub while API/control remained on Hetzner. Seven agents failed the unchanged
+five-second ensure-group request; eight remained incomplete and zero of 73
+assertions were evaluated. Actual runner CPU/memory telemetry was not retained.
+Moving browser agents alone therefore did not demonstrate setup or ALM benefit.
+
+The next measurement places API, control, SPA and 15 isolated browser contexts
+together on one standard GitHub runner. Reuse the existing full-stack Playwright
+lifecycle, headless worker and generic manifest operator. Extend the operator's
+current export boundary to retain complete recorder streams and snapshots on
+failure as well as success; its bounded artifact preview is insufficient for
+this workload. Keep the committed manifest, distinct principals, roles, tree
+configuration, storage/delivery budgets and all fixture deadlines unchanged.
+Canonical native terminal/rollup and complete 73-assertion evidence decide
+acceptance, independently of worker exit or analysis readability.
+
+Capture actual CPU/memory/disk, runtime/browser versions, source/manifest identity
+and safe effective configuration. Fresh ephemeral PGlite/local pubsub/local ICE,
+loopback transport and browser/API co-location differ from the inherited host.
+Thus the comparison tests an environment hypothesis without isolating CPU count
+or proving the adaptive lane policy's elapsed-time effect. Preserve failed
+native evidence and select a repair only from a demonstrated owning defect.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
