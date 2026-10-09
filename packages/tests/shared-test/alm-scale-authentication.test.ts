@@ -3,9 +3,12 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { createSpaBrowserRallarRuntime } from '../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
+import { sleep } from '../../shared-test/rallar-bb-test/browser/browser-command-cancellation.ts';
 import type { RallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { createAlmScaleSetupCommands } from '../../shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-setup-commands.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { Command } from '../../shared/cache/Command.ts';
+import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '../../shared/services/ws-queue-box-client-service.ts';
 import { facade, loadRuntime, resetFacade } from './rallar-browser-runtime/browser-rallar-runtime-test-harness.ts';
 
 const GROUP = { applicationId: 'scale-app', workspaceId: 'scale-workspace', groupId: 'scale-room' };
@@ -35,6 +38,7 @@ beforeEach(() => {
 afterEach(() => {
     localStorage.clear();
     Reflect.deleteProperty(window, '__blackBoxRallar');
+    vi.useRealTimers();
     vi.unstubAllGlobals();
 });
 
@@ -63,7 +67,7 @@ async function createAuthenticatedWorkerBrowser(): Promise<RallarBlackBoxBrowser
     });
 }
 
-it.each(['director', 'player'] as const)('restores the authenticated %s worker identity through the browser connect boundary', async (role) => {
+async function bootstrapWorkerBrowser(): Promise<RallarBlackBoxBrowserTestRuntime> {
     const browser = await createAuthenticatedWorkerBrowser();
     await browser.execute({
         kind: 'configure',
@@ -82,6 +86,11 @@ it.each(['director', 'player'] as const)('restores the authenticated %s worker i
     expect(bootstrapped.ok).toBe(true);
     expect(facade.records.loginAttempts).toHaveLength(1);
     facade.behavior.restore.mockReturnValue(facade.session);
+    return browser;
+}
+
+it.each(['director', 'player'] as const)('restores the authenticated %s worker identity through the browser connect boundary', async (role) => {
+    const browser = await bootstrapWorkerBrowser();
 
     const commands = createAlmScaleSetupCommands({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 }, role);
     const connect = commands.find((command) => command.kind === 'rtc.connect');
@@ -101,7 +110,62 @@ it.each(['director', 'player'] as const)('restores the authenticated %s worker i
     expect(facade.records.connectionAttempts).toHaveLength(1);
     expect(facade.records.configurationWrites.every((config) => config.apiBaseUrl === 'https://api.example.test')).toBe(true);
     expect(facade.records.roomJoins).toEqual([
-        [GROUP.groupId, { timeoutMs: undefined, scope: { applicationId: GROUP.applicationId, workspaceId: GROUP.workspaceId } }]
+        [GROUP.groupId, { timeoutMs: 45_000, scope: { applicationId: GROUP.applicationId, workspaceId: GROUP.workspaceId } }]
     ]);
+    await browser.execute({ kind: 'close' });
+});
+
+it.each(
+    [
+        ['director', 15_000, 0, 'connected'],
+        ['player', 15_000, 0, 'connected'],
+        ['director', 45_001, 0, 'connect-timeout'],
+        ['player', 45_001, 0, 'connect-timeout'],
+        ['player', 40_000, 20_000, 'connected'],
+        ['player', 0, 45_001, 'readiness-timeout']
+    ] as const
+)('bounds separate %s phases: %ims socket, %ims RTC readiness (%s)', async (role, delayMs, readinessDelayMs, outcome) => {
+    const browser = await bootstrapWorkerBrowser();
+    vi.useFakeTimers();
+    // The real socket owner uses this Command/default pair; delay only its network completion.
+    facade.behavior.connect.mockImplementation(async (options) => {
+        await new Command<void>((signal) => sleep(delayMs, signal), {
+            timeoutMs: options?.timeoutMs ?? DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
+            errorOnNull: false
+        }).run();
+    });
+    const readyRoom = await facade.behavior.rtcWaitForRoom(GROUP);
+    facade.behavior.rtcWaitForRoom.mockImplementation(async (_room, options) => {
+        await sleep(readinessDelayMs, options?.signal);
+        return readyRoom;
+    });
+    const commands = createAlmScaleSetupCommands({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 }, role);
+    const connect = commands.find((command) => command.kind === 'rtc.connect');
+    if (connect?.kind !== 'rtc.connect') {
+        throw new Error('The scale setup has no connect command.');
+    }
+    const pending = browser.execute(connect);
+    await vi.advanceTimersByTimeAsync(95_000);
+    const connected = await pending;
+
+    expect(connected.ok).toBe(outcome === 'connected');
+    if (outcome === 'connected') {
+        expect(connected.error).toBeUndefined();
+        expect(connected.durationMs).toBe(delayMs + readinessDelayMs);
+        expect(connected.value).toMatchObject({ sessionId: facade.session.sessionId, username: facade.session.username });
+    }
+    else if (outcome === 'connect-timeout') {
+        expect(connected.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+            message: 'Command timed out after 45000 ms'
+        });
+        expect(connected.durationMs).toBe(45_000);
+    }
+    else {
+        expect(connected.error).toMatchObject({ code: 'RALLAR_BB_RTC_READY_TIMEOUT' });
+        expect(connected.durationMs).toBe(45_000);
+    }
+    expect(facade.records.loginAttempts).toHaveLength(1);
+    expect(facade.records.registrationAttempts).toHaveLength(0);
     await browser.execute({ kind: 'close' });
 });

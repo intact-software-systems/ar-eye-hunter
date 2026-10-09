@@ -126,6 +126,7 @@ describe('ALM scale recipes', () => {
                     username: '{auth.username}',
                     password: '',
                     restoreSession: true,
+                    timeoutMs: 45_000,
                     topicId: 'room.ar-eye-hunter.director',
                     messageSelector: { topicId: 'room.ar-eye-hunter.director' },
                     messageTypeIds: ['room.ar-eye-hunter.director.intent.v1', 'room.ar-eye-hunter.director.event.v1']

@@ -12,7 +12,12 @@ Each isolated room has one appointed director (manifest role `sender`) and
 director topic and its intent/event type IDs. Existing ensure-group, membership,
 RTC readiness, refreshed director status, and distributed barriers establish the
 workload boundary before counters reset. Tree topology and the existing
-45-second readiness allowance remain.
+45-second readiness allowance remain. The initial socket connection explicitly
+receives this allowance in the Rallar configuration; the subsequent RTC readiness
+phase separately owns a 45-second wait. The outer connect timer ends before that
+readiness wait begins, so these are phase budgets, not a combined setup deadline.
+Each phase fails when its allowance expires; the 30-second measured workload and
+330-second terminal allowance remain unchanged.
 
 The director sends a match-started event, each player sends six shot intents at
 five-second intervals, and the director sends a match-ended event after the
