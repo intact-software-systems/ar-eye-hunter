@@ -1,3 +1,5 @@
+import { FULL_STACK_RTC_ICE_FIXTURE_POLICIES } from '../../../shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts';
+
 import type {
     RtcBaselineCaseKeyDto,
     RtcBaselineConfigurationFieldDescriptorDto,
@@ -375,6 +377,32 @@ const fullStackSourcePaths = [
     'apps/rallar-black-box-control-server/src/control-artifacts.ts'
 ];
 
+const fullStackMemorySourcePaths = [
+    ...fullStackSourcePaths,
+    'apps/api-v1/src/main.ts',
+    'apps/api-v1/src/configuration/read-api-v1-configuration.ts',
+    'apps/api-v1/src/configuration/read-api-v1-configuration-environment.ts',
+    'apps/api-v1/src/configuration/decode-api-v1-configuration-source.ts',
+    'apps/api-v1/src/configuration/decode-api-v1-configuration.ts',
+    'apps/api-v1/src/configuration/decode-api-v1-configuration-values.ts',
+    'apps/api-v1/src/composition/create-api-v1-route-installers.ts',
+    'apps/api-v1/src/routes/ice-route.ts',
+    'packages/shared-server/http/rate-limit-service.ts',
+    'packages/shared/resilience/Resilience.ts',
+    'packages/shared/cache/LoanedValue.ts',
+    'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-deno-runtime.ts',
+    'packages/shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts',
+    'packages/shared-test/black-box-runner/fixtures/read-full-stack-rtc-ice-fixture-requests.ts'
+];
+
+const fullStackMemoryConfigPaths = [
+    'apps/rallar-black-box/playwright.full-stack.config.ts',
+    'apps/rallar-black-box/playwright-full-stack-api-server.ts',
+    'apps/api-v1/resources/configuration/defaults-config.json',
+    'apps/api-v1/resources/configuration/prod-in-memory-config.json',
+    'apps/api-v1/src/configuration/README.md'
+];
+
 function toRtcBaselineFullStackCase(input: RtcBaselineFullStackCaseInput): RtcBaselineWorkloadCase {
     const { caseId, inputKey, database, allScenarios, retention } = input;
     const postgres = database === 'postgres';
@@ -388,8 +416,8 @@ function toRtcBaselineFullStackCase(input: RtcBaselineFullStackCaseInput): RtcBa
                 toRtcBaselineFullStackRuntimeScript(database, allScenarios)
             ]
         },
-        sourcePaths: fullStackSourcePaths,
-        configPaths: ['apps/rallar-black-box/playwright.full-stack.config.ts'],
+        sourcePaths: postgres ? fullStackSourcePaths : fullStackMemorySourcePaths,
+        configPaths: postgres ? ['apps/rallar-black-box/playwright.full-stack.config.ts'] : fullStackMemoryConfigPaths,
         warmupOuterAttempts: 1,
         retainedOuterAttempts: caseId === 'default' ? 5 : 3,
         configuration: toRtcBaselineFullStackConfiguration(input),
@@ -400,9 +428,51 @@ function toRtcBaselineFullStackCase(input: RtcBaselineFullStackCaseInput): RtcBa
 function toRtcBaselineFullStackConfiguration(
     input: RtcBaselineFullStackCaseInput
 ): RtcBaselineConfigurationFieldDescriptorDto[] {
-    const { caseId, inputKey, database, allScenarios, retention } = input;
+    const { caseId, inputKey, database, retention } = input;
     const caseKey = { workloadId: 'RTC-B06' as const, caseId, inputKey };
     const postgres = database === 'postgres';
+    return [
+        ...toRtcBaselineFullStackWorkloadConfiguration(input),
+        toRtcBaselineConfigurationDescriptor({
+            caseKey,
+            field: 'databaseProvider',
+            flag: '--rtc-database-provider',
+            scalarKind: 'string',
+            defaultValue: database
+        }),
+        toRtcBaselineConfigurationDescriptor({
+            caseKey,
+            field: 'iceMode',
+            flag: '--rtc-ice-mode',
+            scalarKind: 'string',
+            defaultValue: postgres ? 'local' : 'repository-default',
+            environment: postgres ? 'RALLAR_ICE_MODE' : null,
+            unset: postgres ? 'reject' : null
+        }),
+        ...(postgres ? [] : [
+            toRtcBaselineConfigurationDescriptor({
+                caseKey,
+                field: 'iceRateLimitRequests',
+                flag: '--rtc-ice-rate-limit-requests',
+                scalarKind: 'nonnegative-integer',
+                defaultValue: FULL_STACK_RTC_ICE_FIXTURE_POLICIES[retention ? 'retention-100' : 'default'].requests
+            }),
+            toRtcBaselineConfigurationDescriptor({
+                caseKey,
+                field: 'iceRateLimitWindowMs',
+                flag: '--rtc-ice-rate-limit-window-ms',
+                scalarKind: 'nonnegative-integer',
+                defaultValue: FULL_STACK_RTC_ICE_FIXTURE_POLICIES.default.windowMs
+            })
+        ])
+    ];
+}
+
+function toRtcBaselineFullStackWorkloadConfiguration(
+    input: RtcBaselineFullStackCaseInput
+): RtcBaselineConfigurationFieldDescriptorDto[] {
+    const { caseId, inputKey, allScenarios, retention } = input;
+    const caseKey = { workloadId: 'RTC-B06' as const, caseId, inputKey };
     return [
         toRtcBaselineConfigurationDescriptor({
             caseKey,
@@ -438,22 +508,6 @@ function toRtcBaselineFullStackConfiguration(
             defaultValue: retention ? 100 : 0,
             environment: retention ? 'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES' : null,
             unset: retention ? 'reject' : null
-        }),
-        toRtcBaselineConfigurationDescriptor({
-            caseKey,
-            field: 'databaseProvider',
-            flag: '--rtc-database-provider',
-            scalarKind: 'string',
-            defaultValue: database
-        }),
-        toRtcBaselineConfigurationDescriptor({
-            caseKey,
-            field: 'iceMode',
-            flag: '--rtc-ice-mode',
-            scalarKind: 'string',
-            defaultValue: postgres ? 'local' : 'repository-default',
-            environment: postgres ? 'RALLAR_ICE_MODE' : null,
-            unset: postgres ? 'reject' : null
         })
     ];
 }

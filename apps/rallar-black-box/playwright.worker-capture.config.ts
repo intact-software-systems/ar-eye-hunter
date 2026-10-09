@@ -21,7 +21,9 @@ export default defineConfig({
             apiBaseUrl,
             spaBaseUrl: headlessBaseUrl,
             reuseExistingServer: false,
-            requireFreshPostgres: true
+            requireFreshPostgres: true,
+            admittedRtcCaseId: null,
+            environment: process.env
         }),
         {
             command: 'cd ../.. && npm --workspace rallar-black-box-headless run dev',

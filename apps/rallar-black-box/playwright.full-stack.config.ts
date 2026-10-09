@@ -1,4 +1,6 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
+import { loadLiveRtcPerformanceAttempt } from '../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
 import {
     createFullStackApiV1WebServer,
     portFromBaseUrl,
@@ -35,6 +37,15 @@ if (liveRtcClusterEnabled && (fullStackApiServerMode !== 'postgres' || clusterAp
     throw new Error('Live RTC cluster proof requires Postgres and distinct B/C API base URLs.');
 }
 
+// The test composition root admits the complete predeclared selection before
+// constructing any API, SPA or control server configuration.
+const admittedRtcAttempt = fullStackEnabled
+    ? await loadLiveRtcPerformanceAttempt({
+        repoRoot: fileURLToPath(new URL('../../', import.meta.url)),
+        environment: process.env
+    })
+    : null;
+
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     ...(fullStackEnabled
         ? [
@@ -43,7 +54,9 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                 apiBaseUrl: fullStackApiBaseUrl,
                 spaBaseUrl: fullStackSpaBaseUrl,
                 reuseExistingServer,
-                requireFreshPostgres: requireFreshPostgresApi
+                requireFreshPostgres: requireFreshPostgresApi,
+                admittedRtcCaseId: admittedRtcAttempt?.locator.caseId ?? null,
+                environment: process.env
             }),
             ...(liveRtcClusterEnabled
                 ? clusterApiBaseUrls.map((apiBaseUrl) =>
@@ -52,7 +65,9 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                         apiBaseUrl,
                         spaBaseUrl: fullStackSpaBaseUrl,
                         reuseExistingServer,
-                        requireFreshPostgres: requireFreshPostgresApi
+                        requireFreshPostgres: requireFreshPostgresApi,
+                        admittedRtcCaseId: admittedRtcAttempt?.locator.caseId ?? null,
+                        environment: process.env
                     })
                 )
                 : [])

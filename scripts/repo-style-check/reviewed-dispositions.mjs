@@ -5,6 +5,36 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Agent whole-owner review: these guarded readiness boundaries consume raw
+    // HTTP JSON, validate every field used, and return void/readiness only. Raw
+    // JSON never supplies fixture policy or a command. Independent review pending.
+    Object.freeze({
+        path: 'apps/rallar-black-box/playwright-full-stack-api-server.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertFullStackApiConfigEvidence'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/playwright-full-stack-api-server.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertFullStackControlHealthEvidence'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/playwright-full-stack-api-server.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isRecord'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/playwright-full-stack-api-server.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Agent review: malformed JSON fixtures feed only the guarded readiness
+    // admission above; the callback never interprets or trusts the raw value.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'reachable'
+    }),
     // Admission, target preflight, run phases and artifact export form one
     // no-spawn operation with direct named effect adapters and visible failures.
     // The cap records this reviewed warning-tier magnitude, not future growth.

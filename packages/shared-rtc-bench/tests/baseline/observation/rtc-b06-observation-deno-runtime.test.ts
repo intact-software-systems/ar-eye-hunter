@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import {
     describe,
     expect,
@@ -14,6 +16,7 @@ import {
 import { createDenoRtcBaselineAdapters } from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
 import type { RtcBaselineDenoPort } from '../../../baseline/runtime/rtc-baseline-deno-port.ts';
 import { createRtcBaselineDenoRuntime } from '../../../baseline/runtime/rtc-baseline-deno-runtime.ts';
+import { createRtcBaselineDenoObservation } from '../../../baseline/runtime/rtc-baseline-runtime-observation.ts';
 
 const baselineId = '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3';
 
@@ -125,6 +128,93 @@ describe('RTC-B06 observation Deno runtime', () => {
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: null,
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: null
         });
+    });
+
+    it.each([['default', '20'], ['all-scenarios', '20'], ['retention-100', '101']] as const)(
+        'seals the %s child budget against inherited ICE input',
+        (caseId, expectedRequests) => {
+            const command = createRtcB06LiveProducerCommand({ repositoryRoot: '/repository', baselineId, attempt: attempt(caseId) });
+            const child = execFileSync(command.executable, [
+                ...command.arguments.slice(0, command.arguments.indexOf('npm')),
+                process.execPath,
+                '--eval',
+                'process.stdout.write(process.env.RALLAR_ICE_RATE_LIMIT_REQUESTS ?? "unset")'
+            ], { encoding: 'utf8', env: { ...process.env, RALLAR_ICE_RATE_LIMIT_REQUESTS: '999' } });
+            expect(child).toBe(expectedRequests);
+        }
+    );
+
+    it('records the finite case policies and hashes their real configuration owners in the existing observation', async () => {
+        const adapters = createDenoRtcBaselineAdapters(producerRuntime());
+        adapters.environment.readAllowlisted = () => ({
+            RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
+            RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
+            RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
+        });
+        adapters.runtimeHost.read = async () => ({
+            os: 'darwin',
+            kernel: '24.6.0',
+            architecture: 'arm64',
+            logicalCpuCount: 10,
+            cpuModel: 'Apple M4',
+            totalMemoryBytes: 1,
+            deno: '2.9.5',
+            executionContext: 'local'
+        });
+        adapters.sourceConfigHashing.read = async (files) => ({
+            ok: true,
+            value: await Promise.all(files.map(async ({ path, kind }) => ({
+                path,
+                kind,
+                sha256: createHash('sha256').update(await readFile(path)).digest('hex')
+            })))
+        });
+        const observe = createRtcBaselineDenoObservation(adapters);
+        const result = await observe({
+            schema: 'rallar.rtc-baseline.capture-request.v1',
+            baselineId,
+            workloadIds: ['RTC-B06'],
+            environmentId: 'E3-memory',
+            retainedSampleMultiplier: 1,
+            repeatLink: null,
+            conditionalEnvironmentDecisions: []
+        });
+        if (!result.ok) {
+            throw new Error(JSON.stringify(result.issues));
+        }
+        expect(result.ok).toBe(true);
+        expect(
+            result.value.resolvedConfiguration.filter((entry) => entry.field.startsWith('iceRateLimit')).map((
+                entry
+            ) => [entry.caseKey.caseId, entry.field, entry.value, entry.source])
+        ).toEqual([
+            ['default', 'iceRateLimitRequests', 20, 'default'],
+            ['default', 'iceRateLimitWindowMs', 60_000, 'default'],
+            ['all-scenarios', 'iceRateLimitRequests', 20, 'default'],
+            ['all-scenarios', 'iceRateLimitWindowMs', 60_000, 'default'],
+            ['retention-100', 'iceRateLimitRequests', 101, 'default'],
+            ['retention-100', 'iceRateLimitWindowMs', 60_000, 'default']
+        ]);
+        for (
+            const path of [
+                'apps/api-v1/resources/configuration/defaults-config.json',
+                'apps/api-v1/resources/configuration/prod-in-memory-config.json',
+                'apps/api-v1/src/configuration/read-api-v1-configuration-environment.ts',
+                'apps/api-v1/src/configuration/decode-api-v1-configuration-source.ts',
+                'apps/api-v1/src/configuration/read-api-v1-configuration.ts',
+                'apps/rallar-black-box/playwright-full-stack-api-server.ts',
+                'tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts',
+                'apps/rallar-black-box/playwright.full-stack.config.ts',
+                'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-deno-runtime.ts',
+                'packages/shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts',
+                'packages/shared-test/black-box-runner/fixtures/read-full-stack-rtc-ice-fixture-requests.ts'
+            ]
+        ) {
+            expect(result.value.sourceHashes.find((entry) => entry.path === path)?.sha256).toBe(
+                createHash('sha256').update(await readFile(path)).digest('hex')
+            );
+        }
+        expect(JSON.parse(JSON.stringify(result.value)).resolvedConfiguration).toEqual(result.value.resolvedConfiguration);
     });
 
     it('keeps one admitted producer mode across cases, phases, ordinals and a repeat after caller mutation', async () => {

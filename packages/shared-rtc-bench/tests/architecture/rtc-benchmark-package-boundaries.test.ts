@@ -4,6 +4,7 @@ import path from 'node:path';
 const repoRoot = path.resolve(import.meta.dirname, '../../../..');
 const packageRoot = path.join(repoRoot, 'packages/shared-rtc-bench');
 const benchmarkPackageName = '@ar-eye-hunter/shared-rtc-bench';
+const finiteIceFixturePolicyPath = path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts');
 const performanceScriptRoots = ['scripts/platform/perf', 'apps/api-v1/scripts/perf'] as const;
 const approvedRepositoryImportPrefixes = ['@shared/', '@shared-web/', '@shared-server/'] as const;
 const approvedExternalImports = new Set([
@@ -55,6 +56,9 @@ function isPackageLocalImport(file: string, specifier: string): boolean {
 }
 
 function isApprovedImport(file: string, specifier: string): boolean {
+    if (specifier.startsWith('.') && path.resolve(path.dirname(file), specifier) === finiteIceFixturePolicyPath) {
+        return true;
+    }
     if (isPackageLocalImport(file, specifier)) {
         return true;
     }
@@ -126,6 +130,13 @@ describe('shared RTC benchmark package boundaries', () => {
             ].every((specifier) => !isApprovedImport(packageFile, specifier))
         ).toBe(true);
         expect(isBenchmarkPackageSpecifier('@ar-eye-hunter/shared-rtc-bench/internal')).toBe(true);
+    });
+
+    it('admits only the dependency-free finite ICE fixture data, without opening runner imports', () => {
+        const catalogFile = path.join(packageRoot, 'baseline/catalog/rtc-baseline-workload-catalog.ts');
+        expect(isApprovedImport(catalogFile, '../../../shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts')).toBe(true);
+        expect(isApprovedImport(catalogFile, '../../../shared-test/black-box-runner/rallar-in-memory-runtime.ts')).toBe(false);
+        expect(importSpecifiers(fs.readFileSync(finiteIceFixturePolicyPath, 'utf8'))).toEqual([]);
     });
 
     it('scans performance script roots that exist', () => {

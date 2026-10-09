@@ -261,6 +261,57 @@ Deno.test('configuration startup summary is useful and contains no secret-derive
     assert.equal(rendered.includes('length'), false);
 });
 
+Deno.test('ICE request input overrides defaults and profile without changing window or cache and remains frozen', async () => {
+    const environment = { ...validConfigurationEnvironment('prod-in-memory'), RALLAR_ICE_RATE_LIMIT_REQUESTS: '101' };
+    const input = readerInput(environment);
+    const configuration = await readApiV1Configuration({
+        ...input,
+        readTextFile: async (url) => {
+            const source = JSON.parse(await input.readTextFile(url));
+            if (url.href === PROD_IN_MEMORY_URL.href) {
+                source.ice = { mode: 'local', rateLimit: { requests: 37 } };
+            }
+            return JSON.stringify(source);
+        }
+    });
+    assert.deepEqual(configuration.ice.rateLimit, { requests: 101, windowMs: 60_000 });
+    assert.equal(configuration.ice.cacheTtlMs, 300_000);
+    assertRecursivelyFrozen(configuration);
+    assert.equal(configuration.profile.appliedEnvironmentOverrideNames.includes('RALLAR_ICE_RATE_LIMIT_REQUESTS'), true);
+    const summary = toApiV1ConfigurationStartupSummary(configuration);
+    assert.equal(summary.appliedEnvironmentOverrideNames.includes('RALLAR_ICE_RATE_LIMIT_REQUESTS'), true);
+    for (const secret of Object.values(CONFIGURATION_SECRET_SENTINELS)) {
+        assert.equal(JSON.stringify(summary).includes(secret), false);
+    }
+});
+
+Deno.test('ICE request input rejects malformed and nonpositive integers with safe source diagnostics', async () => {
+    for (const value of ['', 'malformed-input-sentinel', '0', '-1', '1.5', 'Infinity', 'NaN']) {
+        const error = await captureConfigurationError(readerInput({
+            ...validConfigurationEnvironment('prod-in-memory'),
+            RALLAR_ICE_RATE_LIMIT_REQUESTS: value
+        }));
+        assert.equal(
+            error.issues.some((issue) =>
+                issue.path === 'ice.rateLimit.requests' && issue.environmentName === 'RALLAR_ICE_RATE_LIMIT_REQUESTS' && issue.source === 'environment'
+            ),
+            true
+        );
+        assert.equal(error.message.includes('malformed-input-sentinel'), false);
+        for (const secret of Object.values(CONFIGURATION_SECRET_SENTINELS)) {
+            assert.equal(error.message.includes(secret), false);
+        }
+    }
+});
+
+Deno.test('all committed profiles preserve the default finite ICE admission policy', async () => {
+    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
+        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
+        assert.deepEqual(configuration.ice.rateLimit, { requests: 20, windowMs: 60_000 });
+        assert.equal(configuration.ice.cacheTtlMs, 300_000);
+    }
+});
+
 function readerInput(environmentValues: Record<string, string>): ReadApiV1ConfigurationInput {
     return {
         environment: { get: (name) => environmentValues[name] },

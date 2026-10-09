@@ -228,6 +228,7 @@ const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'appInbox.completionWait.maxRetryIntervalMs': 'RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS',
     'appInbox.completionWait.jitterRatio': 'RALLAR_APP_INBOX_WAIT_JITTER_RATIO',
     'ice.mode': 'RALLAR_ICE_MODE',
+    'ice.rateLimit.requests': 'RALLAR_ICE_RATE_LIMIT_REQUESTS',
     'ice.appName': 'METERED_APP_NAME',
     'ice.region': 'METERED_REGION',
     'crdt.documentTypePolicies': 'RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON',

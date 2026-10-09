@@ -1,6 +1,8 @@
 import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
+import { FULL_STACK_RTC_ICE_FIXTURE_POLICIES } from '../../../shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts';
+
 import type { RtcBaselineAttemptLocatorDto, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 import type { DenoRtcBaselineAdapters } from '../runtime/rtc-baseline-deno-adapters.ts';
 import type { RtcBaselineDenoPort } from '../runtime/rtc-baseline-deno-port.ts';
@@ -48,6 +50,7 @@ const liveRtcProducerPath = 'tests/playwright/rallar-black-box/full-stack-live-r
 const inheritedConfiguration = [
     'DATABASE_URL',
     'RALLAR_ICE_MODE',
+    'RALLAR_ICE_RATE_LIMIT_REQUESTS',
     'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS',
     'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK',
     'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES'
@@ -121,6 +124,11 @@ export function createRtcB06LiveProducerCommand(
             }`,
             `RALLAR_BLACK_BOX_STORAGE_DIR=${recorderDirectory(input)}`,
             `RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR=${producerDirectory(input)}/failure-diagnostics`,
+            `RALLAR_ICE_RATE_LIMIT_REQUESTS=${
+                FULL_STACK_RTC_ICE_FIXTURE_POLICIES[
+                    input.attempt.caseId as 'default' | 'all-scenarios' | 'retention-100'
+                ].requests
+            }`,
             ...caseConfiguration(input.attempt.caseId),
             ...liveRtcCommand,
             '--',
