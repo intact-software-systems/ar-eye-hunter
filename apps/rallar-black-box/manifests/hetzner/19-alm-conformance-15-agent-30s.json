@@ -607,7 +607,7 @@
               "intervalMs": 100
             },
             "rallar": {
-              "username": "",
+              "username": "{auth.username}",
               "password": "",
               "restoreSession": true,
               "typeId": "room.ar-eye-hunter.director.intent.v1",
@@ -2515,7 +2515,7 @@
               "intervalMs": 100
             },
             "rallar": {
-              "username": "",
+              "username": "{auth.username}",
               "password": "",
               "restoreSession": true,
               "typeId": "room.ar-eye-hunter.director.intent.v1",

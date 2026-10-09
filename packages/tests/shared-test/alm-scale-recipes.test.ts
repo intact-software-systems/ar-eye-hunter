@@ -123,7 +123,7 @@ describe('ALM scale recipes', () => {
                 transport: 'messages.rtc',
                 readiness: { minReadyPeers: 1, timeoutMs: 45_000 },
                 rallar: {
-                    username: '',
+                    username: '{auth.username}',
                     password: '',
                     restoreSession: true,
                     topicId: 'room.ar-eye-hunter.director',
