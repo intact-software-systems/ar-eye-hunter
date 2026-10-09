@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -158,8 +159,9 @@ describe('GitHub Free distributed recipe workflow', () => {
             expect(provenance.node).toMatch(/^v[0-9]+/);
             expect(provenance.deno).toMatch(/^deno [0-9]+/);
             expect(provenance.chromium).toMatch(/^[A-Za-z ]+[0-9]+/);
-            expect(await readFile(path.join(directory, 'source-manifest.json'))).toEqual(
-                await readFile(path.join(repoRoot, 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json'))
+            const retainedManifest = await readFile(path.join(directory, 'source-manifest.json'));
+            expect(createHash('sha256').update(retainedManifest).digest('hex')).toBe(
+                '26c8983f3377c841b7ec88d2e6fb1d34b3558e556031087462e962b409715459'
             );
         }
         finally {
