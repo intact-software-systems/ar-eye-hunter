@@ -242,24 +242,24 @@ export class DequeueController<K, V, T> {
     ): Promise<Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>> {
         const maxNumDequeue = budget?.maxNumToDequeue ?? this.maxNumDequeue;
         let consecutiveFailureCounter = 0;
-        let dequeuedCounter = 0;
+        let claimedCount = 0;
         const allComputed = new Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>();
         while (
             this.checkIsTypesToDequeue(this.typesToDequeue()) &&
-            dequeuedCounter < maxNumDequeue &&
+            claimedCount < maxNumDequeue &&
             consecutiveFailureCounter < DequeueController.MAX_CONSECUTIVE_FAILURE_RETRY
         ) {
             try {
                 const numToReserve = Math.min(
                     budget?.maxToReserve ?? this.maxNumToReserve(),
-                    maxNumDequeue - dequeuedCounter
+                    maxNumDequeue - claimedCount
                 );
                 if (numToReserve <= 0) {
                     return allComputed;
                 }
                 const reserved = await reservator(this.typesToDequeue(), numToReserve) ?? new Map<K, V>();
+                claimedCount += reserved.size;
                 const processedCount = await this.computeAndReleaseReserved(reserved, computer, allComputed);
-                dequeuedCounter += processedCount;
                 consecutiveFailureCounter = 0;
                 if (processedCount === 0) {
                     return allComputed;
