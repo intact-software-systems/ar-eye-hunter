@@ -1,10 +1,9 @@
 import { execFileSync } from 'node:child_process';
-
-import { createDenoRtcBaselineAdapters } from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
-import type { RtcBaselineDenoPort } from '../../../baseline/runtime/rtc-baseline-deno-port.ts';
-import { createRtcBaselineDenoRuntime } from '../../../baseline/runtime/rtc-baseline-deno-runtime.ts';
-
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import {
     createRtcB06LiveProducerCommand,
@@ -12,6 +11,9 @@ import {
     runRtcB06LiveProducer,
     type RtcB06ObservationDenoRuntimeInput
 } from '../../../baseline/observation/rtc-b06-observation-deno-runtime.ts';
+import { createDenoRtcBaselineAdapters } from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
+import type { RtcBaselineDenoPort } from '../../../baseline/runtime/rtc-baseline-deno-port.ts';
+import { createRtcBaselineDenoRuntime } from '../../../baseline/runtime/rtc-baseline-deno-runtime.ts';
 
 const baselineId = '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3';
 
@@ -27,24 +29,64 @@ function attempt(caseId: 'default' | 'all-scenarios' | 'retention-100') {
     };
 }
 
-const commonArguments = [
-    '-u',
-    'DATABASE_URL',
-    '-u',
-    'RALLAR_ICE_MODE',
-    '-u',
-    'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS',
-    '-u',
-    'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK',
-    '-u',
-    'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES',
-    `RALLAR_BLACK_BOX_RTC_BASELINE_ID=${baselineId}`,
-    'RALLAR_BLACK_BOX_RTC_CASE_ID=default',
-    'RALLAR_BLACK_BOX_RTC_INPUT_KEY=e3-memory-default',
-    'RALLAR_BLACK_BOX_RTC_INTENDED_PHASE=retained',
-    'RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL=2',
-    'RALLAR_BLACK_BOX_RTC_CAPTURE_MODE=signaling'
-];
+describe('governed RTC-B06 producer evidence', () => {
+    it('retains an explicit launch failure log when the producer cannot start', async () => {
+        const files = new Map<string, Uint8Array>();
+        const runtime = {
+            ...producerRuntime(),
+            writeFile: async (path: string, bytes: Uint8Array) => {
+                files.set(path, bytes);
+            },
+            command: async () => {
+                throw new Error('spawn failed');
+            }
+        };
+        await expect(
+            runRtcB06LiveProducer(runtime, { writeStdout: async () => {}, writeStderr: async () => {} }, {
+                repositoryRoot: '/repository',
+                baselineId,
+                attempt: attempt('default')
+            })
+        )
+            .resolves.toEqual({ exitStatus: 1 });
+        expect([...files.values()].map((bytes) => new TextDecoder().decode(bytes))).toEqual(['', 'spawn failed']);
+    });
+
+    it.each([0, 9])('isolates recorder storage and preserves raw attempt output on exit %s', async (code) => {
+        const files = new Map<string, Uint8Array>();
+        const directories: string[] = [];
+        let arguments_: readonly string[] = [];
+        const runtime = {
+            ...producerRuntime(),
+            mkdir: async (path: string) => {
+                directories.push(path);
+            },
+            writeFile: async (path: string, bytes: Uint8Array) => {
+                files.set(path, bytes);
+            },
+            command: async (_executable: string, args: readonly string[]) => {
+                arguments_ = args;
+                return { code, stdout: new TextEncoder().encode('raw stdout'), stderr: new TextEncoder().encode('raw stderr') };
+            }
+        };
+        const result = await runRtcB06LiveProducer(runtime, { writeStdout: async () => {}, writeStderr: async () => {} }, {
+            repositoryRoot: '/repository',
+            baselineId,
+            attempt: attempt('default'),
+            rtcCaptureMode: 'native'
+        });
+        expect(result).toEqual({ exitStatus: code });
+        expect([...files].map(([path, bytes]) => [path.split('/').at(-1), new TextDecoder().decode(bytes)])).toEqual([['stdout.log', 'raw stdout'], [
+            'stderr.log',
+            'raw stderr'
+        ]]);
+        expect(arguments_).toContain('--retries=0');
+        expect(arguments_.some((arg) => arg.startsWith('--output=/repository/tmp/perf/rtc-b06-producer/'))).toBe(true);
+        const storage = arguments_.find((arg) => arg.startsWith('RALLAR_BLACK_BOX_STORAGE_DIR='))?.split('=')[1];
+        expect(storage).toBe(`/repository/tmp/perf/rtc-b06-recorder/${baselineId}/default/retained-2`);
+        expect(directories).toContain(storage);
+    });
+});
 
 describe('RTC-B06 observation Deno runtime', () => {
     it.each(
@@ -55,19 +97,34 @@ describe('RTC-B06 observation Deno runtime', () => {
             ['native', 'native']
         ] as const
     )('seals producer capture %s against inherited Native capture', (rtcCaptureMode, expectedMode) => {
-        const input = { baselineId, attempt: attempt('default'), rtcCaptureMode };
+        const input = { repositoryRoot: '/repository', baselineId, attempt: attempt('default'), rtcCaptureMode };
         const command = createRtcB06LiveProducerCommand(input);
         const observedMode = execFileSync(command.executable, [
-            ...command.arguments.slice(0, -3),
+            ...command.arguments.slice(0, command.arguments.indexOf('npm')),
             process.execPath,
             '--eval',
-            'process.stdout.write(process.env.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE ?? \'<unset>\')'
+            `process.stdout.write(JSON.stringify(Object.fromEntries(['RALLAR_BLACK_BOX_RTC_CAPTURE_MODE','DATABASE_URL','RALLAR_ICE_MODE','RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS','RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK','RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES'].map(name => [name, process.env[name] ?? null]))))`
         ], {
             encoding: 'utf8',
-            env: { ...process.env, RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'native' }
+            env: {
+                ...process.env,
+                RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'native',
+                DATABASE_URL: 'inherited',
+                RALLAR_ICE_MODE: 'inherited',
+                RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: 'inherited',
+                RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: 'inherited',
+                RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '999'
+            }
         });
 
-        expect(observedMode).toBe(expectedMode);
+        expect(JSON.parse(observedMode)).toEqual({
+            RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: expectedMode,
+            DATABASE_URL: null,
+            RALLAR_ICE_MODE: null,
+            RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: null,
+            RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: null,
+            RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: null
+        });
     });
 
     it('keeps one admitted producer mode across cases, phases, ordinals and a repeat after caller mutation', async () => {
@@ -75,6 +132,7 @@ describe('RTC-B06 observation Deno runtime', () => {
         const port = producerRuntime();
         const adapters = createDenoRtcBaselineAdapters(port);
         const input: RtcB06ObservationDenoRuntimeInput = {
+            repositoryRoot: '/repository',
             rtcCaptureMode: 'off',
             runtime: {
                 ...port,
@@ -104,6 +162,7 @@ describe('RTC-B06 observation Deno runtime', () => {
         const stderr: string[] = [];
         const result = await runRtcB06LiveProducer(
             {
+                ...producerRuntime(),
                 command: async () => ({
                     code: 1,
                     stdout: new TextEncoder().encode('playwright failure\n'),
@@ -118,7 +177,7 @@ describe('RTC-B06 observation Deno runtime', () => {
                     stderr.push(new TextDecoder().decode(bytes));
                 }
             },
-            { baselineId, attempt: attempt('default') }
+            { repositoryRoot: '/repository', baselineId, attempt: attempt('default') }
         );
 
         expect(result).toEqual({ exitStatus: 1 });
@@ -133,6 +192,7 @@ describe('RTC-B06 observation Deno runtime', () => {
         const writes: Uint8Array[] = [];
         const result = await runRtcB06LiveProducer(
             {
+                ...producerRuntime(),
                 command: async () => ({
                     code: 0,
                     stdout: new TextEncoder().encode('normal output\n'),
@@ -147,28 +207,16 @@ describe('RTC-B06 observation Deno runtime', () => {
                     writes.push(bytes);
                 }
             },
-            { baselineId, attempt: attempt('default') }
+            { repositoryRoot: '/repository', baselineId, attempt: attempt('default') }
         );
 
         expect(result).toEqual({ exitStatus: 0 });
         expect(writes).toEqual([]);
     });
 
-    it('starts the default E3 producer with database and scenario inheritance removed', () => {
-        expect(createRtcB06LiveProducerCommand({ baselineId, attempt: attempt('default') }))
-            .toEqual({
-                executable: 'env',
-                arguments: [
-                    ...commonArguments,
-                    'npm',
-                    'run',
-                    'test:rallar:full-stack:memory:live-rtc-3'
-                ]
-            });
-    });
-
     it('enables only the all-scenarios flag for that case', () => {
         const command = createRtcB06LiveProducerCommand({
+            repositoryRoot: '/repository',
             baselineId,
             attempt: attempt('all-scenarios')
         });
@@ -183,6 +231,7 @@ describe('RTC-B06 observation Deno runtime', () => {
 
     it('enables exactly the governed 100-cycle retention configuration', () => {
         const command = createRtcB06LiveProducerCommand({
+            repositoryRoot: '/repository',
             baselineId,
             attempt: attempt('retention-100')
         });

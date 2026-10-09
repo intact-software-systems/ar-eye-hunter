@@ -1,10 +1,26 @@
+import { load } from 'js-yaml';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import {
+    afterEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
-import { load } from 'js-yaml';
-import { afterEach, describe, expect, it } from 'vitest';
+interface RtcB06WorkflowStep {
+    run: string;
+    env: Readonly<Record<string, string>>;
+}
 
 const repoRoot = path.resolve(__dirname, '../../../..');
 const fixtureRoots: string[] = [];
@@ -124,6 +140,38 @@ describe('RTC-B06 observation workflow environment', () => {
         expect(mainPublication).toMatchObject({ status: 0, stderr: '' });
     });
 
+    it('runs a governed branch capture with real source attribution and propagates capture failure', () => {
+        const fixtureRoot = createEnvironmentCaptureFixture();
+        const output = path.join(fixtureRoot, 'output');
+        mkdirSync(output);
+        const step = readWorkflowStep('Capture RTC-B06 governed branch baseline');
+        const result = spawnSync('bash', ['-euo', 'pipefail', '-c', step.run], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                ...selectedCaptureEnvironment(step.env, 'native'),
+                PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
+                RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
+                RTC_B06_CAPTURE_RECORD: `${fixtureRoot}/capture.jsonl`,
+                RTC_B06_FAKE_EXIT_STATUS: '23',
+                RTC_OBSERVATION_OUTPUT: output,
+                RTC_SOURCE_REF: 'codex/rtc-baseline-refresh',
+                GITHUB_RUN_ID: '123456789',
+                GITHUB_RUN_ATTEMPT: '2',
+                GITHUB_SERVER_URL: 'https://github.com',
+                GITHUB_REPOSITORY: 'example/repository'
+            }
+        });
+        expect(result.status).toBe(23);
+        const records = readCaptureRecords(fixtureRoot);
+        expect(records[0]?.arguments).toContain('capture-live-rtc');
+        expect(records[0]?.arguments).toContain('--source-ref=codex/rtc-baseline-refresh');
+        expect(records[0]?.arguments).toContain('--rtc-capture-mode=native');
+        expect(records[0]?.mode).toBeNull();
+        expect(readFileSync(path.join(output, 'capture.log'), 'utf8')).toContain('fake RTC-B06 execution');
+    });
+
     it('starts the controller with complete catalog values and a memory-only producer boundary', () => {
         const fixtureRoot = createEnvironmentCaptureFixture();
         const step = readWorkflowStep('Capture RTC-B06 E3-memory observation');
@@ -236,11 +284,6 @@ describe('RTC-B06 observation workflow environment', () => {
     });
 });
 
-interface RtcB06WorkflowStep {
-    run: string;
-    env: Readonly<Record<string, string>>;
-}
-
 function readWorkflowStep(stepName: string): RtcB06WorkflowStep {
     const workflowPath = path.join(
         repoRoot,
@@ -252,6 +295,7 @@ function readWorkflowStep(stepName: string): RtcB06WorkflowStep {
     const step = Object.values(workflow.jobs)
         .flatMap(({ steps }) => steps ?? [])
         .find(({ name }) => name === stepName);
+    expect(step?.run, `RTC-B06 ${stepName} must provide an executable command`).toBeTypeOf('string');
     if (step?.run === undefined) {
         throw new Error(`RTC-B06 ${stepName} command is missing.`);
     }

@@ -1,6 +1,10 @@
 import { spawnSync } from 'node:child_process';
-
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import {
     isRtcPerformanceObservationCommand,
@@ -24,6 +28,64 @@ const liveRtcObserveArguments = [
     '--github-run-url=https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/123456789',
     '--output=tmp/observation'
 ];
+
+describe('governed branch RTC capture CLI', () => {
+    it.each(['passed', 'failed', 'incomplete'] as const)(
+        'returns truthful branch capture metadata and status for %s primary evidence',
+        async (primaryOutcome) => {
+            const output: string[] = [];
+            const errors: string[] = [];
+            const captured = {
+                baselineId: 'branch-primary',
+                startedAt: '2026-10-09T00:00:00.000Z',
+                source: { ref: 'codex/rtc-baseline-refresh', commit: 'a'.repeat(40), tree: 'b'.repeat(40) },
+                primaryOutcome,
+                acceptedMetrics: primaryOutcome === 'passed',
+                repeatDecision: 'not-required' as const,
+                repeatOutcome: 'not-run' as const
+            };
+            const code = await runRtcPerformanceObservationCli({
+                args: ['capture-live-rtc', '--source-ref=codex/rtc-baseline-refresh', ...liveRtcObserveArguments.slice(2), '--rtc-capture-mode=native'],
+                browserRunner: {
+                    run: async () => {
+                        throw new Error('No browser observation');
+                    }
+                },
+                liveRtcRunner: {
+                    run: async () => {
+                        throw new Error('No Main archive');
+                    },
+                    captureBaseline: async (capture) => {
+                        expect(capture.sourceRef).toBe('codex/rtc-baseline-refresh');
+                        expect(capture.rtcCaptureMode).toBe('native');
+                        return { ok: true, value: captured };
+                    }
+                },
+                readFile: async () => {
+                    throw new Error('No verification input');
+                },
+                verifyArchive: async () => {
+                    throw new Error('No permanent archive');
+                },
+                writeStdout: (value) => output.push(value),
+                writeStderr: (value) => errors.push(value)
+            });
+            expect(code).toBe(primaryOutcome === 'passed' ? 0 : 1);
+            expect(output.map((value) => JSON.parse(value))).toEqual([captured]);
+            expect(errors).toEqual([]);
+        }
+    );
+
+    it('admits an exact feature branch without weakening Main-only observation', () => {
+        const args = [...liveRtcObserveArguments];
+        args[0] = 'capture-live-rtc';
+        args[1] = '--source-ref=codex/rtc-baseline-refresh';
+        expect(parseRtcPerformanceObservationCommand([...args, '--rtc-capture-mode=native']))
+            .toMatchObject({ ok: true, value: { kind: 'capture-live-rtc', sourceRef: 'codex/rtc-baseline-refresh', rtcCaptureMode: 'native' } });
+        args[0] = 'observe-live-rtc';
+        expect(parseRtcPerformanceObservationCommand(args)).toMatchObject({ ok: false, issues: [expect.objectContaining({ code: 'unsupported-source-ref' })] });
+    });
+});
 
 describe('RTC performance observation CLI', () => {
     it('refuses selected invalid ambient capture at the actual Deno entry before live process effects', () => {
@@ -95,7 +157,7 @@ describe('RTC performance observation CLI', () => {
         const code = await runRtcPerformanceObservationCli({
             args: [...liveRtcObserveArguments, '--rtc-capture-mode=native'],
             browserRunner: { run: vi.fn() },
-            liveRtcRunner: { run },
+            liveRtcRunner: { run, captureBaseline: vi.fn() },
             readFile: vi.fn(),
             verifyArchive: vi.fn(),
             writeStdout: vi.fn(),
@@ -183,7 +245,7 @@ describe('RTC performance observation CLI', () => {
         const code = await runRtcPerformanceObservationCli({
             args: observeArguments,
             browserRunner: { run },
-            liveRtcRunner: { run: vi.fn() },
+            liveRtcRunner: { run: vi.fn(), captureBaseline: vi.fn() },
             readFile: vi.fn(),
             verifyArchive: vi.fn(),
             writeStdout: (value) => stdout.push(value),
@@ -220,7 +282,7 @@ describe('RTC performance observation CLI', () => {
                     throw new Error('observe-live-rtc must not invoke the browser observation runner');
                 }
             },
-            liveRtcRunner: { run },
+            liveRtcRunner: { run, captureBaseline: vi.fn() },
             readFile: vi.fn(),
             verifyArchive: vi.fn(),
             writeStdout: (value) => stdout.push(value),
@@ -256,7 +318,7 @@ describe('RTC performance observation CLI', () => {
                 '--index-entry=tmp/index-entry.jsonl'
             ],
             browserRunner: { run: vi.fn() },
-            liveRtcRunner: { run: vi.fn() },
+            liveRtcRunner: { run: vi.fn(), captureBaseline: vi.fn() },
             readFile: vi.fn(async (path) =>
                 path.endsWith('.zip')
                     ? archiveBytes

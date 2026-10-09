@@ -42,6 +42,66 @@ interface RtcBaselineCliComposition {
     readonly observation: RtcPerformanceObservationCliDependencies;
 }
 
+export async function runRtcBaselineCli(input: RtcBaselineCliInput) {
+    const parsed = 'command' in input
+        ? { ok: true as const, value: input.command }
+        : isRtcPerformanceObservationCommand(input.args[0])
+        ? parseRtcPerformanceObservationCommand(input.args)
+        : parseRtcBaselineCommand(input.args);
+    if (!parsed.ok) {
+        input.writeStderr(`${JSON.stringify(parsed.issues)}\n`);
+        return 64;
+    }
+    const command = parsed.value;
+    if (
+        command.kind === 'observe-browser' || command.kind === 'observe-live-rtc' ||
+        command.kind === 'capture-live-rtc' ||
+        command.kind === 'verify-observation'
+    ) {
+        if (input.observation === undefined) {
+            input.writeStderr(
+                '[{"path":"$.observation","code":"missing-observation-runtime","message":"Observation runtime is unavailable."}]\n'
+            );
+            return 1;
+        }
+        return runRtcPerformanceObservationCommand({
+            command,
+            ...input.observation,
+            writeStdout: input.writeStdout,
+            writeStderr: input.writeStderr
+        });
+    }
+    const dispatched = await dispatch(input.envelope, command);
+    if (!dispatched.result.ok) {
+        input.writeStderr(`${JSON.stringify(dispatched.result.issues)}\n`);
+        return 1;
+    }
+    if (dispatched.kind === 'list-external-attempts') {
+        for (const attempt of dispatched.result.value) {
+            const columns = [
+                attempt.caseId,
+                attempt.intendedPhase,
+                attempt.outerOrdinal,
+                attempt.environmentId
+            ];
+            input.writeStdout(`${columns.join('\t')}\n`);
+        }
+    }
+    else if (dispatched.kind === 'repeat-required') {
+        if (dispatched.result.value.workloadIds.length === 0) {
+            return 3;
+        }
+        input.writeStdout(`${[...dispatched.result.value.workloadIds].sort().join(',')}\n`);
+    }
+    else if (dispatched.kind === 'compare-paired') {
+        input.writeStdout(`${JSON.stringify(dispatched.result.value)}\n`);
+        if (dispatched.result.value.outcome === 'inconclusive-still-noisy') {
+            return 2;
+        }
+    }
+    return 0;
+}
+
 function captureRequest(command: Extract<RtcBaselineParsedCommand, { kind: 'initialize'; }>) {
     return {
         schema: 'rallar.rtc-baseline.capture-request.v1',
@@ -135,65 +195,6 @@ async function dispatchBaselineRead(
     };
 }
 
-export async function runRtcBaselineCli(input: RtcBaselineCliInput) {
-    const parsed = 'command' in input
-        ? { ok: true as const, value: input.command }
-        : isRtcPerformanceObservationCommand(input.args[0])
-        ? parseRtcPerformanceObservationCommand(input.args)
-        : parseRtcBaselineCommand(input.args);
-    if (!parsed.ok) {
-        input.writeStderr(`${JSON.stringify(parsed.issues)}\n`);
-        return 64;
-    }
-    const command = parsed.value;
-    if (
-        command.kind === 'observe-browser' || command.kind === 'observe-live-rtc' ||
-        command.kind === 'verify-observation'
-    ) {
-        if (input.observation === undefined) {
-            input.writeStderr(
-                '[{"path":"$.observation","code":"missing-observation-runtime","message":"Observation runtime is unavailable."}]\n'
-            );
-            return 1;
-        }
-        return runRtcPerformanceObservationCommand({
-            command,
-            ...input.observation,
-            writeStdout: input.writeStdout,
-            writeStderr: input.writeStderr
-        });
-    }
-    const dispatched = await dispatch(input.envelope, command);
-    if (!dispatched.result.ok) {
-        input.writeStderr(`${JSON.stringify(dispatched.result.issues)}\n`);
-        return 1;
-    }
-    if (dispatched.kind === 'list-external-attempts') {
-        for (const attempt of dispatched.result.value) {
-            const columns = [
-                attempt.caseId,
-                attempt.intendedPhase,
-                attempt.outerOrdinal,
-                attempt.environmentId
-            ];
-            input.writeStdout(`${columns.join('\t')}\n`);
-        }
-    }
-    else if (dispatched.kind === 'repeat-required') {
-        if (dispatched.result.value.workloadIds.length === 0) {
-            return 3;
-        }
-        input.writeStdout(`${[...dispatched.result.value.workloadIds].sort().join(',')}\n`);
-    }
-    else if (dispatched.kind === 'compare-paired') {
-        input.writeStdout(`${JSON.stringify(dispatched.result.value)}\n`);
-        if (dispatched.result.value.outcome === 'inconclusive-still-noisy') {
-            return 2;
-        }
-    }
-    return 0;
-}
-
 function defaultRuntime() {
     const deno = Deno;
     return {
@@ -237,10 +238,6 @@ function defaultRuntime() {
     };
 }
 
-export function createDefaultRtcBaselineEnvelope() {
-    return createRtcBaselineDenoRuntime(createDenoRtcBaselineAdapters(defaultRuntime()));
-}
-
 function createDefaultRtcBaselineCliComposition(
     captureAdmission: RtcBaselineCaptureAdmission | undefined
 ): RtcBaselineCliComposition {
@@ -253,6 +250,7 @@ function createDefaultRtcBaselineCliComposition(
         envelope
     });
     const liveRtcObservation = createRtcB06ObservationDenoRuntime({
+        repositoryRoot: Deno.cwd(),
         runtime,
         adapters,
         envelope,
@@ -279,7 +277,7 @@ async function runDefaultRtcBaselineCli() {
         writeRtcBaselineCliOutput(deno.stderr, `${JSON.stringify(parsed.issues)}\n`);
         return 64;
     }
-    const admission = parsed.value.kind === 'observe-live-rtc'
+    const admission = (parsed.value.kind === 'observe-live-rtc' || parsed.value.kind === 'capture-live-rtc')
         ? resolveRtcBaselineCaptureAdmission(
             parsed.value.rtcCaptureMode,
             deno.env.get(RTC_BASELINE_CAPTURE_ENVIRONMENT_NAME)

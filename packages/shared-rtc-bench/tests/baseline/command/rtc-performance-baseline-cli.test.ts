@@ -1,6 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
-import { createDefaultRtcBaselineEnvelope, runRtcBaselineCli } from '../../../baseline/command/rtc-baseline-cli.ts';
+import { runRtcBaselineCli } from '../../../baseline/command/rtc-baseline-cli.ts';
 import { writeRtcBaselineCliOutput } from '../../../baseline/command/write-rtc-baseline-cli-output.ts';
 import type { RtcPerformanceObservationCliDependencies } from '../../../baseline/observation/rtc-performance-observation-cli.ts';
 import type { RtcBaselineEnvelope } from '../../../baseline/runtime/rtc-baseline-envelope.ts';
@@ -19,21 +24,41 @@ const conclusiveComparison = {
     },
     comparisons: []
 } as const;
-function createEnvelope(result: unknown = { ok: true, value: undefined }) {
-    const envelope = {
-        initializeBaseline: vi.fn(async () => result),
-        captureWorkload: vi.fn(async () => result),
-        readExternalAttempts: vi.fn(async () => result),
-        recordBrowser: vi.fn(async () => result),
-        recordExternalAttempt: vi.fn(async () => result),
-        recordExternalCohortAssertion: vi.fn(async () => result),
-        readRepeatRequirement: vi.fn(async () => result),
-        readPairedComparison: vi.fn(async () => result),
-        readBaselineValidation: vi.fn(async () => result),
-        readVerifiedRepeatPrimary: vi.fn(async () => result),
-        finalize: vi.fn(async () => result)
+const emptyFinalizedSummary = {
+    schema: 'rallar.rtc-baseline.summary.v1' as const,
+    baselineId: '20260807-0123456789ab-e1-local',
+    workloadIds: ['RTC-B01'] as const,
+    environmentId: 'E1-local' as const,
+    repeatLink: null,
+    conditionalEnvironmentDecisions: [],
+    sampleOutcomes: [],
+    cohortOutcomes: [],
+    metricSummaries: [],
+    rawReferences: []
+};
+
+function createEnvelope() {
+    return {
+        initializeBaseline: vi.fn<RtcBaselineEnvelope['initializeBaseline']>(async () => ({ ok: true, value: undefined })),
+        captureWorkload: vi.fn<RtcBaselineEnvelope['captureWorkload']>(async () => ({ ok: true, value: { acceptedSampleCount: 0 } })),
+        readExternalAttempts: vi.fn<RtcBaselineEnvelope['readExternalAttempts']>(async () => ({ ok: true, value: [] })),
+        recordBrowser: vi.fn<RtcBaselineEnvelope['recordBrowser']>(async () => ({ ok: true, value: { acceptedSampleCount: 0 } })),
+        recordExternalAttempt: vi.fn<RtcBaselineEnvelope['recordExternalAttempt']>(async () => ({ ok: true, value: { acceptedSampleCount: 0 } })),
+        recordExternalCohortAssertion: vi.fn<RtcBaselineEnvelope['recordExternalCohortAssertion']>(async () => ({
+            ok: true,
+            value: { acceptedCohortCount: 0 }
+        })),
+        readRepeatRequirement: vi.fn<RtcBaselineEnvelope['readRepeatRequirement']>(async () => ({ ok: true, value: { workloadIds: [] } })),
+        readPairedComparison: vi.fn<RtcBaselineEnvelope['readPairedComparison']>(async () => ({ ok: true, value: conclusiveComparison })),
+        readBaselineValidation: vi.fn<RtcBaselineEnvelope['readBaselineValidation']>(async () => ({
+            ok: true,
+            value: { baselineId: '', retainedArtifactPaths: [], checksumEntryCount: 0 }
+        })),
+        readVerifiedRepeatPrimary: vi.fn<RtcBaselineEnvelope['readVerifiedRepeatPrimary']>(async () => {
+            throw new Error('CLI does not directly read verified repeat primaries');
+        }),
+        finalize: vi.fn<RtcBaselineEnvelope['finalize']>(async () => ({ ok: true, value: emptyFinalizedSummary }))
     };
-    return envelope as typeof envelope & RtcBaselineEnvelope;
 }
 
 async function run(
@@ -64,7 +89,7 @@ describe('RTC baseline CLI application', () => {
         }));
         const observation: RtcPerformanceObservationCliDependencies = {
             browserRunner: { run: runObservation },
-            liveRtcRunner: { run: vi.fn() },
+            liveRtcRunner: { run: vi.fn(), captureBaseline: vi.fn() },
             readFile: vi.fn(),
             verifyArchive: vi.fn()
         };
@@ -116,7 +141,8 @@ describe('RTC baseline CLI application', () => {
     });
 
     it('emits exactly four external-attempt TSV columns without inputKey', async () => {
-        const envelope = createEnvelope({
+        const envelope = createEnvelope();
+        envelope.readExternalAttempts.mockResolvedValueOnce({
             ok: true,
             value: [
                 {
@@ -149,7 +175,8 @@ describe('RTC baseline CLI application', () => {
     });
 
     it('maps repeat required, no-repeat, evidence failure, and usage exits', async () => {
-        const triggered = createEnvelope({ ok: true, value: { workloadIds: ['RTC-B03', 'RTC-B01'] } });
+        const triggered = createEnvelope();
+        triggered.readRepeatRequirement.mockResolvedValueOnce({ ok: true, value: { workloadIds: ['RTC-B03', 'RTC-B01'] } });
         const triggeredResult = await run(
             ['repeat-required', '--baseline-id=20260807-0123456789ab-e1-local', '--format=workload-csv'],
             triggered
@@ -159,7 +186,8 @@ describe('RTC baseline CLI application', () => {
             stdout: triggeredResult.stdout,
             stderr: triggeredResult.stderr
         }).toEqual({ exitCode: 0, stdout: ['RTC-B01,RTC-B03\n'], stderr: [] });
-        const quiet = createEnvelope({ ok: true, value: { workloadIds: [] } });
+        const quiet = createEnvelope();
+        quiet.readRepeatRequirement.mockResolvedValueOnce({ ok: true, value: { workloadIds: [] } });
         const quietResult = await run(
             ['repeat-required', '--baseline-id=20260807-0123456789ab-e1-local', '--format=workload-csv'],
             quiet
@@ -169,7 +197,8 @@ describe('RTC baseline CLI application', () => {
             stdout: quietResult.stdout,
             stderr: quietResult.stderr
         }).toEqual({ exitCode: 3, stdout: [], stderr: [] });
-        const failed = createEnvelope({
+        const failed = createEnvelope();
+        failed.readBaselineValidation.mockResolvedValueOnce({
             ok: false,
             issues: [{ path: '$', code: 'invalid-evidence', message: 'Incomplete.' }]
         });
@@ -201,7 +230,8 @@ describe('RTC baseline CLI application', () => {
     });
 
     it('writes only paired comparison JSON to stdout on success', async () => {
-        const envelope = createEnvelope({
+        const envelope = createEnvelope();
+        envelope.readPairedComparison.mockResolvedValueOnce({
             ok: true,
             value: conclusiveComparison
         });
@@ -247,6 +277,8 @@ describe('RTC baseline CLI application', () => {
                 }
             ]
         } as const;
+        const envelope = createEnvelope();
+        envelope.readPairedComparison.mockResolvedValueOnce({ ok: true, value });
         const result = await run(
             [
                 'compare-paired',
@@ -256,7 +288,7 @@ describe('RTC baseline CLI application', () => {
                 '--comparison-cohort-id=20260808-fedcba987654-e1-local',
                 '--workload=RTC-B01'
             ],
-            createEnvelope({ ok: true, value })
+            envelope
         );
         expect({ exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }).toEqual({
             exitCode: 2,
@@ -429,10 +461,9 @@ describe('RTC baseline CLI application', () => {
         });
     });
 
-    it('keeps default composition thin and import side-effect free when import.meta.main is false', async () => {
+    it('keeps imports side-effect free when import.meta.main is false', async () => {
         const writes: string[] = [];
-        const previousDeno = (globalThis as { Deno?: unknown; }).Deno;
-        (globalThis as { Deno?: unknown; }).Deno = {
+        vi.stubGlobal('Deno', {
             args: ['validate', '--baseline-id=20260807-0123456789ab-e1-local'],
             stdout: {
                 write: () => {
@@ -447,20 +478,14 @@ describe('RTC baseline CLI application', () => {
             exit: () => {
                 writes.push('exit');
             }
-        };
+        });
         try {
             // @ts-expect-error Vitest resolves the import-only query while TypeScript checks the base module.
-            const imported = await import('../../../baseline/command/rtc-baseline-cli.ts?import-only');
-            expect(writes).toEqual([]);
-            expect(Object.keys(imported).sort()).toEqual([
-                'createDefaultRtcBaselineEnvelope',
-                'runRtcBaselineCli'
-            ]);
-            expect(createDefaultRtcBaselineEnvelope()).toBeDefined();
+            await import('../../../baseline/command/rtc-baseline-cli.ts?import-only');
             expect(writes).toEqual([]);
         }
         finally {
-            (globalThis as { Deno?: unknown; }).Deno = previousDeno;
+            vi.unstubAllGlobals();
         }
     });
 });

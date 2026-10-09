@@ -8,24 +8,6 @@ import type { RtcB06PerformanceObservation } from './rtc-b06-performance-observa
 import type { RtcPerformanceObservationArchiveWritten } from './rtc-performance-observation-archive.ts';
 import type { RtcPerformanceObservationOutcome } from './rtc-performance-observation.ts';
 
-const conditionalEnvironmentDecision = {
-    environmentId: 'E4-pg' as const,
-    decision: 'not-required' as const,
-    reason: 'E3-memory observation only; no database-backed candidate is being selected.'
-};
-const retentionCohortId = 'rtc-b06-e3-memory-retention';
-
-type RtcB06ObservationEnvelope = Pick<
-    RtcBaselineEnvelope,
-    | 'initializeBaseline'
-    | 'readExternalAttempts'
-    | 'recordExternalAttempt'
-    | 'recordExternalCohortAssertion'
-    | 'finalize'
-    | 'readBaselineValidation'
-    | 'readRepeatRequirement'
->;
-
 export interface RtcB06ObservationRunInput {
     readonly sourceRef: 'main';
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
@@ -33,6 +15,21 @@ export interface RtcB06ObservationRunInput {
     readonly githubRunAttempt: number;
     readonly githubRunUrl: string;
     readonly outputDirectory: string;
+}
+
+export interface RtcB06BaselineCaptureInput extends Omit<RtcB06ObservationRunInput, 'sourceRef'> {
+    readonly sourceRef: string;
+}
+
+export interface RtcB06BaselineCapture {
+    readonly baselineId: string;
+    readonly startedAt: string;
+    readonly source: { readonly commit: string; readonly tree: string; readonly ref: string; };
+    readonly primaryOutcome: RtcPerformanceObservationOutcome;
+    readonly acceptedMetrics: boolean;
+    readonly repeatDecision: RtcB06PerformanceObservation['repeat']['decision'];
+    readonly repeatOutcome: RtcB06PerformanceObservation['repeat']['outcome'];
+    readonly repeatArtifacts?: ReadonlyMap<string, Uint8Array>;
 }
 
 export interface RtcB06ObservationOutput {
@@ -63,11 +60,31 @@ export interface RtcB06ObservationRunnerDependencies {
     nowUtc(): string;
 }
 
+const conditionalEnvironmentDecision = {
+    environmentId: 'E4-pg' as const,
+    decision: 'not-required' as const,
+    reason: 'E3-memory observation only; no database-backed candidate is being selected.'
+};
+
+const retentionCohortId = 'rtc-b06-e3-memory-retention';
+
+type RtcB06ObservationEnvelope = Pick<
+    RtcBaselineEnvelope,
+    | 'initializeBaseline'
+    | 'readExternalAttempts'
+    | 'recordExternalAttempt'
+    | 'recordExternalCohortAssertion'
+    | 'finalize'
+    | 'readBaselineValidation'
+    | 'readRepeatRequirement'
+>;
+
 export function createRtcB06ObservationRunner(
     dependencies: RtcB06ObservationRunnerDependencies
 ) {
     return {
-        run: (observation: RtcB06ObservationRunInput) => runRtcB06Observation(dependencies, observation)
+        run: (observation: RtcB06ObservationRunInput) => runRtcB06Observation(dependencies, observation),
+        captureBaseline: (capture: RtcB06BaselineCaptureInput) => captureRtcB06Baseline(dependencies, capture)
     };
 }
 
@@ -75,6 +92,14 @@ async function runRtcB06Observation(
     dependencies: RtcB06ObservationRunnerDependencies,
     run: RtcB06ObservationRunInput
 ) {
+    const captured = await captureRtcB06Baseline(dependencies, run);
+    return captured.ok ? writeObservationArchive(dependencies, run, captured.value) : captured;
+}
+
+async function captureRtcB06Baseline(
+    dependencies: RtcB06ObservationRunnerDependencies,
+    capture: RtcB06BaselineCaptureInput
+): Promise<RtcBaselineResult<RtcB06BaselineCapture>> {
     const preflight = await dependencies.preflight();
     if (!preflight.ok) {
         return preflight;
@@ -88,8 +113,8 @@ async function runRtcB06Observation(
         startedAt,
         sourceCommit: source.value.commit,
         environmentId: 'E3-memory',
-        githubRunId: run.githubRunId,
-        githubRunAttempt: run.githubRunAttempt
+        githubRunId: capture.githubRunId,
+        githubRunAttempt: capture.githubRunAttempt
     });
     if (!identity.ok) {
         return identity;
@@ -107,23 +132,17 @@ async function runRtcB06Observation(
     if (!repeat.ok) {
         return repeat;
     }
-    return writeObservationArchive(dependencies, run, {
-        baselineId: identity.value,
-        startedAt,
-        source: source.value,
-        primaryOutcome,
-        ...repeat.value
-    });
-}
-
-interface RtcB06ObservationArchiveInput {
-    baselineId: string;
-    startedAt: string;
-    source: { commit: string; tree: string; };
-    primaryOutcome: RtcPerformanceObservationOutcome;
-    repeatDecision: RtcB06PerformanceObservation['repeat']['decision'];
-    repeatOutcome: RtcB06PerformanceObservation['repeat']['outcome'];
-    repeatArtifacts?: ReadonlyMap<string, Uint8Array>;
+    return {
+        ok: true,
+        value: {
+            baselineId: identity.value,
+            startedAt,
+            source: { ...source.value, ref: capture.sourceRef },
+            primaryOutcome,
+            acceptedMetrics: primaryOutcome === 'passed',
+            ...repeat.value
+        }
+    };
 }
 
 async function captureRequiredRepeat(
@@ -163,7 +182,7 @@ async function captureRequiredRepeat(
 async function writeObservationArchive(
     dependencies: RtcB06ObservationRunnerDependencies,
     run: RtcB06ObservationRunInput,
-    input: RtcB06ObservationArchiveInput
+    input: RtcB06BaselineCapture
 ) {
     const { baselineId, startedAt, source, primaryOutcome, repeatDecision, repeatOutcome, repeatArtifacts } = input;
     const primaryArtifacts = await dependencies.readFinalizedArtifacts(baselineId);

@@ -4,12 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Choose permanent main evidence or a non-publishing branch diagnostic
+        description: Choose permanent main evidence, a governed branch baseline, or a diagnostic
         required: true
         default: publish
         type: choice
         options:
           - publish
+          - baseline
           - diagnostic
       rtc_capture_mode:
         description: Select RTC diagnostics capture
@@ -52,7 +53,7 @@ jobs:
 
   capture:
     name: Run RTC-B06 E3-memory
-    if: ${{ inputs.mode == 'publish' }}
+    if: ${{ inputs.mode == 'publish' || inputs.mode == 'baseline' }}
     needs: source
     runs-on: ubuntu-latest
     timeout-minutes: 360
@@ -69,6 +70,8 @@ jobs:
           observation_output="$RUNNER_TEMP/rtc-b06-observation"
           mkdir -p "$observation_output"
           git rev-parse HEAD > "$observation_output/source-commit.txt"
+          git rev-parse 'HEAD^{tree}' > "$observation_output/source-tree.txt"
+          printf '%s\n' "$GITHUB_REF_NAME" > "$observation_output/source-ref.txt"
           echo "RTC_OBSERVATION_OUTPUT=$observation_output" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v7
@@ -106,6 +109,38 @@ jobs:
             --github-run-attempt="$GITHUB_RUN_ATTEMPT" \
             --github-run-url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --output="$RTC_OBSERVATION_OUTPUT"
+
+      - name: Capture RTC-B06 governed branch baseline
+        if: ${{ inputs.mode == 'baseline' }}
+        env:
+          RTC_CAPTURE_MODE: ${{ inputs.rtc_capture_mode }}
+          RTC_SOURCE_REF: ${{ github.ref_name }}
+        run: |
+          set -o pipefail
+          env -u DATABASE_URL -u RALLAR_ICE_MODE -u RALLAR_BLACK_BOX_RTC_CAPTURE_MODE \
+            RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 \
+            RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 \
+            RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
+            npm run --silent perf:rtc-baseline -- capture-live-rtc \
+            --source-ref="$RTC_SOURCE_REF" \
+            --rtc-capture-mode="$RTC_CAPTURE_MODE" \
+            --github-run-id="$GITHUB_RUN_ID" \
+            --github-run-attempt="$GITHUB_RUN_ATTEMPT" \
+            --github-run-url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --output="$RTC_OBSERVATION_OUTPUT" \
+            2> "$RTC_OBSERVATION_OUTPUT/capture-stderr.log" | tee "$RTC_OBSERVATION_OUTPUT/capture.log"
+
+      - name: Retain governed RTC-B06 branch baseline
+        if: ${{ always() && inputs.mode == 'baseline' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: rtc-b06-baseline-gh${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/rtc-b06-observation
+            tmp/perf/rtc-baseline
+            tmp/perf/rtc-b06-producer
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Retain RTC-B06 observation output
         if: ${{ always() && inputs.mode == 'publish' }}

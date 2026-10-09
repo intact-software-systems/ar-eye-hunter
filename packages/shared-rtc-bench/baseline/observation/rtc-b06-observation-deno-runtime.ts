@@ -15,18 +15,8 @@ import {
     writeRtcPerformanceObservationOutput
 } from './rtc-performance-observation-deno-support.ts';
 
-const liveRtcCommand = ['npm', 'run', 'test:rallar:full-stack:memory:live-rtc-3'];
-const liveRtcProducerPath = 'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts';
-const inheritedConfiguration = [
-    'DATABASE_URL',
-    'RALLAR_ICE_MODE',
-    'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS',
-    'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK',
-    'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES'
-];
-const encoder = new TextEncoder();
-
 export interface RtcB06LiveProducerCommandInput {
+    readonly repositoryRoot: string;
     readonly baselineId: string;
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly attempt: RtcBaselineAttemptLocatorDto;
@@ -38,6 +28,7 @@ export interface RtcB06LiveProducerCommand {
 }
 
 export interface RtcB06ObservationDenoRuntimeInput {
+    readonly repositoryRoot: string;
     readonly runtime: RtcBaselineDenoPort;
     readonly adapters: DenoRtcBaselineAdapters;
     readonly envelope: RtcBaselineEnvelope;
@@ -50,16 +41,31 @@ export interface RtcB06ProducerOutput {
     writeStderr(bytes: Uint8Array): Promise<void>;
 }
 
+const liveRtcCommand = ['npm', 'run', 'test:rallar:full-stack:memory:live-rtc-3'];
+
+const liveRtcProducerPath = 'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts';
+
+const inheritedConfiguration = [
+    'DATABASE_URL',
+    'RALLAR_ICE_MODE',
+    'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS',
+    'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK',
+    'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES'
+];
+
+const encoder = new TextEncoder();
+
 export function createRtcB06ObservationDenoRuntime(
     input: RtcB06ObservationDenoRuntimeInput
 ): RtcB06ObservationRunnerDependencies {
+    const repositoryRoot = input.repositoryRoot;
     const rtcCaptureMode = input.rtcCaptureMode ?? resolveRtcCaptureConfiguration({ sinkAvailable: true }).mode;
     return {
         envelope: input.envelope,
         preflight: () => preflight(input.runtime),
         readSource: () => readRtcPerformanceObservationSource(input.adapters),
         runLiveRtcProducer: (producer) =>
-            runRtcB06LiveProducer(input.runtime, input.producerOutput, { ...producer, rtcCaptureMode }),
+            runRtcB06LiveProducer(input.runtime, input.producerOutput, { ...producer, rtcCaptureMode, repositoryRoot }),
         readFinalizedArtifacts: (baselineId) =>
             readRtcPerformanceObservationFinalizedArtifacts(input.runtime, baselineId),
         createArchive: createVerifiedRtcPerformanceObservationArchive,
@@ -70,12 +76,19 @@ export function createRtcB06ObservationDenoRuntime(
 }
 
 export async function runRtcB06LiveProducer(
-    runtime: Pick<RtcBaselineDenoPort, 'command'>,
+    runtime: Pick<RtcBaselineDenoPort, 'command' | 'mkdir' | 'writeFile'>,
     producerOutput: RtcB06ProducerOutput,
     input: RtcB06LiveProducerCommandInput
 ) {
     const command = createRtcB06LiveProducerCommand(input);
-    const output = await runtime.command(command.executable, command.arguments);
+    const directory = producerDirectory(input);
+    await runtime.mkdir(directory, { recursive: true });
+    const storageDirectory = recorderDirectory(input);
+    await runtime.mkdir(storageDirectory.slice(0, storageDirectory.lastIndexOf('/')), { recursive: true });
+    await runtime.mkdir(storageDirectory, { recursive: false });
+    const output = await runLiveRtcCommand(runtime, command);
+    await runtime.writeFile(`${directory}/stdout.log`, output.stdout, { createNew: true });
+    await runtime.writeFile(`${directory}/stderr.log`, output.stderr, { createNew: true });
     if (output.code !== 0) {
         const attempt = input.attempt;
         await producerOutput.writeStderr(encoder.encode(
@@ -106,10 +119,39 @@ export function createRtcB06LiveProducerCommand(
             `RALLAR_BLACK_BOX_RTC_CAPTURE_MODE=${
                 input.rtcCaptureMode ?? resolveRtcCaptureConfiguration({ sinkAvailable: true }).mode
             }`,
+            `RALLAR_BLACK_BOX_STORAGE_DIR=${recorderDirectory(input)}`,
+            `RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR=${producerDirectory(input)}/failure-diagnostics`,
             ...caseConfiguration(input.attempt.caseId),
-            ...liveRtcCommand
+            ...liveRtcCommand,
+            '--',
+            '--retries=0',
+            `--output=${producerDirectory(input)}/playwright-results`
         ]
     };
+}
+
+function producerDirectory(input: RtcB06LiveProducerCommandInput) {
+    return `${input.repositoryRoot}/tmp/perf/rtc-b06-producer/${input.baselineId}/${input.attempt.caseId}/${input.attempt.intendedPhase}-${input.attempt.outerOrdinal}`;
+}
+
+function recorderDirectory(input: RtcB06LiveProducerCommandInput) {
+    return `${input.repositoryRoot}/tmp/perf/rtc-b06-recorder/${input.baselineId}/${input.attempt.caseId}/${input.attempt.intendedPhase}-${input.attempt.outerOrdinal}`;
+}
+
+async function runLiveRtcCommand(
+    runtime: Pick<RtcBaselineDenoPort, 'command'>,
+    command: RtcB06LiveProducerCommand
+) {
+    try {
+        return await runtime.command(command.executable, command.arguments);
+    }
+    catch (error) {
+        return {
+            code: 1,
+            stdout: new Uint8Array(),
+            stderr: encoder.encode(cleanObservationError(error instanceof Error ? error : String(error)))
+        };
+    }
 }
 
 function caseConfiguration(caseId: string) {
