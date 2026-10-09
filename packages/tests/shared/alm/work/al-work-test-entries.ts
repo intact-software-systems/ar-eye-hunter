@@ -91,6 +91,7 @@ export function fakePort(input: FakeALWorkPortInput): ALWorkQueuePort {
         readPage: async () => ({ entries: [], nextCursor: null }),
         readPages: async (inputs) => inputs.map(() => ({ entries: [], hasMoreEntries: false })),
         claim: async ({ maxCount }) => pending.splice(0, maxCount),
+        claimObserved: async () => [],
         finalizeExhausted: async () => {
             const claims = exhausted;
             exhausted = [];

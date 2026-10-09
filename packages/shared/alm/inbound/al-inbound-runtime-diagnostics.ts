@@ -101,6 +101,11 @@ export type ALInboundRuntimeDiagnosticsEvent =
         claimedEffectIds: readonly string[];
         /** Due rows this batch's page saw and did not run, oldest first. */
         deferred: readonly ALInboundDeferredEffect[];
+        /**
+         * Releases this batch ran because the same track's previous release completed in it (D190):
+         * counted in `claimedCount`, named in `claimedEffectIds`, and never listed in `deferred`.
+         */
+        promoted: number;
     }>
     | Readonly<{
         kind: 'claim-settled';

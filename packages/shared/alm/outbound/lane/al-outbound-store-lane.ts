@@ -524,6 +524,7 @@ export class ALOutboundStoreLane<TPrepared> {
             readNextReadyAtMs: (port) => this.readiness.readOpenedStore(() => this.readNextReadyAtMs(port), undefined),
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
+            claimSuccessor: undefined,
             runClaim: (claim) => this.runOutboundClaim(claim),
             diagnostics: (event) => this.recordWorkDiagnostics(event),
             storageHealth: stores.storageHealth,

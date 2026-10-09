@@ -1,6 +1,7 @@
 import type { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import type { RallarChannelRecovery } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
+import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import type {
     ALInboundResyncCursor,
     ALInboundResyncRequired
@@ -23,12 +24,16 @@ export namespace BrowserResyncRecovery {
  * Invokes a channel's recovery owner once per ordering track while the track goes on resynchronizing:
  * the runtime resets no track after a resynchronization, and the sender's new epoch is a new track. A
  * track is remembered for the session's age budget after its last resynchronization (D181), so one that
- * fell silent is forgotten and a later resynchronization of it invokes the owner again. A message whose
- * route declared no owner is dropped as before, and nothing is stated for it.
+ * fell silent is forgotten and a later resynchronization of it invokes the owner again. It remembers at most as
+ * many tracks as the receiver keeps ordering snapshots for, the first remembered leaving first (D191). A message
+ * whose route declared no owner is dropped as before, and nothing is stated for it.
  */
 export class BrowserResyncRecovery {
     private readonly input: BrowserResyncRecovery.Input;
-    private readonly invokedTrackKeys = new LatestRepository<string, true>({ ttlMs: AL_VOLATILE_SESSION_MAX_AGE_MS });
+    private readonly invokedTrackKeys = new LatestRepository<string, true>({
+        ttlMs: AL_VOLATILE_SESSION_MAX_AGE_MS,
+        maxEntries: AL_INBOUND_MAX_ORDERING_TRACKS
+    });
 
     constructor(input: BrowserResyncRecovery.Input) {
         this.input = input;

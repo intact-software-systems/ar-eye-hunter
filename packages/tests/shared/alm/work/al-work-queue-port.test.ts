@@ -311,6 +311,19 @@ describe('ALWorkQueuePort lease recovery', () => {
         expect(toEffectIds(await port.claim({ maxCount: 1, observedEntries: undefined }))).toEqual(['crashed']);
     });
 
+    it('claims an observed row only as new or retrying work, and spends no timeout allowance when the row moved on', async () => {
+        const now = 10_000;
+        const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(now));
+        const port = createLimitedTestPort(queue, () => now);
+        const observed = await port.retainIfAbsent(newWorkEntry('AL_TEST', 'promoted'));
+        expect(toEffectIds(await port.claim({ maxCount: 1, observedEntries: undefined }))).toEqual(['promoted']);
+        await port.retainIfAbsent(newReservedWorkEntry('crashed', { startMs: 0, attempts: 1 }));
+
+        expect(await port.claimObserved([observed])).toEqual([]);
+        // Still inside the first lease: only an allowance the observed claim left unspent recovers the row.
+        expect(toEffectIds(await port.claim({ maxCount: 1, observedEntries: undefined }))).toEqual(['crashed']);
+    });
+
     it('finalizes exhausted reservations on its first batch, then at most once per lease of its own clock', async () => {
         let now = 10_000;
         const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(now));

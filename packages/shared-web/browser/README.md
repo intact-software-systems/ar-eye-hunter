@@ -300,7 +300,8 @@ Message ownership is concentrated under [`messages/`](./messages/):
   sink the refused message and its `ALInboundResyncCursor`; the sink invokes the
   message's route owner once per ordering track (ordering key, sender, epoch)
   while the track goes on resynchronizing (the sink forgets a track 5 minutes
-  after its last resynchronization), states `recovery-owner-invoked` with that cursor
+  after its last resynchronization, and remembers at most 256 tracks, the first
+  remembered leaving first, D191), states `recovery-owner-invoked` with that cursor
   on the `storage` diagnostics port even when the owner throws (the error is
   logged), and states nothing for a route without an owner, whose message is
   dropped as before. A new epoch is a new track; a reload invokes the owner

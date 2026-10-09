@@ -1,10 +1,10 @@
+import type { RallarBlackBoxTestAlmUsage } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import type {
@@ -85,8 +85,11 @@ export interface BlackBoxRallarRuntime {
     submitControl(input: unknown): Promise<BlackBoxRallarControlSubmitDiagnostics>;
     injectFault(input: unknown): Promise<void>;
     readStorageCounters(input: unknown): Promise<IndexedDbOperationCounts>;
-    /** The facade's `rallar.messages.readUsage()`; `undefined` until the facade's connect completes. */
-    readAlmUsage(): Promise<ALVolatileSessionReport | undefined>;
+    /**
+     * The facade's `rallar.messages.readUsage()` beside the ordering snapshots the page's inbound stores state they
+     * hold; `undefined` until the facade's connect completes.
+     */
+    readAlmUsage(): Promise<RallarBlackBoxTestAlmUsage | undefined>;
     /** The congestion decisions the page counted since its last `close`; `undefined` until the facade's connect completes. */
     readCongestionCounters(): Promise<ALCongestionCounters | undefined>;
     refreshRoom(options: BlackBoxRallarRoomRefreshOptions): Promise<void>;

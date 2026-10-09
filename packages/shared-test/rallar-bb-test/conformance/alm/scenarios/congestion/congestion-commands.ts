@@ -65,8 +65,8 @@ export function toBackpressureReleaseCommand(sender: AlmConformanceStepInput): R
 }
 
 /**
- * The page's own count of the decision (D186), read after the verdict. The two-agent family runs these cells after its
- * others, none of which raises a congestion counter, so a count above zero is this cell's.
+ * The page's own count of the decision (D186), read after the verdict. The two-agent family runs these cells after
+ * every cell registered before them, none of which raises a congestion counter, so a count above zero is this cell's.
  */
 export function toCongestionCounterCommands(
     sender: AlmConformanceStepInput,

@@ -167,7 +167,9 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'capacity',
         'capacity-age',
         'capacity-tracks',
-        'backpressure-deferred'
+        'backpressure-deferred',
+        'own-share-under-inbound',
+        'buffered-track-drains'
     ],
     rtc: [
         'volatile-default',
@@ -189,7 +191,10 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'capacity-age',
         'capacity-tracks',
         'backpressure-refused',
-        'backpressure-deferred'
+        'backpressure-deferred',
+        'own-share-under-inbound',
+        'buffered-track-drains',
+        'churn-bounded-tracks'
     ],
     'rtc-with-ws-fallback': [
         'volatile-default',
@@ -417,7 +422,11 @@ describe('alm-conformance recipe family', () => {
                 // The capacity and capacity-tracks senders reconnect before they send; those waits are pinned in
                 // alm-conformance-addressed-scenarios.
                 const capacityReceived1 = /-capacity(-tracks)?-receiver-received-1$/.test(command.commandId ?? '');
-                if (durableOptInReceived1 || capacityReceived1) {
+                // The fairness cells' reconnect and lifetime windows are pinned in alm-conformance-fairness.
+                const fairnessWindow =
+                    /-(own-share-under-inbound-sender-received-1|buffered-track-drains-receiver-received-1|churn-bounded-tracks-receiver-received-1)$/
+                        .test(command.commandId ?? '');
+                if (durableOptInReceived1 || capacityReceived1 || fairnessWindow) {
                     continue;
                 }
                 expect({ windowMs: command.windowMs, timeoutMs: command.timeoutMs })
@@ -535,6 +544,9 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
+            ['full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],

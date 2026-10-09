@@ -108,8 +108,12 @@ WS server and Node keep the always-owned default.
 - **The age limit bounds counted admissions, not tracks.** Every pair keeps an ordering
   track's snapshot for `orderingTrackTtlMs`, the repository's 1 h, the volatile pair too
   (D181): a receiver that forgot a track would read the sender's next sequence as a gap
-  from 1 and stall the track on a repair. **Limit:** an idle track therefore holds two rows
-  for the hour after its last message.
+  from 1 and stall the track on a repair. Each of the browser's inbound stores keeps at most
+  `AL_INBOUND_MAX_ORDERING_TRACKS` (256) ordering snapshots, though (D191, below); the server's
+  stores are uncapped. **Limit:** an idle track therefore holds two
+  rows for the hour after its last message, or one once its snapshot was evicted: the marker of
+  its delivered sequences stays for the hour, because ordered delivery reads it while the track's
+  buffered rows live.
 - **Diagnostics name the lane.** `effect-drain`, `claim-settled` and `rotation-alive`
   carry a required `lane: 'durable' | 'volatile'` (R-S3a-15).
 
@@ -133,9 +137,10 @@ as well. Before S3c-ii the owner row stayed for an hour and the history row
 An inbound data admission on the volatile pair is recorded in the session's volatile budget
 ([`admitALInboundVolatileBudget`](./lane/admit-al-inbound-volatile-budget.ts)) and released at the earlier of the
 message deadline and 30 s after its arrival (`AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS`, R-S3c-ii-6); it is
-never refused for capacity (D74, D78). It raises the usage the session's own volatile sends are refused against and
-the usage `overloaded` reads (R-S3c-ii-3): its count, its bytes and the age of the oldest counted admission, but
-never the track count, since the ledger records it with no ordering track (D179). A duplicate, a rejected arrival and a message whose sender named no
+never refused for capacity (D74, D78). It counts in the ledger's inbound pool (D189) and raises the totals (R-S3c-ii-3):
+its count, its bytes and the age of the oldest counted admission, but never the track count, since the ledger records
+it with no ordering track (D179). The session's own send is refused, and `overloaded` read, only once the totals are at
+the limit and the own pool at its share as well, so arrivals alone refuse no own send. A duplicate, a rejected arrival and a message whose sender named no
 deadline count nothing. The platform's own state sync admitted on the volatile pair counts as well (R-S3c-ii-7). An
 inbound plan never reads `overloaded` (R-S3c-ii-8), nor `backpressured` (D184): at its bound a session still delivers a best-effort arrival at
 once, still forwards it to the children it owns and still sends its ACKs and NACKs.
@@ -408,7 +413,7 @@ Web and API deploy together.
 | Initial data admission conflict | A fully validated message is retained as `admit-message` in the same inbound QueueBox namespace, with its source and original deadline. Retention checks exact content and identity on reuse.                                                                                                                                                                                                                                                              | The caller receives `pending-admission`; the worker later calls `replay` for one fresh admission attempt. No success receipt is earned by pending storage.                                                                                                 |
 | Control ingress                 | [`ALInboundControlAdmission`](./control/al-inbound-control-admission.ts) reads the tracked message and expected control peer, then [`computeALInboundControlAdmission`](./control/compute-al-inbound-control-admission.ts) and [`validateALInboundControlAdmission`](./control/validate-al-inbound-control-admission.ts) decide the candidate before a conditional commit of its state and effects. Unknown controls cannot create a pending data message. | A commit that wrote work announces it, and the configured control callback receives the acceptance. A commit conflict retains `admit-control` work, answers `pending-admission`, and the worker's replay reports the acceptance through the same callback. |
 | Admitted delivery               | `ALInboundAdmittedDelivery` decides on the surface its eligibility read carried, and reads that surface itself — the retained message and its stored planning state, from one session — for a claim that carries none. It then re-checks expiry and ordering before it dispatches locally or forwards through the supplied port.                                                                                                                           | The worker completes or reschedules the claimed QueueBox entry.                                                                                                                                                                                            |
-| Buffered release                | [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) reads progress and buffered work, computes a permitted release or resynchronization result, and commits the observed transition.                                                                                                                                                                                                                                                            | Local dispatch occurs only after the required release decision; later work becomes eligible through the same worker.                                                                                                                                       |
+| Buffered release                | [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) reads progress and buffered work, computes a permitted release or resynchronization result, and commits the observed transition.                                                                                                                                                                                                                                                            | Local dispatch occurs only after the required release decision; the same batch promotes the track's next release (D190), and later work becomes eligible through the same worker.                                                                          |
 
 `validateALInboundControlAdmission` returns every reason an acknowledgement is
 inadmissible; the caller joins them into one rejection reason. Only an absent pending
@@ -442,6 +447,43 @@ topic and type name, found as for any sender (D142); Relic Hunters' round-transi
 TTL (60 minutes) that also bounds the server's head, so a track silent for over an hour restarts at
 `seq` 1 on both sides, and since the server's sequences follow commit order, two publications of one
 track can commit out of publish order under contention.
+
+**Buffered releases and the snapshot cap.** The message that closes a gap writes one release row per sequence it makes
+releasable, and each release is eligible only once its predecessor is delivered, so a page holds one claimable release
+of a track and defers the rest. A batch whose `release-buffered` claim of track T at seq k completed promotes T's
+release of seq k + 1 (D190): the handler asks the selector's `claimPromotedRelease`, which reads that row by its key
+([`claim-al-inbound-promoted-release.ts`](./lane/claim-al-inbound-promoted-release.ts)), not by searching the page, and
+reserves it only when it is due, its eligibility reads claimable now and the row is still as the read saw it, as a new
+or retrying row only: a promotion whose row moved on claims nothing and spends no lease-timeout sweep. The batch runs it
+after its other claims and asks again for its successor while the batch holds fewer than `AL_INBOUND_WORK_PAGE_SIZE`
+(16) claims. A `claimPromotedRelease` that throws is reported as the batch's failure and promotes nothing; the batch's
+unrun claims still run. Only a completed `release-buffered` claim promotes: a release that did not complete promotes
+nothing and ends its track's chain for that batch, the gap-filling message's own dispatch promotes nothing, a track
+never has two releases claimed at once, and a release never promotes another track's. A 64-message buffer drains in 5
+batches (the first delivers the gap-filling message and promotes nothing, each of the other four runs 16 claims, 15 of
+them promoted), where one release per engine round took 65 batches: 0.4 s against 7.5 s in memory, and 0.7 s against
+13.5 s on IndexedDB with 84 % fewer IndexedDB operations. A 255-message buffer drains in 17 batches (2.1 s in memory,
+33.5 s before), well inside the 30 s default message lifetime that the old drain outlived. The `effect-drain` of such a
+batch counts the promoted releases as `promoted`, and they leave its `deferred`.
+
+A store built with `maxOrderingTracks` keeps at most that many ordering snapshots (D191): the browser's
+session and volatile stores pass `AL_INBOUND_MAX_ORDERING_TRACKS` (256); the WS server's Postgres stores, the
+Node runtime's and the default factories' pass `undefined`, run no pass and state no count, since one server
+store holds every relayed client's tracks and a cap there would evict live ones. A commit that opens
+a track lists the store's ordering prefix right after it commits and, past the cap, removes the least
+recently updated snapshots in a write of its own, each only while it is still the very snapshot read (a
+track updated again in the same millisecond survives). Between the two writes the store may hold 257. A
+snapshot whose removal finds it changed, or whose write conflicts, is left to the next new track and counts
+as still held until then, while one that a rival pass already removed counts as gone. The pass is
+best-effort: the admission has committed, so a snapshot that does not decode, a failed removal write or a
+throwing reporter ends the pass without a count, the commit still answers `committed`, and the next new
+track evicts. The evicted track's next arrival is read as a new track's, from sequence 1, and
+the release of a message buffered on a track evicted beyond its delivered head reads `resync-required`. Only
+the snapshot leaves: the track's `delivered` marker stays for the hour (**Limit** above). A store that
+names a reporter (`reportOrderingTracks`) is told the number of snapshots it holds after each such pass; the
+browser states it on the `storage` diagnostics port as `ordering-tracks`. **Limit:** a receiver holding
+more than 256 live ordered tracks in one store thrashes: each new track evicts a live one, whose next arrival
+reads as a gap from sequence 1 and goes to repair or resynchronization.
 
 **Room authority and the membership fence.** An RTC receiver judges a room send against the room
 snapshot it holds before planning it
@@ -745,8 +787,9 @@ due; `batchStartedAtMs`, when its batch's run loop started, after that batch's s
 reservation; and `startedAtMs`, when the claim itself started — so the reservation half
 (`batchStartedAtMs − dueAtMs`) and the intra-batch half (`startedAtMs − batchStartedAtMs`, the
 serialization behind earlier claims of the run loop alone) are each named rather than left for
-a reader to subtract. `effect-drain` carries the matching `startedAtMs` and names the effects it
-ran in run order (`claimedEffectIds`, recorded by this owner as it runs them). The due rows a round
+a reader to subtract. `effect-drain` carries the matching `startedAtMs`, names the effects it
+ran in run order (`claimedEffectIds`, recorded by this owner as it runs them) and counts the
+releases it ran by promotion (`promoted`, D190). The due rows a round
 saw and did not run ride on the events that already exist, never on one of their own: a
 round that ran claims lists them in its `effect-drain.deferred`, and empty rounds fold them
 into the next `rotation-alive` (`deferredRoundCount`, `latestDeferred`). No

@@ -171,6 +171,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: (probed) => readALOutboundWorkReadyAt(probed, nowMs, NO_DEFERRAL),
             selectReady: async (claimed, size) => toTestALWorkReadySelection(await claimed.claim({ maxCount: size, observedEntries: undefined })),
+            claimSuccessor: undefined,
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
@@ -203,6 +204,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: (probed) => readALOutboundWorkReadyAt(probed, NOW_MS, NO_DEFERRAL),
             selectReady: async (claimable, size) => toTestALWorkReadySelection(await claimable.claim({ maxCount: size, observedEntries: undefined })),
+            claimSuccessor: undefined,
             runClaim: async (claim) => {
                 claimed.push(claim.entry.key.contextId);
                 return { status: 'completed' };
@@ -583,6 +585,7 @@ async function readCompletedBatchReleaseOperations(claimCount: number): Promise<
             toTestALWorkReadySelection(
                 await claimable.claim({ maxCount: size, observedEntries: undefined })
             ),
+        claimSuccessor: undefined,
         runClaim: async () => ({ status: 'completed' }),
         diagnostics: (event) => {
             if (event.kind === 'work-batch' && event.completedCount === claimCount) {

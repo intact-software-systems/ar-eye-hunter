@@ -80,7 +80,9 @@ export function createPSqlALInboundRuntimeStores(
             backend,
             orderingTrackTtlMs: input.orderingTrackTtlMs,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
-            retention: normalizeALRuntimeStoreRetention(input.retention)
+            retention: normalizeALRuntimeStoreRetention(input.retention),
+            // Every WS client's tracks share the one store, so a cap there would evict live tracks (D191).
+            maxOrderingTracks: undefined
         }),
         workQueue: backend.workQueue
     };

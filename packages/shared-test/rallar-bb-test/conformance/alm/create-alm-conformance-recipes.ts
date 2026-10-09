@@ -47,6 +47,9 @@ import { deliveryLifecycle } from './scenarios/delivery-lifecycle.ts';
 import { deliveryReload } from './scenarios/delivery-reload.ts';
 import { durableOptIn } from './scenarios/durable-opt-in.ts';
 import { durableTakeover } from './scenarios/durable-takeover.ts';
+import { bufferedTrackDrains } from './scenarios/fairness/buffered-track-drains.ts';
+import { churnBoundedTracks } from './scenarios/fairness/churn-bounded-tracks.ts';
+import { ownShareUnderInbound } from './scenarios/fairness/own-share-under-inbound.ts';
 import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts';
 import { leaderConfirms } from './scenarios/leader-ack/leader-confirms.ts';
 import { leaderOutsideList } from './scenarios/leader-ack/leader-outside-list.ts';
@@ -138,6 +141,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     backpressureHandsOver,
     backpressureRefused,
     backpressureDeferred,
+    ownShareUnderInbound,
+    bufferedTrackDrains,
+    churnBoundedTracks,
     ...receiptedAudience,
     fencedDelivery,
     fencedCatchUp,

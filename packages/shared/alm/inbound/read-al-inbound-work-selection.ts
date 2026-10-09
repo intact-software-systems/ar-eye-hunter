@@ -22,6 +22,7 @@ import {
     type ALPersistedInboundEffect
 } from './al-inbound-work-entry.ts';
 import { ALInboundRotationPage, type ALInboundWorkScan } from './lane/al-inbound-rotation-page.ts';
+import { claimALInboundPromotedRelease } from './lane/claim-al-inbound-promoted-release.ts';
 
 const SCAN_STATUSES = [EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED] as const;
 
@@ -145,6 +146,14 @@ export interface ALInboundWorkSelector {
      * fresh array, so its identity names the batch even when new work is committed meanwhile.
      */
     getClaimedControlSends(): readonly ALInboundClaimedControlSend[];
+    /**
+     * Reserves the release of `seq + 1` of the track whose release of `seq` this batch just completed,
+     * when that row is due and eligible now (D190). The same track only, one row per completed
+     * predecessor, so a track never has two releases claimed at once.
+     */
+    claimPromotedRelease(port: ALWorkQueuePort, completed: ALWorkClaim): Promise<ALWorkClaim | undefined>;
+    /** How many releases the last batch ran by promotion; each left that batch's unreserved due rows. */
+    getPromotedCount(): number;
     requestHeadRead(): void;
     isHeadReadPending(): boolean;
 }
@@ -310,6 +319,7 @@ export function createALInboundWorkSelector(
     });
     let claimedObservations: ReadonlyMap<string, ALInboundDeliveryObservation> = new Map();
     let unreservedDue: readonly ALInboundDeferredEffect[] = [];
+    let promotedCount = 0;
     let claimedControlSends: readonly ALInboundClaimedControlSend[] = [];
     return {
         readNextReadyAtMs: (port) => readALInboundNextReadyAtMs(page, port, dependencies.nowMs),
@@ -317,9 +327,25 @@ export function createALInboundWorkSelector(
             const claimed = await readALInboundClaimedSelection({ page, port, pageSize, nowMs: dependencies.nowMs });
             claimedObservations = claimed.observations;
             unreservedDue = claimed.unreservedDue;
+            promotedCount = 0;
             claimedControlSends = claimed.controlSends;
             return claimed.selection;
         },
+        claimPromotedRelease: async (port, completed) => {
+            const promoted = await claimALInboundPromotedRelease({
+                port,
+                completed,
+                delivery: dependencies.delivery,
+                namespace: dependencies.namespace,
+                nowMs: dependencies.nowMs()
+            });
+            if (promoted !== undefined) {
+                unreservedDue = unreservedDue.filter((due) => due.effectId !== promoted.effectId);
+                promotedCount += 1;
+            }
+            return promoted?.claim;
+        },
+        getPromotedCount: () => promotedCount,
         getDeliveryObservation: (effectId) => claimedObservations.get(effectId),
         getUnreservedDue: () => unreservedDue,
         getClaimedControlSends: () => claimedControlSends,

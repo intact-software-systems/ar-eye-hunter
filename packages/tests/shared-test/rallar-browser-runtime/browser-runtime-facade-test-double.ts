@@ -5,6 +5,10 @@ import {
     type BlackBoxRallarCongestionCounters
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-congestion-counters.ts';
 import {
+    createBlackBoxRallarOrderingTracks,
+    type BlackBoxRallarOrderingTracks
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-ordering-tracks.ts';
+import {
     type BlackBoxBrowserAuthDependency,
     type BlackBoxBrowserCrdtDependency,
     type BlackBoxBrowserDeliveriesDependency,
@@ -148,6 +152,8 @@ const QUEUED_ADMISSION: ALDeliveryAdmissionVerdict = { kind: 'admitted', durable
 /** The ledger of a connected session that holds nothing, at the production limits. */
 const IDLE_SESSION_REPORT: ALVolatileSessionReport = {
     usage: { admissions: 0, bytes: 0, oldestAgeMs: 0, tracks: 0 },
+    own: { admissions: 0, bytes: 0 },
+    inbound: { admissions: 0, bytes: 0 },
     limits: AL_VOLATILE_SESSION_LIMITS,
     overloaded: false
 };
@@ -373,6 +379,7 @@ let scriptedFaults = createScriptedTransportFaultPort();
 let countingStorage = createCountingIndexedDbOperationObserver();
 let scriptedStorageFaults = createScriptedStorageFaultPort();
 let congestionCounters = createBlackBoxRallarCongestionCounters();
+let orderingTracks = createBlackBoxRallarOrderingTracks();
 let deliveryRegistry = createFacadeDeliveryRegistry();
 let deliverySequence = 0;
 
@@ -407,6 +414,9 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     },
     get congestion(): BlackBoxRallarCongestionCounters {
         return congestionCounters;
+    },
+    get orderingTracks(): BlackBoxRallarOrderingTracks {
+        return orderingTracks;
     }
 };
 
@@ -460,6 +470,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     countingStorage = createCountingIndexedDbOperationObserver();
     scriptedStorageFaults = createScriptedStorageFaultPort();
     congestionCounters = createBlackBoxRallarCongestionCounters();
+    orderingTracks = createBlackBoxRallarOrderingTracks();
     deliveryRegistry = createFacadeDeliveryRegistry();
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);

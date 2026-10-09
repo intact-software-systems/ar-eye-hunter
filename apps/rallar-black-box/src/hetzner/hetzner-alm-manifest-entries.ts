@@ -19,6 +19,9 @@ import { claimRefusedOnRtc } from '@shared-test/rallar-bb-test/conformance/alm/s
 import { backpressureDeferred } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/congestion/backpressure-deferred.ts';
 import { backpressureHandsOver } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/congestion/backpressure-hands-over.ts';
 import { backpressureRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/congestion/backpressure-refused.ts';
+import { bufferedTrackDrains } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/buffered-track-drains.ts';
+import { churnBoundedTracks } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/churn-bounded-tracks.ts';
+import { ownShareUnderInbound } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/own-share-under-inbound.ts';
 import { leaderConfirms } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-confirms.ts';
 import { leaderOutsideList } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-outside-list.ts';
 import { noLeaderRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/no-leader-refused.ts';
@@ -94,7 +97,11 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     // The congestion cells' lane evidence is local and the hosted full read's; manifest 18 stays as recorded.
     { scenarioKey: 'backpressure-hands-over', carriers: backpressureHandsOver.carriers },
     { scenarioKey: 'backpressure-refused', carriers: backpressureRefused.carriers },
-    { scenarioKey: 'backpressure-deferred', carriers: backpressureDeferred.carriers }
+    { scenarioKey: 'backpressure-deferred', carriers: backpressureDeferred.carriers },
+    // The fairness cells' lane evidence is local and the hosted full read's; manifest 18 stays as recorded.
+    { scenarioKey: 'own-share-under-inbound', carriers: ownShareUnderInbound.carriers },
+    { scenarioKey: 'buffered-track-drains', carriers: bufferedTrackDrains.carriers },
+    { scenarioKey: 'churn-bounded-tracks', carriers: churnBoundedTracks.carriers }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {

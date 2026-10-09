@@ -1,3 +1,5 @@
+import { Activity } from 'react';
+
 import { EventStreamPanel } from '../../diagnostics/events/event-stream-panel.tsx';
 import { ExecutionFocusPanel } from '../../diagnostics/events/ExecutionFocusPanel.tsx';
 import { RallarTracePanel } from '../../diagnostics/events/rallar-trace-panel.tsx';
@@ -36,7 +38,9 @@ export function DiagnosticEvidenceTabPanels(props: DiagnosticEvidenceTabPanelsPr
                 aria-labelledby="tab-rallar-trace"
                 hidden={activeTab !== 'rallar-trace'}
             >
-                <RallarTracePanel active={activeTab === 'rallar-trace'} state={state} authSession={authSession} />
+                <Activity mode={activeTab === 'rallar-trace' ? 'visible' : 'hidden'}>
+                    <RallarTracePanel active={activeTab === 'rallar-trace'} state={state} authSession={authSession} />
+                </Activity>
             </section>
             <section
                 id="panel-event-stream"
@@ -45,12 +49,14 @@ export function DiagnosticEvidenceTabPanels(props: DiagnosticEvidenceTabPanelsPr
                 aria-labelledby="tab-event-stream"
                 hidden={activeTab !== 'event-stream'}
             >
-                <EventStreamEvidence
-                    runtime={props.runtime}
-                    auth={props.auth}
-                    runnerSelection={props.runnerSelection}
-                    active={activeTab === 'event-stream'}
-                />
+                <Activity mode={activeTab === 'event-stream' ? 'visible' : 'hidden'}>
+                    <EventStreamEvidence
+                        runtime={props.runtime}
+                        auth={props.auth}
+                        runnerSelection={props.runnerSelection}
+                        active={activeTab === 'event-stream'}
+                    />
+                </Activity>
             </section>
             <section
                 id="panel-rallar-server"

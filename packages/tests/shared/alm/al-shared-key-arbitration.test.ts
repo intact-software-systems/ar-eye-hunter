@@ -329,7 +329,8 @@ function createInboundStore(fixture: ArbitrationFixture): ALInboundAdmissionStor
         backend: fixture.backend,
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
 }
 

@@ -51,6 +51,8 @@ describe('rallar.messages.readUsage', () => {
 
         expect(report).toEqual({
             usage: { admissions: 1, bytes: 100, oldestAgeMs: expect.any(Number), tracks: 1 },
+            own: { admissions: 1, bytes: 100 },
+            inbound: { admissions: 0, bytes: 0 },
             limits: LIMITS,
             overloaded: false
         });
@@ -68,6 +70,27 @@ describe('rallar.messages.readUsage', () => {
         expect(facade.messages.readUsage()).toMatchObject({ usage: { admissions: 2, bytes: 20, tracks: 0 }, overloaded: true });
     });
 
+    it('reads the session\'s own sends and its arrivals as two pools, not overloaded while arrivals alone hold the bound (D189)', async () => {
+        const facade = createRallarTestFacade();
+        await facade.connect();
+        const nowMs = Date.now();
+        budget.record({ msgId: 'received-1', bytes: 40, deadlineAtMs: nowMs + 30_000, nowMs, trackKey: undefined });
+        budget.record({ msgId: 'received-2', bytes: 60, deadlineAtMs: nowMs + 30_000, nowMs, trackKey: undefined });
+
+        expect(facade.messages.readUsage()).toMatchObject({
+            usage: { admissions: 2, bytes: 100 },
+            own: { admissions: 0, bytes: 0 },
+            inbound: { admissions: 2, bytes: 100 },
+            overloaded: false
+        });
+        budget.tryAdmit({ msgId: 'sent-1', bytes: 10, deadlineAtMs: nowMs + 30_000, nowMs, trackKey: undefined });
+        expect(facade.messages.readUsage()).toMatchObject({
+            usage: { admissions: 3, bytes: 110 },
+            own: { admissions: 1, bytes: 10 },
+            overloaded: true
+        });
+    });
+
     it('reads an admission whose deadline has passed as released', async () => {
         const facade = createRallarTestFacade();
         await facade.connect();
@@ -76,6 +99,8 @@ describe('rallar.messages.readUsage', () => {
 
         expect(facade.messages.readUsage()).toEqual({
             usage: { admissions: 0, bytes: 0, oldestAgeMs: 0, tracks: 0 },
+            own: { admissions: 0, bytes: 0 },
+            inbound: { admissions: 0, bytes: 0 },
             limits: LIMITS,
             overloaded: false
         });

@@ -230,6 +230,7 @@ function createOwnedHandler<TOwnership extends ALDurableWorkOwnership>(ownership
         readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
         readNextReadyAtMs: async () => undefined,
         selectReady: async (port, size) => toTestALWorkReadySelection(await port.claim({ maxCount: size, observedEntries: undefined })),
+        claimSuccessor: undefined,
         runClaim: async () => ({ status: 'completed' }),
         diagnostics: (event) => {
             diagnostics.push(event);

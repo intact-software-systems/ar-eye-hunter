@@ -110,10 +110,10 @@ const skippedScenarioIds = (process.env.RALLAR_BLACK_BOX_ALM_SKIP ?? '')
 
 const CONFORMANCE_TYPE_ID = 'alm.conformance';
 const CONFORMANCE_DEADLINE_MS = 18_000;
-// Finite carrier ceiling covers the conformance recipes and connection readiness: the next five minutes above the
-// widest carrier, rtc-with-ws-fallback in the full scope, measured at 10.0 minutes unloaded and 10.3 under load
-// (rtc 7.9, ws 6.7 minutes on the same machine). Its two-agent family outgrew the nine-minute ceiling with the
-// checkpoint-recovery, checkpoint-lag and congestion cells; the volatile-bound cells run in the addressed family.
+// Finite carrier ceiling covers the conformance recipes and connection readiness. With the fairness cells the full
+// scope's two-agent family measured ws 5.3, rtc 6.4 and rtc-with-ws-fallback 6.8 minutes. Before the agent page paced
+// its React updates, the rtc family took 15.1 minutes (about 906 s, past this ceiling): the ceiling holds only while
+// the page's renders stay off the lane's sends.
 const CARRIER_TEST_TIMEOUT_MS = 900_000;
 
 /**

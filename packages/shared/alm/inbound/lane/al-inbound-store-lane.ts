@@ -325,7 +325,8 @@ export class ALInboundStoreLane {
             queueWaitMs: event.queueWaitMs,
             startedAtMs: event.startedAtMs,
             claimedEffectIds: runOrder?.batchStartedAtMs === event.startedAtMs ? runOrder.effectIds : [],
-            deferred: toOldestFirstALInboundDeferredEffects(this.workSelector.getUnreservedDue())
+            deferred: toOldestFirstALInboundDeferredEffects(this.workSelector.getUnreservedDue()),
+            promoted: this.workSelector.getPromotedCount()
         });
     }
 
@@ -504,6 +505,7 @@ export class ALInboundStoreLane {
             // The rotation advances one status per probe, so an answer of its own never stands.
             readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
             selectReady: (port, pageSize) => this.selectInboundWork(port, pageSize),
+            claimSuccessor: (port, completed) => this.workSelector.claimPromotedRelease(port, completed),
             runClaim: (claim, batchStartedAtMs) => this.runInboundClaim(claim, batchStartedAtMs),
             diagnostics: (event) => this.recordWorkDiagnostics(event),
             storageHealth: input.stores.storageHealth,

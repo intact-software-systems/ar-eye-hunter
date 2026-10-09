@@ -1,6 +1,5 @@
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { computeAssertCommandOutcome } from '../assert/compute-assert-command-outcome.ts';
 import { waitForBarrier } from '../barrier/wait-for-barrier.ts';
@@ -8,6 +7,7 @@ import { toRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import { LoopCommandExecution } from '../loop/loop-command-execution.ts';
 import { ParallelCommandExecution } from '../parallel/parallel-command-execution.ts';
 import type {
+    RallarBlackBoxTestAlmUsage,
     RallarBlackBoxTestCleanupInput,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandContext,
@@ -47,8 +47,8 @@ export interface CreateRallarBlackBoxTestRuntimeOptions {
     readonly idFactory?: (prefix: string) => string;
     readonly commandExecutor?: RallarBlackBoxTestCommandExecutor;
     readonly cleanup?: RallarBlackBoxTestRuntimeCleanup;
-    /** Reads the page's session ledger for `stats`; absent on a runtime that drives no Rallar page. */
-    readonly readAlmUsage?: () => Promise<ALVolatileSessionReport | undefined>;
+    /** Reads the page's session ledger and ordering snapshots for `stats`; absent on a runtime that drives no Rallar page. */
+    readonly readAlmUsage?: () => Promise<RallarBlackBoxTestAlmUsage | undefined>;
     /** Reads the page's congestion counters for `stats`; absent on a runtime that drives no Rallar page. */
     readonly readCongestionCounters?: () => Promise<ALCongestionCounters | undefined>;
 }
@@ -83,7 +83,7 @@ namespace InMemoryRallarBlackBoxTestRuntime {
         readonly idFactory: (prefix: string) => string;
         readonly commandExecutor: RallarBlackBoxTestCommandExecutor | undefined;
         readonly cleanup: RallarBlackBoxTestRuntimeCleanup | undefined;
-        readonly readAlmUsage: (() => Promise<ALVolatileSessionReport | undefined>) | undefined;
+        readonly readAlmUsage: (() => Promise<RallarBlackBoxTestAlmUsage | undefined>) | undefined;
         readonly readCongestionCounters: (() => Promise<ALCongestionCounters | undefined>) | undefined;
     }
 }
@@ -682,7 +682,7 @@ function toRuntimeDependencies(
 /** The page's readings join the runtime's own stats only where the page answered them, so absence stays absence. */
 function toStatsWithPageReadings(
     stats: RallarBlackBoxTestStatsSnapshot,
-    alm: ALVolatileSessionReport | undefined,
+    alm: RallarBlackBoxTestAlmUsage | undefined,
     congestion: ALCongestionCounters | undefined
 ): RallarBlackBoxTestStatsSnapshot {
     if (alm === undefined && congestion === undefined) {

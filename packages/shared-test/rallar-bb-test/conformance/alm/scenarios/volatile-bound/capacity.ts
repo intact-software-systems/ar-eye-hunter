@@ -31,7 +31,9 @@ import {
  * reconnect joins the room again (the close keeps the membership), and the lowered session admits the platform state
  * sync inbound (`group-state.event`, `client-state.snapshot` and `event`, 6 entries and about 26 KB in a fresh
  * two-member room), counted for at most 30 s; the sender waits that long after the reconnect before its first send,
- * so that sync has left the budget. The count bound keeps its constant, so bytes alone decide.
+ * so that sync has left the budget. The count bound keeps its constant, so bytes alone decide. An own send is
+ * refused only once its own pool would also pass its share, half the bound (D189): with the sync gone the own pool is
+ * the sends themselves, which the second already takes past 18 000, so the total decides and refuses the third.
  */
 const CAPACITY_FILLER = 'x'.repeat(12_000);
 const CAPACITY_LIMITS = {
