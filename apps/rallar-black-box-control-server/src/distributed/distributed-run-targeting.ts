@@ -3,16 +3,16 @@ import type {
     RallarBlackBoxDistributedRoleAssignment,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRecipeSelection,
+    RallarBlackBoxDistributedTargetPolicy,
     RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import {
     computeDistributedTargetResolutionSummary,
     toDistributedAgentRecipeSelections
 } from '@shared-test/rallar-bb-test/distributed/resolve-distributed-run-targets.ts';
-import { snapshotExecutableRecipe } from '@shared-test/rallar-bb-test/recipe/snapshot-executable-recipe.ts';
-
 import { toMissingRtcCaptureSupportReason } from '@shared-test/rallar-bb-test/distributed/rtc-capture-support.ts';
 import { RecipeCaptureRequirements } from '@shared-test/rallar-bb-test/recipe/recipe-capture-requirements.ts';
+import { snapshotExecutableRecipe } from '@shared-test/rallar-bb-test/recipe/snapshot-executable-recipe.ts';
 
 import type { ControlDistributedRunState, ControlRunState } from '../control-service-state.ts';
 
@@ -52,23 +52,7 @@ export function toNormalizedDistributedRunManifest(
                 ? {}
                 : { roleAssignmentPolicy: Object.freeze({ ...manifest.roleAssignmentPolicy }) }),
             barrier: Object.freeze({ ...manifest.barrier }),
-            targetPolicy: manifest.targetPolicy.mode === 'selected-agents'
-                ? Object.freeze({
-                    ...manifest.targetPolicy,
-                    agentIds: Object.freeze([...manifest.targetPolicy.agentIds])
-                })
-                : manifest.targetPolicy.mode === 'role-map'
-                ? Object.freeze({
-                    ...manifest.targetPolicy,
-                    roles: Object.freeze(
-                        Object.fromEntries(
-                            Object.entries(manifest.targetPolicy.roles).map((
-                                [role, agents]
-                            ) => [role, Object.freeze([...agents])])
-                        )
-                    )
-                })
-                : Object.freeze({ ...manifest.targetPolicy }),
+            targetPolicy: toDistributedTargetPolicySnapshot(manifest.targetPolicy),
             groupAssertions: Object.freeze(
                 manifest.groupAssertions.map((assertion) =>
                     Object.freeze({
@@ -83,6 +67,28 @@ export function toNormalizedDistributedRunManifest(
             metadata: Object.freeze({ ...manifest.metadata })
         })
     };
+}
+
+function toDistributedTargetPolicySnapshot(
+    policy: RallarBlackBoxDistributedTargetPolicy
+): RallarBlackBoxDistributedTargetPolicy {
+    if (policy.mode === 'selected-agents') {
+        return Object.freeze({
+            ...policy,
+            agentIds: Object.freeze([...policy.agentIds])
+        });
+    }
+    if (policy.mode === 'role-map') {
+        return Object.freeze({
+            ...policy,
+            roles: Object.freeze(
+                Object.fromEntries(
+                    Object.entries(policy.roles).map(([role, agents]) => [role, Object.freeze([...agents])])
+                )
+            )
+        });
+    }
+    return Object.freeze({ ...policy });
 }
 
 export function isResolvedTargetPolicy(manifest: RallarBlackBoxDistributedRunManifest): boolean {

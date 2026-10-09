@@ -21,6 +21,7 @@ import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.t
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from './browser-rallar-message-dispatch.ts';
 import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
@@ -81,6 +82,19 @@ export class BrowserRallarMessagesController {
             resolveRoomSendFence: input.resolveRoomSendFence
         });
 
+        this.operations = this.createOperations(
+            inputValidator,
+            input.recoveryOwners,
+            () => input.requireMiddleware().middleware.volatileBudget.readReport(input.nowMs())
+        );
+        this.crdtTransport = createRallarCrdtMessageTransport(this.operations);
+    }
+
+    private createOperations(
+        inputValidator: BrowserMessageInputValidator,
+        recoveryOwners: BrowserChannelRecoveryOwners,
+        readUsage: RallarMessagesOperations['readUsage']
+    ): RallarMessagesOperations {
         const rtc: RallarMessagesOperations['rtc'] = {
             send: async <T>(sendInput: RallarRtcSendInput<T>) => await this.sender.sendRtc(sendInput, undefined),
             onMessage: <T>(
@@ -100,9 +114,9 @@ export class BrowserRallarMessagesController {
             sender: this.sender,
             rtc,
             ws,
-            recoveryOwners: input.recoveryOwners
+            recoveryOwners
         });
-        this.operations = {
+        return {
             rtc,
             ws,
             channel: <T>(
@@ -111,8 +125,7 @@ export class BrowserRallarMessagesController {
             room: <T>(
                 definition: RallarRoomMessageChannelDefinition
             ): RallarTypedMessageChannel<T> => channels.room<T>(definition),
-            readUsage: () => input.requireMiddleware().middleware.volatileBudget.readReport(input.nowMs())
+            readUsage
         };
-        this.crdtTransport = createRallarCrdtMessageTransport(this.operations);
     }
 }

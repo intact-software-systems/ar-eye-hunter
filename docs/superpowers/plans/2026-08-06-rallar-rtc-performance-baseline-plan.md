@@ -68,8 +68,20 @@ canonical browser and headless bundles remain below their existing 253/327 KiB c
 generated manifests remain unchanged. Original raw native and full-suite failures remain retained;
 focused passes do not retroactively change their verdicts.
 
-The next useful slices are accepted feature publication with immutable-main gates and fresh CI,
-then exact deployed HOST/RUN verification. Source checks provide no governed E3 acceptance.
+The final integrated review's three private corrections are independently accepted. Manifest
+target-policy snapshotting and browser message-operation construction now have distinct coherent
+responsibilities; receipt fixtures use named inputs and explicit clocks. The correction passes
+1,602 shared-web cases, 106 Deno cases (one ignored), native and maintained typing, four consumer
+builds and fresh unchanged browser/headless bundle budgets. Original failures remain preserved.
+
+Final source readiness remains blocked by a maintainer decision for the two current shell tab
+boundaries: RunnerWorkspaceTabPanels and DiagnosticEvidenceTabPanels. Advanced and Monitor links,
+existing routes and in-session draft/filter/request state still depend on them. The boundaries
+and empty production legacy registry remain unchanged; neither plan approval nor passing tests
+authorize continued retention. The completed construction documents are removed from active work.
+
+The next useful outcomes are this exact compatibility decision and fresh CI for the reviewed draft
+milestone, then exact deployed HOST/RUN verification. Source checks provide no governed E3 acceptance.
 
 Actual local default-worker HOST acceptance remains three cases in 19.8 seconds with zero retries:
 native, off and malformed. Deployed HOST/RUN and actual Actions application are still unaccepted.
