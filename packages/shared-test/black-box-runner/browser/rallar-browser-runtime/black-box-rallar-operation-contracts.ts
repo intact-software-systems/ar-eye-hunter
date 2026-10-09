@@ -25,6 +25,7 @@ import type {
     ALDeliveryCarrier,
     ALDeliveryEvidence,
     ALDeliveryReceiptEvidence,
+    ALDeliveryRefusalReason,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
@@ -398,6 +399,8 @@ export interface BlackBoxRallarDeliveryObservation
     readonly attemptOutcomes: readonly ALDeliveryAttemptOutcome[];
     /** The carrier of every settled attempt, index-aligned with `attemptOutcomes`: a hand-over reads `rtc` then `ws` (D56). */
     readonly attemptCarriers: readonly ALDeliveryCarrier[];
+    /** The reason of every refused admission row, in attempt order: a leg the fallback carrier took over. */
+    readonly attemptRefusalReasons: readonly ALDeliveryRefusalReason[];
     readonly reason: string | undefined;
     /** A carrier refused admission because of its own rate limit or open circuit, not for want of a route. */
     readonly backpressured: boolean;

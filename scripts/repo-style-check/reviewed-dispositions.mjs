@@ -276,14 +276,15 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 71
     }),
-    // One admitted invocation owns capture, cached results, events and cleanup.
-    // Async ledger reads choose accepted/current state, include available usage
-    // and fence successor writes inside that same reviewed warning-tier shell.
+    // One admitted assignment owns capture, recipe bodies, cached results,
+    // events and cleanup. Ledger and congestion reads choose admitted/current
+    // state and fence successor publication after both awaits in that same shell.
+    // This exact combined-owner review authorizes no future growth or other rule.
     Object.freeze({
         path: 'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 109
+        maximumMagnitude: 112
     }),
     // Workbench JSON.parse remains raw until its selected schema validates it.
     Object.freeze({
@@ -649,6 +650,15 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/tests/repo/tests-typecheck-external-unit.test.ts',
         rule: 'boundary.unknown',
         symbol: 'readTestProjectIncludes'
+    }),
+    // Raw filesystem compiler options stay local to rejection checks: baseUrl
+    // and ignoreDeprecations use key presence, skipLibCheck compares true, and
+    // types uses Array.isArray. Only problem strings leave these four fields;
+    // no raw value supplies execution config or trusted domain state.
+    Object.freeze({
+        path: 'packages/tests/repo/typescript-7-boundaries.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
     }),
     // erasableSyntaxOnly migration: converting parameter properties to explicit
     // fields duplicates each `unknown`-typed parameter annotation into a field

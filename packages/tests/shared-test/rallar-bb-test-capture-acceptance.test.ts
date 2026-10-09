@@ -8,7 +8,8 @@ import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 
 const CONTROL_A = Object.freeze({ runId: 'callback-A', agentId: 'agent-A' } satisfies ControlClientIdentity);
 const CONTROL_B = Object.freeze({ runId: 'callback-B', agentId: 'agent-B' } satisfies ControlClientIdentity);
@@ -20,7 +21,7 @@ describe('accepted recipe capture structure', () => {
         const commands: RallarBlackBoxTestCommand[] = [step, { kind: 'ws.send', data: opaque }];
         const recipe = { schemaVersion: 1 as const, recipeId: 'same', rtcCaptureMode: 'signaling' as const, commands };
         const observed: RallarBlackBoxTestCommand[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: async (command) => {
                 observed.push(command);
                 return { status: 'ok' };
@@ -38,7 +39,7 @@ describe('accepted recipe capture structure', () => {
 
     it('retains original body and invocation attribution on replay and distinguishes a new body with the same ID', async () => {
         let effects = 0;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: async () => {
                 effects += 1;
                 return { status: 'ok' };
@@ -53,7 +54,7 @@ describe('accepted recipe capture structure', () => {
         expect(first.value).toMatchObject({ invocation: { invocationId: expect.any(String), recipeBodyId: expect.any(String), run: 'off' } });
         expect(replay).toMatchObject({ value: first.value, replayed: true });
         expect(second.value).toMatchObject({ invocation: { recipe: 'native' } });
-        expect(second.value).not.toMatchObject({ invocation: Reflect.get(Object(first.value), 'invocation') });
+        expect(second.value).not.toMatchObject({ invocation: decodeRecord(first.value).invocation });
         expect(effects).toBe(2);
     });
     it('captures Configure selection for a later implicit CRDT step before an earlier command yields', async () => {
@@ -61,7 +62,7 @@ describe('accepted recipe capture structure', () => {
         const release = Promise.withResolvers<void>();
         const rallar = { rtcCaptureMode: 'off' };
         const observed: RallarBlackBoxTestCommandContext[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: async (command, context) => {
                 if (command.kind === 'health') {
                     entered.resolve();
@@ -93,7 +94,7 @@ describe('accepted recipe capture structure', () => {
     });
 
     it('keeps each accepted body identity when a load notification accepts another recipe', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         let replaced = false;
         let second: ReturnType<typeof runtime.execute> | undefined;
         runtime.subscribe((state) => {
@@ -106,7 +107,7 @@ describe('accepted recipe capture structure', () => {
         const other = await second;
         expect(first.value).toMatchObject({ recipeId: 'first', recipeBodyId: expect.any(String) });
         expect(other?.value).toMatchObject({ recipeId: 'second', recipeBodyId: expect.any(String) });
-        expect(Reflect.get(Object(first.value), 'recipeBodyId')).not.toBe(Reflect.get(Object(other?.value), 'recipeBodyId'));
+        expect(decodeRecord(first.value).recipeBodyId).not.toBe(decodeRecord(other?.value).recipeBodyId);
     });
     it.each(['running', 'command-id', 'invocation-id'] as const)(
         'binds a reference run before a reentrant %s callback replaces the loaded body',
@@ -115,7 +116,7 @@ describe('accepted recipe capture structure', () => {
             const effects: string[] = [];
             let sequence = 0;
             let onId = (_prefix: string): void => {};
-            const runtime = createRallarBlackBoxTestRuntime({
+            const runtime = createDefaultRallarBlackBoxTestRuntime({
                 idFactory: (prefix) => {
                     onId(prefix);
                     return `${prefix}-${++sequence}`;
@@ -170,7 +171,7 @@ describe('accepted recipe capture structure', () => {
                 recipeId: 'first',
                 invocation: {
                     recipe: 'off',
-                    recipeBodyId: Reflect.get(Object(loaded.value), 'recipeBodyId')
+                    recipeBodyId: decodeRecord(loaded.value).recipeBodyId
                 }
             });
             expect(effects).toEqual(['first']);
@@ -180,7 +181,7 @@ describe('accepted recipe capture structure', () => {
                 recipeId: 'replacement',
                 invocation: {
                     recipe: 'native',
-                    recipeBodyId: Reflect.get(Object(replacementLoad?.value), 'recipeBodyId')
+                    recipeBodyId: decodeRecord(replacementLoad?.value).recipeBodyId
                 }
             });
             expect(effects).toEqual(['first', 'replacement']);
@@ -189,7 +190,7 @@ describe('accepted recipe capture structure', () => {
 
     it('captures a nested reference body at its own admission after earlier children change the load', async () => {
         const effects: string[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: async (command) => {
                 if (command.kind === 'rtc.connect') {
                     effects.push(command.connection ?? 'missing');
@@ -199,10 +200,11 @@ describe('accepted recipe capture structure', () => {
         });
         await runtime.execute({ kind: 'recipe.load', recipe: { schemaVersion: 1, recipeId: 'old', commands: [{ kind: 'rtc.connect', connection: 'old' }] } });
         let replaced = false;
+        let thirdLoad: Promise<RallarBlackBoxTestResult> | undefined;
         runtime.subscribe((state) => {
             if (!replaced && state.status === 'running' && state.activeCommand?.commandId === 'nested') {
                 replaced = true;
-                void runtime.execute({
+                thirdLoad = runtime.execute({
                     kind: 'recipe.load',
                     recipe: { schemaVersion: 1, recipeId: 'third', commands: [{ kind: 'rtc.connect', connection: 'third' }] }
                 });
@@ -222,6 +224,7 @@ describe('accepted recipe capture structure', () => {
                 ]
             }
         });
+        await thirdLoad;
         expect(outer.ok).toBe(true);
         expect(effects).toEqual(['second']);
         expect(runtime.state().commandHistory.find((result) => result.commandId === 'nested')?.value).toMatchObject({
@@ -239,7 +242,7 @@ describe('accepted recipe capture structure', () => {
             let onCommandId = (): void => {};
             const effects: string[] = [];
             const observed: RallarBlackBoxTestCommandContext[] = [];
-            const runtime = createRallarBlackBoxTestRuntime({
+            const runtime = createDefaultRallarBlackBoxTestRuntime({
                 idFactory: (prefix) => {
                     if (prefix === 'command') {
                         onCommandId();
@@ -308,7 +311,7 @@ describe('accepted recipe capture structure', () => {
         let onCommandId = (): void => {};
         const effects: string[] = [];
         const observed: RallarBlackBoxTestCommandContext[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             idFactory: (prefix) => {
                 if (prefix === 'command') {
                     onCommandId();
@@ -353,7 +356,7 @@ describe('accepted recipe capture structure', () => {
         const effects: string[] = [];
         const observed: RallarBlackBoxTestCommandContext[] = [];
         const reentered: Promise<RallarBlackBoxTestResult>[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             idFactory: (prefix) => {
                 if (prefix === 'event' && eventArmed) {
                     eventArmed = false;

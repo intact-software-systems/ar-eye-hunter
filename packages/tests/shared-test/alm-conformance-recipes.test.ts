@@ -21,7 +21,7 @@ import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRtcConnectCommand
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
@@ -166,7 +166,8 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'server-command',
         'capacity',
         'capacity-age',
-        'capacity-tracks'
+        'capacity-tracks',
+        'backpressure-deferred'
     ],
     rtc: [
         'volatile-default',
@@ -186,7 +187,9 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'ws-unicast-receipt',
         'capacity',
         'capacity-age',
-        'capacity-tracks'
+        'capacity-tracks',
+        'backpressure-refused',
+        'backpressure-deferred'
     ],
     'rtc-with-ws-fallback': [
         'volatile-default',
@@ -211,7 +214,8 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'unicast-fallback',
         'capacity',
         'capacity-age',
-        'capacity-tracks'
+        'capacity-tracks',
+        'backpressure-hands-over'
     ]
 } as const;
 
@@ -281,7 +285,7 @@ describe('alm-conformance recipe family', () => {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
                 const threeRoles = threeAgentIds.includes(scenario.scenarioId);
                 const twoPages = scenario.scenarioId === 'durable-takeover' || scenario.scenarioId === 'flush-on-hide';
-                const twoSessions = (AUDIENCE_KEYS as readonly string[]).includes(scenario.scenarioId);
+                const twoSessions = AUDIENCE_KEYS.some((scenarioId) => scenarioId === scenario.scenarioId);
                 expect(scenario.roles, scenario.scenarioKey).toEqual(
                     threeRoles
                         ? ['sender', 'receiver', 'recipient-b']
@@ -512,6 +516,7 @@ describe('alm-conformance recipe family', () => {
             'ws-unicast-receipt',
             'unicast-fallback',
             ...VOLATILE_BOUND_KEYS,
+            'backpressure-hands-over',
             'receipted-audience',
             'receipted-audience',
             'receipted-audience',
@@ -530,6 +535,8 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],
@@ -798,7 +805,7 @@ describe('alm-conformance recipe family', () => {
                 ? { expected: ['r', 'b'], confirmed: ['r'], unconfirmed: ['b'] }
                 : { expected: ['r', 'b'], confirmed: ['r', 'b'], unconfirmed: [] };
             const readTail = async (state: string) => {
-                const runtime = createRallarBlackBoxTestRuntime({
+                const runtime = createDefaultRallarBlackBoxTestRuntime({
                     commandExecutor: (command) =>
                         command.kind === 'messages.receipts'
                             ? {

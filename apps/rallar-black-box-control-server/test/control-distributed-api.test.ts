@@ -6,7 +6,7 @@ import {
     decodeTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 import { createRallarBlackBoxRtcSmokeRecipe } from '@shared-test/rallar-bb-test/fixtures/rtc-live-recipes.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import { registerAgent, waitForPersistedSnapshot } from './support/control-api-test-agent.ts';
@@ -100,7 +100,7 @@ Deno.test('distributed HTTP admission retains explicit Off through actual result
             assert(isJsonRecordValue(manifest));
             const agentSocket = await registerAgent(server.baseUrl, 'api-capture-control', 'agent-a');
             socket = agentSocket;
-            const runtime = createRallarBlackBoxTestRuntime();
+            const runtime = createDefaultRallarBlackBoxTestRuntime();
             const completed = Promise.withResolvers<void>();
             agentSocket.addEventListener('message', (event) => {
                 void (async () => {

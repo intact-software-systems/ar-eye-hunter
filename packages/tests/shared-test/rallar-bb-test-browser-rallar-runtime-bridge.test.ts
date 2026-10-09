@@ -60,6 +60,23 @@ describe('browser Rallar runtime bridge', () => {
         expect(await createSpaBrowserRallarRuntime().readAlmUsage()).toBe(report);
     });
 
+    it('reads no congestion counters from a page that never used Rallar, and loads no runtime to read them', async () => {
+        const fakeWindow: { __blackBoxRallar?: { readCongestionCounters(): Promise<undefined>; }; } = {};
+        vi.stubGlobal('window', fakeWindow);
+
+        expect(await createSpaBrowserRallarRuntime().readCongestionCounters()).toBeUndefined();
+
+        expect(runtimeModuleLoads.count).toBe(0);
+        expect(fakeWindow.__blackBoxRallar).toBeUndefined();
+    });
+
+    it('reads the congestion counters through the runtime a page already installed', async () => {
+        const counters = { dropped: 1, deferred: 2, handedOver: 1 };
+        vi.stubGlobal('window', { __blackBoxRallar: { readCongestionCounters: async () => counters } });
+
+        expect(await createSpaBrowserRallarRuntime().readCongestionCounters()).toBe(counters);
+    });
+
     it('normalizes the optional health diagnostics request at the page boundary', async () => {
         vi.stubGlobal('window', { __blackBoxRallar: { health: async (input: BlackBoxRallarHealthInput) => input } });
         const bridge = createSpaBrowserRallarRuntime();

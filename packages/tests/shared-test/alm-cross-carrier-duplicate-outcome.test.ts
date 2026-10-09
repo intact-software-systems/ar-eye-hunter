@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import { createBlackBoxRallarCongestionCounters } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-congestion-counters.ts';
 import {
     BlackBoxRallarRuntimeDiagnostics,
     createBlackBoxRallarDiagnosticsPorts
@@ -18,7 +19,7 @@ import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createCountingIndexedDbOperationObserver, createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
@@ -79,7 +80,7 @@ async function readDuplicateDiagnostics(
     return diagnostics;
 }
 
-function createRecipeDiagnosticsPorts(recipeRuntime: ReturnType<typeof createRallarBlackBoxTestRuntime>) {
+function createRecipeDiagnosticsPorts(recipeRuntime: ReturnType<typeof createDefaultRallarBlackBoxTestRuntime>) {
     const pageDiagnostics = new BlackBoxRallarRuntimeDiagnostics({
         now: Date.now,
         publish: (event) => {
@@ -99,7 +100,8 @@ function createRecipeDiagnosticsPorts(recipeRuntime: ReturnType<typeof createRal
     return createBlackBoxRallarDiagnosticsPorts(pageDiagnostics, {
         faults: createScriptedTransportFaultPort(),
         storage: createCountingIndexedDbOperationObserver(),
-        storageFaults: createScriptedStorageFaultPort()
+        storageFaults: createScriptedStorageFaultPort(),
+        congestion: createBlackBoxRallarCongestionCounters()
     });
 }
 
@@ -109,7 +111,7 @@ async function runDiagnosticOutcomeCommands(
     diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]
 ): Promise<boolean> {
     const scenario = toCrossCarrierScenario(order);
-    const recipeRuntime = createRallarBlackBoxTestRuntime();
+    const recipeRuntime = createDefaultRallarBlackBoxTestRuntime();
     const ports = createRecipeDiagnosticsPorts(recipeRuntime);
     for (const event of diagnostics) {
         ports.inboundDiagnostics?.(event);

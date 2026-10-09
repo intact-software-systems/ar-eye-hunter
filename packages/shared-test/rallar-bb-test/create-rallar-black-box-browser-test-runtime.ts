@@ -1,3 +1,4 @@
+import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
@@ -8,6 +9,7 @@ import {
     type RallarBlackBoxAlmBrowserPort,
     type RallarBlackBoxAlmCommandWithId
 } from './alm/browser-adapter-alm-commands.ts';
+import { decodeALCongestionCounters } from './alm/decode-al-congestion-counters.ts';
 import { decodeALVolatileSessionReport } from './alm/decode-al-volatile-session-report.ts';
 import {
     createBrowserCommandAbortScope,
@@ -250,7 +252,10 @@ export function createRallarBlackBoxBrowserTestRuntime(
         cleanup: (input, context) => adapter.cleanupOwnedResources(input, context),
         readAlmUsage: rallarRuntime === undefined
             ? undefined
-            : async () => decodeAlmUsageResultValue(await rallarRuntime.readAlmUsage())
+            : async () => decodeAlmUsageResultValue(await rallarRuntime.readAlmUsage()),
+        readCongestionCounters: rallarRuntime === undefined
+            ? undefined
+            : async () => decodeCongestionCountersResultValue(await rallarRuntime.readCongestionCounters())
     });
 
     Object.defineProperty(runtime, 'rtcCaptureSupport', {
@@ -274,6 +279,19 @@ function decodeAlmUsageResultValue(value: unknown): ALVolatileSessionReport | un
             throw new TypeError(`The page's session ledger report is not valid: ${issues.join('; ')}`);
         },
         (report) => report
+    );
+}
+
+/** `undefined` is the page before its connect; anything else the page returns must carry all three counts. */
+function decodeCongestionCountersResultValue(value: unknown): ALCongestionCounters | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    return decodeALCongestionCounters(value).fold(
+        (issues) => {
+            throw new TypeError(`The page's congestion counters are not valid: ${issues.join('; ')}`);
+        },
+        (counters) => counters
     );
 }
 

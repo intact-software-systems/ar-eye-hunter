@@ -41,7 +41,7 @@ import type {
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
@@ -99,10 +99,6 @@ function recordValidatedProviderConfig(
     return Either.ofLeft(configError.message);
 }
 
-function canInstallSpaBrowserRallarRuntime(): boolean {
-    return typeof window !== 'undefined';
-}
-
 namespace RallarBlackBoxRuntimeStore {
     export interface Snapshot {
         readonly state: RallarBlackBoxTestState;
@@ -133,7 +129,7 @@ class RallarBlackBoxRuntimeStore {
     constructor() {
         if (
             this.bootstrapConfig.providerMode === 'browser-rallar' &&
-            canInstallSpaBrowserRallarRuntime()
+            typeof window !== 'undefined'
         ) {
             const browserRuntime = createDefaultRallarBlackBoxBrowserTestRuntime({
                 rallarRuntime: createSpaBrowserRallarRuntime(),
@@ -144,7 +140,7 @@ class RallarBlackBoxRuntimeStore {
             installSpaBrowserRallarEventBridge(browserRuntime);
         }
         else {
-            this.runtime = createRallarBlackBoxTestRuntime({
+            this.runtime = createDefaultRallarBlackBoxTestRuntime({
                 commandExecutor: runSimulatedProviderCommand
             });
         }

@@ -249,6 +249,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
+        faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
     const streamer = createDefaultWebRtcRxStreamerService({ multicast, sessionId });

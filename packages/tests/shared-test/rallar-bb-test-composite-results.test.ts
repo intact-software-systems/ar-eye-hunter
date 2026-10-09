@@ -2,23 +2,23 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { JsonComparisonObject } from '../../shared-test/json-compare/compare-json-values.ts';
 import {
     computeRallarBlackBoxCompositeResultSummary,
-    createRallarBlackBoxTestRuntime,
+    createDefaultRallarBlackBoxTestRuntime,
     resolveRallarBlackBoxCompositeFirstFailure,
     toRallarBlackBoxCompositeDisplayResults,
     toRallarBlackBoxCompositeResultFlatEntries,
     toRallarBlackBoxCompositeResultTimeline,
     toRallarBlackBoxCompositeResultTree,
-    type RallarBlackBoxCompositeResultSummary,
     type RallarBlackBoxCompositeResultTreeNode,
     type RallarBlackBoxTestCommand,
     type RallarBlackBoxTestCommandContext,
     type RallarBlackBoxTestCommandOutcome,
     type RallarBlackBoxTestParallelChildResult,
+    type RallarBlackBoxTestRecord,
     type RallarBlackBoxTestResult
 } from '../../shared-test/rallar-bb-test/mod.ts';
+import { decodeRecord } from '../../shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 interface CompositeResultTreeShape {
@@ -37,27 +37,19 @@ type RecordedParallelChildPosition = Omit<RallarBlackBoxTestParallelChildResult,
 
 interface RecordedParallelChildWithPosition extends RecordedParallelChild, RecordedParallelChildPosition {}
 
-interface CompositeResultFixture {
-    readonly summary: RallarBlackBoxCompositeResultSummary;
-    readonly paths: readonly string[];
-    readonly sourceRecipePaths: readonly string[];
-    readonly tree: readonly CompositeResultTreeShape[];
-    readonly redactedFailure: JsonComparisonObject;
-}
-
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const fixturePath = path.join(
     repoRoot,
     'packages/tests/shared-test/fixtures/rallar-bb-test/composite-result-summary-v1.json'
 );
 
-function readFixture(): CompositeResultFixture {
+function readFixture(): RallarBlackBoxTestRecord {
     const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
     assertCompositeResultFixture(fixture);
     return fixture;
 }
 
-function assertCompositeResultFixture(value: unknown): asserts value is CompositeResultFixture {
+function assertCompositeResultFixture(value: unknown): asserts value is RallarBlackBoxTestRecord {
     const hasSections = isJsonRecordValue(value) &&
         isJsonRecordValue(value.summary) &&
         Array.isArray(value.paths) &&
@@ -187,7 +179,7 @@ function toSyntheticSendOutcome(
 
 async function runNestedCompositeResult(): Promise<RallarBlackBoxTestResult> {
     let now = 1_000;
-    const runtime = createRallarBlackBoxTestRuntime({
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
         now: () => now++,
         commandExecutor: toSyntheticSendOutcome
     });
@@ -249,14 +241,14 @@ describe('rallar-bb-test composite result helpers', () => {
         expect(timeline.map((entry) => entry.startedAtEpochMs)).toEqual(
             [...timeline.map((entry) => entry.startedAtEpochMs)].sort((left, right) => left - right)
         );
-        expect(redactedFailure).toMatchObject(fixture.redactedFailure);
+        expect(redactedFailure).toMatchObject(decodeRecord(fixture.redactedFailure));
         expect(JSON.stringify(display)).not.toContain('secret-token');
         expect(JSON.stringify(display)).not.toContain('hidden-body');
     });
 
     it('focuses first failure on the failed child when the composite parent also fails', async () => {
         let sendCount = 0;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: (command, context) => {
                 if (command.kind !== 'rtc.send') {
                     return undefined;

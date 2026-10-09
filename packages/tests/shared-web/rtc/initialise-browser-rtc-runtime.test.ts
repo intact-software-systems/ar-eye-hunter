@@ -241,6 +241,7 @@ describe('browser RTC runtime composition', () => {
         const drain = captureOutboundWorkRunnable(qboxEngine);
         const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} });
         const manager = initialiseRtcOverlayMulticastManager({
+            faultPort: createPassThroughTransportFaultPort(),
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
             volatileBudget: createDefaultVolatileSessionBudget(),
@@ -320,6 +321,7 @@ describe('browser RTC runtime composition', () => {
         const qboxEngine = new InboxOutboxEngine();
         const drainOnce = captureOutboundWorkRunnable(qboxEngine);
         const manager = initialiseRtcOverlayMulticastManager({
+            faultPort: createPassThroughTransportFaultPort(),
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             volatileBudget: createDefaultVolatileSessionBudget(),
@@ -398,6 +400,7 @@ describe('browser RTC runtime composition', () => {
         }
         const budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
         const manager = initialiseRtcOverlayMulticastManager({
+            faultPort: createPassThroughTransportFaultPort(),
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             volatileBudget: budget,
@@ -434,6 +437,7 @@ describe('browser RTC runtime composition', () => {
         const budget = createDefaultVolatileSessionBudget();
         const checkpointStores = resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay;
         const manager = initialiseRtcOverlayMulticastManager({
+            faultPort: createPassThroughTransportFaultPort(),
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             volatileBudget: budget,

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import {
     afterEach,
     beforeEach,
@@ -281,6 +282,7 @@ class RtcRecoveryOwner {
             }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => this.close());

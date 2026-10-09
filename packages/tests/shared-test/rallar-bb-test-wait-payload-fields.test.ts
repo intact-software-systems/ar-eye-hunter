@@ -7,7 +7,7 @@ import {
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type { RallarBlackBoxTestWaitCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { snapshotExecutableCommand } from '@shared-test/rallar-bb-test/recipe/snapshot-executable-recipe.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
@@ -28,7 +28,7 @@ function toWaitCommand(): RallarBlackBoxTestWaitCommand {
 
 describe('wait payload field constraints', () => {
     it('selects the newest event satisfying every constraint, ignoring newer wrong-kind and wrong-scenario events', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         for (
             const data of [
                 { kind: 'admission-outcome', typeId: 'scenario-one', carrier: 'rtc', outcome: 'committed', reason: 'admitted' },
@@ -63,7 +63,7 @@ describe('wait payload field constraints', () => {
         { kind: 'admission-outcome', typeId: 'scenario-two' },
         { kind: 'admission-outcome' }
     ])('times out when one event cannot satisfy all constraints: %j', async (data) => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         runtime.recordEvent({ kind: 'diagnostic', topic: TOPIC, payload: { data } });
 
         const result = await runtime.execute(toWaitCommand());
@@ -73,7 +73,7 @@ describe('wait payload field constraints', () => {
     });
 
     it('requires the constraints on one event rather than assembling them across different events', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         for (
             const data of [
                 { kind: 'dispatch-decision', typeId: 'scenario-one' },
@@ -119,7 +119,7 @@ describe('wait payload field constraints', () => {
     });
 
     it('owns field operands before caller mutation can redirect execution', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const payloadFields = { 'data.identity': { scenario: 'one', sequence: [1, 2] }, 'data.reason': null };
         const command = snapshotExecutableCommand({ ...toWaitCommand(), match: { payloadFields } });
         payloadFields['data.identity'].scenario = 'two';

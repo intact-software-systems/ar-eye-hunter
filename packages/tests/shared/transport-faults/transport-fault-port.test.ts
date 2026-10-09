@@ -85,6 +85,44 @@ describe('transport fault port', () => {
     it('passes everything through by default', () => {
         const port = createPassThroughTransportFaultPort();
         expect(port.decideSend('ws', ackFrame)).toEqual({ kind: 'pass' });
+        expect(port.decideBackpressure('rtc', JSON.parse(dataFrame))).toBe(false);
+    });
+
+    it('holds one carrier backpressured for a matching message, one decision per count', () => {
+        const port = createScriptedTransportFaultPort();
+        const message = JSON.parse(dataFrame);
+        const match = { controlType: undefined, typeId: 'chat', msgId: undefined };
+        port.inject({ faultId: 'full', carrier: 'rtc', match, action: 'backpressure', remaining: 2 });
+
+        expect(port.decideBackpressure('ws', message)).toBe(false);
+        expect(port.decideBackpressure('rtc', JSON.parse(ackFrame))).toBe(false);
+        expect(port.decideSend('rtc', dataFrame)).toEqual({ kind: 'pass' });
+        expect(port.decideSubmissionReadiness(dataFrame)).toBe('ready');
+        expect(port.decideBackpressure('rtc', message)).toBe(true);
+        expect(port.decideBackpressure('rtc', message)).toBe(true);
+        expect(port.decideBackpressure('rtc', message)).toBe(false);
+        expect(port.getObservations()).toEqual([
+            { faultId: 'full', carrier: 'rtc', decision: 'backpressure' },
+            { faultId: 'full', carrier: 'rtc', decision: 'backpressure' }
+        ]);
+    });
+
+    it('keeps a carrier backpressured until the fault is cleared', () => {
+        const port = createScriptedTransportFaultPort();
+        const message = JSON.parse(dataFrame);
+        port.inject({
+            faultId: 'held-full',
+            carrier: 'ws',
+            match: { controlType: undefined, typeId: undefined, msgId: message.id.msgId },
+            action: 'backpressure',
+            remaining: 'until-cleared'
+        });
+
+        for (let decision = 0; decision < 50; decision += 1) {
+            expect(port.decideBackpressure('ws', message)).toBe(true);
+        }
+        port.clear();
+        expect(port.decideBackpressure('ws', message)).toBe(false);
     });
 
     it.each(

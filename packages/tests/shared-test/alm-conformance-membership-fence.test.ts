@@ -18,7 +18,7 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
@@ -89,7 +89,7 @@ function toSelfMembershipPath({ carrier, scenarioKey, role, request }: SelfMembe
 describe('membership fence conformance scenarios', () => {
     it.each(ALM_CONFORMANCE_CARRIERS)('catalogs the %s fence cells on three agents in the full tag only', (carrier) => {
         const cells = createAlmConformanceRecipes(toConformanceInput(carrier))
-            .filter((scenario) => (FENCE_SCENARIO_IDS as readonly string[]).includes(scenario.scenarioId))
+            .filter((scenario) => FENCE_SCENARIO_IDS.some((scenarioId) => scenarioId === scenario.scenarioId))
             .map(({ scenarioId, laneFamily, roles, tags }) => ({ scenarioId, laneFamily, roles, tags }));
         const cell = (scenarioId: FenceScenarioId) => ({
             scenarioId,
@@ -109,7 +109,7 @@ describe('membership fence conformance scenarios', () => {
 
     it.each(ALM_CONFORMANCE_SINGLE_HOP_CARRIERS)('gives every %s fence cell identities no other scenario of the run shares', (carrier) => {
         const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
-        const isFence = (scenario: AlmConformanceScenario) => (FENCE_SCENARIO_IDS as readonly string[]).includes(scenario.scenarioId);
+        const isFence = (scenario: AlmConformanceScenario) => FENCE_SCENARIO_IDS.some((scenarioId) => scenarioId === scenario.scenarioId);
         const others = new Set(scenarios.filter((scenario) => !isFence(scenario)).flatMap(toMintedIdentities));
         const own = scenarios.filter(isFence).flatMap(toMintedIdentities);
 
@@ -178,7 +178,7 @@ describe('fenced-delivery', () => {
     it('resolves the stamp wait against an arrival of the read roster and not of another', async () => {
         const recipientB = requireRecipientB(findScenario(toConformanceInput('rtc'), 'fenced-delivery'));
         const run = async (rosterVersion: number) => {
-            const runtime = createRallarBlackBoxTestRuntime({
+            const runtime = createDefaultRallarBlackBoxTestRuntime({
                 commandExecutor: (command) =>
                     command.kind === 'http.request'
                         ? { status: 'ok', value: { status: 200, body: { group: { rosterVersion: 4 } } } }
@@ -405,7 +405,7 @@ describe('fenced-rejection', () => {
         const { sender } = findScenario(toConformanceInput('ws'), 'fenced-rejection');
         const from = sender.commands.findIndex((command) => command.commandId === `${sender.recipeId}-observe-rejected-1`);
         const readTail = async (reason: string) => {
-            const runtime = createRallarBlackBoxTestRuntime({
+            const runtime = createDefaultRallarBlackBoxTestRuntime({
                 commandExecutor: (command) =>
                     command.kind === 'messages.observe'
                         ? {

@@ -22,7 +22,7 @@ import {
     type ControlResultEnvelope
 } from '../../shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestRecord } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { createBrowserTestStorage } from './browser-test-storage.ts';
 
 const RESUME_KEY = 'rallar-bb-agent-resume';
@@ -62,7 +62,7 @@ class FakeControlSocket {
 }
 
 function createReloadAgent(sockets: FakeControlSocket[]): RallarBlackBoxBrowserControlAgent {
-    const runtime = createRallarBlackBoxTestRuntime();
+    const runtime = createDefaultRallarBlackBoxTestRuntime();
     const controlClient = new RallarBlackBoxControlClient({
         now: Date.now,
         runtime,

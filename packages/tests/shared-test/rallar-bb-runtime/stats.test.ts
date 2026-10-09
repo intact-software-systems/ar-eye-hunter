@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
     type ALVolatileSessionReport
@@ -13,6 +14,7 @@ import type { RallarBlackBoxBrowserRallarRuntime } from '../../../shared-test/ra
 import {
     createDefaultRallarBlackBoxBrowserTestRuntime,
     type RallarBlackBoxBrowserTestRuntime,
+    type RallarBlackBoxTestRecord,
     type RallarBlackBoxTestResult
 } from '../../../shared-test/rallar-bb-test/mod.ts';
 import { decodeRecord } from '../../../shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
@@ -49,6 +51,25 @@ function createPageRuntime(
             refreshRoom: async () => undefined,
             close: async () => ({ closed: true }),
             health
+        }
+    });
+}
+
+/** A connected page whose counters answer the next reading, holding the last. */
+function createCongestionPageRuntime(
+    readings: readonly (ALCongestionCounters | RallarBlackBoxTestRecord | undefined)[]
+): RallarBlackBoxBrowserTestRuntime {
+    let index = 0;
+    return createDefaultRallarBlackBoxBrowserTestRuntime({
+        rallarRuntime: {
+            ...createBrowserRallarRequiredMethodsTestDouble(),
+            connect: async () => ({ connected: true }),
+            send: async () => ({ sent: true }),
+            readAlmUsage: async () => FIRST_REPORT,
+            readCongestionCounters: async () => readings[Math.min(index++, readings.length - 1)],
+            refreshRoom: async () => undefined,
+            close: async () => ({ closed: true }),
+            health: async () => ({ connected: true })
         }
     });
 }
@@ -145,7 +166,7 @@ describe('the stats result rallar.alm block', () => {
     });
 
     it.each(
-        [
+        ([
             { kind: 'stats', settlement: 'resolve', reassigned: true },
             { kind: 'stats', settlement: 'reject', reassigned: true },
             { kind: 'health', settlement: 'resolve', reassigned: true },
@@ -154,21 +175,35 @@ describe('the stats result rallar.alm block', () => {
             { kind: 'stats', settlement: 'reject', reassigned: false },
             { kind: 'health', settlement: 'resolve', reassigned: false },
             { kind: 'health', settlement: 'reject', reassigned: false }
-        ] as const
-    )('settling held $kind ledger $settlement retains assignment ownership; reassigned=$reassigned', async ({ kind, settlement, reassigned }) => {
+        ] as const).flatMap((cell) => (['ledger', 'congestion'] as const).map((source) => ({ ...cell, source })))
+    )('settling held $kind $source $settlement retains assignment ownership; reassigned=$reassigned', async ({ kind, settlement, reassigned, source }) => {
         const entered = Promise.withResolvers<void>();
-        const held = Promise.withResolvers<ALVolatileSessionReport>();
+        const held = Promise.withResolvers<ALVolatileSessionReport | ALCongestionCounters>();
+        const firstCongestion = { dropped: 0, deferred: 3, handedOver: 0 };
+        const secondCongestion = { dropped: 1, deferred: 3, handedOver: 1 };
         let reading = 0;
-        const runtime = createDefaultPageRuntime(async () => {
+        const readHeldPageValue = async () => {
             if (reading++ === 0) {
                 entered.resolve();
                 return await held.promise;
             }
-            return SECOND_REPORT;
+            return source === 'ledger' ? SECOND_REPORT : secondCongestion;
+        };
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createBrowserRallarRequiredMethodsTestDouble(),
+                connect: async () => ({ connected: true }),
+                send: async () => ({ sent: true }),
+                refreshRoom: async () => undefined,
+                close: async () => ({ closed: true }),
+                readAlmUsage: source === 'ledger' ? readHeldPageValue : async () => reading === 0 ? FIRST_REPORT : SECOND_REPORT,
+                readCongestionCounters: source === 'congestion' ? readHeldPageValue : async () => firstCongestion,
+                health: async () => ({ connected: true })
+            }
         });
         const original = { runId: 'ledger-A', agentId: 'agent-A' };
         const current = reassigned ? { runId: 'ledger-B', agentId: 'agent-B' } : original;
-        const originalFailure = new Error('original page ledger read failed');
+        const originalFailure = new Error(`original page ${source} read failed`);
         expect((await runtime.execute({ kind: 'configure', commandId: 'A-config', config: original }, original)).ok)
             .toBe(true);
         const pending = runtime.execute({ kind, commandId: 'A-read' }, original);
@@ -189,7 +224,7 @@ describe('the stats result rallar.alm block', () => {
             }
             const before = runtime.state();
             if (settlement === 'resolve') {
-                held.resolve(FIRST_REPORT);
+                held.resolve(source === 'ledger' ? FIRST_REPORT : firstCongestion);
             }
             else {
                 held.reject(originalFailure);
@@ -198,7 +233,7 @@ describe('the stats result rallar.alm block', () => {
             expect(result.ok).toBe(settlement === 'resolve');
             if (settlement === 'resolve') {
                 const stats = kind === 'health' ? decodeRecord(result.value).stats : result.value;
-                expect(stats).toMatchObject({ ...original, rallar: { alm: FIRST_REPORT } });
+                expect(stats).toMatchObject({ ...original, rallar: { alm: FIRST_REPORT, congestion: firstCongestion } });
             }
             if (settlement === 'reject') {
                 expect(result.error?.message).toBe(originalFailure.message);
@@ -214,6 +249,12 @@ describe('the stats result rallar.alm block', () => {
                 const replay = await runtime.execute({ kind: 'stats', commandId: 'B-stats' }, current);
                 expect(replay.replayed).toBe(true);
                 expect(replay.value).toEqual(before.resultCache['B-stats'].value);
+                const fresh = await runtime.execute({ kind: 'stats', commandId: 'B-fresh-stats' }, current);
+                expect(fresh.ok).toBe(true);
+                expect(fresh.value).toMatchObject({
+                    ...current,
+                    rallar: { alm: SECOND_REPORT, congestion: source === 'congestion' ? secondCongestion : firstCongestion }
+                });
             }
             else if (settlement === 'resolve') {
                 expect(runtime.state().latestStats?.rallar?.alm).toEqual(FIRST_REPORT);
@@ -222,7 +263,7 @@ describe('the stats result rallar.alm block', () => {
             }
         }
         finally {
-            held.resolve(FIRST_REPORT);
+            held.resolve(source === 'ledger' ? FIRST_REPORT : firstCongestion);
             await pending;
         }
     });
@@ -293,6 +334,46 @@ describe('the stats result rallar.alm block', () => {
         expect(result.error?.message).toBe(
             'The page\'s session ledger report is not valid: usage.admissions is not a count; ' +
                 'usage.tracks is not a count; overloaded is not a boolean'
+        );
+    });
+});
+
+describe('the stats result rallar.congestion block', () => {
+    const DEFERRED: ALCongestionCounters = { dropped: 0, deferred: 3, handedOver: 0 };
+    const HANDED_OVER: ALCongestionCounters = { dropped: 1, deferred: 3, handedOver: 1 };
+
+    it('reads the page congestion counters afresh at every stats command, beside the ledger', async () => {
+        const runtime = createCongestionPageRuntime([DEFERRED, HANDED_OVER]);
+
+        const first = await readStats(runtime, 'stats-1');
+        const second = await readStats(runtime, 'stats-2');
+
+        expect(decodeRecord(first.value).rallar).toMatchObject({ alm: FIRST_REPORT, congestion: DEFERRED });
+        expect(decodeRecord(decodeRecord(second.value).rallar).congestion).toEqual(HANDED_OVER);
+        expect(runtime.state().latestStats?.rallar?.congestion).toEqual(HANDED_OVER);
+        const statsEvents = runtime.state().events.filter((event) => event.topic === 'rallar.bb.stats');
+        expect(statsEvents.map((event) => decodeRecord(decodeRecord(event.payload).rallar).congestion)).toEqual([
+            DEFERRED,
+            HANDED_OVER
+        ]);
+    });
+
+    it('leaves the block absent while the page has not connected, and on a runtime that drives no Rallar page', async () => {
+        const unconnected = await readStats(createCongestionPageRuntime([undefined]), 'stats-1');
+        const pageless = await readStats(createDefaultRallarBlackBoxBrowserTestRuntime(), 'stats-2');
+
+        expect(decodeRecord(unconnected.value).rallar).not.toHaveProperty('congestion');
+        expect(decodeRecord(pageless.value).rallar).not.toHaveProperty('congestion');
+    });
+
+    it('fails the stats command when the page answers counters that are not counts, naming each bad field', async () => {
+        const runtime = createCongestionPageRuntime([{ dropped: -1, deferred: 2.5, handedOver: 0 }]);
+
+        const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toBe(
+            'The page\'s congestion counters are not valid: dropped is not a count; deferred is not a count'
         );
     });
 });

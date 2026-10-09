@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import { createDefaultLiveRtcControlHttpFixture, LiveRtcControlHttpFixture } from './live-rtc-control-http-fixture.ts';
 import { toDeliveryObservationFixture } from './to-delivery-observation-fixture.ts';
@@ -35,6 +43,7 @@ describe('live RTC control client', () => {
                                 attempts: 1,
                                 attemptOutcomes: [],
                                 attemptCarriers: [],
+                                attemptRefusalReasons: [],
                                 relayRejection: undefined,
                                 carrierFallback: undefined,
                                 durabilityDowngrade: undefined,
@@ -103,6 +112,7 @@ describe('live RTC control client', () => {
                             attempts: 1,
                             attemptOutcomes: [],
                             attemptCarriers: [],
+                            attemptRefusalReasons: [],
                             relayRejection: undefined,
                             carrierFallback: undefined,
                             durabilityDowngrade: undefined,

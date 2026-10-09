@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { parseControlServerMessage } from '../../shared-test/rallar-bb-test/control-protocol.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
-import type { RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import type { RallarBlackBoxTestRecipe, RallarBlackBoxTestRtcSendCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
@@ -25,7 +25,7 @@ describe('explicit browser recipe format', () => {
             error: `${kind}.recipe.schemaVersion must be 1.`,
             messages: [`${kind}.recipe.schemaVersion must be 1.`]
         });
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const result = await runtime.execute(command);
         expect.soft(result.ok).toBe(false);
         expect.soft(result.error?.message).toContain('schemaVersion must be 1');
@@ -42,7 +42,7 @@ describe('explicit browser recipe format', () => {
         for (const kind of ['recipe.load', 'recipe.run'] as const) {
             const command = { kind, recipe };
             expect.soft(validateRallarBlackBoxTestCommand(command).ok).toBe(false);
-            const runtime = createRallarBlackBoxTestRuntime();
+            const runtime = createDefaultRallarBlackBoxTestRuntime();
             const result = await runtime.execute(command);
             expect.soft(result.ok).toBe(false);
             expect.soft(result.error?.message).toContain('schemaVersion must be 1');
@@ -101,7 +101,7 @@ describe('recipe field admission', () => {
                 }
             }
             const effects: string[] = [];
-            const runtime = createRallarBlackBoxTestRuntime({
+            const runtime = createDefaultRallarBlackBoxTestRuntime({
                 commandExecutor: async (child) => {
                     effects.push(child.kind);
                     return undefined;
@@ -145,8 +145,8 @@ describe('recipe field admission', () => {
         if (!parsed.ok) {
             return;
         }
-        const effects: unknown[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const effects: RallarBlackBoxTestRtcSendCommand['send'][] = [];
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: async (command) => {
                 if (command.kind !== 'rtc.send') {
                     return undefined;

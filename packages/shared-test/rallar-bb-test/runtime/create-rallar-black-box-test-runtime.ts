@@ -1,4 +1,5 @@
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
+import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { computeAssertCommandOutcome } from '../assert/compute-assert-command-outcome.ts';
@@ -42,15 +43,19 @@ import { toMergedRuntimeConfig } from './to-merged-runtime-config.ts';
 import { computeCommandDeadlineEpochMs } from './to-runtime-command-values.ts';
 import { toRuntimeHealth, toRuntimeStats } from './to-runtime-stats.ts';
 
-export interface CreateRallarBlackBoxTestRuntimeOptions {
-    readonly now?: () => number;
-    readonly sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
-    readonly idFactory?: (prefix: string) => string;
+export interface CreateRallarBlackBoxTestRuntimeInput {
+    readonly now: () => number;
+    readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+    readonly idFactory: (prefix: string) => string;
     readonly commandExecutor?: RallarBlackBoxTestCommandExecutor;
     readonly cleanup?: RallarBlackBoxTestRuntimeCleanup;
     /** Reads the page's session ledger for `stats`; absent on a runtime that drives no Rallar page. */
     readonly readAlmUsage?: () => Promise<ALVolatileSessionReport | undefined>;
+    /** Reads the page's congestion counters for `stats`; absent on a runtime that drives no Rallar page. */
+    readonly readCongestionCounters?: () => Promise<ALCongestionCounters | undefined>;
 }
+
+export type CreateRallarBlackBoxTestRuntimeOptions = Partial<CreateRallarBlackBoxTestRuntimeInput>;
 
 type CommandWithId = RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>;
 
@@ -115,19 +120,10 @@ namespace InMemoryRallarBlackBoxTestRuntime {
         targetSettled: boolean;
         requestSettled: boolean;
     }
-
-    export interface Dependencies {
-        readonly now: () => number;
-        readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
-        readonly idFactory: (prefix: string) => string;
-        readonly commandExecutor: RallarBlackBoxTestCommandExecutor | undefined;
-        readonly cleanup: RallarBlackBoxTestRuntimeCleanup | undefined;
-        readonly readAlmUsage: (() => Promise<ALVolatileSessionReport | undefined>) | undefined;
-    }
 }
 
 class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
-    private readonly dependencies: InMemoryRallarBlackBoxTestRuntime.Dependencies;
+    private readonly dependencies: CreateRallarBlackBoxTestRuntimeInput;
     private readonly listeners = new Set<RallarBlackBoxTestStateListener>();
     private currentState: RallarBlackBoxTestState = createInitialRuntimeState();
     private controlIdentity: ControlClientIdentity | undefined;
@@ -146,7 +142,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private cancellationController = new AbortController();
     private recipeExecutionDepth = 0;
 
-    constructor(dependencies: InMemoryRallarBlackBoxTestRuntime.Dependencies) {
+    constructor(dependencies: CreateRallarBlackBoxTestRuntimeInput) {
         this.dependencies = dependencies;
     }
 
@@ -791,11 +787,15 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     ): Promise<RallarBlackBoxTestStatsSnapshot> {
         const admittedState = this.currentState;
         const alm = await this.dependencies.readAlmUsage?.();
-        const stats = toRuntimeStats(
-            ownership.cacheOwner === this.cacheOwner ? this.currentState : admittedState,
-            this.dependencies.now()
+        const congestion = await this.dependencies.readCongestionCounters?.();
+        const latestStats = toStatsWithPageReadings(
+            toRuntimeStats(
+                ownership.cacheOwner === this.cacheOwner ? this.currentState : admittedState,
+                this.dependencies.now()
+            ),
+            alm,
+            congestion
         );
-        const latestStats = alm === undefined ? stats : { ...stats, rallar: { ...stats.rallar, alm } };
         if (ownership.cacheOwner !== this.cacheOwner) {
             return latestStats;
         }
@@ -845,7 +845,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     }
 
     private toCommandWithId(command: RallarBlackBoxTestCommand): CommandWithId {
-        return { ...command, commandId: command.commandId ?? this.dependencies.idFactory('command') } as CommandWithId;
+        return { ...command, commandId: command.commandId ?? this.dependencies.idFactory('command') };
     }
 
     private toRedacted<T>(value: T): T {
@@ -854,29 +854,53 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
 }
 
 export function createRallarBlackBoxTestRuntime(
-    options: CreateRallarBlackBoxTestRuntimeOptions = {}
+    input: CreateRallarBlackBoxTestRuntimeInput
 ): RallarBlackBoxTestRuntime {
-    return new InMemoryRallarBlackBoxTestRuntime(toRuntimeDependencies(options));
+    return new InMemoryRallarBlackBoxTestRuntime({
+        now: input.now,
+        sleep: input.sleep,
+        idFactory: input.idFactory,
+        commandExecutor: input.commandExecutor,
+        cleanup: input.cleanup,
+        readAlmUsage: input.readAlmUsage,
+        readCongestionCounters: input.readCongestionCounters
+    });
 }
 
-function toRuntimeDependencies(
-    options: CreateRallarBlackBoxTestRuntimeOptions
-): InMemoryRallarBlackBoxTestRuntime.Dependencies {
-    return {
+export function createDefaultRallarBlackBoxTestRuntime(
+    options: CreateRallarBlackBoxTestRuntimeOptions = {}
+): RallarBlackBoxTestRuntime {
+    let sequence = 1;
+    return createRallarBlackBoxTestRuntime({
         now: options.now ?? (() => Date.now()),
         sleep: options.sleep ?? sleepWithAbort,
-        idFactory: options.idFactory ?? createSequentialIdFactory(),
+        idFactory: options.idFactory ?? ((prefix) => `${prefix}-${sequence++}`),
         commandExecutor: options.commandExecutor,
         cleanup: options.cleanup,
-        readAlmUsage: options.readAlmUsage
+        readAlmUsage: options.readAlmUsage,
+        readCongestionCounters: options.readCongestionCounters
+    });
+}
+
+/** The page's readings join the runtime's own stats only where the page answered them, so absence stays absence. */
+function toStatsWithPageReadings(
+    stats: RallarBlackBoxTestStatsSnapshot,
+    alm: ALVolatileSessionReport | undefined,
+    congestion: ALCongestionCounters | undefined
+): RallarBlackBoxTestStatsSnapshot {
+    if (alm === undefined && congestion === undefined) {
+        return stats;
+    }
+    return {
+        ...stats,
+        rallar: {
+            ...stats.rallar,
+            ...(alm === undefined ? {} : { alm }),
+            ...(congestion === undefined ? {} : { congestion })
+        }
     };
 }
 
 function createInitialRuntimeState(): RallarBlackBoxTestState {
     return { status: 'idle', commandHistory: [], events: [], failures: [], resultCache: {} };
-}
-
-function createSequentialIdFactory(): (prefix: string) => string {
-    let sequence = 1;
-    return (prefix: string) => `${prefix}-${sequence++}`;
 }

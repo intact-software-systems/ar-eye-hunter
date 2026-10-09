@@ -34,14 +34,6 @@ export const reviewedScenarioDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 54
     }),
-    // Outcome translation/reporting already have separate owners. Invocation,
-    // cancellation and cleanup fences stay together in the runtime lifecycle.
-    Object.freeze({
-        path: 'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 68
-    }),
     // Reload command results retain opaque external evidence. These readers keep
     // malformed leaves intact until the adjacent validators reject them; JSON
     // normalization would erase NaN/Infinity and missing-value negative evidence.

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { executeBlackBox } from '../../../shared-test/black-box-runner/execute-black-box.ts';
 import {
+    createDefaultRallarBlackBoxTestRuntime,
     createRallarBlackBoxRtcProvider,
-    createRallarBlackBoxTestRuntime,
     getRallarBlackBoxCommandHistory,
     type RallarBlackBoxTestCommand
 } from '../../../shared-test/rallar-bb-test/mod.ts';
@@ -12,7 +12,7 @@ describe('rallar-bb runtime facade', () => {
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const effects: string[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: async (command, context) => {
                 if (command.kind === 'reset') {
                     entered.resolve();
@@ -67,7 +67,7 @@ describe('rallar-bb runtime facade', () => {
     });
 
     it('drives a black-box runner RTC scenario through the facade adapter', async () => {
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: async (command, context) => {
                 if (command.kind === 'rtc.connect') {
                     return {
@@ -222,7 +222,7 @@ describe('rallar-bb runtime facade', () => {
             },
             minSnapshotVersion: 7
         };
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: (command, context) => {
                 executedCommands.push(command);
                 if (command.kind === 'rtc.connect') {

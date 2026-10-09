@@ -22,7 +22,7 @@ import {
     type RallarBlackBoxTestRecipe,
     type RallarBlackBoxTestResult
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import {
@@ -172,7 +172,7 @@ for (const reference of [false, true]) {
             identity: { sessionLabel: 'capture-agent', updatedAtEpochMs: 1_000 },
             resume: { completedCommandIds: [] }
         });
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: () => 1_000,
             commandExecutor: (command) =>
                 command.kind === 'rtc.connect'
@@ -307,7 +307,7 @@ for (
 Deno.test('nested inline recipe selection remains admissible with omitted outer intent', async () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'capture-agent' }));
-    const runtime = createRallarBlackBoxTestRuntime({
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
         now: () => 1_000,
         commandExecutor: (command) =>
             command.kind === 'rtc.connect'
@@ -510,7 +510,7 @@ async function toRuntimeCaptureExecution(command: RallarBlackBoxTestCommand): Pr
         command
     }));
     assertEquals(service.takeDispatchableCommands('run-1', 'capture-agent').length, 1);
-    const runtime = createRallarBlackBoxTestRuntime({
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
         now: () => 1_000,
         commandExecutor: (command) =>
             command.kind === 'rtc.connect'
@@ -543,7 +543,7 @@ for (const scenario of ['wrong parent', 'wrong path', 'wrong source path', 'wron
             : { kind: 'loop', count: 2, commands: [child] };
         const queued = assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'capture-agent', commandId: 'capture-composite', command }));
         service.takeDispatchableCommands('run-1', 'capture-agent');
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: () => 1_000,
             commandExecutor: (command) => command.kind === 'rtc.connect' ? { status: 'ok', value: { rtcCapture: APPLIED_OFF_RECEIPT } } : undefined
         });
@@ -869,7 +869,7 @@ class ControlClientWire implements RallarBlackBoxControlWebSocket {
         this.agentId = agentId;
         this.client = new RallarBlackBoxControlClient({
             now: Date.now,
-            runtime: createRallarBlackBoxTestRuntime({ now: () => 1_000 }),
+            runtime: createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 }),
             webSocketFactory: () => this,
             fetch: () => Promise.reject(new Error('This fixture does not upload reports.')),
             heartbeatIntervalMs: 60_000,
@@ -950,7 +950,7 @@ Deno.test('ordinary omitted intent compaction reports descendant retention limit
         command: { kind: 'recipe.run', recipe }
     }));
     service.takeDispatchableCommands('run-1', 'capture-agent');
-    const runtime = createRallarBlackBoxTestRuntime({
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
         commandExecutor: (command) =>
             command.kind === 'rtc.connect' ? { status: 'ok', value: { rtcCapture: APPLIED_OFF_RECEIPT, arbitraryPayload: 'x'.repeat(100) } } : undefined
     });

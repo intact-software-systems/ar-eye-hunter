@@ -23,7 +23,7 @@ import type {
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
 import type { ALDeliveryCarrierFallback } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -148,6 +148,19 @@ type PortHold =
 
 const HOLD_MSG_ID_REFERENCE = /^\{resultCache\.(.+)\.value\.msgId\}$/u;
 
+namespace GeneratedAlmPorts {
+    /** The initial message and admission decisions retained while routing mutates its delivery state. */
+    export interface SendAdmission {
+        readonly message: PortMessage;
+        readonly capacityRefused: boolean;
+        readonly durable: boolean;
+        readonly checkpointed: boolean;
+        readonly quotaHeld: boolean;
+        readonly storageRefused: boolean;
+        readonly rejected: boolean;
+    }
+}
+
 /** Controlled external facts prove recipe/control composition, never native storage or transport behavior. */
 class GeneratedAlmPorts {
     now = 1_000;
@@ -220,7 +233,7 @@ class GeneratedAlmPorts {
     }
 
     private createRuntime(role: PortRole): RallarBlackBoxTestRuntime {
-        return createRallarBlackBoxTestRuntime({
+        return createDefaultRallarBlackBoxTestRuntime({
             now: () => this.now,
             sleep: async (duration) => {
                 if (!this.holdNextSleep) {
@@ -562,40 +575,7 @@ class GeneratedAlmPorts {
 
     private send(command: RallarBlackBoxTestMessagesSendCommand): RallarBlackBoxTestCommandOutcome {
         assert(isJsonRecordValue(command.payload));
-        // The lowered volatile bound refuses the third capacity send at admission (D78): no attempt, nothing delivered.
-        const capacityRefused = command.payload.marker === 'capacity' && command.payload.index === 3;
-        const durable = (command.durability ?? 'volatile') !== 'volatile';
-        const checkpointed = command.durability === 'local-checkpoint';
-        const quotaHeld = this.storageQuotaFaultId !== undefined;
-        // The checkpoint tier's send path stores nothing: only a checkpoint lag past its bound makes it unavailable.
-        const unavailable = checkpointed ? this.checkpointHealth === 'failing' : quotaHeld;
-        const storageRefused = durable && unavailable && command.onStorageUnavailable !== 'volatile';
-        const downgraded = durable && unavailable && command.onStorageUnavailable === 'volatile';
-        const cause = checkpointed ? 'checkpoint-lag' : 'quota';
-        const rejected = command.payload.marker === 'bounded-rejection' || capacityRefused || storageRefused;
-        const message: PortMessage = {
-            command,
-            msgId: `port-message-${this.messages.length + 1}`,
-            admittedAtMs: this.now,
-            checkpoint: checkpointed && !storageRefused && !downgraded ? 'unsaved' : undefined,
-            state: storageRefused ? 'failed' : rejected ? 'rejected' : command.payload.seq === 300 ? 'queued' : 'accepted',
-            submitted: false,
-            buffered: false,
-            deliveredIndex: undefined,
-            repairAttempts: 0,
-            rosterVersion: this.group.rosterVersion,
-            floor: toPortFloor(command.minSnapshotVersion, this.group.snapshotVersion),
-            attemptCarriers: [],
-            attemptOutcomes: [],
-            relayRejection: undefined,
-            failure: capacityRefused
-                ? { kind: 'refused', reason: 'capacity' }
-                : storageRefused
-                ? { kind: 'storage-unavailable', cause }
-                : undefined,
-            carrierFallback: undefined,
-            durabilityDowngrade: downgraded ? { requested: String(command.durability), cause } : undefined
-        };
+        const { message, capacityRefused, durable, checkpointed, quotaHeld, storageRefused, rejected } = this.deriveSendAdmission(command, command.payload);
         if (!checkpointed && storageRefused && !this.storageFailing) {
             this.reportStoreHealth('failing');
         }
@@ -632,6 +612,56 @@ class GeneratedAlmPorts {
                     ? 'Payload exceeds fixture carrier limit'
                     : undefined
             }
+        };
+    }
+
+    /** Derive admission from the current page and room facts before publishing any fixture effects. */
+    private deriveSendAdmission(
+        command: RallarBlackBoxTestMessagesSendCommand,
+        payload: Record<string, unknown>
+    ): GeneratedAlmPorts.SendAdmission {
+        // The lowered volatile bound refuses the third capacity send at admission (D78): no attempt, nothing delivered.
+        const capacityRefused = payload.marker === 'capacity' && payload.index === 3;
+        const durable = (command.durability ?? 'volatile') !== 'volatile';
+        const checkpointed = command.durability === 'local-checkpoint';
+        const quotaHeld = this.storageQuotaFaultId !== undefined;
+        // The checkpoint tier's send path stores nothing: only a checkpoint lag past its bound makes it unavailable.
+        const unavailable = checkpointed ? this.checkpointHealth === 'failing' : quotaHeld;
+        const storageRefused = durable && unavailable && command.onStorageUnavailable !== 'volatile';
+        const downgraded = durable && unavailable && command.onStorageUnavailable === 'volatile';
+        const cause = checkpointed ? 'checkpoint-lag' : 'quota';
+        const rejected = payload.marker === 'bounded-rejection' || capacityRefused || storageRefused;
+        const message: PortMessage = {
+            command,
+            msgId: `port-message-${this.messages.length + 1}`,
+            admittedAtMs: this.now,
+            checkpoint: checkpointed && !storageRefused && !downgraded ? 'unsaved' : undefined,
+            state: storageRefused ? 'failed' : rejected ? 'rejected' : payload.seq === 300 ? 'queued' : 'accepted',
+            submitted: false,
+            buffered: false,
+            deliveredIndex: undefined,
+            repairAttempts: 0,
+            rosterVersion: this.group.rosterVersion,
+            floor: toPortFloor(command.minSnapshotVersion, this.group.snapshotVersion),
+            attemptCarriers: [],
+            attemptOutcomes: [],
+            relayRejection: undefined,
+            failure: capacityRefused
+                ? { kind: 'refused', reason: 'capacity' }
+                : storageRefused
+                ? { kind: 'storage-unavailable', cause }
+                : undefined,
+            carrierFallback: undefined,
+            durabilityDowngrade: downgraded ? { requested: String(command.durability), cause } : undefined
+        };
+        return {
+            message,
+            capacityRefused,
+            durable,
+            checkpointed,
+            quotaHeld,
+            storageRefused,
+            rejected
         };
     }
 
@@ -1104,7 +1134,16 @@ function toPortFloor(floor: RallarBlackBoxTestMessagesSendCommand['minSnapshotVe
 }
 
 /** An addressed send's receipt names its one addressee: the server itself, or the receiver's stored session. */
-function toAddresseeReceipt(toPeer: 'server' | 'receiver') {
+interface AddresseeReceipt {
+    readonly receiptMode: 'receiver';
+    readonly confirmedHopPeerIds: readonly string[];
+    readonly unconfirmedHopPeerIds: readonly string[];
+    readonly expectedRecipientPeerIds: readonly string[];
+    readonly confirmedRecipientPeerIds: readonly string[];
+    readonly unconfirmedRecipientPeerIds: readonly string[];
+}
+
+function toAddresseeReceipt(toPeer: 'server' | 'receiver'): AddresseeReceipt {
     const addressee = toPeer === 'server' ? 'server-peer' : 'receiver-stored-session';
     return {
         receiptMode: 'receiver',

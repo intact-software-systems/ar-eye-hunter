@@ -231,6 +231,40 @@ describe('outbound admission verdict', () => {
         });
     });
 
+    it('is refused as congested when the planner drops the message for carrier backpressure, and hands it over', async () => {
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
+        const message = createOutboundMessage('verdict-congested');
+        const read = await store.readOutgoingMessage({
+            msg: message,
+            planner: () => ({
+                msg: message,
+                dropReason: 'Carrier backpressure dropped the send',
+                dropReasonCode: 'congested',
+                congestionDrop: { cause: 'backpressured', priority: 0 },
+                lane: 'volatile',
+                preparedMessages: []
+            }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
+        const computed = computeALOutboundDispatch({
+            read,
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            dispatchAtMs: Date.now(),
+            intent: 'enqueue',
+            phase: 'immediate',
+            options: {}
+        });
+
+        expect(computed.verdict).toStrictEqual({
+            kind: 'refused',
+            reason: 'congested',
+            detail: 'Carrier backpressure dropped the send'
+        });
+        expect(isALDeliveryAdmissionFallbackVerdict(computed.verdict)).toBe(true);
+    });
+
     it('is deferred as not-yet-in-sync when the planner drops the message with that code', async () => {
         const stores = createDefaultOutboundTestStores();
         const store = stores.admissionStore;

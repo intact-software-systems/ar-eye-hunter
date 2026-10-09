@@ -341,9 +341,13 @@ export function toCreateWsUrl(
 /** The facade reads the one ledger the connect's carriers count against, never one of its own. */
 export function toBrowserMiddleware(
     input: InitialiseBrowserTransportInput,
-    carriers: Omit<RallarBrowserMiddleware, 'volatileBudget'>
+    carriers: Omit<RallarBrowserMiddleware, 'volatileBudget' | 'outboundDiagnostics'>
 ): RallarBrowserMiddleware {
-    return { ...carriers, volatileBudget: input.volatileBound.budget };
+    return {
+        ...carriers,
+        volatileBudget: input.volatileBound.budget,
+        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics
+    };
 }
 
 export function toBrowserWebSocketQueueBoxInput(
@@ -382,7 +386,8 @@ export function toRtcOverlayMulticastManagerInput(
         checkpointStores: input.checkpointStores.rtcOverlay,
         durableWorkOwnership: input.options.durableWorkOwnership,
         outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
-        outboundSettlements: input.options.deliverySettlements.rtc
+        outboundSettlements: input.options.deliverySettlements.rtc,
+        faultPort: input.options.diagnosticsPorts.transportFaultPort
     };
 }
 

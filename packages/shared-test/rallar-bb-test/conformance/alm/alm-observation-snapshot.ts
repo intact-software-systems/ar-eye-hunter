@@ -1,7 +1,9 @@
 import type { ALStoreDurability } from '../../../../shared/alm/al-runtime-stores.ts';
 import type { ALDeliveryCarrier } from '../../../../shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALCongestionCounters } from '../../../../shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALVolatileSessionUsage } from '../../../../shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { Either } from '../../../../shared/resilience/Either.ts';
+import { decodeALCongestionCounters } from '../../alm/decode-al-congestion-counters.ts';
 import { decodeALVolatileSessionReport } from '../../alm/decode-al-volatile-session-report.ts';
 import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';
 
@@ -55,6 +57,13 @@ export interface ALMObservationLedgerReading {
     readonly agentId: string;
     readonly usage: ALVolatileSessionUsage;
     readonly overloaded: boolean;
+}
+
+/** One `stats` reading of the congestion decisions an agent's page counted since its last `close` (D186). */
+export interface ALMObservationCongestionReading {
+    readonly atEpochMs: number;
+    readonly agentId: string;
+    readonly counters: ALCongestionCounters;
 }
 
 export type ALMObservationCommandResult =
@@ -144,6 +153,14 @@ export interface ALMObservationSnapshot {
     readonly inboundClaims: readonly ALMObservationInboundClaim[];
     readonly readinessProbes: readonly ALMObservationReadinessProbe[];
     readonly ledgerReadings: readonly ALMObservationLedgerReading[];
+    readonly congestionReadings: readonly ALMObservationCongestionReading[];
+}
+
+/** A `stats` event the `stats` command recorded: its agent and the `rallar` block it read off the page. */
+interface ALMObservationStatsEvent {
+    readonly atEpochMs: number;
+    readonly agentId: string;
+    readonly rallar: RallarBlackBoxTestRecord;
 }
 
 interface ALMObservationDiagnostic {
@@ -172,6 +189,7 @@ export function decodeALMObservationSnapshot(
         return Either.ofLeft(toSnapshotIssues({ runId, events, results, firstEventAtEpochMs }));
     }
     const diagnostics = events.map(toDiagnostic).filter(isPresent);
+    const statsEvents = events.map(toStatsEvent).filter(isPresent);
     return Either.ofRight({
         runId,
         firstEventAtEpochMs,
@@ -193,7 +211,8 @@ export function decodeALMObservationSnapshot(
         readinessProbes: toTopicDiagnostics(diagnostics, OUTBOUND_DIAGNOSTICS_TOPIC).map(toReadinessProbe).filter(
             isPresent
         ),
-        ledgerReadings: events.map(toLedgerReading).filter(isPresent)
+        ledgerReadings: statsEvents.map(toLedgerReading).filter(isPresent),
+        congestionReadings: statsEvents.map(toCongestionReading).filter(isPresent)
     });
 }
 
@@ -372,17 +391,30 @@ function toReadinessProbe(
         };
 }
 
-function toLedgerReading(event: RallarBlackBoxTestRecord): ALMObservationLedgerReading | undefined {
+function toStatsEvent(event: RallarBlackBoxTestRecord): ALMObservationStatsEvent | undefined {
     const envelope = decodeRecord(event.payload);
     const atEpochMs = decodeFiniteNumber(event.atEpochMs);
     const agentId = decodeText(event.agentId);
-    const report = decodeRecord(decodeRecord(envelope?.payload)?.rallar)?.alm;
-    if (envelope?.topic !== STATS_TOPIC || atEpochMs === undefined || agentId === undefined || report === undefined) {
-        return undefined;
-    }
-    return decodeALVolatileSessionReport(report).fold(
+    const rallar = decodeRecord(decodeRecord(envelope?.payload)?.rallar);
+    return envelope?.topic !== STATS_TOPIC || atEpochMs === undefined || agentId === undefined || rallar === undefined
+        ? undefined
+        : { atEpochMs, agentId, rallar };
+}
+
+/** A `stats` event with no ledger, as the control client's periodic stats, decodes to a left and is skipped. */
+function toLedgerReading(stats: ALMObservationStatsEvent): ALMObservationLedgerReading | undefined {
+    const { atEpochMs, agentId } = stats;
+    return decodeALVolatileSessionReport(stats.rallar.alm).fold(
         () => undefined,
         ({ usage, overloaded }) => ({ atEpochMs, agentId, usage, overloaded })
+    );
+}
+
+function toCongestionReading(stats: ALMObservationStatsEvent): ALMObservationCongestionReading | undefined {
+    const { atEpochMs, agentId } = stats;
+    return decodeALCongestionCounters(stats.rallar.congestion).fold(
+        () => undefined,
+        (counters) => ({ atEpochMs, agentId, counters })
     );
 }
 

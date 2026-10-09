@@ -452,8 +452,9 @@ const faultDelayActionSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJEC
     delayMs: numberSchema
 });
 const faultActionSchema: JsonSchema = {
-    oneOf: [{ type: 'string', enum: ['drop', 'not-ready'] }, faultDelayActionSchema]
+    oneOf: [{ type: 'string', enum: ['drop', 'not-ready', 'backpressure'] }, faultDelayActionSchema]
 };
+const rtcFaultActionSchema: JsonSchema = { type: 'string', enum: ['drop', 'backpressure'] };
 const faultRemainingSchema: JsonSchema = { oneOf: [numberSchema, { const: 'until-cleared' }] };
 const storageFaultMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.storageFaultMatch, {
     owner: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.storageFaultOwner },
@@ -678,7 +679,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
                     faultId: stringSchema,
                     carrier: { const: carrier },
                     match: faultMatchSchema,
-                    action: carrier === 'ws' ? faultActionSchema : { const: 'drop' },
+                    action: carrier === 'ws' ? faultActionSchema : rtcFaultActionSchema,
                     remaining: faultRemainingSchema
                 })
             ),

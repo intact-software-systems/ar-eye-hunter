@@ -60,7 +60,9 @@ export function decodeALInboundPlan(value: unknown): ALMessageHandlingPlan {
     requireOptionalDropReasonCode(plan.dropReasonCode);
     assertDeliveryAndForwarding(plan);
     assertControlPlan(plan);
-    assertSupersedenceAndCongestion(plan);
+    assertSupersedencePlan(plan.supersedence);
+    assertCongestionPlan(plan.congestion);
+    assertOwnershipPlan(plan.ownership);
     assertOrderingObservation(plan.orderingRuntime);
     return value as ALMessageHandlingPlan;
 }
@@ -137,8 +139,8 @@ function assertControlPlan(plan: PersistedALRecord): void {
     requireOptionalPersistedALNonEmptyString(repair.reason, 'repair reason');
 }
 
-function assertSupersedenceAndCongestion(plan: PersistedALRecord): void {
-    const supersedence = requirePersistedALRecord(plan.supersedence, 'supersedence plan');
+function assertSupersedencePlan(value: PersistedALValue): void {
+    const supersedence = requirePersistedALRecord(value, 'supersedence plan');
     requirePersistedALFields(supersedence, ['enabled', 'algo', 'key', 'replacesMsgId', 'status', 'latestMsgId'], [
         'enabled',
         'algo',
@@ -154,14 +156,27 @@ function assertSupersedenceAndCongestion(plan: PersistedALRecord): void {
     for (const field of ['key', 'replacesMsgId', 'latestMsgId']) {
         requireOptionalPersistedALNonEmptyString(supersedence[field], `supersedence ${field}`);
     }
-    const congestion = requirePersistedALRecord(plan.congestion, 'congestion plan');
-    requirePersistedALFields(congestion, ['overloaded', 'action', 'priority'], ['overloaded', 'action', 'priority']);
+}
+
+function assertCongestionPlan(value: PersistedALValue): void {
+    const congestion = requirePersistedALRecord(value, 'congestion plan');
+    requirePersistedALFields(
+        congestion,
+        ['overloaded', 'action', 'priority', 'cause'],
+        ['overloaded', 'action', 'priority']
+    );
     requireBooleans(congestion, ['overloaded']);
     requireVariant(congestion.action, ['none', 'drop-low', 'defer', 'reject'], 'congestion action');
     if (typeof congestion.priority !== 'number' || !Number.isFinite(congestion.priority)) {
         throw new TypeError('Persisted congestion priority is invalid');
     }
-    const ownership = requirePersistedALRecord(plan.ownership, 'ownership plan');
+    if (congestion.cause !== undefined) {
+        requireVariant(congestion.cause, ['overloaded', 'backpressured'], 'congestion cause');
+    }
+}
+
+function assertOwnershipPlan(value: PersistedALValue): void {
+    const ownership = requirePersistedALRecord(value, 'ownership plan');
     requirePersistedALFields(ownership, ['algo', 'exclusive'], ['algo', 'exclusive']);
     requireVariant(ownership.algo, ['shared', 'exclusive'], 'ownership algorithm');
     requireBooleans(ownership, ['exclusive']);

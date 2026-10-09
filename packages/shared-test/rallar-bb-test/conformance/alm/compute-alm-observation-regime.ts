@@ -1,3 +1,4 @@
+import type { ALCongestionCounters } from '../../../../shared/alm/outbound/al-outbound-message-runtime.ts';
 import type {
     ALMObservationPageDiagnosticRecord,
     ALMObservationPageDiagnosticsFile
@@ -5,6 +6,7 @@ import type {
 import type {
     ALMObservationAgentRole,
     ALMObservationCommandResult,
+    ALMObservationCongestionReading,
     ALMObservationInboundClaim,
     ALMObservationInboundDrain,
     ALMObservationInboundOutcome,
@@ -133,6 +135,16 @@ export type ALMObservationLedger =
     }>
     | Readonly<{ outcome: 'no-readings'; }>;
 
+/**
+ * The congestion decisions the cell's pages counted (D186). A page's counters only grow between its closes, so each
+ * page contributes its largest reading of each count and the cell sums its pages. The sum is a lower bound when a page
+ * reconnects inside the cell: the counts of its earlier connection are lost at that close. `no-readings` is a cell
+ * whose agents read no counters at all, not an uncongested one.
+ */
+export type ALMObservationCongestion =
+    | Readonly<{ outcome: 'measured'; readingCount: number; dropped: number; deferred: number; handedOver: number; }>
+    | Readonly<{ outcome: 'no-readings'; }>;
+
 export interface ALMObservationRegime {
     readonly runId: string;
     readonly carrier: string;
@@ -149,6 +161,7 @@ export interface ALMObservationRegime {
     readonly pageDiagnostics: ALMObservationPageDiagnostics;
     readonly pageRegime: ALMObservationPageRegime;
     readonly ledger: ALMObservationLedger;
+    readonly congestion: ALMObservationCongestion;
     readonly snapshotIssues: readonly string[];
 }
 
@@ -198,6 +211,7 @@ export function computeALMObservationRegime(input: ALMObservationRegimeInput): A
         pageDiagnostics: computePageDiagnostics(input.pageDiagnosticsFile),
         pageRegime,
         ledger: computeLedger(input.snapshot.ledgerReadings),
+        congestion: computeCongestion(input.snapshot.congestionReadings),
         snapshotIssues: []
     };
 }
@@ -222,6 +236,7 @@ export function createUnreadableALMObservationRegime(
         pageDiagnostics: computePageDiagnostics(input.pageDiagnosticsFile),
         pageRegime: { outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' },
         ledger: { outcome: 'no-readings' },
+        congestion: { outcome: 'no-readings' },
         snapshotIssues: input.snapshotIssues
     };
 }
@@ -363,6 +378,38 @@ function computeLedger(readings: readonly ALMObservationLedgerReading[]): ALMObs
         maxOldestAgeMs: usages.reduce((max, usage) => Math.max(max, usage.oldestAgeMs), 0),
         maxTracks: usages.reduce((max, usage) => Math.max(max, usage.tracks), 0),
         overloadedReadings: readings.filter((reading) => reading.overloaded).length
+    };
+}
+
+function computeCongestion(readings: readonly ALMObservationCongestionReading[]): ALMObservationCongestion {
+    if (readings.length === 0) {
+        return { outcome: 'no-readings' };
+    }
+    const largestByAgent = readings.reduce<Readonly<Record<string, ALCongestionCounters>>>(
+        (largest, reading) => ({
+            ...largest,
+            [reading.agentId]: computeLargestCounters(largest[reading.agentId], reading.counters)
+        }),
+        {}
+    );
+    const pages = Object.values(largestByAgent);
+    return {
+        outcome: 'measured',
+        readingCount: readings.length,
+        dropped: pages.reduce((total, page) => total + page.dropped, 0),
+        deferred: pages.reduce((total, page) => total + page.deferred, 0),
+        handedOver: pages.reduce((total, page) => total + page.handedOver, 0)
+    };
+}
+
+function computeLargestCounters(
+    largest: ALCongestionCounters | undefined,
+    reading: ALCongestionCounters
+): ALCongestionCounters {
+    return largest === undefined ? reading : {
+        dropped: Math.max(largest.dropped, reading.dropped),
+        deferred: Math.max(largest.deferred, reading.deferred),
+        handedOver: Math.max(largest.handedOver, reading.handedOver)
     };
 }
 

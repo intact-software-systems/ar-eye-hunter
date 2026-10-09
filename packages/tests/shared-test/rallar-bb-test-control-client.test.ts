@@ -39,7 +39,7 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRuntime
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { createBrowserTestStorage } from './browser-test-storage.ts';
 
@@ -190,7 +190,7 @@ describe('shared rallar black-box control client', () => {
         vi.useFakeTimers();
         vi.setSystemTime(99_000);
         let now = 1_234;
-        const runtime = createRallarBlackBoxTestRuntime({ now: () => now });
+        const runtime = createDefaultRallarBlackBoxTestRuntime({ now: () => now });
         const socket = new FakeControlSocket();
         const options = { ...toClientOptions(runtime, () => socket), now: () => now, statsIntervalMs: 0 };
         const client = new RallarBlackBoxControlClient(options);
@@ -272,7 +272,7 @@ describe('shared rallar black-box control client', () => {
         vi.stubGlobal('localStorage', createBrowserTestStorage());
         vi.stubGlobal('sessionStorage', createBrowserTestStorage());
         vi.useFakeTimers();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const socket = new FakeControlSocket();
         const client = new RallarBlackBoxControlClient(toClientOptions(runtime, () => socket));
         const agent = createRallarBlackBoxBrowserControlAgent({
@@ -304,7 +304,7 @@ describe('shared rallar black-box control client', () => {
 
     it('executes the same installed runtime it advertises when caller options later change', async () => {
         const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() });
-        const replacement = createRallarBlackBoxTestRuntime();
+        const replacement = createDefaultRallarBlackBoxTestRuntime();
         const socket = new FakeControlSocket();
         const options = toClientOptions(runtime, () => socket);
         const client = new RallarBlackBoxControlClient(options);
@@ -351,7 +351,7 @@ describe('shared rallar black-box control client', () => {
         vi.useFakeTimers();
         const custom = { ...createSpaBrowserRallarRuntime() };
         Reflect.deleteProperty(custom, 'rtcCaptureSupport');
-        const runtime = kind === 'simulated' ? createRallarBlackBoxTestRuntime() : createDefaultRallarBlackBoxBrowserTestRuntime({
+        const runtime = kind === 'simulated' ? createDefaultRallarBlackBoxTestRuntime() : createDefaultRallarBlackBoxBrowserTestRuntime({
             ...(kind === 'unverified custom' ? { rallarRuntime: custom } : {})
         });
         await runtime.execute({ kind: 'configure', config: { control: { providerMode: 'browser-rallar' }, rallar: { crdt: true } } });
@@ -376,7 +376,7 @@ describe('shared rallar black-box control client', () => {
 
     it('records the message a socket error event carries as the last error', () => {
         const socket = new FakeControlSocket();
-        const client = new RallarBlackBoxControlClient(toClientOptions(createRallarBlackBoxTestRuntime(), () => socket));
+        const client = new RallarBlackBoxControlClient(toClientOptions(createDefaultRallarBlackBoxTestRuntime(), () => socket));
 
         try {
             connectToRunOne(client);
@@ -583,7 +583,7 @@ describe('shared rallar black-box control client', () => {
 
     it('registers, dispatches commands, and streams results and events', async () => {
         const socket = new FakeControlSocket();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const client = new RallarBlackBoxControlClient(toClientOptions(runtime, () => socket));
 
         try {
@@ -629,7 +629,7 @@ describe('shared rallar black-box control client', () => {
 
     it('delivers each snapshot change to subscribers until they unsubscribe', () => {
         const socket = new FakeControlSocket();
-        const client = new RallarBlackBoxControlClient(toClientOptions(createRallarBlackBoxTestRuntime(), () => socket));
+        const client = new RallarBlackBoxControlClient(toClientOptions(createDefaultRallarBlackBoxTestRuntime(), () => socket));
         const delivered: RallarBlackBoxControlSnapshot['state'][] = [];
         const unsubscribe = client.subscribe((snapshot) => delivered.push(snapshot.state));
 
@@ -651,7 +651,7 @@ describe('shared rallar black-box control client', () => {
 
     it('names the agent identity from the configured actor, session and scope, reading no key a configuration never writes', async () => {
         const socket = new FakeControlSocket();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         await runtime.execute({
             kind: 'configure',
             commandId: 'configure-identity-agent',
@@ -710,7 +710,7 @@ describe('shared rallar black-box control client', () => {
 
     it('reports CRDT runtime capability in register identity when configured for browser Rallar', async () => {
         const socket = new FakeControlSocket();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         await runtime.execute({
             kind: 'configure',
             commandId: 'configure-crdt-agent',
@@ -823,7 +823,7 @@ describe('shared rallar black-box control client', () => {
 
     it('replays cached command results for duplicate command IDs', async () => {
         const socket = new FakeControlSocket();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const client = new RallarBlackBoxControlClient(toClientOptions(runtime, () => socket));
         const command = JSON.stringify(toCommandEnvelope('configure-1', toConfigureCommand()));
 
@@ -859,7 +859,7 @@ describe('shared rallar black-box control client', () => {
         vi.useFakeTimers();
 
         const sockets: FakeControlSocket[] = [];
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const client = new RallarBlackBoxControlClient({
             ...toClientOptions(runtime, () => {
                 const socket = new FakeControlSocket();
@@ -909,7 +909,7 @@ describe('shared rallar black-box control client', () => {
         vi.useFakeTimers();
 
         const socket = new FakeControlSocket();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const client = new RallarBlackBoxControlClient({ ...toClientOptions(runtime, () => socket), statsIntervalMs: 25 });
 
         try {
@@ -937,7 +937,7 @@ describe('shared rallar black-box control client', () => {
 
     it('sends and uploads a redacted final report', async () => {
         const socket = new FakeControlSocket();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const uploads: Array<{
             url: string;
             body: ControlClientEnvelope;
@@ -1011,7 +1011,7 @@ describe('shared rallar black-box control client', () => {
 
     it('clears browser storage before executing remote reset commands', async () => {
         const socket = new FakeControlSocket();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         vi.stubGlobal('localStorage', createBrowserTestStorage());
         vi.stubGlobal('sessionStorage', createBrowserTestStorage());
         const client = new RallarBlackBoxControlClient({ ...toClientOptions(runtime, () => socket), statsIntervalMs: 0 });
@@ -1047,7 +1047,7 @@ describe('shared rallar black-box control client', () => {
 
     it('reports a failed final report upload as the snapshot error and a warning diagnostic', async () => {
         const socket = new FakeControlSocket();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const fetch = vi.fn(async () => new Response('down', { status: 503, statusText: 'Service Unavailable' }));
         const client = new RallarBlackBoxControlClient({ ...toClientOptions(runtime, () => socket), fetch, statsIntervalMs: 0 });
 
@@ -1082,7 +1082,7 @@ describe('shared rallar black-box control client', () => {
 
     it('streams the runtime stats, including load, over the control socket', async () => {
         const socket = new FakeControlSocket();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const client = new RallarBlackBoxControlClient({ ...toClientOptions(runtime, () => socket), statsIntervalMs: 0 });
 
         try {
@@ -1106,7 +1106,7 @@ describe('shared rallar black-box control client', () => {
     it('registers without a configured fleet location that names no precision and reports why once', async () => {
         vi.useFakeTimers();
         const socket = new FakeControlSocket();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         await runtime.execute({
             kind: 'configure',
             commandId: 'configure-fleet',
@@ -1153,7 +1153,7 @@ describe('shared rallar black-box control client', () => {
             return Promise.resolve(new Response('{}', { status: 202 }));
         });
         const socket = new FakeControlSocket();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const client = createDefaultRallarBlackBoxControlClient({
             runtime,
             heartbeatIntervalMs: 60_000,
@@ -1186,7 +1186,7 @@ describe('shared rallar black-box control client', () => {
     });
 
     it('records a barrier resolution addressed to this agent as a runtime event, never as a command', () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const socket = new FakeControlSocket();
         const client = new RallarBlackBoxControlClient(toClientOptions(runtime, () => socket));
         try {

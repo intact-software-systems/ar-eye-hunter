@@ -87,7 +87,7 @@ export function toRepairDispatchWait(
 }
 
 /** The message id the send of `step.index` returned, resolved from the result cache when the wait is armed. */
-function toSentMsgIdReference(step: AlmConformanceMessageStepInput): string {
+export function toSentMsgIdReference(step: AlmConformanceMessageStepInput): string {
     return `{resultCache.${toCommandId(step, `send-${step.index}`)}.value.msgId}`;
 }
 

@@ -93,6 +93,7 @@ export class RtcEndpointFixture {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, stores: this.outbound }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         this.streamer = createDefaultWebRtcRxStreamerService({

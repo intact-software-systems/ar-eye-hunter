@@ -275,6 +275,7 @@ function openRtcReceiverPeer(faults: ScriptedTransportFaultPort) {
 /** The outbound owner and, as `initialise-browser-middleware.ts` adds it, the inbound half on the receiver's channel. */
 function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnectionService): WebRtcOverlayMulticastManager {
     const manager = initialiseRtcOverlayMulticastManager({
+        faultPort: runtime.faults,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         qosProvider: undefined,
         volatileBudget: createDefaultVolatileSessionBudget(),

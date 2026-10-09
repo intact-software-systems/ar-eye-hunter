@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
     createDefaultRallarBlackBoxBrowserTestRuntime,
+    createDefaultRallarBlackBoxTestRuntime,
     createRallarBlackBoxCompositeConformanceMatrix,
-    createRallarBlackBoxTestRuntime,
     formatJsonSchemaValidationErrors,
     RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES,
     RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_DEFAULT_RECIPE_SETTINGS,
@@ -44,7 +44,7 @@ interface DeterministicConformanceCommandResult {
 /** The clock/event shell executes the fixture's pure, deterministic command policies. */
 function createDeterministicConformanceRuntime(): RallarBlackBoxTestRuntime {
     let now = 1_000;
-    return createRallarBlackBoxTestRuntime({
+    return createDefaultRallarBlackBoxTestRuntime({
         now: () => now,
         sleep: async (ms) => {
             now += ms;

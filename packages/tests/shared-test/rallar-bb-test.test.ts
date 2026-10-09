@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { describe, expect, it, vi } from 'vitest';
 import { normalizeBlackBoxResponseHeaders } from '../../shared-test/black-box-runner/http/normalize-black-box-response-headers.ts';
+import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import {
+    createDefaultRallarBlackBoxTestRuntime,
     createRallarBlackBoxTestRuntime,
     getRallarBlackBoxActiveCommand,
     getRallarBlackBoxCommandHistory,
@@ -11,9 +14,181 @@ import {
     redactRallarBlackBoxValue,
     toRallarBlackBoxDiagnostics,
     type RallarBlackBoxTestCommand,
+    type RallarBlackBoxTestJsonValue,
     type RallarBlackBoxTestRecipe
 } from '../../shared-test/rallar-bb-test/mod.ts';
+import { sleepWithAbort } from '../../shared-test/rallar-bb-test/runtime/sleep-with-abort.ts';
 import { createDeterministicRuntime } from './rallar-bb-runtime/create-deterministic-runtime.ts';
+
+describe('runtime construction', () => {
+    it('constructs a default runtime through the public entry', async () => {
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
+        const result = await runtime.execute({ kind: 'health' });
+        expect(result.ok).toBe(true);
+    });
+
+    it('shares default IDs across prefixes and isolates runtime instances', async () => {
+        const a = createDefaultRallarBlackBoxTestRuntime();
+        const b = createDefaultRallarBlackBoxTestRuntime();
+        a.recordEvent({ kind: 'event', topic: 'construction.first' });
+        const firstA = a.state().events[0];
+        const healthA = await a.execute({ kind: 'health' });
+        b.recordEvent({ kind: 'event', topic: 'construction.first' });
+        const firstB = b.state().events[0];
+        expect(firstA.eventId).toBe('event-1');
+        expect(healthA.commandId).toBe('command-2');
+        expect(firstB.eventId).toBe('event-1');
+    });
+
+    it('reads the current default clock function after construction', () => {
+        const original = Object.getOwnPropertyDescriptor(Date, 'now')!;
+        try {
+            Object.defineProperty(Date, 'now', { ...original, value: () => 1_000 });
+            const runtime = createDefaultRallarBlackBoxTestRuntime();
+            runtime.recordEvent({ kind: 'event', topic: 'construction.first' });
+            Object.defineProperty(Date, 'now', { ...original, value: () => 2_000 });
+            runtime.recordEvent({ kind: 'event', topic: 'construction.second' });
+            const eventTimes = runtime.state().events.map((event) => event.atEpochMs);
+            expect(eventTimes).toEqual([1_000, 2_000]);
+        }
+        finally {
+            Object.defineProperty(Date, 'now', original);
+        }
+    });
+
+    it('uses each supplied infrastructure override without replacing other defaults', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(2_000);
+        try {
+            const clock = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
+            clock.recordEvent({ kind: 'event', topic: 'clock' });
+            expect(clock.state().events[0]).toMatchObject({ atEpochMs: 1_000, eventId: 'event-1' });
+            const ids = createDefaultRallarBlackBoxTestRuntime({ idFactory: (prefix) => `${prefix}-supplied` });
+            ids.recordEvent({ kind: 'event', topic: 'ids' });
+            expect(ids.state().events[0]).toMatchObject({ eventId: 'event-supplied', atEpochMs: 2_000 });
+            expect((await ids.execute({ kind: 'health' })).commandId).toBe('command-supplied');
+            const sleptMs: number[] = [];
+            const sleeper = createDefaultRallarBlackBoxTestRuntime({
+                sleep: async (ms) => {
+                    sleptMs.push(ms);
+                }
+            });
+            const loop = await sleeper.execute({ kind: 'loop', count: 2, intervalMs: 10, commands: [{ kind: 'health' }] });
+            expect(sleptMs).toEqual([10]);
+            expect(loop).toMatchObject({ ok: true, value: { iterations: 2, passed: 2 } });
+            expect(sleeper.state().events[0].atEpochMs).toBe(2_000);
+        }
+        finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it.each([
+        { name: 'explicit', create: createRallarBlackBoxTestRuntime },
+        { name: 'default', create: createDefaultRallarBlackBoxTestRuntime }
+    ])('snapshots every supplied dependency for explicit and default construction: $name', async ({ create }) => {
+        let sequence = 1;
+        const sleptMs: number[] = [];
+        const resources: string[] = [];
+        const initialLedger = {
+            usage: { admissions: 3, bytes: 912, oldestAgeMs: 1_250, tracks: 2 },
+            limits: AL_VOLATILE_SESSION_LIMITS,
+            overloaded: false
+        };
+        const initialCongestion = { dropped: 2, deferred: 3, handedOver: 4 };
+        const input = {
+            now: () => 1_000,
+            sleep: async (ms: number) => {
+                sleptMs.push(ms);
+            },
+            idFactory: (prefix: string) => `${prefix}-initial-${sequence++}`,
+            commandExecutor: (command: RallarBlackBoxTestCommand) =>
+                command.kind === 'rtc.send'
+                    ? { status: 'ok' as const, value: { owner: 'initial' } }
+                    : undefined,
+            cleanup: async () => {
+                resources.push('initial');
+            },
+            readAlmUsage: async () => initialLedger,
+            readCongestionCounters: async () => initialCongestion
+        };
+        const runtime = create(input);
+        input.now = () => 2_000;
+        input.sleep = async () => {
+            sleptMs.push(-1);
+        };
+        input.idFactory = (prefix) => `${prefix}-replacement`;
+        input.commandExecutor = () => ({ status: 'ok', value: { owner: 'replacement' } });
+        input.cleanup = async () => {
+            resources.push('replacement');
+        };
+        input.readAlmUsage = async () => ({ ...initialLedger, usage: { admissions: 99, bytes: 99, oldestAgeMs: 99, tracks: 99 } });
+        input.readCongestionCounters = async () => ({ dropped: 99, deferred: 99, handedOver: 99 });
+        runtime.recordEvent({ kind: 'event', topic: 'snapshot' });
+        expect(runtime.state().events[0]).toMatchObject({ atEpochMs: 1_000, eventId: 'event-initial-1' });
+        expect((await runtime.execute({ kind: 'health' })).commandId).toBe('command-initial-2');
+        const loop = await runtime.execute({ kind: 'loop', commandId: 'loop', count: 2, intervalMs: 10, commands: [{ kind: 'health' }] });
+        expect(loop).toMatchObject({ ok: true, value: { iterations: 2, passed: 2 } });
+        expect(sleptMs).toEqual([10]);
+        expect((await runtime.execute({ kind: 'rtc.send', commandId: 'send', send: {} })).value).toEqual({ owner: 'initial' });
+        const stats = await runtime.execute({ kind: 'stats', commandId: 'stats' });
+        expect(stats.value).toMatchObject({ rallar: { alm: initialLedger, congestion: initialCongestion } });
+        await runtime.execute({ kind: 'recipe.cancel', commandId: 'cleanup' });
+        expect(resources).toEqual(['initial']);
+    });
+
+    it.each([
+        { name: 'explicit', create: createRallarBlackBoxTestRuntime },
+        { name: 'default', create: createDefaultRallarBlackBoxTestRuntime }
+    ])('keeps absent optional capabilities absent: $name', async ({ create }) => {
+        let sequence = 1;
+        const runtime = create({ now: () => 1_000, sleep: sleepWithAbort, idFactory: (prefix) => `${prefix}-${sequence++}` });
+        const stats = await runtime.execute({ kind: 'stats' });
+        expect(stats.ok).toBe(true);
+        expect(stats.value).not.toHaveProperty('rallar.alm');
+        expect(stats.value).not.toHaveProperty('rallar.congestion');
+    });
+
+    it.each(['complete', 'cancel'] as const)('paces and cancels a loop using real default sleep: %s', async (settlement) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        try {
+            const runtime = createDefaultRallarBlackBoxTestRuntime();
+            const pending = runtime.execute({ kind: 'loop', count: 2, intervalMs: 10, commands: [{ kind: 'health' }] });
+            try {
+                await vi.advanceTimersByTimeAsync(0);
+                expect(runtime.state().commandHistory.filter((result) => result.kind === 'health')).toHaveLength(1);
+                expect(vi.getTimerCount()).toBe(1);
+                await vi.advanceTimersByTimeAsync(9);
+                expect(runtime.state().commandHistory.filter((result) => result.kind === 'health')).toHaveLength(1);
+                if (settlement === 'cancel') {
+                    await runtime.execute({ kind: 'recipe.cancel' });
+                    expect((await pending).status).toBe('cancelled');
+                }
+                else {
+                    await vi.advanceTimersByTimeAsync(1);
+                    expect(await pending).toMatchObject({ ok: true, value: { iterations: 2, passed: 2 } });
+                }
+                expect(vi.getTimerCount()).toBe(0);
+            }
+            finally {
+                await runtime.execute({ kind: 'recipe.cancel' });
+                await pending;
+            }
+        }
+        finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('preserves nonpositive and pre-aborted sleep outcomes', async () => {
+        const reason = new Error('owned-abort');
+        const signal = AbortSignal.abort(reason);
+        await expect(sleepWithAbort(0, signal)).resolves.toBeUndefined();
+        await expect(sleepWithAbort(-1, signal)).resolves.toBeUndefined();
+        await expect(sleepWithAbort(1, signal)).rejects.toBe(reason);
+    });
+});
 
 describe('black-box HTTP response evidence', () => {
     it('retains only allow-listed response headers with lowercase names', () => {
@@ -152,7 +327,7 @@ describe('rallar-bb runtime core', () => {
 
     it('passes raw config to command executors while keeping runtime state redacted', async () => {
         let capturedPassword: string | undefined;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: (_command, context) => {
                 const password = context.config()?.rallar?.password;
                 capturedPassword = typeof password === 'string' ? password : undefined;
@@ -325,7 +500,7 @@ describe('rallar-bb runtime core', () => {
 
     it('re-executes recipe children with the same IDs across separate recipe runs', async () => {
         let sendCount = 0;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: (command, context) => {
                 if (command.kind !== 'rtc.send') {
                     return undefined;
@@ -397,8 +572,9 @@ describe('rallar-bb runtime core', () => {
             }
         };
 
-        const parsedCommand = JSON.parse(JSON.stringify(command)) as RallarBlackBoxTestCommand;
-        const result = await runtime.execute(parsedCommand);
+        const parsedCommand: RallarBlackBoxTestJsonValue = JSON.parse(JSON.stringify(command));
+        expect(validateRallarBlackBoxTestCommand(parsedCommand)).toEqual({ ok: true });
+        const result = await runtime.execute(parsedCommand as RallarBlackBoxTestCommand);
         const parsedResult = JSON.parse(JSON.stringify(result));
 
         expect(parsedResult).toEqual(result);

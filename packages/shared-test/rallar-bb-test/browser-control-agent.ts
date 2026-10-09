@@ -29,7 +29,7 @@ import type {
     RallarBlackBoxTestRuntimeStatus,
     RallarBlackBoxTestState
 } from './rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from './runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from './runtime/create-rallar-black-box-test-runtime.ts';
 
 export type BrowserControlAgentRunState =
     | 'waiting'
@@ -275,7 +275,7 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
 
 function createDefaultBrowserControlAgentRuntime(providerMode: RallarBlackBoxProviderMode): BrowserControlAgentRuntime {
     if (providerMode === 'simulated') {
-        return { runtime: createRallarBlackBoxTestRuntime() };
+        return { runtime: createDefaultRallarBlackBoxTestRuntime() };
     }
 
     const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({

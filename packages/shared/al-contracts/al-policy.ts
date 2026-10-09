@@ -164,6 +164,8 @@ export interface ALQosNormalizationInput {
     readonly authorization?: ALQosAuthorization;
     readonly live?: {
         readonly overloaded?: boolean;
+        /** The carrier's channel cannot take the send now (D184); absent when the carrier read no channel. */
+        readonly backpressured?: boolean;
         readonly connectedNeighborCount?: number;
         readonly hasAlternateRoute?: boolean;
     };
@@ -179,6 +181,8 @@ export interface ALQosMessageContext {
     readonly groupMemberPeerIds?: readonly string[];
     readonly overlayNeighborPeerIds?: readonly string[];
     readonly overloaded?: boolean;
+    /** The carrier's channel cannot take the send now (D184); absent when the carrier read no channel. */
+    readonly backpressured?: boolean;
 }
 
 export interface ALQosInputProvider {
@@ -225,9 +229,14 @@ export interface ALMessagePlanningContext extends ALMessagePlanningObservations 
     readonly groupMemberPeerIds?: readonly string[];
     readonly overlayNeighborPeerIds?: readonly string[];
     readonly overloaded?: boolean;
+    /** The carrier's channel cannot take the send now (D184); absent when the carrier read no channel. */
+    readonly backpressured?: boolean;
 }
 
 export type ALCongestionRuntimeAction = 'none' | 'drop-low' | 'defer' | 'reject';
+
+/** Which live input the congestion policy answers: the session's own volatile bound, or its carrier's channel (D185). */
+export type ALCongestionCause = 'overloaded' | 'backpressured';
 
 /** Why handling stopped. Consumers branch on this code; `dropReason` is the human-readable detail. */
 export type ALMessageDropReasonCode =
@@ -238,6 +247,7 @@ export type ALMessageDropReasonCode =
     | 'expired'
     | 'resync-required'
     | 'overloaded'
+    | 'congested'
     | 'not-yet-in-sync'
     | 'unauthorized'
     | 'membership-fenced'
@@ -251,6 +261,7 @@ export const AL_MESSAGE_DROP_REASON_CODES: readonly ALMessageDropReasonCode[] = 
     'expired',
     'resync-required',
     'overloaded',
+    'congested',
     'not-yet-in-sync',
     'unauthorized',
     'membership-fenced',
@@ -305,6 +316,8 @@ export interface ALMessageHandlingPlan {
         readonly overloaded: boolean;
         readonly action: ALCongestionRuntimeAction;
         readonly priority: number;
+        /** The input the action answers, `overloaded` when both hold (D185); `undefined` exactly when the action is `none`. */
+        readonly cause: ALCongestionCause | undefined;
     };
     readonly ownership: {
         readonly algo: ALOwnershipAlgo;
@@ -465,16 +478,17 @@ function computeMessageHandlingDecision(
 ): ALMessageHandlingDecision {
     const neighborCount = context.overlayNeighborPeerIds?.length ?? 0;
     const overloaded = context.overloaded ?? input.live?.overloaded ?? false;
+    const backpressured = context.backpressured ?? input.live?.backpressured ?? false;
     const result = normalizeALQosPolicy(msg, {
         ...input,
-        live: { overloaded, connectedNeighborCount: neighborCount, hasAlternateRoute: neighborCount > 1 }
+        live: { overloaded, backpressured, connectedNeighborCount: neighborCount, hasAlternateRoute: neighborCount > 1 }
     });
     return {
         result,
         dedupKey: toDedupKey(msg, result.effective),
         supersedenceRuntime: context.supersedenceObservation ?? { status: 'untracked' },
         orderingRuntime: context.orderingObservation ?? { status: 'untracked', missingRanges: [], releasableSeqs: [] },
-        congestion: planCongestion(result.effective, overloaded)
+        congestion: planCongestion(result.effective, resolveCongestionCause(overloaded, backpressured))
     };
 }
 
@@ -514,16 +528,22 @@ function resolveMessageDrop(
     if (orderingRuntime.status === 'resync-required') {
         return { code: 'resync-required', reason: 'resync-required' };
     }
-    if (congestion.action === 'reject') {
-        return { code: 'overloaded', reason: 'Node overloaded and congestion policy rejects handling' };
+    return resolveCongestionDrop(congestion);
+}
+
+/** `reject` drops every message and `drop-low` the lowest priority; the drop names its cause (D185). */
+function resolveCongestionDrop(congestion: ALMessageHandlingPlan['congestion']): ALMessageDrop | undefined {
+    const dropped = congestion.action === 'reject' ||
+        (congestion.action === 'drop-low' && congestion.priority <= LOW_PRIORITY_OVERLOAD_THRESHOLD);
+    if (!dropped) {
+        return undefined;
     }
-    if (congestion.action === 'drop-low' && congestion.priority <= LOW_PRIORITY_OVERLOAD_THRESHOLD) {
-        return {
-            code: 'overloaded',
-            reason: 'Node overloaded and congestion policy drops low-priority message'
-        };
+    if (congestion.cause === 'backpressured') {
+        return { code: 'congested', reason: 'Carrier backpressure dropped the send' };
     }
-    return undefined;
+    return congestion.action === 'reject'
+        ? { code: 'overloaded', reason: 'Node overloaded and congestion policy rejects handling' }
+        : { code: 'overloaded', reason: 'Node overloaded and congestion policy drops low-priority message' };
 }
 
 function isHeldByOtherSession(effective: ALQosEffectivePolicy, context: ALMessagePlanningContext): boolean {
@@ -647,37 +667,30 @@ function planRepair(
     };
 }
 
+/** The session's own bound comes first: when it and the carrier's backpressure both hold, the cause is `overloaded`. */
+function resolveCongestionCause(overloaded: boolean, backpressured: boolean): ALCongestionCause | undefined {
+    if (overloaded) {
+        return 'overloaded';
+    }
+    return backpressured ? 'backpressured' : undefined;
+}
+
 function planCongestion(
     effective: ALQosEffectivePolicy,
-    overloaded: boolean
+    cause: ALCongestionCause | undefined
 ): ALMessageHandlingPlan['congestion'] {
-    if (!overloaded) {
-        return {
-            overloaded: false,
-            action: 'none',
-            priority: effective.congestion.opts.priority
-        };
+    const { algo, opts: { priority } } = effective.congestion;
+    const overloaded = cause === 'overloaded';
+    if (cause === undefined) {
+        return { overloaded, action: 'none', priority, cause };
     }
-
-    switch (effective.congestion.algo) {
+    switch (algo) {
         case 'reject':
-            return {
-                overloaded: true,
-                action: 'reject',
-                priority: effective.congestion.opts.priority
-            };
+            return { overloaded, action: 'reject', priority, cause };
         case 'defer':
-            return {
-                overloaded: true,
-                action: 'defer',
-                priority: effective.congestion.opts.priority
-            };
+            return { overloaded, action: 'defer', priority, cause };
         default:
-            return {
-                overloaded: true,
-                action: 'drop-low',
-                priority: effective.congestion.opts.priority
-            };
+            return { overloaded, action: 'drop-low', priority, cause };
     }
 }
 

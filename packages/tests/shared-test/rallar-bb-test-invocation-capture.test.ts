@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { parseControlServerMessage } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestCommand, RallarBlackBoxTestCommandContext } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 function decode(command: object): RallarBlackBoxTestCommand {
     const decoded = parseControlServerMessage(
@@ -18,7 +18,7 @@ function decode(command: object): RallarBlackBoxTestCommand {
 
 function captureRuntime() {
     const observations: RallarBlackBoxTestCommandContext[] = [];
-    const runtime = createRallarBlackBoxTestRuntime({
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
         commandExecutor: async (command, context) => {
             if (command.kind === 'rtc.connect') {
                 observations.push(context);
@@ -148,7 +148,7 @@ describe('recipe invocation capture authority', () => {
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const observed: RallarBlackBoxTestCommandContext[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: async (command, context) => {
                 if (command.kind === 'health') {
                     entered.resolve();
@@ -175,21 +175,25 @@ describe('recipe invocation capture authority', () => {
                 ]
             }
         }));
-        await entered.promise;
-        await runtime.execute(decode({
-            kind: 'recipe.run',
-            rtcCaptureMode: 'native',
-            recipe: {
-                schemaVersion: 1,
-                recipeId: 'second',
-                commands: [
-                    { kind: 'configure', config: { rallar: { rtcCaptureMode: 'off' } } },
-                    { kind: 'rtc.connect' }
-                ]
-            }
-        }));
-        release.resolve();
-        await first;
+        try {
+            await entered.promise;
+            await runtime.execute(decode({
+                kind: 'recipe.run',
+                rtcCaptureMode: 'native',
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: 'second',
+                    commands: [
+                        { kind: 'configure', config: { rallar: { rtcCaptureMode: 'off' } } },
+                        { kind: 'rtc.connect' }
+                    ]
+                }
+            }));
+        }
+        finally {
+            release.resolve();
+            await first;
+        }
         expect(observed.map((context) => context.rtcCapture)).toEqual([
             { run: 'native', recipe: undefined, step: 'off' },
             { run: 'off', recipe: undefined, step: 'native' },
@@ -217,7 +221,7 @@ describe('recipe invocation capture authority', () => {
             }
         ])('rejects later $position capture before any child effect', async ({ invalid }) => {
             const effects: string[] = [];
-            const runtime = createRallarBlackBoxTestRuntime({
+            const runtime = createDefaultRallarBlackBoxTestRuntime({
                 commandExecutor: async (command) => {
                     if (command.kind === 'loop' || command.kind === 'parallel') {
                         return undefined;
@@ -239,7 +243,7 @@ describe('recipe invocation capture authority', () => {
             const lookalike = { kind: 'configure', config: { rallar: { rtcCaptureMode: 'invalid' } } };
             const opaque = kind === 'loop' ? { application: lookalike } : new Map([['application', lookalike]]);
             const received: RallarBlackBoxTestCommand[] = [];
-            const runtime = createRallarBlackBoxTestRuntime({
+            const runtime = createDefaultRallarBlackBoxTestRuntime({
                 commandExecutor: async (command) => {
                     if (command.kind === 'ws.send') {
                         received.push(command);

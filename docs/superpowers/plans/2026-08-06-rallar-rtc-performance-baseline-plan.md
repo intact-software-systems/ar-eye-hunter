@@ -52,12 +52,24 @@ approve the correction. Fresh remote confirmation remains pending; no all-green 
 from local acceptance.
 
 [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645) remains stacked on
-[PR633](https://github.com/intact-software-systems/ar-eye-hunter/pull/633). The parent has six real
-source conflicts with current main. The next useful slices are preservation repair of those
-conflicts, then integration of the accepted child source with fresh affected checks and canonical
-bundle measurements. Capture receipts/ownership guards and current congestion/overlay behavior must
-coexist through one construction path. Real conflict repair precedes broad final validation;
-harmless BEHIND alone does not create work.
+[PR633](https://github.com/intact-software-systems/ar-eye-hunter/pull/633). The parent preservation
+repair is independently accepted and published at `e02b7a46c4f0023704380c2304ca708fe52b4e5c`,
+integrating main `1db2c29c3d764b3963cb9a71edf58fd70bef79a8`. Child integration preserves both
+assignment-publication fences, current congestion/overlay behavior and capture ownership.
+
+The approved construction correction makes the core require its clock, sleeper and ID factory;
+verified partial callers choose the adjacent named default composition. All seven selected
+references are owned snapshots, optional capabilities remain genuinely absent, and default sleep
+remains abort-aware. Authentic native and runtime RED evidence precedes implementation. The original reviewer approves
+specification and complete 49-owner quality closure, including the final fixture admission
+refactor; both construction findings are closed. The required correction checks pass 69 focused cases, 2,945 affected
+consumer cases and 205 Deno cases; maintained typing enforces 1,521 files with zero debt. Fresh
+canonical browser and headless bundles remain below their existing 253/327 KiB caps, and all 67
+generated manifests remain unchanged. Original raw native and full-suite failures remain retained;
+focused passes do not retroactively change their verdicts.
+
+The next useful slices are accepted feature publication with immutable-main gates and fresh CI,
+then exact deployed HOST/RUN verification. Source checks provide no governed E3 acceptance.
 
 Actual local default-worker HOST acceptance remains three cases in 19.8 seconds with zero retries:
 native, off and malformed. Deployed HOST/RUN and actual Actions application are still unaccepted.

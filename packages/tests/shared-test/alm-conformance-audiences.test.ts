@@ -12,7 +12,7 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
@@ -72,7 +72,7 @@ function toMintedIdentities(scenario: AlmConformanceScenario): readonly string[]
 /** Runs the sender's verdict tail against one observation of its handle. */
 async function readVerdictTail(sender: RallarBlackBoxTestRecipe, observation: object): Promise<boolean> {
     const from = sender.commands.findIndex((command) => command.kind === 'messages.observe');
-    const runtime = createRallarBlackBoxTestRuntime({
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
         commandExecutor: (command) => command.kind === 'messages.observe' ? { status: 'ok', value: observation } : undefined
     });
     const tail = { ...sender, commands: sender.commands.slice(from, -1) };
@@ -82,7 +82,7 @@ async function readVerdictTail(sender: RallarBlackBoxTestRecipe, observation: ob
 describe('audience conformance scenarios', () => {
     it.each(ALM_CONFORMANCE_CARRIERS)('catalogs the %s audience cells on the sender\'s principal twice, in the full tag only', (carrier) => {
         const cells = createAlmConformanceRecipes(toConformanceInput(carrier))
-            .filter((scenario) => (AUDIENCE_SCENARIO_IDS as readonly string[]).includes(scenario.scenarioId))
+            .filter((scenario) => AUDIENCE_SCENARIO_IDS.some((scenarioId) => scenarioId === scenario.scenarioId))
             .map(({ scenarioId, laneFamily, roles, tags }) => ({ scenarioId, laneFamily, roles, tags }));
 
         expect(cells).toEqual(AUDIENCE_SCENARIO_IDS.map((scenarioId) => ({
@@ -95,7 +95,7 @@ describe('audience conformance scenarios', () => {
 
     it.each(ALM_CONFORMANCE_CARRIERS)('gives every %s audience cell identities no other scenario of the run shares', (carrier) => {
         const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
-        const isAudience = (scenario: AlmConformanceScenario) => (AUDIENCE_SCENARIO_IDS as readonly string[]).includes(scenario.scenarioId);
+        const isAudience = (scenario: AlmConformanceScenario) => AUDIENCE_SCENARIO_IDS.some((scenarioId) => scenarioId === scenario.scenarioId);
         const others = new Set(
             scenarios.filter((scenario) => !isAudience(scenario)).flatMap((scenario) =>
                 [scenario.sender, scenario.receiver, scenario.recipientB, scenario.successor]

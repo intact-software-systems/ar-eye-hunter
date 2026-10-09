@@ -21,6 +21,16 @@ export const reviewedBrowserDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 50
     }),
+    // One captured delivery owns admission, settlement and carrier fallback. Its
+    // post-diagnostic capture/epoch guard must remain beside the external callback;
+    // splitting that lifecycle would obscure ownership. Only this reviewed score
+    // is accepted; further growth and other owners still require a fresh review.
+    Object.freeze({
+        path: 'packages/shared-web/browser/messages/browser-rallar-message-dispatch.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 51
+    }),
     // Framework rejections are captured solely for exact error/identity
     // assertions. The checker supplies no function symbol for these callbacks:
     // these are module-owner reviews, not per-method immunity.

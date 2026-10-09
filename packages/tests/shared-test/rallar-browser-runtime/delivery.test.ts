@@ -86,6 +86,7 @@ const unknownObservation = {
     attempts: 0,
     attemptOutcomes: [],
     attemptCarriers: [],
+    attemptRefusalReasons: [],
     relayRejection: undefined,
     carrierFallback: undefined,
     failure: undefined,
@@ -153,6 +154,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         attempts: 0,
         attemptOutcomes: [],
         attemptCarriers: [],
+        attemptRefusalReasons: [],
         relayRejection: undefined,
         confirmedHopPeerIds: [],
         unconfirmedHopPeerIds: [],
@@ -277,6 +279,48 @@ it('projects the carrier of every settled attempt beside its outcome, in attempt
         attempts: 2,
         attemptOutcomes: ['not-ready', 'sent'],
         attemptCarriers: ['rtc', 'ws']
+    });
+});
+
+it('projects the reason of a refused admission leg the fallback carrier took over, beside its row (D185)', async () => {
+    const runtime = await loadRuntime();
+    const delivery = openDelivery({ kind: 'admitted', durable: false, queuedAttempts: 1 });
+    facade.behavior.typedSend.mockResolvedValue(delivery.handle);
+    await runtime.connect(connection);
+    await runtime.sendMessage(send);
+    delivery.registry.record({
+        kind: 'carrier-refused',
+        msgId: delivery.msgId,
+        carrier: 'rtc',
+        atMs: Date.now(),
+        reason: 'congested',
+        detail: 'Carrier backpressure dropped the send'
+    });
+    delivery.registry.record({
+        kind: 'attempt-started',
+        msgId: delivery.msgId,
+        carrier: 'ws',
+        atMs: Date.now(),
+        attemptId: 'ws-attempt'
+    });
+    delivery.registry.record({
+        kind: 'attempt-settled',
+        msgId: delivery.msgId,
+        carrier: 'ws',
+        atMs: Date.now(),
+        attemptId: 'ws-attempt',
+        outcome: 'sent',
+        submissionAttempted: true,
+        detail: undefined,
+        willRetry: false
+    });
+
+    expect(await runtime.readReceipts(query)).toMatchObject({
+        attempts: 2,
+        attemptOutcomes: ['refused', 'sent'],
+        attemptCarriers: ['rtc', 'ws'],
+        attemptRefusalReasons: ['congested'],
+        carrierFallback: undefined
     });
 });
 

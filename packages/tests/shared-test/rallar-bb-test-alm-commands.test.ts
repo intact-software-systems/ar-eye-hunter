@@ -20,7 +20,7 @@ import {
     type RallarBlackBoxTestRecord,
     type RallarBlackBoxTestState
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import {
     formatJsonSchemaValidationErrors,
@@ -105,6 +105,7 @@ const DELIVERY_OBSERVATION = {
     attempts: 2,
     attemptOutcomes: ['refused', 'sent'],
     attemptCarriers: ['rtc', 'ws'],
+    attemptRefusalReasons: ['congested'],
     relayRejection: { relay: 'peer', peerId: 'relay-session', reason: 'resync-required' },
     reason: 'hop evidence retained'
 };
@@ -114,10 +115,6 @@ const STORAGE_COUNTS = {
     byOwner: { 'al-admission': 3, 'al-work': 4 },
     byKind: { read: 3, 'work-write': 4 }
 };
-
-function decodeCapturedInput(value: unknown): RallarBlackBoxTestRecord {
-    return isJsonRecordValue(value) ? value : {};
-}
 
 function createAlmRuntimeCaptures(): AlmRuntimeCaptures {
     return {
@@ -139,34 +136,35 @@ function createAlmBrowserRuntimeFake(
         connect: async () => ({ connected: true }),
         send: async () => ({ sent: true }),
         sendMessage: async (input) => {
-            captures.sendMessage.push(decodeCapturedInput(input));
+            captures.sendMessage.push(input);
             return SEND_DIAGNOSTICS;
         },
         observeDelivery: async (input) => {
-            captures.observeDelivery.push(decodeCapturedInput(input));
+            captures.observeDelivery.push(input);
             return DELIVERY_OBSERVATION;
         },
         cancelDelivery: async (input) => {
-            captures.cancelDelivery.push(decodeCapturedInput(input));
+            captures.cancelDelivery.push(input);
             return { ...DELIVERY_OBSERVATION, state: 'cancelled' };
         },
         readReceipts: async (input) => {
-            captures.readReceipts.push(decodeCapturedInput(input));
+            captures.readReceipts.push(input);
             return DELIVERY_OBSERVATION;
         },
         submitControl: async (input) => {
-            captures.submitControl.push(decodeCapturedInput(input));
+            captures.submitControl.push(input);
             return CONTROL_SUBMISSION;
         },
         injectFault: async (input) => {
-            captures.injectFault.push(decodeCapturedInput(input));
+            captures.injectFault.push(input);
             return undefined;
         },
         readStorageCounters: async (input) => {
-            captures.readStorageCounters.push(decodeCapturedInput(input));
+            captures.readStorageCounters.push(input);
             return STORAGE_COUNTS;
         },
         readAlmUsage: async () => undefined,
+        readCongestionCounters: async () => undefined,
         waitForRoom: async () => {
             throw new Error('This ALM command test does not exercise room readiness.');
         },
@@ -652,6 +650,7 @@ describe('ALM browser adapter execution', () => {
             attempts: 2,
             attemptOutcomes: ['refused', 'sent'],
             attemptCarriers: ['rtc', 'ws'],
+            attemptRefusalReasons: ['congested'],
             relayRejection: { relay: 'peer', peerId: 'relay-session', reason: 'resync-required' },
             reason: 'hop evidence retained'
         });
@@ -760,7 +759,7 @@ describe('ALM browser adapter execution', () => {
             rallarRuntime: {
                 ...createAlmBrowserRuntimeFake(captures),
                 sendMessage: async (input) => {
-                    captures.sendMessage.push(decodeCapturedInput(input));
+                    captures.sendMessage.push(input);
                     return replayed;
                 }
             }
@@ -859,7 +858,7 @@ describe('ALM browser adapter execution', () => {
             rallarRuntime: {
                 ...createAlmBrowserRuntimeFake(captures),
                 sendMessage: async (input) => {
-                    captures.sendMessage.push(decodeCapturedInput(input));
+                    captures.sendMessage.push(input);
                     return REJECTED_SEND_DIAGNOSTICS;
                 }
             }
@@ -1151,6 +1150,8 @@ describe('ALM browser adapter execution', () => {
         { field: 'attemptOutcomes', value: ['delivered'] },
         { field: 'attemptCarriers', value: ['server', 'ws'] },
         { field: 'attemptCarriers', value: ['ws'] },
+        { field: 'attemptRefusalReasons', value: ['busy'] },
+        { field: 'attemptRefusalReasons', value: undefined },
         { field: 'relayRejection', value: { relay: 'trusted-server' } },
         { field: 'relayRejection', value: { relay: 'trusted-server', peerId: 'server-1', reason: 'resync-required' } },
         { field: 'relayRejection', value: { relay: 'peer', reason: 'resync-required' } },
@@ -1262,7 +1263,7 @@ describe('ALM browser adapter execution', () => {
 });
 
 async function runAlmKindThroughRtcSendStep(kind: string) {
-    const provider = createRallarBlackBoxRtcProvider(createRallarBlackBoxTestRuntime(), { commandIdPrefix: 'rallar-bb' });
+    const provider = createRallarBlackBoxRtcProvider(createDefaultRallarBlackBoxTestRuntime(), { commandIdPrefix: 'rallar-bb' });
     return await executeBlackBox(
         [
             {
@@ -1316,7 +1317,7 @@ describe('ALM commands on the in-process runner adapter', () => {
 
     it('rejects every browser-only ALM kind instead of translating it to an RTC send', async () => {
         const client = createRallarBlackBoxRtcClient(
-            createRallarBlackBoxTestRuntime(),
+            createDefaultRallarBlackBoxTestRuntime(),
             { connection: 'alice' },
             { commandIdPrefix: 'rallar-bb' }
         );

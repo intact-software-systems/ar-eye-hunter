@@ -16,6 +16,9 @@ import {
 import { claimExpiresReclaims } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/claim/claim-expires-reclaims.ts';
 import { claimFirstWins } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/claim/claim-first-wins.ts';
 import { claimRefusedOnRtc } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/claim/claim-refused-on-rtc.ts';
+import { backpressureDeferred } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/congestion/backpressure-deferred.ts';
+import { backpressureHandsOver } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/congestion/backpressure-hands-over.ts';
+import { backpressureRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/congestion/backpressure-refused.ts';
 import { leaderConfirms } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-confirms.ts';
 import { leaderOutsideList } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-outside-list.ts';
 import { noLeaderRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/no-leader-refused.ts';
@@ -87,7 +90,11 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'claim-refused-on-rtc', carriers: claimRefusedOnRtc.carriers },
     // The age and track bound cells' lane evidence is local and the hosted full read's; manifest 18 stays as recorded.
     { scenarioKey: 'capacity-age', carriers: capacityAge.carriers },
-    { scenarioKey: 'capacity-tracks', carriers: capacityTracks.carriers }
+    { scenarioKey: 'capacity-tracks', carriers: capacityTracks.carriers },
+    // The congestion cells' lane evidence is local and the hosted full read's; manifest 18 stays as recorded.
+    { scenarioKey: 'backpressure-hands-over', carriers: backpressureHandsOver.carriers },
+    { scenarioKey: 'backpressure-refused', carriers: backpressureRefused.carriers },
+    { scenarioKey: 'backpressure-deferred', carriers: backpressureDeferred.carriers }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {

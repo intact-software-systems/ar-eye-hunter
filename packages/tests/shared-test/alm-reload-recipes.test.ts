@@ -7,7 +7,7 @@ import {
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import { bindAlmReloadPair, toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 describe('ALM durable reload specimens', () => {
     it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)('holds one %s original across an executable full-only reload checkpoint', async (carrier) => {
@@ -86,7 +86,7 @@ describe('ALM durable reload specimens', () => {
         const absence = receiver.commands.find((command) => command.commandId === checkpoint.receiverAbsenceEnd)!;
         expect(absence).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 17_000 });
         const receive = receiver.commands.find((command) => command.kind === 'wait' && command.absent !== true)!;
-        const unrelatedRuntime = createRallarBlackBoxTestRuntime({ sleep: async () => {} });
+        const unrelatedRuntime = createDefaultRallarBlackBoxTestRuntime({ sleep: async () => {} });
         unrelatedRuntime.recordEvent({
             kind: 'message',
             connection: 'receiver',
@@ -94,7 +94,7 @@ describe('ALM durable reload specimens', () => {
             payload: { data: { msgId: 'another-carrier', payload: { marker: 'delivery-reload', carrier: 'unrelated-carrier' } } }
         });
         expect((await unrelatedRuntime.execute({ ...receive, timeoutMs: 1 })).ok).toBe(false);
-        const runtime = createRallarBlackBoxTestRuntime({ sleep: async () => {} });
+        const runtime = createDefaultRallarBlackBoxTestRuntime({ sleep: async () => {} });
         runtime.recordEvent({
             kind: 'message',
             connection: 'receiver',
@@ -113,7 +113,7 @@ describe('ALM durable reload specimens', () => {
                 { state: 'expired', enqueued: true, submitted: false }
             ]
         ) {
-            const invalidRuntime = createRallarBlackBoxTestRuntime({
+            const invalidRuntime = createDefaultRallarBlackBoxTestRuntime({
                 commandExecutor: (command) =>
                     command.kind === 'messages.observe'
                         ? { status: 'ok', value: observation }
@@ -125,7 +125,7 @@ describe('ALM durable reload specimens', () => {
             expect(outcome.ok, JSON.stringify(observation)).toBe(observation.state === 'accepted' && observation.enqueued && !observation.submitted);
         }
         for (const byKind of [{ read: 2 }, { write: 0, 'work-write': 1 }]) {
-            const storageRuntime = createRallarBlackBoxTestRuntime({
+            const storageRuntime = createDefaultRallarBlackBoxTestRuntime({
                 commandExecutor: (command) =>
                     command.kind === 'messages.observe'
                         ? { status: 'ok', value: { state: 'accepted', enqueued: true, submitted: false } }
@@ -139,7 +139,7 @@ describe('ALM durable reload specimens', () => {
         expect(oldHandle).toMatchObject({ handleId: sends[0].handleId });
         const suffixEvidence = sender.commands.slice(reloadIndex + 1).filter((command) => command.kind === 'messages.observe' || command.kind === 'assert');
         for (const state of ['queued', 'unobservable']) {
-            const restoredRuntime = createRallarBlackBoxTestRuntime({
+            const restoredRuntime = createDefaultRallarBlackBoxTestRuntime({
                 commandExecutor: (command) => command.kind === 'messages.observe' ? { status: 'ok', value: { state } } : undefined
             });
             expect((await restoredRuntime.execute({ kind: 'recipe.run', recipe: { ...sender, commands: suffixEvidence } })).ok).toBe(state === 'unobservable');

@@ -17,7 +17,7 @@ import type {
     RallarBlackBoxControlSnapshot,
     RallarBlackBoxControlSnapshotListener
 } from '../../../packages/shared-test/rallar-bb-test/control-client.ts';
-import { createRallarBlackBoxTestRuntime } from '../../../packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '../../../packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 import { readHeadlessWorkerConfig } from '../../../apps/rallar-black-box/src/headless-worker-config.ts';
 import {
@@ -79,7 +79,7 @@ function createTestControlAgent(search: string): TestControlAgent {
     const controlClient = new FakeAgentControlClient();
     const agent = createRallarBlackBoxBrowserControlAgent({
         bootstrap: resolveRallarBlackBoxBootstrapConfig(search, {}, ''),
-        agentRuntime: { runtime: createRallarBlackBoxTestRuntime() },
+        agentRuntime: { runtime: createDefaultRallarBlackBoxTestRuntime() },
         controlClient
     });
     return { agent, controlClient };

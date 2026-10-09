@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createRallarBlackBoxRtcClient } from '../../shared-test/rallar-bb-test/black-box-runner-adapter.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type { RallarBlackBoxTestRtcSendCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
@@ -25,7 +25,7 @@ const rtcSendWithExpect = {
 function createDeterministicRuntime() {
     let now = 1_000;
     let sequence = 1;
-    return createRallarBlackBoxTestRuntime({
+    return createDefaultRallarBlackBoxTestRuntime({
         now: () => now++,
         idFactory: (prefix) => `${prefix}-${sequence++}`
     });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     createDefaultRallarBlackBoxBrowserTestRuntime,
-    createRallarBlackBoxTestRuntime,
+    createDefaultRallarBlackBoxTestRuntime,
     toRallarBlackBoxDiagnostics,
     toRallarBlackBoxRuntimeDiagnostic
 } from '../../shared-test/rallar-bb-test/mod.ts';
@@ -54,7 +54,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
     });
 
     it('normalizes transport diagnostics so wait and assert can match them', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         runtime.recordEvent({
             kind: 'diagnostic',
             topic: 'rallar.browser.ws.unhandled_message',
@@ -115,7 +115,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
     });
 
     it('names the producer of a simulated runtime command diagnostic', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
 
         await runtime.execute({
             kind: 'rtc.send',

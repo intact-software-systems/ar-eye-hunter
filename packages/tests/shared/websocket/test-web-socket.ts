@@ -17,7 +17,7 @@ export class TestWebSocket extends EventTarget implements WebSocket {
     readonly CLOSING = 2;
     readonly CLOSED = 3;
     binaryType: BinaryType = 'blob';
-    readonly bufferedAmount = 0;
+    bufferedAmount = 0;
     readonly extensions = '';
     readonly protocol = '';
     onclose: WebSocket['onclose'] = null;

@@ -6,24 +6,24 @@ import {
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { decodeControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
-import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxControlAgentIdentity } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxControlAgentIdentity, RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { toControlAgentCapabilities } from '@shared-test/rallar-bb-test/distributed/control-agent-capabilities.ts';
 import { validateControlFleetRunReportCollection } from '@shared-test/rallar-bb-test/fleet-report-validation.ts';
 import type {
+    RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestConfig,
     RallarBlackBoxTestCrdtOpenCommand,
-    RallarBlackBoxTestRecipe
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRuntime
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { RallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { RallarBlackBoxTestCommandContext } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { validateExecutableRecipe } from '@shared-test/rallar-bb-test/recipe/validate-executable-recipe.ts';
-import type { CreateRallarBlackBoxTestRuntimeOptions } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import {
+    createDefaultRallarBlackBoxTestRuntime,
+    type CreateRallarBlackBoxTestRuntimeOptions
+} from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { decodeJsonValue } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
-import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
-import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { isJsonRecordValue, validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { assert, assertEquals, assertThrows } from '@std/assert';
@@ -49,8 +49,13 @@ interface CaptureIntentTestRuntime extends RallarBlackBoxTestRuntime {
 /** A bounded executor consumes canonical capture intent; it never claims an applied SDK receipt. */
 function createCaptureIntentTestRuntime(options: CreateRallarBlackBoxTestRuntimeOptions): CaptureIntentTestRuntime {
     const captureConsumptions: RtcSignalingDiagnostics.CaptureConfiguration[] = [];
-    const runtime = createRallarBlackBoxTestRuntime({
-        ...options,
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
+        now: options.now,
+        sleep: options.sleep,
+        idFactory: options.idFactory,
+        cleanup: options.cleanup,
+        readAlmUsage: options.readAlmUsage,
+        readCongestionCounters: options.readCongestionCounters,
         commandExecutor: (command, context) => {
             if (command.kind === 'rtc.connect') {
                 const capture = resolveRtcCaptureConfiguration({ ...context.rtcCapture, sinkAvailable: false });
@@ -1139,7 +1144,7 @@ for (const startMode of ['manual', 'auto-after-ready', 'scheduled'] as const) {
         Deno.test(`capture admission rechecks frozen roles after staging for ${startMode} with ${loss} support`, async () => {
             let now = 1_000;
             const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => now }));
-            const runtimes = new Map(['agent-1', 'agent-2'].map((agentId) => [agentId, createRallarBlackBoxTestRuntime()]));
+            const runtimes = new Map(['agent-1', 'agent-2'].map((agentId) => [agentId, createDefaultRallarBlackBoxTestRuntime()]));
             for (const agentId of runtimes.keys()) {
                 service.receiveClientEnvelope(toRegisterEnvelope({ agentId, identity: toCaptureTestIdentity(agentId, ['off', 'signaling', 'native']) }));
             }
