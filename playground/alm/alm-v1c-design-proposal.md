@@ -306,7 +306,7 @@ five-second ensure-group request; eight remained incomplete and zero of 73
 assertions were evaluated. Actual runner CPU/memory telemetry was not retained.
 Moving browser agents alone therefore did not demonstrate setup or ALM benefit.
 
-The next measurement places API, control, SPA and 15 isolated browser contexts
+The full-stack measurement places API, control, SPA and 15 isolated browser contexts
 together on one standard GitHub runner. Reuse the existing full-stack Playwright
 lifecycle, standalone headless worker entry and generic manifest operator. The
 local lifecycle must select the standalone headless SPA before startup; the
@@ -340,6 +340,16 @@ loopback transport and browser/API co-location differ from the inherited host.
 Thus the comparison tests an environment hypothesis without isolating CPU count
 or proving the adaptive lane policy's elapsed-time effect. Preserve failed
 native evidence and select a repair only from a demonstrated owning defect.
+
+The actual all-local GitHub comparison at clean `d80ff3a` used four CPUs and
+about 16 GiB RAM. All 15 identities were selected without blockers. The first
+blocking player passed setup and reached traffic, then failed its 30-second
+parallel window. Native terminal/rollup failed and zero group assertions were
+evaluated. Worker completion preceded final export; recorder bytes and received
+counts verify 74 results and 26,247 event records, with 46 latest command results.
+The run demonstrates progress to traffic in this environment, with incomplete
+acceptance. Analyse actual pending work, receipts, samples and canonical deadline
+semantics before selecting a repair; the timeout label alone earns no relaxation.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
