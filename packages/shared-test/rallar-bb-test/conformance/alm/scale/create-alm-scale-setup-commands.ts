@@ -69,6 +69,7 @@ function createConnectCommand(input: AlmScaleRecipeInput, prefix: string): Ralla
         rallar: {
             ...RESTORED_SESSION_RALLAR,
             username: '{auth.username}',
+            timeoutMs: input.readyTimeoutMs,
             typeId: 'room.ar-eye-hunter.director.intent.v1',
             topicId: 'room.ar-eye-hunter.director',
             messageSelector: { topicId: 'room.ar-eye-hunter.director' },

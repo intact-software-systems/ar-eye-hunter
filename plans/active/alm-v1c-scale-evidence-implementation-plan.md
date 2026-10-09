@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - No runtime policy, public delivery contract, migration path, or dependency changes.
-- One director and N−1 players; participant counts 15, 30, 50; 45-second RTC readiness allowance; tree topology.
+- One director and N−1 players; participant counts 15, 30, 50; tree topology. Initial socket connection and subsequent RTC readiness each use the declared 45-second allowance through their existing phase owners; this is not one combined setup deadline.
 - Six leader-ACK shot intents per player at five-second intervals; two all-recipient-ACK match events; 30-second sampling window; seven samples at five-second intervals.
 - Effective delivery policy: volatile, at-least-once, 30-second TTL, rtc-with-ws-fallback.
 - Budgets: own admissions 1,000; own bytes 4,194,304; counted oldest age 300,000 ms; own tracks 64; ordering snapshots 512; overloaded false; congestion dropped 0.

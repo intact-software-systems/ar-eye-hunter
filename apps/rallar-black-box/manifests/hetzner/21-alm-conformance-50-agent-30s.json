@@ -610,6 +610,7 @@
               "username": "{auth.username}",
               "password": "",
               "restoreSession": true,
+              "timeoutMs": 45000,
               "typeId": "room.ar-eye-hunter.director.intent.v1",
               "topicId": "room.ar-eye-hunter.director",
               "messageSelector": {
@@ -4233,6 +4234,7 @@
               "username": "{auth.username}",
               "password": "",
               "restoreSession": true,
+              "timeoutMs": 45000,
               "typeId": "room.ar-eye-hunter.director.intent.v1",
               "topicId": "room.ar-eye-hunter.director",
               "messageSelector": {
