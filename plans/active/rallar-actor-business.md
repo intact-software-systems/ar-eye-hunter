@@ -37,6 +37,14 @@ Unity or Unreal studio.
 design. They decide durability, delivery, and performance budgets. They do not
 name a market.
 
+The [publication QoS and pub/sub addendum](../../playground/alm/alm-publication-qos-addendum.md)
+proposes pacing as shared ALM policy and publication permissions per scoped
+topic. It would let a producer, subscribed observer, or application processing
+stage use the same participant model. Its cadence is a scheduling target,
+intentionally displaced values are reported, and reliable events keep their
+delivery requirements. These are proposed technical capabilities, not a new
+commercial tier or an adopted security/latency promise.
+
 **Production deployment** in `docs/production-deployment.md` describes how
 `main` ships web apps and the API. It is an operational rule. It does not
 describe a paid service.
@@ -80,14 +88,14 @@ remains the hosted service the kit reaches.
 The survey shows six meters that already exist. Each one mis-measures this
 product in a different way.
 
-| Meter in the market                          | Who uses it              | How it sits on an actor                                                                                                            |
-| -------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Peak concurrent users, summed across regions | Photon                   | A publishing host is one user and may fan out a world. A quiet spectator is also one user. The peaks are not the cost.             |
-| CCU-hour plus simulator-hour                 | coherence                | Fits a hosted simulation better than a seat. The actor is not the simulator.                                                       |
-| Room-hour plus bandwidth                     | Normcore                 | Close, if a group-hour is the room-hour. A participant in five groups must not be billed as five unknown things with no rule.      |
-| Participant-minute                           | LiveKit, PlayFab Party   | Fits a seat that is simply present. Under-counts a high-rate live stream the application pours through one seat.                   |
-| Monthly active user, or a message            | PubNub, Ably             | Fits social tools. A live update is not a chat message, and presence fan-out can dominate message count.                          |
-| Virtual-machine hour                         | Edgegap, PlayFab servers | Fits the dedicated game process. That process may also run an actor. The machine is not the group service.                         |
+| Meter in the market                          | Who uses it              | How it sits on an actor                                                                                                       |
+| -------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Peak concurrent users, summed across regions | Photon                   | A publishing host is one user and may fan out a world. A quiet spectator is also one user. The peaks are not the cost.        |
+| CCU-hour plus simulator-hour                 | coherence                | Fits a hosted simulation better than a seat. The actor is not the simulator.                                                  |
+| Room-hour plus bandwidth                     | Normcore                 | Close, if a group-hour is the room-hour. A participant in five groups must not be billed as five unknown things with no rule. |
+| Participant-minute                           | LiveKit, PlayFab Party   | Fits a seat that is simply present. Under-counts a high-rate live stream the application pours through one seat.              |
+| Monthly active user, or a message            | PubNub, Ably             | Fits social tools. A live update is not a chat message, and presence fan-out can dominate message count.                      |
+| Virtual-machine hour                         | Edgegap, PlayFab servers | Fits the dedicated game process. That process may also run an actor. The machine is not the group service.                    |
 
 A workable brainstorm, not a price:
 

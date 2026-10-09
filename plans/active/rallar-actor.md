@@ -11,6 +11,11 @@ Two companion proposals sit beside this file. The
 repository already has and sketches how a RallarActor offer could be sold.
 Neither companion changes this product proposal.
 
+The [ALM publication QoS and pub/sub addendum](../../playground/alm/alm-publication-qos-addendum.md)
+defines the proposed shared pacing and publication-permission semantics that
+the actor would consume. Those capabilities also apply to browsers and server
+producers; they are not a separate actor protocol.
+
 ## The job
 
 Rallar is a room product. A room has members, presence, validated events, and
@@ -77,7 +82,9 @@ The host can ask the actor to do the work of a member:
 - Send and receive live updates, such as poses, cursors, and other values the
   group does not store.
 - Send a payload to a whole group, or to named members of a group. Members who
-  were not named do not receive that payload.
+  were not named do not receive that payload in their applications. An RTC
+  relay may still carry its bytes; confidential delivery needs an explicitly
+  supported transport or encryption policy.
 - Send match commands and receive published snapshots when the product uses a
   shared match.
 - Send a live payload immediately when the host owns the network send
@@ -85,8 +92,14 @@ The host can ask the actor to do the work of a member:
   delivers the bytes with the sending participant attached.
 - Optionally publish replaceable live payloads to a paced N-latest-values
   lane. The application chooses the group and member list. The actor retains at
-  most the newest N unsent values; when the bound is full, a newer publication
-  replaces the oldest retained one. N=1 is the latest-value lane.
+  most the newest N staged values not yet admitted to ALM; when the bound is
+  full, a newer publication replaces the oldest retained one. N=1 is the
+  latest-value lane.
+- Use group/topic publication permissions when that ALM capability is adopted:
+  publish, subscribe, or both, independently of group administration. A sensor
+  may publish telemetry and subscribe to commands without being allowed to
+  publish commands. An active subscription and permission to subscribe remain
+  separate facts.
 - Report a lost seat and a restored seat after a reconnect, including the
   groups that participant held.
 
@@ -104,7 +117,12 @@ Network pacing is optional and does not weaken that boundary. A host may send
 every live payload immediately, or it may publish replaceable state faster
 than the requested network rate and let the actor retain only a bounded recent
 window. A 120 Hz simulation with a 30 Hz live lane is still a 120 Hz host
-simulation; Rallar has only scheduled 30 delivery opportunities per second.
+simulation; Rallar targets at most 30 new send opportunities per second.
+
+The cadence is a scheduling target under load, not a guaranteed arrival rate.
+The actor reports superseded, expired, refused, and dispatched publications so
+the host can distinguish intentional loss from delivery. Reliable commands
+and events are not conflated by a paced live lane.
 
 ### Paced realtime transport
 
@@ -114,7 +132,8 @@ A paced live lane has independent transport policies:
 - **Retention depth N.** At most the newest N unsent values are worth keeping.
   When another value arrives at the bound, the oldest retained value is
   discarded. The ordinary latest-value lane is exactly N=1.
-- **Drain budget.** How many retained values may be sent at one opportunity.
+- **Drain budget.** How many retained values and serialized bytes may be
+  selected at one opportunity.
   Retaining N values does not require bursting all N after a delayed tick.
 
 The lane is intentionally lossy. It does not promise that every publication is
@@ -125,22 +144,29 @@ The host may choose N=1 for state where only the newest value matters, or N>1
 when a small amount of recent history is useful for smoothing, interpolation,
 or short scheduling disturbances.
 
+The [ALM addendum](../../playground/alm/alm-publication-qos-addendum.md#4-publication-pacing-as-qos)
+owns stream-key isolation, byte and age bounds, shared drain/fairness budgets,
+expiry from publication time, resume without catch-up bursts, immutable
+admission and fallback, and incompatible QoS outcomes. The actor exposes
+those shared policies. Its local attachment does not add another pacing
+queue or silently weaken a durability or receipt request.
+
 ## Which fact travels which way
 
 The actor uses the same planes Rallar already has. The host chooses the plane
 by the kind of fact, then the actor carries it.
 
-| The host has                           | The room treats it as          | What the group gets                                    |
-| -------------------------------------- | ------------------------------ | ------------------------------------------------------ |
-| "I am here" and "I entered this group" | Membership and presence        | A scoped seat that survives reconnect                  |
-| "This happened"                        | A validated group event        | One ordered fact the group can trust                   |
-| "This is where I am right now"         | A live peer update             | A replaceable stream between the named members         |
-| "Send this live value now"              | A live update to a member list | The named members receive the application's bytes      |
-| "Keep my newest N live values moving"   | A paced N-latest-values stream | A bounded recent window is delivered at the requested rate |
-| "This is the match"                    | A command in, a snapshot out   | One shared world, published from the match owner       |
-| "We are writing this together"         | An authored document           | A mergeable document                                   |
-| "Remember this on this machine"        | A local latest value           | A cache that belongs to this participant               |
-| "Here is a generated suggestion"       | A proposal                     | Something the host accepts before it affects the world |
+| The host has                           | The room treats it as          | What the group gets                                               |
+| -------------------------------------- | ------------------------------ | ----------------------------------------------------------------- |
+| "I am here" and "I entered this group" | Membership and presence        | A scoped seat that survives reconnect                             |
+| "This happened"                        | A validated group event        | One ordered fact the group can trust                              |
+| "This is where I am right now"         | A live peer update             | A replaceable stream between the named members                    |
+| "Send this live value now"             | A live update to a member list | The named members receive the application's bytes                 |
+| "Keep my newest N live values moving"  | A paced N-latest-values stream | A bounded recent window is eligible at the requested send cadence |
+| "This is the match"                    | A command in, a snapshot out   | One shared world, published from the match owner                  |
+| "We are writing this together"         | An authored document           | A mergeable document                                              |
+| "Remember this on this machine"        | A local latest value           | A cache that belongs to this participant                          |
+| "Here is a generated suggestion"       | A proposal                     | Something the host accepts before it affects the world            |
 
 The host keeps simulation and presentation. When a game already interpolates
 motion, that smoothing stays in the engine. The actor delivers the updates.
@@ -238,19 +264,22 @@ the group it needs has named participants and more than one kind of message:
 - A world of many entities, when the application partitions that world into
   groups and names the audience of each live send.
 
-A one-way telemetry feed with no members is a different product.
+A one-way telemetry feed with no members is a different product. A telemetry
+producer and subscribed dashboard that need scoped identity, admission, and
+presence can use the proposed ALM publication groups; they remain ordinary
+participants with different publication permissions.
 
 ## Fit
 
 RallarActor widens who may sit in a group, and it widens a single participant
 to every group the application asks that participant to hold.
 
-| Kind of product                             | Fit through an actor                                                                                                                               |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Turn-based or asynchronous multiplayer      | Strong. The host sends commands and receives the durable result.                                                                                   |
-| Social or collaborative groups              | Strong. Presence, events, and shared documents include native hosts. One participant may hold several groups.                                      |
-| Casual realtime groups                      | Good. Live updates carry avatars, cursors, and other replaceable state.                                                                            |
-| One authoritative match                     | The match owner publishes. The actor carries commands and snapshots. Each host renders.                                                            |
+| Kind of product                             | Fit through an actor                                                                                                                              |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Turn-based or asynchronous multiplayer      | Strong. The host sends commands and receives the durable result.                                                                                  |
+| Social or collaborative groups              | Strong. Presence, events, and shared documents include native hosts. One participant may hold several groups.                                     |
+| Casual realtime groups                      | Good. Live updates carry avatars, cursors, and other replaceable state.                                                                           |
+| One authoritative match                     | The match owner publishes. The actor carries commands and snapshots. Each host renders.                                                           |
 | Competitive twitch play or MMO-scale worlds | Conditional. The application owns simulation and interest. The actor can carry host-paced or paced live payloads only inside a measured envelope. |
 
 For the conditional case, the product needs a published latency, jitter,
@@ -333,7 +362,8 @@ The product is real when all of these are true:
   lane without giving the actor ownership of the simulation tick or interest
   set. N=1 behaves as a latest-value lane; N>1 retains a bounded recent window.
 - A publishing actor sends live payloads to different member lists in different
-  groups. Members who were not named do not receive that payload.
+  groups. Members who were not named do not receive that payload in their
+  applications; relay participation is distinct from application delivery.
 - Crossing a boundary overlaps two groups, then leaves the old one, both on
   the application's instruction.
 - The beside-process attachment has a measured latency and jitter envelope,

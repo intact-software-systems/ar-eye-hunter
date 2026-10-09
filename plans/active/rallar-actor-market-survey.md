@@ -21,6 +21,13 @@ N=1 is the ordinary latest-value lane. Cadence, retention depth, and drain
 budget remain separate transport policies. The actor still does not simulate,
 compute relevancy, or choose a gameplay audience.
 
+The [ALM publication QoS and pub/sub addendum](../../playground/alm/alm-publication-qos-addendum.md)
+now holds the proposed common semantics, including expiry, aggregate byte
+bounds, drain fairness, and exact topic publication permissions. This extends
+the proposal's scope toward directed member data flows; it does not change the
+dated vendor survey below or claim that the runtime already implements those
+features.
+
 One sequencing gap was in the outcomes. A shared group already required a
 Unity or Unreal host to meet a browser, while the host kit was a later stage.
 The smallest attachment now belongs to the first outcome, and the engine kits
@@ -206,14 +213,14 @@ a substitute for the group service. [27]
 
 ## What the survey implies for the proposal
 
-| Question                                          | What the market already sells                                                                                                                         | What the proposal keeps                                                                                                           |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Who computes the simulation and audience?         | Fusion, coherence, and Normcore take a large share inside the SDK. Colyseus and a dedicated server leave it in application code on a hosted process.  | The host application. The actor never simulates or chooses relevancy.                                                             |
-| Who owns the network send cadence?                | Engine and networking stacks expose their own send/update policies.                                                                                   | The host may send immediately, or opt into paced N-latest-values transport for replaceable state; N=1 is latest-value.                                           |
-| Where does the network code live?                 | Usually in the game process as an SDK. LiveKit also allows a separate program that joins as a participant.                                            | Beside the host by default, with the engine kit as a first-class adoption surface; in-process is a measured optimization.        |
-| Can a browser and an engine share one membership? | Only when both sides speak that vendor's client. EOS and Party are game-platform services. Ably and PubNub can, for pub/sub channels.                 | Yes. That mixed group is the normal case.                                                                                         |
-| Must the game replace its existing netcode?       | Most game products expect their SDK or engine networking model to carry gameplay.                                                                      | No. Rallar may complement Unreal replication, Unity Netcode, Photon, or another stack.                                           |
-| What is the billable object?                      | Peak CCU, CCU-hours, room-hours, participant-minutes, MAU, messages, or a virtual machine.                                                            | Not decided in the product proposal. The business brainstorm takes this up.                                                       |
+| Question                                          | What the market already sells                                                                                                                        | What the proposal keeps                                                                                                   |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Who computes the simulation and audience?         | Fusion, coherence, and Normcore take a large share inside the SDK. Colyseus and a dedicated server leave it in application code on a hosted process. | The host application. The actor never simulates or chooses relevancy.                                                     |
+| Who owns the network send cadence?                | Engine and networking stacks expose their own send/update policies.                                                                                  | The host may send immediately, or opt into paced N-latest-values transport for replaceable state; N=1 is latest-value.    |
+| Where does the network code live?                 | Usually in the game process as an SDK. LiveKit also allows a separate program that joins as a participant.                                           | Beside the host by default, with the engine kit as a first-class adoption surface; in-process is a measured optimization. |
+| Can a browser and an engine share one membership? | Only when both sides speak that vendor's client. EOS and Party are game-platform services. Ably and PubNub can, for pub/sub channels.                | Yes. That mixed group is the normal case.                                                                                 |
+| Must the game replace its existing netcode?       | Most game products expect their SDK or engine networking model to carry gameplay.                                                                    | No. Rallar may complement Unreal replication, Unity Netcode, Photon, or another stack.                                    |
+| What is the billable object?                      | Peak CCU, CCU-hours, room-hours, participant-minutes, MAU, messages, or a virtual machine.                                                           | Not decided in the product proposal. The business brainstorm takes this up.                                               |
 
 The empty cell is a local actor, instructed by Unreal, Unity, or any other
 process, holding several Rallar groups at once, including groups that also
