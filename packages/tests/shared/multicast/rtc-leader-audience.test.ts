@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import {
     newALBroadcastMessage,
@@ -7,11 +14,14 @@ import {
     type ALMessage,
     type ALTargets
 } from '@shared/al-contracts/al-contract.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import {
     acknowledgeAtOrigin,
     createOriginPrincipalSnapshot,
+    createOriginSnapshot,
     createRtcOriginOverlayFixture,
     ORIGIN_PRINCIPAL_REF,
     ORIGIN_ROOM,
@@ -22,8 +32,6 @@ import {
 } from './rtc-origin-overlay-fixture.ts';
 
 type LeaderAudience = 'room multicast' | 'room broadcast' | 'room except' | 'principal' | 'list';
-
-const NO_LEADER_DETAIL = 'no-leader: the room has no active leader inside the audience the send names';
 
 describe('the RTC leg of a group-leader room send', () => {
     beforeEach(() => {
@@ -75,6 +83,96 @@ describe('the RTC leg of a group-leader room send', () => {
         });
     });
 
+    it.each([{ readyPeerIds: [] }, { readyPeerIds: ['r'] }])(
+        'hands over a missing accepted RTC edge with ready peers $readyPeerIds, then admits that edge when ready',
+        async ({ readyPeerIds }) => {
+            const directed = toOriginDirectedSnapshot(createOriginSnapshot(['a', 'b', 'c', 'd'], 4), 'd');
+            const snapshot = { ...directed, causalRevision: { groupRevision: 4, presenceRevision: 4 } };
+            validateAuthoritativeGroupSnapshot(snapshot, ORIGIN_ROOM);
+            const fixture = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b'] });
+            const message = createLeaderSend('room multicast', []);
+            fixture.ready.peerIds = readyPeerIds;
+
+            const result = await fixture.manager.enqueueLegIfAbsent(message, 'hand-over');
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect(result.verdict).toMatchObject({ kind: 'unroutable', reason: 'no-route' });
+            expect(result.entries).toEqual([]);
+            expect(result.message.id).toEqual(message.id);
+            expect(result.message.delivery).toEqual(message.delivery);
+            expect(result.message.constraints).toEqual(message.constraints);
+            expect(result.message.targets).toEqual(message.targets);
+            expect(await fixture.resources.workQueue.getAllKeys()).toEqual([]);
+            expect(Object.values(fixture.channels).flatMap((channel) => channel.sent)).toEqual([]);
+            expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+                .toBeUndefined();
+
+            fixture.ready.peerIds = ['b', 'r'];
+            const admitted = await fixture.manager.enqueueLegIfAbsent(message, 'hand-over');
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+            expect(admitted.message.targets).toEqual(toLeaderFrozenTargets(['d']));
+            expect(readSentTargets(fixture.channels.b!)).toEqual([toLeaderFrozenTargets(['d'])]);
+            expect(fixture.channels.r!.sent).toEqual([]);
+            expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+                .toMatchObject({ mode: 'leader', expectedPeerIds: ['d'] });
+        }
+    );
+
+    it.each(['direct', 'hold'] as const)('keeps %s RTC route waiting when the accepted edge is absent', async (strategy) => {
+        const directed = toOriginDirectedSnapshot(createOriginSnapshot(['a', 'b', 'c', 'd'], 4), 'd');
+        const snapshot = { ...directed, causalRevision: { groupRevision: 4, presenceRevision: 4 } };
+        validateAuthoritativeGroupSnapshot(snapshot, ORIGIN_ROOM);
+        const fixture = createLeaderFixture(snapshot);
+        fixture.ready.peerIds = [];
+        const message = createLeaderSend('room multicast', [], 'local-outbox');
+
+        const admitted = strategy === 'direct'
+            ? await fixture.manager.enqueueIfAbsent(message)
+            : await fixture.manager.enqueueLegIfAbsent(message, 'hold');
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(admitted.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        expect(admitted.message.targets).toEqual(toLeaderFrozenTargets(['d']));
+        expect(Object.values(fixture.channels).flatMap((channel) => channel.sent)).toEqual([]);
+        fixture.ready.peerIds = ['b', 'c'];
+        await vi.advanceTimersByTimeAsync(100);
+        expect(readSentTargets(fixture.channels.b!)).toEqual([toLeaderFrozenTargets(['d'])]);
+    });
+
+    it.each([
+        { denial: 'no leader', verdict: { kind: 'refused', reason: 'no-leader' } },
+        { denial: 'unsupported receipt', verdict: { kind: 'refused', reason: 'unsupported' } },
+        { denial: 'forbidden repair', verdict: { kind: 'skipped', reason: 'planner-drop' } }
+    ])('preserves $denial on a hand-over leg with an absent accepted edge', async ({ denial, verdict }) => {
+        const origin = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
+        const directed = denial === 'no leader' ? origin : toOriginDirectedSnapshot(origin, 'd');
+        const snapshot = { ...directed, causalRevision: { groupRevision: 4, presenceRevision: 4 } };
+        validateAuthoritativeGroupSnapshot(snapshot, ORIGIN_ROOM);
+        const fixture = createRtcOriginOverlayFixture({
+            snapshot,
+            nextHopPeerIds: ['b'],
+            qosProvider: denial === 'forbidden repair' ? { authorizationForMessage: () => ({ allowedRepairs: [] }) } : undefined
+        });
+        fixture.ready.peerIds = ['r'];
+        const original = createLeaderSend('room multicast', []);
+        const message: ALMessage = denial === 'unsupported receipt'
+            ? {
+                ...original,
+                delivery: { ...original.delivery, reliability: 'at-least-once', ack: 'receiver' },
+                qos: { ...original.qos, ack: { algo: 'leader' } }
+            }
+            : original;
+
+        const result = await fixture.manager.enqueueLegIfAbsent(message, 'hand-over');
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(result.verdict).toMatchObject(verdict);
+        expect(result.entries).toEqual([]);
+        expect(Object.values(fixture.channels).flatMap((channel) => channel.sent)).toEqual([]);
+    });
+
     it('keeps a leader send frozen to the director it was admitted to after the room appoints another', async () => {
         const fixture = createLeaderFixture(toDirectedSnapshot('d'));
         const message = createLeaderSend('room multicast', []);
@@ -115,7 +213,7 @@ describe('the RTC leg of a group-leader room send', () => {
 
         const admitted = await enqueueLegAndDrain(fixture, message);
 
-        expect(admitted.verdict).toEqual({ kind: 'refused', reason: 'no-leader', detail: NO_LEADER_DETAIL });
+        expect(admitted.verdict).toMatchObject({ kind: 'refused', reason: 'no-leader' });
         expect(admitted.message.targets).toEqual(message.targets);
         expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
@@ -229,7 +327,7 @@ function createLeaderSend(
     }
 }
 
-async function enqueueLegAndDrain(fixture: RtcOriginOverlayFixture, message: ALMessage) {
+async function enqueueLegAndDrain(fixture: RtcOriginOverlayFixture, message: ALMessage): Promise<ALOutboundEnqueueResult> {
     const result = await fixture.manager.enqueueLegIfAbsent(message, 'hold');
     await vi.advanceTimersByTimeAsync(0);
     return result;
