@@ -1,4 +1,5 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
+
 import { createDefaultFullStackApiV1WebServer, readFullStackApiBaseUrl } from './playwright-full-stack-api-server.ts';
 
 const exhaustiveWorkers = Number.parseInt(

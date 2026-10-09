@@ -1,7 +1,4 @@
-import {
-    readFullStackRtcIceFixtureRequests,
-    type ReadFullStackRtcIceFixtureRequestsInput
-} from '../../packages/shared-test/black-box-runner/fixtures/read-full-stack-rtc-ice-fixture-requests.ts';
+import path from 'node:path';
 
 export const FULL_STACK_API_SERVER_MODES = [
     'postgres',
@@ -10,23 +7,14 @@ export const FULL_STACK_API_SERVER_MODES = [
 
 export type FullStackApiServerMode = typeof FULL_STACK_API_SERVER_MODES[number];
 
-type FullStackEnvironment = Readonly<Record<string, string | undefined>>;
+type EnvReader = Readonly<Record<string, string | undefined>>;
 
 export interface FullStackApiV1WebServer {
     readonly command: string;
     readonly url: string;
     readonly reuseExistingServer: boolean;
     readonly timeout: number;
-}
-
-export interface FullStackApiV1WebServerInput {
-    readonly mode: FullStackApiServerMode;
-    readonly apiBaseUrl: string;
-    readonly spaBaseUrl: string;
-    readonly reuseExistingServer: boolean;
-    readonly requireFreshPostgres: boolean;
-    readonly environment: FullStackEnvironment;
-    readonly admittedRtcCaseId: ReadFullStackRtcIceFixtureRequestsInput['admittedCaseId'];
+    readonly gracefulShutdown?: { readonly signal: 'SIGTERM'; readonly timeout: number; };
 }
 
 export interface DefaultFullStackApiV1WebServerInput {
@@ -35,8 +23,16 @@ export interface DefaultFullStackApiV1WebServerInput {
     readonly spaBaseUrl?: string;
     readonly reuseExistingServer?: boolean;
     readonly requireFreshPostgres?: boolean;
-    readonly environment?: FullStackEnvironment;
-    readonly admittedRtcCaseId?: ReadFullStackRtcIceFixtureRequestsInput['admittedCaseId'];
+    readonly timingCaptureDirectory?: string;
+}
+
+export interface FullStackApiV1WebServerInput {
+    readonly mode: FullStackApiServerMode;
+    readonly apiBaseUrl: string;
+    readonly spaBaseUrl: string;
+    readonly reuseExistingServer: boolean;
+    readonly requireFreshPostgres: boolean;
+    readonly timingCaptureDirectory: string | undefined;
 }
 
 export interface FullStackReadinessHttpEvidence {
@@ -56,7 +52,7 @@ const DEFAULT_API_BASE_URL = 'http://localhost:8080';
 const DEFAULT_SPA_BASE_URL = 'http://localhost:5176';
 
 export function readFullStackApiServerMode(
-    env: FullStackEnvironment = process.env
+    env: EnvReader = process.env
 ): FullStackApiServerMode {
     const raw = env.RALLAR_BLACK_BOX_API_MODE?.trim();
     if (!raw) {
@@ -73,60 +69,53 @@ export function readFullStackApiServerMode(
 }
 
 export function readFullStackApiBaseUrl(
-    env: FullStackEnvironment = process.env
+    env: EnvReader = process.env
 ): string {
     return normalizeBaseUrl(env.VITE_RALLAR_API_BASE_URL ?? DEFAULT_API_BASE_URL);
 }
 
 export function readFullStackSpaBaseUrl(
-    env: FullStackEnvironment = process.env
+    env: EnvReader = process.env
 ): string {
     return normalizeBaseUrl(env.VITE_RALLAR_SPA_BASE_URL ?? DEFAULT_SPA_BASE_URL);
 }
 
 export function createDefaultFullStackApiV1WebServer(
-    input: DefaultFullStackApiV1WebServerInput
+    input: DefaultFullStackApiV1WebServerInput = {}
 ): FullStackApiV1WebServer {
-    const environment = input.environment ?? process.env;
     return createFullStackApiV1WebServer({
-        mode: input.mode ?? readFullStackApiServerMode(environment),
-        apiBaseUrl: input.apiBaseUrl ?? readFullStackApiBaseUrl(environment),
-        spaBaseUrl: input.spaBaseUrl ?? readFullStackSpaBaseUrl(environment),
+        mode: input.mode ?? readFullStackApiServerMode(),
+        apiBaseUrl: input.apiBaseUrl ?? readFullStackApiBaseUrl(),
+        spaBaseUrl: input.spaBaseUrl ?? readFullStackSpaBaseUrl(),
         reuseExistingServer: input.reuseExistingServer ?? true,
         requireFreshPostgres: input.requireFreshPostgres ?? false,
-        admittedRtcCaseId: input.admittedRtcCaseId ?? null,
-        environment
+        timingCaptureDirectory: input.timingCaptureDirectory
     });
 }
 
 export function createFullStackApiV1WebServer(
     input: FullStackApiV1WebServerInput
 ): FullStackApiV1WebServer {
-    const environment = input.environment;
-    const mode = input.mode;
-    if (input.requireFreshPostgres === true && mode !== 'postgres') {
+    const { mode } = input;
+    if (input.requireFreshPostgres && mode !== 'postgres') {
         throw new Error('Fresh Postgres API isolation requires mode postgres.');
     }
-    const apiBaseUrl = normalizeBaseUrl(
-        input.apiBaseUrl
-    );
-    const spaBaseUrl = normalizeBaseUrl(
-        input.spaBaseUrl
-    );
+    const apiBaseUrl = normalizeBaseUrl(input.apiBaseUrl);
+    const spaBaseUrl = normalizeBaseUrl(input.spaBaseUrl);
 
-    const iceRequests = mode === 'memory'
-        ? readFullStackRtcIceFixtureRequests({ environment, admittedCaseId: input.admittedRtcCaseId })
-        : 20;
-
+    const apiInvocation = toFullStackApiInvocation(input.timingCaptureDirectory, mode);
     return {
         command: mode === 'memory'
-            ? createMemoryApiCommand(apiBaseUrl, spaBaseUrl, iceRequests)
-            : createPostgresApiCommand(apiBaseUrl, spaBaseUrl),
+            ? createMemoryApiCommand(apiBaseUrl, spaBaseUrl, apiInvocation)
+            : createPostgresApiCommand(apiBaseUrl, spaBaseUrl, apiInvocation),
         url: `${apiBaseUrl}/api/config`,
-        reuseExistingServer: mode === 'memory' || input.requireFreshPostgres === true
+        reuseExistingServer: input.requireFreshPostgres === true || input.timingCaptureDirectory !== undefined
             ? false
             : input.reuseExistingServer,
-        timeout: mode === 'memory' ? 120_000 : 90_000
+        timeout: mode === 'memory' ? 120_000 : 90_000,
+        ...(input.timingCaptureDirectory === undefined
+            ? {}
+            : { gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 7_000 } })
     };
 }
 
@@ -228,7 +217,7 @@ export async function evaluateFullStackConfiguredServiceEvidence(
         : 'ready';
 }
 
-function createFullStackApiProfileEnvBlock(): string {
+export function createFullStackApiProfileEnvBlock(): string {
     return [
         'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory',
         'RALLAR_LOGIN_USER_RATE_LIMIT=100',
@@ -237,7 +226,7 @@ function createFullStackApiProfileEnvBlock(): string {
     ].join(' ');
 }
 
-function createFullStackApiUrlEnvBlock(apiBaseUrl: string): string {
+export function createFullStackApiUrlEnvBlock(apiBaseUrl: string): string {
     const normalizedApiBaseUrl = normalizeBaseUrl(apiBaseUrl);
     return [
         `RALLAR_API_BASE_URL=${normalizedApiBaseUrl}`,
@@ -245,7 +234,7 @@ function createFullStackApiUrlEnvBlock(apiBaseUrl: string): string {
     ].join(' ');
 }
 
-function createFullStackSpaCorsOrigins(spaBaseUrl: string): string {
+export function createFullStackSpaCorsOrigins(spaBaseUrl: string): string {
     const normalizedSpaBaseUrl = normalizeBaseUrl(spaBaseUrl);
     const url = new URL(normalizedSpaBaseUrl);
     const origins = [url.origin];
@@ -269,18 +258,29 @@ export function portFromBaseUrl(apiBaseUrl: string): number {
     return url.protocol === 'https:' ? 443 : 80;
 }
 
-function createMemoryApiCommand(apiBaseUrl: string, spaBaseUrl: string, iceRequests: number): string {
+function createMemoryApiCommand(apiBaseUrl: string, spaBaseUrl: string, apiInvocation: string): string {
     return `cd ../.. && CORS_ORIGINS=${createFullStackSpaCorsOrigins(spaBaseUrl)} PORT=${portFromBaseUrl(apiBaseUrl)} ${
         createFullStackApiUrlEnvBlock(apiBaseUrl)
-    } ${createFullStackApiProfileEnvBlock()} RALLAR_ICE_RATE_LIMIT_REQUESTS=${iceRequests} deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+    } ${createFullStackApiProfileEnvBlock()} ${apiInvocation} run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
 }
 
-function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string): string {
+function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string, apiInvocation: string): string {
     return `cd ../.. && ${createFullStackApiProfileEnvBlock()} RALLAR_SQL_BACKEND=postgres RALLAR_PGLITE_SCHEMA_INIT=disabled RALLAR_DB_PUBSUB=postgres CORS_ORIGINS=${
         createFullStackSpaCorsOrigins(spaBaseUrl)
     } PORT=${portFromBaseUrl(apiBaseUrl)} ${
         createFullStackApiUrlEnvBlock(apiBaseUrl)
-    } deno run --env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+    } ${apiInvocation} run --env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+}
+
+function toFullStackApiInvocation(directory: string | undefined, mode: FullStackApiServerMode): string {
+    if (directory === undefined) {
+        return 'deno';
+    }
+    if (mode !== 'memory' || !path.isAbsolute(directory)) {
+        throw new Error('Setup timing capture requires the local memory API and an absolute recorder directory.');
+    }
+    const quotedDirectory = '\'' + directory.replaceAll('\'', '\'\\\'\'') + '\'';
+    return `RALLAR_TIMING_LOGS=true RALLAR_APP_INBOX_PHASE_TIMING=true node --import tsx apps/rallar-black-box/scripts/run-full-stack-api-with-timing.ts ${quotedDirectory} -- deno`;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

@@ -1,13 +1,14 @@
 import { spawnSync } from 'node:child_process';
+
 import { describe, expect, it } from 'vitest';
 
 import {
     assertFullStackApiConfigEvidence,
     assertFullStackControlHealthEvidence,
     assertFullStackReadinessHttpEvidence,
+    createDefaultFullStackApiV1WebServer,
     createFullStackApiProfileEnvBlock,
     createFullStackApiUrlEnvBlock,
-    createFullStackApiV1WebServer,
     createFullStackSpaCorsOrigins,
     evaluateFullStackConfiguredServiceEvidence,
     readFullStackApiBaseUrl,
@@ -17,6 +18,101 @@ import {
 import type { ApiJsonValue } from '../../shared/api/api-json-value.ts';
 
 describe('rallar-black-box full-stack API server mode', () => {
+    it.each(['', 'false', 'true'])('routes capture=%s only through the local memory lifecycle', (capture) => {
+        const result = spawnSync(process.execPath, [
+            '--import',
+            'tsx',
+            '--input-type=module',
+            '--eval',
+            `import config from './apps/rallar-black-box/playwright.full-stack.config.ts';
+             process.stdout.write(JSON.stringify(config.webServer));`
+        ], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                CI: '1',
+                RALLAR_BLACK_BOX_FULL_STACK: '1',
+                RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '1',
+                RALLAR_BLACK_BOX_API_MODE: 'memory',
+                RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER: '0',
+                RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING: capture,
+                RALLAR_BLACK_BOX_STORAGE_DIR: '/tmp/capture recorder'
+            }
+        });
+        expect(result.status).toBe(0);
+        const api = JSON.parse(result.stdout)[0];
+        if (capture === 'true') {
+            expect(api.command).toContain('RALLAR_TIMING_LOGS=true RALLAR_APP_INBOX_PHASE_TIMING=true');
+            expect(api.command).toContain(
+                'node --import tsx apps/rallar-black-box/scripts/run-full-stack-api-with-timing.ts \'/tmp/capture recorder\' -- deno run'
+            );
+            expect(api.command).toContain('--allow-read apps/api-v1/src/main.ts');
+            expect(api).toMatchObject({ reuseExistingServer: false, timeout: 120_000, gracefulShutdown: { signal: 'SIGTERM', timeout: 7_000 } });
+        }
+        else {
+            expect(api.command).not.toContain('run-full-stack-api-with-timing');
+            expect(api.command).not.toContain('RALLAR_TIMING_LOGS=');
+            expect(api).not.toHaveProperty('gracefulShutdown');
+        }
+    });
+
+    it('preserves the ordinary exhaustive consumer with no diagnostic capture', () => {
+        const result = spawnSync(process.execPath, [
+            '--import',
+            'tsx',
+            '--input-type=module',
+            '--eval',
+            `import config from './apps/rallar-black-box/playwright.exhaustive.config.ts';
+             process.stdout.write(JSON.stringify(config.webServer));`
+        ], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                CI: '1',
+                RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING: 'true',
+                VITE_RALLAR_API_BASE_URL: 'http://localhost:8080',
+                RALLAR_LOGIN_USER_RATE_LIMIT: '123'
+            }
+        });
+        expect(result.status).toBe(0);
+        const api = JSON.parse(result.stdout)[0];
+        expect(api.command).toContain('RALLAR_LOGIN_USER_RATE_LIMIT=123 CORS_ORIGINS=');
+        expect(api.command).toContain('deno run --env-file=apps/api-v1/.env.local');
+        expect(api.command).not.toContain('run-full-stack-api-with-timing');
+        expect(api).toMatchObject({ url: 'http://localhost:8080/api/config', reuseExistingServer: false, timeout: 90_000 });
+        expect(api).not.toHaveProperty('gracefulShutdown');
+    });
+
+    it.each([
+        { RALLAR_BLACK_BOX_FULL_STACK: '0' },
+        { RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '0' },
+        { RALLAR_BLACK_BOX_API_MODE: 'postgres' },
+        { RALLAR_BLACK_BOX_STORAGE_DIR: '' },
+        { RALLAR_BLACK_BOX_STORAGE_DIR: 'relative/recorder' }
+    ])('rejects capture outside the local lifecycle %s', (override) => {
+        const result = spawnSync(process.execPath, [
+            '--import',
+            'tsx',
+            '--input-type=module',
+            '--eval',
+            'import \'./apps/rallar-black-box/playwright.full-stack.config.ts\';'
+        ], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                RALLAR_BLACK_BOX_FULL_STACK: '1',
+                RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '1',
+                RALLAR_BLACK_BOX_API_MODE: 'memory',
+                RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING: 'true',
+                RALLAR_BLACK_BOX_STORAGE_DIR: '/tmp/recorder',
+                RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER: '0',
+                ...override
+            }
+        });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('Setup timing capture requires');
+    });
+
     it.each([
         { headless: '1', workspace: 'rallar-black-box-headless', readiness: '/headless/' },
         { headless: '', workspace: 'rallar-black-box', readiness: '' }
@@ -56,7 +152,7 @@ describe('rallar-black-box full-stack API server mode', () => {
         expect(readFullStackApiBaseUrl({})).toBe('http://localhost:8080');
         expect(readFullStackSpaBaseUrl({})).toBe('http://localhost:5176');
 
-        const server = createFullStackApiV1WebServer({
+        const server = createDefaultFullStackApiV1WebServer({
             mode: 'postgres',
             apiBaseUrl: 'http://localhost:8080/',
             spaBaseUrl: 'http://localhost:5178/'
@@ -75,7 +171,7 @@ describe('rallar-black-box full-stack API server mode', () => {
     });
 
     it('builds an API-v1 memory-mode full-stack server command with no DATABASE_URL requirement', () => {
-        const server = createFullStackApiV1WebServer({
+        const server = createDefaultFullStackApiV1WebServer({
             mode: 'memory',
             apiBaseUrl: 'http://localhost:18080',
             spaBaseUrl: 'http://localhost:5177'
@@ -103,7 +199,7 @@ describe('rallar-black-box full-stack API server mode', () => {
     });
 
     it('allows CI configs to disable existing web server reuse', () => {
-        const server = createFullStackApiV1WebServer({
+        const server = createDefaultFullStackApiV1WebServer({
             mode: 'postgres',
             reuseExistingServer: false
         });
@@ -112,7 +208,7 @@ describe('rallar-black-box full-stack API server mode', () => {
     });
 
     it('forces a fresh Postgres process for backend-authoritative acceptance', () => {
-        const server = createFullStackApiV1WebServer({
+        const server = createDefaultFullStackApiV1WebServer({
             mode: 'postgres',
             reuseExistingServer: true,
             requireFreshPostgres: true
@@ -121,7 +217,7 @@ describe('rallar-black-box full-stack API server mode', () => {
         expect(server.reuseExistingServer).toBe(false);
         expect(server.command).toContain('RALLAR_SQL_BACKEND=postgres');
         expect(() =>
-            createFullStackApiV1WebServer({
+            createDefaultFullStackApiV1WebServer({
                 mode: 'memory',
                 requireFreshPostgres: true
             })
