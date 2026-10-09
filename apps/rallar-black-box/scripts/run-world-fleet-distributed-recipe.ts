@@ -8,7 +8,11 @@ import { fileURLToPath } from 'node:url';
 
 import type { JsonComparisonObject, JsonValue } from '@shared-test/json-compare/compare-json-values.ts';
 import { decodeDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
-import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import {
+    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES,
+    type RallarBlackBoxDistributedRunManifest,
+    type RallarBlackBoxDistributedRunState
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import { readManifestRunnerOptions } from './read-manifest-runner-options.ts';
@@ -26,7 +30,7 @@ export interface WorldFleetDistributedRecipeRunnerOptions {
 }
 
 interface DistributedRunObservation {
-    readonly state: string;
+    readonly state: RallarBlackBoxDistributedRunState;
 }
 
 interface EvidenceExportResult {
@@ -200,17 +204,15 @@ async function waitForState(
             `/distributed-runs/${encodeURIComponent(distributedRunId)}`,
             { method: 'GET' }
         );
-        if (
-            !isRecord(snapshot) || typeof snapshot.state !== 'string' ||
-            !['draft', 'waiting-for-ack', 'ready', 'running', ...TERMINAL_STATES].includes(snapshot.state)
-        ) {
+        const state = RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES.find((candidate) => candidate === snapshot.state);
+        if (state === undefined) {
             throw new Error('Invalid distributed run snapshot.');
         }
         if (
-            TERMINAL_STATES.has(snapshot.state) ||
-            (phase === 'ready' && (snapshot.state === 'ready' || snapshot.state === 'running'))
+            TERMINAL_STATES.has(state) ||
+            (phase === 'ready' && (state === 'ready' || state === 'running'))
         ) {
-            return { state: snapshot.state };
+            return { state };
         }
         await delay(runnerOptions.pollMs);
     }
