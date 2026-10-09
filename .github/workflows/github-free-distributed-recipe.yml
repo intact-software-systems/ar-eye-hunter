@@ -10,6 +10,10 @@ on:
         options:
           - hetzner-control
           - all-local
+      capture_setup_timing:
+        description: Retain safe existing API setup timing for the all-local diagnostic only
+        type: boolean
+        default: false
       rollout_control_plane:
         description: Deploy and restart the Hetzner API/control services before the run
         type: boolean
@@ -498,6 +502,7 @@ jobs:
           CI: '1'
           RALLAR_BLACK_BOX_FULL_STACK: '1'
           RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '1'
+          RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING: '${{ inputs.capture_setup_timing }}'
           RALLAR_BLACK_BOX_API_MODE: memory
           RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '16'
           RALLAR_BLACK_BOX_STORAGE_DIR: ${{ github.workspace }}/tmp/alm-v1c/all-local-recorder

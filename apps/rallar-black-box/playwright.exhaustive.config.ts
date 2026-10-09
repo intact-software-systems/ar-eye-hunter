@@ -1,5 +1,6 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
-import { createFullStackApiV1WebServer, readFullStackApiBaseUrl } from './playwright-full-stack-api-server.ts';
+
+import { createDefaultFullStackApiV1WebServer, readFullStackApiBaseUrl } from './playwright-full-stack-api-server.ts';
 
 const exhaustiveWorkers = Number.parseInt(
     process.env.RALLAR_BLACK_BOX_EXHAUSTIVE_WORKERS ?? '4',
@@ -8,7 +9,7 @@ const exhaustiveWorkers = Number.parseInt(
 const loginUserRateLimit = process.env.RALLAR_LOGIN_USER_RATE_LIMIT ?? '100';
 const fullStackApiBaseUrl = readFullStackApiBaseUrl();
 const reuseExistingServer = !process.env.CI;
-const apiServer = createFullStackApiV1WebServer({
+const apiServer = createDefaultFullStackApiV1WebServer({
     mode: 'postgres',
     apiBaseUrl: fullStackApiBaseUrl,
     reuseExistingServer

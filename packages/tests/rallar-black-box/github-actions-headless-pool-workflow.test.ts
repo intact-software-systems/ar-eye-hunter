@@ -11,6 +11,7 @@ import {
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+
 import {
     describe,
     expect,
@@ -92,6 +93,22 @@ const findStep = (job: WorkflowJob, name: string): WorkflowStep =>
     );
 
 describe('GitHub Free distributed recipe workflow', () => {
+    it('exposes false-by-default setup timing only to the local observation caller', async () => {
+        const workflow = await readWorkflow();
+        expect(workflow.on?.workflow_dispatch?.inputs?.capture_setup_timing).toMatchObject({
+            type: 'boolean',
+            default: false
+        });
+        const jobs = required(workflow.jobs, 'jobs');
+        expect(findStep(jobs['all-local'], 'Observe frozen 15-agent manifest').env).toHaveProperty(
+            'RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING',
+            '${{ inputs.capture_setup_timing }}'
+        );
+        for (const job of ['plan', 'prepare-hetzner', 'github-agents', 'operator']) {
+            expect(JSON.stringify(jobs[job])).not.toMatch(/capture_setup_timing|RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING/);
+        }
+    });
+
     it('routes manual modes to mutually exclusive local and external jobs', async () => {
         const workflow = await readWorkflow();
         const mode = required(workflow.on?.workflow_dispatch?.inputs?.execution_mode, 'execution mode');
@@ -202,7 +219,8 @@ describe('GitHub Free distributed recipe workflow', () => {
             expect(result.status).toBe(Object.keys(override).length === 0 ? 0 : 1);
             expect(result.stdout).toBe('');
         }
-        expect(local.steps!.indexOf(preflight)).toBeLessThan(local.steps!.indexOf(findStep(local, 'Setup local toolchains')));
+        const steps = required(local.steps, 'all-local steps');
+        expect(steps.indexOf(preflight)).toBeLessThan(steps.indexOf(findStep(local, 'Setup local toolchains')));
     });
 
     it('locks the complete production run with the shared queued group', async () => {
