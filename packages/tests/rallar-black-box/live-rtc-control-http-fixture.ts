@@ -15,6 +15,12 @@ export namespace LiveRtcControlHttpFixture {
         formation: LiveRtcJsonRecord | undefined;
         results: LiveRtcControlClient.Result[];
         events: LiveRtcControlClient.Event[];
+        artifactRunId: string | undefined;
+        artifactBundle: LiveRtcJsonRecord | undefined;
+        resultsJsonl: string;
+        resultsStatus: number;
+        recorderOpenEnded: boolean;
+        recorderClosed: boolean;
         recorderJsonl: string;
         recorderStatus: number;
         recorderReads: number;
@@ -66,6 +72,12 @@ export async function createDefaultLiveRtcControlHttpFixture(): Promise<LiveRtcC
         formation: undefined,
         results: [],
         events: [],
+        artifactRunId: undefined,
+        artifactBundle: undefined,
+        resultsJsonl: '',
+        resultsStatus: 200,
+        recorderOpenEnded: false,
+        recorderClosed: false,
         recorderJsonl: '',
         recorderStatus: 200,
         recorderReads: 0,
@@ -94,11 +106,32 @@ export async function createDefaultLiveRtcControlHttpFixture(): Promise<LiveRtcC
 }
 
 async function writeLiveRtcControlResponse(state: LiveRtcControlHttpFixture.State, incoming: IncomingMessage, response: ServerResponse): Promise<void> {
+    if (state.artifactRunId !== undefined && incoming.url?.split('/')[2] !== encodeURIComponent(state.artifactRunId)) {
+        response.writeHead(404).end();
+        return;
+    }
+    if (incoming.url?.endsWith('/artifacts')) {
+        response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(state.artifactBundle));
+        return;
+    }
+    if (incoming.url?.endsWith('/results.jsonl')) {
+        response.writeHead(state.resultsStatus, { 'content-type': 'application/x-ndjson' }).end(state.resultsJsonl);
+        return;
+    }
     if (incoming.url?.endsWith('/events.jsonl')) {
         state.recorderUrls.push(incoming.url);
         state.recorderReads += 1;
         state.captureEffects.push('history');
-        response.writeHead(state.recorderStatus, { 'content-type': 'application/x-ndjson' }).end(state.recorderJsonl);
+        response.once('close', () => {
+            state.recorderClosed = true;
+        });
+        response.writeHead(state.recorderStatus, { 'content-type': 'application/x-ndjson' });
+        if (state.recorderOpenEnded) {
+            response.write(state.recorderJsonl);
+        }
+        else {
+            response.end(state.recorderJsonl);
+        }
         return;
     }
     if (incoming.method === 'POST') {

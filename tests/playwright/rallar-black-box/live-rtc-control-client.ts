@@ -6,8 +6,6 @@ import {
     type TestInfo
 } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { get as readHttp, type ClientRequest, type IncomingMessage } from 'node:http';
-import { get as readHttps } from 'node:https';
 import { resolve } from 'node:path';
 
 import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -20,6 +18,7 @@ import type { BlackBoxRallarRuntime } from '../../../packages/shared-test/black-
 import type { RtcNativeProjection } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts';
 import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
+import { expectLiveRtcArtifactEvidence } from './expect-live-rtc-artifact-evidence.ts';
 import {
     buildLiveRtcAgentDiagnostics,
     toLiveRtcLifecycleHistory,
@@ -55,9 +54,14 @@ import type {
     LiveRtcNackSendResultSummary,
     LiveRtcSendResultSummary
 } from './live-rtc-performance-evidence.ts';
-import { LIVE_RTC_LIFECYCLE_LIMITS } from './live-rtc-recorder-rows.ts';
+import { readLiveRtcRecorderJsonl } from './live-rtc-recorder-reader.ts';
 import { summarizeLiveRtcNackWireObservation } from './live-rtc-wire-observation.ts';
 import { toLiveRtcNativeAcquisition } from './to-live-rtc-native-acquisition.ts';
+
+export interface LiveRtcObservedDeliveries {
+    readonly events: readonly LiveRtcControlClient.Event[];
+    readonly scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
+}
 
 interface FirstMessageFailureCase {
     readonly senderAgentId: string;
@@ -83,6 +87,9 @@ const HEALTH_CAPTURE_FAILURE: LiveRtcDiagnosticFailure = {
     name: 'health-capture-failed',
     message: 'RTC health diagnostic capture failed.'
 };
+
+const MAX_RETAINED_MESSAGE_FAILURES = 2;
+const MAX_RETAINED_MESSAGE_FAILURE_OBSERVATIONS = 100;
 
 export namespace LiveRtcControlClient {
     export interface RecipeAttribution {
@@ -746,11 +753,7 @@ export class LiveRtcControlClient {
             normalizeJson(await response.json()),
             '$.artifactBundle'
         );
-        const files = requiredJsonRecord(bundle.files, '$.artifactBundle.files');
-        const report = stringValue(files['report.json']) ?? '';
-        const events = stringValue(files['events.jsonl']) ?? '';
-        expect(report).toContain(input.commandIds[0]);
-        expect(events).toContain('rallar.browser');
+        await expectLiveRtcArtifactEvidence(bundle, input, this.#baseUrl);
     }
 
     async attachRunSummary(
@@ -1027,6 +1030,23 @@ export class LiveRtcControlClient {
     }
 }
 
+export function countUnexpectedLiveRtcDeliveries(
+    input: LiveRtcObservedDeliveries
+): number {
+    const scenarioById = new Map(
+        input.scenarios.map((scenario) => [scenario.matrixId, scenario])
+    );
+    return input.events.filter((event) => {
+        const matrixId = stringValue(messageData(event).matrixId);
+        const scenario = matrixId ? scenarioById.get(matrixId) : undefined;
+        return (
+            scenario !== undefined &&
+            event.agentId !== undefined &&
+            !scenario.allowedAgentIds.includes(event.agentId)
+        );
+    }).length;
+}
+
 function nackFailureMessage(stage: LiveRtcNackProbeStage): string {
     switch (stage) {
         case 'start-observation':
@@ -1284,9 +1304,6 @@ function summarizeMessageFailureEvent(
     };
 }
 
-const MAX_RETAINED_MESSAGE_FAILURES = 2;
-const MAX_RETAINED_MESSAGE_FAILURE_OBSERVATIONS = 100;
-
 function summarizeNackSendResult(
     result: LiveRtcControlClient.Result | undefined,
     probeMessageId: string | null
@@ -1381,28 +1398,6 @@ function toFailedControlResult(
     };
 }
 
-export interface LiveRtcObservedDeliveries {
-    readonly events: readonly LiveRtcControlClient.Event[];
-    readonly scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
-}
-
-export function countUnexpectedLiveRtcDeliveries(
-    input: LiveRtcObservedDeliveries
-): number {
-    const scenarioById = new Map(
-        input.scenarios.map((scenario) => [scenario.matrixId, scenario])
-    );
-    return input.events.filter((event) => {
-        const matrixId = stringValue(messageData(event).matrixId);
-        const scenario = matrixId ? scenarioById.get(matrixId) : undefined;
-        return (
-            scenario !== undefined &&
-            event.agentId !== undefined &&
-            !scenario.allowedAgentIds.includes(event.agentId)
-        );
-    }).length;
-}
-
 function isMessageFor(
     event: LiveRtcControlClient.Event,
     input: LiveRtcControlClient.WaitForMessageInput
@@ -1420,89 +1415,4 @@ function isMessageFor(
 
 function safeFileName(value: string): string {
     return value.replace(/[^a-zA-Z0-9_.-]+/g, '-');
-}
-
-interface LiveRtcRecorderRead {
-    readonly jsonl: string;
-    readonly bytesRead: number;
-    readonly retainedBytes: number;
-    readonly retainedPrefixDropped: boolean;
-    readonly transportTruncated: boolean;
-}
-
-interface LiveRtcRecorderFailure {
-    readonly code: 'unsupported-endpoint' | 'http-unavailable' | 'runtime-read-failed';
-    readonly cause: Error | null;
-}
-
-async function readLiveRtcRecorderJsonl(url: string): Promise<Either<LiveRtcRecorderFailure, LiveRtcRecorderRead>> {
-    let response: IncomingMessage | undefined;
-    let request: ClientRequest | undefined;
-    let deadline: ReturnType<typeof setTimeout> | undefined;
-    try {
-        const endpoint = new URL(url);
-        if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password) {
-            return Either.ofLeft({ code: 'unsupported-endpoint', cause: null });
-        }
-        request = (endpoint.protocol === 'https:' ? readHttps : readHttp)(endpoint);
-        deadline = setTimeout(() => {
-            response?.destroy(new Error('RTC recorder deadline reached.'));
-            request?.destroy(new Error('RTC recorder deadline reached.'));
-        }, LIVE_RTC_LIFECYCLE_LIMITS.transportTimeoutMs);
-        const pending = request;
-        response = await new Promise<IncomingMessage>((resolve, reject) => {
-            pending.once('response', resolve);
-            pending.once('error', reject);
-        });
-        if (response.statusCode !== 200) {
-            return Either.ofLeft({ code: 'http-unavailable', cause: null });
-        }
-        return Either.ofRight(await readLiveRtcRecorderBody(response));
-    }
-    catch (cause) {
-        return Either.ofLeft({ code: 'runtime-read-failed', cause: toError(cause) });
-    }
-    finally {
-        clearTimeout(deadline);
-        response?.destroy();
-        request?.destroy();
-    }
-}
-
-async function readLiveRtcRecorderBody(response: IncomingMessage): Promise<LiveRtcRecorderRead> {
-    const chunks: Buffer[] = [];
-    let bytesRead = 0;
-    let retainedBytes = 0;
-    let retainedPrefixDropped = false;
-    let transportTruncated = false;
-    for await (const chunk of response) {
-        const bytes = Buffer.from(chunk);
-        const remaining = LIVE_RTC_LIFECYCLE_LIMITS.transportBytes - bytesRead;
-        chunks.push(bytes.subarray(0, remaining));
-        bytesRead += Math.min(bytes.length, remaining);
-        retainedBytes += Math.min(bytes.length, remaining);
-        while (retainedBytes > LIVE_RTC_LIFECYCLE_LIMITS.inputBytes) {
-            const oldest = chunks[0];
-            const discarded = Math.min(oldest.length, retainedBytes - LIVE_RTC_LIFECYCLE_LIMITS.inputBytes);
-            if (discarded === oldest.length) {
-                chunks.shift();
-            }
-            else {
-                chunks[0] = oldest.subarray(discarded);
-            }
-            retainedBytes -= discarded;
-            retainedPrefixDropped = true;
-        }
-        if (bytes.length > remaining) {
-            transportTruncated = true;
-            break;
-        }
-    }
-    return {
-        jsonl: Buffer.concat(chunks).toString('utf8'),
-        bytesRead,
-        retainedBytes,
-        retainedPrefixDropped,
-        transportTruncated
-    };
 }

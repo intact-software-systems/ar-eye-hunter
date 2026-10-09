@@ -3993,6 +3993,22 @@ moved or changed test.
         "requiredConstraint": "Explicitly unavailable fetch remains unavailable even when global fetch exists.",
         "failureRationale": "An implementation could invoke ambient HTTP and then return a failed result; only the absence assertion rules out that unintended external request independently of the reported fetch-unavailable error."
       }
+    },
+    {
+      "id": "rtc-benchmark-finite-ice-fixture-dependency-isolation",
+      "domain": "Shared RTC benchmark package dependency isolation",
+      "owner": "Shared RTC benchmark maintainers",
+      "summary": "The benchmark package may consume the canonical finite ICE fixture as dependency-free data while shared-test runner execution remains outside its approved dependency boundary.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts#admits only the dependency-free finite ICE fixture data, without opening runner imports",
+      "coverageRelation": "The architecture test admits the exact canonical fixture import, rejects the neighboring runner runtime import, and reads the actual admitted fixture to verify that it imports no modules. The source read proves dependency isolation rather than a private helper name or incidental file layout."
+    },
+    {
+      "id": "rtc-b06-current-configuration-source-provenance",
+      "domain": "RTC-B06 observation configuration and source provenance",
+      "owner": "Shared RTC benchmark maintainers",
+      "summary": "The existing RTC-B06 observation reports the finite default/all-scenarios/retention policies and SHA256 fingerprints of the actual configuration and fixture owners used by the current source tree.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-deno-runtime.test.ts#records the finite case policies and hashes their real configuration owners in the existing observation",
+      "coverageRelation": "The test runs createRtcBaselineDenoObservation with real repository-file hashing, checks emitted requests 20/20/101 and the 60000ms windows, and independently hashes the actual configuration, command, evidence, producer and fixture files to compare with observation sourceHashes. Expectations follow current bytes rather than a pinned source snapshot."
     }
   ],
   "entries": [
@@ -8923,6 +8939,28 @@ moved or changed test.
       "owner": "Shared Test maintainers",
       "rationale": "The ambient fetch spy must remain untouched when the explicit HTTP capability is unavailable; a failed result could otherwise conceal a forbidden ambient network invocation.",
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-runtime/capabilities.test.ts#capture dependency fix1 keeps explicit unavailable fetch unavailable despite an ambient implementation"
+    },
+    {
+      "id": "test-structure-coupling-3a8e5b1bfbea42bd",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts",
+      "kind": "production-source-read",
+      "contract": "rtc-benchmark-finite-ice-fixture-dependency-isolation",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "Reading the admitted canonical fixture is necessary to reject an import-bearing module that would pull runner execution into the approved data-only benchmark dependency. The exact allowlist and neighboring runner rejection keep this architecture boundary narrow; dependency-free implementations pass without pinning fixture values or internal symbols.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts#admits only the dependency-free finite ICE fixture data, without opening runner imports"
+    },
+    {
+      "id": "test-structure-coupling-ac5e6841bb61346d",
+      "path": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-deno-runtime.test.ts",
+      "kind": "production-source-read",
+      "contract": "rtc-b06-current-configuration-source-provenance",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "The independent read of each current configuration owner supplies the expected SHA256 for the emitted observation artifact. It catches missing, stale or substituted provenance even when policy values agree; changing source bytes remains valid when the observation records their current fingerprint.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-deno-runtime.test.ts#records the finite case policies and hashes their real configuration owners in the existing observation"
     }
   ]
 }
