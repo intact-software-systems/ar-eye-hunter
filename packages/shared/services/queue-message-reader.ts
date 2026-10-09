@@ -1,6 +1,7 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '../api/api-config.ts';
+import type { DequeueController } from '../queuebox/dequeue/dequeue-controller.ts';
 import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import {
     NonRetryableException,
@@ -51,14 +52,19 @@ export class QueueMessageReader {
         );
     }
 
-    async dequeue(typesToDequeue: Set<string>, resilience: ResourceInboxResilience): Promise<void> {
+    async dequeue(
+        typesToDequeue: Set<string>,
+        resilience: ResourceInboxResilience,
+        readLaneBudgets?: DequeueController.ReadLaneBudgets
+    ): Promise<void> {
         await QueueBoxUtilities.defaultDequeue(
             {
                 qbox: this.repository,
                 typesToDequeue: typesToDequeue,
                 resilience: resilience,
                 onDequeuedDo: (entry, attemptTelemetry) => this.dispatchQueuedMessage(entry, attemptTelemetry),
-                options: this.config.dequeueOptions
+                options: this.config.dequeueOptions,
+                readLaneBudgets
             }
         );
     }

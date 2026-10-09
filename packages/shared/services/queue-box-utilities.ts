@@ -10,7 +10,7 @@ import {
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
-import { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
+import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
     EntityStatus,
     NEVER_EXPIRE_TS,
@@ -25,12 +25,13 @@ export namespace QueueBoxUtilities {
         readonly resilience: ResourceInboxResilience;
         readonly onDequeuedDo: (entry: ResourceEntry, attemptTelemetry: ResourceInboxAttemptTelemetry) => Promise<void>;
         readonly options: DequeueResourceEntryOptions;
+        readonly readLaneBudgets?: DequeueController.ReadLaneBudgets;
     }
 }
 
 export class QueueBoxUtilities {
     static async defaultDequeue(
-        { qbox, typesToDequeue, resilience, onDequeuedDo, options }: QueueBoxUtilities.DequeueInput
+        { qbox, typesToDequeue, resilience, onDequeuedDo, options, readLaneBudgets }: QueueBoxUtilities.DequeueInput
     ): Promise<void> {
         if (resilience.isNotAllowedThroughToDequeue()) {
             console.warn('Dequeue blocked {}, circuit state {}', typesToDequeue, resilience.circuitBreaker.state.get());
@@ -42,6 +43,7 @@ export class QueueBoxUtilities {
             typesToDequeue: () => typesToDequeue,
             maxToReserve: () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
             maxNumToDequeue: DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE,
+            readLaneBudgets,
             resilience: resilience,
             options: options
         })
