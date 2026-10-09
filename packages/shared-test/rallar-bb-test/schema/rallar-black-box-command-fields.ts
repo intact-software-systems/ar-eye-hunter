@@ -3,6 +3,7 @@ import {
     INDEXED_DB_OPERATION_KINDS,
     INDEXED_DB_OPERATION_OWNERS
 } from '@shared/persistence/indexed-db-operation-observer.ts';
+
 import type { RallarBlackBoxTestCommandKind } from '../rallar-black-box-test-contracts.ts';
 
 export interface RallarBlackBoxCommandFieldSet {
@@ -236,6 +237,7 @@ export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
             'transport',
             'severity',
             'payloadPath',
+            'payloadFields',
             'equals',
             'contains',
             'exists',

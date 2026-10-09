@@ -1,4 +1,5 @@
 import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
+import { snapshotComparisonValue } from './snapshot-comparison-value.ts';
 
 /** Captures executable structure and capture options. Opaque application payloads retain their semantics. */
 export function snapshotExecutableRecipe(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestRecipe {
@@ -36,6 +37,8 @@ export function snapshotExecutableCommand(command: RallarBlackBoxTestCommand): R
             });
         case 'rtc.connect':
             return Object.freeze({ ...command, rallar: command.rallar && Object.freeze({ ...command.rallar }) });
+        case 'wait':
+            return Object.freeze({ ...command, match: snapshotComparisonValue(command.match) });
         default:
             return Object.freeze({ ...command });
     }

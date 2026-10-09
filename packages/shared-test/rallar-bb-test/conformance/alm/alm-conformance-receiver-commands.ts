@@ -111,12 +111,12 @@ export function toControlAdmissionOutcomeWait(
 }
 
 /**
- * The pair's `admission-outcome` event, matched in its emitted key order (`typeId`, then `carrier`, `outcome`,
- * `reason`); the inbound diagnostics event carries no connection to route on.
+ * Exact admission kind and scenario scope apply to one event. Optional refusal fragments retain
+ * their emitted key-order contract; absence selects the latest scoped admission outcome.
  */
 export function toAdmissionOutcomeWait(
     step: AlmConformanceStepInput,
-    outcome: Readonly<{ name: string; contains: string; timeoutMs: number; }>
+    outcome: Readonly<{ name: string; contains?: string; timeoutMs: number; }>
 ): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
@@ -124,8 +124,14 @@ export function toAdmissionOutcomeWait(
         match: {
             kind: 'diagnostic',
             topic: INBOUND_DIAGNOSTICS_TOPIC,
-            payloadPath: 'data',
-            contains: `"typeId":"${toScenarioTypeId(step)}",${outcome.contains}`
+            payloadFields: {
+                'data.kind': 'admission-outcome',
+                'data.typeId': toScenarioTypeId(step)
+            },
+            ...(outcome.contains === undefined ? {} : {
+                payloadPath: 'data',
+                contains: `"typeId":"${toScenarioTypeId(step)}",${outcome.contains}`
+            })
         },
         timeoutMs: outcome.timeoutMs
     };

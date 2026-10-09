@@ -8575,6 +8575,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.rtc.ordering-resync"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.rtc.ordering-resync\",\"carrier\":\"rtc\",\"outcome\":\"not-handled\",\"reason\":\"resync-required\""
             },
@@ -8613,6 +8617,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.rtc.not-yet-in-sync-expires"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.rtc.not-yet-in-sync-expires\",\"carrier\":\"rtc\",\"outcome\":\"rejected\",\"reason\":\"not-yet-in-sync"
             },
@@ -9035,6 +9043,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.rtc-with-ws-fallback.ordering-resync"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.ordering-resync\",\"carrier\":\"rtc\",\"outcome\":\"not-handled\",\"reason\":\"resync-required\""
             },
@@ -9093,6 +9105,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-rtc-then-ws"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-rtc-then-ws\",\"carrier\":\"ws\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
             },
@@ -9141,8 +9157,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-ws-then-rtc\",\"carrier\":\""
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-ws-then-rtc"
+              }
             },
             "timeoutMs": 2000
           },
@@ -9185,6 +9203,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires\",\"carrier\":\"rtc\",\"outcome\":\"rejected\",\"reason\":\"not-yet-in-sync"
             },
@@ -9243,6 +9265,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.rtc-with-ws-fallback.fallback-within-deadline"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.fallback-within-deadline\",\"carrier\":\"ws\",\"outcome\":\"committed\",\"reason\":\"admitted\""
             },
@@ -9303,6 +9329,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback\",\"carrier\":\"ws\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
             },
@@ -9365,6 +9395,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.rtc-with-ws-fallback.no-fallback-after-deadline"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.no-fallback-after-deadline\",\"carrier\":\"ws\""
             },
@@ -9443,6 +9477,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.rtc-with-ws-fallback.unicast-fallback"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.unicast-fallback\",\"carrier\":\"ws\",\"outcome\":\"committed\",\"reason\":\"admitted\""
             },

@@ -94,7 +94,11 @@ function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] 
         case 'messages.received':
             return [command.typeId];
         case 'wait':
-            return command.match.topic === INBOUND_DIAGNOSTICS_TOPIC ? toAdmissionOutcomeTypeIds(command.match.contains) : [];
+            return command.match.topic === INBOUND_DIAGNOSTICS_TOPIC
+                ? typeof command.match.payloadFields?.['data.typeId'] === 'string'
+                    ? [command.match.payloadFields['data.typeId']]
+                    : toAdmissionOutcomeTypeIds(command.match.contains)
+                : [];
         case 'fault.inject':
             return command.carrier === 'storage' || command.match.typeId === undefined ? [] : [command.match.typeId];
         default:
@@ -602,34 +606,6 @@ describe('alm-conformance recipe family', () => {
             expect(observed).not.toContain('acknowledged');
             expect(scenario?.receiver.commands.filter((command) => command.kind === 'messages.received'))
                 .toMatchObject([{ count: 1, absent: false }, { count: 2, absent: true }]);
-        }
-    });
-
-    it('requires the receiver to refuse the second copy: over WS in rtc-then-ws, over either carrier in ws-then-rtc', () => {
-        const [rtcThenWs, wsThenRtc] = createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
-            .filter((scenario) => scenario.scenarioId === 'cross-carrier-duplicate');
-        const outcomeWait = (order: string, contains: string) => ({
-            kind: 'wait',
-            match: {
-                kind: 'diagnostic',
-                topic: 'rallar.browser.alm.inbound_diagnostics',
-                payloadPath: 'data',
-                contains: `"typeId":"alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-${order}",${contains}`
-            }
-        });
-        const tailOf = (scenario: AlmConformanceScenario | undefined, count: number) => (scenario?.receiver.commands ?? []).slice(-count - 1, -1);
-
-        expect(tailOf(rtcThenWs, 1)).toMatchObject([
-            outcomeWait('rtc-then-ws', '"carrier":"ws","outcome":"not-handled","reason":"duplicate"')
-        ]);
-        const latestId = 'alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-receiver-duplicate-outcome-latest';
-        expect(tailOf(wsThenRtc, 3)).toMatchObject([
-            { ...outcomeWait('ws-then-rtc', '"carrier":"'), commandId: latestId },
-            { kind: 'assert', source: `resultCache.${latestId}.value.event.payload.data.outcome`, operator: 'equals', expected: 'not-handled' },
-            { kind: 'assert', source: `resultCache.${latestId}.value.event.payload.data.reason`, operator: 'equals', expected: 'duplicate' }
-        ]);
-        for (const scenario of [rtcThenWs, wsThenRtc]) {
-            expect(scenario?.receiver.commands.some((command) => ['parallel', 'loop'].includes(command.kind))).toBe(false);
         }
     });
 

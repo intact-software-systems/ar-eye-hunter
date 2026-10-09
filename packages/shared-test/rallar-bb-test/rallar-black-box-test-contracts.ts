@@ -1,22 +1,26 @@
-import type { ALAckAlgo, ALDurabilityAlgo, ALOwnershipAlgo } from '@shared/al-contracts/al-policy.ts';
-import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
-import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
-import type { RecipeCaptureSequence } from './recipe/recipe-capture-sequence.ts';
-
+import type {
+    ALAckAlgo,
+    ALDurabilityAlgo,
+    ALOwnershipAlgo
+} from '@shared/al-contracts/al-policy.ts';
 import type {
     ALDeliveryCarrier,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type {
     IndexedDbOperationKind,
     IndexedDbOperationOwner
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { ScriptedStorageFault } from '@shared/persistence/storage-fault-port.ts';
 import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import type { RallarBlackBoxTestMessagesControlFields } from './alm/rallar-black-box-test-messages-control-fields.ts';
+import type { RecipeCaptureSequence } from './recipe/recipe-capture-sequence.ts';
+
 export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'configure',
     'recipe.load',
@@ -234,6 +238,8 @@ export interface RallarBlackBoxTestWaitMatch {
     readonly transport?: RallarBlackBoxTestTransport;
     readonly severity?: RallarBlackBoxTestSeverity;
     readonly payloadPath?: string;
+    /** Every path must reach its expected JSON value in the same event payload. */
+    readonly payloadFields?: Readonly<Record<string, ApiJsonValue>>;
     readonly equals?: ApiJsonValue;
     readonly contains?: string;
     readonly exists?: boolean;
