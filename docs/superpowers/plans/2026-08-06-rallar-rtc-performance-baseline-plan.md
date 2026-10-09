@@ -74,14 +74,19 @@ responsibilities; receipt fixtures use named inputs and explicit clocks. The cor
 1,602 shared-web cases, 106 Deno cases (one ignored), native and maintained typing, four consumer
 builds and fresh unchanged browser/headless bundle budgets. Original failures remain preserved.
 
-Final source readiness remains blocked by a maintainer decision for the two current shell tab
-boundaries: RunnerWorkspaceTabPanels and DiagnosticEvidenceTabPanels. Advanced and Monitor links,
-existing routes and in-session draft/filter/request state still depend on them. The boundaries
-and empty production legacy registry remain unchanged; neither plan approval nor passing tests
-authorize continued retention. The completed construction documents are removed from active work.
+The maintainer explicitly approved narrow retention of the two current shell tab boundaries:
+RunnerWorkspaceTabPanels and DiagnosticEvidenceTabPanels, with knuthelge as their named owner.
+Advanced and Monitor links, existing routes and in-session draft/filter/request state still depend
+on them. Exactly two focused production legacy registry entries preserve their canonical panel
+ownership, minimal compatibility scope and concrete review/removal conditions; the UI boundaries
+remain unchanged. Independent review approves these exact registry entries. The completed
+construction documents are removed from active work.
 
-The next useful outcomes are this exact compatibility decision and fresh CI for the reviewed draft
-milestone, then exact deployed HOST/RUN verification. Source checks provide no governed E3 acceptance.
+Fresh integrated-source hosted correctness passes the Branch Release Gate, Formation and
+Medium-Scale workflows. RTC observation integrity is skipped; these checks establish no governed
+E3 acceptance. The parent pull request still carries its original unit failure, so the next useful
+outcomes are final source publication and the smallest approved-selector parent repair, then exact
+deployed HOST/RUN verification.
 
 Actual local default-worker HOST acceptance remains three cases in 19.8 seconds with zero retries:
 native, off and malformed. Deployed HOST/RUN and actual Actions application are still unaccepted.
