@@ -141,3 +141,59 @@ cells. Corrections and carries: §4 and §5.
 - `replace-latest` and the bounded queue on the reliable lane; RTC unicast and unaddressed sends reading the
   congestion inputs (V1b-i's carry); relay fanout reduction, alternate routes, server-side WS backpressure, per-hop
   routing around a backpressured peer, a per-peer backpressure metric (D188).
+
+## 6. As applied (#651, `53a9267`)
+
+- D189 landed with the share rounded down at construction (a one-admission bound keeps no own share, which keeps the
+  existing overload fixtures true) and the refusal rule as `total+1 > max` and `own+1 > share` for counts, the same
+  for bytes; `overloaded` is that condition for the smallest next own send, which is stricter than before: arrivals
+  alone no longer set it, so the RTC congestion drop no longer fires under inbound-only load, and the total held may
+  exceed the limit while inbound keeps arriving. The four refusal limit names stay; the refusal carries the own
+  pool's figures and a reason naming the pool and the share; `own` and `inbound` sit at the top level of the report
+  beside `usage`, and the pool type is not re-exported from the shared-web entries. The `capacity*` cells kept their
+  limits.
+- D190's promotion reads the successor by key rather than from the page's deferred rows: a page holds rows in queue
+  order, so page-bound promotion measured 8 batches for 64 messages and 48 for 255, while the keyed read gives 5
+  and 17 (the design said "at most 16"; a gap fill's own dispatch does not promote). The work handler takes
+  `claimSuccessor` as a required dependency the outbound lane passes as undefined; a throwing claim is reported as a
+  batch failure and promotes nothing. The IndexedDB cost of a 64-message drain fell by 84 percent (24 861 → 4 020
+  operations), pinned nowhere yet.
+- D191 bounds ordering snapshots only: the per-track delivered row stays for the hour, because ordered delivery
+  needs it while buffered rows live; a count bound for it is carried to V1d. The eviction runs right after the
+  admission commit in its own guarded write (the store may hold 257 between the two writes, a guard conflict reports
+  the pre-removal count until the next new track, a snapshot another pass removed counts as gone), compares the whole
+  snapshot before removing (a track updated in the same millisecond survives), and finds the oldest by the
+  ordering-key prefix, so no schema bump. An evicted track is not "known as before": its next arrival reads as a gap
+  from seq 1 and a buffered release on it reads `resync-required`, so a receiver holding more than 256 live tracks in
+  one store thrashes between eviction and repair or resync; the cap is per store (a browser session holds two inbound
+  stores, so up to 512 snapshots, and `orderingTracks` is their sum). The cap is a construction input of the store:
+  the browser's session and volatile stores take it, the WS server's shared Postgres stores (one namespace per queue
+  box, shared by every client) run uncapped, since a server-side cap would evict live tracks of other sessions. The
+  eviction pass is best-effort: a failing list, write or report leaves eviction to the next new track and the
+  committed admission still completes. A promoted successor is claimed only from its new or retried state, so a
+  timed-out successor is left to the rotation and a failed promotion does not spend the lease sweep. The resync set reuses the constant and evicts by insertion order. The receipt aggregates' repository keeps an entry for the window plus
+  the receipt deadline grace, strictly above every deadline, so the sweep is the one path that ends an aggregate; the
+  aggregation evicts the oldest itself at the cap and answers it as a passed deadline.
+- D192's storage counters count IndexedDB operations, not rows, so the ordering-snapshot count is pushed by the
+  store after its eviction pass as an `ordering-tracks` storage event and read as the required
+  `stats.rallar.alm.orderingTracks`; the fold carries `promotedReleases` per inbound direction and
+  `maxOrderingTracks` on the ledger block; the lane scripts now retain every event and result of a run (the control
+  server's default keeps the last 2 000, which the fairness cells alone exceed, so a capped run reported a mid-run
+  start and read `promotedReleases` as 0), and a fold whose retained events hit the cap reports its regime unmeasured.
+  The cells changed shape against the measured harness: a harness send cost about a second over WS and two and a
+  half over RTC because the black-box agent page re-rendered its React shell on every event (fixed in the app:
+  paced emits, the report serialised only while shown, hidden panels kept mounted under `Activity`); the own-share
+  cell runs on `ws` and `rtc` (its lowered-limit reconnect trips the fallback carrier's readiness) with a 20-send
+  `ack: 'none'` flood paced 75 ms apart and a ready message the receiver repeats every eight seconds until the flood
+  starts; its lowered-limit reconnect can still race the sender's prologue RTC readiness under heavy load, because a
+  recipe wait sees only its own page's events and a barrier needs a distributed run (carried); the
+  buffered-track cell sends its 64 sequences bare and paced, observes only seq 1, and gives those sends a 90-second
+  lifetime, leaving the one-lifetime claim to the facade proof (which delivers a 65-message track within the 30 s
+  default lifetime on the real WS composition); the churn cell opens 280 tracks on rtc against the real cap. §2.d
+  above was edited in place when the cells changed: it first said 300 tracks and "within one lifetime" for the lane
+  cell, and promised all three carriers for the own-share cell; the shipped cells are the ones described here. The
+  cell does not assert the observation's `promotedReleases`, which a fast run can trim to 0.
+- D193's carries gain: the delivered row's count bound; the resync set's insertion-order eviction; the 257 window
+  between the eviction's two writes; the observation fold's loss of early events in a fast run; the question whether
+  a typed channel replays an at-least-once arrival that predates its subscription (the own-share ready message was
+  acknowledged but unseen); and the fairness cells' dependence on the RTC overlay's 20-per-second limiter.
