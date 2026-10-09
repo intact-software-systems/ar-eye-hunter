@@ -109,7 +109,8 @@ describe('inbound canonical message ownership', () => {
             orderingTrackTtlMs: retention.repositoryTtlMs,
             supersedenceTrackTtlMs: retention.repositoryTtlMs,
             retention,
-            nowMs: () => clock.nowMs
+            nowMs: () => clock.nowMs,
+            maxOrderingTracks: undefined
         });
         const gapped = newInboundMessage('gapped', { orderingKey: 'stream', seq: 2 }, 'buffered');
         const trackKey = toALOrderingTrackKey(gapped)!;
@@ -242,7 +243,8 @@ function createRetentionFixture(
             orderingTrackTtlMs: retention.repositoryTtlMs,
             supersedenceTrackTtlMs: retention.repositoryTtlMs,
             retention,
-            nowMs: () => nowMs
+            nowMs: () => nowMs,
+            maxOrderingTracks: undefined
         })
     };
 }
@@ -277,7 +279,8 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
         backend,
         orderingTrackTtlMs: 5 * 60_000,
         supersedenceTrackTtlMs: 5 * 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',

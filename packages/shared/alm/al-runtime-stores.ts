@@ -14,7 +14,7 @@ import type { ALRuntimeStoreRetentionConfig } from './ALStoreRetention.ts';
 import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from './ALStoreRetention.ts';
 import type { ALCheckpointWriter } from './checkpoint/al-checkpoint-writer.ts';
 import { ALCheckpoint, type ALCheckpointStorage } from './checkpoint/al-checkpoint.ts';
-import type { ALInboundOrderingTracksReport } from './inbound/admission/al-inbound-ordering-track-cap.ts';
+import type { ALInboundOrderingTracksReport } from './inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import {
     createALInboundAdmissionStore,
     createVolatileALInboundAdmissionStore,
@@ -72,6 +72,8 @@ export interface CreateInMemoryALRuntimeStoresInput {
     readonly orderingTrackTtlMs: number;
     readonly supersedenceTrackTtlMs: number;
     readonly retention: ALRuntimeStoreRetentionConfig | undefined;
+    /** The most ordering snapshots an inbound pair keeps (D191); `undefined` keeps every track until its TTL. */
+    readonly maxOrderingTracks: number | undefined;
     /** Where an inbound pair states its ordering snapshots (D191); absent where nothing reads the count. */
     readonly reportOrderingTracks?: ALInboundOrderingTracksReport;
 }
@@ -115,6 +117,8 @@ export interface CreateDefaultALRuntimeStoresInput {
     readonly onStorageReset?: (event: ALStorageResetEvent) => void;
     readonly storageHealth?: ALStorageHealth;
     readonly connectOpenings?: ALStorageConnectOpenings;
+    /** Absent, an inbound pair keeps every track until its TTL; only the browser's pairs pass a cap (D191). */
+    readonly maxOrderingTracks?: number;
     readonly reportOrderingTracks?: ALInboundOrderingTracksReport;
 }
 
@@ -233,6 +237,7 @@ function toIndexedDbALInboundRuntimeStores(
             orderingTrackTtlMs: input.orderingTrackTtlMs,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention),
+            maxOrderingTracks: input.maxOrderingTracks,
             reportOrderingTracks: input.reportOrderingTracks
         }),
         workQueue: backend.workQueue
@@ -407,6 +412,7 @@ function toInMemoryALInboundAdmissionStoreInput(
         orderingTrackTtlMs: input.orderingTrackTtlMs,
         supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
         retention: normalizeALRuntimeStoreRetention(input.retention),
+        maxOrderingTracks: input.maxOrderingTracks,
         reportOrderingTracks: input.reportOrderingTracks
     };
 }
@@ -440,6 +446,7 @@ function toDefaultInMemoryInput(
         orderingTrackTtlMs: options.orderingTrackTtlMs ?? DEFAULT_AL_REPOSITORY_TTL_MS,
         supersedenceTrackTtlMs: options.supersedenceTrackTtlMs ?? 5 * 60_000,
         retention: options.retention,
+        maxOrderingTracks: options.maxOrderingTracks,
         reportOrderingTracks: options.reportOrderingTracks
     };
 }

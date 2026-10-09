@@ -300,7 +300,8 @@ it('retains predecessor completion through the longest admitted deadline across 
         backend,
         orderingTrackTtlMs: 100,
         supersedenceTrackTtlMs: 100,
-        retention: normalizeALRuntimeStoreRetention({ bufferedMessageTtlMs: 50, durableEffectTtlMs: 500 })
+        retention: normalizeALRuntimeStoreRetention({ bufferedMessageTtlMs: 50, durableEffectTtlMs: 500 }),
+        maxOrderingTracks: undefined
     });
     const engine = new InboxOutboxEngine();
     const delivered: string[] = [];
@@ -358,7 +359,8 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
         backend,
         orderingTrackTtlMs: 100,
         supersedenceTrackTtlMs: 100,
-        retention: normalizeALRuntimeStoreRetention({ durableEffectTtlMs: 500 })
+        retention: normalizeALRuntimeStoreRetention({ durableEffectTtlMs: 500 }),
+        maxOrderingTracks: undefined
     });
     const engine = new InboxOutboxEngine();
     const trackKey = toALOrderingTrackKey(createOrderedMessage(1))!;
@@ -418,7 +420,8 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
         backend,
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
     const delivered: string[] = [];
     const failedAttemptReleased = Promise.withResolvers<void>();
@@ -498,7 +501,8 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
             backend,
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
+            maxOrderingTracks: undefined
         });
         const engine = new InboxOutboxEngine();
         const controls: ALMessage[] = [];
@@ -589,7 +593,8 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
         backend,
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
     const delivered: number[] = [];
     let unavailable = true;

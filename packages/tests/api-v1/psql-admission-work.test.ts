@@ -97,7 +97,8 @@ describe('PostgreSQL inbound admission', () => {
             backend: new PSqlAdmissionWorkBackend(sql, namespace),
             orderingTrackTtlMs: 5 * 60_000,
             supersedenceTrackTtlMs: 5 * 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
+            maxOrderingTracks: undefined
         });
 
         const candidate = {
@@ -134,7 +135,8 @@ describe('PostgreSQL inbound admission', () => {
             backend,
             orderingTrackTtlMs: 5 * 60_000,
             supersedenceTrackTtlMs: 5 * 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
+            maxOrderingTracks: undefined
         });
         const expireAtTimestamp = Date.now() + 60_000;
 

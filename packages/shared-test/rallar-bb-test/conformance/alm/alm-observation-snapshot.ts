@@ -153,6 +153,8 @@ export function resolveALMObservationAgentRole(agentId: string): ALMObservationA
 export interface ALMObservationSnapshot {
     readonly runId: string;
     readonly firstEventAtEpochMs: number;
+    /** The events the control server retained of the run, every kind counted. */
+    readonly retainedEventCount: number;
     readonly commitPhases: readonly ALMObservationCommitPhase[];
     readonly rtcLifecycles: readonly ALMObservationRtcLifecycle[];
     readonly storageCounters: readonly ALMObservationStorageCounters[];
@@ -202,6 +204,7 @@ export function decodeALMObservationSnapshot(
     return Either.ofRight({
         runId,
         firstEventAtEpochMs,
+        retainedEventCount: events.length,
         commitPhases: toTopicDiagnostics(diagnostics, OUTBOUND_DIAGNOSTICS_TOPIC).map(toCommitPhase).filter(isPresent),
         rtcLifecycles: toTopicDiagnostics(diagnostics, RTC_LIFECYCLE_TOPIC).map(toRtcLifecycle).filter(isPresent),
         storageCounters: toTopicDiagnostics(diagnostics, STORAGE_COUNTERS_TOPIC).map(toStorageCounter).filter(

@@ -41,8 +41,7 @@ export function DiagnosticEvidenceTabPanels({
         selectedResult
     } = runnerSelection;
 
-    // The trace and event panels render the run's events, and the state changes with each one: hidden, they keep their
-    // state but render only when the page is otherwise idle.
+    // Hidden, the trace and event panels keep their state and render only when the page is otherwise idle.
     return (
         <>
             <section

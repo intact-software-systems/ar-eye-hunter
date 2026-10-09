@@ -648,7 +648,8 @@ function createTestInboundStore(admission: ALAdmissionMemoryState, clock: { nowM
         backend: new InMemoryAdmissionBackend(admission, nowMs),
         orderingTrackTtlMs: 300000,
         supersedenceTrackTtlMs: 300000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
 }
 

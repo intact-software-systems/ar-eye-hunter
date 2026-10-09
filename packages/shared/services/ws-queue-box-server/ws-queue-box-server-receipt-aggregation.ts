@@ -102,6 +102,8 @@ export namespace WsQueueBoxServerReceiptAggregation {
     }
 
     export interface RecordedAdmission {
+        /** False when the message's aggregate was already live: the admission that started it wrote its receipt. */
+        readonly started: boolean;
         readonly admitted: ALReceiptPayload;
         /** Absent unless this admission found the cap reached. */
         readonly evicted: EndedAggregate | undefined;
@@ -178,13 +180,14 @@ export class WsQueueBoxServerReceiptAggregation {
         const nowMs = this.#dependencies.clock.nowMs();
         const live = this.#aggregates.readAt(key, nowMs);
         const aggregate = live ?? { ...admission, confirmedRecipientPeerIds: [] };
-        if (live !== undefined || aggregate.expectedRecipientPeerIds.length === 0) {
-            return { admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted: undefined };
+        const started = live === undefined;
+        if (!started || aggregate.expectedRecipientPeerIds.length === 0) {
+            return { started, admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted: undefined };
         }
         const evicted = this.takeOldestAggregateAtCap(nowMs);
         this.#aggregates.acceptAt({ key, value: aggregate, nowEpochMs: nowMs });
         this.#deadlines.add(key, aggregate.deadlineAtMs);
-        return { admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted };
+        return { started, admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted };
     }
 
     /** A counted ACK; its `complete` receipt when it confirms the last expected recipient, none before. */
@@ -226,13 +229,13 @@ export class WsQueueBoxServerReceiptAggregation {
             return;
         }
         const admission = this.toAdmission(admitted, admitted.roomAudience);
-        if (
-            admission === undefined ||
-            this.readAggregate(toReceiptAggregateKey(admission.originPeerId, admission.msgId)) !== undefined
-        ) {
+        if (admission === undefined) {
             return;
         }
         const recorded = this.recordAdmission(admission);
+        if (!recorded.started) {
+            return;
+        }
         if (recorded.evicted !== undefined) {
             await this.writeReceipt(recorded.evicted.receipt, recorded.evicted.deadlineAtMs);
         }

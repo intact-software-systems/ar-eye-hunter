@@ -49,11 +49,12 @@ const OWN_INDEX = 2;
  * A ready message reaches the sender's recipe only once the sender's connect has subscribed its channel: one that
  * arrives earlier is admitted and acknowledged with no subscriber to see it, which over `ws` happens when the
  * receiver's reconnect finishes first. So the receiver repeats it until the flood's first arrival shows the sender
- * heard one. Each repeat stays in the own pool for its lifetime, so the attempts and the own send stay under the
- * share of 10.
+ * heard one. The five repeats outlast the sender's prologue connect, whose readiness may take up to 30 s, and the 10 s
+ * its first send may take after it. Each repeat stays in the own pool for its lifetime, so the five attempts and the
+ * own send stay under the share of 10.
  */
 const READY_ATTEMPTS = 5;
-const READY_REPEAT_MS = 3_000;
+const READY_REPEAT_MS = 8_000;
 
 /**
  * D189: the receiver reconnects with its count bound lowered and says it is ready; the sender floods the room until

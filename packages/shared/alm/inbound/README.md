@@ -108,8 +108,9 @@ WS server and Node keep the always-owned default.
 - **The age limit bounds counted admissions, not tracks.** Every pair keeps an ordering
   track's snapshot for `orderingTrackTtlMs`, the repository's 1 h, the volatile pair too
   (D181): a receiver that forgot a track would read the sender's next sequence as a gap
-  from 1 and stall the track on a repair. A store keeps at most `AL_INBOUND_MAX_ORDERING_TRACKS`
-  (256) ordering snapshots, though (D191, below). **Limit:** an idle track therefore holds two
+  from 1 and stall the track on a repair. Each of the browser's inbound stores keeps at most
+  `AL_INBOUND_MAX_ORDERING_TRACKS` (256) ordering snapshots, though (D191, below); the server's
+  stores are uncapped. **Limit:** an idle track therefore holds two
   rows for the hour after its last message, or one once its snapshot was evicted: the marker of
   its delivered sequences stays for the hour, because ordered delivery reads it while the track's
   buffered rows live.
@@ -454,9 +455,11 @@ of track T at seq k completed promotes T's release of seq k + 1 (D190): the hand
 `claimPromotedRelease`, which reads that row by its key
 ([`claim-al-inbound-promoted-release.ts`](./lane/claim-al-inbound-promoted-release.ts)), not by searching
 the page, and reserves it only when it is due, its eligibility reads claimable now and the row is still as
-the read saw it. The batch runs it after its other claims and asks again for its successor while the batch
-holds fewer than `AL_INBOUND_WORK_PAGE_SIZE` (16) claims. Only a completed `release-buffered` claim
-promotes: a release that did not complete promotes nothing and ends its track's chain for that batch, the
+the read saw it, as a new or retrying row only: a promotion whose row moved on claims nothing and spends no
+lease-timeout sweep. The batch runs it after its other claims and asks again for its successor while the batch
+holds fewer than `AL_INBOUND_WORK_PAGE_SIZE` (16) claims. A `claimPromotedRelease` that throws is reported
+as the batch's failure and promotes nothing; the batch's unrun claims still run. Only a completed
+`release-buffered` claim promotes: a release that did not complete promotes nothing and ends its track's chain for that batch, the
 gap-filling message's own dispatch promotes nothing, a track never has two releases claimed at once, and a
 release never promotes another track's. A 64-message buffer drains in 5 batches (the first delivers the
 gap-filling message and promotes nothing, each of the other four runs 16 claims, 15 of them promoted),
@@ -465,16 +468,24 @@ on IndexedDB with 84 % fewer IndexedDB operations. A 255-message buffer drains i
 memory, 33.5 s before), well inside the 30 s default message lifetime that the old drain outlived. The
 `effect-drain` of such a batch counts the promoted releases as `promoted`, and they leave its `deferred`.
 
-A store keeps at most `AL_INBOUND_MAX_ORDERING_TRACKS` (256) ordering snapshots (D191). A commit that opens
+A store built with `maxOrderingTracks` keeps at most that many ordering snapshots (D191): the browser's
+session and volatile stores pass `AL_INBOUND_MAX_ORDERING_TRACKS` (256); the WS server's Postgres stores, the
+Node runtime's and the default factories' pass `undefined`, run no pass and state no count, since one server
+store holds every relayed client's tracks and a cap there would evict live ones. A commit that opens
 a track lists the store's ordering prefix right after it commits and, past the cap, removes the least
 recently updated snapshots in a write of its own, each only while it is still the very snapshot read (a
 track updated again in the same millisecond survives). Between the two writes the store may hold 257. A
 snapshot whose removal finds it changed, or whose write conflicts, is left to the next new track and counts
-as still held until then, while one that a rival pass already removed counts as gone. The evicted track's next arrival is read as a new track's, from sequence 1, and
+as still held until then, while one that a rival pass already removed counts as gone. The pass is
+best-effort: the admission has committed, so a snapshot that does not decode, a failed removal write or a
+throwing reporter ends the pass without a count, the commit still answers `committed`, and the next new
+track evicts. The evicted track's next arrival is read as a new track's, from sequence 1, and
 the release of a message buffered on a track evicted beyond its delivered head reads `resync-required`. Only
 the snapshot leaves: the track's `delivered` marker stays for the hour (**Limit** above). A store that
 names a reporter (`reportOrderingTracks`) is told the number of snapshots it holds after each such pass; the
-browser states it on the `storage` diagnostics port as `ordering-tracks`.
+browser states it on the `storage` diagnostics port as `ordering-tracks`. **Limit:** a receiver holding
+more than 256 live ordered tracks in one store thrashes: each new track evicts a live one, whose next arrival
+reads as a gap from sequence 1 and goes to repair or resynchronization.
 
 **Room authority and the membership fence.** An RTC receiver judges a room send against the room
 snapshot it holds before planning it

@@ -1,3 +1,4 @@
+import type { ALInboundOrderingTracksReport } from '../inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import type { ALInboundResyncCursor } from '../inbound/al-inbound-resync-required.ts';
 import type { ALStorageResetEvent } from '../open-indexed-db-admission-database.ts';
 import type { ALStorageUnavailable } from './al-storage-unavailable.ts';
@@ -48,7 +49,7 @@ export function createPassThroughALStorageEventSink(): ALStorageEventSink {
     return () => {};
 }
 
-export function toALOrderingTracksReport(storage: ALStorageEventSink, storeId: string): (tracks: number) => void {
+export function toALOrderingTracksReport(storage: ALStorageEventSink, storeId: string): ALInboundOrderingTracksReport {
     return (tracks) => storage({ kind: 'ordering-tracks', storeId, tracks });
 }
 

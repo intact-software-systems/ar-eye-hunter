@@ -6,7 +6,7 @@ import { BrowserResyncRecovery } from '@shared-web/browser/messages/browser-resy
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
 import type { RallarChannelRecovery } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/al-inbound-ordering-track-cap.ts';
+import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import type {
     ALInboundResyncCursor,
     ALInboundResyncRequired

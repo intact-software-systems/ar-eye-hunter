@@ -520,11 +520,12 @@ recorded. The cells live in `conformance/alm/scenarios/congestion/`.
 The fairness cells run last in the two-agent family, in the full scope, after the congestion cells (D192).
 `own-share-under-inbound` (`ws`, `rtc`; its ledger is carrier-independent, and the lowered-limit reconnect is not
 stable under `rtc-with-ws-fallback`'s readiness) closes the receiver and reconnects it with
-`rallar.almVolatileLimits` `{ maxAdmissions: 20, maxBytes: 4194304 }`, so its own share is 10 (D189); the receiver
-sends a ready message, which the sender waits for with one readiness budget in its window, and repeats it in a `loop`
-with `until: 'first-success'` (up to five, each followed by a 3 s `messages.received` of one flood arrival), since a
-message that arrives before the sender's connect has subscribed its channel is acknowledged unseen (over `ws` the
-receiver's reconnect can finish first); the repeats and its own send stay under the share. The sender then sends
+`rallar.almVolatileLimits` `{ maxAdmissions: 20, maxBytes: 4194304 }`, so its own share is 10 (D189). The receiver
+then sends a ready message, which the sender waits for with one readiness budget in its window. The receiver repeats
+it in a `loop` with `until: 'first-success'` (up to five, each followed by an 8 s `messages.received` of one flood
+arrival, so the five outlast the sender's 30 s connect readiness and its 10 s send), since a message that arrives
+before the sender's connect has subscribed its channel is acknowledged unseen (over `ws` the receiver's reconnect can
+finish first); the repeats and its own send stay under the share. The sender then sends
 20 at-least-once room sends with `ack: 'none'` and a 30 s `ttlMs` in a `loop` with `intervalMs: 75` (about 13 a
 second, under the RTC lane's 20 a second limiter, which the receiver's own ACKs share), each naming its own handle by
 `{loop.index}`; they ask for no receipt, so all 20 arrive within the arrivals' own 30 s counted lifetime instead of
@@ -545,7 +546,8 @@ reconnects it with the production count and byte limits and `maxTracks: 560`, si
 own ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of 256
 and a margin) in a `loop` with `intervalMs: 75`, observes the last one `transport-accepted` and closes; the
 receiver receives the 280, holds one second, and its `stats` reads `rallar.alm.orderingTracks` both `lte` and
-`gte` 256 (D191). Hosted manifest 18 withholds all three, so manifests 18 and 22 stay as recorded. The cells live in
+`gte` 256 (D191): the sum of every store that stated a count since the receiver's last `close`, where the 280
+volatile tracks fill the memory store to the cap and the cell sends nothing durable, so the IndexedDB store adds none. Hosted manifest 18 withholds all three, so manifests 18 and 22 stay as recorded. The cells live in
 `conformance/alm/scenarios/fairness/`.
 
 The addressed family runs on two agents, in the full scope, as its own Playwright test per carrier (R-S3c-ii-2,
@@ -579,9 +581,8 @@ naming the four production limits but `maxTracks: 2` and sends three at-least-on
 its own (`alm-<carrier>-capacity-tracks-<index>`), so each would open one track: the third ends `rejected` with
 `limit: 'tracks'` and `attempts` 0; right after the refusal, while both sends still hold their tracks, it reads
 `stats` and asserts `rallar.alm.usage.tracks` 2, `rallar.alm.limits.maxTracks` 2 and `rallar.alm.overloaded` false
-(a ledger reading at a bound, as `own-share-under-inbound` reads its pools); the first two are acknowledged; then it reconnects without
-the field. A
-received message never opens a counted track, so it needs no wait for the rejoin's state sync, and its receiver's
+(a ledger reading at a bound, as `own-share-under-inbound` reads its pools); the first two are acknowledged; then it
+reconnects without the field. A received message never opens a counted track, so it needs no wait for the rejoin's state sync, and its receiver's
 window adds only the readiness budget. The three cells live in `conformance/alm/scenarios/volatile-bound/`.
 
 The same-context family runs, in the full scope, as the `same-context family over <carrier>` Playwright test. Its
@@ -1153,7 +1154,8 @@ diagnostic of the page, `drop`, `defer` or `hand-over`, on either carrier and fo
 either cause. `deferred` counts every message the page held at submission, relay
 forwards and controls included, not only its own sends. The counters belong to
 the connection: a `close` resets them, and the block is absent while the page is
-not connected, in the same places `rallar.alm` is absent. An `assert` reads it as `latestStats.rallar.congestion.deferred`.
+not connected, in the same places `rallar.alm` is absent. An `assert` reads it as
+`latestStats.rallar.congestion.deferred`.
 
 `rtc.stream` is the high-rate RTC traffic primitive. Use it when a recipe wants
 to model a realtime stream, such as 100 frames at 20 Hz, without expanding that

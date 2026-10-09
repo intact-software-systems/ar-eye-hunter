@@ -38,11 +38,22 @@ export const ALM_OBSERVATION_SLOW_REGIME_MIN_MS_PER_OPERATION = 35;
 export const ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT = 5;
 export const ALM_OBSERVATION_WINDOW_MS = 20_000;
 export const ALM_OBSERVATION_COMMIT_ORIGIN = 'send';
+/**
+ * The events the control server keeps of a run unless `RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS` names another bound
+ * (its runtime retention default); past it the oldest leave, so a run that holds this many may have lost its start.
+ */
+export const ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS = 2_000;
 
 const ALM_OBSERVATION_AGENT_ROLES: readonly ALMObservationAgentRole[] = ['sender', 'receiver', 'unattributed'];
 const PENDING_INBOUND_OUTCOME = 'pending';
 const DISPATCH_LOCAL_PAYLOAD_KIND = 'dispatch-local';
 const SEND_CONTROL_PAYLOAD_KIND = 'send-control';
+/** The earliest event a trimmed run kept is not its start, so a page window measured from it is not the calibrated one. */
+const TRIMMED_RUN_PAGE_REGIME: ALMObservationPageRegime = {
+    outcome: 'unmeasured',
+    sampleCount: 0,
+    regime: 'unclassified'
+};
 /** Task 7b: bounds the cell JSON, not the raw file — the raw file already caps at 200 per page. */
 const ALM_OBSERVATION_PAGE_DIAGNOSTICS_FIRST_LIMIT = 20;
 
@@ -197,10 +208,9 @@ interface ALMObservationPeerObservation {
 
 export function computeALMObservationRegime(input: ALMObservationRegimeInput): ALMObservationRegime {
     const perOperation = computePerOperationCost(input.snapshot);
-    const pageRegime = computePageRegime(
-        input.snapshot,
-        input.snapshot.firstEventAtEpochMs + ALM_OBSERVATION_WINDOW_MS
-    );
+    const pageRegime = input.snapshot.retainedEventCount >= ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS
+        ? TRIMMED_RUN_PAGE_REGIME
+        : computePageRegime(input.snapshot, input.snapshot.firstEventAtEpochMs + ALM_OBSERVATION_WINDOW_MS);
     const measured = perOperation.outcome === 'measured';
     return {
         runId: input.snapshot.runId,

@@ -6,29 +6,48 @@ import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflic
 import { decodeALInboundOrderingSnapshot } from '../al-inbound-ordering-validation.ts';
 
 /**
- * The most ordering snapshots one store keeps (D191). The next new track evicts the least recently updated
- * one, so a departed sender's tracks leave under churn instead of an hour after their last message.
+ * The most ordering snapshots one of the browser's inbound stores keeps (D191); the server's stores pass no cap. The
+ * next new track evicts the least recently updated one, so a departed sender's tracks leave under churn instead of an
+ * hour after their last message.
  */
 export const AL_INBOUND_MAX_ORDERING_TRACKS = 256;
 
 /** The ordering snapshots one store holds, stated after the eviction pass a new track runs. */
 export type ALInboundOrderingTracksReport = (tracks: number) => void;
 
+export interface EvictALInboundOrderingTracksPastCapInput {
+    readonly backend: ALAdmissionWorkBackend;
+    readonly orderingPrefix: string;
+    readonly maxTracks: number;
+    /** Absent where nothing reads the count. */
+    readonly report: ALInboundOrderingTracksReport | undefined;
+}
+
 /**
  * Removes the least recently updated snapshots past the cap, each only if it is still the one read: a snapshot
  * updated in between is no longer the least recent, and its conflict leaves the eviction to the next new track.
  * Only the snapshot leaves; the track's delivered marker keeps the completion evidence its live work reads.
- * States how many snapshots the store holds after the pass to `report`, absent where nothing reads the count.
+ * States how many snapshots the store holds after the pass to `report`.
+ *
+ * The pass runs after the admission that opened the track committed, so it is best-effort: a snapshot that does not
+ * decode, a failed removal write or a throwing `report` ends the pass without a count and leaves the eviction to the
+ * next new track. The admission's own read of a corrupt snapshot still fails where it decodes that snapshot.
  */
-export async function evictOrderingTracksPastCap(
-    backend: ALAdmissionWorkBackend,
-    orderingPrefix: string,
-    report: ALInboundOrderingTracksReport | undefined
+export async function evictALInboundOrderingTracksPastCap(
+    input: EvictALInboundOrderingTracksPastCapInput
 ): Promise<void> {
-    const held = await backend.readWithin((session) => session.list(orderingPrefix, decodeALInboundOrderingSnapshot));
-    const evicted = resolveLeastRecentlyUpdatedTracks(held, held.length - AL_INBOUND_MAX_ORDERING_TRACKS);
-    const gone = evicted.length === 0 ? 0 : await removeUnchangedTracks(backend, evicted);
-    report?.(held.length - gone);
+    try {
+        const { backend, orderingPrefix, maxTracks } = input;
+        const held = await backend.readWithin((session) =>
+            session.list(orderingPrefix, decodeALInboundOrderingSnapshot)
+        );
+        const evicted = resolveLeastRecentlyUpdatedTracks(held, held.length - maxTracks);
+        const gone = evicted.length === 0 ? 0 : await removeUnchangedTracks(backend, evicted);
+        input.report?.(held.length - gone);
+    }
+    catch {
+        return;
+    }
 }
 
 /** Answers how many of `evicted` the store no longer holds: those it removed and those a rival pass already had. */

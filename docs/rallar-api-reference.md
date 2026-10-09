@@ -728,8 +728,10 @@ if (rallar.isConnected()) {
 
 The age limit bounds the messages the bound counts, not the ordering state a
 session keeps (D181). An ordering track stays known for an hour after its last
-message, so a sender that resumes a track within the hour is read in order
-rather than as a gap. What the session keeps per message, track or peer is
+message unless the snapshot cap below evicts it first, so a sender that resumes
+a track within the hour is read in order rather than as a gap. An evicted
+track is not: its next arrival reads as a gap from sequence 1, and a buffered
+release on it reads `resync-required`. What the session keeps per message, track or peer is
 bounded rather than held for its lifetime: the ids of cancelled and handed-over
 sends for 60 minutes, as long as a durable message's own rows, so a cancelled
 message picked up late within that hour still does not send; the browser's
@@ -737,11 +739,16 @@ record of the tracks it has resynchronized for 5 minutes after the track's last
 resynchronization and for at most 256 tracks, so a track that needs a resync
 again after longer than that calls the channel's recovery handler again; and
 RTC round-trip measurements are numbered from one counter for all peers, with
-no entry per peer. A receiver also keeps at most 256 ordering snapshots per
-session store (`AL_INBOUND_MAX_ORDERING_TRACKS`, D191): the track that opens a
-257th evicts the least recently updated snapshot, so the tracks of senders
-that left go under churn rather than after the hour (see Ordering, Repair And
-Resynchronization below).
+no entry per peer. Each of the browser's inbound stores also keeps at most 256
+ordering snapshots (`AL_INBOUND_MAX_ORDERING_TRACKS`, D191): the track that
+opens a 257th evicts the least recently updated snapshot, so the tracks of
+senders that left go under churn rather than after the hour (see Ordering,
+Repair And Resynchronization below). The cap is per store: a browser session
+holds two inbound stores, its IndexedDB store and the memory store of its
+volatile messages, so up to 512 snapshots, and the black-box harness's
+`orderingTracks` is their sum. The WS server's inbound stores are not capped:
+one store there holds the tracks of every client the server relays for, so a
+cap would evict tracks that are still live.
 
 **Limit:** an idle volatile ordering track still holds two inbound rows for the
 hour after its last message, its snapshot (while one of the store's 256) and
@@ -751,6 +758,18 @@ therefore plateaus at no more than 256 snapshots per store, plus one delivered
 marker per track it received on in the last hour, rather than returning to
 empty within the age limit. The browser's resync record leaves its first
 recorded track first, even when that track resynchronized again since.
+
+**Limit:** a receiver holding more than 256 live ordered tracks in one store
+thrashes: each new track evicts a live one, whose next arrival then reads as a
+gap from sequence 1 and is repaired or resynchronized, and a buffered release
+on it reads `resync-required`. Keep the live ordered tracks a session receives
+per store under 256.
+
+**Limit:** an at-least-once `ack: 'receiver'` send can be reported delivered
+although no channel handler of the receiver saw it: in one lane run the
+message arrived 131 ms before the receiving page's channel had subscribed, was
+admitted and acknowledged, and no handler ran. Whether a typed channel replays
+an arrival that predates its subscription is an open question of this release.
 
 **Congestion.** A send's QoS names a congestion policy and a priority,
 `qos: { congestion: { algo, opts: { priority } } }`: `algo` is `'drop-low'`
@@ -961,7 +980,7 @@ every `ALStorageEvent`:
 - `ordering-tracks`: the number of ordering snapshots (`tracks`) an inbound
   store holds after the eviction a newly opened track runs (D191), from the
   session's IndexedDB store under its store id and from its memory pair as
-  `<store id>/volatile`.
+  `<store id>/volatile`. A failed eviction states nothing.
 
 Room channels add room defaults and default `send(...)` to the existing
 `rtc-with-ws-fallback` strategy. This scopes sends; `onWs(...)` and
@@ -1330,11 +1349,15 @@ track's next release in the same batch, read by its key, up to 16 claims a
 batch (`AL_INBOUND_WORK_PAGE_SIZE`, D190): 64 buffered messages are delivered in
 5 batches (measured in memory: 0.4 s, where one release per engine round took
 7.5 s), 255 in 17. Only a delivered release runs its successor, never two of
-one track at once and never another track's. A receiver keeps at most 256
-ordering snapshots per session store: right after the message that opens a
-257th track is admitted, the least recently updated snapshot is evicted, and a
-later message on an evicted track is read as it would be on a new track, from
-sequence 1.
+one track at once and never another track's. A successor claim that throws is
+reported as the batch's failure and promotes nothing; the rotation claims that
+release later. Each of the browser's inbound stores keeps at most 256 ordering
+snapshots (the WS server's are not capped): right after the message that opens
+a 257th track is admitted, the least recently updated snapshot is evicted, in
+a second write, so the store holds 257 snapshots between the two writes. The
+eviction is best-effort: if it fails, the next new track evicts. A later
+message on an evicted track is read as it would be on a new track, from
+sequence 1, and a buffered release on that track reads `resync-required`.
 
 An in-window gap is repaired by the sender. The hop that keeps a browser
 sender's ordering track -- the receiver over RTC, the WS server over WS -- NACKs

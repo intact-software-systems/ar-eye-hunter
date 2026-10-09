@@ -76,7 +76,8 @@ function createLocalALInboundRuntimeStores(nowMs: () => number): ALInboundRuntim
             backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(workQueue), nowMs),
             orderingTrackTtlMs: DEFAULT_AL_REPOSITORY_TTL_MS,
             supersedenceTrackTtlMs: 5 * 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
+            maxOrderingTracks: undefined
         }),
         workQueue
     };

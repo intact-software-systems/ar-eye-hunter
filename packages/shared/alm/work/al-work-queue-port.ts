@@ -68,7 +68,7 @@ export interface ClaimALWorkInput {
 }
 
 /**
- * The queue half of a work owner. `retainIfAbsent`, `claim`, `finalizeExhausted` and `releaseAll`
+ * The queue half of a work owner. `retainIfAbsent`, `claim`, `claimObserved`, `finalizeExhausted` and `releaseAll`
  * all change the rows a readiness probe reads: a handler runs them inside `runBatch`, whose end
  * restores the answer a commit set aside only when the batch accounted for every row that commit
  * wrote. **A write this owner makes outside `runBatch` must reach `ALWorkHandler.committed()`**, and
@@ -85,6 +85,11 @@ export interface ALWorkQueuePort {
      */
     readPages(inputs: readonly ReadALWorkPageScanInput[]): Promise<readonly ALWorkPageScan[]>;
     claim(input: ClaimALWorkInput): Promise<readonly ALWorkClaim[]>;
+    /**
+     * Reserves each observed row only while it is still new or retrying as observed. It never sweeps for timed-out
+     * leases, so a row that moved on since it was read spends no sweep allowance.
+     */
+    claimObserved(observedEntries: readonly ResourceEntry[]): Promise<readonly ALWorkClaim[]>;
     finalizeExhausted(maxCount: number): Promise<readonly ALWorkClaim[]>;
     /** Releases a whole batch in one queue write; a retained claim flushes a one-entry batch. */
     releaseAll(releases: readonly ALWorkRelease[]): Promise<void>;
@@ -107,6 +112,7 @@ export function createALWorkQueuePort(input: CreateALWorkQueuePortInput): ALWork
         readPage: (pageInput) => readMergedALWorkPage(queue, workTypes, pageInput),
         readPages: (scanInputs) => readMergedALWorkPageScans(queue, workTypes, scanInputs),
         claim: (claimInput) => claimALWork(input, claimInput),
+        claimObserved: (observedEntries) => claimObservedALWork(input, observedEntries),
         finalizeExhausted: (maxCount) => finalizeExhaustedALWork(input, maxCount),
         releaseAll: (releases) =>
             releaseALWorkClaims(
@@ -124,14 +130,30 @@ async function claimALWork(
     input: CreateALWorkQueuePortInput,
     { maxCount, observedEntries }: ClaimALWorkInput
 ): Promise<readonly ALWorkClaim[]> {
-    const pending = await input.queue.reserveEntries({
+    const pending = await reservePendingALWork(input, maxCount, observedEntries);
+    const recovered = await reserveALWorkTimeouts(input, maxCount - pending.size, observedEntries);
+    return [...pending.values(), ...recovered.values()].map((entry) => toALWorkClaim(entry, input.leaseMs));
+}
+
+async function claimObservedALWork(
+    input: CreateALWorkQueuePortInput,
+    observedEntries: readonly ResourceEntry[]
+): Promise<readonly ALWorkClaim[]> {
+    const pending = await reservePendingALWork(input, observedEntries.length, observedEntries);
+    return [...pending.values()].map((entry) => toALWorkClaim(entry, input.leaseMs));
+}
+
+async function reservePendingALWork(
+    input: CreateALWorkQueuePortInput,
+    maxCount: number,
+    observedEntries: ClaimALWorkInput['observedEntries']
+): Promise<Map<Key, ResourceEntry>> {
+    return await input.queue.reserveEntries({
         typeIds: new Set(input.workTypes),
         statusIds: new Set(NEW_AND_RETRY_STATUSES),
         reservationInput: { maxToReserve: maxCount, maxAttempts: AL_WORK_MAX_ATTEMPTS },
         observedEntries
     });
-    const recovered = await reserveALWorkTimeouts(input, maxCount - pending.size, observedEntries);
-    return [...pending.values(), ...recovered.values()].map((entry) => toALWorkClaim(entry, input.leaseMs));
 }
 
 /**

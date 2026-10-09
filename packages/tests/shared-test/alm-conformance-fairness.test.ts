@@ -195,8 +195,8 @@ describe('own-share-under-inbound', () => {
                         commandId: `${scenario.receiver.recipeId}-ready-heard`,
                         count: 1,
                         absent: false,
-                        windowMs: 3_000,
-                        timeoutMs: 4_000
+                        windowMs: 8_000,
+                        timeoutMs: 9_000
                     })
                 ]
             });

@@ -307,6 +307,7 @@ describe('ALWorkHandler', () => {
             readPage: async () => ({ entries: [], nextCursor: null }),
             readPages: async (inputs) => inputs.map(() => ({ entries: [], hasMoreEntries: false })),
             claim: async ({ maxCount }) => pending.splice(0, maxCount),
+            claimObserved: async () => [],
             finalizeExhausted: async () => [],
             releaseAll: async (releases) => {
                 for (const release of releases) {
@@ -432,6 +433,7 @@ describe('ALWorkHandler', () => {
                 claimCallCount += 1;
                 return pending.splice(0, maxCount);
             },
+            claimObserved: async () => [],
             finalizeExhausted: async () => [],
             releaseAll: async (releases) => {
                 for (const release of releases) {

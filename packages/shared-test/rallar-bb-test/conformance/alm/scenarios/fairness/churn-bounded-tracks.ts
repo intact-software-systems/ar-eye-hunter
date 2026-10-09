@@ -1,4 +1,4 @@
-import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/al-inbound-ordering-track-cap.ts';
+import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import {
     AL_VOLATILE_SESSION_MAX_ADMISSIONS,
     AL_VOLATILE_SESSION_MAX_BYTES
@@ -30,7 +30,7 @@ import { toSendLoopCommand } from './to-send-loop-command.ts';
 
 /**
  * More tracks than a session store keeps ordering snapshots for (`AL_INBOUND_MAX_ORDERING_TRACKS`, D191), with a
- * margin: at this count the opens take about 24 s at the loop's pace, inside the receiver's 58 s window.
+ * margin: at this count the opens take about 24 s at the loop's pace, inside the receiver's 57 s window.
  */
 const CHURN_TRACK_COUNT = AL_INBOUND_MAX_ORDERING_TRACKS + 24;
 /**
@@ -110,7 +110,12 @@ function toTrackSend(sender: AlmConformanceStepInput, track: string): RallarBlac
     });
 }
 
-/** The receiver's ordering snapshots after the churn: at the cap, neither under it nor past it. */
+/**
+ * The receiver's ordering snapshots after the churn: at the cap, neither under it nor past it. The count sums every
+ * inbound store that stated one since the receiver's last close. The cell's 280 tracks are volatile and fill that
+ * store to the cap; the cell sends nothing durable, so its durable store opens no track and adds nothing, and the upper
+ * bound is the cap plus those zero tracks.
+ */
 function toOrderingTracksCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const facts = [
         ['ordering-tracks-within-the-cap', 'lte'],

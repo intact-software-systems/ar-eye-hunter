@@ -542,7 +542,8 @@ function createSelectorFixture(): SelectorFixture {
         backend: new InMemoryAdmissionBackend(state, () => NOW_MS),
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
     const stores = { admissionStore, workQueue: state.workQueue };
     const delivery = createInboundTestDispatch(stores, () => NOW_MS).delivery;
@@ -566,7 +567,8 @@ function createTimedSelectorFixture(): SelectorFixture {
         backend: new InMemoryAdmissionBackend(state, () => nowMs),
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
     const stores = { admissionStore, workQueue: state.workQueue };
     const delivery = createInboundTestDispatch(stores, () => nowMs).delivery;
@@ -607,7 +609,8 @@ function createCostBoundaryFixture() {
         backend: new InMemoryAdmissionBackend(state, nowMs),
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
     const stores = { admissionStore, workQueue: state.workQueue };
     const delivery = createInboundTestDispatch(stores, nowMs).delivery;

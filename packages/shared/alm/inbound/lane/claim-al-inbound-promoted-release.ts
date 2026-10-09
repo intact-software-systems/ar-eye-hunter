@@ -28,7 +28,8 @@ export namespace ClaimALInboundPromotedRelease {
  * key rather than looked for on the page, since a page holds its rows in queue order and a track's
  * next release is as often on the page after it. It is claimed only when it is due and its delivery
  * reads it ready now that the predecessor is delivered, and only as that read observed it, so a
- * track never has two releases claimed at once.
+ * track never has two releases claimed at once. A promotion that loses that race claims nothing and
+ * leaves the lease-timeout sweep's allowance to the rotation.
  */
 export async function claimALInboundPromotedRelease(
     input: ClaimALInboundPromotedRelease.Input
@@ -42,7 +43,7 @@ export async function claimALInboundPromotedRelease(
     if (entry === undefined || !await isALInboundReleaseClaimableNow(entry, input)) {
         return undefined;
     }
-    const [claim] = await input.port.claim({ maxCount: 1, observedEntries: [entry] });
+    const [claim] = await input.port.claimObserved([entry]);
     return claim === undefined ? undefined : { claim, effectId };
 }
 

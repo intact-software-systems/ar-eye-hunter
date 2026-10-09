@@ -337,7 +337,6 @@ describe('the checkpoint lane on the WS client', () => {
     it('admits a local-checkpoint send to the checkpoint pair it is handed, outside the volatile budget', async () => {
         const budget = createDefaultVolatileSessionBudget();
         const checkpointStores = resolveWsClientCheckpointStores();
-
         const service = await openWsClient({ budget, checkpointStores });
 
         const sent = await service.enqueueOutboxIfAbsent(newALUnicastMessage(

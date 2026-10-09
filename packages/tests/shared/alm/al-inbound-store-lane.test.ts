@@ -233,7 +233,8 @@ function createObservedInboundPairs(): ObservedInboundPairs {
             backend,
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
+            maxOrderingTracks: undefined
         }),
         workQueue: backend.workQueue,
         evictExpired,

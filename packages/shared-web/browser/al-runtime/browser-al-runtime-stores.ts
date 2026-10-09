@@ -13,6 +13,7 @@ import {
     type ALRuntimeStoreId,
     type ALRuntimeStoreScope
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
+import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
@@ -64,7 +65,10 @@ interface BrowserALRuntimeOptions extends Omit<CreateDefaultALRuntimeStoresInput
 
 export interface ConfigureBrowserALRuntimeStoresInput
     extends
-        Omit<BrowserALRuntimeOptions, 'dbName' | 'observer' | 'onStorageReset' | 'storageHealth' | 'connectOpenings'>,
+        Omit<
+            BrowserALRuntimeOptions,
+            'dbName' | 'observer' | 'onStorageReset' | 'storageHealth' | 'connectOpenings' | 'maxOrderingTracks'
+        >,
         BrowserALCheckpointSettingsInput {
     readonly scope: StateScope;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
@@ -86,6 +90,7 @@ function toBrowserRuntimeStoreScopes(
     const sessionInboundId = toBrowserSessionALInboundRuntimeStoreId(sessionId);
     const inboundOptions: BrowserALRuntimeOptions = {
         ...createBrowserStoreOptions(sessionInboundId, options, reporting.storage),
+        maxOrderingTracks: AL_INBOUND_MAX_ORDERING_TRACKS,
         reportOrderingTracks: toALOrderingTracksReport(reporting.storage, sessionInboundId)
     };
 
@@ -198,6 +203,7 @@ export function createBrowserALVolatileInboundRuntimeStores(
 ): ALVolatileInboundRuntimeStores {
     return createVolatileALInboundRuntimeStores({
         namespace: `browser:${name}:volatile`,
+        maxOrderingTracks: AL_INBOUND_MAX_ORDERING_TRACKS,
         reportOrderingTracks: toALOrderingTracksReport(storage, `${name}/volatile`)
     }, budget);
 }

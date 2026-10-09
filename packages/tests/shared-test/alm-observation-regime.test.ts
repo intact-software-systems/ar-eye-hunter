@@ -10,6 +10,7 @@ import {
     ALM_OBSERVATION_PAGE_WINDOW_END_MS
 } from '../../shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-page-regime.ts';
 import {
+    ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS,
     ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT,
     ALM_OBSERVATION_WINDOW_MS,
     computeALMObservationRegime,
@@ -466,6 +467,18 @@ describe('computeALMObservationRegime', () => {
         expect(regime.regime).toBe('unclassified');
         expect(regime.perOperation).toEqual({ outcome: 'too-few-samples', sampleCount: 0 });
         expect(regime.pageRegime).toEqual({ outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' });
+    });
+
+    it('reads the page unmeasured once the run holds the control server\'s default event bound, whose start may be gone', () => {
+        const probes = toPageWindowProbes(2, 10);
+        const toFiller = (count: number) =>
+            Array.from({ length: count }, (_unused, index) => toReadinessProbeEvent(2_000 + index, SENDER_AGENT_ID, { cause: 'own-commit', durationMs: 1 }));
+
+        const trimmed = toSyntheticRegime([...probes, ...toFiller(ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS - probes.length)]);
+        const whole = toSyntheticRegime([...probes, ...toFiller(ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS - probes.length - 1)]);
+
+        expect(trimmed.pageRegime).toEqual({ outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' });
+        expect(whole.pageRegime).toEqual({ outcome: 'measured', storageProbeMedianMs: 2, sampleCount: 10, regime: 'normal' });
     });
 
     it('classifies the page as slow at 120 ms and unclassified in the band at 30 ms', () => {

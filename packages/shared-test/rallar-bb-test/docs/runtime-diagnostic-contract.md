@@ -549,6 +549,7 @@ are the sync points of a paired `agent.reload`.
 - `ordering-tracks`: `storeId` and `tracks`, the number of ordering snapshots an
   inbound store holds right after the eviction a newly opened track runs (D191):
   at most 256 unless a removal found its snapshot changed or conflicted, which leaves it to the next new track.
+  Only the browser's stores are capped and state it; a pass that fails states nothing.
   The session's IndexedDB store states it under its store id, its memory pair as
   `<store id>/volatile`; a known track's next message states nothing. The harness
   keeps each store's latest count and reads their sum as `stats.rallar.alm.orderingTracks`.

@@ -57,6 +57,11 @@ export function decodeALVolatileSessionReport(value: unknown): Either<readonly s
     });
 }
 
+/** A whole number at or above zero; absent for anything else. */
+export function decodeCount(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
 function decodeCounts<Field extends string>(
     value: unknown,
     fields: readonly Field[],
@@ -66,7 +71,8 @@ function decodeCounts<Field extends string>(
     return hasCounts(record, fields)
         ? Either.ofRight(record)
         : Either.ofLeft(
-            fields.filter((field) => !isCount(record[field])).map((field) => `${path}.${field} is not a count`)
+            fields.filter((field) => decodeCount(record[field]) === undefined)
+                .map((field) => `${path}.${field} is not a count`)
         );
 }
 
@@ -74,9 +80,5 @@ function hasCounts<Field extends string>(
     record: RallarBlackBoxTestRecord,
     fields: readonly Field[]
 ): record is RallarBlackBoxTestRecord & Readonly<Record<Field, number>> {
-    return fields.every((field) => isCount(record[field]));
-}
-
-function isCount(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+    return fields.every((field) => decodeCount(record[field]) !== undefined);
 }

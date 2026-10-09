@@ -107,7 +107,10 @@ records what the runner was doing while the cell ran:
   sampleCount, regime: 'unclassified' }` below `ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT` samples;
   otherwise `{ outcome: 'measured', storageProbeMedianMs, sampleCount, regime }`. Only probes whose
   `lane` is `durable` count: a memory lane's `…/volatile` owner probes at 0 ms and would pull the
-  median of a slow page toward `normal`.
+  median of a slow page toward `normal`. A snapshot that holds the control server's default event
+  bound (`ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS`, 2 000) reads `{ outcome: 'unmeasured', sampleCount: 0,
+  regime: 'unclassified' }`: the server drops a run's oldest events past that bound, so the earliest
+  event it kept may be from mid-run and the window measured from it is not the run's opening one.
 - `peerReadiness` — per lifecycle stream and peer, the time from first known to first ready, or
   `never-ready` with how long the peer was observed.
 - `scenarioSends` — each recipe run's wall clock, or, for a run that failed, the failing step's
@@ -165,7 +168,10 @@ records what the runner was doing while the cell ran:
   - `promotedReleases` — the sum of `promoted` over every `effect-drain` of that direction, on both
     lanes (a volatile track is released on the memory lane): the buffered releases its batches ran
     right after their predecessor (D190). An `effect-drain` that states no `promoted` (one recorded
-    before D190) is skipped, as a drain missing any other field is.
+    before D190) is skipped, as a drain missing any other field is. **Caveat:** under the control
+    server's default bound of 2 000 retained events a long fast run drops its early drains, so
+    `promotedReleases` can read `0` and `pageRegime` `unmeasured` although the fairness cells' own
+    witnesses passed; the lane's scripts retain every event for that reason.
 - `cellOutcome` — `passed` or `failed`, including a soft-assertion failure.
 - `pageDiagnostics` — the lane's `pageerror`/console capture, folded from the cell's
   `-page-diagnostics.json` file. It captures page-level errors only and does not by itself prove
@@ -199,6 +205,11 @@ records what the runner was doing while the cell ran:
   `{ outcome: 'no-readings' }` when no agent read the counters: an artifact from before the block existed, not an
   uncongested cell. No threshold reads it.
 - `snapshotIssues` — non-empty only when the control snapshot could not be decoded at all.
+
+Every fold reads only the events and results the control server retained for the run. The ALM lane's
+scripts set `RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS` and `RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS` to
+`unbounded`, so the server keeps the whole run; a control server started without them, or one the lane
+reused because it was already running, keeps the defaults.
 
 ## Reading a red
 

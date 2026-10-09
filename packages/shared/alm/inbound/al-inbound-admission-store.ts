@@ -29,9 +29,9 @@ import {
     type ALSupersedenceAcceptance
 } from '../compute-al-supersedence-observation.ts';
 import {
-    evictOrderingTracksPastCap,
+    evictALInboundOrderingTracksPastCap,
     type ALInboundOrderingTracksReport
-} from './admission/al-inbound-ordering-track-cap.ts';
+} from './admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import {
     readALInboundStoredMessage,
@@ -335,8 +335,13 @@ export interface CreateALInboundAdmissionStoreInput {
     readonly supersedenceTrackTtlMs: number;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     /**
+     * The most ordering snapshots the store keeps (D191): the browser's stores pass `AL_INBOUND_MAX_ORDERING_TRACKS`;
+     * `undefined` keeps every track until its TTL, as the server's shared stores do, and runs no eviction pass.
+     */
+    readonly maxOrderingTracks: number | undefined;
+    /**
      * Hears how many ordering snapshots the store holds after each new track's eviction pass (D191); absent where
-     * nothing reads the count.
+     * nothing reads the count. A store without a cap states nothing.
      */
     readonly reportOrderingTracks?: ALInboundOrderingTracksReport;
 }
@@ -410,6 +415,7 @@ namespace ProviderBackedALInboundAdmissionStore {
         readonly backend: ALAdmissionWorkBackend;
         readonly nowMs: () => number;
         readonly durability: ALStoreDurability;
+        readonly maxOrderingTracks: number | undefined;
         readonly reportOrderingTracks: ALInboundOrderingTracksReport | undefined;
     }
 }
@@ -423,10 +429,12 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     private readonly backend: ALAdmissionWorkBackend;
     private readonly effects: ALInboundDurableEffectStore;
     private readonly nowMs: () => number;
+    private readonly maxOrderingTracks: number | undefined;
     private readonly reportOrderingTracks: ALInboundOrderingTracksReport | undefined;
 
     constructor(input: ProviderBackedALInboundAdmissionStore.Dependencies) {
         this.namespace = input.namespace;
+        this.maxOrderingTracks = input.maxOrderingTracks;
         this.reportOrderingTracks = input.reportOrderingTracks;
         this.orderingTrackTtlMs = input.orderingTrackTtlMs;
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
@@ -643,8 +651,13 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         }
 
         const status = await this.writeValidatedBundle(validated.right!);
-        if (status === 'committed' && opensALInboundOrderingTrack(bundle)) {
-            await evictOrderingTracksPastCap(this.backend, this.toOrderingPrefix(), this.reportOrderingTracks);
+        if (status === 'committed' && this.maxOrderingTracks !== undefined && opensALInboundOrderingTrack(bundle)) {
+            await evictALInboundOrderingTracksPastCap({
+                backend: this.backend,
+                orderingPrefix: this.toOrderingPrefix(),
+                maxTracks: this.maxOrderingTracks,
+                report: this.reportOrderingTracks
+            });
         }
         return status;
     }

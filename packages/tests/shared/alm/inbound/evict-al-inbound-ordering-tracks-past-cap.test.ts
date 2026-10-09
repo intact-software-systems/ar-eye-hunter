@@ -4,7 +4,7 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
-import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/al-inbound-ordering-track-cap.ts';
+import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
@@ -25,6 +25,8 @@ const DELIVERED_PREFIX = `${NAMESPACE}:delivered:`;
 const CHURNED_TRACKS = 300;
 /** Three hundred IndexedDB admissions, each opening a track, take about five seconds under a loaded machine. */
 const CHURN_TIMEOUT_MS = 30_000;
+/** The test drives the rounds that deliver the cap's 256 earlier first sequences, 16 a round, before the opening one. */
+const DELIVERY_TIMEOUT_MS = 10_000;
 
 interface OrderingCapFixture {
     readonly backend: ALAdmissionWorkBackend;
@@ -168,6 +170,65 @@ describe('the inbound store\'s ordering tracks', () => {
     });
 });
 
+describe('an inbound store without a cap', () => {
+    it('holds every track it opened and states no count', async () => {
+        const stated: number[] = [];
+        const fixture = await createOrderingCapFixture('memory', (tracks) => stated.push(tracks), 'uncapped');
+
+        await admitFirstSequences(fixture, CHURNED_TRACKS);
+
+        expect(await readHeldTracks(fixture.backend)).toHaveLength(CHURNED_TRACKS);
+        expect(stated).toEqual([]);
+    });
+});
+
+describe('the eviction pass after a committed admission', () => {
+    it('leaves a snapshot that does not decode to the next track, and the opening track is still admitted and delivered', async () => {
+        const stated: number[] = [];
+        const fixture = await createOrderingCapFixture('memory', (tracks) => stated.push(tracks));
+        await admitFirstSequences(fixture, 1);
+        await fixture.backend.write(async (transaction) => {
+            await transaction.set(`${ORDERING_PREFIX}corrupt`, { lastContiguousSeq: 'not a sequence' });
+        });
+        stated.length = 0;
+
+        await admitAtNextMs(fixture, createTrackMessage(1, 1));
+
+        await expect.poll(() => fixture.inbound.delivered.length).toBe(2);
+        expect(stated).toEqual([]);
+    });
+
+    it('leaves the eviction to the next track when its removal write fails, and the opening track is still delivered', async () => {
+        const stated: number[] = [];
+        const fixture = await createOrderingCapFixture('memory', (tracks) => stated.push(tracks));
+        await admitFirstSequences(fixture, AL_INBOUND_MAX_ORDERING_TRACKS);
+        failOrderingSnapshotRemovals(fixture.backend);
+        const store = fixture.inbound.stores.admissionStore;
+        const opening = createTrackMessage(AL_INBOUND_MAX_ORDERING_TRACKS, 1);
+        const openingTrackKey = toALOrderingTrackKey(opening)!;
+        stated.length = 0;
+
+        await admitAtNextMs(fixture, opening);
+
+        await expect.poll(async () => {
+            await fixture.inbound.queueEngine.executeOnce();
+            return (await store.readOrderedDelivery(openingTrackKey, 2)).completedThrough;
+        }, { timeout: DELIVERY_TIMEOUT_MS }).toBe(1);
+        expect(stated).toEqual([]);
+        expect(await readHeldTracks(fixture.backend)).toHaveLength(AL_INBOUND_MAX_ORDERING_TRACKS + 1);
+    }, CHURN_TIMEOUT_MS);
+
+    it('admits and delivers the opening track when the count\'s listener throws', async () => {
+        const fixture = await createOrderingCapFixture('memory', () => {
+            throw new Error('The count listener failed');
+        });
+
+        await admitAtNextMs(fixture, createTrackMessage(0, 1));
+
+        await expect.poll(() => fixture.inbound.delivered.length).toBe(1);
+    });
+});
+
 describe.each<InboundTestStorage>(['memory', 'indexeddb'])('the %s inbound pair under track churn', (storage) => {
     it('stays at the cap, and states it, after one sender opens 300 tracks of one message each', async () => {
         const stated: number[] = [];
@@ -185,7 +246,8 @@ describe.each<InboundTestStorage>(['memory', 'indexeddb'])('the %s inbound pair 
 
 async function createOrderingCapFixture(
     storage: InboundTestStorage,
-    reportOrderingTracks?: (tracks: number) => void
+    reportOrderingTracks?: (tracks: number) => void,
+    cap: 'capped' | 'uncapped' = 'capped'
 ): Promise<OrderingCapFixture> {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(START_MS);
@@ -196,11 +258,29 @@ async function createOrderingCapFixture(
         namespace: NAMESPACE,
         storage,
         observer: createPassThroughIndexedDbOperationObserver(),
+        maxOrderingTracks: cap === 'capped' ? AL_INBOUND_MAX_ORDERING_TRACKS : undefined,
         reportOrderingTracks
     });
     const inbound = createInboundTestRuntime({ carrier: 'ws', stores, effectWorkerId: 'al-inbound:ordering-cap' });
     await inbound.runtime.ready();
     return { backend, inbound };
+}
+
+/** Fails every write that removes an ordering snapshot, as a storage error would: only the eviction pass removes one. */
+function failOrderingSnapshotRemovals(backend: ALAdmissionWorkBackend): void {
+    const write = backend.write.bind(backend);
+    vi.spyOn(backend, 'write').mockImplementation(async (operation, executionExpiresAtMs) =>
+        await write(async (context) => {
+            const remove = context.remove.bind(context);
+            context.remove = async (key) => {
+                if (key.startsWith(ORDERING_PREFIX)) {
+                    throw new Error('The storage refused the removal');
+                }
+                await remove(key);
+            };
+            return await operation(context);
+        }, executionExpiresAtMs)
+    );
 }
 
 /** One first sequence on each of `count` tracks, a millisecond apart, so each track's update time is its own. */

@@ -702,11 +702,22 @@ release runs the same track's next release in the same batch, read by its key,
 up to 16 claims a batch (D190): a 64-message buffer drains in 5 batches instead
 of 65 engine rounds, and a 255-message one no longer outlives the 30 s default
 lifetime. Departed-sender state is bounded by count (D191): at most 256
-ordering snapshots per receiver store, the least recently updated evicted; the
+ordering snapshots in each of the browser's inbound stores, the least recently
+updated evicted; a browser session holds two such stores, its IndexedDB store
+and the memory store of its volatile messages, so up to 512 snapshots, and the
+harness's `orderingTracks` is their sum. The WS server's inbound stores are
+not capped, since one of them holds every relayed client's tracks. The
 browser's resync record holds at most 256 tracks; the WS server holds at most
 4 096 receipt aggregates, ending the oldest at the cap as its deadline would.
 Three two-agent lane cells prove the share, the promotion and the snapshot cap
-(D192).
+(D192). **Limit:** a receiver holding more than 256 live ordered tracks in one
+store thrashes: each new track evicts a live one, whose next arrival reads as a
+gap from sequence 1 and goes to repair or resynchronization. **Limit:** an
+at-least-once `ack: 'receiver'` send can be reported delivered although no
+channel handler saw it: in one lane run the message arrived 131 ms before the
+receiving page's channel subscribed, and it was admitted and acknowledged with
+no handler to run. Whether a typed channel replays an arrival that predates its
+subscription is open.
 
 **PLANNED:** `replace-latest` by semantic key and a bounded queue on the
 reliable lane (the realtime lane keeps its own `replace-by-key`); relay fanout
@@ -938,10 +949,16 @@ elements per protocol collection/page, 64 visited peers or hops, a 256-sequence
 repair window, and 256 messages and 1 MiB per ordering track. The additional
 ceilings are planned requirements, not current guarantees.
 
-**CURRENT — S3c-ii and V1a, the volatile bound:** one session holds at most
-1 000 volatile messages and 4 MiB of envelopes at a time, sent and received
-together; it sends no volatile message whose deadline lies more than 5 minutes
-ahead; and its own ordered sends hold at most 64 live ordering tracks (D179).
+**CURRENT — S3c-ii and V1a, the volatile bound:** one session's volatile
+messages are counted against limits of 1 000 messages and 4 MiB of envelopes,
+in two pools since V1b-ii (D189): its own sends and its arrivals. Arrivals are
+never refused, so the total can pass the limits while they keep arriving. An
+own send is refused only when it would pass both a limit on the total and the
+own pool's share of it, half of each limit (500 messages, 2 MiB): own sends may
+use whatever the arrivals leave free, and once the total is at a limit they
+still have their share. A session sends no
+volatile message whose deadline lies more than 5 minutes ahead, and its own
+ordered sends hold at most 64 live ordering tracks (D179).
 A sent message is counted until its deadline, and its track until the last
 counted send on it reaches its deadline; a received one until the earlier of
 its deadline and 30 s after its arrival, and it never opens a counted track; a
@@ -962,16 +979,21 @@ command records the same report as `rallar.alm`, so every run that reads
 `stats` measures the bound over time; the ALM lane's observation records each
 page's one end-of-cell reading, and the `capacity-tracks` cell's reading at the
 track bound (D180). The age limit bounds the messages the bound counts, not ordering
-state: an ordering track stays known for an hour after its last message, so a
-resumed track is not read as a gap. What a session keeps per message, track or
-peer is bounded rather than held for its lifetime: the ids of cancelled and
-handed-over sends for 60 minutes, the browser's record of resynchronized tracks
-for 5 minutes (a track that has not resynchronized for 5 minutes calls its
-recovery handler again when it next resyncs), and RTC round-trip measurements
-share one counter for all peers
+state: an ordering track stays known for an hour after its last message unless
+the snapshot cap (D191, above) evicts it first, so a resumed track is not read as
+a gap; an evicted track's next arrival reads as a gap from sequence 1, and a
+buffered release on it reads `resync-required`. What a session keeps per
+message, track or peer is bounded rather than held for its lifetime: the ids of
+cancelled and handed-over sends for 60 minutes, the browser's record of
+resynchronized tracks for 5 minutes and at most 256 tracks (a track that has not
+resynchronized for 5 minutes, or that 256 later tracks pushed out, calls its
+recovery handler again when it next resyncs), at most 256 ordering snapshots in
+each of the browser's inbound stores, and RTC round-trip measurements share one
+counter for all peers
 (D181). **Limit:** a long session plateaus rather than empties: an idle ordering
-track keeps two inbound rows for an hour, and each sending origin one outbound
-version row.
+track keeps two inbound rows for an hour, its snapshot while it is one of its
+store's 256 and the marker of its delivered sequences, which the snapshot cap
+leaves for the hour, and each sending origin one outbound version row.
 
 These are work limits, not a 256-session room limit. Large audiences and system
 snapshots use bounded producer/consumer pages without truncation; incomplete

@@ -119,10 +119,11 @@ export class ALVolatileSessionBudget {
         if (this.entriesByMsgId.has(input.msgId)) {
             return Either.ofRight(usage);
         }
-        const limit = this.resolvePassedLimit(input, usage);
+        const own = this.toOwnUsage();
+        const limit = this.resolvePassedLimit(input, usage, own);
         return limit === undefined
             ? Either.ofRight(this.hold(input, 'own'))
-            : Either.ofLeft({ limit, usage, own: this.toOwnUsage(), limits: this.limits });
+            : Either.ofLeft({ limit, usage, own, limits: this.limits });
     }
 
     /** A received message is never refused and never opens a counted track (D74, D179). */
@@ -149,12 +150,12 @@ export class ALVolatileSessionBudget {
 
     private resolvePassedLimit(
         input: ALVolatileSessionBudget.Admission,
-        usage: ALVolatileSessionUsage
+        usage: ALVolatileSessionUsage,
+        own: ALVolatileSessionPoolUsage
     ): ALVolatileSessionLimit | undefined {
         if (input.deadlineAtMs - input.nowMs > this.limits.maxAgeMs) {
             return 'age';
         }
-        const own = this.toOwnUsage();
         if (this.passesAdmissionBound(usage, own)) {
             return 'admissions';
         }
