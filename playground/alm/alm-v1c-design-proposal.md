@@ -381,9 +381,34 @@ route-gap hand-over contract without another routing policy or fallback strategy
 Uncaptured original native inputs remain unknown. The regression and unchanged
 generic fallback tests establish leg classification and strategy contracts,
 without proving a new real-manager-to-WS receipt integration or the original
-native cause. One unchanged GitHub observation tests the reviewed candidate's
-actual outcomes; neither that observation nor this source correction isolates
-CPU benefit or resolves every leader ACK and deadline failure.
+native cause. The unchanged candidate observation failed during group/member
+setup before traffic. Three players timed out ensuring the group; eleven accepted
+group-conflict responses and then timed out ensuring membership. The director
+completed initial connection but lacks room-join completion and final output.
+All 73 group assertions remain unevaluated. Authentication and fetch own separate
+timeout scopes, so total command duration does not itself prove a late request
+timer. Complete recorder evidence cannot supply uncaptured server phases or a
+native route-benefit comparison.
+
+The next measurement exposes existing HTTP/AppInbox timing through the same
+local lifecycle. An optional all-local timing capture is disabled by default.
+It enables the existing timing switches and observes API stdout through a small
+owned stdio boundary, while the original API entry and Playwright readiness and
+teardown remain canonical. Retain only validated timing events through a fixed
+field/detail allowlist for actor/client/request and lane/attempt/phase/result
+correlation. Raw stdout, authorization values, command payloads, arbitrary error
+prose and complete environments are excluded. Safe counts and source/flag/exit
+bindings distinguish missing or partial recording from observed stream completion;
+neither proves every durable request settled. Capture failure remains visible
+without masking the API exit or abandoning its owned process.
+
+One reviewed diagnostic seeks actual setup ingress, queue/handler/transaction and
+durable-result linkage before an owning repair. No logger/event producer, generic
+process framework, duplicate evaluator, new public contract or dependency is
+needed. Preserve all normal consumers, fixture inputs, policy and deadlines.
+Observation overhead and co-location remain confounders; async elapsed phases do
+not establish per-request CPU or an isolated lane-policy improvement. Ordinary
+uninstrumented acceptance remains required.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
