@@ -267,6 +267,29 @@ before selecting a repair. Preserve complete validation, generation/authority
 guards, exact receipt/outbox/provenance bytes and pretransaction hashing. Native
 snapshot/session/page cardinalities are uncaptured and must not be invented.
 
+The smallest existing frozen fixture has one live own session, one snapshot page
+and three outbox rows. Thirty repeated real compute/assert pairs preserve complete
+output bytes. Bootstrap and reconnect median pairs take 2.5722 and 2.3314 ms;
+their six sequential digest completions occupy 6.84% and 9.84% of aggregate pair
+time. Repetition, an unwrapped control and a V8 profile support this isolated
+result. Digest completion does not dominate that fixture. The result remains
+inconclusive for the deployed operation: actual cardinality, host load, GC and
+continuation scheduling are not reproduced. No excess operation or performance
+repair follows from the small result.
+
+Use Deno's existing CPU profiler and safe host/process resource observations
+during one further isolated hosted diagnostic before adding production
+instrumentation. An ignored entry wrapper imports the unchanged API entry and
+provides timestamp anchors and a controlled post-capture termination so Deno
+actually writes its profile. Existing HTTP/AppInbox phase events remain the
+correlation surface. Profile samples describe process stacks within matched
+phase windows, including possible other process work; they do not reveal exact
+digest CPU or native input cardinality by themselves. Preserve unknowns and
+capture a smaller missing boundary only if the profile cannot choose an owner.
+Profiling and logging may perturb setup, so final ordinary acceptance remains
+required. Restore normal service settings and remove exclusively created
+diagnostic files after capture.
+
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
 WebSocket connect, so that result does not establish this operation's cost or
