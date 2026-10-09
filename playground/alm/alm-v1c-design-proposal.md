@@ -330,8 +330,8 @@ The corrected local rehearsal registered all 15 distinct principals/clients,
 then failed during member setup before evaluating group assertions. Complete
 recorder bytes and native arrival/latest-result counts were verified offline.
 This was a dirty-tree rehearsal before the final producer-lifecycle correction;
-its source hashes remain explicit, and it is not the pending immutable-source
-GitHub result. The correction passed late-arrival/error-precedence TDD and fresh
+its source hashes remain explicit, and it is distinct from the subsequent
+immutable-source GitHub result. The correction passed late-arrival/error-precedence TDD and fresh
 scoped re-review without another domain run.
 
 Capture actual CPU/memory/disk, runtime/browser versions, source/manifest identity
@@ -350,6 +350,28 @@ counts verify 74 results and 26,247 event records, with 46 latest command result
 The run demonstrates progress to traffic in this environment, with incomplete
 acceptance. Analyse actual pending work, receipts, samples and canonical deadline
 semantics before selecting a repair; the timeout label alone earns no relaxation.
+
+The retained traffic analysis verifies successful setup prefixes for all 15
+agents. One shot fails immediately with no attempts or recipients and a terminal
+planner-drop for missing downstream forwarding candidates. Its exact routing
+inputs were not captured. Ten other shots reach the director but their ACK
+observations time out; arrival alone does not establish ACK return. Fourteen
+samplers complete seven readings and stay within sampled budgets; the remaining
+agent has six readings and no final output. Final storage and the native group
+assertions remain unevaluated. Receipt waits and fixed delays consume the actual
+shot-loop windows, so a timeout label earns no timer or fixture relaxation.
+
+The next independent contract probe concerns an authorized originating leader
+send with an exact accepted tree and a missing required RTC edge. An unrelated
+ready peer must not turn the existing missing-route hand-over into a terminal
+repair failure. Test the public RTC leg against both connection observations
+with the same message, authority and accepted edge. Only a valid independent RED
+earns an owning correction; uncaptured native inputs remain unknown. Preserve
+explicit authorization, no-leader and QoS refusals, generic planner-drop terminal
+handling, frozen identity/audience and the original TTL. This is consistency of
+the existing route-gap contract, without a new fallback policy. After scoped
+review and publication, one unchanged GitHub observation tests actual outcomes;
+it cannot by itself prove the original native cause or isolated CPU benefit.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
