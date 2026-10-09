@@ -243,6 +243,35 @@ return after cached-zero pressure shows no adaptive advantage over fixed two.
 This supports conditional service and probe benefits, not a universal improvement,
 SQL savings, native IndexedDB request/transaction counts or elapsed-time latency.
 
+### Observed hosted limit and next measurement
+
+A subsequent diagnostic privately matched a failed JOIN to its first NEW
+execution: queue age was 35.219 seconds, beyond its unchanged completion wait.
+Sixteen preceding NEW handlers occupied 30.818 seconds of that interval;
+seven WebSocket authorization handlers accounted for 25.944 seconds. Exact
+admission records and queue-age estimates support already-ahead work, with no
+observed newer admission overtaking this JOIN. Every captured processing attempt
+was NEW/one. Lane turns therefore address retry starvation but cannot themselves
+bound waiting behind expensive NEW handlers. Changing RETRY weights cannot
+resolve this particular observation.
+
+Canonical queue-key translation matched all seven WebSocket handlers to their
+inner phases. Compute and complete-result validation occupied 20.517 seconds,
+79.08% of their combined handler time; reads and writes occupied 10.35%.
+These are elapsed asynchronous phases, not CPU measurements. The computation
+prepares snapshot pages, outbox rows and immutable provenance; validation
+independently recomputes the complete result. Their internal materialization,
+canonical serialization, cryptography and scheduling costs remain unmeasured.
+Measure those exact boundaries with real frozen inputs and real cryptography
+before selecting a repair. Preserve complete validation, generation/authority
+guards, exact receipt/outbox/provenance bytes and pretransaction hashing. Native
+snapshot/session/page cardinalities are uncaptured and must not be invented.
+
+The unchanged order-balanced PostgreSQL state-write comparison passed, including
+its existing resource and correctness gates. Its mutation mix omits authorized
+WebSocket connect, so that result does not establish this operation's cost or
+replace the required ordinary hosted setup and ALM acceptance.
+
 Focused queue/reader/engine and authenticated group-join redelivery regressions
 precede shared/API type checks and memory API validation. Scheduling changes also
 require unchanged PostgreSQL medium-scale coverage and the governed state-write
