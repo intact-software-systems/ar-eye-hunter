@@ -134,6 +134,7 @@ function createRestoreFixture(input: RestoreFixtureInput): RestoreFixture {
         readinessMemoryMs: input.readinessMemoryMs,
         readNextReadyAtMs: async () => storage.readyAtMs,
         selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
+        claimSuccessor: undefined,
         runClaim: (claim) =>
             input.runClaim(claim, {
                 engine,
@@ -432,6 +433,7 @@ describe('ALWorkHandler readiness restore', () => {
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: () => readTestALWorkReadyAtMs(queue, AL_TEST_TYPES, nowMs),
             selectReady: async (claimable, size) => toTestALWorkReadySelection(await claimable.claim({ maxCount: size, observedEntries: undefined })),
+            claimSuccessor: undefined,
             runClaim: async (claim) => {
                 claimed.push(claim.entry.key.contextId);
                 return { status: 'completed' };
@@ -487,6 +489,7 @@ describe('ALWorkHandler readiness invalidation label', () => {
                 return undefined;
             },
             selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
+            claimSuccessor: undefined,
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: (event) => collectProbe(probes, event)
         });
@@ -531,6 +534,7 @@ describe('ALWorkHandler readiness invalidation label', () => {
                 return undefined;
             },
             selectReady: async () => toTestALWorkReadySelection([]),
+            claimSuccessor: undefined,
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: (event) => collectProbe(probes, event)
         });

@@ -670,7 +670,10 @@ send with `qos: { durability: { algo: 'local-checkpoint' } }`.
 Every volatile message a session sends or receives counts against the session's
 volatile bound, on both carriers and for lane and typed channel sends alike
 (D74, D179). The bound has four limits. The count and byte limits, 1 000
-messages and 4 MiB of envelopes, hold sent and received messages together. The
+messages and 4 MiB of envelopes, hold sent and received messages together, in
+two pools (D189): `own`, the session's own sends, and `inbound`, the messages it
+receives. Half of each limit is the own share
+(`AL_VOLATILE_SESSION_OWN_SHARE`, 0.5, rounded down: 500 messages and 2 MiB). The
 age limit admits a deadline at most 5 minutes ahead
 (`AL_VOLATILE_SESSION_MAX_AGE_MS`). The track limit holds 64 live ordering
 tracks of the session's own ordered sends (`AL_VOLATILE_SESSION_MAX_TRACKS`).
@@ -685,8 +688,16 @@ A send that would pass a limit is refused before any carrier attempt: the
 handle ends `rejected` with `evidence.failure`
 `{ kind: 'refused', reason: 'capacity', limit }`, where `limit` names the
 limit it would pass (`'admissions'`, `'bytes'`, `'age'` or `'tracks'`), and no
-fallback is tried, because both carriers share the bound. While the session is
-`overloaded`, at or over the count or the byte limit, the RTC carrier's
+fallback is tried, because both carriers share the bound. A send passes the
+count or the byte limit only when it would take both the total past the limit
+and the own pool past its share, so received messages alone never refuse the
+session's own sends: whatever the inbound rate, the session keeps its share,
+and while inbound is light its sends may use the rest of the limit. Received
+messages are never refused, so the total can exceed the limit. Under one shared
+pool, received messages at 34 a second (30 s each) held the count limit and
+refused every send of a session sending once a second; with the share that
+session's sends stay far under 500 and are admitted. While the session is
+`overloaded`, refusing its next send at the count or the byte limit, the RTC carrier's
 congestion drop (see Congestion below) also sheds a best-effort RTC room send; that refusal is
 `{ kind: 'refused', reason: 'capacity' }` with no `limit`, so code that
 switches on `failure.limit` handles `undefined` as the count or byte limit. An
@@ -697,10 +708,12 @@ count. A message whose sender named no deadline, a control, a receipt, a relay
 forward and a retransmission count nothing.
 
 `rallar.messages.readUsage()` reads the bound synchronously, with no event
-(D180): `usage` (`admissions`, `bytes`, `oldestAgeMs`, the age of the oldest
-counted message, 0 when none is counted, and `tracks`), `limits` (`maxAdmissions`,
-`maxBytes`, `maxAgeMs`, `maxTracks`) and `overloaded`, true while the usage is at
-or over the count or the byte limit. It throws while the session is not
+(D180): `usage`, the totals of both pools (`admissions`, `bytes`, `oldestAgeMs`,
+the age of the oldest counted message, 0 when none is counted, and `tracks`),
+`own` and `inbound` (`admissions` and `bytes` of each pool, D189), `limits`
+(`maxAdmissions`, `maxBytes`, `maxAgeMs`, `maxTracks`) and `overloaded`, true
+while the smallest next send would be refused at the count or the byte limit:
+the total and the own pool both at their bounds. It throws while the session is not
 connected, before `connect` and again after `disconnect`, so a poll guards it
 with `rallar.isConnected()`.
 
@@ -715,21 +728,48 @@ if (rallar.isConnected()) {
 
 The age limit bounds the messages the bound counts, not the ordering state a
 session keeps (D181). An ordering track stays known for an hour after its last
-message, so a sender that resumes a track within the hour is read in order
-rather than as a gap. What the session keeps per message, track or peer is
+message unless the snapshot cap below evicts it first, so a sender that resumes
+a track within the hour is read in order rather than as a gap. An evicted
+track is not: its next arrival reads as a gap from sequence 1, and a buffered
+release on it reads `resync-required`. What the session keeps per message, track or peer is
 bounded rather than held for its lifetime: the ids of cancelled and handed-over
 sends for 60 minutes, as long as a durable message's own rows, so a cancelled
 message picked up late within that hour still does not send; the browser's
 record of the tracks it has resynchronized for 5 minutes after the track's last
-resynchronization, so a track that needs a resync again after longer than that
-calls the channel's recovery handler again; and RTC round-trip measurements are
-numbered from one counter for all peers, with no entry per peer.
+resynchronization and for at most 256 tracks, so a track that needs a resync
+again after longer than that calls the channel's recovery handler again; and
+RTC round-trip measurements are numbered from one counter for all peers, with
+no entry per peer. Each of the browser's inbound stores also keeps at most 256
+ordering snapshots (`AL_INBOUND_MAX_ORDERING_TRACKS`, D191): the track that
+opens a 257th evicts the least recently updated snapshot, so the tracks of
+senders that left go under churn rather than after the hour (see Ordering,
+Repair And Resynchronization below). The cap is per store: a browser session
+holds two inbound stores, its IndexedDB store and the memory store of its
+volatile messages, so up to 512 snapshots, and the black-box harness's
+`orderingTracks` is their sum. The WS server's inbound stores are not capped:
+one store there holds the tracks of every client the server relays for, so a
+cap would evict tracks that are still live.
 
 **Limit:** an idle volatile ordering track still holds two inbound rows for the
-hour after its last message, and each sending origin one outbound version row
-for an hour. Received tracks have no count limit, so a long session plateaus at
-two inbound rows per track it received on in the last hour rather than
-returning to empty within the age limit.
+hour after its last message, its snapshot (while one of the store's 256) and
+the marker of its delivered sequences, which the cap leaves for the hour, and
+each sending origin one outbound version row for an hour. A long session
+therefore plateaus at no more than 256 snapshots per store, plus one delivered
+marker per track it received on in the last hour, rather than returning to
+empty within the age limit. The browser's resync record leaves its first
+recorded track first, even when that track resynchronized again since.
+
+**Limit:** a receiver holding more than 256 live ordered tracks in one store
+thrashes: each new track evicts a live one, whose next arrival then reads as a
+gap from sequence 1 and is repaired or resynchronized, and a buffered release
+on it reads `resync-required`. Keep the live ordered tracks a session receives
+per store under 256.
+
+**Limit:** an at-least-once `ack: 'receiver'` send can be reported delivered
+although no channel handler of the receiver saw it: in one lane run the
+message arrived 131 ms before the receiving page's channel had subscribed, was
+admitted and acknowledged, and no handler ran. Whether a typed channel replays
+an arrival that predates its subscription is an open question of this release.
 
 **Congestion.** A send's QoS names a congestion policy and a priority,
 `qos: { congestion: { algo, opts: { priority } } }`: `algo` is `'drop-low'`
@@ -738,7 +778,8 @@ at-least-once send and 0 otherwise. A lane send defaults to at-least-once, and
 a typed channel send is at-least-once under either purpose; either is
 best-effort only when it names `reliability: 'best-effort'`. The policy
 applies only while the carrier reads congestion when it plans the session's own
-data: `overloaded`, the session at its count or byte limit (above), on every
+data: `overloaded`, the session refusing its next send at its count or byte
+limit (above), on every
 plan of the session's own outbound data, dequeue and repair plans included, and
 `backpressured` (D184) only on a new send's first plan at admission. The RTC
 carrier reads `backpressured` when the reliable channel of every ready next
@@ -935,7 +976,11 @@ every `ALStorageEvent`:
   (`ALStoragePersistOutcome`);
 - `recovery-owner-invoked`: the `ALInboundResyncCursor` the browser handed a
   typed channel's recovery owner (below), once per ordering track while it goes
-  on resynchronizing, stated even when the owner throws. It names no store.
+  on resynchronizing, stated even when the owner throws. It names no store;
+- `ordering-tracks`: the number of ordering snapshots (`tracks`) an inbound
+  store holds after the eviction a newly opened track runs (D191), from the
+  session's IndexedDB store under its store id and from its memory pair as
+  `<store id>/volatile`. A failed eviction states nothing.
 
 Room channels add room defaults and default `send(...)` to the existing
 `rtc-with-ws-fallback` strategy. This scopes sends; `onWs(...)` and
@@ -1297,6 +1342,22 @@ limits bound the buffer (`AL_MESSAGE_RESOURCE_LIMITS`): a sequence more than
 `repairWindow` (256) past the expected one, or a track already holding
 `bufferedMessages` (256) or `bufferedBytes` (1 MiB), is refused
 `resync-required`. It is not buffered, and the sender is NACKed.
+
+The missing sequence releases the buffered ones in order. Each release runs
+once its predecessor is delivered, and a batch that delivers one runs the
+track's next release in the same batch, read by its key, up to 16 claims a
+batch (`AL_INBOUND_WORK_PAGE_SIZE`, D190): 64 buffered messages are delivered in
+5 batches (measured in memory: 0.4 s, where one release per engine round took
+7.5 s), 255 in 17. Only a delivered release runs its successor, never two of
+one track at once and never another track's. A successor claim that throws is
+reported as the batch's failure and promotes nothing; the rotation claims that
+release later. Each of the browser's inbound stores keeps at most 256 ordering
+snapshots (the WS server's are not capped): right after the message that opens
+a 257th track is admitted, the least recently updated snapshot is evicted, in
+a second write, so the store holds 257 snapshots between the two writes. The
+eviction is best-effort: if it fails, the next new track evicts. A later
+message on an evicted track is read as it would be on a new track, from
+sequence 1, and a buffered release on that track reads `resync-required`.
 
 An in-window gap is repaired by the sender. The hop that keeps a browser
 sender's ordering track -- the receiver over RTC, the WS server over WS -- NACKs

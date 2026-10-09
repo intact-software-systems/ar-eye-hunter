@@ -38,7 +38,7 @@ import {
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
-import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
+import { createPassThroughALStorageEventSink, type ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
     ALVolatileSessionBudget
@@ -62,6 +62,11 @@ import {
     it,
     vi
 } from 'vitest';
+import {
+    createInboundTestMessage,
+    createInboundTestRuntime,
+    INBOUND_TEST_SOURCE
+} from '../../shared/alm/inbound-runtime-test-fixture.ts';
 import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 
 const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
@@ -793,7 +798,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
         );
         const inbound = createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId('session-budget'),
-            budget
+            budget,
+            createPassThroughALStorageEventSink()
         );
 
         expect(outbound.budget).toBe(budget);
@@ -806,7 +812,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
         configureBrowserALRuntimeStores(sessionId, { scope: SCOPE, diagnosticsPorts });
         const volatile = createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
-            createDefaultVolatileSessionBudget()
+            createDefaultVolatileSessionBudget(),
+            createPassThroughALStorageEventSink()
         );
         const message = createOutboundUnicastMessage('inbound-memory');
         await volatile.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'));
@@ -817,6 +824,22 @@ describe('Browser AL runtime IndexedDB stores', () => {
         );
         await deleteBrowserALRuntimeEntriesForSession(sessionId, { currentScope: SCOPE, storage: diagnosticsPorts.storage });
         expect(await volatile.workQueue.getAllKeys()).toHaveLength(1);
+    });
+    it('states the ordering snapshots of the session inbound memory pair as the store\'s volatile lane', async () => {
+        const stated: ALStorageEvent[] = [];
+        const storeId = toBrowserSessionALInboundRuntimeStoreId('ordering-tracks');
+        const volatile = createBrowserALVolatileInboundRuntimeStores(
+            storeId,
+            createDefaultVolatileSessionBudget(),
+            (event) => stated.push(event)
+        );
+        const inbound = createInboundTestRuntime({ carrier: 'ws', stores: volatile, effectWorkerId: 'al-inbound:tracks' });
+        await inbound.runtime.ready();
+
+        await inbound.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-1', seq: 1 }), INBOUND_TEST_SOURCE);
+        await inbound.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-2', seq: 2 }), INBOUND_TEST_SOURCE);
+
+        expect(stated).toEqual([{ kind: 'ordering-tracks', storeId: `${storeId}/volatile`, tracks: 1 }]);
     });
 });
 

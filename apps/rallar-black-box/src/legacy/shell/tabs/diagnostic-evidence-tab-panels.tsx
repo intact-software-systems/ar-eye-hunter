@@ -1,3 +1,4 @@
+import { Activity } from 'react';
 import { EventStreamPanel } from '../../diagnostics/events/EventStreamPanel.tsx';
 import { ExecutionFocusPanel } from '../../diagnostics/events/ExecutionFocusPanel.tsx';
 import { RallarTracePanel } from '../../diagnostics/events/RallarTracePanel.tsx';
@@ -40,6 +41,7 @@ export function DiagnosticEvidenceTabPanels({
         selectedResult
     } = runnerSelection;
 
+    // Hidden, the trace and event panels keep their state and render only when the page is otherwise idle.
     return (
         <>
             <section
@@ -49,7 +51,9 @@ export function DiagnosticEvidenceTabPanels({
                 aria-labelledby="tab-rallar-trace"
                 hidden={activeTab !== 'rallar-trace'}
             >
-                <RallarTracePanel state={state} authSession={authSession} />
+                <Activity mode={activeTab === 'rallar-trace' ? 'visible' : 'hidden'}>
+                    <RallarTracePanel state={state} authSession={authSession} />
+                </Activity>
             </section>
             <section
                 id="panel-event-stream"
@@ -58,21 +62,23 @@ export function DiagnosticEvidenceTabPanels({
                 aria-labelledby="tab-event-stream"
                 hidden={activeTab !== 'event-stream'}
             >
-                <ExecutionFocusPanel
-                    result={selectedResult}
-                    activeCommand={activeCommand}
-                    startedAtEpochMs={state.activeCommandStartedAtEpochMs}
-                    now={now}
-                    redactionOptions={uiRedactionOptions(state, authSession)}
-                />
-                <CommandHistoryPanel
-                    history={history}
-                    selectedCommandId={selectedCommandId}
-                    onSelect={setSelectedCommandId}
-                />
-                <StatsPanel state={state} />
-                <FailurePanel state={state} authSession={authSession} />
-                <EventStreamPanel state={state} />
+                <Activity mode={activeTab === 'event-stream' ? 'visible' : 'hidden'}>
+                    <ExecutionFocusPanel
+                        result={selectedResult}
+                        activeCommand={activeCommand}
+                        startedAtEpochMs={state.activeCommandStartedAtEpochMs}
+                        now={now}
+                        redactionOptions={uiRedactionOptions(state, authSession)}
+                    />
+                    <CommandHistoryPanel
+                        history={history}
+                        selectedCommandId={selectedCommandId}
+                        onSelect={setSelectedCommandId}
+                    />
+                    <StatsPanel state={state} />
+                    <FailurePanel state={state} authSession={authSession} />
+                    <EventStreamPanel state={state} />
+                </Activity>
             </section>
             <section
                 id="panel-rallar-server"

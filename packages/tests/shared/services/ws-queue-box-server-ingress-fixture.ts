@@ -50,7 +50,8 @@ export async function createServerIngressFixture(
         backend,
         orderingTrackTtlMs: 300000,
         supersedenceTrackTtlMs: 300000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
     const service = createDefaultWsQueueBoxServerService({
         outbox: new InMemoryQueueBox(new Map()),

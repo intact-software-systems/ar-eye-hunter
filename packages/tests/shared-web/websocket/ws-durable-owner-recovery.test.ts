@@ -29,6 +29,7 @@ import {
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { createPassThroughALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
@@ -97,7 +98,8 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
-            createDefaultVolatileSessionBudget()
+            createDefaultVolatileSessionBudget(),
+            createPassThroughALStorageEventSink()
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
         checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
@@ -147,7 +149,8 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
-            createDefaultVolatileSessionBudget()
+            createDefaultVolatileSessionBudget(),
+            createPassThroughALStorageEventSink()
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
         checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
@@ -475,7 +478,8 @@ async function openRecoveryOwner(
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
-            createDefaultVolatileSessionBudget()
+            createDefaultVolatileSessionBudget(),
+            createPassThroughALStorageEventSink()
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
         checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,

@@ -6,6 +6,7 @@ import {
     createBlackBoxRallarDiagnosticsPorts
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts';
 import { blackBoxRallarScopeDiagnosticsOf } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-policy.ts';
+import { createBlackBoxRallarOrderingTracks } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-ordering-tracks.ts';
 import {
     resolveBlackBoxRallarLaneId,
     resolveBlackBoxRallarTransport
@@ -79,7 +80,8 @@ async function runDuplicateOutcomeCommands(
         faults: createScriptedTransportFaultPort(),
         storage: createCountingIndexedDbOperationObserver(),
         storageFaults: createScriptedStorageFaultPort(),
-        congestion: createBlackBoxRallarCongestionCounters()
+        congestion: createBlackBoxRallarCongestionCounters(),
+        orderingTracks: createBlackBoxRallarOrderingTracks()
     });
     const { runtime, diagnostics } = createInboundTestRuntime({
         carrier: 'rtc',

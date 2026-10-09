@@ -4,6 +4,7 @@ import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryState } from '@shared/alm/d
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestJsonValue,
+    RallarBlackBoxTestMessagesObserveCommand,
     RallarBlackBoxTestMessagesSendCommand
 } from '../../rallar-black-box-test-contracts.ts';
 
@@ -28,7 +29,8 @@ interface AlmConformanceSendDelivery {
     readonly ttlMs?: number;
     /** Command budget when it must stay independent of `ttlMs`. */
     readonly commandTimeoutMs?: number;
-    readonly ack?: 'receiver' | 'all-logical-recipients' | 'group-leader';
+    /** Absent, the channel's purpose decides; `none` asks for no receipt, so the send is done at transport acceptance. */
+    readonly ack?: RallarBlackBoxTestMessagesSendCommand['ack'];
     /** Absent, the channel's purpose decides: at-least-once for both. */
     readonly reliability?: RallarBlackBoxTestMessagesSendCommand['reliability'];
     readonly durability?: Exclude<ALDurabilityAlgo, 'volatile'>;
@@ -66,7 +68,17 @@ interface AlmConformanceResultAssertionInput {
     readonly name: string;
     readonly resultName: string;
     readonly field: string;
-    readonly operator: 'equals' | 'notEquals' | 'matches' | 'gt' | 'length' | 'contains' | 'exists';
+    readonly operator:
+        | 'equals'
+        | 'notEquals'
+        | 'matches'
+        | 'gt'
+        | 'gte'
+        | 'lt'
+        | 'lte'
+        | 'length'
+        | 'contains'
+        | 'exists';
     readonly expected: string | number | boolean;
 }
 
@@ -103,7 +115,7 @@ export function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTest
     };
 }
 
-export function toObserveCommand(observe: AlmConformanceObserveInput): RallarBlackBoxTestCommand {
+export function toObserveCommand(observe: AlmConformanceObserveInput): RallarBlackBoxTestMessagesObserveCommand {
     return {
         kind: 'messages.observe',
         commandId: toCommandId(observe, `observe-${observe.state}-${observe.index}`),

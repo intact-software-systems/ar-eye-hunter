@@ -48,7 +48,8 @@ describe('PSql admission optimistic retry', () => {
             backend: new PSqlAdmissionWorkBackend(sql, namespace),
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
+            maxOrderingTracks: undefined
         });
         const message = createInboundMessage('inbound-conflict');
         conflictNextInboundCommit({ storage, namespace, msg: message, nowMs: Date.now });
@@ -79,7 +80,8 @@ describe('PSql admission optimistic retry', () => {
             backend: new PSqlAdmissionWorkBackend(sql, namespace),
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
+            maxOrderingTracks: undefined
         });
         const message = createInboundMessage('inbound-error');
         vi.spyOn(sql, 'begin').mockRejectedValueOnce(new Error('inbound storage unavailable'));

@@ -282,7 +282,8 @@ function createRetainedInboundStoreSet(
                 backend,
                 orderingTrackTtlMs: 5 * 60_000,
                 supersedenceTrackTtlMs: 5 * 60_000,
-                retention: normalizeALRuntimeStoreRetention()
+                retention: normalizeALRuntimeStoreRetention(),
+                maxOrderingTracks: undefined
             })
         }
     };

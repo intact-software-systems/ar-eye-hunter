@@ -77,6 +77,18 @@ describe('the session QoS provider over the volatile budget (D78)', () => {
         expect(provider.liveForMessage?.(MESSAGE, CONTEXT)).toBeUndefined();
     });
 
+    it('states no overload while arrivals alone hold the total, and overloaded once the own share is held too (D189)', () => {
+        const budget = new ALVolatileSessionBudget({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 2, maxBytes: 1_000 });
+        const provider = toALVolatileSessionQosProvider(APPLICATION, budget, () => NOW_MS);
+        for (const msgId of ['received-1', 'received-2']) {
+            budget.record({ msgId, bytes: 10, deadlineAtMs: NOW_MS + 1_000, nowMs: NOW_MS, trackKey: undefined });
+        }
+
+        expect(provider.liveForMessage?.(MESSAGE, CONTEXT)).toEqual({ connectedNeighborCount: 3 });
+        budget.tryAdmit({ msgId: 'sent', bytes: 10, deadlineAtMs: NOW_MS + 1_000, nowMs: NOW_MS, trackKey: undefined });
+        expect(provider.liveForMessage?.(MESSAGE, CONTEXT)).toEqual({ connectedNeighborCount: 3, overloaded: true });
+    });
+
     it('passes the application\'s defaults, capabilities and authorization through unchanged', () => {
         const provider = toALVolatileSessionQosProvider(
             APPLICATION,

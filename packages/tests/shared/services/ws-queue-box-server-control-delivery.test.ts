@@ -280,7 +280,8 @@ function createControlInstance(
                 backend: new InMemoryAdmissionBackend(stores.inbound, Date.now),
                 orderingTrackTtlMs: 300000,
                 supersedenceTrackTtlMs: 300000,
-                retention: normalizeALRuntimeStoreRetention()
+                retention: normalizeALRuntimeStoreRetention(),
+                maxOrderingTracks: undefined
             }),
             workQueue: holdWorkQueueClaims(stores.inbound.workQueue, isClaimHeld)
         },

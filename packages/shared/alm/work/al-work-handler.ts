@@ -62,6 +62,15 @@ export interface ALWorkHandlerDependencies {
         pageSize: number
     ) => Promise<ALWorkReadySelection>;
     /**
+     * Reserves the claim a completed one hands its place in the batch to, which the batch then runs
+     * after the claims it selected. Asked only after a claim completed and while the batch has
+     * fewer than `pageSize` claims, so a claim that failed promotes nothing and no batch runs more
+     * than a page. Undefined for an owner whose rows wait on no other row of theirs.
+     */
+    readonly claimSuccessor:
+        | ((port: ALWorkQueuePort, completed: ALWorkClaim) => Promise<ALWorkClaim | undefined>)
+        | undefined;
+    /**
      * Runs one claim. The instant the batch's run loop started comes with it -- after the selection
      * and the reservation, before the first claim runs -- so an owner that reports per-claim timing
      * measures the wait behind earlier claims against the same moment the batch diagnostics do. A
@@ -404,18 +413,43 @@ export class ALWorkHandler {
     ): Promise<ALWorkClaimedRun | undefined> {
         const { clock, port, pageSize, selectReady } = this.dependencies;
         const selection = await selectReady(port, pageSize);
-        progress.claimedCount = selection.claims.length;
+        const queued = [...selection.claims];
+        progress.claimedCount = queued.length;
         const runStartedAtMs = clock.nowMs();
-        for (const claim of selection.claims) {
+        for (let claim = queued.shift(); claim !== undefined; claim = queued.shift()) {
             if (this.shutdown.signal.aborted) {
                 return undefined;
             }
             const release = await this.runOne(claim, runStartedAtMs, progress);
-            if (release !== undefined) {
-                releases.push(release);
+            if (release === undefined) {
+                continue;
             }
+            releases.push(release);
+            const successors = await this.claimSuccessors(release, progress.claimedCount);
+            queued.push(...successors);
+            progress.claimedCount += successors.length;
         }
         return { selection, runStartedAtMs };
+    }
+
+    /**
+     * The successor a completed claim hands its place to, while the batch holds fewer than a page.
+     * One that cannot be claimed is left to the next selection, and the failure is stated as a batch
+     * failure is: throwing here would strand the claims this batch has not run yet.
+     */
+    private async claimSuccessors(release: ALWorkRelease, claimedCount: number): Promise<readonly ALWorkClaim[]> {
+        const { claimSuccessor, pageSize, port } = this.dependencies;
+        if (claimSuccessor === undefined || release.outcome.status !== 'completed' || claimedCount >= pageSize) {
+            return [];
+        }
+        try {
+            const successor = await claimSuccessor(port, release.claim);
+            return successor === undefined ? [] : [successor];
+        }
+        catch (error) {
+            this.reportBatchFailure(toError(error));
+            return [];
+        }
     }
 
     private reportBatch(

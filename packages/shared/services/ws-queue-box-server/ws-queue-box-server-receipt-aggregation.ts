@@ -27,6 +27,7 @@ import type {
     ALOutboundMessageRuntime
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/al-outbound-control-admission.ts';
+import { LatestRepository } from '../../cache/LatestRepository.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
 import type { WsServerRoomAudience } from './ws-queue-box-server-contracts.ts';
@@ -39,6 +40,12 @@ import { WsQueueBoxServerReceiptDeadlineIndex } from './ws-queue-box-server-rece
  * a terminal receipt until its own deadline plus the receipt grace, so an earlier `timed-out` still lands.
  */
 export const WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS = DEFAULT_AL_EPHEMERAL_TTL_MS;
+
+/**
+ * The most receipt aggregates one server instance holds (D191). An admission that finds the cap reached
+ * ends the oldest admitted aggregate as a passed deadline would, so churn cannot grow the set within the window.
+ */
+export const WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES = 4096;
 
 export namespace WsQueueBoxServerReceiptAggregation {
     /** What the server froze when it admitted a `receiver` room message: the audience its receipt answers for. */
@@ -87,6 +94,20 @@ export namespace WsQueueBoxServerReceiptAggregation {
         /** The aggregate's message deadline, which the receipt row outlives by the receipt grace. */
         readonly deadlineAtMs: number;
     }
+
+    /** An aggregate the cap ended before its deadline: its `timed-out` receipt, as of the eviction. */
+    export interface EndedAggregate {
+        readonly receipt: ALReceiptPayload;
+        readonly deadlineAtMs: number;
+    }
+
+    export interface RecordedAdmission {
+        /** False when the message's aggregate was already live: the admission that started it wrote its receipt. */
+        readonly started: boolean;
+        readonly admitted: ALReceiptPayload;
+        /** Absent unless this admission found the cap reached. */
+        readonly evicted: EndedAggregate | undefined;
+    }
 }
 
 interface WsQueueBoxServerReceiptAggregate extends WsQueueBoxServerReceiptAggregation.Admission {
@@ -98,11 +119,20 @@ interface WsQueueBoxServerReceiptAggregate extends WsQueueBoxServerReceiptAggreg
  * answered to the origin as one durable outbox row per phase; each terminal receipt also settles the
  * server's own pending row for the message, so the receipt is the one settlement authority. It is also
  * the server's control router: a receiver ACK relayed for an origin is counted here, every other control
- * goes to the server's own outbound owner. An aggregate leaves the map when its audience is confirmed or
- * its deadline passes.
+ * goes to the server's own outbound owner. An aggregate leaves when its audience is confirmed, its deadline
+ * passes, or an admission finds the cap reached while it is the oldest admitted.
  */
 export class WsQueueBoxServerReceiptAggregation {
-    readonly #aggregates = new Map<string, WsQueueBoxServerReceiptAggregate>();
+    /**
+     * The deadline sweep ends an aggregate on time, and an admission at the cap takes the oldest itself to answer
+     * it, so the repository never drops one on its own: its TTL is above every deadline (the window), or a read
+     * after a deadline and before the sweep would drop the aggregate without its `timed-out` receipt.
+     */
+    readonly #aggregates = new LatestRepository<string, WsQueueBoxServerReceiptAggregate>({
+        ttlMs: WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS + AL_RECEIPT_DEADLINE_GRACE_MS,
+        maxEntries: WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES,
+        evictsPerWindow: 0
+    });
     readonly #deadlines = new WsQueueBoxServerReceiptDeadlineIndex();
     readonly #dependencies: WsQueueBoxServerReceiptAggregation.Dependencies;
     readonly #sweepTaskId: string;
@@ -128,32 +158,43 @@ export class WsQueueBoxServerReceiptAggregation {
 
     /** The typed reason a relayed receiver ACK may not count, read against the live aggregate at ingress. */
     readRelayedAckRejection(ack: ALAckPayload): ALMessageRejection | undefined {
-        const aggregate = this.#aggregates.get(toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId));
-        const issues = validateWsQueueBoxServerReceiptAck(aggregate, ack, this.#dependencies.clock.nowMs());
+        const nowMs = this.#dependencies.clock.nowMs();
+        const aggregate = this.#aggregates.readAt(toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId), nowMs);
+        const issues = validateWsQueueBoxServerReceiptAck(aggregate, ack, nowMs);
         return issues.length === 0 ? undefined : { code: 'unauthorized', message: issues.join('; ') };
     }
 
     /** Whether this instance holds the receipt aggregate the ACK names. */
     holdsReceiptFor(ack: ALAckPayload): boolean {
-        return this.#aggregates.has(toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId));
+        return this.readAggregate(toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId)) !== undefined;
     }
 
-    /** The `admitted` receipt the origin receives at once. An empty audience is complete as it is admitted. */
-    recordAdmission(admission: WsQueueBoxServerReceiptAggregation.Admission): ALReceiptPayload {
+    /**
+     * The `admitted` receipt the origin receives at once, and the aggregate this admission ended at the cap.
+     * An empty audience is complete as it is admitted.
+     */
+    recordAdmission(
+        admission: WsQueueBoxServerReceiptAggregation.Admission
+    ): WsQueueBoxServerReceiptAggregation.RecordedAdmission {
         const key = toReceiptAggregateKey(admission.originPeerId, admission.msgId);
-        const aggregate = this.#aggregates.get(key) ?? { ...admission, confirmedRecipientPeerIds: [] };
-        if (aggregate.expectedRecipientPeerIds.length > 0 && !this.#aggregates.has(key)) {
-            this.#aggregates.set(key, aggregate);
-            this.#deadlines.add(key, aggregate.deadlineAtMs);
+        const nowMs = this.#dependencies.clock.nowMs();
+        const live = this.#aggregates.readAt(key, nowMs);
+        const aggregate = live ?? { ...admission, confirmedRecipientPeerIds: [] };
+        const started = live === undefined;
+        if (!started || aggregate.expectedRecipientPeerIds.length === 0) {
+            return { started, admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted: undefined };
         }
-        return toReceiptPayload(aggregate, 'admitted', this.#dependencies.clock.nowMs());
+        const evicted = this.takeOldestAggregateAtCap(nowMs);
+        this.#aggregates.acceptAt({ key, value: aggregate, nowEpochMs: nowMs });
+        this.#deadlines.add(key, aggregate.deadlineAtMs);
+        return { started, admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted };
     }
 
     /** A counted ACK; its `complete` receipt when it confirms the last expected recipient, none before. */
     recordAck(ack: ALAckPayload): Either<ALMessageRejection, WsQueueBoxServerReceiptAggregation.CountedAck> {
         const key = toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId);
-        const aggregate = this.#aggregates.get(key);
         const nowMs = this.#dependencies.clock.nowMs();
+        const aggregate = this.#aggregates.readAt(key, nowMs);
         const issues = validateWsQueueBoxServerReceiptAck(aggregate, ack, nowMs);
         if (issues.length > 0 || aggregate === undefined) {
             return Either.ofLeft({ code: 'unauthorized', message: issues.join('; ') });
@@ -163,7 +204,7 @@ export class WsQueueBoxServerReceiptAggregation {
             confirmedRecipientPeerIds: [...aggregate.confirmedRecipientPeerIds, ack.logicalRecipientPeerId]
         };
         if (next.confirmedRecipientPeerIds.length < next.expectedRecipientPeerIds.length) {
-            this.#aggregates.set(key, next);
+            this.#aggregates.acceptAt({ key, value: next, nowEpochMs: nowMs });
             return Either.ofRight({ receipt: undefined, deadlineAtMs: next.deadlineAtMs });
         }
         this.deleteAggregate(key);
@@ -173,8 +214,7 @@ export class WsQueueBoxServerReceiptAggregation {
     /** The `timed-out` receipt of every aggregate whose deadline has passed; each leaves the map. */
     sweep(nowMs: number): readonly ALReceiptPayload[] {
         return this.#deadlines.takeDue(nowMs).flatMap((key) => {
-            const aggregate = this.#aggregates.get(key);
-            this.#aggregates.delete(key);
+            const aggregate = this.#aggregates.take(key);
             return aggregate === undefined ? [] : [toReceiptPayload(aggregate, 'timed-out', nowMs)];
         });
     }
@@ -189,12 +229,17 @@ export class WsQueueBoxServerReceiptAggregation {
             return;
         }
         const admission = this.toAdmission(admitted, admitted.roomAudience);
-        if (
-            admission !== undefined &&
-            !this.#aggregates.has(toReceiptAggregateKey(admission.originPeerId, admission.msgId))
-        ) {
-            await this.writeReceipt(this.recordAdmission(admission), admission.deadlineAtMs);
+        if (admission === undefined) {
+            return;
         }
+        const recorded = this.recordAdmission(admission);
+        if (!recorded.started) {
+            return;
+        }
+        if (recorded.evicted !== undefined) {
+            await this.writeReceipt(recorded.evicted.receipt, recorded.evicted.deadlineAtMs);
+        }
+        await this.writeReceipt(recorded.admitted, admission.deadlineAtMs);
     }
 
     /**
@@ -244,6 +289,23 @@ export class WsQueueBoxServerReceiptAggregation {
                 clock.nowMs() + WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS
             )
         };
+    }
+
+    private readAggregate(key: string): WsQueueBoxServerReceiptAggregate | undefined {
+        return this.#aggregates.readAt(key, this.#dependencies.clock.nowMs());
+    }
+
+    /** The oldest admitted aggregate, ended as a passed deadline ends it, when one more would pass the cap. */
+    private takeOldestAggregateAtCap(nowMs: number): WsQueueBoxServerReceiptAggregation.EndedAggregate | undefined {
+        if (this.#aggregates.size() < WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES) {
+            return undefined;
+        }
+        const [oldest] = this.#aggregates.keys();
+        const aggregate = this.#aggregates.take(oldest);
+        this.#deadlines.delete(oldest);
+        return aggregate === undefined
+            ? undefined
+            : { receipt: toReceiptPayload(aggregate, 'timed-out', nowMs), deadlineAtMs: aggregate.deadlineAtMs };
     }
 
     private deleteAggregate(key: string): void {

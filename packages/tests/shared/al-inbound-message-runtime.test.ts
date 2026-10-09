@@ -1092,7 +1092,8 @@ function createInboundBackedStores(namespace: string, state: ALAdmissionMemorySt
                 backend,
                 orderingTrackTtlMs: 5 * 60_000,
                 supersedenceTrackTtlMs: 5 * 60_000,
-                retention: normalizeALRuntimeStoreRetention()
+                retention: normalizeALRuntimeStoreRetention(),
+                maxOrderingTracks: undefined
             }),
             workQueue: backend.workQueue
         }

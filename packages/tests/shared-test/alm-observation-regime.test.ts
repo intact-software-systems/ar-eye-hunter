@@ -10,6 +10,7 @@ import {
     ALM_OBSERVATION_PAGE_WINDOW_END_MS
 } from '../../shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-page-regime.ts';
 import {
+    ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS,
     ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT,
     ALM_OBSERVATION_WINDOW_MS,
     computeALMObservationRegime,
@@ -51,10 +52,7 @@ function readFixtureRegime(
     fixtureName: string,
     cellOutcome: ALMObservationCellOutcome
 ): ALMObservationRegime {
-    const value = JSON.parse(
-        readFileSync(path.join(fixtureRoot, fixtureName), 'utf8')
-    ) as unknown;
-    return decodeALMObservationSnapshot(value).fold(
+    return decodeALMObservationSnapshot(JSON.parse(readFileSync(path.join(fixtureRoot, fixtureName), 'utf8'))).fold(
         (issues) => {
             throw new Error(`${fixtureName} did not decode: ${issues.join('; ')}`);
         },
@@ -188,6 +186,7 @@ function toInboundDrainEvent(
         runDurationMs: number;
         releaseDurationMs: number;
         queueWaitMs: number;
+        promoted?: number;
     }>
 ): RallarBlackBoxTestRecord {
     return {
@@ -197,7 +196,7 @@ function toInboundDrainEvent(
         payload: {
             topic: 'rallar.browser.alm.inbound_diagnostics',
             payload: {
-                data: { kind: 'effect-drain', workerId: INBOUND_WORKER_ID, ...phases }
+                data: { kind: 'effect-drain', workerId: INBOUND_WORKER_ID, promoted: 0, ...phases }
             }
         }
     };
@@ -470,6 +469,21 @@ describe('computeALMObservationRegime', () => {
         expect(regime.pageRegime).toEqual({ outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' });
     });
 
+    it('reads the page unmeasured once the run holds exactly the control server\'s default event bound, whose start may be gone', () => {
+        const probes = toPageWindowProbes(2, 10);
+        const toFiller = (count: number) =>
+            Array.from({ length: count }, (_unused, index) => toReadinessProbeEvent(2_000 + index, SENDER_AGENT_ID, { cause: 'own-commit', durationMs: 1 }));
+
+        const trimmed = toSyntheticRegime([...probes, ...toFiller(ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS - probes.length)]);
+        const whole = toSyntheticRegime([...probes, ...toFiller(ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS - probes.length - 1)]);
+        // A run retained without a bound holds more than the default and keeps its start.
+        const unbounded = toSyntheticRegime([...probes, ...toFiller(ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS - probes.length + 1)]);
+
+        expect(trimmed.pageRegime).toEqual({ outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' });
+        expect(whole.pageRegime).toEqual({ outcome: 'measured', storageProbeMedianMs: 2, sampleCount: 10, regime: 'normal' });
+        expect(unbounded.pageRegime).toEqual({ outcome: 'measured', storageProbeMedianMs: 2, sampleCount: 10, regime: 'normal' });
+    });
+
     it('classifies the page as slow at 120 ms and unclassified in the band at 30 ms', () => {
         expect(toSyntheticRegime(toPageWindowProbes(120, 10)).pageRegime).toEqual({
             outcome: 'measured',
@@ -607,7 +621,8 @@ describe('computeALMObservationRegime', () => {
                     drainMedianMs: 150,
                     drainCount: 2
                 },
-                claimWaits: NO_CLAIM_WAITS
+                claimWaits: NO_CLAIM_WAITS,
+                promotedReleases: 0
             },
             {
                 role: 'receiver',
@@ -622,7 +637,8 @@ describe('computeALMObservationRegime', () => {
                     drainMedianMs: 350,
                     drainCount: 2
                 },
-                claimWaits: NO_CLAIM_WAITS
+                claimWaits: NO_CLAIM_WAITS,
+                promotedReleases: 0
             },
             { role: 'unattributed', outcome: 'no-events' }
         ]);
@@ -685,7 +701,8 @@ describe('computeALMObservationRegime', () => {
                     drainMedianMs: 0,
                     drainCount: 0
                 },
-                claimWaits: NO_CLAIM_WAITS
+                claimWaits: NO_CLAIM_WAITS,
+                promotedReleases: 0
             },
             { role: 'receiver', outcome: 'no-events' },
             { role: 'unattributed', outcome: 'no-events' }
@@ -719,7 +736,8 @@ describe('computeALMObservationRegime', () => {
                     drainMedianMs: 100,
                     drainCount: 1
                 },
-                claimWaits: NO_CLAIM_WAITS
+                claimWaits: NO_CLAIM_WAITS,
+                promotedReleases: 0
             },
             { role: 'receiver', outcome: 'no-events' },
             { role: 'unattributed', outcome: 'no-events' }
@@ -778,8 +796,57 @@ describe('computeALMObservationRegime', () => {
                 dispatchClaimCount: 2,
                 sendControlClaimMedianMs: 0,
                 sendControlClaimCount: 0
-            }
+            },
+            promotedReleases: 0
         });
+    });
+
+    it('sums the releases a role ran by promotion over both lanes, and skips a drain that states no count', () => {
+        const drain = (atEpochMs: number, agentId: string, promoted: number) =>
+            toInboundDrainEvent(atEpochMs, agentId, {
+                durationMs: 4,
+                selectionDurationMs: 1,
+                claimDurationMs: 1,
+                runDurationMs: 1,
+                releaseDurationMs: 1,
+                queueWaitMs: 0,
+                promoted
+            });
+        const countless = {
+            kind: 'diagnostic',
+            atEpochMs: 1_001,
+            agentId: RECEIVER_AGENT_ID,
+            payload: {
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                payload: {
+                    data: {
+                        kind: 'effect-drain',
+                        workerId: INBOUND_WORKER_ID,
+                        durationMs: 4,
+                        selectionDurationMs: 1,
+                        claimDurationMs: 1,
+                        runDurationMs: 1,
+                        releaseDurationMs: 1,
+                        queueWaitMs: 0
+                    }
+                }
+            }
+        };
+        const regime = toSyntheticRegime([
+            ...toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+            drain(1_000, RECEIVER_AGENT_ID, 3),
+            countless,
+            ...toVolatileLaneEvents([drain(1_002, RECEIVER_AGENT_ID, 15), drain(1_003, RECEIVER_AGENT_ID, 0)]),
+            drain(1_004, SENDER_AGENT_ID, 2)
+        ]);
+
+        const directionOf = (role: string) => {
+            const direction = regime.inbound.find((candidate) => candidate.role === role);
+            return direction?.outcome === 'measured' ? direction : undefined;
+        };
+        expect(directionOf('receiver')?.promotedReleases).toBe(18);
+        expect(directionOf('receiver')?.phases.drainCount).toBe(1);
+        expect(directionOf('sender')?.promotedReleases).toBe(2);
     });
 
     it('summarizes a cell in one line for the job log', () => {

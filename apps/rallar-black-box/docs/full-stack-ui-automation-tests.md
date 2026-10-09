@@ -196,7 +196,10 @@ Postgres live RTC scripts use `http://localhost:18081` for API-v1 and
 
 The config always starts the SPA and control server. It starts `apps/api-v1`
 only when `RALLAR_BLACK_BOX_FULL_STACK=1` is set. If a service is already
-running on the expected port, Playwright reuses it.
+running on the expected port, Playwright reuses it. With
+`RALLAR_BLACK_BOX_FULL_STACK` set to `1` or `true` the SPA's Vite server runs
+without hot module replacement, so an edit never reloads the lane's long-lived
+agent pages; still, do not edit a worktree while its lane runs.
 
 To run the backend servers separately before test execution:
 

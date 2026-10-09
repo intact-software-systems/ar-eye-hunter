@@ -35,13 +35,13 @@ export function toLimitRefusalFacts(limit: ALVolatileSessionLimit): readonly Alm
 }
 
 /**
- * A session reads its bound once, when it initialises, so the sender closes first and reconnects with the lowered
- * limits, written as given; the page reads an age or track limit the override leaves out as its constant.
+ * A session reads its bound once, when it initialises, so the page closes first and reconnects with the lowered or
+ * raised limits, written as given; the page reads an age or track limit the override leaves out as its constant.
  * `restored` reconnects without the field.
  */
 export function toBoundReconnectCommands(
     sender: AlmConformanceStepInput,
-    name: 'lowered' | 'restored',
+    name: 'lowered' | 'raised' | 'restored',
     limits:
         | (
             & Pick<ALVolatileSessionLimits, 'maxAdmissions' | 'maxBytes'>
@@ -107,18 +107,18 @@ export function toAcknowledgedCommands(
 }
 
 /**
- * The receiver's window opens before the sender's reconnect, so it also owns one RTC readiness budget and whatever
- * the sender waits after the reconnect before it sends.
+ * The waiting page's window opens before the other page's reconnect, so it also owns one RTC readiness budget and
+ * whatever the other page waits after the reconnect before it sends.
  */
 export function toReconnectedArrivalsCommand(
-    receiver: AlmConformanceStepInput,
+    waiting: AlmConformanceStepInput,
     count: number,
     settleMs: number
 ): RallarBlackBoxTestMessagesReceivedCommand {
-    const timeoutMs = receiver.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS + CONNECT_READINESS_TIMEOUT_MS +
+    const timeoutMs = waiting.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS + CONNECT_READINESS_TIMEOUT_MS +
         settleMs;
     return {
-        ...toReceivedCommand({ ...receiver, index: 1, count, absent: false }),
+        ...toReceivedCommand({ ...waiting, index: 1, count, absent: false }),
         windowMs: timeoutMs - RESPONSE_MARGIN_MS,
         timeoutMs
     };
