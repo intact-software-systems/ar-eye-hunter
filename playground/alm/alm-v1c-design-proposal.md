@@ -361,17 +361,29 @@ agent has six readings and no final output. Final storage and the native group
 assertions remain unevaluated. Receipt waits and fixed delays consume the actual
 shot-loop windows, so a timeout label earns no timer or fixture relaxation.
 
-The next independent contract probe concerns an authorized originating leader
-send with an exact accepted tree and a missing required RTC edge. An unrelated
-ready peer must not turn the existing missing-route hand-over into a terminal
-repair failure. Test the public RTC leg against both connection observations
-with the same message, authority and accepted edge. Only a valid independent RED
-earns an owning correction; uncaptured native inputs remain unknown. Preserve
-explicit authorization, no-leader and QoS refusals, generic planner-drop terminal
-handling, frozen identity/audience and the original TTL. This is consistency of
-the existing route-gap contract, without a new fallback policy. After scoped
-review and publication, one unchanged GitHub observation tests actual outcomes;
-it cannot by itself prove the original native cause or isolated CPU benefit.
+An independent public-leg regression establishes a route inconsistency for an
+authorized originating leader send with an exact accepted tree and a missing
+required RTC edge. Before the correction, the manager queues the retryable
+send with no ready peers, while only an unrelated ready peer causes terminal planner-drop. The
+earlier missing-immediate-peer assumption did not account for at-least-once
+route waiting.
+
+The explicit hand-over leg now observes canonical owned accepted children and
+returns no-route when none is ready, after the existing authority, frozen
+audience, QoS and leader checks. It returns the original envelope without a queue
+entry, transport attempt or pending receipt. A ready required edge follows the
+existing RTC path with the director alone in its receipt audience. Direct RTC
+and hold legs retain their existing waiting behavior. Explicit authorization,
+no-leader and QoS refusals, generic planner-drop terminal handling, frozen
+identity/audience and original TTL remain unchanged. This corrects the existing
+route-gap hand-over contract without another routing policy or fallback strategy.
+
+Uncaptured original native inputs remain unknown. The regression and unchanged
+generic fallback tests establish leg classification and strategy contracts,
+without proving a new real-manager-to-WS receipt integration or the original
+native cause. One unchanged GitHub observation tests the reviewed candidate's
+actual outcomes; neither that observation nor this source correction isolates
+CPU benefit or resolves every leader ACK and deadline failure.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
