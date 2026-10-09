@@ -1,6 +1,12 @@
 // @vitest-environment happy-dom
 
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { createSpaBrowserRallarRuntime } from '../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import { sleep } from '../../shared-test/rallar-bb-test/browser/browser-command-cancellation.ts';
@@ -9,7 +15,19 @@ import { createAlmScaleSetupCommands } from '../../shared-test/rallar-bb-test/co
 import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import { Command } from '../../shared/cache/Command.ts';
 import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '../../shared/services/ws-queue-box-client-service.ts';
-import { facade, loadRuntime, resetFacade } from './rallar-browser-runtime/browser-rallar-runtime-test-harness.ts';
+
+import {
+    facade,
+    loadRuntime,
+    resetFacade
+} from './rallar-browser-runtime/browser-rallar-runtime-test-harness.ts';
+
+interface AlmScalePhaseCase {
+    readonly role: 'director' | 'player';
+    readonly delayMs: number;
+    readonly readinessDelayMs: number;
+    readonly outcome: 'connected' | 'connect-timeout' | 'readiness-timeout';
+}
 
 const GROUP = { applicationId: 'scale-app', workspaceId: 'scale-workspace', groupId: 'scale-room' };
 
@@ -115,31 +133,29 @@ it.each(['director', 'player'] as const)('restores the authenticated %s worker i
     await browser.execute({ kind: 'close' });
 });
 
-it.each(
-    [
-        ['director', 15_000, 0, 'connected'],
-        ['player', 15_000, 0, 'connected'],
-        ['director', 45_001, 0, 'connect-timeout'],
-        ['player', 45_001, 0, 'connect-timeout'],
-        ['player', 40_000, 20_000, 'connected'],
-        ['player', 0, 45_001, 'readiness-timeout']
-    ] as const
-)('bounds separate %s phases: %ims socket, %ims RTC readiness (%s)', async (role, delayMs, readinessDelayMs, outcome) => {
+it.each<AlmScalePhaseCase>([
+    { role: 'director', delayMs: 15_000, readinessDelayMs: 0, outcome: 'connected' },
+    { role: 'player', delayMs: 15_000, readinessDelayMs: 0, outcome: 'connected' },
+    { role: 'director', delayMs: 45_001, readinessDelayMs: 0, outcome: 'connect-timeout' },
+    { role: 'player', delayMs: 45_001, readinessDelayMs: 0, outcome: 'connect-timeout' },
+    { role: 'player', delayMs: 40_000, readinessDelayMs: 20_000, outcome: 'connected' },
+    { role: 'player', delayMs: 0, readinessDelayMs: 45_001, outcome: 'readiness-timeout' }
+])('bounds separate $role phases: $delayMs ms socket, $readinessDelayMs ms RTC readiness ($outcome)', async (phaseCase) => {
     const browser = await bootstrapWorkerBrowser();
     vi.useFakeTimers();
     // The real socket owner uses this Command/default pair; delay only its network completion.
     facade.behavior.connect.mockImplementation(async (options) => {
-        await new Command<void>((signal) => sleep(delayMs, signal), {
+        await new Command<void>((signal) => sleep(phaseCase.delayMs, signal), {
             timeoutMs: options?.timeoutMs ?? DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
             errorOnNull: false
         }).run();
     });
     const readyRoom = await facade.behavior.rtcWaitForRoom(GROUP);
     facade.behavior.rtcWaitForRoom.mockImplementation(async (_room, options) => {
-        await sleep(readinessDelayMs, options?.signal);
+        await sleep(phaseCase.readinessDelayMs, options?.signal);
         return readyRoom;
     });
-    const commands = createAlmScaleSetupCommands({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 }, role);
+    const commands = createAlmScaleSetupCommands({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 }, phaseCase.role);
     const connect = commands.find((command) => command.kind === 'rtc.connect');
     if (connect?.kind !== 'rtc.connect') {
         throw new Error('The scale setup has no connect command.');
@@ -148,13 +164,13 @@ it.each(
     await vi.advanceTimersByTimeAsync(95_000);
     const connected = await pending;
 
-    expect(connected.ok).toBe(outcome === 'connected');
-    if (outcome === 'connected') {
+    expect(connected.ok).toBe(phaseCase.outcome === 'connected');
+    if (phaseCase.outcome === 'connected') {
         expect(connected.error).toBeUndefined();
-        expect(connected.durationMs).toBe(delayMs + readinessDelayMs);
+        expect(connected.durationMs).toBe(phaseCase.delayMs + phaseCase.readinessDelayMs);
         expect(connected.value).toMatchObject({ sessionId: facade.session.sessionId, username: facade.session.username });
     }
-    else if (outcome === 'connect-timeout') {
+    else if (phaseCase.outcome === 'connect-timeout') {
         expect(connected.error).toMatchObject({
             code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
             message: 'Command timed out after 45000 ms'
