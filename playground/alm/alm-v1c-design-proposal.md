@@ -308,13 +308,31 @@ Moving browser agents alone therefore did not demonstrate setup or ALM benefit.
 
 The next measurement places API, control, SPA and 15 isolated browser contexts
 together on one standard GitHub runner. Reuse the existing full-stack Playwright
-lifecycle, headless worker and generic manifest operator. Extend the operator's
-current export boundary to retain complete recorder streams and snapshots on
-failure as well as success; its bounded artifact preview is insufficient for
-this workload. Keep the committed manifest, distinct principals, roles, tree
-configuration, storage/delivery budgets and all fixture deadlines unchanged.
+lifecycle, standalone headless worker entry and generic manifest operator. The
+local lifecycle must select the standalone headless SPA before startup; the
+operator SPA does not serve its `/headless/` entry. Preserve the operator SPA's
+existing default for other consumers. The manifest operator now exports direct
+stream bytes and snapshots on failure as well as success, while explicitly
+leaving stream completeness unverified. The caller owns fresh recorder storage
+and unbounded runtime retention; bounded previews cannot prove this workload.
+Before worker registration completes, retain available control/recorder evidence
+and explicit missing distributed evidence, since no distributed run exists yet.
+After operation completion or failure, await bounded owned-worker completion or
+stop/reap before the canonical final export. Late arrivals must settle before
+snapshot/stream completeness checks, while the original operation error remains
+primary if lifecycle preparation or export also fails.
+Keep the committed manifest, distinct principals, roles, tree configuration,
+storage/delivery budgets and all fixture deadlines unchanged.
 Canonical native terminal/rollup and complete 73-assertion evidence decide
 acceptance, independently of worker exit or analysis readability.
+
+The corrected local rehearsal registered all 15 distinct principals/clients,
+then failed during member setup before evaluating group assertions. Complete
+recorder bytes and native arrival/latest-result counts were verified offline.
+This was a dirty-tree rehearsal before the final producer-lifecycle correction;
+its source hashes remain explicit, and it is not the pending immutable-source
+GitHub result. The correction passed late-arrival/error-precedence TDD and fresh
+scoped re-review without another domain run.
 
 Capture actual CPU/memory/disk, runtime/browser versions, source/manifest identity
 and safe effective configuration. Fresh ephemeral PGlite/local pubsub/local ICE,
