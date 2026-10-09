@@ -3,6 +3,7 @@ import type {
     RallarBlackBoxTestMessagesSendCommand
 } from '../../../rallar-black-box-test-contracts.ts';
 
+import { createAlmScaleLifecycleArrival, createAlmScaleShotArrivals } from './create-alm-scale-arrival-commands.ts';
 import { createAlmScalePayload } from './create-alm-scale-payload.ts';
 import type { AlmScaleRecipeInput } from './create-alm-scale-recipes.ts';
 
@@ -35,13 +36,16 @@ export function createAlmScaleWorkloadCommands(
             ...createLifecycleSendCommands(input, 'start', 0),
             complete,
             ...createLifecycleSendCommands(input, 'end', 9),
-            createReceivedCommand(prefix, 'intent', (input.participantCount - 1) * 6)
+            createReceivedCommand(prefix, 'intent', (input.participantCount - 1) * 6),
+            createAlmScaleShotArrivals(input)
         ]
         : [
             { ...createReceivedCommand(prefix, 'event', 1), commandId: `${prefix}-received-start` },
+            ...createAlmScaleLifecycleArrival(input, 'started'),
             createShotLoop(input),
             complete,
-            createReceivedCommand(prefix, 'event', 2)
+            createReceivedCommand(prefix, 'event', 2),
+            ...createAlmScaleLifecycleArrival(input, 'ended')
         ];
 }
 
@@ -53,7 +57,7 @@ function createLifecycleSendCommands(
     const prefix = 'alm-scale-director';
     const receiptId = `${prefix}-${event}-receipt`;
     const handleId = `${prefix}-${event}`;
-    const resultId = `${prefix}-traffic:g1:workload:c${commandOffset + 3}:${receiptId}`;
+    const resultId = `${prefix}-traffic:g1:workload:c1:${prefix}-window:g1:commands:c${commandOffset + 3}:${receiptId}`;
     return [
         createSendCommand(input, { prefix, handleId, kind: event === 'start' ? 'started' : 'ended' }),
         {
@@ -76,7 +80,8 @@ function createLifecycleSendCommands(
 
 function createShotLoop(input: AlmScaleRecipeInput): RallarBlackBoxTestCommand {
     const prefix = 'alm-scale-player';
-    const resultId = `${prefix}-traffic:g1:workload:c2:${prefix}-shots:i{loop.iteration}:c3:${prefix}-shot-receipt`;
+    const resultId =
+        `${prefix}-traffic:g1:workload:c1:${prefix}-window:g1:commands:c4:${prefix}-shots:i{loop.iteration}:c3:${prefix}-shot-receipt`;
     const handleId = `${prefix}-shot-{loop.iteration}`;
     return {
         kind: 'loop',

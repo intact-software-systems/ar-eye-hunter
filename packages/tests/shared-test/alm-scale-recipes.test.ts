@@ -107,6 +107,13 @@ describe('ALM scale recipes', () => {
             intervalMs: 5_000,
             samplingWindowMs: 30_000
         });
+        expect(scale.metadata).toMatchObject({
+            workloadWindowMs: 30_000,
+            arrivalChecks: {
+                director: { commandId: 'alm-scale-director-shot-arrivals', iterations: 6, passed: (participantCount - 1) * 6 * 3 },
+                player: { commandIds: ['alm-scale-player-started-arrival', 'alm-scale-player-ended-arrival'] }
+            }
+        });
         for (const recipe of scale.recipes) {
             expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe)).toEqual({ ok: true, errors: [] });
             const commands = flattenCommands(recipe.commands);
@@ -151,6 +158,14 @@ describe('ALM scale recipes', () => {
             }
         }
         expect(scale.groupAssertions).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                source: { recipeId: 'alm-scale-director', commandId: 'alm-scale-director-shot-arrivals', path: 'passed' },
+                predicate: { operator: 'equals', expected: (participantCount - 1) * 6 * 3 }
+            }),
+            expect.objectContaining({
+                source: { recipeId: 'alm-scale-player', commandId: 'alm-scale-player-window', path: 'groups.0.durationMs' },
+                predicate: { operator: 'lt', expected: 30_000 }
+            }),
             expect.objectContaining({
                 scope: { role: 'sender' },
                 source: {

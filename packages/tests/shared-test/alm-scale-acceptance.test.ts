@@ -3,8 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
+import type { BlackBoxRallarDeliveryObservation } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+
 import type { RallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { isRallarBlackBoxTestResult } from '../../shared-test/rallar-bb-test/composite-results.ts';
+import { createAlmScalePayload } from '../../shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-payload.ts';
 import { createAlmScaleRecipes } from '../../shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-recipes.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '../../shared-test/rallar-bb-test/distributed-run.ts';
@@ -13,8 +16,10 @@ import type { DistributedGroupAssertionRecipeEvidence } from '../../shared-test/
 import type {
     RallarBlackBoxTestAlmUsage,
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestJsonValue,
     RallarBlackBoxTestResult
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { decodeJsonValue } from '../../shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
@@ -24,6 +29,19 @@ interface SamplerExecution {
     readonly final: RallarBlackBoxTestResult;
     readonly runtime: RallarBlackBoxBrowserTestRuntime;
     readonly elapsedMs: number;
+}
+
+interface TrafficScenario {
+    readonly role: 'director' | 'player';
+    readonly participantCount?: 15 | 30 | 50;
+    readonly missingPlayer?: boolean;
+    readonly missingSequence?: boolean;
+    readonly wrongDirector?: boolean;
+    readonly wrongType?: boolean;
+    readonly cancelAtMs?: number;
+    readonly duplicateStart?: boolean;
+    readonly startDelayMs?: number;
+    readonly ackDelayMs?: number;
 }
 
 const GROUP = { applicationId: 'scale-app', workspaceId: 'scale-workspace', groupId: 'scale-room' };
@@ -231,9 +249,25 @@ describe('ALM scale player wire execution', () => {
         if (traffic?.kind !== 'parallel') {
             throw new Error('Missing player traffic');
         }
+        const window = traffic.groups[0].commands[0];
+        if (window.kind !== 'parallel') {
+            throw new Error('Missing workload window');
+        }
         const result = await runtime.execute({
             ...traffic,
-            groups: [{ ...traffic.groups[0], commands: [{ kind: 'health', commandId: 'connected-health' }, traffic.groups[0].commands[1]] }, traffic.groups[1]]
+            groups: [{
+                ...traffic.groups[0],
+                commands: [{
+                    ...window,
+                    groups: [{
+                        ...window.groups[0],
+                        commands: [{ kind: 'health', commandId: 'connected-health' }, { kind: 'health', commandId: 'started-port' }, {
+                            kind: 'health',
+                            commandId: 'started-type-port'
+                        }, window.groups[0].commands[3]]
+                    }]
+                }]
+            }, { ...traffic.groups[1], commands: [{ kind: 'health', commandId: 'sampling-port' }] }]
         });
         expect(result.ok).toBe(recipientSessionId === 'director-session');
         if (recipientSessionId === 'director-session') {
@@ -261,6 +295,212 @@ describe('ALM scale player wire execution', () => {
     });
 });
 
+function recordTrafficArrivals(runtime: RallarBlackBoxBrowserTestRuntime, scenario: TrafficScenario): void {
+    const input = { participantCount: scenario.participantCount ?? 15, group: GROUP, readyTimeoutMs: 45_000 } as const;
+    const prefix = `alm-scale-${scenario.role}`;
+    const shotCount = (input.participantCount - 1) * 6;
+    const payloads = scenario.role === 'player'
+        ? [createAlmScalePayload(input, 'started'), createAlmScalePayload(input, scenario.duplicateStart ? 'started' : 'ended')]
+        : Array.from({ length: shotCount }, (_, index) => {
+            const player = scenario.missingPlayer && index >= shotCount - 6 ? 1 : Math.floor(index / 6) + 1;
+            return decodeTrafficFixture(
+                JSON.stringify(createAlmScalePayload(input, 'shot'))
+                    .replaceAll('{auth.sessionId}', `session-${player}`)
+                    .replaceAll('"{loop.iteration}"', String(scenario.missingSequence && index === shotCount - 1 ? 5 : index % 6 + 1))
+            );
+        });
+    if (scenario.wrongType) {
+        payloads.push(payloads[0]);
+    }
+    for (const [index, payload] of payloads.entries()) {
+        runtime.receiveRallarBrowserEvent({
+            kind: 'message',
+            connection: prefix,
+            topic: 'rallar.browser.messages.rtc.message',
+            data: {
+                typeId: `room.ar-eye-hunter.director.${
+                    scenario.role === 'director' && !(scenario.wrongType && index === shotCount - 1) ? 'intent' : 'event'
+                }.v1`,
+                payload: decodeTrafficFixture(
+                    JSON.stringify(payload).replaceAll('{auth.sessionId}', scenario.wrongDirector ? 'wrong-director' : 'director-session')
+                )
+            }
+        });
+    }
+}
+
+function decodeTrafficFixture(serialized: string): RallarBlackBoxTestJsonValue {
+    const decoded = decodeJsonValue(JSON.parse(serialized));
+    if (decoded === undefined) {
+        throw new Error('Invalid authored traffic fixture');
+    }
+    return decoded;
+}
+
+function createTrafficReceipt(scenario: TrafficScenario, handleId: string): BlackBoxRallarDeliveryObservation {
+    return {
+        handleId,
+        state: 'acknowledged',
+        submitted: true,
+        enqueued: false,
+        receiptMode: scenario.role === 'player' ? 'leader' : 'receiver',
+        confirmedHopPeerIds: [],
+        unconfirmedHopPeerIds: [],
+        expectedRecipientPeerIds: scenario.role === 'player'
+            ? ['director-session']
+            : Array.from({ length: (scenario.participantCount ?? 15) - 1 }, (_, index) => `session-${index + 1}`),
+        confirmedRecipientPeerIds: scenario.role === 'player'
+            ? ['director-session']
+            : Array.from({ length: (scenario.participantCount ?? 15) - 1 }, (_, index) => `session-${index + 1}`),
+        unconfirmedRecipientPeerIds: [],
+        attempts: 1,
+        attemptOutcomes: [],
+        attemptCarriers: [],
+        attemptRefusalReasons: [],
+        reason: undefined,
+        backpressured: false,
+        relayRejection: undefined,
+        failure: undefined,
+        carrierFallback: undefined,
+        durabilityDowngrade: undefined
+    };
+}
+
+function createTrafficRuntime(scenario: TrafficScenario): RallarBlackBoxBrowserTestRuntime {
+    const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+    return createRallarBlackBoxBrowserTestRuntime({
+        now: Date.now,
+        sleep,
+        rallarRuntime: {
+            ...createBrowserRallarRequiredMethodsTestDouble(),
+            connect: async () => ({ sessionId: 'player-session', connected: true }),
+            waitForRoom: async () => READY_ROOM,
+            send: async () => ({}),
+            refreshRoom: async () => undefined,
+            close: async () => ({}),
+            health: async () => ({ connected: true }),
+            readAlmUsage: async () => HEALTHY,
+            readCongestionCounters: async () => ({ dropped: 0, deferred: 0, handedOver: 0 }),
+            sendMessage: async (command) => ({ handleId: command.handleId, carrier: command.carrier, status: 'acknowledged' }),
+            observeDelivery: async (command) => {
+                await sleep(scenario.ackDelayMs ?? 0);
+                return createTrafficReceipt(scenario, String(command.handleId));
+            },
+            readReceipts: async (command) => createTrafficReceipt(scenario, String(command.handleId)),
+            director: {
+                status: async () => ({ directorStatus: { active: true, appointment: { sessionId: 'director-session' } } }),
+                appoint: async () => ({}),
+                resign: async () => ({}),
+                relayStart: async () => ({}),
+                intent: async () => ({}),
+                syncRequest: async () => ({}),
+                relayStop: async () => ({})
+            }
+        }
+    });
+}
+
+async function runTrafficScenario(scenario: TrafficScenario): Promise<RallarBlackBoxTestResult> {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    vi.stubGlobal('localStorage', {
+        getItem: () =>
+            JSON.stringify({
+                clientId: 'page-client',
+                username: 'Player',
+                sessionId: 'player-session',
+                accessToken: 'test-token',
+                expiresAtEpochMs: Date.now() + 60_000
+            })
+    });
+    const runtime = createTrafficRuntime(scenario);
+    const recipe = createAlmScaleRecipes({ participantCount: scenario.participantCount ?? 15, group: GROUP, readyTimeoutMs: 45_000 })
+        .recipes[scenario.role === 'director' ? 0 : 1];
+    await runtime.execute(recipe.commands.find((command) => command.kind === 'rtc.connect')!);
+    await runtime.execute({ kind: 'director.status', commandId: 'alm-scale-player-ready-status', roomRef: GROUP, refresh: true });
+    if (!scenario.startDelayMs) {
+        recordTrafficArrivals(runtime, scenario);
+    }
+    else {
+        setTimeout(() => recordTrafficArrivals(runtime, scenario), scenario.startDelayMs);
+    }
+    const traffic = recipe.commands.find((command) => command.kind === 'parallel');
+    if (traffic?.kind !== 'parallel') {
+        throw new Error('Missing traffic');
+    }
+    const execution = runtime.execute({
+        ...traffic,
+        groups: [{ ...traffic.groups[0], commands: replaceDistributedTrafficPorts(traffic.groups[0].commands) }, traffic.groups[1]]
+    });
+    if (scenario.cancelAtMs !== undefined) {
+        setTimeout(() => {
+            void runtime.execute({ kind: 'recipe.cancel', commandId: 'cancel-traffic', reason: 'test cancellation' });
+        }, scenario.cancelAtMs);
+    }
+    await vi.runAllTimersAsync();
+    return await execution;
+}
+
+function replaceDistributedTrafficPorts(commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestCommand[] {
+    return commands.map((command) =>
+        command.kind === 'barrier'
+            ? { kind: 'health', commandId: command.commandId }
+            : command.kind === 'loop'
+            ? { ...command, commands: replaceDistributedTrafficPorts(command.commands) }
+            : command.kind === 'parallel'
+            ? { ...command, groups: command.groups.map((group) => ({ ...group, commands: replaceDistributedTrafficPorts(group.commands) })) }
+            : command.kind === 'wait'
+            ? { ...command, timeoutMs: 1 }
+            : command
+    );
+}
+
+describe('ALM scale complete traffic evidence', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
+    });
+
+    it.each(
+        [
+            { role: 'director', missingPlayer: true },
+            { role: 'director', missingSequence: true },
+            { role: 'director', wrongType: true },
+            { role: 'player', duplicateStart: true },
+            { role: 'player', wrongDirector: true },
+            { role: 'player', startDelayMs: 8_000 },
+            { role: 'player', ackDelayMs: 1_500 }
+        ] as const
+    )('rejects incomplete identities or traffic outside the sampled window: %j', async (scenario) => {
+        expect((await runTrafficScenario(scenario)).ok).toBe(false);
+    });
+
+    it.each(['director', 'player'] as const)('accepts complete %s traffic inside the window', async (role) => {
+        const result = await runTrafficScenario({ role });
+        expect(result.error).toBeUndefined();
+        expect(result.ok).toBe(true);
+        if (role === 'player') {
+            expect(result.value).toMatchObject({ groups: [{ results: [{ result: { value: { groups: [{ durationMs: 25_000 }] } } }] }, {}] });
+        }
+    });
+
+    it('keeps the generated workload and sampler cancelled after interruption', async () => {
+        const result = await runTrafficScenario({ role: 'player', cancelAtMs: 7_000 });
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe('cancelled');
+        expect(result.value).toMatchObject({
+            cancelled: true,
+            groups: [{ cancelled: true, results: [{ result: { value: { cancelled: true } } }] }, { cancelled: true }]
+        });
+    });
+
+    it.each([30, 50] as const)('executes all per-player arrivals within native composite bounds for %i participants', async (participantCount) => {
+        const result = await runTrafficScenario({ role: 'director', participantCount });
+        expect(result.error).toBeUndefined();
+        expect(result.ok).toBe(true);
+    });
+});
+
 function createEvidenceResult(commandId: string, kind: RallarBlackBoxTestCommand['kind'], value: RallarBlackBoxTestResult['value']): RallarBlackBoxTestResult {
     return { commandId, kind, value, status: 'ok', ok: true, startedAtEpochMs: 1_000, endedAtEpochMs: 31_000, durationMs: 30_000 };
 }
@@ -273,7 +513,20 @@ interface SamplerEvidence {
 
 const HEALTHY_SAMPLER: SamplerEvidence = { iterations: 7, failed: 0, cancelled: false };
 
-function createEvidence(agentId: string, director: boolean, samplerEvidence: SamplerEvidence): DistributedGroupAssertionRecipeEvidence {
+interface WorkloadEvidence {
+    readonly elapsedMs: number;
+    readonly cancelled: boolean;
+    readonly arrivalsFailed: number;
+}
+
+const HEALTHY_WORKLOAD: WorkloadEvidence = { elapsedMs: 25_000, cancelled: false, arrivalsFailed: 0 };
+
+function createEvidence(
+    agentId: string,
+    director: boolean,
+    samplerEvidence: SamplerEvidence,
+    workloadEvidence: WorkloadEvidence = HEALTHY_WORKLOAD
+): DistributedGroupAssertionRecipeEvidence {
     const prefix = director ? 'alm-scale-director' : 'alm-scale-player';
     return {
         agentId,
@@ -282,6 +535,7 @@ function createEvidence(agentId: string, director: boolean, samplerEvidence: Sam
         resultValue: {
             results: [
                 createSamplerTrafficEvidence(prefix, samplerEvidence),
+                ...createWorkloadEvidence(prefix, director, workloadEvidence),
                 createEvidenceResult(`${prefix}-final-stats`, 'stats', { rallar: { alm: HEALTHY, congestion: { dropped: 0, deferred: 0, handedOver: 0 } } }),
                 createEvidenceResult(`${prefix}-storage`, 'storage.counters', {
                     byOwner: { 'al-admission': 0, 'al-work': 5 },
@@ -302,6 +556,32 @@ function createEvidence(agentId: string, director: boolean, samplerEvidence: Sam
             ]
         }
     };
+}
+
+function createWorkloadEvidence(prefix: string, director: boolean, evidence: WorkloadEvidence): readonly RallarBlackBoxTestResult[] {
+    return [
+        createEvidenceResult(`${prefix}-window`, 'parallel', {
+            groupCount: 1,
+            passed: director ? 19 : 8,
+            failed: 0,
+            cancelled: evidence.cancelled,
+            groups: [{ commandCount: director ? 19 : 8, durationMs: evidence.elapsedMs }]
+        }),
+        ...(director
+            ? [createEvidenceResult(`${prefix}-shot-arrivals`, 'loop', {
+                iterations: 6,
+                passed: 252,
+                failed: evidence.arrivalsFailed,
+                cancelled: false,
+                pacing: { completedIterations: 6 }
+            })]
+            : ['started', 'ended'].map((kind) =>
+                createEvidenceResult(`${prefix}-${kind}-arrival`, 'wait', {
+                    matched: true,
+                    event: { payload: { data: { typeId: 'room.ar-eye-hunter.director.event.v1' } } }
+                })
+            ))
+    ];
 }
 
 function createSamplerTrafficEvidence(prefix: string, samplerEvidence: SamplerEvidence): RallarBlackBoxTestResult {
@@ -469,5 +749,19 @@ describe('ALM scale controller evidence', () => {
         expect(failed.ok).toBe(false);
         expect(failed.violatingAgentIds).toEqual(['controller-09']);
         expect(failed.missingAgentIds).toEqual([]);
+    });
+
+    it.each(
+        [
+            { role: 'director', evidence: { ...HEALTHY_WORKLOAD, arrivalsFailed: 1 }, command: 'shot-arrivals', path: 'failed' },
+            { role: 'player', evidence: { ...HEALTHY_WORKLOAD, elapsedMs: 33_000 }, command: 'window', path: 'groups-0-durationMs' },
+            { role: 'player', evidence: { ...HEALTHY_WORKLOAD, cancelled: true }, command: 'window', path: 'cancelled' }
+        ] as const
+    )('keeps native traffic failures on the original controller: $command/$path', ({ role, evidence, command, path }) => {
+        const controller = role === 'director' ? 'controller-01' : 'controller-09';
+        const rows = healthy.map((row) => row.agentId === controller ? createEvidence(row.agentId, role === 'director', HEALTHY_SAMPLER, evidence) : row);
+        const assertion = evaluateEvidence(rows)!.find((result) => result.groupAssertionId === `alm-scale-${role}-${command}-${path}`)!;
+        expect(assertion.ok).toBe(false);
+        expect(assertion.violatingAgentIds).toEqual([controller]);
     });
 });
