@@ -1,4 +1,11 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    expectTypeOf,
+    it,
+    vi
+} from 'vitest';
 
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { DequeueController, Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
@@ -8,7 +15,11 @@ import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resourc
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
-import { createQueueMessage, createQueueResilience, seedRetry } from './app-inbox/fair-service-fixture.ts';
+import {
+    createQueueMessage,
+    createQueueResilience,
+    seedRetry
+} from './app-inbox/fair-service-fixture.ts';
 
 function laneBudgets(maxNumToDequeue: number): DequeueController.LaneBudgets {
     return {
@@ -123,6 +134,89 @@ describe('DequeueController lane budgets', () => {
             .toEqual([EntityStatus.COMPLETED, EntityStatus.COMPLETED, EntityStatus.NEW, EntityStatus.NEW]);
     });
 
+    it.each(['release', 'completion', 'preprocessing'] as const)(
+        'keeps a successful claim charged when %s fails',
+        async (failurePhase) => {
+            vi.useFakeTimers();
+            try {
+                const queue = new InMemoryQueueBox();
+                const reader = new InboxQueueReader(queue);
+                const first = await reader.enqueueIfAbsent(createQueueMessage('first'));
+                const trailing = await reader.enqueueIfAbsent(createQueueMessage('trailing'));
+                const failure = new Error(`${failurePhase} unavailable`);
+                const computed: string[] = [];
+                const controller = createDefaultResourceInboxDequeuer<string>({
+                    repository: queue,
+                    typesToDequeue: () => InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                    maxToReserve: () => 1,
+                    maxNumToDequeue: 1_000,
+                    resilience: createQueueResilience(),
+                    readLaneBudgets: () => laneBudgets(1)
+                });
+                if (failurePhase === 'release') {
+                    vi.spyOn(queue, 'releaseEntries').mockRejectedValueOnce(failure);
+                }
+                if (failurePhase === 'completion') {
+                    controller.onCompletedEntries((entries) => {
+                        if ([...entries.keys()].some((key) => key.resourceId === 'first')) {
+                            throw failure;
+                        }
+                    });
+                }
+                if (failurePhase === 'preprocessing') {
+                    controller.onPreProcessingReservedEntries(async (entries) => {
+                        if ([...entries.keys()].some((key) => key.resourceId === 'first')) {
+                            throw failure;
+                        }
+                        return entries;
+                    });
+                }
+
+                const draining = controller.dequeueForCompute(async (key) => {
+                    computed.push(key.resourceId);
+                    return key.resourceId;
+                });
+                await vi.runAllTimersAsync();
+                await draining;
+
+                expect(await queue.getItem(trailing.key)).toMatchObject({ status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
+                expect(computed).toEqual(failurePhase === 'preprocessing' ? [] : ['first']);
+                expect(await queue.getItem(first.key)).toMatchObject({
+                    status: failurePhase === 'completion' ? EntityStatus.COMPLETED : EntityStatus.RESERVED,
+                    dequeueAudit: { attempts: 1 }
+                });
+            }
+            finally {
+                vi.restoreAllMocks();
+                vi.useRealTimers();
+            }
+        }
+    );
+
+    it.each(['callback', 'numeric'] as const)('charges a filtered claimed batch against the %s lane budget', async (budgetSource) => {
+        const queue = new InMemoryQueueBox();
+        const reader = new InboxQueueReader(queue);
+        const entries = await Promise.all(['a', 'b', 'c'].map((id) => reader.enqueueIfAbsent(createQueueMessage(id))));
+        const computed: string[] = [];
+        await createDefaultResourceInboxDequeuer<string>({
+            repository: queue,
+            typesToDequeue: () => InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            maxToReserve: () => 2,
+            maxNumToDequeue: 2,
+            resilience: createQueueResilience(),
+            readLaneBudgets: budgetSource === 'callback' ? () => laneBudgets(2) : undefined
+        }).onPreProcessingReservedEntries(async (reserved) => new Map([...reserved].filter(([key]) => key.resourceId !== 'b'))).dequeueForCompute(
+            async (key) => {
+                computed.push(key.resourceId);
+                return key.resourceId;
+            }
+        );
+
+        expect(await Promise.all(entries.map(async (entry) => (await queue.getItem(entry.key))?.status)))
+            .toEqual([EntityStatus.COMPLETED, EntityStatus.RESERVED, EntityStatus.NEW]);
+        expect(computed).toEqual(['a']);
+    });
+
     it.each([0, -1, 1.5, Number.POSITIVE_INFINITY, Number.NaN, Number.MAX_SAFE_INTEGER + 1]
         .flatMap((invalid) => ['maxToReserve', 'maxNumToDequeue'].map((field) => ({ invalid, field }))))(
             'rejects invalid $field=$invalid before claiming any work',
@@ -144,4 +238,3 @@ describe('DequeueController lane budgets', () => {
             }
         );
 });
-import { Temporal } from '@js-temporal/polyfill';
