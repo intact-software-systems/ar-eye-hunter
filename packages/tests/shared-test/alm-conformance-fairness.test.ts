@@ -145,7 +145,7 @@ describe('own-share-under-inbound', () => {
                 ...RECEIVER_PROLOGUE,
                 'close-before-lowered',
                 'connect-lowered',
-                'send-1',
+                'ready',
                 'received-1',
                 'send-2',
                 'observe-acknowledged-2',
@@ -166,16 +166,40 @@ describe('own-share-under-inbound', () => {
             const restored = findCommand(scenario.receiver, 'connect-restored');
             expect(restored.kind === 'rtc.connect' ? restored.rallar : undefined).not.toHaveProperty('almVolatileLimits');
             expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 20, absent: false });
-            for (const name of ['send-1', 'send-2']) {
-                expect(findCommand(scenario.receiver, name)).toMatchObject({
-                    kind: 'messages.send',
-                    carrier,
-                    ack: 'receiver',
-                    reliability: 'at-least-once',
-                    ttlMs: 30_000,
-                    handleId: `alm-${carrier}-own-share-under-inbound-receiver-${name}`
-                });
-            }
+            const ownSend = {
+                kind: 'messages.send',
+                carrier,
+                ack: 'receiver',
+                reliability: 'at-least-once',
+                ttlMs: 30_000
+            };
+            expect(findCommand(scenario.receiver, 'send-2')).toMatchObject({
+                ...ownSend,
+                handleId: `alm-${carrier}-own-share-under-inbound-receiver-send-2`
+            });
+            // A ready message the sender's connect has not yet subscribed for goes unseen, so the receiver repeats it
+            // until the flood's first arrival; five repeats and the own send stay under the own share of 10.
+            expect(findCommand(scenario.receiver, 'ready')).toEqual({
+                kind: 'loop',
+                commandId: `${scenario.receiver.recipeId}-ready`,
+                count: 5,
+                until: 'first-success',
+                commands: [
+                    expect.objectContaining({
+                        ...ownSend,
+                        commandId: `${scenario.receiver.recipeId}-ready-send`,
+                        handleId: `alm-${carrier}-own-share-under-inbound-receiver-send-1-{loop.index}`
+                    }),
+                    expect.objectContaining({
+                        kind: 'messages.received',
+                        commandId: `${scenario.receiver.recipeId}-ready-heard`,
+                        count: 1,
+                        absent: false,
+                        windowMs: 3_000,
+                        timeoutMs: 4_000
+                    })
+                ]
+            });
             expect(await readLedgerTail(scenario.receiver, 'stats-own-share', atTheShare)).toBe(true);
             const changes = [
                 { inbound: { admissions: 19, bytes: 28_800 } },

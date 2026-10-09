@@ -43,6 +43,7 @@ import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/run
 import { configureAuthSessionStorage } from '@shared/api/auth.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { useSyncExternalStore } from 'react';
+import { PacedEmit } from './app/paced-emit.ts';
 import { runSimulatedProviderCommand } from './run-simulated-provider-command.ts';
 
 type RuntimeStoreSnapshot = Readonly<{
@@ -61,6 +62,9 @@ type RuntimeStoreSnapshot = Readonly<{
 }>;
 
 type StoreListener = () => void;
+
+/** Runtime and control changes reach React at most this often: an agent run makes one every few milliseconds. */
+const RUNTIME_CHANGE_EMIT_INTERVAL_MS = 100;
 
 function resolveInitialBootstrapConfig(): RallarBlackBoxBootstrapConfig {
     const bootstrap = readRallarBlackBoxBootstrapConfig();
@@ -111,6 +115,7 @@ class RallarBlackBoxRuntimeStore {
     private readonly controlClient: RallarBlackBoxControlClient;
     private readonly listeners = new Set<StoreListener>();
     private snapshot: RuntimeStoreSnapshot;
+    private readonly runtimeChangeEmit = new PacedEmit(RUNTIME_CHANGE_EMIT_INTERVAL_MS, () => this.emit());
     private bootstrapStarted = false;
     private runSequence = 1;
     private resumedCommandIds: readonly string[] = [];
@@ -152,14 +157,14 @@ class RallarBlackBoxRuntimeStore {
                 ...this.snapshot,
                 control
             };
-            this.emit();
+            this.runtimeChangeEmit.request();
         });
         this.runtime.subscribe((state) => {
             this.snapshot = {
                 ...this.snapshot,
                 state
             };
-            this.emit();
+            this.runtimeChangeEmit.request();
         });
     }
 

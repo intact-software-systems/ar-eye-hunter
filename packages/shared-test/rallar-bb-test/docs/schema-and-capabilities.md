@@ -521,7 +521,10 @@ The fairness cells run last in the two-agent family, in the full scope, after th
 `own-share-under-inbound` (`ws`, `rtc`; its ledger is carrier-independent, and the lowered-limit reconnect is not
 stable under `rtc-with-ws-fallback`'s readiness) closes the receiver and reconnects it with
 `rallar.almVolatileLimits` `{ maxAdmissions: 20, maxBytes: 4194304 }`, so its own share is 10 (D189); the receiver
-sends a ready message, which the sender waits for with one readiness budget in its window, and the sender then sends
+sends a ready message, which the sender waits for with one readiness budget in its window, and repeats it in a `loop`
+with `until: 'first-success'` (up to five, each followed by a 3 s `messages.received` of one flood arrival), since a
+message that arrives before the sender's connect has subscribed its channel is acknowledged unseen (over `ws` the
+receiver's reconnect can finish first); the repeats and its own send stay under the share. The sender then sends
 20 at-least-once room sends with `ack: 'none'` and a 30 s `ttlMs` in a `loop` with `intervalMs: 75` (about 13 a
 second, under the RTC lane's 20 a second limiter, which the receiver's own ACKs share), each naming its own handle by
 `{loop.index}`; they ask for no receipt, so all 20 arrive within the arrivals' own 30 s counted lifetime instead of

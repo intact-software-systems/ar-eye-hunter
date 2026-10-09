@@ -34,10 +34,10 @@ const NONZERO_LEADING_DIGITS = 9;
 /**
  * D190: the sender sends seq 2 to 65 on one ordering key, then seq 1; the receiver delivers all 65. The sends ask for
  * no receipt: the receiver cannot acknowledge seq 2 to 65 before seq 1 arrives, so a receipted send would wait out
- * its ACK retries one after the other. They are bare, without an admission observation each (over `ws` one costs
- * about 1.9 s), and paced; only seq 1 is observed admitted. Over `rtc` the receiver is the hop that buffered them,
- * so one of its inbound batches states a release it ran by promotion. Over `ws` the relay buffers and releases them
- * out of the page's sight, as in `ordering-gap-repair`.
+ * its ACK retries one after the other. They are bare, without an admission observation each, and paced; only seq 1
+ * is observed admitted. Over `rtc` the receiver is the hop that buffered them, so one of its inbound batches states a
+ * release it ran by promotion. Over `ws` the relay buffers and releases them out of the page's sight, as in
+ * `ordering-gap-repair`.
  */
 export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
     scenarioId: 'buffered-track-drains',

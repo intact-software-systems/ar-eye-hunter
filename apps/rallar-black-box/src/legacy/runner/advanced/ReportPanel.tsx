@@ -1,10 +1,49 @@
 import { decodeRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestResult,
+    RallarBlackBoxTestState
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useMemo, useState } from 'react';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 
-function createReportSnapshot(state: RallarBlackBoxTestState): unknown {
+/** The local run as the report shows it: its identity and outcome, every result and every event. */
+interface LocalReportSnapshot {
+    readonly reportId: string;
+    readonly runId: string | undefined;
+    readonly agentId: string | undefined;
+    /** The provider mode, or the issue that kept the configuration from naming one. */
+    readonly providerMode: string;
+    readonly generatedAtEpochMs: number;
+    readonly status: RallarBlackBoxTestState['status'];
+    readonly config: RallarBlackBoxTestState['currentConfig'];
+    readonly loadedRecipe: LocalReportRecipe | undefined;
+    readonly summary: LocalReportSummary;
+    readonly stats: RallarBlackBoxTestState['latestStats'];
+    readonly results: readonly LocalReportResult[];
+    readonly events: RallarBlackBoxTestState['events'];
+}
+
+interface LocalReportRecipe {
+    readonly recipeId: string;
+    /** Absent when the recipe carries no name. */
+    readonly name: string | undefined;
+    readonly commandCount: number;
+}
+
+interface LocalReportSummary {
+    readonly providerMode: string;
+    readonly commands: number;
+    readonly failures: number;
+    readonly events: number;
+    readonly firstFailureCommandId: string | undefined;
+}
+
+interface LocalReportResult extends RallarBlackBoxTestResult {
+    readonly providerMode: string;
+}
+
+function createReportSnapshot(state: RallarBlackBoxTestState): LocalReportSnapshot {
     const providerMode = decodeRallarBlackBoxConfigProviderMode(state.currentConfig).fold(
         (issue) => issue,
         (mode) => mode
@@ -48,10 +87,6 @@ export function ReportPanel({
     authSession?: AuthSession;
 }) {
     const [visible, setVisible] = useState(false);
-    const reportText = useMemo(
-        () => redactedJson(createReportSnapshot(state), state, authSession),
-        [authSession, state]
-    );
 
     return (
         <section className="panel report-panel">
@@ -64,14 +99,30 @@ export function ReportPanel({
                     {visible ? 'Hide' : 'Show'}
                 </button>
             </div>
-            {visible && (
-                <textarea
-                    className="report-output"
-                    value={reportText}
-                    readOnly
-                    spellCheck={false}
-                />
-            )}
+            {visible && <ReportOutput state={state} authSession={authSession} />}
         </section>
+    );
+}
+
+/** Mounted only while shown: the snapshot serialises every event and result, and the state changes with each event. */
+function ReportOutput({
+    state,
+    authSession
+}: {
+    state: RallarBlackBoxTestState;
+    authSession?: AuthSession;
+}) {
+    const reportText = useMemo(
+        () => redactedJson(createReportSnapshot(state), state, authSession),
+        [authSession, state]
+    );
+
+    return (
+        <textarea
+            className="report-output"
+            value={reportText}
+            readOnly
+            spellCheck={false}
+        />
     );
 }

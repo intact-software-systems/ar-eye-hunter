@@ -30,7 +30,7 @@ import { toSendLoopCommand } from './to-send-loop-command.ts';
 
 /**
  * More tracks than a session store keeps ordering snapshots for (`AL_INBOUND_MAX_ORDERING_TRACKS`, D191), with a
- * margin: at this count the opens take about 21 s at the loop's pace, inside the receiver's 58 s window.
+ * margin: at this count the opens take about 24 s at the loop's pace, inside the receiver's 58 s window.
  */
 const CHURN_TRACK_COUNT = AL_INBOUND_MAX_ORDERING_TRACKS + 24;
 /**

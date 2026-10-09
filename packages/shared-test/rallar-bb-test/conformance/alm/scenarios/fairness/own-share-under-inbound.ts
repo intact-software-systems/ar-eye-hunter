@@ -5,10 +5,15 @@ import {
 
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestLoopCommand,
     RallarBlackBoxTestMessagesSendCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
+import {
+    NON_EXPIRING_SEND_TIMEOUT_MS,
+    NON_EXPIRING_TTL_MS,
+    RESPONSE_MARGIN_MS
+} from '../../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_SINGLE_HOP_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
@@ -18,6 +23,7 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
+import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import {
     toAcknowledgedCommands,
     toBoundReconnectCommands,
@@ -32,14 +38,22 @@ const OWN_SHARE_ADMISSIONS = Math.floor(OWN_SHARE_LIMITS.maxAdmissions * AL_VOLA
 /**
  * Arrivals alone fill the lowered total. An arrival counts for `min(ttl, 30 s)` from the moment it arrives, so the
  * total stays full only while all 20 arrivals are younger than that. The flood therefore asks for no receipt: a
- * receipted send waits for its ACK (about 1.5 s over `ws`), twenty of them in a row span the whole window, and the
- * first arrivals have left it before the receiver reads its stats. Unreceipted and paced at 75 ms, the 20 are on the
- * wire within two seconds, under the RTC limiter that the receiver's ready ACK shares, and the receiver reads its
- * stats once it has seen all of them and its own send is acknowledged.
+ * receipted send waits for its ACK, so twenty of them in a row would stretch the flood by twenty round trips.
+ * Unreceipted and paced at 75 ms, the 20 are on the wire within two seconds, under the RTC limiter that the receiver's
+ * ready ACK shares, and the receiver reads its stats once it has seen all of them and its own send is acknowledged.
  */
 const FLOOD_COUNT = OWN_SHARE_LIMITS.maxAdmissions;
 const READY_INDEX = 1;
 const OWN_INDEX = 2;
+/**
+ * A ready message reaches the sender's recipe only once the sender's connect has subscribed its channel: one that
+ * arrives earlier is admitted and acknowledged with no subscriber to see it, which over `ws` happens when the
+ * receiver's reconnect finishes first. So the receiver repeats it until the flood's first arrival shows the sender
+ * heard one. Each repeat stays in the own pool for its lifetime, so the attempts and the own send stay under the
+ * share of 10.
+ */
+const READY_ATTEMPTS = 5;
+const READY_REPEAT_MS = 3_000;
 
 /**
  * D189: the receiver reconnects with its count bound lowered and says it is ready; the sender floods the room until
@@ -68,13 +82,33 @@ function toOwnShareReceiverCommands(
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toBoundReconnectCommands(receiver, 'lowered', OWN_SHARE_LIMITS),
-        toRoomSend(receiver, READY_INDEX, 'receiver'),
+        toReadyCommand(receiver),
         toReceivedCommand({ ...receiver, index: 1, count: FLOOD_COUNT, absent: false }),
         toRoomSend(receiver, OWN_INDEX, 'receiver'),
         ...toAcknowledgedCommands(receiver, OWN_INDEX),
         ...toOwnShareLedgerCommands(receiver),
         ...toBoundReconnectCommands(receiver, 'restored', undefined)
     ];
+}
+
+/** The ready send, repeated until the first arrival of the flood, each repeat under a handle of its own. */
+function toReadyCommand(receiver: AlmConformanceStepInput): RallarBlackBoxTestLoopCommand {
+    const send = toRoomSend(receiver, READY_INDEX, 'receiver');
+    return {
+        kind: 'loop',
+        commandId: toCommandId(receiver, 'ready'),
+        count: READY_ATTEMPTS,
+        until: 'first-success',
+        commands: [
+            { ...send, commandId: toCommandId(receiver, 'ready-send'), handleId: `${send.handleId}-{loop.index}` },
+            {
+                ...toReceivedCommand({ ...receiver, index: 1, count: 1, absent: false }),
+                commandId: toCommandId(receiver, 'ready-heard'),
+                windowMs: READY_REPEAT_MS,
+                timeoutMs: READY_REPEAT_MS + RESPONSE_MARGIN_MS
+            }
+        ]
+    };
 }
 
 /** The receiver's ledger after its own send: arrivals at the bound, its own pool under the share, no overload. */
