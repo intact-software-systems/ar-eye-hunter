@@ -239,6 +239,21 @@ describe('manifest no-spawn distributed recipe runner', () => {
         expect(JSON.parse(await readArtifact(fixture, 'source-manifest.json'))).toEqual(manifest());
     });
 
+    it('waits through all canonical intermediate states before starting a barrier-enabled run and exporting evidence', async () => {
+        const fixture = await createRunnerFixture();
+        const barrierManifest = { ...manifest(), barrier: { enabled: true, timeoutMs: 30_000 } };
+        await writeFile(fixture.manifestPath, JSON.stringify(barrierManifest));
+        const server = new ManifestControlServer(barrierManifest);
+        server.pollStates = ['draft', 'resolving-targets', 'staging', 'waiting-for-ack', 'waiting-for-barrier', 'ready', 'running', 'passed'];
+
+        await expect(runFixture(fixture, { fetchFn: server.fetch })).resolves.toBeUndefined();
+
+        expect(JSON.parse(await readArtifact(fixture, 'source-manifest.json')).barrier).toEqual({ enabled: true, timeoutMs: 30_000 });
+        expect(await readArtifact(fixture, 'events.jsonl')).toBe('{"event":1}\n');
+        expect(await readArtifact(fixture, 'results.jsonl')).toBe('{"result":1}\n');
+        expect(JSON.parse(await readArtifact(fixture, 'evidence-export.json')).operationFailure).toBeNull();
+    });
+
     it('keeps pre-start terminal failure primary while retaining native artifacts', async () => {
         const fixture = await createRunnerFixture();
         fixture.server.pollStates = ['failed'];
