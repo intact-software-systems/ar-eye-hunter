@@ -353,7 +353,12 @@ export class LiveRtcControlClient {
         await expect
             .poll(
                 async () => {
-                    const run = await this.fetchRun(input.runId);
+                    const response = await this.#request.get(
+                        `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}` +
+                            '?limitEvents=0&limitStats=0&limitReports=0&limitHeartbeats=0'
+                    );
+                    expect(response.ok()).toBe(true);
+                    const run = decodeControlRunSnapshot(normalizeJson(await response.json()));
                     latest = run.results.find(
                         (result) => result.commandId === input.commandId
                     );

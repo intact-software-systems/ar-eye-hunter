@@ -1,8 +1,21 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import {
+    mkdir,
+    rm,
+    writeFile
+} from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import {
     assertFullStackApiConfigEvidence,
     assertFullStackControlHealthEvidence,
@@ -14,13 +27,47 @@ import {
     readFullStackSpaBaseUrl
 } from '../../../apps/rallar-black-box/playwright-full-stack-api-server.ts';
 import { loadLiveRtcPerformanceAttempt } from '../../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
+import { runOwnedTestProcess } from '../hetzner/owned-test-process.ts';
 
-const temporaryBaselineRoots: string[] = [];
+const CONFIG_LOADER_PROCESS_TIMEOUT_MS = 20_000;
+const CONFIG_LOADER_TEST_TIMEOUT_MS = 30_000;
+const playwrightCli = createRequire(import.meta.url).resolve('@playwright/test/cli');
 
-afterEach(async () => {
-    for (const directory of temporaryBaselineRoots.splice(0)) {
-        await rm(directory, { recursive: true, force: true });
-    }
+const predeclaredEnvironmentObservation = {
+    git: { headCommit: 'a'.repeat(40), headTree: 'b'.repeat(40), ref: 'codex/unit-fixture', clean: true },
+    runtime: { node: 'v24.0.0', npm: '11.0.0', deno: '2.4.0', playwright: '1.55.0', chromium: '140.0.0.0' },
+    host: {
+        os: 'darwin',
+        kernel: '24.0.0',
+        architecture: 'arm64',
+        logicalCpuCount: 12,
+        cpuModel: 'unit-fixture',
+        totalMemoryBytes: 24 * 1024 * 1024 * 1024,
+        executionContext: 'local'
+    },
+    timing: {
+        startedAtUtc: '2026-10-09T20:45:00.000Z',
+        endedAtUtc: '2026-10-09T20:46:00.000Z',
+        monotonicDurationMs: 60_000,
+        monotonicSource: 'performance.now'
+    },
+    deviations: [],
+    sourceHashes: [{
+        path: 'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts',
+        sha256: 'c'.repeat(64),
+        kind: 'source'
+    }],
+    configurationInputs: [],
+    resolvedConfiguration: [],
+    controllerInputs: [],
+    workerCommand: {
+        redactedArgv: { executable: 'npm', arguments: ['run', 'test:rallar:full-stack:memory:live-rtc-3'] },
+        projection: { fixedWorkerFlags: [], configurationFlags: [] }
+    },
+    allowlistedEnvironment: {}
+};
+
+afterEach(() => {
     vi.unstubAllEnvs();
     vi.resetModules();
 });
@@ -256,7 +303,9 @@ describe('rallar-black-box full-stack API server mode', () => {
         expect(controlFactory).not.toHaveBeenCalled();
     });
 
-    it('constructs the standalone retention101 child only after canonical predeclared attempt admission', async () => {
+    it('constructs the standalone retention101 child only after canonical predeclared attempt admission', {
+        timeout: CONFIG_LOADER_TEST_TIMEOUT_MS
+    }, async (testContext) => {
         const environment = {
             ...await createPredeclaredSelection('retention-100'),
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
@@ -280,19 +329,26 @@ describe('rallar-black-box full-stack API server mode', () => {
             reuseExistingServer: false
         })]));
         // --list invokes Playwright's supported config loader without starting services.
-        const listed = execFileSync('npx', [
-            'playwright',
-            'test',
-            '--config',
-            'apps/rallar-black-box/playwright.full-stack.config.ts',
-            '--list',
-            '--project=chromium'
-        ], {
-            cwd: process.cwd(),
-            env: { ...process.env },
-            encoding: 'utf8'
+        const listed = await runOwnedTestProcess(testContext, {
+            executable: process.execPath,
+            args: [
+                playwrightCli,
+                'test',
+                '--config',
+                'apps/rallar-black-box/playwright.full-stack.config.ts',
+                '--list',
+                '--project=chromium'
+            ],
+            options: {
+                cwd: process.cwd(),
+                env: { ...process.env },
+                timeout: CONFIG_LOADER_PROCESS_TIMEOUT_MS,
+                killSignal: 'SIGKILL'
+            }
         });
-        expect(listed).toContain('Total: 46 tests in 14 files');
+        expect(listed.stdout).toMatch(
+            /\[chromium\].*returns RTC state and post-GC heap to baseline after 100 reconnect cycles/
+        );
     });
 
     it('allows CI configs to disable existing web server reuse', () => {
@@ -453,7 +509,7 @@ async function createPredeclaredSelection(caseId: string): Promise<Record<string
     // Synthetic unit initialization: never a live receipt or accepted performance cohort.
     const baselineId = `20261009T204500000Z-${randomBytes(6).toString('hex')}-e3-memory-local`;
     const baselineRoot = join(process.cwd(), 'tmp', 'perf', 'rtc-baseline', baselineId);
-    temporaryBaselineRoots.push(baselineRoot);
+    onTestFinished(() => rm(baselineRoot, { recursive: true, force: true }));
     await mkdir(baselineRoot, { recursive: true });
     const cases = ['default', 'all-scenarios', 'retention-100'].map((caseId) => ({
         workloadId: 'RTC-B06',
@@ -493,39 +549,7 @@ async function createPredeclaredSelection(caseId: string): Promise<Record<string
             environmentId: 'E3-memory',
             repeatLink: null,
             conditionalEnvironmentDecisions: [],
-            observation: {
-                git: { headCommit: 'a'.repeat(40), headTree: 'b'.repeat(40), ref: 'codex/unit-fixture', clean: true },
-                runtime: { node: 'v24.0.0', npm: '11.0.0', deno: '2.4.0', playwright: '1.55.0', chromium: '140.0.0.0' },
-                host: {
-                    os: 'darwin',
-                    kernel: '24.0.0',
-                    architecture: 'arm64',
-                    logicalCpuCount: 12,
-                    cpuModel: 'unit-fixture',
-                    totalMemoryBytes: 24 * 1024 * 1024 * 1024,
-                    executionContext: 'local'
-                },
-                timing: {
-                    startedAtUtc: '2026-10-09T20:45:00.000Z',
-                    endedAtUtc: '2026-10-09T20:46:00.000Z',
-                    monotonicDurationMs: 60_000,
-                    monotonicSource: 'performance.now'
-                },
-                deviations: [],
-                sourceHashes: [{
-                    path: 'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts',
-                    sha256: 'c'.repeat(64),
-                    kind: 'source'
-                }],
-                configurationInputs: [],
-                resolvedConfiguration: [],
-                controllerInputs: [],
-                workerCommand: {
-                    redactedArgv: { executable: 'npm', arguments: ['run', 'test:rallar:full-stack:memory:live-rtc-3'] },
-                    projection: { fixedWorkerFlags: [], configurationFlags: [] }
-                },
-                allowlistedEnvironment: {}
-            }
+            observation: predeclaredEnvironmentObservation
         })
     );
     return {

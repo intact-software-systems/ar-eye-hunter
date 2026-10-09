@@ -1,13 +1,30 @@
 import { request, type APIRequestContext } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import {
+    createServer,
+    type IncomingMessage,
+    type Server,
+    type ServerResponse
+} from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { parseControlServerMessage } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+
+import { toControlRunSnapshot } from '../../../apps/rallar-black-box-control-server/src/control-service-snapshots.ts';
+import { type ControlRunState } from '../../../apps/rallar-black-box-control-server/src/control-service-state.ts';
+import { createControlHttpResponses } from '../../../apps/rallar-black-box-control-server/src/http/control-http-responses.ts';
+import { routeRunReadRequest } from '../../../apps/rallar-black-box-control-server/src/routes/run-routes-read.ts';
 import { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { normalizeJson, type LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 
 export namespace LiveRtcControlHttpFixture {
+    export interface RunRead {
+        readonly url: string;
+        readonly snapshot: ControlRunSnapshot;
+    }
+
     export interface State {
         nowMs: number;
         readyPeerIds: string[];
@@ -28,6 +45,8 @@ export namespace LiveRtcControlHttpFixture {
         captureEffects: string[];
         healthCommandFailure: { agentId: string; body: string; } | undefined;
         holdHealthCommand: ((agentId: string) => Promise<void>) | undefined;
+        runState: ControlRunState | undefined;
+        runReads: RunRead[];
     }
 
     export interface Dependencies {
@@ -84,7 +103,9 @@ export async function createDefaultLiveRtcControlHttpFixture(): Promise<LiveRtcC
         recorderUrls: [],
         captureEffects: [],
         healthCommandFailure: undefined,
-        holdHealthCommand: undefined
+        holdHealthCommand: undefined,
+        runState: undefined,
+        runReads: []
     };
     const diagnosticsRoot = mkdtempSync(path.join(tmpdir(), 'live-rtc-control-client-'));
     const server = createServer(async (incoming, response) => await writeLiveRtcControlResponse(state, incoming, response));
@@ -135,10 +156,80 @@ async function writeLiveRtcControlResponse(state: LiveRtcControlHttpFixture.Stat
         return;
     }
     if (incoming.method === 'POST') {
+        if (state.runState) {
+            await writeLiveRtcQueuedCommandResponse(state.runState, incoming, response);
+            return;
+        }
         await writeLiveRtcHealthCommandResponse(state, incoming, response);
         return;
     }
+    if (state.runState) {
+        await writeLiveRtcRunSnapshotResponse(state, incoming, response);
+        return;
+    }
     response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ results: state.results, events: state.events }));
+}
+
+async function writeLiveRtcRunSnapshotResponse(
+    state: LiveRtcControlHttpFixture.State,
+    incoming: IncomingMessage,
+    response: ServerResponse
+): Promise<void> {
+    const run = state.runState;
+    if (!run) {
+        throw new Error('Expected an owned run snapshot fixture.');
+    }
+    const url = new URL(incoming.url ?? '/', 'http://fixture.test');
+    const routed = await routeRunReadRequest(url, {
+        controlService: {
+            snapshot: () => ({ runs: [] }),
+            snapshotRun: (runId, bounds) => {
+                if (runId !== run.runId) {
+                    return undefined;
+                }
+                const snapshot = toControlRunSnapshot(run, bounds ?? {}, []);
+                state.runReads.push({ url: url.pathname + url.search, snapshot });
+                return snapshot;
+            }
+        },
+        artifactRecorder: {
+            response: async () => {
+                throw new Error('Unexpected recorder fixture read.');
+            }
+        },
+        responses: createControlHttpResponses([])
+    });
+    response.writeHead(routed?.status ?? 404, { 'content-type': 'application/json' }).end(await routed?.text());
+}
+
+async function writeLiveRtcQueuedCommandResponse(
+    run: ControlRunState,
+    incoming: IncomingMessage,
+    response: ServerResponse
+): Promise<void> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of incoming) {
+        chunks.push(Buffer.from(chunk));
+    }
+    const agentId = decodeURIComponent(incoming.url?.split('/')[4] ?? '');
+    const parsed = parseControlServerMessage({
+        ...JSON.parse(Buffer.concat(chunks).toString()),
+        kind: 'command',
+        protocolVersion: 1,
+        runId: run.runId,
+        agentId
+    }, { runId: run.runId, agentId });
+    if (!parsed.ok) {
+        response.writeHead(400).end();
+        return;
+    }
+    run.commands.set(parsed.envelope.commandId, {
+        envelope: parsed.envelope,
+        fingerprint: 'local-http-fixture',
+        queuedAtEpochMs: 100,
+        dispatchCount: 0
+    });
+    response.writeHead(202).end('{}');
 }
 
 async function writeLiveRtcHealthCommandResponse(state: LiveRtcControlHttpFixture.State, incoming: IncomingMessage, response: ServerResponse): Promise<void> {
