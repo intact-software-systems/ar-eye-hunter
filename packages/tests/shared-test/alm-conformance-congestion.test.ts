@@ -127,9 +127,14 @@ describe('congestion conformance scenarios', () => {
                 tags: ['full']
             }))
         );
-        // The two-agent family runs them last on its pages, so the counter each one reads is its own.
+        // The two-agent family runs them after every other cell but the fairness cells, which follow them, so the
+        // counter each one reads is its own.
         const twoAgent = scenarios.filter((scenario) => scenario.laneFamily === 'two-agent').map(({ scenarioId }) => scenarioId);
-        expect(twoAgent.slice(twoAgent.length - cells.length)).toEqual(cells.map(({ scenarioId }) => scenarioId));
+        const fairnessStart = twoAgent.findIndex((scenarioId) =>
+            ['own-share-under-inbound', 'buffered-track-drains', 'churn-bounded-tracks'].includes(scenarioId)
+        );
+        const beforeFairness = fairnessStart === -1 ? twoAgent : twoAgent.slice(0, fairnessStart);
+        expect(beforeFairness.slice(beforeFairness.length - cells.length)).toEqual(cells.map(({ scenarioId }) => scenarioId));
     });
 
     it.each(ALM_CONFORMANCE_CARRIERS)('gives every %s congestion cell identities no other scenario of the run shares, each a valid command', (carrier) => {

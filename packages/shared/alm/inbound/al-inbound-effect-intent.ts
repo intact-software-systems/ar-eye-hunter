@@ -103,7 +103,7 @@ export function toALInboundBufferedReleaseEffects(read: ALInboundMessageReadDto)
     return read.orderingAcceptance.observation.releasableSeqs.map((seq) => {
         const buffered = bufferedBySequence.get(seq);
         return {
-            effectId: toEffectId(['release', trackKey, seq]),
+            effectId: toALInboundReleaseEffectId(trackKey, seq),
             expireAtTimestamp: buffered === undefined
                 ? undefined
                 : resolveALMessageExpireAtMs(buffered.msg, buffered.plan.effective),
@@ -112,6 +112,11 @@ export function toALInboundBufferedReleaseEffects(read: ALInboundMessageReadDto)
             payload: { kind: 'release-buffered', trackKey, seq }
         };
     });
+}
+
+/** The one row that releases `seq` of a track: a delivered predecessor finds its successor by it (D190). */
+export function toALInboundReleaseEffectId(trackKey: string, seq: number): string {
+    return toEffectId(['release', trackKey, seq]);
 }
 
 export function toALInboundLocalDeliveryEffects(

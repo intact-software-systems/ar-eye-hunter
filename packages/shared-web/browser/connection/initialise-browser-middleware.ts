@@ -296,7 +296,8 @@ export function createBrowserTransportInput(
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-            volatileBound.budget
+            volatileBound.budget,
+            options.diagnosticsPorts.storage
         ),
         volatileBound,
         checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, options.durableWorkOwnership),

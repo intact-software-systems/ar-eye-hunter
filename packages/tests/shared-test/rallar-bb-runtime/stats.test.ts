@@ -5,10 +5,7 @@ import {
 } from 'vitest';
 
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import {
-    AL_VOLATILE_SESSION_LIMITS,
-    type ALVolatileSessionReport
-} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import type { RallarBlackBoxBrowserRallarRuntime } from '../../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import {
@@ -17,19 +14,26 @@ import {
     type RallarBlackBoxTestRecord,
     type RallarBlackBoxTestResult
 } from '../../../shared-test/rallar-bb-test/mod.ts';
+import type { RallarBlackBoxTestAlmUsage } from '../../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { decodeRecord } from '../../../shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from '../browser-rallar-required-methods-test-double.ts';
 import { createDeterministicRuntime } from './create-deterministic-runtime.ts';
 
-const FIRST_REPORT: ALVolatileSessionReport = {
+const FIRST_REPORT: RallarBlackBoxTestAlmUsage = {
     usage: { admissions: 3, bytes: 912, oldestAgeMs: 1_250, tracks: 2 },
+    own: { admissions: 2, bytes: 600 },
+    inbound: { admissions: 1, bytes: 312 },
     limits: AL_VOLATILE_SESSION_LIMITS,
-    overloaded: false
+    overloaded: false,
+    orderingTracks: 3
 };
-const SECOND_REPORT: ALVolatileSessionReport = {
-    usage: { admissions: 1_000, bytes: 40_000, oldestAgeMs: 29_000, tracks: 64 },
+const SECOND_REPORT: RallarBlackBoxTestAlmUsage = {
+    usage: { admissions: 1_500, bytes: 60_000, oldestAgeMs: 29_000, tracks: 64 },
+    own: { admissions: 500, bytes: 20_000 },
+    inbound: { admissions: 1_000, bytes: 40_000 },
     limits: AL_VOLATILE_SESSION_LIMITS,
-    overloaded: true
+    overloaded: true,
+    orderingTracks: 256
 };
 
 function createDefaultPageRuntime(
@@ -178,7 +182,7 @@ describe('the stats result rallar.alm block', () => {
         ] as const).flatMap((cell) => (['ledger', 'congestion'] as const).map((source) => ({ ...cell, source })))
     )('settling held $kind $source $settlement retains assignment ownership; reassigned=$reassigned', async ({ kind, settlement, reassigned, source }) => {
         const entered = Promise.withResolvers<void>();
-        const held = Promise.withResolvers<ALVolatileSessionReport | ALCongestionCounters>();
+        const held = Promise.withResolvers<RallarBlackBoxTestAlmUsage | ALCongestionCounters>();
         const firstCongestion = { dropped: 0, deferred: 3, handedOver: 0 };
         const secondCongestion = { dropped: 1, deferred: 3, handedOver: 1 };
         let reading = 0;
@@ -324,8 +328,10 @@ describe('the stats result rallar.alm block', () => {
     it('fails the stats command when the page answers with something that is not a ledger report, naming each bad field', async () => {
         const runtime = createDefaultPageRuntime(async () => ({
             usage: { admissions: -1, bytes: 0, oldestAgeMs: 0 },
+            own: { admissions: 0, bytes: -2 },
             limits: AL_VOLATILE_SESSION_LIMITS,
-            overloaded: 'no'
+            overloaded: 'no',
+            orderingTracks: 2.5
         }));
 
         const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
@@ -333,7 +339,8 @@ describe('the stats result rallar.alm block', () => {
         expect(result.ok).toBe(false);
         expect(result.error?.message).toBe(
             'The page\'s session ledger report is not valid: usage.admissions is not a count; ' +
-                'usage.tracks is not a count; overloaded is not a boolean'
+                'usage.tracks is not a count; own.bytes is not a count; inbound.admissions is not a count; ' +
+                'inbound.bytes is not a count; overloaded is not a boolean; orderingTracks is not a count'
         );
     });
 });

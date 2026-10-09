@@ -25,6 +25,7 @@ import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-in
 import { ALOutboundMessageRuntime, type ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import { createPassThroughALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -292,7 +293,8 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         inboundStores: resolveBrowserSessionALInboundRuntimeStores('self'),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId('self'),
-            createDefaultVolatileSessionBudget()
+            createDefaultVolatileSessionBudget(),
+            createPassThroughALStorageEventSink()
         ),
         inboundDiagnostics: (event) => runtime.diagnostics.push(event)
     });
@@ -369,7 +371,8 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
-            createDefaultVolatileSessionBudget()
+            createDefaultVolatileSessionBudget(),
+            createPassThroughALStorageEventSink()
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
         checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,

@@ -469,3 +469,66 @@ it('records synchronous connection producer diagnostics once across reconnect', 
     expect(events.filter((event) => event.topic === 'rallar.browser.alm.outbound_diagnostics')).toHaveLength(2);
     expect(events.filter((event) => event.topic === 'rallar.browser.alm.storage_reset')).toHaveLength(2);
 });
+
+it('preserves sanitized native signaling and live ordering usage through the same connection diagnostics ports', async () => {
+    const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
+    await runtime.connect({
+        connection: 'joint-diagnostics',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+    });
+    const ports = facade.records.defaultWrites.at(-1)?.diagnosticsPorts;
+    const native = {
+        kind: 'native-observation-status',
+        localSessionId: 'session-1',
+        peerSessionId: undefined,
+        signalType: undefined,
+        offerId: undefined,
+        atEpochMs: 123,
+        stage: 'initialized',
+        availability: { status: 'observed', value: 'enabled' },
+        capture: {
+            scopeId: { status: 'observed', value: 'capture-1' },
+            scope: 'active',
+            ordinaryRowsSuppressed: false,
+            admissionLimited: false,
+            payloadLimited: false
+        }
+    } as const;
+    ports?.signalingDiagnostics?.(native);
+    ports?.storage?.({ kind: 'ordering-tracks', storeId: 'durable', tracks: 3 });
+    ports?.signalingDiagnostics?.({ ...native, offerId: 'untrusted-offer' });
+    ports?.storage?.({ kind: 'ordering-tracks', storeId: 'volatile', tracks: 5 });
+    ports?.storage?.({ kind: 'ordering-tracks', storeId: 'durable', tracks: 4 });
+    ports?.storage?.({
+        kind: 'reset',
+        storeId: 'durable',
+        event: { dbName: 'joint', previousSchemaId: undefined, schemaId: 'current', reason: 'schema-id-mismatch' }
+    });
+
+    expect(events.filter((event) => event.topic === 'rallar.browser.rtc.signaling_diagnostics').map((event) => event.data))
+        .toEqual([{
+            kind: 'native-observation-status',
+            localSessionId: 'session-1',
+            atEpochMs: 123,
+            stage: 'initialized',
+            availability: { status: 'observed', value: 'enabled' },
+            capture: {
+                scopeId: { status: 'observed', value: 'capture-1' },
+                scope: 'active',
+                ordinaryRowsSuppressed: false,
+                admissionLimited: false,
+                payloadLimited: false
+            }
+        }]);
+    expect(events.filter((event) => event.topic === 'rallar.browser.alm.storage').map((event) => event.data)).toEqual([
+        { kind: 'ordering-tracks', storeId: 'durable', tracks: 3 },
+        { kind: 'ordering-tracks', storeId: 'volatile', tracks: 5 },
+        { kind: 'ordering-tracks', storeId: 'durable', tracks: 4 }
+    ]);
+    expect(events.filter((event) => event.topic === 'rallar.browser.alm.storage_reset').map((event) => event.data))
+        .toEqual([{ dbName: 'joint', schemaId: 'current', reason: 'schema-id-mismatch' }]);
+    await expect(runtime.readAlmUsage()).resolves.toMatchObject({ orderingTracks: 9 });
+});

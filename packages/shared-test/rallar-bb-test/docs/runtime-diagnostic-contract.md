@@ -356,7 +356,11 @@ independent of any connection. The event's `data` is the event itself:
   in neither. `deferred` lists the due rows the batch's page saw and did not
   run, as `{ effectId, dueAtMs }`, oldest first — held back by their eligibility
   read, or cleared by it and left unreserved by the port. A row a live lease
-  holds is not due, so a batch's own rows never read as deferred
+  holds is not due, so a batch's own rows never read as deferred. `promoted`
+  counts the buffered releases the batch ran because the same track's previous
+  release completed earlier in that batch (D190): each is also counted in
+  `claimedCount` and named in `claimedEffectIds`, and none is listed in
+  `deferred`
 - `claim-settled` carries `msgId`, `typeId`, `payloadKind`, `durationMs`,
   `attempts`, `outcome` and `queueWaitMs`: one event for each claim a drain ran,
   so a delivery can be followed from its own `admission-outcome` to the claim
@@ -541,6 +545,14 @@ are the sync points of a paired `agent.reload`.
   message is dropped as before. The harness's recording owner, installed by the
   lane-only `rtc.connect.rallar.recoveryOwner: 'record'`, states the same cursor
   as a `rallar.browser.messages.recovery_owner_invoked` diagnostic.
+
+- `ordering-tracks`: `storeId` and `tracks`, the number of ordering snapshots an
+  inbound store holds right after the eviction a newly opened track runs (D191):
+  at most 256 unless a removal found its snapshot changed or conflicted, which leaves it to the next new track.
+  Only the browser's stores are capped and state it; a pass that fails states nothing.
+  The session's IndexedDB store states it under its store id, its memory pair as
+  `<store id>/volatile`; a known track's next message states nothing. The harness
+  keeps each store's latest count and reads their sum as `stats.rallar.alm.orderingTracks`.
 
 - `persist`: `outcome` (`granted`, `denied` or `unsupported`), once per connect
   after its first durable admission: `granted` when the origin already

@@ -28,6 +28,10 @@ import {
     type ALReplacementSupersedenceValue,
     type ALSupersedenceAcceptance
 } from '../compute-al-supersedence-observation.ts';
+import {
+    evictALInboundOrderingTracksPastCap,
+    type ALInboundOrderingTracksReport
+} from './admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import {
     readALInboundStoredMessage,
@@ -330,6 +334,16 @@ export interface CreateALInboundAdmissionStoreInput {
     readonly orderingTrackTtlMs: number;
     readonly supersedenceTrackTtlMs: number;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    /**
+     * The most ordering snapshots the store keeps (D191): the browser's stores pass `AL_INBOUND_MAX_ORDERING_TRACKS`;
+     * `undefined` keeps every track until its TTL, as the server's shared stores do, and runs no eviction pass.
+     */
+    readonly maxOrderingTracks: number | undefined;
+    /**
+     * Hears how many ordering snapshots the store holds after each new track's eviction pass (D191); absent where
+     * nothing reads the count. A store without a cap states nothing.
+     */
+    readonly reportOrderingTracks?: ALInboundOrderingTracksReport;
 }
 
 export interface ALInboundAdmissionStore extends ALReadyable {
@@ -369,13 +383,21 @@ export interface ALInboundAdmissionStore extends ALReadyable {
 export function createALInboundAdmissionStore(
     input: CreateALInboundAdmissionStoreInput
 ): ALInboundAdmissionStore {
-    return new ProviderBackedALInboundAdmissionStore({ ...input, durability: 'durable' });
+    return new ProviderBackedALInboundAdmissionStore({
+        ...input,
+        durability: 'durable',
+        reportOrderingTracks: input.reportOrderingTracks
+    });
 }
 
 export function createVolatileALInboundAdmissionStore(
     input: CreateALInboundAdmissionStoreInput
 ): ALInboundAdmissionStore {
-    return new ProviderBackedALInboundAdmissionStore({ ...input, durability: 'volatile' });
+    return new ProviderBackedALInboundAdmissionStore({
+        ...input,
+        durability: 'volatile',
+        reportOrderingTracks: input.reportOrderingTracks
+    });
 }
 
 namespace ProviderBackedALInboundAdmissionStore {
@@ -393,6 +415,8 @@ namespace ProviderBackedALInboundAdmissionStore {
         readonly backend: ALAdmissionWorkBackend;
         readonly nowMs: () => number;
         readonly durability: ALStoreDurability;
+        readonly maxOrderingTracks: number | undefined;
+        readonly reportOrderingTracks: ALInboundOrderingTracksReport | undefined;
     }
 }
 
@@ -405,9 +429,13 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     private readonly backend: ALAdmissionWorkBackend;
     private readonly effects: ALInboundDurableEffectStore;
     private readonly nowMs: () => number;
+    private readonly maxOrderingTracks: number | undefined;
+    private readonly reportOrderingTracks: ALInboundOrderingTracksReport | undefined;
 
     constructor(input: ProviderBackedALInboundAdmissionStore.Dependencies) {
         this.namespace = input.namespace;
+        this.maxOrderingTracks = input.maxOrderingTracks;
+        this.reportOrderingTracks = input.reportOrderingTracks;
         this.orderingTrackTtlMs = input.orderingTrackTtlMs;
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
         this.retention = input.retention;
@@ -622,9 +650,24 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             throw new TypeError(validated.left.message);
         }
 
+        const status = await this.writeValidatedBundle(validated.right!);
+        if (status === 'committed' && this.maxOrderingTracks !== undefined && opensALInboundOrderingTrack(bundle)) {
+            await evictALInboundOrderingTracksPastCap({
+                backend: this.backend,
+                orderingPrefix: this.toOrderingPrefix(),
+                maxTracks: this.maxOrderingTracks,
+                report: this.reportOrderingTracks
+            });
+        }
+        return status;
+    }
+
+    private async writeValidatedBundle(
+        bundle: ALInboundCommitBundle
+    ): Promise<'committed' | 'conflict' | 'expired'> {
         try {
             return await this.backend.write(
-                (transaction) => this.writeCommitBundle(transaction, validated.right!),
+                (transaction) => this.writeCommitBundle(transaction, bundle),
                 bundle.admissionExpiresAtMs
             );
         }
@@ -835,7 +878,11 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     }
 
     private toOrderingKey(trackKey: string): string {
-        return `${this.namespace}:ordering:${trackKey}`;
+        return `${this.toOrderingPrefix()}${trackKey}`;
+    }
+
+    private toOrderingPrefix(): string {
+        return `${this.namespace}:ordering:`;
     }
 
     private toSupersedenceLatestKey(key: string): string {
@@ -853,6 +900,12 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     private toBufferedTrackPrefix(trackKey: string): string {
         return `${this.namespace}:buffered:${trackKey}:`;
     }
+}
+
+/** A bundle that writes the first snapshot of its track: the only commit that can take the store past its cap. */
+function opensALInboundOrderingTrack(bundle: ALInboundCommitBundle): boolean {
+    return bundle.observations.ordering?.snapshot === undefined &&
+        bundle.mutations.some((mutation) => mutation.kind === 'set-ordering');
 }
 
 /**

@@ -134,7 +134,8 @@ async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInbou
             admissionStore: createALInboundAdmissionStore({
                 nowMs: Date.now,
                 ...configuration,
-                backend: firstBackend
+                backend: firstBackend,
+                maxOrderingTracks: undefined
             }),
             workQueue: firstBackend.workQueue
         },
@@ -142,7 +143,8 @@ async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInbou
             admissionStore: createALInboundAdmissionStore({
                 nowMs: Date.now,
                 ...configuration,
-                backend: secondBackend
+                backend: secondBackend,
+                maxOrderingTracks: undefined
             }),
             workQueue: secondBackend.workQueue
         }

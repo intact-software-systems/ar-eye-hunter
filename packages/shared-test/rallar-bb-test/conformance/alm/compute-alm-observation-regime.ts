@@ -38,11 +38,23 @@ export const ALM_OBSERVATION_SLOW_REGIME_MIN_MS_PER_OPERATION = 35;
 export const ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT = 5;
 export const ALM_OBSERVATION_WINDOW_MS = 20_000;
 export const ALM_OBSERVATION_COMMIT_ORIGIN = 'send';
+/**
+ * The events the control server keeps of a run unless `RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS` names another bound
+ * (its runtime retention default); past it the oldest leave as an exact tail, so a run that holds exactly this many
+ * may have lost its start, while a run retained without a bound can hold more.
+ */
+export const ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS = 2_000;
 
 const ALM_OBSERVATION_AGENT_ROLES: readonly ALMObservationAgentRole[] = ['sender', 'receiver', 'unattributed'];
 const PENDING_INBOUND_OUTCOME = 'pending';
 const DISPATCH_LOCAL_PAYLOAD_KIND = 'dispatch-local';
 const SEND_CONTROL_PAYLOAD_KIND = 'send-control';
+/** The earliest event a trimmed run kept is not its start, so a page window measured from it is not the calibrated one. */
+const TRIMMED_RUN_PAGE_REGIME: ALMObservationPageRegime = {
+    outcome: 'unmeasured',
+    sampleCount: 0,
+    regime: 'unclassified'
+};
 /** Task 7b: bounds the cell JSON, not the raw file — the raw file already caps at 200 per page. */
 const ALM_OBSERVATION_PAGE_DIAGNOSTICS_FIRST_LIMIT = 20;
 
@@ -102,6 +114,8 @@ export type ALMObservationInboundDirection =
         pendingShare: ALMObservationInboundPendingShare;
         phases: ALMObservationInboundPhases;
         claimWaits: ALMObservationInboundClaimWaits;
+        /** Every release this role's batches ran by promotion (D190), on either lane. */
+        promotedReleases: number;
     }>
     | Readonly<{ role: ALMObservationAgentRole; outcome: 'no-events'; }>;
 
@@ -131,6 +145,11 @@ export type ALMObservationLedger =
         maxBytes: number;
         maxOldestAgeMs: number;
         maxTracks: number;
+        /** The most arrivals and arrival bytes one page's inbound pool held (D189). */
+        maxInboundAdmissions: number;
+        maxInboundBytes: number;
+        /** The most ordering snapshots one page's inbound stores held (D191). */
+        maxOrderingTracks: number;
         overloadedReadings: number;
     }>
     | Readonly<{ outcome: 'no-readings'; }>;
@@ -190,10 +209,9 @@ interface ALMObservationPeerObservation {
 
 export function computeALMObservationRegime(input: ALMObservationRegimeInput): ALMObservationRegime {
     const perOperation = computePerOperationCost(input.snapshot);
-    const pageRegime = computePageRegime(
-        input.snapshot,
-        input.snapshot.firstEventAtEpochMs + ALM_OBSERVATION_WINDOW_MS
-    );
+    const pageRegime = input.snapshot.retainedEventCount === ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS
+        ? TRIMMED_RUN_PAGE_REGIME
+        : computePageRegime(input.snapshot, input.snapshot.firstEventAtEpochMs + ALM_OBSERVATION_WINDOW_MS);
     const measured = perOperation.outcome === 'measured';
     return {
         runId: input.snapshot.runId,
@@ -377,6 +395,9 @@ function computeLedger(readings: readonly ALMObservationLedgerReading[]): ALMObs
         maxBytes: usages.reduce((max, usage) => Math.max(max, usage.bytes), 0),
         maxOldestAgeMs: usages.reduce((max, usage) => Math.max(max, usage.oldestAgeMs), 0),
         maxTracks: usages.reduce((max, usage) => Math.max(max, usage.tracks), 0),
+        maxInboundAdmissions: readings.reduce((max, reading) => Math.max(max, reading.inbound.admissions), 0),
+        maxInboundBytes: readings.reduce((max, reading) => Math.max(max, reading.inbound.bytes), 0),
+        maxOrderingTracks: readings.reduce((max, reading) => Math.max(max, reading.orderingTracks), 0),
         overloadedReadings: readings.filter((reading) => reading.overloaded).length
     };
 }
@@ -486,7 +507,8 @@ interface ALMObservationInboundRoleEvents {
 /**
  * The drain phases and claim waits read the IndexedDB lane only, as the runner regime does (R-S3a-15):
  * F2c's acceptance figures were measured when every inbound owner was IndexedDB, and a memory lane's
- * single-digit drains would pull a slow receiver's medians into the normal band.
+ * single-digit drains would pull a slow receiver's medians into the normal band. The promoted releases
+ * count both lanes: a volatile track is released on the memory lane.
  */
 function toInboundDirection(
     role: ALMObservationAgentRole,
@@ -500,7 +522,8 @@ function toInboundDirection(
             outcome: 'measured',
             pendingShare: computeInboundPendingShare(outcomes),
             phases: computeInboundPhases(drains.filter((drain) => drain.lane === 'durable')),
-            claimWaits: computeInboundClaimWaits(claims.filter((claim) => claim.lane === 'durable'))
+            claimWaits: computeInboundClaimWaits(claims.filter((claim) => claim.lane === 'durable')),
+            promotedReleases: drains.reduce((total, drain) => total + drain.promoted, 0)
         };
 }
 

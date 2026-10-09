@@ -1060,6 +1060,14 @@ export type RallarBlackBoxTestEvent<T = unknown> = Readonly<{
 
 export type RallarBlackBoxTestRuntimeEventInput = Omit<RallarBlackBoxTestEvent, 'eventId' | 'atEpochMs'>;
 
+/**
+ * The page's session ledger report (D180) beside `orderingTracks`, the ordering snapshots its inbound stores state
+ * they hold, each store's latest statement since the page's last `close`, summed (D191).
+ */
+export interface RallarBlackBoxTestAlmUsage extends ALVolatileSessionReport {
+    readonly orderingTracks: number;
+}
+
 export interface RallarBlackBoxTestStatsSnapshot {
     readonly atEpochMs: number;
     readonly runId?: string;
@@ -1091,11 +1099,11 @@ export interface RallarBlackBoxTestStatsSnapshot {
         peerCount?: number;
         laneHealth?: unknown;
         /**
-         * The page's session ledger, read by the `stats` command through `rallar.messages.readUsage()` (D180).
-         * Absent before the page connects, on a runtime that drives no Rallar page, and in the control client's
-         * periodic stats and final report, which read no page.
+         * The page's session ledger, read by the `stats` command through `rallar.messages.readUsage()` (D180), and
+         * its ordering snapshots. Absent before the page connects, on a runtime that drives no Rallar page, and in
+         * the control client's periodic stats and final report, which read no page.
          */
-        alm?: ALVolatileSessionReport;
+        alm?: RallarBlackBoxTestAlmUsage;
         /**
          * The congestion decisions the page counted since its last `close`, read by the `stats` command (D186).
          * Absent exactly where `alm` is.

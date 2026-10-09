@@ -1,8 +1,9 @@
 import { isALControlTypeId } from '../../../al-contracts/al-control-type-ids.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
-import type {
-    ALVolatileSessionBudget,
-    ALVolatileSessionLimit
+import {
+    AL_VOLATILE_SESSION_OWN_SHARE,
+    type ALVolatileSessionBudget,
+    type ALVolatileSessionLimit
 } from '../../volatile-budget/al-volatile-session-budget.ts';
 import { toALVolatileSessionAdmission } from '../../volatile-budget/to-al-volatile-session-admission.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
@@ -33,12 +34,14 @@ function toCapacityRefusedPlan<TPrepared>(
     plan: ALOutboundDispatchPlan<TPrepared>,
     refusal: ALVolatileSessionBudget.Refusal
 ): ALOutboundDispatchPlan<TPrepared> {
-    const { usage, limits } = refusal;
+    const { usage, own, limits } = refusal;
     return {
         ...plan,
         dropReason: `The session's volatile bound refused the send (${refusal.limit}): ${usage.admissions} of ` +
-            `${limits.maxAdmissions} admissions, ${usage.bytes} of ${limits.maxBytes} bytes, ${usage.tracks} of ` +
-            `${limits.maxTracks} tracks, a deadline at most ${limits.maxAgeMs} ms ahead.`,
+            `${limits.maxAdmissions} admissions, ${usage.bytes} of ${limits.maxBytes} bytes, of which its own sends ` +
+            `hold ${own.admissions} admissions and ${own.bytes} bytes against a share of ` +
+            `${AL_VOLATILE_SESSION_OWN_SHARE * 100}%, ${usage.tracks} of ${limits.maxTracks} tracks, a deadline at ` +
+            `most ${limits.maxAgeMs} ms ahead.`,
         dropReasonCode: 'capacity',
         capacityLimit: refusal.limit,
         preparedMessages: []

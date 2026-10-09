@@ -1,5 +1,7 @@
-import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { describe, expect, it, vi } from 'vitest';
+
+import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+
 import { normalizeBlackBoxResponseHeaders } from '../../shared-test/black-box-runner/http/normalize-black-box-response-headers.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import {
@@ -17,6 +19,7 @@ import {
     type RallarBlackBoxTestJsonValue,
     type RallarBlackBoxTestRecipe
 } from '../../shared-test/rallar-bb-test/mod.ts';
+import type { RallarBlackBoxTestAlmUsage } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { sleepWithAbort } from '../../shared-test/rallar-bb-test/runtime/sleep-with-abort.ts';
 import { createDeterministicRuntime } from './rallar-bb-runtime/create-deterministic-runtime.ts';
 
@@ -90,8 +93,11 @@ describe('runtime construction', () => {
         let sequence = 1;
         const sleptMs: number[] = [];
         const resources: string[] = [];
-        const initialLedger = {
+        const initialLedger: RallarBlackBoxTestAlmUsage = {
             usage: { admissions: 3, bytes: 912, oldestAgeMs: 1_250, tracks: 2 },
+            own: { admissions: 2, bytes: 600 },
+            inbound: { admissions: 1, bytes: 312 },
+            orderingTracks: 3,
             limits: AL_VOLATILE_SESSION_LIMITS,
             overloaded: false
         };

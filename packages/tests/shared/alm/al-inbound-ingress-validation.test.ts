@@ -199,7 +199,8 @@ function createFixture(carrier: ALDeliveryCarrier) {
         backend: new InMemoryAdmissionBackend(state, Date.now),
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
     const runtime = new ALInboundMessageRuntime({
         carrier,

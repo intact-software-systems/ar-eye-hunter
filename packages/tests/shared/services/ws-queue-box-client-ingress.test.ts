@@ -357,7 +357,8 @@ async function createClientIngressFixture(
         backend: new InMemoryAdmissionBackend(admission, Date.now),
         orderingTrackTtlMs: 300000,
         supersedenceTrackTtlMs: 300000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
     const service = createDefaultWsQueueBoxClientService({
         outbox,

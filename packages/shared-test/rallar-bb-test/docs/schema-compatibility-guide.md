@@ -863,3 +863,43 @@ schema-and-capabilities.md and ai-recipe-prompt-guide.md describe the array form
 Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-test-assert-operators.test.ts
 ```
+
+```text
+Title: stats.rallar.alm names its two pools and the ordering snapshots; the observation folds them
+Date: 2026-10-08
+Owner: ALM V1b-ii
+
+Change type:
+- Compatible addition to a result value; a stricter decode of recorded stats and drains
+
+Affected schemas:
+- None: the recipe schema and the control validator are unchanged; the stats result value, its decoder and the
+  observation snapshot decoder change
+
+Old shape:
+stats.rallar.alm was { usage, limits, overloaded }, overloaded true at or over the count or byte limit. The
+observation's ledger readings were { atEpochMs, agentId, usage, overloaded } and an inbound effect-drain named no
+promoted count.
+
+New shape:
+stats.rallar.alm is { usage, own, inbound, limits, overloaded, orderingTracks }: own and inbound are the ledger's two
+pools (D189), overloaded is true when the smallest next own send would be refused at the count or byte limit, and
+orderingTracks is the sum of the latest ordering-tracks count each inbound store stated since the page's last close
+(D191). A page answer missing any of them fails the stats command, naming each bad field. The observation's ledger
+readings carry own, inbound and orderingTracks, its ledger fold maxInboundAdmissions, maxInboundBytes and
+maxOrderingTracks, and each inbound direction promotedReleases, the sum of the drains' required promoted (D190).
+
+Migration:
+None for recipes. A recorded stats event or effect-drain from before this change no longer decodes and is skipped,
+so re-reading an older artifact reports no-readings for its ledger and leaves its drains out.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the stats block and the fairness cells; alm-observation-artifact.md the folds;
+runtime-diagnostic-contract.md the ordering-tracks storage event.
+
+Verification:
+npx vitest run packages/tests/shared-test/alm-conformance-fairness.test.ts packages/tests/shared-test/rallar-bb-runtime/stats.test.ts packages/tests/shared-test/alm-observation-ledger.test.ts packages/tests/shared-test/alm-observation-regime.test.ts
+```

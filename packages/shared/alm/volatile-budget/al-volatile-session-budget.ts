@@ -13,6 +13,11 @@ export const AL_VOLATILE_SESSION_MAX_TRACKS = 64;
  * refused. An inbound envelope is delivered at once; only small rows outlive it.
  */
 export const AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS = 30_000;
+/**
+ * The part of the count and byte limits kept for this session's own sends (D189): arrivals are never refused, so they
+ * refuse an own send only once the own pool also holds this share of the limit it passes.
+ */
+export const AL_VOLATILE_SESSION_OWN_SHARE = 0.5;
 
 export type ALVolatileSessionLimit = 'admissions' | 'bytes' | 'age' | 'tracks';
 
@@ -39,9 +44,20 @@ export interface ALVolatileSessionUsage {
     readonly tracks: number;
 }
 
-/** `overloaded` is the count or byte bound reached; the age and track bounds refuse a send without shedding others. */
+/** One pool of the totals: this session's own admissions, or the arrivals it records (D189). */
+export interface ALVolatileSessionPoolUsage {
+    readonly admissions: number;
+    readonly bytes: number;
+}
+
+/**
+ * `overloaded` is the count or byte bound refusing this session's next own send; the age and track bounds refuse a
+ * send without shedding others.
+ */
 export interface ALVolatileSessionReport {
     readonly usage: ALVolatileSessionUsage;
+    readonly own: ALVolatileSessionPoolUsage;
+    readonly inbound: ALVolatileSessionPoolUsage;
     readonly limits: ALVolatileSessionLimits;
     readonly overloaded: boolean;
 }
@@ -59,14 +75,18 @@ export namespace ALVolatileSessionBudget {
     export interface Refusal {
         readonly limit: ALVolatileSessionLimit;
         readonly usage: ALVolatileSessionUsage;
+        readonly own: ALVolatileSessionPoolUsage;
         readonly limits: ALVolatileSessionLimits;
     }
 }
+
+type ALVolatileSessionPool = 'own' | 'inbound';
 
 interface ALVolatileSessionEntry {
     readonly bytes: number;
     readonly admittedAtMs: number;
     readonly trackKey: string | undefined;
+    readonly pool: ALVolatileSessionPool;
 }
 
 /**
@@ -75,13 +95,20 @@ interface ALVolatileSessionEntry {
  */
 export class ALVolatileSessionBudget {
     private readonly limits: ALVolatileSessionLimits;
+    private readonly ownShare: ALVolatileSessionPoolUsage;
     private readonly entriesByMsgId = new Map<string, ALVolatileSessionEntry>();
     private readonly admissionsByTrackKey = new Map<string, number>();
     private readonly releases = new ALVolatileSessionReleaseQueue();
     private bytes = 0;
+    private ownAdmissions = 0;
+    private ownBytes = 0;
 
     constructor(limits: ALVolatileSessionLimits) {
         this.limits = limits;
+        this.ownShare = {
+            admissions: Math.floor(limits.maxAdmissions * AL_VOLATILE_SESSION_OWN_SHARE),
+            bytes: Math.floor(limits.maxBytes * AL_VOLATILE_SESSION_OWN_SHARE)
+        };
     }
 
     tryAdmit(
@@ -92,10 +119,11 @@ export class ALVolatileSessionBudget {
         if (this.entriesByMsgId.has(input.msgId)) {
             return Either.ofRight(usage);
         }
-        const limit = this.resolvePassedLimit(input, usage);
+        const own = this.toOwnUsage();
+        const limit = this.resolvePassedLimit(input, usage, own);
         return limit === undefined
-            ? Either.ofRight(this.hold(input))
-            : Either.ofLeft({ limit, usage, limits: this.limits });
+            ? Either.ofRight(this.hold(input, 'own'))
+            : Either.ofLeft({ limit, usage, own, limits: this.limits });
     }
 
     /** A received message is never refused and never opens a counted track (D74, D179). */
@@ -104,46 +132,57 @@ export class ALVolatileSessionBudget {
             ...input,
             deadlineAtMs: Math.min(input.deadlineAtMs, input.nowMs + AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS),
             trackKey: undefined
-        });
+        }, 'inbound');
     }
 
     readReport(nowMs: number): ALVolatileSessionReport {
         this.releaseDue(nowMs);
         const usage = this.toUsage(nowMs);
+        const own = this.toOwnUsage();
         return {
             usage,
+            own,
+            inbound: { admissions: usage.admissions - own.admissions, bytes: usage.bytes - own.bytes },
             limits: this.limits,
-            overloaded: usage.admissions >= this.limits.maxAdmissions || usage.bytes >= this.limits.maxBytes
+            overloaded: this.passesAdmissionBound(usage, own) || this.passesByteBound(usage, own, 1)
         };
     }
 
     private resolvePassedLimit(
         input: ALVolatileSessionBudget.Admission,
-        usage: ALVolatileSessionUsage
+        usage: ALVolatileSessionUsage,
+        own: ALVolatileSessionPoolUsage
     ): ALVolatileSessionLimit | undefined {
         if (input.deadlineAtMs - input.nowMs > this.limits.maxAgeMs) {
             return 'age';
         }
-        if (usage.admissions + 1 > this.limits.maxAdmissions) {
+        if (this.passesAdmissionBound(usage, own)) {
             return 'admissions';
         }
-        if (usage.bytes + input.bytes > this.limits.maxBytes) {
+        if (this.passesByteBound(usage, own, input.bytes)) {
             return 'bytes';
         }
         const opensTrack = input.trackKey !== undefined && !this.admissionsByTrackKey.has(input.trackKey);
         return opensTrack && usage.tracks >= this.limits.maxTracks ? 'tracks' : undefined;
     }
 
-    private hold(input: ALVolatileSessionBudget.Admission): ALVolatileSessionUsage {
+    /** One more own admission passes the count bound only past both the total limit and the own share (D189). */
+    private passesAdmissionBound(usage: ALVolatileSessionUsage, own: ALVolatileSessionPoolUsage): boolean {
+        return usage.admissions + 1 > this.limits.maxAdmissions && own.admissions + 1 > this.ownShare.admissions;
+    }
+
+    private passesByteBound(usage: ALVolatileSessionUsage, own: ALVolatileSessionPoolUsage, bytes: number): boolean {
+        return usage.bytes + bytes > this.limits.maxBytes && own.bytes + bytes > this.ownShare.bytes;
+    }
+
+    private hold(input: ALVolatileSessionBudget.Admission, pool: ALVolatileSessionPool): ALVolatileSessionUsage {
         this.releaseDue(input.nowMs);
         if (!this.entriesByMsgId.has(input.msgId) && input.deadlineAtMs > input.nowMs) {
-            this.entriesByMsgId.set(input.msgId, {
-                bytes: input.bytes,
-                admittedAtMs: input.nowMs,
-                trackKey: input.trackKey
-            });
+            const entry = { bytes: input.bytes, admittedAtMs: input.nowMs, trackKey: input.trackKey, pool };
+            this.entriesByMsgId.set(input.msgId, entry);
             this.releases.push({ msgId: input.msgId, deadlineAtMs: input.deadlineAtMs });
             this.bytes += input.bytes;
+            this.holdOwn(entry);
             this.holdTrack(input.trackKey);
         }
         return this.toUsage(input.nowMs);
@@ -155,8 +194,23 @@ export class ALVolatileSessionBudget {
             if (entry !== undefined) {
                 this.entriesByMsgId.delete(due.msgId);
                 this.bytes -= entry.bytes;
+                this.releaseOwn(entry);
                 this.releaseTrack(entry.trackKey);
             }
+        }
+    }
+
+    private holdOwn(entry: ALVolatileSessionEntry): void {
+        if (entry.pool === 'own') {
+            this.ownAdmissions += 1;
+            this.ownBytes += entry.bytes;
+        }
+    }
+
+    private releaseOwn(entry: ALVolatileSessionEntry): void {
+        if (entry.pool === 'own') {
+            this.ownAdmissions -= 1;
+            this.ownBytes -= entry.bytes;
         }
     }
 
@@ -177,6 +231,10 @@ export class ALVolatileSessionBudget {
         else {
             this.admissionsByTrackKey.delete(trackKey);
         }
+    }
+
+    private toOwnUsage(): ALVolatileSessionPoolUsage {
+        return { admissions: this.ownAdmissions, bytes: this.ownBytes };
     }
 
     private toUsage(nowMs: number): ALVolatileSessionUsage {

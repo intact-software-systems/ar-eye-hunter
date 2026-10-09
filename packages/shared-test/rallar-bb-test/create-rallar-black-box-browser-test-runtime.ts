@@ -1,5 +1,4 @@
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -10,7 +9,7 @@ import {
     type RallarBlackBoxAlmCommandWithId
 } from './alm/browser-adapter-alm-commands.ts';
 import { decodeALCongestionCounters } from './alm/decode-al-congestion-counters.ts';
-import { decodeALVolatileSessionReport } from './alm/decode-al-volatile-session-report.ts';
+import { decodeRallarBlackBoxTestAlmUsage } from './alm/decode-rallar-black-box-test-alm-usage.ts';
 import {
     createBrowserCommandAbortScope,
     withBrowserCommandAbort
@@ -34,6 +33,7 @@ import { BrowserWebSocketCommands } from './browser/browser-web-socket-commands.
 import { toRallarBrowserEventInput } from './browser/to-rallar-browser-event-input.ts';
 import { decodeRtcCaptureSupport } from './distributed/rtc-capture-support.ts';
 import type {
+    RallarBlackBoxTestAlmUsage,
     RallarBlackBoxTestCleanupInput,
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
@@ -270,11 +270,11 @@ export function createRallarBlackBoxBrowserTestRuntime(
 }
 
 /** `undefined` is the page before its connect; anything else the page returns must be a whole report. */
-function decodeAlmUsageResultValue(value: unknown): ALVolatileSessionReport | undefined {
+function decodeAlmUsageResultValue(value: unknown): RallarBlackBoxTestAlmUsage | undefined {
     if (value === undefined) {
         return undefined;
     }
-    return decodeALVolatileSessionReport(value).fold(
+    return decodeRallarBlackBoxTestAlmUsage(value).fold(
         (issues) => {
             throw new TypeError(`The page's session ledger report is not valid: ${issues.join('; ')}`);
         },
