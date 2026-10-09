@@ -2,8 +2,10 @@
 
 V1c implements D183's 15-, 30-, and 50-agent consumer proof after V1b-ii.
 Reusable recipes and acceptance evidence belong to `packages/shared-test`;
-the black-box app chooses manifest size, topology, and destination. No runtime
-policy, public delivery contract, migration path, or dependency changes.
+the black-box app chooses manifest size, topology, and destination. ALM delivery
+and retention policy, public delivery contracts, persisted formats and dependencies
+remain unchanged. The queue scheduling prerequisite below changes how AppInbox
+shares serial service between lanes, without changing reservation authority.
 
 ## Workload
 
@@ -113,6 +115,104 @@ manifest load estimate counts accepted logical messages: six leader-targeted
 shots per player plus two lifecycle fanouts, yielding 112/232/392 logical
 recipient deliveries at 15/30/50 participants. This is a match workload estimate;
 `streamFrames` and the former 20 Hz/600-frame metadata are absent.
+
+## Queue scheduling prerequisite
+
+An authenticated join diagnostic exposed a retry selected 52.66 seconds overdue
+after 72 serial NEW handlers. The existing controller drains up to 1,000 entries
+per lane before visiting the next lane. Larger reservations do not provide
+parallelism: handlers execute serially and claims are released after the batch.
+Bounded turns must provide retry service independently of pressure observations.
+This scheduling defect does not establish that a repair resolves every observed
+room-readiness failure; latest accepted topology remains a separate acceptance.
+
+### Ownership and dataflow
+
+`DequeueController` accepts an optional lane-budget callback that returns one
+complete snapshot keyed by its existing `Reservator`. Each lane budget has
+positive safe-integer `maxToReserve` and `maxNumToDequeue` fields. Numeric settings
+retain their current per-lane meaning when no callback is supplied. Read the
+snapshot once per invocation, before claiming entries, and reject malformed
+budgets before claims. Each normal reservation is clamped to the remaining lane
+quota. FINALIZATION keeps its existing first, separate recovery reservation;
+normal service stays NEW → FAIRNESS → RETRY → TIMEOUT. The controller owns no
+database pressure queries, cache, refresh timer, or additional rate limiter.
+
+`InboxQueueReader` owns the pressure state for its lifetime. Its callback travels
+through `QueueMessageReader`, `QueueBoxUtilities` and
+`createDefaultResourceInboxDequeuer` to the controller. Only the exact singleton
+APP_INBOX scope selects this policy; unrelated type sets and outbox consumers
+retain their existing limits. Keep the callback contract with the controller and
+the queue-specific policy with the reader. Add no compatibility aliases, retained
+alternate scheduler, dependencies, migrations, or new shared count API.
+
+### Initial policy and bounded observation
+
+All reservations stay at one. The fallback service quotas are one per normal
+lane. An observation containing at least two eligible due retries increases the
+RETRY service quota to two; other quotas stay one. Two is the smallest unequal
+positive service quantum and an initial hypothesis to measure, not a latency SLO.
+FAIRNESS remains a distinct recovery turn over the overdue subset of RETRY;
+observations never create ownership or change retry delays or attempt limits.
+
+Use the existing RETRY work-page port with page size two. Follow its opaque cursor
+after each successful refresh and restart at null after the end. A page is an
+observation in backend order, not an exact queue count. Count only entries in the
+requested APP_INBOX scope with RETRY status, shared expiry validation passing,
+attempts below the unchanged retry policy, and an explicit `nextTs` due at the
+captured observation time. Missing due timestamps conservatively underobserve;
+do not change differing backend reservation behavior. Do not sum old pages or
+double-count FAIRNESS as an independent population. Partial or empty observations
+cannot establish absence and never remove a lane's service opportunity.
+
+The provider uses the repository `RateLimiter`, initially a 1,000-ms window with
+one admission. This is a measurement setting; quarter-window buckets mean it is
+not an exact one-second refresh schedule. Use the existing injected clock when
+provided. Keep one refresh in flight and return cached budgets promptly while
+refreshing. Cold, stale, failed or stalled observations use bounded fallback
+quotas. Successful observations are fresh for one configured window; invalidating
+or aging a sample cannot restore the old 1,000-NEW drain. Refresh is demand-driven,
+has caught/reported failures, and introduces no background timer. Retain no
+result across queue/type ownership changes.
+
+### Proof and decision boundary
+
+Compare the same real queue and reader workload under four configurations:
+
+| Configuration          |   NEW | FAIRNESS |  RETRY | TIMEOUT | Pressure reads |
+| ---------------------- | ----: | -------: | -----: | ------: | -------------- |
+| Current drain          | 1,000 |    1,000 |  1,000 |   1,000 | None           |
+| Fixed fallback         |     1 |        1 |      1 |       1 | None           |
+| Adaptive               |     1 |        1 | 1 or 2 |       1 | Rate limited   |
+| Fixed catch-up control |     1 |        1 |      2 |       1 | None           |
+
+All four reserve one entry at a time. Exercise cold start, sustained due retries
+with replenished NEW, recurring single-retry rounds, backlog disappearance,
+backlog returning after a cached zero, and future/expired/exhausted rows hiding
+due work in a partial page. Do not prewarm adaptive pressure with oracle knowledge.
+Record durable completion order and attempt counts, lane service and engine
+passes, empty/nonempty reservation operations, pressure reads and their maximum
+concurrency, and total backend operations including observations. Memory counters
+prove semantic ordering and operation counts, not PostgreSQL performance. Use
+existing IndexedDB operation observers where applicable and retain backend
+measurement artifacts outside tracked source.
+
+Required semantic outcomes are due-retry completion before trailing NEW exhaustion,
+positive NEW progress during retry catch-up, eventual engine re-entry over remaining
+work, and unchanged authority, NotReady neutrality and delayed-retry readiness.
+The adaptive observation must demonstrate an incremental benefit over the fixed
+catch-up control at equal durable work, including its polling cost. Merely beating
+the current drain or fixed quota one does not prove counts help. Report cold-start
+and stale-sample penalties explicitly. If that benefit is absent, revise the
+pressure hypothesis before publishing it as an improvement; do not silently
+substitute a different final design or weaken acceptance.
+
+Focused queue/reader/engine and authenticated group-join redelivery regressions
+precede shared/API type checks and memory API validation. Scheduling changes also
+require unchanged PostgreSQL medium-scale coverage and the governed state-write
+baseline/candidate comparison. Final ordinary, uninstrumented 15/30/50-agent
+manifests must prove the complete cohort, accepted layout, delivery and sampled
+budgets; deterministic scheduling proof does not replace these outcomes.
 
 ## Validation and next boundary
 
