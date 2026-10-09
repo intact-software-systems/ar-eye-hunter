@@ -35,21 +35,6 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
-    // Untrusted payloadFields is record-guarded and each operand is admitted by
-    // decodeJsonValue. Only validation issues leave this issue-returning boundary.
-    Object.freeze({
-        path: 'packages/shared-test/rallar-bb-test/control/validate-wait-control-command.ts',
-        rule: 'boundary.unknown',
-        symbol: 'validateWaitPayloadFields'
-    }),
-    // This generic copier owns comparison arrays/records without admitting
-    // them. Cycles and invalid non-JSON operands retain their existing validation
-    // boundary; unknown array storage stays local. Its checker owner is absent.
-    Object.freeze({
-        path: 'packages/shared-test/rallar-bb-test/recipe/snapshot-comparison-value.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
     // Module-owned bodies observe outgoing HTTP JSON for independent equality;
     // adversarial responses feed the real decoders. Child rejection reasons are
     // checked as Errors only. No fixture unknown becomes trusted domain state.

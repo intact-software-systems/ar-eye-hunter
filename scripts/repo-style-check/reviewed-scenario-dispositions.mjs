@@ -787,6 +787,21 @@ export const reviewedScenarioDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 144
     }),
+    // Untrusted payloadFields is record-guarded and each operand is admitted by
+    // decodeJsonValue. Only validation issues leave this issue-returning boundary.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control/validate-wait-control-command.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateWaitPayloadFields'
+    }),
+    // This generic copier owns comparison arrays/records without admitting
+    // them. Cycles and invalid non-JSON operands retain their existing validation
+    // boundary; unknown array storage stays local. Its checker owner is absent.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/recipe/snapshot-comparison-value.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // JSON comparison accepts native input at its facade and decoder only.
     // Descriptor-built snapshots remove accessors, prototypes, and caller-owned
     // mutation before the JsonValue core runs. The private worklist is raw input
