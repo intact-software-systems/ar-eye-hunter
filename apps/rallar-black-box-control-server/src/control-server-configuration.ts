@@ -39,6 +39,7 @@ const DEFAULT_SNAPSHOT_PERSISTENCE_BOUNDS: Required<ControlRunSnapshotBounds> = 
 const DEFAULT_RUNTIME_RETENTION_BOUNDS: Required<ControlRunSnapshotBounds> = {
     commands: 1_000,
     results: 1_000,
+    // The ALM observation's ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS reads a run at this bound as trimmed.
     events: 2_000,
     stats: 500,
     reports: 20,

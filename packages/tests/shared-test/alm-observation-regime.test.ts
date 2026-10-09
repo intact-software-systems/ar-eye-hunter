@@ -469,16 +469,19 @@ describe('computeALMObservationRegime', () => {
         expect(regime.pageRegime).toEqual({ outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' });
     });
 
-    it('reads the page unmeasured once the run holds the control server\'s default event bound, whose start may be gone', () => {
+    it('reads the page unmeasured once the run holds exactly the control server\'s default event bound, whose start may be gone', () => {
         const probes = toPageWindowProbes(2, 10);
         const toFiller = (count: number) =>
             Array.from({ length: count }, (_unused, index) => toReadinessProbeEvent(2_000 + index, SENDER_AGENT_ID, { cause: 'own-commit', durationMs: 1 }));
 
         const trimmed = toSyntheticRegime([...probes, ...toFiller(ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS - probes.length)]);
         const whole = toSyntheticRegime([...probes, ...toFiller(ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS - probes.length - 1)]);
+        // A run retained without a bound holds more than the default and keeps its start.
+        const unbounded = toSyntheticRegime([...probes, ...toFiller(ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS - probes.length + 1)]);
 
         expect(trimmed.pageRegime).toEqual({ outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' });
         expect(whole.pageRegime).toEqual({ outcome: 'measured', storageProbeMedianMs: 2, sampleCount: 10, regime: 'normal' });
+        expect(unbounded.pageRegime).toEqual({ outcome: 'measured', storageProbeMedianMs: 2, sampleCount: 10, regime: 'normal' });
     });
 
     it('classifies the page as slow at 120 ms and unclassified in the band at 30 ms', () => {

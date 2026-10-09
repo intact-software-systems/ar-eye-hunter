@@ -45,8 +45,8 @@ export async function evictALInboundOrderingTracksPastCap(
         const gone = evicted.length === 0 ? 0 : await removeUnchangedTracks(backend, evicted);
         input.report?.(held.length - gone);
     }
-    catch {
-        return;
+    catch (error) {
+        console.warn('AL inbound ordering-track eviction failed; the next new track retries it', error);
     }
 }
 

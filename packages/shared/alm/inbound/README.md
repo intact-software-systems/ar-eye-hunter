@@ -448,25 +448,23 @@ TTL (60 minutes) that also bounds the server's head, so a track silent for over 
 `seq` 1 on both sides, and since the server's sequences follow commit order, two publications of one
 track can commit out of publish order under contention.
 
-**Buffered releases and the snapshot cap.** The message that closes a gap writes one release row per
-sequence it makes releasable, and each release is eligible only once its predecessor is delivered, so a
-page holds one claimable release of a track and defers the rest. A batch whose `release-buffered` claim
-of track T at seq k completed promotes T's release of seq k + 1 (D190): the handler asks the selector's
-`claimPromotedRelease`, which reads that row by its key
-([`claim-al-inbound-promoted-release.ts`](./lane/claim-al-inbound-promoted-release.ts)), not by searching
-the page, and reserves it only when it is due, its eligibility reads claimable now and the row is still as
-the read saw it, as a new or retrying row only: a promotion whose row moved on claims nothing and spends no
-lease-timeout sweep. The batch runs it after its other claims and asks again for its successor while the batch
-holds fewer than `AL_INBOUND_WORK_PAGE_SIZE` (16) claims. A `claimPromotedRelease` that throws is reported
-as the batch's failure and promotes nothing; the batch's unrun claims still run. Only a completed
-`release-buffered` claim promotes: a release that did not complete promotes nothing and ends its track's chain for that batch, the
-gap-filling message's own dispatch promotes nothing, a track never has two releases claimed at once, and a
-release never promotes another track's. A 64-message buffer drains in 5 batches (the first delivers the
-gap-filling message and promotes nothing, each of the other four runs 16 claims, 15 of them promoted),
-where one release per engine round took 65 batches: 0.4 s against 7.5 s in memory, and 0.7 s against 13.5 s
-on IndexedDB with 84 % fewer IndexedDB operations. A 255-message buffer drains in 17 batches (2.1 s in
-memory, 33.5 s before), well inside the 30 s default message lifetime that the old drain outlived. The
-`effect-drain` of such a batch counts the promoted releases as `promoted`, and they leave its `deferred`.
+**Buffered releases and the snapshot cap.** The message that closes a gap writes one release row per sequence it makes
+releasable, and each release is eligible only once its predecessor is delivered, so a page holds one claimable release
+of a track and defers the rest. A batch whose `release-buffered` claim of track T at seq k completed promotes T's
+release of seq k + 1 (D190): the handler asks the selector's `claimPromotedRelease`, which reads that row by its key
+([`claim-al-inbound-promoted-release.ts`](./lane/claim-al-inbound-promoted-release.ts)), not by searching the page, and
+reserves it only when it is due, its eligibility reads claimable now and the row is still as the read saw it, as a new
+or retrying row only: a promotion whose row moved on claims nothing and spends no lease-timeout sweep. The batch runs it
+after its other claims and asks again for its successor while the batch holds fewer than `AL_INBOUND_WORK_PAGE_SIZE`
+(16) claims. A `claimPromotedRelease` that throws is reported as the batch's failure and promotes nothing; the batch's
+unrun claims still run. Only a completed `release-buffered` claim promotes: a release that did not complete promotes
+nothing and ends its track's chain for that batch, the gap-filling message's own dispatch promotes nothing, a track
+never has two releases claimed at once, and a release never promotes another track's. A 64-message buffer drains in 5
+batches (the first delivers the gap-filling message and promotes nothing, each of the other four runs 16 claims, 15 of
+them promoted), where one release per engine round took 65 batches: 0.4 s against 7.5 s in memory, and 0.7 s against
+13.5 s on IndexedDB with 84 % fewer IndexedDB operations. A 255-message buffer drains in 17 batches (2.1 s in memory,
+33.5 s before), well inside the 30 s default message lifetime that the old drain outlived. The `effect-drain` of such a
+batch counts the promoted releases as `promoted`, and they leave its `deferred`.
 
 A store built with `maxOrderingTracks` keeps at most that many ordering snapshots (D191): the browser's
 session and volatile stores pass `AL_INBOUND_MAX_ORDERING_TRACKS` (256); the WS server's Postgres stores, the

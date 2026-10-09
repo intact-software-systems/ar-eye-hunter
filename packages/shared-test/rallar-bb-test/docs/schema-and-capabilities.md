@@ -518,72 +518,70 @@ hand the send to WS, so the cell runs on single carriers. Hosted manifest 18 wit
 recorded. The cells live in `conformance/alm/scenarios/congestion/`.
 
 The fairness cells run last in the two-agent family, in the full scope, after the congestion cells (D192).
-`own-share-under-inbound` (`ws`, `rtc`; its ledger is carrier-independent, and the lowered-limit reconnect is not
-stable under `rtc-with-ws-fallback`'s readiness) closes the receiver and reconnects it with
-`rallar.almVolatileLimits` `{ maxAdmissions: 20, maxBytes: 4194304 }`, so its own share is 10 (D189). The receiver
-then sends a ready message, which the sender waits for with one readiness budget in its window. The receiver repeats
-it in a `loop` with `until: 'first-success'` (up to five, each followed by an 8 s `messages.received` of one flood
-arrival, so the five outlast the sender's 30 s connect readiness and its 10 s send), since a message that arrives
-before the sender's connect has subscribed its channel is acknowledged unseen (over `ws` the receiver's reconnect can
-finish first); the repeats and its own send stay under the share. The sender then sends
-20 at-least-once room sends with `ack: 'none'` and a 30 s `ttlMs` in a `loop` with `intervalMs: 75` (about 13 a
-second, under the RTC lane's 20 a second limiter, which the receiver's own ACKs share), each naming its own handle by
-`{loop.index}`; they ask for no receipt, so all 20 arrive within the arrivals' own 30 s counted lifetime instead of
-each waiting out an ACK. Arrivals alone then hold the receiver's total at the bound, so its own room send, which asks
-for a receiver receipt, is admitted only under the share: it is `acknowledged`, and its `stats`, read once the
-receiver has counted all 20 arrivals, reads `rallar.alm.inbound.admissions` `gte` 20, `rallar.alm.own.admissions`
-`lt` 10 and `rallar.alm.overloaded` false; it then reconnects without the field. `buffered-track-drains` (`ws`,
-`rtc`) sends seq 2 to 65 on one ordering key as 64 literal bare send commands (a loop index counts from 0 and a
-sequence is not substituted), each followed by a 75 ms absence wait as the pause, and then seq 1, which alone is
-observed admitted; all carry `ack: 'none'`, since the receiver cannot acknowledge a buffered sequence before seq 1
-arrives, and a 90 s `ttlMs`, and the receiver receives all 65 in a 90 s window (that a 64-message buffer drains within
-the default 30 s lifetime is proven on the real runtime). Over `rtc` the receiver buffered the track, so it also waits
-for an inbound `effect-drain` whose `promoted` count is above zero (D190): a `loop` with `until: 'first-success'`
-tries `"promoted":1` to `"promoted":9`, one leading digit per iteration, against the page's event history. Over
-`ws` the relay buffers and releases the track out of the page's sight, as in `ordering-gap-repair`.
-`churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the sender and
-reconnects it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts in its
-own ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of 256
-and a margin) in a `loop` with `intervalMs: 75`, observes the last one `transport-accepted` and closes; the
-receiver receives the 280, holds one second, and its `stats` reads `rallar.alm.orderingTracks` both `lte` and
-`gte` 256 (D191): the sum of every store that stated a count since the receiver's last `close`, where the 280
-volatile tracks fill the memory store to the cap and the cell sends nothing durable, so the IndexedDB store adds none. Hosted manifest 18 withholds all three, so manifests 18 and 22 stay as recorded. The cells live in
-`conformance/alm/scenarios/fairness/`.
+`own-share-under-inbound` (`ws`, `rtc`; its ledger is carrier-independent, and the lowered-limit reconnect is not stable
+under `rtc-with-ws-fallback`'s readiness) closes the receiver and reconnects it with `rallar.almVolatileLimits` `{
+maxAdmissions: 20, maxBytes: 4194304 }`, so its own share is 10 (D189). The receiver then sends a ready message, which
+the sender waits for with one readiness budget in its window. The receiver repeats it in a `loop` with `until:
+'first-success'` (up to five, each followed by an 8 s `messages.received` of one flood arrival, so the five outlast the
+sender's 30 s connect readiness and its 10 s send), since a message that arrives before the sender's connect has
+subscribed its channel is acknowledged unseen (over `ws` the receiver's reconnect can finish first); the repeats and its
+own send stay under the share. The sender then sends 20 at-least-once room sends with `ack: 'none'` and a 30 s `ttlMs`
+in a `loop` with `intervalMs: 75` (about 13 a second, under the RTC lane's 20 a second limiter, which the receiver's own
+ACKs share), each naming its own handle by `{loop.index}`; they ask for no receipt, so all 20 arrive within the
+arrivals' own 30 s counted lifetime instead of each waiting out an ACK. Arrivals alone then hold the receiver's total at
+the bound, so its own room send, which asks for a receiver receipt, is admitted only under the share: it is
+`acknowledged`, and its `stats`, read once the receiver has counted all 20 arrivals, reads
+`rallar.alm.inbound.admissions` `gte` 20, `rallar.alm.own.admissions` `lt` 10 and `rallar.alm.overloaded` false; it then
+reconnects without the field. `buffered-track-drains` (`ws`, `rtc`) sends seq 2 to 65 on one ordering key as 64 literal
+bare send commands (a loop index counts from 0 and a sequence is not substituted), each followed by a 75 ms absence wait
+as the pause, and then seq 1, which alone is observed admitted; all carry `ack: 'none'`, since the receiver cannot
+acknowledge a buffered sequence before seq 1 arrives, and a 90 s `ttlMs`, and the receiver receives all 65 in a 90 s
+window (that a 64-message buffer drains within the default 30 s lifetime is proven on the real runtime). Over `rtc` the
+receiver buffered the track, so it also waits for an inbound `effect-drain` whose `promoted` count is above zero (D190):
+a `loop` with `until: 'first-success'` tries `"promoted":1` to `"promoted":9`, one leading digit per iteration, against
+the page's event history. Over `ws` the relay buffers and releases the track out of the page's sight, as in
+`ordering-gap-repair`. `churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the
+sender and reconnects it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts
+in its own ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of
+256 and a margin) in a `loop` with `intervalMs: 75`, observes the last one `transport-accepted` and closes; the receiver
+receives the 280, holds one second, and its `stats` reads `rallar.alm.orderingTracks` both `lte` and `gte` 256 (D191):
+the sum of every store that stated a count since the receiver's last `close`, where the 280 volatile tracks fill the
+memory store to the cap and the cell sends nothing durable, so the IndexedDB store adds none. Hosted manifest 18
+withholds all three, so manifests 18 and 22 stay as recorded. The cells live in `conformance/alm/scenarios/fairness/`.
 
 The addressed family runs on two agents, in the full scope, as its own Playwright test per carrier (R-S3c-ii-2,
-R-S3c-ii-5); each scenario declares it as its `laneFamily`. The lane proves the addressee's receipt, not the
-addressing: on two agents a room send yields the same receipt, so the addressing is pinned by unit tests.
-`ws-unicast-receipt` (a historical id: it runs over every carrier: the sender sends a `command` to
-`toPeer: 'receiver'`) and observes `acknowledged` under the `receiver` mode with one expected and one
-confirmed recipient; its recipe metadata `almReceiptRoles` pins the receipt to the `receiver` role, which the
-identity assessment joins to the receiver's session after the run. `unicast-fallback`
-(`rtc-with-ws-fallback`) drops the sender's own RTC frames of the unicast until the third `not-ready` attempt
-hands it to WS; the sender reads `attemptCarriers` containing `rtc` and `ws` and `carrierFallback`
-`{ from: 'rtc', to: 'ws', reason: 'not-ready' }`, and the receiver receives the copy and reads its
-`admission-outcome` `committed`/`admitted` on carrier `ws`. `server-command` (`ws` only) sends a `command` to
-`toPeer: 'server'` and observes `acknowledged` on the server's own ACK, while the receiver proves for the whole
-window that nothing reaches it. `capacity` runs over every carrier: the sender closes, reconnects with
-`rallar.almVolatileLimits` `{ maxAdmissions: 1000, maxBytes: 36000 }`, waits 31 s, sends two ≈13.4 KB messages (a
-12 000-byte filler) that are admitted and acknowledged, and a third that ends `rejected` with
-`failure: { kind: 'refused', reason: 'capacity' }` and `attempts` 0, so no fallback; then it closes and reconnects
-without the field, restoring the constants. The close keeps the membership, and the reconnect joins the room again,
-so the lowered session counts the platform's own state sync it admits inbound (about 26 KB in 6 entries in the local
-lane, larger in a long-lived hosted room) for at most 30 s; the 31 s wait lets it leave the budget before the first
-send (R-S3c-ii-9). The limit is three fillers, so the two counted sends alone refuse the third, and the second keeps
-at least 9 180 bytes of headroom. Its receiver's window adds one readiness budget and the 31 s wait, since the sender
-reconnects and waits before it sends. In manifest 18 the three `capacity` blocks run after every other block.
-Two more cells of the family prove the age and track limits over every carrier, and manifest 18
-withholds both, so it stays as recorded. `capacity-age` keeps the sender's connection and constants and sends one
-message with `ttlMs` `AL_VOLATILE_SESSION_MAX_AGE_MS + 1_000` (301 000): it ends `rejected` with
-`failure: { kind: 'refused', reason: 'capacity', limit: 'age' }` and `attempts` 0, and the receiver proves for the
-whole window that nothing reaches it. `capacity-tracks` closes, reconnects with `rallar.almVolatileLimits`
-naming the four production limits but `maxTracks: 2` and sends three at-least-once messages with `ack: 'receiver'`, each `seq` 1 on an ordering key of
-its own (`alm-<carrier>-capacity-tracks-<index>`), so each would open one track: the third ends `rejected` with
-`limit: 'tracks'` and `attempts` 0; right after the refusal, while both sends still hold their tracks, it reads
-`stats` and asserts `rallar.alm.usage.tracks` 2, `rallar.alm.limits.maxTracks` 2 and `rallar.alm.overloaded` false
-(a ledger reading at a bound, as `own-share-under-inbound` reads its pools); the first two are acknowledged; then it
-reconnects without the field. A received message never opens a counted track, so it needs no wait for the rejoin's state sync, and its receiver's
-window adds only the readiness budget. The three cells live in `conformance/alm/scenarios/volatile-bound/`.
+R-S3c-ii-5); each scenario declares it as its `laneFamily`. The lane proves the addressee's receipt, not the addressing:
+on two agents a room send yields the same receipt, so the addressing is pinned by unit tests. `ws-unicast-receipt` (a
+historical id: it runs over every carrier: the sender sends a `command` to `toPeer: 'receiver'`) and observes
+`acknowledged` under the `receiver` mode with one expected and one confirmed recipient; its recipe metadata
+`almReceiptRoles` pins the receipt to the `receiver` role, which the identity assessment joins to the receiver's session
+after the run. `unicast-fallback` (`rtc-with-ws-fallback`) drops the sender's own RTC frames of the unicast until the
+third `not-ready` attempt hands it to WS; the sender reads `attemptCarriers` containing `rtc` and `ws` and
+`carrierFallback` `{ from: 'rtc', to: 'ws', reason: 'not-ready' }`, and the receiver receives the copy and reads its
+`admission-outcome` `committed`/`admitted` on carrier `ws`. `server-command` (`ws` only) sends a `command` to `toPeer:
+'server'` and observes `acknowledged` on the server's own ACK, while the receiver proves for the whole window that
+nothing reaches it. `capacity` runs over every carrier: the sender closes, reconnects with `rallar.almVolatileLimits` `{
+maxAdmissions: 1000, maxBytes: 36000 }`, waits 31 s, sends two ≈13.4 KB messages (a 12 000-byte filler) that are
+admitted and acknowledged, and a third that ends `rejected` with `failure: { kind: 'refused', reason: 'capacity' }` and
+`attempts` 0, so no fallback; then it closes and reconnects without the field, restoring the constants. The close keeps
+the membership, and the reconnect joins the room again, so the lowered session counts the platform's own state sync it
+admits inbound (about 26 KB in 6 entries in the local lane, larger in a long-lived hosted room) for at most 30 s; the 31
+s wait lets it leave the budget before the first send (R-S3c-ii-9). The limit is three fillers, so the two counted sends
+alone refuse the third, and the second keeps at least 9 180 bytes of headroom. Its receiver's window adds one readiness
+budget and the 31 s wait, since the sender reconnects and waits before it sends. In manifest 18 the three `capacity`
+blocks run after every other block. Two more cells of the family prove the age and track limits over every carrier, and
+manifest 18 withholds both, so it stays as recorded. `capacity-age` keeps the sender's connection and constants and
+sends one message with `ttlMs` `AL_VOLATILE_SESSION_MAX_AGE_MS + 1_000` (301 000): it ends `rejected` with `failure: {
+kind: 'refused', reason: 'capacity', limit: 'age' }` and `attempts` 0, and the receiver proves for the whole window that
+nothing reaches it. `capacity-tracks` closes, reconnects with `rallar.almVolatileLimits` naming the four production
+limits but `maxTracks: 2` and sends three at-least-once messages with `ack: 'receiver'`, each `seq` 1 on an ordering key
+of its own (`alm-<carrier>-capacity-tracks-<index>`), so each would open one track: the third ends `rejected` with
+`limit: 'tracks'` and `attempts` 0; right after the refusal, while both sends still hold their tracks, it reads `stats`
+and asserts `rallar.alm.usage.tracks` 2, `rallar.alm.limits.maxTracks` 2 and `rallar.alm.overloaded` false (a ledger
+reading at a bound, as `own-share-under-inbound` reads its pools); the first two are acknowledged; then it reconnects
+without the field. A received message never opens a counted track, so it needs no wait for the rejoin's state sync, and
+its receiver's window adds only the readiness budget. The three cells live in
+`conformance/alm/scenarios/volatile-bound/`.
 
 The same-context family runs, in the full scope, as the `same-context family over <carrier>` Playwright test. Its
 scenarios declare a fourth role, `successor`: a second page opened in the sender's own browser context, so it shares

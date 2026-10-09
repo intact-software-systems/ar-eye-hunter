@@ -261,13 +261,13 @@ out when `rallarLogoutOnClose=1`, and records cleanup diagnostics. Remote reset 
 
 The preserved legacy shell is tabbed. Its active tab is stored in the `tab` query parameter and local browser storage,
 but a fresh blank URL ignores stale legacy navigation and opens Recipe Console `Execute`. Documented stateful legacy
-panes remain mounted only while the legacy experience is active so their drafts or live state survive legacy
-navigation; other inactive surfaces are lazy or unmounted. The hidden Rallar Trace and Event Stream panels stay
-mounted under React's `Activity` and render only when the page is otherwise idle, the Report pane serialises its
-report only while it is shown, and the runtime store hands changes to React at most every 100 ms. Selected command ID, Manual Rallar values/payload draft,
-Event Stream filters, and Rallar Server request drafts also survive reloads.
-Secret-shaped draft fields are not stored raw: Manual Rallar passwords are stripped, JSON editor drafts are redacted, and
-invalid JSON editor drafts are dropped instead of being persisted with possible secrets.
+panes remain mounted only while the legacy experience is active so their drafts or live state survive legacy navigation;
+other inactive surfaces are lazy or unmounted. The hidden Rallar Trace and Event Stream panels stay mounted under
+React's `Activity` and render only when the page is otherwise idle, the Report pane serialises its report only while it
+is shown, and the runtime store hands changes to React at most every 100 ms. Selected command ID, Manual Rallar
+values/payload draft, Event Stream filters, and Rallar Server request drafts also survive reloads. Secret-shaped draft
+fields are not stored raw: Manual Rallar passwords are stripped, JSON editor drafts are redacted, and invalid JSON
+editor drafts are dropped instead of being persisted with possible secrets.
 
 The `Rallar Server` tab can call API v1 REST endpoints directly from the browser. It starts from curated
 OpenAPI-derived presets, can refresh endpoint rows from `/api/openapi.json`, injects the active browser auth session

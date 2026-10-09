@@ -40,7 +40,8 @@ export const ALM_OBSERVATION_WINDOW_MS = 20_000;
 export const ALM_OBSERVATION_COMMIT_ORIGIN = 'send';
 /**
  * The events the control server keeps of a run unless `RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS` names another bound
- * (its runtime retention default); past it the oldest leave, so a run that holds this many may have lost its start.
+ * (its runtime retention default); past it the oldest leave as an exact tail, so a run that holds exactly this many
+ * may have lost its start, while a run retained without a bound can hold more.
  */
 export const ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS = 2_000;
 
@@ -208,7 +209,7 @@ interface ALMObservationPeerObservation {
 
 export function computeALMObservationRegime(input: ALMObservationRegimeInput): ALMObservationRegime {
     const perOperation = computePerOperationCost(input.snapshot);
-    const pageRegime = input.snapshot.retainedEventCount >= ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS
+    const pageRegime = input.snapshot.retainedEventCount === ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS
         ? TRIMMED_RUN_PAGE_REGIME
         : computePageRegime(input.snapshot, input.snapshot.firstEventAtEpochMs + ALM_OBSERVATION_WINDOW_MS);
     const measured = perOperation.outcome === 'measured';
