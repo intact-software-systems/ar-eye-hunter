@@ -5,7 +5,7 @@ import {
     vi
 } from 'vitest';
 
-import { runRtcBaselineCli } from '../../../baseline/command/rtc-baseline-cli.ts';
+import { runRtcBaselineCli } from '../../../baseline/command/run-rtc-baseline-cli.ts';
 import { writeRtcBaselineCliOutput } from '../../../baseline/command/write-rtc-baseline-cli-output.ts';
 import type { RtcPerformanceObservationCliDependencies } from '../../../baseline/observation/rtc-performance-observation-cli.ts';
 import type { RtcBaselineEnvelope } from '../../../baseline/runtime/rtc-baseline-envelope.ts';
@@ -481,7 +481,7 @@ describe('RTC baseline CLI application', () => {
         });
         try {
             // @ts-expect-error Vitest resolves the import-only query while TypeScript checks the base module.
-            await import('../../../baseline/command/rtc-baseline-cli.ts?import-only');
+            await import('../../../baseline/command/run-rtc-baseline-cli.ts?import-only');
             expect(writes).toEqual([]);
         }
         finally {

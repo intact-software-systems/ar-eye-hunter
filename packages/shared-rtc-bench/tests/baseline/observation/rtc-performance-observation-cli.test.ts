@@ -97,7 +97,7 @@ describe('RTC performance observation CLI', () => {
             '--allow-read',
             '--allow-env',
             '--deny-run',
-            'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts',
+            'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
             ...liveRtcObserveArguments
         ], { encoding: 'utf8', env: { ...process.env, DENO_NO_UPDATE_CHECK: '1', RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'Native' } });
         expect(result.status).toBe(64);
@@ -115,7 +115,7 @@ describe('RTC performance observation CLI', () => {
             '--allow-read',
             '--deny-env',
             '--deny-run',
-            'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts',
+            'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
             ...liveRtcObserveArguments,
             '--rtc-capture-mode=Native'
         ], { encoding: 'utf8', env: { ...process.env, DENO_NO_UPDATE_CHECK: '1' } });

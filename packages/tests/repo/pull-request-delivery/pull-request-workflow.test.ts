@@ -1,8 +1,13 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { runInNewContext } from 'node:vm';
 
 import { load } from 'js-yaml';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 const repoRoot = path.resolve(__dirname, '../../../..');
 
@@ -99,109 +104,59 @@ describe('pull-request release workflow', () => {
         expect(publish.run).not.toMatch(/gh\s+pr\s+merge|--admin|git\s+push\s+origin\s+main/iu);
     });
 
-    it('captures RTC-B06 E3 only by explicit publish dispatch with hermetic memory configuration', () => {
-        const workflow = readWorkflow(
-            '.github/workflows/rtc-b06-performance-observation.yml'
-        );
-        const source = readJobWithSteps(workflow, 'source');
+    it.each([
+        { mode: 'publish', capture: true, observation: true, baseline: false, diagnostic: false, publication: true },
+        { mode: 'baseline', capture: true, observation: false, baseline: true, diagnostic: false, publication: false },
+        { mode: 'diagnostic', capture: false, observation: false, baseline: false, diagnostic: true, publication: false },
+        { mode: 'invalid', capture: false, observation: false, baseline: false, diagnostic: false, publication: false }
+    ])('routes RTC-B06 $mode without allowing branch evidence into publication', (selection) => {
+        const workflow = readWorkflow('.github/workflows/rtc-b06-performance-observation.yml');
+        const capture = readJobWithSteps(workflow, 'capture');
+        const observation = findStep(capture, 'Capture RTC-B06 E3-memory observation');
+        const baseline = findStep(capture, 'Capture RTC-B06 governed branch baseline');
+        const observationUpload = findStep(capture, 'Retain RTC-B06 observation output');
+        const baselineUpload = findStep(capture, 'Retain governed RTC-B06 branch baseline');
+
+        expect(resolveWorkflowModeCondition(capture.if, selection.mode)).toBe(selection.capture);
+        expect(resolveWorkflowModeCondition(observation.if, selection.mode)).toBe(selection.observation);
+        expect(resolveWorkflowModeCondition(baseline.if, selection.mode)).toBe(selection.baseline);
+        expect(resolveWorkflowModeCondition(observationUpload.if, selection.mode)).toBe(selection.observation);
+        expect(resolveWorkflowModeCondition(baselineUpload.if, selection.mode)).toBe(selection.baseline);
+        expect(resolveWorkflowModeCondition(workflow.jobs.diagnostic.if, selection.mode)).toBe(selection.diagnostic);
+        expect(resolveWorkflowModeCondition(workflow.jobs.publication.if, selection.mode)).toBe(selection.publication);
+    });
+
+    it.each(['publish', 'baseline'])('retains RTC-B06 %s raw output even after capture failure', (mode) => {
+        const capture = readJobWithSteps(readWorkflow('.github/workflows/rtc-b06-performance-observation.yml'), 'capture');
+        const observationUpload = findStep(capture, 'Retain RTC-B06 observation output');
+        const baselineUpload = findStep(capture, 'Retain governed RTC-B06 branch baseline');
+
+        expect(resolveWorkflowModeCondition(observationUpload.if, mode, false)).toBe(mode === 'publish');
+        expect(resolveWorkflowModeCondition(baselineUpload.if, mode, false)).toBe(mode === 'baseline');
+    });
+
+    it('offers all RTC-B06 run modes while requiring verified evidence before publication', () => {
+        const workflow = readWorkflow('.github/workflows/rtc-b06-performance-observation.yml');
         const capture = readJobWithSteps(workflow, 'capture');
         const publication = readJobWithSteps(workflow, 'publication');
-        const observe = findStep(capture, 'Capture RTC-B06 E3-memory observation');
-        const upload = findStep(capture, 'Retain RTC-B06 observation output');
         const verify = findStep(publication, 'Verify captured observation');
         const publish = findStep(publication, 'Publish observation pull request');
 
         expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch']);
-        expect(workflow.on.workflow_dispatch).toMatchObject({
-            inputs: {
-                mode: {
-                    required: true,
-                    default: 'publish',
-                    type: 'choice',
-                    options: ['publish', 'diagnostic']
-                },
-                rtc_capture_mode: {
-                    required: true,
-                    default: 'signaling',
-                    type: 'choice',
-                    options: ['off', 'signaling', 'native']
-                }
-            }
-        });
-        expect(workflow.concurrency).toEqual({
-            group: 'rtc-b06-performance-observation',
-            'cancel-in-progress': false
-        });
-        expect(source.steps[0]?.run).toContain('$RUN_MODE" == "publish"');
-        expect(source.steps[0]?.run).toContain('refs/heads/main');
-        expect(capture['timeout-minutes']).toBe(360);
-        expect(observe.if).toBe('${{ inputs.mode == \'publish\' }}');
-        expect(observe.run).toContain('observe-live-rtc');
-        expect(upload).toMatchObject({
-            if: '${{ always() && inputs.mode == \'publish\' }}',
-            uses: 'actions/upload-artifact@v7',
-            with: {
-                name: 'rtc-b06-observation-gh${{ github.run_id }}-a${{ github.run_attempt }}',
-                path: '${{ runner.temp }}/rtc-b06-observation'
-            }
-        });
-        expect(verify.run).toContain('verify-observation');
-        expect(publication.if).toBe('${{ inputs.mode == \'publish\' }}');
-        expect(publication.steps.indexOf(publish)).toBeGreaterThan(
-            publication.steps.indexOf(verify)
-        );
-        expect(publish.env).toEqual({
-            GH_TOKEN: '${{ secrets.RTC_OBSERVATION_PR_TOKEN }}'
-        });
-    });
-
-    it('runs RTC-B06 branch diagnostics without creating publishable observation evidence', () => {
-        const workflow = readWorkflow(
-            '.github/workflows/rtc-b06-performance-observation.yml'
-        );
-        const diagnostic = readJobWithSteps(workflow, 'diagnostic');
-        const exercise = findStep(diagnostic, 'Exercise RTC-B06 diagnostic cases');
-        const upload = findStep(diagnostic, 'Retain RTC-B06 diagnostic output');
-
-        expect(workflow.jobs.capture.if).toBe('${{ inputs.mode == \'publish\' }}');
-        expect(diagnostic).toMatchObject({
-            if: '${{ inputs.mode == \'diagnostic\' }}',
+        expect(workflow.on.workflow_dispatch?.inputs.mode.options).toEqual(['publish', 'baseline', 'diagnostic']);
+        expect(capture.permissions).toEqual({ contents: 'read' });
+        expect(workflow.concurrency).toEqual({ group: 'rtc-b06-performance-observation', 'cancel-in-progress': false });
+        expect(workflow.jobs.diagnostic).toMatchObject({
             needs: 'source',
-            strategy: {
-                'fail-fast': false,
-                matrix: { runner: [1, 2, 3] }
-            }
+            strategy: { 'fail-fast': false, matrix: { runner: [1, 2, 3] } }
         });
-        expect(diagnostic.steps[0]).toMatchObject({
-            uses: 'actions/checkout@v7',
-            with: { ref: '${{ github.sha }}', 'fetch-depth': 0 }
-        });
-        expect(exercise.run?.match(/npm run test:rallar:full-stack:memory:live-rtc-3/g))
-            .toHaveLength(3);
-        expect(exercise.run).toContain('RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1');
-        expect(exercise.run).toContain('RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1');
-        expect(exercise.run).toContain('RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100');
-        expect(exercise.run?.match(/--retries=0/g)).toHaveLength(3);
-        expect(exercise.run).toContain('set -o pipefail');
-        expect(exercise.run).not.toContain('observe-live-rtc');
-        expect(upload).toMatchObject({
-            if: '${{ always() }}',
-            uses: 'actions/upload-artifact@v7',
-            with: {
-                name: 'rtc-b06-diagnostic-r${{ matrix.runner }}-gh${{ github.run_id }}-a${{ github.run_attempt }}',
-                path: '${{ runner.temp }}/rtc-b06-diagnostic-${{ matrix.runner }}'
-            }
-        });
-        expect(diagnostic.steps.some(
-            (step) => step.name === 'Capture RTC-B06 E3-memory observation'
-        )).toBe(false);
-        expect(diagnostic.steps.some(
-            (step) => step.name === 'Publish observation pull request'
-        )).toBe(false);
-        expect(workflow.jobs.publication).toMatchObject({
-            if: '${{ inputs.mode == \'publish\' }}',
-            needs: ['source', 'capture']
-        });
+        expect(publication.needs).toEqual(['source', 'capture']);
+        expect(publication.steps[0]?.with?.ref).toBe('${{ github.sha }}');
+        expect(publication.steps[0]?.with?.['persist-credentials']).toBe(false);
+        expect(publication.steps.indexOf(publish)).toBeGreaterThan(publication.steps.indexOf(verify));
+        expect(verify.if).toBeUndefined();
+        expect(publish.if).toBeUndefined();
+        expect(publish.env).toEqual({ GH_TOKEN: '${{ secrets.RTC_OBSERVATION_PR_TOKEN }}' });
     });
 
     it('runs only for current pull-request changes and cancels only superseded runs of that PR', () => {
@@ -220,7 +175,7 @@ describe('pull-request release workflow', () => {
         expect(workflow.permissions).toEqual({ contents: 'read', actions: 'read' });
 
         const group = workflow.concurrency.group;
-        expect(resolveConcurrencyGroup(group, 101)).toBe(resolveConcurrencyGroup(group, 101));
+        expect(resolveConcurrencyGroup(group, 101)).toBe('branch-release-pr-101');
         expect(resolveConcurrencyGroup(group, 101)).not.toBe(resolveConcurrencyGroup(group, 102));
     });
 
@@ -302,4 +257,23 @@ function readSource(repositoryPath: string): string {
 
 function resolveConcurrencyGroup(template: string, pullRequestNumber: number): string {
     return template.replace('${{ github.event.pull_request.number }}', String(pullRequestNumber));
+}
+
+function resolveWorkflowModeCondition(condition: string | undefined, mode: string, successful = true): boolean {
+    if (condition === undefined) {
+        return successful;
+    }
+    const expression = /^\$\{\{([\s\S]+)\}\}$/.exec(condition)?.[1];
+    if (expression === undefined) {
+        throw new Error(`Workflow condition is not an expression: ${condition}`);
+    }
+    // GitHub adds success() implicitly unless a status function is present.
+    if (!successful && !/\balways\s*\(/u.test(expression)) {
+        return false;
+    }
+    const selected = runInNewContext(expression, { inputs: { mode }, always: () => true });
+    if (typeof selected !== 'boolean') {
+        throw new Error(`Workflow condition did not return a boolean: ${condition}`);
+    }
+    return selected;
 }

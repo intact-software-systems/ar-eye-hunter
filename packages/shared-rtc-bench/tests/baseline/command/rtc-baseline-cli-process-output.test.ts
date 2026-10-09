@@ -66,7 +66,7 @@ describe('RTC baseline CLI process output', () => {
                 '-A',
                 '--config',
                 'packages/shared-rtc-bench/deno.json',
-                'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts',
+                'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
                 'list-external-attempts',
                 `--baseline-id=${baselineId}`,
                 '--workload=RTC-B05',
