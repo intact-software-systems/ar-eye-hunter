@@ -119,7 +119,7 @@ recipient deliveries at 15/30/50 participants. This is a match workload estimate
 ## Queue scheduling prerequisite
 
 An authenticated join diagnostic exposed a retry selected 52.66 seconds overdue
-after 72 serial NEW handlers. The existing controller drains up to 1,000 entries
+after 72 serial NEW handlers. The prior AppInbox policy drained up to 1,000 entries
 per lane before visiting the next lane. Larger reservations do not provide
 parallelism: handlers execute serially and claims are released after the batch.
 Bounded turns must provide retry service independently of pressure observations.
@@ -137,6 +137,10 @@ budgets before claims. Each normal reservation is clamped to the remaining lane
 quota. FINALIZATION keeps its existing first, separate recovery reservation;
 normal service stays NEW → FAIRNESS → RETRY → TIMEOUT. The controller owns no
 database pressure queries, cache, refresh timer, or additional rate limiter.
+
+Charge the full successful reservation before preprocessing, computation, release
+or completion callbacks. Filtering or a later exception cannot restore consumed
+quota. The budget bounds claims, independently of successful results.
 
 Finalization recovery returns the queue key, independently of the domain
 computer's result type. Type the finalization computer as returning `K` and the
@@ -215,6 +219,29 @@ the current drain or fixed quota one does not prove counts help. Report cold-sta
 and stale-sample penalties explicitly. If that benefit is absent, revise the
 pressure hypothesis before publishing it as an improvement; do not silently
 substitute a different final design or weaken acceptance.
+
+### Observed local tradeoff
+
+The actual IndexedDB queue observer records the following logical operations and
+service passes. Every arm completes 12 NEW entries and 12 retries, with NEW attempt
+one and retry attempt two. Sparse rounds include admission and seed operations;
+backlog totals exclude initial seeding and include handler-driven replenishment.
+Compare arms within each workload, not totals between workloads.
+
+| Measurement                               | Current drain | Fixed one | Adaptive | Fixed RETRY two |
+| ----------------------------------------- | ------------: | --------: | -------: | --------------: |
+| 12 singleton-retry rounds: operations     |           152 |       128 |      129 |             140 |
+| 12-retry backlog: operations              |            63 |        79 |       86 |              85 |
+| Backlog: retry completion pass            |             1 |        12 |        7 |               6 |
+| Backlog: NEW completed before first retry |            12 |         1 |        1 |               1 |
+
+Adaptive avoids 12 empty retry probes at a cost of one pressure read across the
+sparse rounds, saving 11 operations against fixed RETRY two. Fixed one remains
+cheapest there. Adaptive catches backlog faster than fixed one in service passes,
+while cold fallback costs one pass and one pressure read against fixed two. A
+return after cached-zero pressure shows no adaptive advantage over fixed two.
+This supports conditional service and probe benefits, not a universal improvement,
+SQL savings, native IndexedDB request/transaction counts or elapsed-time latency.
 
 Focused queue/reader/engine and authenticated group-join redelivery regressions
 precede shared/API type checks and memory API validation. Scheduling changes also
