@@ -5,13 +5,13 @@ import type {
     RallarBlackBoxTestRecord
 } from '../../../rallar-black-box-test-contracts.ts';
 
-interface AlmScaleBudgetFact {
+interface AlmScaleAcceptanceFact {
     readonly path: string;
-    readonly operator: 'lte' | 'equals';
-    readonly expected: number | boolean;
+    readonly operator: 'lt' | 'lte' | 'equals';
+    readonly expected: number | boolean | string;
 }
 
-const BUDGET_FACTS: readonly AlmScaleBudgetFact[] = [
+const BUDGET_FACTS: readonly AlmScaleAcceptanceFact[] = [
     { path: 'rallar.alm.own.admissions', operator: 'lte', expected: 1_000 },
     { path: 'rallar.alm.own.bytes', operator: 'lte', expected: 4_194_304 },
     { path: 'rallar.alm.usage.oldestAgeMs', operator: 'lte', expected: 300_000 },
@@ -84,6 +84,7 @@ export function createAlmScaleGroupAssertions(playerCount: number): readonly Ral
         );
         return [
             ...assertions,
+            ...createWorkloadGroupAssertions(role, playerCount),
             ...BUDGET_FACTS.map((fact) => createGroupAssertion(role, `${prefix}-final-stats`, fact)),
             createGroupAssertion(role, `${prefix}-storage`, {
                 path: 'byOwner.al-admission',
@@ -112,6 +113,50 @@ export function createAlmScaleGroupAssertions(playerCount: number): readonly Ral
     });
 }
 
+function createWorkloadGroupAssertions(
+    role: 'director' | 'player',
+    playerCount: number
+): readonly RallarBlackBoxDistributedGroupAssertion[] {
+    const prefix = `alm-scale-${role}`;
+    const window = [
+        ['groupCount', 1],
+        ['groups.0.commandCount', role === 'director' ? 19 : 8],
+        ['passed', role === 'director' ? 19 : 8],
+        ['failed', 0],
+        ['cancelled', false]
+    ] as const;
+    return [
+        ...window.map(([path, expected]) =>
+            createGroupAssertion(role, `${prefix}-window`, { path, operator: 'equals', expected })
+        ),
+        createGroupAssertion(role, `${prefix}-window`, {
+            path: 'groups.0.durationMs',
+            operator: 'lt',
+            expected: 30_000
+        }),
+        ...(role === 'director'
+            ? ([['iterations', 6], ['pacing.completedIterations', 6], ['passed', playerCount * 6 * 3], ['failed', 0], [
+                'cancelled',
+                false
+            ]] as const)
+                .map(([path, expected]) =>
+                    createGroupAssertion(role, `${prefix}-shot-arrivals`, { path, operator: 'equals', expected })
+                )
+            : ['started', 'ended'].flatMap((kind) => [
+                createGroupAssertion(role, `${prefix}-${kind}-arrival`, {
+                    path: 'matched',
+                    operator: 'equals',
+                    expected: true
+                }),
+                createGroupAssertion(role, `${prefix}-${kind}-arrival`, {
+                    path: 'event.payload.data.typeId',
+                    operator: 'equals',
+                    expected: 'room.ar-eye-hunter.director.event.v1'
+                })
+            ]))
+    ];
+}
+
 export function createAlmScaleAcceptanceMetadata(): RallarBlackBoxTestRecord {
     return {
         budgets: Object.fromEntries(BUDGET_FACTS.map((fact) => [fact.path, fact.expected])),
@@ -136,7 +181,7 @@ export function createAlmScaleAcceptanceMetadata(): RallarBlackBoxTestRecord {
 function createGroupAssertion(
     role: 'director' | 'player',
     commandId: string,
-    fact: AlmScaleBudgetFact
+    fact: AlmScaleAcceptanceFact
 ): RallarBlackBoxDistributedGroupAssertion {
     return {
         groupAssertionId: `${commandId}-${fact.path.replaceAll('.', '-')}`,

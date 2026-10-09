@@ -1,6 +1,10 @@
 import type { RallarBlackBoxDistributedGroupRef } from '../../../distributed-run.ts';
 import type { RallarBlackBoxDistributedGroupAssertion } from '../../../distributed/group-assertions.ts';
-import type { RallarBlackBoxTestRecipe, RallarBlackBoxTestRecord } from '../../../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestParallelCommand,
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRecord
+} from '../../../rallar-black-box-test-contracts.ts';
 
 import {
     createAlmScaleAcceptanceMetadata,
@@ -35,6 +39,19 @@ export function createAlmScaleRecipes(input: AlmScaleRecipeInput): AlmScaleRecip
         sampleCount: 7,
         intervalMs: 5_000,
         samplingWindowMs: 30_000,
+        arrivalScope:
+            'Each expected start-receipt player session contributes sequences 1–6; players match both exact appointed-director lifecycle specimens.',
+        workloadWindowMs: 30_000,
+        windowCompletion:
+            'All workload commands complete before the 30000ms deadline; shared traffic-ready barrier precedes both roles and sampler.',
+        arrivalChecks: {
+            director: {
+                commandId: 'alm-scale-director-shot-arrivals',
+                iterations: 6,
+                passed: (input.participantCount - 1) * 6 * 3
+            },
+            player: { commandIds: ['alm-scale-player-started-arrival', 'alm-scale-player-ended-arrival'] }
+        },
         payloadScope:
             'AR Eye wire fixtures; representative baseline/results identities are fixture facts, not live game authority.',
         acceptanceSources: groupAssertions.map((assertion) => ({
@@ -63,17 +80,42 @@ function createRecipe(
         metadata,
         commands: [
             ...createAlmScaleSetupCommands(input, role),
+            createTrafficWindow(input, role),
             {
-                kind: 'parallel',
-                commandId: `${prefix}-traffic`,
-                maxConcurrency: 2,
-                failFast: false,
-                groups: [
-                    { groupId: 'workload', commands: createAlmScaleWorkloadCommands(input, role) },
-                    { groupId: 'sampling', commands: [createAlmScaleSampler(prefix)] }
-                ]
+                kind: 'assert',
+                commandId: `${prefix}-assert-window`,
+                source: `resultCache.${prefix}-traffic:g1:workload:c1:${prefix}-window.value.groups.0.durationMs`,
+                operator: 'lt',
+                expected: 30_000
             },
             ...createAlmScaleFinalCommands(prefix)
+        ]
+    };
+}
+
+function createTrafficWindow(
+    input: AlmScaleRecipeInput,
+    role: 'director' | 'player'
+): RallarBlackBoxTestParallelCommand {
+    const prefix = `alm-scale-${role}`;
+    return {
+        kind: 'parallel',
+        commandId: `${prefix}-traffic`,
+        maxConcurrency: 2,
+        failFast: false,
+        groups: [
+            {
+                groupId: 'workload',
+                // Parallel bounds the whole workload without substituting its nested loop iteration placeholders.
+                commands: [{
+                    kind: 'parallel',
+                    commandId: `${prefix}-window`,
+                    maxConcurrency: 1,
+                    timeoutMs: 30_000,
+                    groups: [{ groupId: 'commands', commands: createAlmScaleWorkloadCommands(input, role) }]
+                }]
+            },
+            { groupId: 'sampling', commands: [createAlmScaleSampler(prefix)] }
         ]
     };
 }
