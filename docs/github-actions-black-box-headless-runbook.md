@@ -4,7 +4,53 @@ This runbook is for manual validation of
 `.github/workflows/github-free-distributed-recipe.yml`. It starts
 GitHub-hosted headless browser shards, reuses the public Hetzner control/API
 environment, and lets the Hetzner operator stage, start, export, and analyze
-the distributed run.
+the distributed run in the default `execution_mode=hetzner-control` mode.
+
+## Frozen All-local ALM Observation
+
+Dispatch the existing workflow on the reviewed feature branch with:
+
+```text
+execution_mode=all-local
+manifest_path=apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json
+target_agent_count=15
+browser_engine=chromium
+register_before_login=true
+```
+
+The local job rejects conflicting values for these frozen inputs before toolchain
+setup. All other dispatch inputs configure only `hetzner-control`; the local job
+uses its own loopback URLs, fixed manifest identities and existing fixture budgets.
+It starts API-v1 memory mode, the standalone headless SPA and the control server
+through the existing Playwright lifecycle, then one Chromium worker with 15 isolated
+contexts. It uses no deployment, production secrets or external control operation.
+The shared queued concurrency group and exact `${{ github.sha }}` checkout apply
+to both modes. The registered manual workflow can run the feature branch before merge.
+
+For a local rehearsal, allocate fresh recorder storage before services start:
+
+```sh
+mkdir -p tmp/alm-v1c
+ALM_LOCAL_RECORDER_DIR="$(mktemp -d "$PWD/tmp/alm-v1c/all-local-recorder.XXXXXX")"
+CI=1 RALLAR_BLACK_BOX_FULL_STACK=1 RALLAR_BLACK_BOX_FULL_STACK_HEADLESS=1 RALLAR_BLACK_BOX_API_MODE=memory RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=16 RALLAR_BLACK_BOX_STORAGE_DIR="$ALM_LOCAL_RECORDER_DIR" RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS=unbounded RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS=unbounded npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts --retries=0
+```
+
+Retain the recorder directory after every attempt. GitHub always uploads
+`all-local-alm-<run_id>-<run_attempt>` with runner resources/runtime versions,
+source commit and digest, the source manifest and available native evidence.
+Local provenance marks dirty source and hashes the measured files. Before all
+registrations, no distributed run exists; evidence records that availability
+boundary. After registration, the canonical operator exports snapshots, bundle,
+results and events on success or failure. Recorder completeness compares exact
+exported bytes, received counts and the latest-per-command snapshot inventory.
+
+Acceptance requires terminal `passed`, `rollup.ok`, 15 distinct principals/clients,
+the frozen roles, all 15 successful recipes and 73 passed group assertions with
+zero failures or incomplete evidence. Worker exit zero or readable analysis alone
+does not establish acceptance. Preserve any setup failure without changing auth,
+readiness, barrier, workload or ACK limits. Fresh ephemeral PGlite, local pubsub/ICE,
+loopback transport, co-located browsers and runtime version differences limit the
+comparison; success cannot establish CPU-only causality or replace hosted scale proof.
 
 ## Prerequisites
 
@@ -188,10 +234,9 @@ principal. The workflow supplies the existing per-agent
   same ref and manifest so `prepare-hetzner` writes a fresh marker before the
   operator run; `prepare-hetzner` is a job of this workflow, not a separate
   dispatch.
-- Short barrier timeout: the current 50-agent smoke uses
-  `barrier.timeoutMs=15000`. If all agents connect but staged command delivery
-  misses the barrier, create a GitHub-specific manifest copy that changes only
-  `distributedRunId`, display/catalog labels, and `barrier.timeoutMs=60000`.
+- Barrier timeout: retain native command delivery and readiness evidence and
+  investigate the demonstrated boundary before rerunning. The frozen all-local
+  observation keeps its 15-second barrier and does not create a relaxed fixture.
 
 ## Cleanup
 

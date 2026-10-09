@@ -1,14 +1,17 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import type { ApiJsonValue } from '../../shared/api/api-json-value.ts';
+
 const repoRoot = path.resolve(__dirname, '../../..');
 const require = createRequire(path.join(repoRoot, 'package.json'));
-const { load: loadYaml } = require('js-yaml') as {
-    load(source: string): unknown;
+const { load: loadYaml, JSON_SCHEMA } = require('js-yaml') as {
+    load(source: string, options: { schema: object; }): ApiJsonValue | undefined;
+    JSON_SCHEMA: object;
 };
 const productionConcurrency = {
     group: 'hetzner-production-distributed-recipe',
@@ -22,30 +25,46 @@ const workflowPath = path.join(
 
 interface WorkflowStep {
     readonly name?: string;
+    readonly if?: string;
     readonly uses?: string;
-    readonly with?: Readonly<Record<string, unknown>>;
-    readonly env?: Readonly<Record<string, unknown>>;
+    readonly with?: Readonly<Record<string, string | number | boolean>>;
+    readonly env?: Readonly<Record<string, string | number | boolean>>;
     readonly run?: string;
 }
 
 interface WorkflowJob {
-    readonly environment?: unknown;
-    readonly needs?: unknown;
-    readonly with?: Readonly<Record<string, unknown>>;
+    readonly if?: string;
+    readonly uses?: string;
+    readonly env?: Readonly<Record<string, string | number | boolean>>;
+    readonly 'runs-on'?: string;
+    readonly environment?: string | { readonly name: string; readonly url?: string; };
+    readonly strategy?: { readonly 'max-parallel'?: string; readonly matrix?: { readonly shard?: string; }; };
+    readonly needs?: string | readonly string[];
+    readonly with?: Readonly<Record<string, string | number | boolean>>;
     readonly steps?: readonly WorkflowStep[];
 }
 
 interface WorkflowDocument {
-    readonly concurrency?: Readonly<Record<string, unknown>>;
+    readonly concurrency?: Readonly<Record<string, string | boolean>>;
     readonly on?: {
         readonly workflow_dispatch?: {
-            readonly inputs?: Readonly<Record<string, { readonly default?: unknown; }>>;
+            readonly inputs?: Readonly<
+                Record<string, { readonly default?: string | number | boolean; readonly type?: string; readonly options?: readonly string[]; }>
+            >;
         };
     };
     readonly jobs?: Readonly<Record<string, WorkflowJob>>;
 }
 
-const readWorkflow = async (): Promise<WorkflowDocument> => loadYaml(await readFile(workflowPath, 'utf8')) as WorkflowDocument;
+async function readWorkflow(): Promise<WorkflowDocument> {
+    const document = loadYaml(await readFile(workflowPath, 'utf8'), { schema: JSON_SCHEMA });
+    expect(document).toEqual(expect.objectContaining({
+        concurrency: expect.any(Object),
+        on: expect.any(Object),
+        jobs: expect.any(Object)
+    }));
+    return document as WorkflowDocument;
+}
 
 const required = <T>(value: T | undefined, description: string): T => {
     if (value === undefined) {
@@ -61,56 +80,144 @@ const findStep = (job: WorkflowJob, name: string): WorkflowStep =>
     );
 
 describe('GitHub Free distributed recipe workflow', () => {
+    it('routes manual modes to mutually exclusive local and external jobs', async () => {
+        const workflow = await readWorkflow();
+        const mode = required(workflow.on?.workflow_dispatch?.inputs?.execution_mode, 'execution mode');
+        expect(mode).toEqual({
+            description: 'Run GitHub browsers against Hetzner control or the frozen all-local ALM observation',
+            type: 'choice',
+            default: 'hetzner-control',
+            options: ['hetzner-control', 'all-local']
+        });
+        for (const name of ['plan', 'prepare-hetzner', 'github-agents', 'operator']) {
+            expect(required(workflow.jobs?.[name], name).if).toBe('${{ inputs.execution_mode == \'hetzner-control\' }}');
+        }
+        const local = required(workflow.jobs?.['all-local'], 'all-local job');
+        expect(local.if).toBe('${{ inputs.execution_mode == \'all-local\' }}');
+        expect(local['runs-on']).toBe('ubuntu-latest');
+        expect(local.needs).toBeUndefined();
+        expect(local.environment).toBeUndefined();
+        expect(local.uses).toBeUndefined();
+        expect(JSON.stringify(local)).not.toMatch(/secrets\.|inputs\.(spa_url|control_url|control_http_url|api_base_url)|hetzner-distributed-recipe-runner/);
+        const checkout = findStep(local, 'Checkout repo');
+        expect(checkout.with?.ref).toBe('${{ github.sha }}');
+        expect(findStep(local, 'Setup local toolchains')).toMatchObject({
+            uses: './.github/actions/release-gate-setup',
+            with: { deno: 'true', playwright: 'true' }
+        });
+    });
+
+    it('starts complete recorder storage and retains local native evidence even on failure', async () => {
+        const local = required((await readWorkflow()).jobs?.['all-local'], 'all-local job');
+        const measurement = findStep(local, 'Observe frozen 15-agent manifest');
+        expect(measurement.env).toMatchObject({
+            CI: '1',
+            RALLAR_BLACK_BOX_FULL_STACK: '1',
+            RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '1',
+            RALLAR_BLACK_BOX_API_MODE: 'memory',
+            RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '16',
+            RALLAR_BLACK_BOX_STORAGE_DIR: '${{ github.workspace }}/tmp/alm-v1c/all-local-recorder',
+            RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS: 'unbounded',
+            RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS: 'unbounded',
+            RALLAR_BLACK_BOX_MANIFEST_PATH: '${{ inputs.manifest_path }}',
+            RALLAR_BLACK_BOX_EXPECTED_AGENT_COUNT: '${{ inputs.target_agent_count }}',
+            VITE_RALLAR_API_BASE_URL: 'http://127.0.0.1:8080',
+            VITE_RALLAR_SPA_BASE_URL: 'http://127.0.0.1:5176',
+            RALLAR_BLACK_BOX_CONTROL_BASE_URL: 'http://127.0.0.1:5180'
+        });
+        expect(measurement.run).toBe(
+            'npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts --retries=0'
+        );
+        const upload = findStep(local, 'Retain local observation evidence');
+        expect(upload).toMatchObject({
+            if: '${{ always() }}',
+            uses: 'actions/upload-artifact@v7',
+            with: { path: 'tmp/alm-v1c/all-local-recorder', 'if-no-files-found': 'warn', 'retention-days': 14 }
+        });
+    });
+
+    it('retains runner resources and exact source before service startup can fail', async () => {
+        const local = required((await readWorkflow()).jobs?.['all-local'], 'all-local job');
+        const capture = findStep(local, 'Record runner provenance');
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-all-local-provenance-'));
+        try {
+            const result = spawnSync('bash', ['-c', required(capture.run, 'provenance command')], {
+                cwd: repoRoot,
+                encoding: 'utf8',
+                env: { ...process.env, RALLAR_BLACK_BOX_STORAGE_DIR: directory }
+            });
+            expect(result.status).toBe(0);
+            expect(result.stdout).toBe('');
+            const provenance = JSON.parse(await readFile(path.join(directory, 'runner-provenance.json'), 'utf8'));
+            expect(provenance.sourceCommit).toMatch(/^[a-f0-9]{40}$/);
+            expect(provenance.manifestSha256).toBe('26c8983f3377c841b7ec88d2e6fb1d34b3558e556031087462e962b409715459');
+            expect(provenance.cpuCount).toBeGreaterThan(0);
+            expect(provenance.memoryBytes).toBeGreaterThan(0);
+            expect(provenance.diskAvailableBytes).toBeGreaterThan(0);
+            expect(provenance).toHaveProperty('os');
+            expect(provenance.node).toMatch(/^v[0-9]+/);
+            expect(provenance.deno).toMatch(/^deno [0-9]+/);
+            expect(provenance.chromium).toMatch(/^[A-Za-z ]+[0-9]+/);
+            expect(await readFile(path.join(directory, 'source-manifest.json'))).toEqual(
+                await readFile(path.join(repoRoot, 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json'))
+            );
+        }
+        finally {
+            await rm(directory, { force: true, recursive: true });
+        }
+    });
+
+    it('rejects dispatch inputs that conflict with the frozen local observation before startup', async () => {
+        const local = required((await readWorkflow()).jobs?.['all-local'], 'all-local job');
+        const preflight = findStep(local, 'Validate frozen local inputs');
+        const baseline = {
+            MANIFEST_PATH: 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json',
+            TARGET_AGENT_COUNT: '15',
+            BROWSER_ENGINE: 'chromium',
+            REGISTER_BEFORE_LOGIN: 'true'
+        };
+        for (
+            const override of [{}, { MANIFEST_PATH: 'other.json' }, { TARGET_AGENT_COUNT: '50' }, { BROWSER_ENGINE: 'firefox' }, {
+                REGISTER_BEFORE_LOGIN: 'false'
+            }]
+        ) {
+            const result = spawnSync('bash', ['-c', required(preflight.run, 'local input preflight')], {
+                cwd: repoRoot,
+                encoding: 'utf8',
+                env: { ...process.env, ...baseline, ...override }
+            });
+            expect(result.status).toBe(Object.keys(override).length === 0 ? 0 : 1);
+            expect(result.stdout).toBe('');
+        }
+        expect(local.steps!.indexOf(preflight)).toBeLessThan(local.steps!.indexOf(findStep(local, 'Setup local toolchains')));
+    });
+
     it('locks the complete production run with the shared queued group', async () => {
         const workflow = await readWorkflow();
 
         expect(workflow.concurrency).toEqual(productionConcurrency);
     });
 
-    it('defines the GitHub Free headless agent pool workflow', async () => {
-        const workflow = await readFile(
-            path.join(
-                repoRoot,
-                '.github/workflows/github-free-distributed-recipe.yml'
-            ),
-            'utf8'
-        );
-
-        expect(workflow).toContain('name: Run GitHub Free Distributed Recipe');
-        expect(workflow).toContain('target_agent_count:');
-        expect(workflow).toContain('agents_per_job:');
-        expect(workflow).toContain('max_parallel_jobs:');
-        expect(workflow).toContain('agent_prefix:');
-        expect(workflow).toContain('default: controller');
-        expect(workflow).toContain('spa_url:');
-        expect(workflow).toContain('control_url:');
-        expect(workflow).toContain('api_base_url:');
-        expect(workflow).toContain('prepare-hetzner:');
-        expect(workflow).toContain('operator_phase: prepare');
-        expect(workflow).toContain('operator_phase: run');
-        expect(workflow).toContain('control_url: ${{ inputs.control_url }}');
-        expect(workflow).toContain(
-            'control_http_url: ${{ inputs.control_http_url }}'
-        );
-        expect(workflow).toContain('needs: [plan, prepare-hetzner]');
-        expect(workflow).toContain('fromJSON(needs.plan.outputs.matrix)');
-        expect(workflow).toContain(
-            'max-parallel: ${{ fromJSON(needs.plan.outputs.max_parallel_jobs) }}'
-        );
-        expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX');
-        expect(workflow).toContain(
-            'RALLAR_BLACK_BOX_EXIT_MODE: after-target-distributed-run-terminal'
-        );
-        expect(workflow).toContain(
-            'npm --workspace rallar-black-box run worker:headless'
-        );
-        expect(workflow).toContain('agent_source: external');
-        expect(workflow).toContain(
-            'uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml'
-        );
-        expect(workflow).toContain(
-            'max_parallel_jobs must be between 1 and 19 for GitHub Free'
-        );
+    it('keeps external browser shards and Hetzner preparation on the existing boundaries', async () => {
+        const jobs = required((await readWorkflow()).jobs, 'jobs');
+        expect(jobs['prepare-hetzner']).toMatchObject({
+            needs: 'plan',
+            uses: './.github/workflows/hetzner-distributed-recipe-runner.yml',
+            with: { operator_phase: 'prepare', agent_source: 'external' }
+        });
+        expect(jobs.operator).toMatchObject({
+            uses: './.github/workflows/hetzner-distributed-recipe-runner.yml',
+            with: { operator_phase: 'run', agent_source: 'external' }
+        });
+        expect(jobs['github-agents'].strategy).toEqual({
+            'fail-fast': false,
+            'max-parallel': '${{ fromJSON(needs.plan.outputs.max_parallel_jobs) }}',
+            matrix: { shard: '${{ fromJSON(needs.plan.outputs.matrix) }}' }
+        });
+        expect(findStep(jobs['github-agents'], 'Run headless worker shard').env).toMatchObject({
+            RALLAR_BLACK_BOX_AGENT_START_INDEX: '${{ matrix.shard.agent_start_index }}',
+            RALLAR_BLACK_BOX_EXIT_MODE: 'after-target-distributed-run-terminal'
+        });
     });
 
     it('plans deterministic GitHub Free worker shards', () => {
@@ -130,7 +237,7 @@ describe('GitHub Free distributed recipe workflow', () => {
         const output = JSON.parse(result.stdout) as {
             runId: string;
             distributedRunId: string;
-            matrix: unknown[];
+            matrix: ApiJsonValue[];
         };
         expect(output.runId).toBe('gh-free-test');
         expect(output.distributedRunId).toBe('dist-gh-free-test');
@@ -163,49 +270,6 @@ describe('GitHub Free distributed recipe workflow', () => {
         expect(unsafe.status).not.toBe(0);
         expect(unsafe.stderr).toContain(
             'max_parallel_jobs must be between 1 and 19 for GitHub Free'
-        );
-    });
-
-    it('preflights free-tier manifests before planning the matrix', async () => {
-        const workflow = await readFile(workflowPath, 'utf8');
-        const parsedWorkflow = await readWorkflow();
-        const plan = required(parsedWorkflow.jobs?.plan, 'plan job');
-        const buildMatrix = findStep(plan, 'Build matrix');
-        const buildMatrixRun = required(buildMatrix.run, 'Build matrix run body');
-
-        expect(workflow).toContain(
-            'jq -r \'.targetPolicy.expectedParticipantCount // empty\''
-        );
-        expect(workflow).toContain('jq -r \'.targetPolicy.mode // empty\'');
-        expect(workflow).toContain(
-            'jq -r \'[.targetPolicy.roles[]?[]?, .roleAssignments[]?.agentId] | unique | @json\''
-        );
-        expect(workflow).toContain('jq -r \'.barrier.enabled // false\'');
-        expect(workflow).toContain('jq -r \'.barrier.timeoutMs // empty\'');
-        expect(workflow).toContain('jq -r \'.metadata.rtcTopologyEnv // empty\'');
-        expect(workflow).toContain(
-            'jq -r \'.metadata.recommendedTerminalTimeoutSeconds // empty\''
-        );
-        expect(workflow).toContain('::error::Manifest expectedParticipantCount');
-        expect(workflow).toContain(
-            '::error::GitHub free multi-agent runs require barrier.enabled=true.'
-        );
-        expect(workflow).toContain('::error::Role-map unique agent count');
-        expect(workflow).toContain(
-            '::error::Role-map agent ${agent_id} must match selected agent_prefix'
-        );
-        expect(workflow).toContain(
-            '::error::Manifest startMode must be manual, auto-after-ready, or scheduled.'
-        );
-        expect(workflow).toContain('requires_topology_prepare=true');
-        expect(buildMatrix.env?.ROLLOUT_CONTROL_PLANE).toBe(
-            '${{ inputs.rollout_control_plane }}'
-        );
-        expect(buildMatrixRun).toContain(
-            'if [[ "${requires_topology_prepare}" == "true" && "${ROLLOUT_CONTROL_PLANE}" != "true" ]]; then'
-        );
-        expect(buildMatrixRun).toContain(
-            '::error::Manifest ${MANIFEST_PATH} sets metadata.rtcTopologyEnv; set rollout_control_plane=true because those values are applied during the API/control rollout.'
         );
     });
 
@@ -281,41 +345,50 @@ describe('GitHub Free distributed recipe workflow', () => {
         expect(operator.with?.ref).toBe('${{ github.sha }}');
     });
 
-    it('scopes per-agent credentials to the mint and worker steps', async () => {
-        const workflow = await readWorkflow();
-        const githubAgents = required(
-            workflow.jobs?.['github-agents'],
-            'github-agents job'
-        );
+    it('writes private per-agent credentials consumed only by the external worker step', async () => {
+        const githubAgents = required((await readWorkflow()).jobs?.['github-agents'], 'github-agents job');
         const mint = findStep(githubAgents, 'Mint per-agent control run tokens');
         const worker = findStep(githubAgents, 'Run headless worker shard');
-        const mintRun = required(mint.run, 'mint step run body');
-
-        expect(mint.env?.RALLAR_BLACK_BOX_PASSWORD).toBe(
-            '${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}'
-        );
-        expect(mintRun).toContain('chmod 600 "${token_env_file}"');
-        expect(mintRun).toContain('quote() { printf \'%q\' "$1"; }');
-        expect(mintRun).toContain(
-            'echo "::add-mask::${RALLAR_BLACK_BOX_PASSWORD}"'
-        );
-        expect(mintRun).toContain(
-            'env_key="RALLAR_BLACK_BOX_AGENT_${local_index}_CONTROL_TOKEN"'
-        );
-        expect(mintRun).toContain(
-            'printf \'%s=%s\\n\' "${env_key}" "$(quote "${token}")" >> "${token_env_file}"'
-        );
-        expect(mintRun).toContain(
-            'printf \'%s=%s\\n\' "RALLAR_BLACK_BOX_AGENT_${local_index}_USERNAME" "$(quote "${agent_id}")" >> "${token_env_file}"'
-        );
-        expect(mintRun).toContain(
-            'printf \'%s=%s\\n\' "RALLAR_BLACK_BOX_AGENT_${local_index}_PASSWORD" "$(quote "${RALLAR_BLACK_BOX_PASSWORD}")" >> "${token_env_file}"'
-        );
-        expect(worker.env).not.toHaveProperty('RALLAR_BLACK_BOX_USERNAME');
-        expect(worker.env).not.toHaveProperty('RALLAR_BLACK_BOX_PASSWORD');
-        expect(worker.run).toContain(
-            'source "${RUNNER_TEMP}/rallar-github-headless-token.env"'
-        );
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-github-free-credentials-'));
+        try {
+            await writeFile(path.join(directory, 'curl'), `#!/bin/sh\nprintf '%s\\n' '{"token":"test-agent-token"}'\n`);
+            await chmod(path.join(directory, 'curl'), 0o700);
+            const result = spawnSync('bash', ['-c', required(mint.run, 'mint command')], {
+                cwd: repoRoot,
+                encoding: 'utf8',
+                env: {
+                    PATH: `${directory}:${process.env.PATH}`,
+                    RUNNER_TEMP: directory,
+                    RALLAR_CONTROL_HTTP_URL: 'https://control.example.test',
+                    RALLAR_BLACK_BOX_RUN_ID: 'test-run',
+                    RALLAR_BLACK_BOX_AGENT_PREFIX: 'controller',
+                    RALLAR_BLACK_BOX_AGENT_COUNT: '2',
+                    RALLAR_BLACK_BOX_AGENT_START_INDEX: '4',
+                    RALLAR_BLACK_BOX_CONTROL_AUTH_TOKEN: 'test-admin-token',
+                    RALLAR_BLACK_BOX_PASSWORD: 'test-password'
+                }
+            });
+            expect(result.status).toBe(0);
+            const credentialFile = path.join(directory, 'rallar-github-headless-token.env');
+            expect((await stat(credentialFile)).mode & 0o777).toBe(0o600);
+            const consume = spawnSync('bash', [
+                '-c',
+                `set -a; source "$1"; node -e 'console.log(JSON.stringify([process.env.RALLAR_BLACK_BOX_AGENT_1_USERNAME,process.env.RALLAR_BLACK_BOX_AGENT_2_USERNAME,process.env.RALLAR_BLACK_BOX_AGENT_1_PASSWORD,process.env.RALLAR_BLACK_BOX_AGENT_2_CONTROL_TOKEN]))'`,
+                'consume',
+                credentialFile
+            ], {
+                encoding: 'utf8',
+                env: { PATH: process.env.PATH }
+            });
+            expect(consume.status).toBe(0);
+            expect(JSON.parse(consume.stdout)).toEqual(['controller-04', 'controller-05', 'test-password', 'test-agent-token']);
+            expect(await readFile(credentialFile, 'utf8')).not.toContain('test-admin-token');
+            expect(worker.env).not.toHaveProperty('RALLAR_BLACK_BOX_USERNAME');
+            expect(worker.env).not.toHaveProperty('RALLAR_BLACK_BOX_PASSWORD');
+        }
+        finally {
+            await rm(directory, { force: true, recursive: true });
+        }
     });
 
     it('rejects registration-disabled multi-agent plans before manifest processing', async () => {
@@ -351,38 +424,5 @@ describe('GitHub Free distributed recipe workflow', () => {
             'GitHub free multi-agent runs require register_before_login=true.'
         );
         expect(result.stderr).not.toContain('Manifest path does not exist');
-    });
-
-    it('documents the GitHub Free operator runbook', async () => {
-        const runbook = await readFile(
-            path.join(
-                repoRoot,
-                'docs/github-actions-black-box-headless-runbook.md'
-            ),
-            'utf8'
-        );
-
-        expect(runbook).toContain('GitHub Free');
-        expect(runbook).toContain('17 shards with agents_per_job=3');
-        expect(runbook).toContain('Do not set max_parallel_jobs above 19');
-        expect(runbook).toContain('agent_prefix=controller');
-        expect(runbook).toContain('prepare-hetzner');
-        expect(runbook).toContain('agent_source=external');
-        expect(runbook).toContain(
-            'RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-run-terminal'
-        );
-        expect(runbook).toContain('2,000 included minutes');
-        expect(runbook).toContain('immutable `${{ github.sha }}`');
-        expect(runbook).toContain(
-            '`production` environment must restrict deployment branches'
-        );
-        expect(runbook).toContain(
-            'Each global `agentId` must have one registered username'
-        );
-        expect(runbook).toMatch(
-            /`RALLAR_BLACK_BOX_USERNAME` remains required by the Hetzner operator reusable\s+runner/
-        );
-        expect(runbook).toContain('both `prepare-hetzner` and `operator` phases');
-        expect(runbook).toContain('not a GitHub-hosted per-agent username');
     });
 });

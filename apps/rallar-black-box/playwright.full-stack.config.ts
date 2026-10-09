@@ -1,4 +1,5 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
+
 import {
     createFullStackApiV1WebServer,
     portFromBaseUrl,
@@ -15,6 +16,7 @@ const fullStackEnabled = process.env.RALLAR_BLACK_BOX_FULL_STACK === '1' ||
     process.env.RALLAR_BLACK_BOX_FULL_STACK === 'true';
 const fullStackApiBaseUrl = readFullStackApiBaseUrl();
 const fullStackSpaBaseUrl = readFullStackSpaBaseUrl();
+const headlessSpaEnabled = process.env.RALLAR_BLACK_BOX_FULL_STACK_HEADLESS === '1';
 const fullStackControlBaseUrl = readFullStackControlBaseUrl();
 const fullStackApiServerMode = fullStackEnabled
     ? readFullStackApiServerMode()
@@ -59,13 +61,13 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
         ]
         : []),
     {
-        command: `cd ../.. && npm --workspace rallar-black-box run dev -- --port ${
-            portFromBaseUrl(fullStackSpaBaseUrl)
-        } --force`,
+        command: `cd ../.. && npm --workspace ${
+            headlessSpaEnabled ? 'rallar-black-box-headless' : 'rallar-black-box'
+        } run dev -- --port ${portFromBaseUrl(fullStackSpaBaseUrl)} --force`,
         env: {
             VITE_RALLAR_API_BASE_URL: fullStackApiBaseUrl
         },
-        url: fullStackSpaBaseUrl,
+        url: headlessSpaEnabled ? `${fullStackSpaBaseUrl}/headless/` : fullStackSpaBaseUrl,
         reuseExistingServer,
         timeout: 60_000
     },

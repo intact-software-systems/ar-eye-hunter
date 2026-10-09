@@ -1,4 +1,6 @@
+import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
+
 import {
     assertFullStackApiConfigEvidence,
     assertFullStackControlHealthEvidence,
@@ -12,8 +14,43 @@ import {
     readFullStackApiServerMode,
     readFullStackSpaBaseUrl
 } from '../../../apps/rallar-black-box/playwright-full-stack-api-server.ts';
+import type { ApiJsonValue } from '../../shared/api/api-json-value.ts';
 
 describe('rallar-black-box full-stack API server mode', () => {
+    it.each([
+        { headless: '1', workspace: 'rallar-black-box-headless', readiness: '/headless/' },
+        { headless: '', workspace: 'rallar-black-box', readiness: '' }
+    ])('selects $workspace at the configured SPA port with fresh CI ownership', ({ headless, workspace, readiness }) => {
+        const result = spawnSync(process.execPath, [
+            '--import',
+            'tsx',
+            '--input-type=module',
+            '--eval',
+            `import config from './apps/rallar-black-box/playwright.full-stack.config.ts';
+             process.stdout.write(JSON.stringify(config.webServer));`
+        ], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                CI: '1',
+                RALLAR_BLACK_BOX_FULL_STACK: '1',
+                RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: headless,
+                RALLAR_BLACK_BOX_API_MODE: 'memory',
+                VITE_RALLAR_SPA_BASE_URL: 'http://127.0.0.1:5376',
+                RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER: '0'
+            }
+        });
+        expect(result.status).toBe(0);
+        const servers = JSON.parse(result.stdout);
+        expect(servers).toHaveLength(3);
+        expect(servers[1]).toMatchObject({
+            command: `cd ../.. && npm --workspace ${workspace} run dev -- --port 5376 --force`,
+            url: `http://127.0.0.1:5376${readiness}`,
+            reuseExistingServer: false
+        });
+        expect(servers.every((server: { reuseExistingServer: boolean; }) => !server.reuseExistingServer)).toBe(true);
+    });
+
     it('defaults to the existing Postgres-backed full-stack API server mode', () => {
         expect(readFullStackApiServerMode({})).toBe('postgres');
         expect(readFullStackApiBaseUrl({})).toBe('http://localhost:8080');
@@ -159,7 +196,7 @@ describe('rallar-black-box full-stack API server mode', () => {
 
     it('validates each reachable probe before classifying an absent peer as unavailable', async () => {
         const unavailable = { kind: 'unavailable' as const };
-        const reachable = (value: unknown) => ({
+        const reachable = (value: ApiJsonValue) => ({
             kind: 'reachable' as const,
             ok: true,
             status: 200,
