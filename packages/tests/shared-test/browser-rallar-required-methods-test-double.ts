@@ -11,6 +11,7 @@ type BrowserRallarRequiredTestMethods = Pick<
     | 'injectFault'
     | 'readStorageCounters'
     | 'readAlmUsage'
+    | 'readCongestionCounters'
     | 'waitForRoom'
 >;
 
@@ -31,6 +32,7 @@ export function createBrowserRallarRequiredMethodsTestDouble(): BrowserRallarReq
         injectFault: unsupported,
         readStorageCounters: unsupported,
         readAlmUsage: async () => undefined,
+        readCongestionCounters: async () => undefined,
         waitForRoom: unsupported
     };
 }

@@ -218,7 +218,7 @@ describe('browser facade restored-session setup', () => {
                 onResyncRequired: expect.any(Function),
                 diagnosticsPorts: {
                     submissionReadinessFaultPort: { decideSubmissionReadiness: expect.any(Function) },
-                    transportFaultPort: { decideSend: expect.any(Function) },
+                    transportFaultPort: { decideSend: expect.any(Function), decideBackpressure: expect.any(Function) },
                     indexedDbOperationObserver: { observe: expect.any(Function) },
                     outboundDiagnostics: expect.any(Function),
                     inboundDiagnostics: expect.any(Function),

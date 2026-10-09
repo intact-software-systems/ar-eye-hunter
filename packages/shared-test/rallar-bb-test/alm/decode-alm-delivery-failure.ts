@@ -26,8 +26,13 @@ const ALM_REFUSAL_REASONS: Readonly<Record<ALDeliveryRefusalReason, true>> = {
     oversized: true,
     unsupported: true,
     capacity: true,
-    'no-leader': true
+    'no-leader': true,
+    congested: true
 };
+
+export function isAlmRefusalReason(value: string): value is ALDeliveryRefusalReason {
+    return Object.hasOwn(ALM_REFUSAL_REASONS, value);
+}
 
 const ALM_VOLATILE_SESSION_LIMIT_NAMES: Readonly<Record<ALVolatileSessionLimit, true>> = {
     admissions: true,

@@ -7,6 +7,7 @@ import type {
     ALDeliveryCarrier,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type {
     IndexedDbOperationKind,
@@ -413,7 +414,8 @@ export type RallarBlackBoxTestTransportFaultInjectCommand =
         faultId: string;
         carrier: 'ws' | 'rtc';
         match: Readonly<{ controlType?: 'ack' | 'nack' | 'repair'; typeId?: string; msgId?: string; }>;
-        action: 'drop' | 'not-ready' | Readonly<{ delayMs: number; }>;
+        /** `backpressure` holds the carrier at its high watermark for each matching origination it plans. */
+        action: ScriptedTransportFault['action'];
         remaining: ScriptedTransportFault['remaining'];
     }>;
 
@@ -1074,6 +1076,11 @@ export interface RallarBlackBoxTestStatsSnapshot {
          * periodic stats and final report, which read no page.
          */
         alm?: ALVolatileSessionReport;
+        /**
+         * The congestion decisions the page counted since its last `close`, read by the `stats` command (D186).
+         * Absent exactly where `alm` is.
+         */
+        congestion?: ALCongestionCounters;
     }>;
     readonly load?: Readonly<{
         loopCount: number;

@@ -31,15 +31,15 @@ import {
     toALSequenceMintComparableMessage
 } from './al-outbound-canonical-message.ts';
 import { ALOutboundCommitPhases } from './al-outbound-commit-phases.ts';
-import type {
-    ALOutboundCommitOrigin,
-    ALOutboundDequeueAuthority,
-    ALOutboundDispatchPhase,
-    ALOutboundDispatchPlan,
-    ALOutboundMessageRuntime,
-    ALOutboundRuntimeDiagnosticsEvent,
-    ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundSettlementEmitter
+import {
+    writeALOutboundRuntimeDiagnostic,
+    type ALOutboundCommitOrigin,
+    type ALOutboundDequeueAuthority,
+    type ALOutboundDispatchPhase,
+    type ALOutboundDispatchPlan,
+    type ALOutboundMessageRuntime,
+    type ALOutboundRuntimeDiagnosticsSink,
+    type ALOutboundSettlementEmitter
 } from './al-outbound-message-runtime.ts';
 import {
     readALOutboundPendingDispatch,
@@ -147,7 +147,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             return await this.commitWithPhases(dispatch, phases);
         }
         finally {
-            this.emitDiagnostics(phases.toEvent());
+            writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, phases.toEvent());
         }
     }
 
@@ -183,7 +183,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
         finally {
             for (const { phases } of members) {
-                this.emitDiagnostics(phases.toEvent());
+                writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, phases.toEvent());
             }
         }
     }
@@ -580,7 +580,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         this.commitQueuesBySenderId.set(senderId, { tail, origin });
 
         await previous.catch(() => undefined);
-        this.emitDiagnostics({
+        writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
             kind: 'sender-queue-wait',
             senderId,
             origin,
@@ -608,7 +608,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         const lockName = toALOutboundCommitLockName(senderId);
         const locks = this.dependencies.browserLocks;
         if (!locks) {
-            this.emitDiagnostics({
+            writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
                 kind: 'browser-lock-wait',
                 senderId,
                 origin,
@@ -624,7 +624,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             lockName,
             { mode: 'exclusive' },
             async () => {
-                this.emitDiagnostics({
+                writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
                     kind: 'browser-lock-wait',
                     senderId,
                     origin,
@@ -646,7 +646,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             return await task();
         }
         finally {
-            this.emitDiagnostics({
+            writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
                 kind: 'browser-lock-hold',
                 ...held,
                 durationMs: this.elapsedSince(holdStartedAtMs)
@@ -660,15 +660,6 @@ export class ALOutboundDispatchAdmission<TPrepared> {
 
     private elapsedSince(startedAtMs: number): number {
         return Math.max(0, this.readNowMs() - startedAtMs);
-    }
-
-    private emitDiagnostics(event: ALOutboundRuntimeDiagnosticsEvent): void {
-        try {
-            this.dependencies.diagnostics?.(event);
-        }
-        catch (error) {
-            console.error('AL outbound runtime diagnostics sink failed', error);
-        }
     }
 }
 

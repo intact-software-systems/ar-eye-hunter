@@ -249,7 +249,8 @@ describe('reviewed repository style dispositions', () => {
     it.each([
         { relativeFile: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-crdt-controller.ts', maximumMagnitude: 117 },
         { relativeFile: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts', maximumMagnitude: 89 },
-        { relativeFile: 'packages/shared/services/web-rtc-connection-service.ts', maximumMagnitude: 142 }
+        { relativeFile: 'packages/shared/services/web-rtc-connection-service.ts', maximumMagnitude: 142 },
+        { relativeFile: 'packages/shared-web/browser/messages/browser-rallar-message-dispatch.ts', maximumMagnitude: 51 }
     ])('keeps the reviewed cognitive magnitude bounded for $relativeFile', ({ relativeFile, maximumMagnitude }) => {
         const finding = {
             file: path.join(repoRoot, relativeFile),

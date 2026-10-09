@@ -1,4 +1,5 @@
 import { readALTargetGroupRef, type ALMessage } from '../al-contracts/al-contract.ts';
+import { isALControlTypeId } from '../al-contracts/al-control-type-ids.ts';
 import { decodePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
 import {
     ALMessageHandlingPlan,
@@ -29,12 +30,14 @@ import type {
     ALOutboundRuntimeDiagnosticsSink
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
+    AL_SUBMISSION_NOT_READY_RETRY_MS,
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
     ALOutboundRepairRequest,
     ALOutboundRepairTrackingPlan,
     ALOutboundRetryTrackingPlan,
     ALOutboundSupersedenceTrackingPlan,
+    toALOutboundCongestionDrop,
     type ALOutboundDropReasonCode
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
@@ -63,12 +66,14 @@ import { Either } from '../resilience/Either.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { QueueBoxUtilities } from '../services/queue-box-utilities.ts';
 import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
+import type { TransportFaultPort } from '../transport-faults/transport-fault-port.ts';
 import type {
     QRtcDataChannel,
     RtcDataChannelHealth,
     RtcDataChannelSendOptions,
     RtcDataChannelSendResult
 } from '../webrtc/qrtc-data-channel.ts';
+import { computeRtcBackpressure } from './compute-rtc-backpressure.ts';
 import { computeRtcExclusiveRefusal } from './compute-rtc-exclusive-refusal.ts';
 import {
     computeRtcOutboundCarrierAvailability,
@@ -117,7 +122,7 @@ import {
 
 export namespace WebRtcOverlayMulticastManager {
     export interface Channel {
-        readHealth(): Pick<RtcDataChannelHealth, 'readyState'>;
+        readHealth(): Pick<RtcDataChannelHealth, 'readyState' | 'bufferedAmount' | 'flowControl'>;
         sendJson(message: ALMessage, options?: RtcDataChannelSendOptions): RtcDataChannelSendResult;
     }
 
@@ -143,8 +148,13 @@ export namespace WebRtcOverlayMulticastManager {
         readonly dequeueResilience: ResourceInboxResilience;
         readonly circuitBreaker: CircuitBreaker;
         readonly rateLimiter: RateLimiter;
+        /** The scripted transport faults; a `backpressure` fault holds this carrier backpressured for its messages. */
+        readonly faultPort: TransportFaultPort;
     }
 }
+
+/** Which plan of the session's own message this is; only a new admission's plan reads backpressure (D184). */
+type RtcOutgoingPlanStage = 'admission' | 'dequeue' | 'replan';
 
 export class WebRtcOverlayMulticastManager {
     public static readonly ENQUEUE_TYPE = EnqueuedType.RTC_OUTBOX;
@@ -164,6 +174,7 @@ export class WebRtcOverlayMulticastManager {
     public readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
     private readonly circuitBreaker: CircuitBreaker;
     private readonly rateLimiter: RateLimiter;
+    private readonly faultPort: TransportFaultPort;
     private readonly clock: ALOutboundMessageRuntime.Clock;
     private readonly submission: RtcOutboundSubmission;
 
@@ -176,8 +187,15 @@ export class WebRtcOverlayMulticastManager {
         this.circuitBreaker = dependencies.circuitBreaker;
         this.rateLimiter = dependencies.rateLimiter;
         this.qosProvider = dependencies.qosProvider;
+        this.faultPort = dependencies.faultPort;
         this.clock = dependencies.outboundRuntime.clock;
-        this.submission = new RtcOutboundSubmission(dependencies.connectionService, this.clock);
+        this.submission = new RtcOutboundSubmission({
+            connectionService: dependencies.connectionService,
+            clock: this.clock,
+            faultPort: dependencies.faultPort,
+            qosProvider: dependencies.qosProvider,
+            diagnostics: dependencies.outboundDiagnostics
+        });
         this.outboundRuntime = new ALOutboundMessageRuntime<ALOutboundTransportMessage>(
             {
                 ...dependencies.outboundRuntime,
@@ -193,8 +211,10 @@ export class WebRtcOverlayMulticastManager {
                         WebRtcOverlayMulticastManager.ENQUEUE_TYPE
                     ),
                 readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-                planOutgoingMessage: (msg) => this.planOutgoingMessage(msg),
-                planDequeuedMessage: (msg) => this.planDequeuedMessage(msg),
+                // A plan without authority is a new admission's; a retained message is planned with its captured one.
+                planOutgoingMessage: (msg, authority) =>
+                    this.planOutgoingMessage(msg, authority === undefined ? 'admission' : 'replan'),
+                planDequeuedMessage: (msg) => this.planOutgoingMessage(msg, 'dequeue'),
                 afterDequeueAdmission: undefined,
                 readPendingAdmissionAuthority: async (message, prepared) =>
                     this.readPendingAdmissionAuthority(message, prepared),
@@ -519,13 +539,9 @@ export class WebRtcOverlayMulticastManager {
         );
     }
 
-    private planDequeuedMessage(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
-        return this.planOutgoingMessage(msg, true);
-    }
-
     private planOutgoingMessage(
         original: ALMessage,
-        alreadyOwned = false
+        stage: RtcOutgoingPlanStage
     ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
         const selfPeerId = this.connectionService.input.sessionId;
         const availability = this.readCarrierAvailability(original);
@@ -556,15 +572,16 @@ export class WebRtcOverlayMulticastManager {
                 (refusal) => Either.ofLeft(refusal),
                 (carried) => computeRtcLeaderRefusal(carried, original)
             )
-            .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, availability, alreadyOwned));
+            .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, availability, stage));
         return toRtcFrozenAudienceDispatchPlan(toRtcEmptyAudienceDispatchPlan(plan, policy.effective), selfPeerId);
     }
 
     private planOriginatingDispatch(
         msg: ALMessage,
         availability: RtcOutboundCarrierAvailability,
-        alreadyOwned: boolean
+        stage: RtcOutgoingPlanStage
     ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
+        const alreadyOwned = stage === 'dequeue';
         const context = availability.kind === 'available' ? availability.context : undefined;
         if (!msg.targets) {
             return this.toUnaddressedDispatchPlan(msg, this.readOutgoingQosPolicy(msg, context).effective);
@@ -588,32 +605,62 @@ export class WebRtcOverlayMulticastManager {
             };
         }
         return context
-            ? this.planOverlayDispatch(msg, context)
+            ? this.planOverlayDispatch(msg, context, stage)
             : this.toNoRouteDispatchPlan(msg, 'without overlay context');
     }
 
+    /** An admission whose every ready next hop is backpressured is planned again with that live state (D184). */
     private planOverlayDispatch(
         msg: ALMessage,
-        context: OverlayMulticasterContext
+        context: OverlayMulticasterContext,
+        stage: RtcOutgoingPlanStage
     ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
         const multicaster = this.getOrCreateMulticaster(context.overlayId);
+        const qos = resolveALQosNormalizationInput(
+            msg,
+            {
+                direction: 'outbound',
+                selfPeerId: this.connectionService.input.sessionId,
+                connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
+                groupMemberPeerIds: readGroupMemberSessionIds(context.room),
+                overlayNeighborPeerIds: context.overlay.nextHopSessionIds
+            },
+            this.qosProvider
+        );
+        const plan = multicaster.createOriginatingPlan(msg, context, qos);
         return this.planOutboundDispatch(
             msg,
-            multicaster.createOriginatingPlan(
-                msg,
-                context,
-                resolveALQosNormalizationInput(
-                    msg,
-                    {
-                        direction: 'outbound',
-                        selfPeerId: this.connectionService.input.sessionId,
-                        connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
-                        groupMemberPeerIds: readGroupMemberSessionIds(context.room),
-                        overlayNeighborPeerIds: context.overlay.nextHopSessionIds
-                    },
-                    this.qosProvider
-                )
-            )
+            stage === 'admission' && this.decideBackpressure(msg, plan)
+                ? multicaster.createOriginatingPlan(msg, context, {
+                    ...qos,
+                    live: { ...qos.live, backpressured: true }
+                })
+                : plan
+        );
+    }
+
+    /**
+     * Whether a dispatchable data origination meets backpressure: a scripted fault holds the carrier for it, spending
+     * one of the fault's counts, or every ready next hop's reliable channel is full. A control or a plan with nothing
+     * to send reads neither.
+     */
+    private decideBackpressure(msg: ALMessage, plan: OverlayMulticastDispatchPlan): boolean {
+        if (
+            isALControlTypeId(msg.payload.typeId) || plan.handlingPlan.dropReason || plan.transportMessages.length === 0
+        ) {
+            return false;
+        }
+        if (this.faultPort.decideBackpressure('rtc', msg)) {
+            return true;
+        }
+        return computeRtcBackpressure(
+            plan.transportMessages.flatMap((copy) => {
+                const peerId = copy.forwarding?.nextHopPeerIds?.[0];
+                const health = peerId === undefined
+                    ? undefined
+                    : this.connectionService.readPeer(peerId)?.channel?.readHealth();
+                return health?.readyState === 'open' ? [health] : [];
+            })
         );
     }
 
@@ -706,6 +753,7 @@ export class WebRtcOverlayMulticastManager {
             return {
                 dropReason: `Skipping planned RTC dispatch: ${plan.handlingPlan.dropReason}`,
                 dropReasonCode: toALOutboundDropReasonCodeFromHandlingPlan(plan.handlingPlan.dropReasonCode),
+                congestionDrop: toALOutboundCongestionDrop(plan.handlingPlan),
                 lane: 'volatile',
                 msg,
                 preparedMessages: []
@@ -804,7 +852,12 @@ export class WebRtcOverlayMulticastManager {
                 ingressPeerId === null &&
                 lifecycle.canonicalMessage.id.senderId === this.connectionService.input.sessionId)
         ) {
-            return { status: 'not-ready', submissionAttempted: false, reason: admission.reason, retryAfterMs: 50 };
+            return {
+                status: 'not-ready',
+                submissionAttempted: false,
+                reason: admission.reason,
+                retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS
+            };
         }
         if (admission.kind === 'unauthorized') {
             return { status: 'no-targets', submissionAttempted: false, reason: admission.reason };
@@ -918,7 +971,7 @@ export class WebRtcOverlayMulticastManager {
                 msg,
                 request,
                 selfPeerId: this.connectionService.input.sessionId,
-                planOutgoingMessage: (repairMsg) => this.planOutgoingMessage(repairMsg)
+                planOutgoingMessage: (repairMsg) => this.planOutgoingMessage(repairMsg, 'replan')
             });
         }
 
@@ -964,7 +1017,7 @@ export class WebRtcOverlayMulticastManager {
             lane: 'volatile',
             msg,
             preparedMessages: [toRtcTargetedRepairCopy({
-                dispatch: this.planOutgoingMessage(msg),
+                dispatch: this.planOutgoingMessage(msg, 'replan'),
                 msg,
                 peerId,
                 selfPeerId: this.connectionService.input.sessionId
@@ -979,7 +1032,7 @@ export class WebRtcOverlayMulticastManager {
     }
 }
 
-/** The five codes shared with inbound handling carry over; an inbound-only code has no outbound route concept. */
+/** The six codes shared with inbound handling carry over; an inbound-only code has no outbound route concept. */
 function toALOutboundDropReasonCodeFromHandlingPlan(
     code: ALMessageDropReasonCode | undefined
 ): ALOutboundDropReasonCode {
@@ -989,6 +1042,7 @@ function toALOutboundDropReasonCodeFromHandlingPlan(
         case 'expired':
         case 'not-yet-in-sync':
         case 'unauthorized':
+        case 'congested':
             return code;
         case 'overloaded':
             return 'capacity';

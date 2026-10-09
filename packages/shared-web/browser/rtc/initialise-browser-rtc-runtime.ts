@@ -73,6 +73,8 @@ export interface InitialiseRtcOverlayMulticastManagerInput {
     /** The connect's claim on its session's durable work, which only the durable lanes take. */
     readonly durableWorkOwnership: ALDurableWorkOwnership;
     readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    /** The session's transport faults, the same port its data channels decide their frames by. */
+    readonly faultPort: TransportFaultPort;
 }
 
 export function initialiseRtcOverlayMulticastManager(
@@ -102,7 +104,8 @@ export function initialiseRtcOverlayMulticastManager(
         outboundSettlements: input.outboundSettlements,
         qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
         circuitBreaker: toCircuitBreaker(),
-        rateLimiter: toRateLimiter()
+        rateLimiter: toRateLimiter(),
+        faultPort: input.faultPort
     });
 
     return webRtcOverlayMulticastManager;

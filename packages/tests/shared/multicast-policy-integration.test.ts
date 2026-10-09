@@ -74,6 +74,7 @@ describe('multicast QoS integration', () => {
                 outboundRuntime: resources,
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
+                faultPort: createPassThroughTransportFaultPort(),
                 dequeueResilience: createDefaultALOutboundDequeueResilience()
             };
             const initial = new shared.WebRtcOverlayMulticastManager(dependencies);
@@ -146,6 +147,7 @@ describe('multicast QoS integration', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: engine }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: resilience
         });
         onTestFinished(() => manager.dispose());
@@ -278,6 +280,7 @@ describe('multicast QoS integration', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -338,6 +341,7 @@ describe('multicast QoS integration', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -395,6 +399,7 @@ describe('multicast QoS integration', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -448,6 +453,7 @@ describe('multicast QoS integration', () => {
                 outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
+                faultPort: createPassThroughTransportFaultPort(),
                 dequeueResilience: createDefaultALOutboundDequeueResilience()
             });
             onTestFinished(() => manager.dispose());
@@ -542,6 +548,7 @@ describe('multicast QoS integration', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -620,6 +627,7 @@ describe('multicast QoS integration', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -671,6 +679,7 @@ describe('multicast QoS integration', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -719,6 +728,7 @@ describe('multicast QoS integration', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());

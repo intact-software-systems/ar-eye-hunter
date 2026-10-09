@@ -75,6 +75,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: resources,
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -140,6 +141,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: resources,
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -243,6 +245,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -294,6 +297,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -338,6 +342,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -379,6 +384,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -423,6 +429,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -493,6 +500,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -566,6 +574,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -612,6 +621,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -659,6 +669,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: CircuitBreaker.create(createCircuitBreakerPolicy()),
             rateLimiter: RateLimiter.init(1_000, 2),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -711,6 +722,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: circuitBreaker,
             rateLimiter: RateLimiter.init(1_000, 20),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -743,6 +755,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: engine }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -784,6 +797,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -835,6 +849,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -890,6 +905,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());
@@ -940,6 +956,7 @@ describe('WebRtc overlay services', () => {
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => manager.dispose());

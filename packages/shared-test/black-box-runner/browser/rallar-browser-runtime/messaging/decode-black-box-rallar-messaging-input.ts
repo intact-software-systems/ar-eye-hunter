@@ -27,8 +27,13 @@ import {
 const FAULT_CARRIERS: readonly TransportFaultCarrier[] = ['ws', 'rtc'];
 const FAULT_CONTROL_TYPES: readonly NonNullable<TransportFaultMatch['controlType']>[] = ['ack', 'nack', 'repair'];
 
-/** The RTC data channel treats a delay decision as pass, so arming one there would be inert. */
-const FAULT_RTC_DELAY_UNSUPPORTED_MESSAGE = 'fault.inject.action must be "drop" on the rtc carrier.';
+const FAULT_RTC_ACTIONS: readonly ScriptedTransportFault['action'][] = ['drop', 'backpressure'];
+
+/**
+ * The RTC data channel treats a delay decision as pass and has no submission readiness port, so arming
+ * either there would be inert.
+ */
+const FAULT_RTC_ACTION_UNSUPPORTED_MESSAGE = 'fault.inject.action must be "drop" or "backpressure" on the rtc carrier.';
 
 export function decodeBlackBoxRallarDeliveryHandleInput(
     value: unknown
@@ -88,8 +93,8 @@ function decodeTransportFault(
     return decodeFaultAction(value.action).flatMap(
         (issue) => Either.ofLeft(issue),
         (action) => {
-            if (carrier === 'rtc' && action !== 'drop') {
-                return toInputIssue(FAULT_RTC_DELAY_UNSUPPORTED_MESSAGE);
+            if (carrier === 'rtc' && !FAULT_RTC_ACTIONS.includes(action)) {
+                return toInputIssue(FAULT_RTC_ACTION_UNSUPPORTED_MESSAGE);
             }
             const faultId = decodeBlackBoxCommandString(value.faultId);
             if (faultId === undefined) {
@@ -150,12 +155,12 @@ export function decodeBlackBoxRallarStorageCountersInput(
 }
 
 function decodeFaultAction(value: unknown): Either<BlackBoxRallarInputIssue, ScriptedTransportFault['action']> {
-    if (value === 'drop' || value === 'not-ready') {
+    if (value === 'drop' || value === 'not-ready' || value === 'backpressure') {
         return Either.ofRight(value);
     }
     const delayMs = isBlackBoxCommandRecord(value) ? decodeBlackBoxCommandNumber(value.delayMs) : undefined;
     return delayMs === undefined
-        ? toInputIssue('fault.inject.action must be "drop", "not-ready" or an object naming delayMs.')
+        ? toInputIssue('fault.inject.action must be "drop", "not-ready", "backpressure" or an object naming delayMs.')
         : Either.ofRight({ delayMs });
 }
 

@@ -8,6 +8,7 @@ import {
     type ALDeliveryCarrierFallback,
     type ALDeliveryDurabilityDowngrade,
     type ALDeliveryFallbackReason,
+    type ALDeliveryRefusalReason,
     type ALDeliveryRelayRejection,
     type ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -20,7 +21,8 @@ import { RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES } from '../schema/rallar-black-bo
 import {
     decodeAlmDeliveryFailure,
     decodeAlmDurabilityDowngrade,
-    decodeAlmRelayRejection
+    decodeAlmRelayRejection,
+    isAlmRefusalReason
 } from './decode-alm-delivery-failure.ts';
 import { decodeAlmRuntimeRecord } from './decode-alm-runtime-record.ts';
 import type {
@@ -181,6 +183,7 @@ export function decodeAlmDeliveryResultValue(
         attempts: requireAlmNumberField(record, path, 'attempts'),
         attemptOutcomes,
         attemptCarriers: requireAlmAttemptCarriersField(record, path, attemptOutcomes.length),
+        attemptRefusalReasons: requireAlmAttemptRefusalReasonsField(record, path),
         reason: readAlmOptionalStringField(record, path, 'reason')
     };
 }
@@ -370,6 +373,17 @@ function requireAlmAttemptCarriersField(
         throw toAlmInvalidRuntimeResultError(`${path}.attemptCarriers`);
     }
     return carriers;
+}
+
+function requireAlmAttemptRefusalReasonsField(
+    record: RallarBlackBoxTestRecord,
+    path: string
+): readonly ALDeliveryRefusalReason[] {
+    const reasons = requireAlmStringListField(record, path, 'attemptRefusalReasons');
+    if (!reasons.every(isAlmRefusalReason)) {
+        throw toAlmInvalidRuntimeResultError(`${path}.attemptRefusalReasons`);
+    }
+    return reasons;
 }
 
 function requireAlmNumberField(

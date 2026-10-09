@@ -287,6 +287,7 @@ function toALOutboundAdmissionVerdict<TPrepared>(
         case 'unauthorized':
         case 'unsupported':
         case 'no-leader':
+        case 'congested':
             return { kind: 'refused', reason: plan.dropReasonCode, detail };
         case 'capacity':
             return toALCapacityRefusedVerdict(plan.capacityLimit, detail);

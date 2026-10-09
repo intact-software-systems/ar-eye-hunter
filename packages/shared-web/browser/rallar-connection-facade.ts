@@ -8,6 +8,7 @@ import type {
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
@@ -52,6 +53,11 @@ export interface RallarBrowserMiddleware {
      * stay the carriers' own, so no caller can count into the bound that refuses sends.
      */
     readonly volatileBudget: Pick<ALVolatileSessionBudget, 'readReport'>;
+    /**
+     * The connect's outbound diagnostics sink, which both carriers' runtimes report to; the dispatch reports its
+     * hand-overs there (D186).
+     */
+    readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink;
 }
 
 /** Authenticated browser connection returned by setup and connect operations. */

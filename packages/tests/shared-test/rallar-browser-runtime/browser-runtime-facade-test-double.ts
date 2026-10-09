@@ -1,6 +1,10 @@
 import { vi } from 'vitest';
 
 import {
+    createBlackBoxRallarCongestionCounters,
+    type BlackBoxRallarCongestionCounters
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-congestion-counters.ts';
+import {
     type BlackBoxBrowserAuthDependency,
     type BlackBoxBrowserCrdtDependency,
     type BlackBoxBrowserDeliveriesDependency,
@@ -368,6 +372,7 @@ const director: BlackBoxBrowserDirectorDependency = {
 let scriptedFaults = createScriptedTransportFaultPort();
 let countingStorage = createCountingIndexedDbOperationObserver();
 let scriptedStorageFaults = createScriptedStorageFaultPort();
+let congestionCounters = createBlackBoxRallarCongestionCounters();
 let deliveryRegistry = createFacadeDeliveryRegistry();
 let deliverySequence = 0;
 
@@ -399,6 +404,9 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     },
     get storageFaults(): ScriptedStorageFaultPort {
         return scriptedStorageFaults;
+    },
+    get congestion(): BlackBoxRallarCongestionCounters {
+        return congestionCounters;
     }
 };
 
@@ -451,6 +459,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     scriptedFaults = createScriptedTransportFaultPort();
     countingStorage = createCountingIndexedDbOperationObserver();
     scriptedStorageFaults = createScriptedStorageFaultPort();
+    congestionCounters = createBlackBoxRallarCongestionCounters();
     deliveryRegistry = createFacadeDeliveryRegistry();
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);

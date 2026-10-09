@@ -837,3 +837,78 @@ describe('durability decoupled from retry (S3a)', () => {
         expect(shouldAwaitALRoute(normalizeALQosPolicy(message).effective)).toBe(false);
     });
 });
+
+describe('the congestion policy on a live cause', () => {
+    const route = { topicId: 'chat', resourceId: 'congested', contextId: 'room' };
+
+    function originate(options: Parameters<typeof newALUnicastMessage>[5] = {}): ALMessage {
+        return newALUnicastMessage('self', route, 'peer', 'chat.message.v1', {}, options);
+    }
+
+    function planOrigination(
+        message: ALMessage,
+        live: Pick<ALMessagePlanningContext, 'overloaded' | 'backpressured'>
+    ) {
+        return planALMessageHandling(message, { nowMs: message.id.ts, selfPeerId: 'self', ...live });
+    }
+
+    it('drops a best-effort origination as congested when its carrier reads backpressure', () => {
+        const plan = planOrigination(originate(), { backpressured: true });
+
+        expect(plan.dropReasonCode).toBe('congested');
+        expect(plan.dropReason).toBe('Carrier backpressure dropped the send');
+        expect(plan.congestion).toEqual({ overloaded: false, action: 'drop-low', priority: 0, cause: 'backpressured' });
+        expect(plan.nack.enabled).toBe(false);
+    });
+
+    it('lets an at-least-once origination through backpressure under the default policy', () => {
+        const plan = planOrigination(originate({ reliability: 'at-least-once', ack: 'receiver' }), {
+            backpressured: true
+        });
+
+        expect(plan.dropReasonCode).toBeUndefined();
+        expect(plan.congestion).toEqual({ overloaded: false, action: 'drop-low', priority: 5, cause: 'backpressured' });
+    });
+
+    it('refuses an origination of any priority as congested under the reject policy', () => {
+        const message = originate({ qos: { congestion: { algo: 'reject', opts: { priority: 9 } } } });
+
+        const plan = planOrigination(message, { backpressured: true });
+
+        expect(plan.dropReasonCode).toBe('congested');
+        expect(plan.congestion).toEqual({ overloaded: false, action: 'reject', priority: 9, cause: 'backpressured' });
+    });
+
+    it('drops nothing at planning under the defer policy, which leaves the wait to submission', () => {
+        const message = originate({ qos: { congestion: { algo: 'defer', opts: { priority: 0 } } } });
+
+        const plan = planOrigination(message, { backpressured: true });
+
+        expect(plan.dropReasonCode).toBeUndefined();
+        expect(plan.congestion).toEqual({ overloaded: false, action: 'defer', priority: 0, cause: 'backpressured' });
+    });
+
+    it('names the overloaded cause when the session bound and the carrier backpressure both hold', () => {
+        const plan = planOrigination(originate(), { overloaded: true, backpressured: true });
+
+        expect(plan.dropReasonCode).toBe('overloaded');
+        expect(plan.congestion).toEqual({ overloaded: true, action: 'drop-low', priority: 0, cause: 'overloaded' });
+    });
+
+    it('reads backpressure from the live input when the planning context names none', () => {
+        const message = originate();
+
+        const plan = planALMessageHandling(message, { nowMs: message.id.ts, selfPeerId: 'self' }, {
+            live: { backpressured: true }
+        });
+
+        expect(plan.dropReasonCode).toBe('congested');
+    });
+
+    it('names no cause and takes no action when neither input holds', () => {
+        const plan = planOrigination(originate(), { overloaded: false, backpressured: false });
+
+        expect(plan.dropReasonCode).toBeUndefined();
+        expect(plan.congestion).toStrictEqual({ overloaded: false, action: 'none', priority: 0, cause: undefined });
+    });
+});

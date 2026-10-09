@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 
 import { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
+import { createPassThroughALOutboundRuntimeDiagnosticsSink } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -14,13 +15,14 @@ import {
 
 import { createDefaultVolatileSessionBudget } from './default-volatile-session-budget.ts';
 
-/** The volatile ledger is replaced whole: a partial ledger would read a report no session holds. */
+/** The volatile ledger and the diagnostics sink are replaced whole: neither has a meaningful partial. */
 export type MiddlewareTestOverrides =
     & {
-        readonly [K in Exclude<keyof RallarBrowserMiddleware, 'volatileBudget'>]?: Partial<RallarBrowserMiddleware[K]>;
+        readonly [K in Exclude<keyof RallarBrowserMiddleware, 'volatileBudget' | 'outboundDiagnostics'>]?: Partial<RallarBrowserMiddleware[K]>;
     }
     & {
         readonly volatileBudget?: RallarBrowserMiddleware['volatileBudget'];
+        readonly outboundDiagnostics?: RallarBrowserMiddleware['outboundDiagnostics'];
     };
 
 export interface ApiMiddlewareTestOverrides {
@@ -61,7 +63,8 @@ export function createDefaultApiMiddlewareTestDouble(
                 middlewareOverrides.heartbeat
             ),
             storageAvailability: createStorageAvailabilityDouble(middlewareOverrides.storageAvailability),
-            volatileBudget: middlewareOverrides.volatileBudget ?? createDefaultVolatileSessionBudget()
+            volatileBudget: middlewareOverrides.volatileBudget ?? createDefaultVolatileSessionBudget(),
+            outboundDiagnostics: middlewareOverrides.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink()
         }
     };
 }

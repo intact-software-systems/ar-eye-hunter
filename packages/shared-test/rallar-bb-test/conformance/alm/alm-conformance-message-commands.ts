@@ -29,7 +29,8 @@ interface AlmConformanceSendDelivery {
     /** Command budget when it must stay independent of `ttlMs`. */
     readonly commandTimeoutMs?: number;
     readonly ack?: 'receiver' | 'all-logical-recipients' | 'group-leader';
-    readonly reliability?: 'at-least-once';
+    /** Absent, the channel's purpose decides: at-least-once for both. */
+    readonly reliability?: RallarBlackBoxTestMessagesSendCommand['reliability'];
     readonly durability?: Exclude<ALDurabilityAlgo, 'volatile'>;
     /** Absent, the channel refuses a durable send its storage cannot take. */
     readonly onStorageUnavailable?: 'refuse' | 'volatile';
@@ -65,7 +66,7 @@ interface AlmConformanceResultAssertionInput {
     readonly name: string;
     readonly resultName: string;
     readonly field: string;
-    readonly operator: 'equals' | 'matches' | 'gt' | 'contains' | 'exists';
+    readonly operator: 'equals' | 'notEquals' | 'matches' | 'gt' | 'length' | 'contains' | 'exists';
     readonly expected: string | number | boolean;
 }
 
@@ -73,7 +74,7 @@ interface AlmConformanceResultAssertionInput {
 export type AlmConformanceVerdictFact = readonly [
     name: string,
     field: string,
-    operator: 'exists' | 'equals',
+    operator: 'exists' | 'equals' | 'length' | 'matches',
     expected: string | number | boolean
 ];
 

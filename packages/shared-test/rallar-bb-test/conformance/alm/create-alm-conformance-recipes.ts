@@ -37,6 +37,9 @@ import { boundedRejection } from './scenarios/bounded-rejection.ts';
 import { claimExpiresReclaims } from './scenarios/claim/claim-expires-reclaims.ts';
 import { claimFirstWins } from './scenarios/claim/claim-first-wins.ts';
 import { claimRefusedOnRtc } from './scenarios/claim/claim-refused-on-rtc.ts';
+import { backpressureDeferred } from './scenarios/congestion/backpressure-deferred.ts';
+import { backpressureHandsOver } from './scenarios/congestion/backpressure-hands-over.ts';
+import { backpressureRefused } from './scenarios/congestion/backpressure-refused.ts';
 import { crossCarrierDuplicate } from './scenarios/cross-carrier-duplicate.ts';
 import { deadlineExpiry } from './scenarios/deadline-expiry.ts';
 import { deliveryBaseline } from './scenarios/delivery-baseline.ts';
@@ -132,6 +135,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     capacity,
     capacityAge,
     capacityTracks,
+    backpressureHandsOver,
+    backpressureRefused,
+    backpressureDeferred,
     ...receiptedAudience,
     fencedDelivery,
     fencedCatchUp,

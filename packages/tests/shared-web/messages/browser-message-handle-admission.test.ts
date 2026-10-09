@@ -4,9 +4,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundEnqueueResult,
+    ALOutboundRuntimeDiagnosticsEvent,
+    ALOutboundRuntimeDiagnosticsSink
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 
+import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createBrowserMessageSenderFixture, toQueuedMessageAdmission } from './browser-message-sender-fixture.ts';
 
 afterEach(() => vi.useRealTimers());
@@ -259,5 +264,101 @@ describe('a send the session volatile bound refuses (D78)', () => {
         });
         // A hand-over would have left the refused RTC leg as an attempt row before a WS leg.
         expect(lifecycle.evidence.attempts).toEqual([]);
+    });
+});
+
+describe('a send its carrier refuses congested', () => {
+    function toCongestedRefusal(message: ALMessage): ALOutboundEnqueueResult {
+        const detail = 'Carrier backpressure dropped the send';
+        return {
+            verdict: { kind: 'refused', reason: 'congested', detail },
+            message,
+            entries: [],
+            reason: detail,
+            trackedReceiptAlgo: 'none'
+        };
+    }
+
+    function createCongestedRtcFixture(outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink) {
+        const fixture = createBrowserMessageSenderFixture(
+            undefined,
+            undefined,
+            createDefaultApiMiddlewareTestDouble({ middleware: { outboundDiagnostics } })
+        );
+        fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent = async (message) => toCongestedRefusal(message);
+        return fixture;
+    }
+
+    it('hands an RTC leg refused congested to WS under rtc-with-ws-fallback and reports the hand-over', async () => {
+        const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
+        const fixture = createCongestedRtcFixture((event) => diagnostics.push(event));
+
+        const handle = await fixture.sender.sendTyped(
+            { typeId: 'room.ready', payload: true, strategy: 'rtc-with-ws-fallback', reliability: 'best-effort' },
+            undefined
+        );
+        const { lifecycle } = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        // The RTC leg refused it, so only the WS leg's admission can queue it.
+        expect(lifecycle.state).toBe('queued');
+        expect(lifecycle.evidence.attempts).toEqual([
+            expect.objectContaining({ carrier: 'rtc', outcome: 'refused', refusalReason: 'congested', submissionAttempted: false })
+        ]);
+        // An admission hand-over leaves the refused leg's row as its evidence, as `rate-limited` and `unsupported` do.
+        expect(lifecycle.evidence.carrierFallback).toBeUndefined();
+        expect(diagnostics).toEqual([{
+            kind: 'congestion',
+            carrier: 'rtc',
+            cause: 'backpressured',
+            action: 'hand-over',
+            priority: 0,
+            msgId: handle.msgId
+        }]);
+    });
+
+    it('names the at-least-once priority of a hand-over', async () => {
+        const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
+        const fixture = createCongestedRtcFixture((event) => diagnostics.push(event));
+
+        const handle = await fixture.sender.sendTyped(
+            { typeId: 'room.ready', payload: true, strategy: 'rtc-with-ws-fallback', reliability: 'at-least-once' },
+            undefined
+        );
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        expect(diagnostics).toEqual([expect.objectContaining({ action: 'hand-over', priority: 5 })]);
+    });
+
+    it('ends an RTC-only send refused congested rejected with the typed failure, and reports no hand-over', async () => {
+        const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
+        const fixture = createCongestedRtcFixture((event) => diagnostics.push(event));
+
+        const handle = await fixture.sender.sendTyped(
+            { typeId: 'room.ready', payload: true, strategy: 'rtc', reliability: 'best-effort' },
+            undefined
+        );
+        const { lifecycle } = await handle.wait();
+
+        expect(lifecycle).toMatchObject({
+            state: 'rejected',
+            evidence: { failure: { kind: 'refused', reason: 'congested' }, carrierFallback: undefined }
+        });
+        expect(lifecycle.evidence.attempts).toEqual([]);
+        expect(diagnostics).toEqual([]);
+    });
+
+    it('still hands the leg over when the diagnostics sink throws', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const fixture = createCongestedRtcFixture(() => {
+            throw new Error('sink down');
+        });
+
+        const handle = await fixture.sender.sendTyped(
+            { typeId: 'room.ready', payload: true, strategy: 'rtc-with-ws-fallback', reliability: 'best-effort' },
+            undefined
+        );
+
+        expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
+        expect(error).toHaveBeenCalledWith('AL outbound runtime diagnostics sink failed', expect.any(Error));
     });
 });
