@@ -1056,9 +1056,25 @@ moved or changed test.
       "id": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
       "domain": "Immutable materialization input",
       "owner": "Rallar operations maintainers",
-      "summary": "Actual materializer executions produce deterministic isolated scopes and correct source/output hashes without modifying the authored source bytes.",
+      "summary": "Actual materializer executions produce deterministic isolated scope, equal repeated output and record bytes, unchanged authored source bytes, and 64-character hexadecimal source/output hash fields.",
       "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data",
-      "coverageRelation": "Re-reads the source after real child execution and compares it byte-for-byte with the independently acquired pre-execution input."
+      "coverageRelation": "The named test supplies the authored 05a manifest to the actual CLI twice, observes executable scope and record fields, compares repeated output and record bytes, and re-reads the same source against its independently acquired pre-execution bytes."
+    },
+    {
+      "id": "hetzner-materializer-null-refusal-preserves-input",
+      "domain": "Materializer validation refusal filesystem effects",
+      "owner": "Rallar operations maintainers",
+      "summary": "The actual materializer rejects a null source before creating output, record, or atomic temporary artifacts and preserves the owned null input bytes.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#refuses null source as validation before materialization effects",
+      "coverageRelation": "The test writes literal null input, runs the actual CLI, observes the validation diagnostic and absent output/record artifacts, inventories the owned directory, and reads the input against the independently authored null bytes."
+    },
+    {
+      "id": "hetzner-materializer-rename-refusal-preserves-input",
+      "domain": "Materializer atomic publication refusal filesystem effects",
+      "owner": "Rallar operations maintainers",
+      "summary": "After a genuine rename refusal, the actual materializer removes its atomic temporary, preserves the existing destination sentinel and owned source bytes, and creates no record.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#removes its atomic temporary after rename refusal while preserving the existing destination",
+      "coverageRelation": "The test supplies an owned valid manifest and existing destination directory to the actual CLI, observes refusal, inventories remaining files and sentinel content, confirms record absence, and compares the source with its independently written bytes."
     },
     {
       "id": "hetzner-distributed-workflow--prepares-the-supported-commit-once-before-running-the-serial-man",
@@ -4633,12 +4649,12 @@ moved or changed test.
       "id": "test-structure-coupling-222daf3d9786f3ed",
       "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
+      "contract": "hetzner-materializer-null-refusal-preserves-input",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Acquires the exact source bytes before child execution for independent source hash, output scope and determinism assertions.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+      "rationale": "Reads the test-owned null input after actual CLI validation refusal and compares it with literal null bytes, proving refusal preserves the input independently of the diagnostic and absent output artifacts.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#refuses null source as validation before materialization effects"
     },
     {
       "id": "test-structure-coupling-03bcfb46477d3a40",
@@ -4655,11 +4671,33 @@ moved or changed test.
       "id": "test-structure-coupling-f27c417734abdf55",
       "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
+      "contract": "hetzner-materializer-rename-refusal-preserves-input",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar operations maintainers",
+      "rationale": "Reads the test-owned valid input after actual CLI rename refusal and compares it with the independently written source text, proving input preservation in addition to destination preservation and atomic temporary cleanup.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#removes its atomic temporary after rename refusal while preserving the existing destination"
+    },
+    {
+      "id": "test-structure-coupling-006aa8cedfed3b9a",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
+      "kind": "production-source-read",
       "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Re-reads the source after real child execution and compares it byte-for-byte with the independently acquired pre-execution input.",
+      "rationale": "Acquires the authored 05a manifest bytes before actual CLI execution; the same path is consumed twice and the independently captured bytes supply the later source-preservation comparison.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+    },
+    {
+      "id": "test-structure-coupling-911706494df90df1",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
+      "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar operations maintainers",
+      "rationale": "Re-reads the same authored 05a manifest after actual CLI execution and compares it byte-for-byte with the independently acquired pre-execution input, proving source preservation alongside repeated output and record equality.",
       "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
     },
     {
