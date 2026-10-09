@@ -3,8 +3,8 @@ import { Temporal } from '@js-temporal/polyfill';
 import { RateLimiter } from '../../resilience/Resilience.ts';
 import { DequeueController, Reservator } from '../dequeue/dequeue-controller.ts';
 import {
-    DequeueResourceEntryRepository,
     toSaturatedResourceInboxFairnessScanBudget,
+    type DequeueResourceEntryRepository,
     type ResourceInboxFinalizationSelection,
     type ResourceInboxReleaseDisposition
 } from '../queue-box-types.ts';
@@ -13,13 +13,13 @@ import * as Resource from '../ResourceEntry.ts';
 import {
     EntityStatus,
     isKeysEqual,
-    ResourceEntry
+    type ResourceEntry
 } from '../ResourceEntry.ts';
 import {
-    ResourceInboxFairnessTelemetry,
-    ResourceInboxRetryPolicy,
     retryAfterAttempt,
-    toResourceInboxFairnessTelemetry
+    toResourceInboxFairnessTelemetry,
+    type ResourceInboxFairnessTelemetry,
+    type ResourceInboxRetryPolicy
 } from '../ResourceInboxRetryPolicy.ts';
 import { isNotReadyException, NotReadyException } from './not-ready-exception.ts';
 import {
@@ -96,8 +96,25 @@ export interface ResourceInboxDequeuerInput {
     readonly typesToDequeue: () => Set<string>;
     readonly maxToReserve: () => number;
     readonly maxNumToDequeue: number;
+    readonly readLaneBudgets?: DequeueController.ReadLaneBudgets;
     readonly resilience: ResourceInboxResilience;
     readonly options?: DequeueResourceEntryOptions;
+}
+
+export interface DequeueResourceEntryOptions {
+    readonly jitterUnit?: () => number;
+    readonly nowEpochMs?: () => number;
+    readonly onReservationTelemetry?: (event: ResourceInboxFairnessTelemetry) => void;
+    readonly onAttemptReleaseTelemetry?: (event: ResourceInboxAttemptReleaseTelemetry) => void;
+    readonly onRetryExhausted?: (
+        exhaustion: ResourceInboxRetryExhaustion
+    ) => Promise<ResourceEntry>;
+    readonly onRetryExhaustionTelemetry?: (
+        exhaustion: ResourceInboxRetryExhaustion | ResourceInboxRetryExhaustionRecovery
+    ) => void;
+    readonly onRetryExhaustionRecovery?: (
+        exhaustion: ResourceInboxRetryExhaustionRecovery
+    ) => Promise<ResourceEntry>;
 }
 
 interface ResourceInboxDequeueDependencies {
@@ -136,6 +153,7 @@ export function createDefaultResourceInboxDequeuer<V>(
     return DequeueController.create<Resource.Key, ResourceInboxAttempt, V>()
         .withInboxTypesToDequeue(input.typesToDequeue)
         .withMaxNumToDequeue(input.maxNumToDequeue)
+        .withLaneBudgets(input.readLaneBudgets)
         .withMaxNumToReserve(input.maxToReserve)
         .onFinalizationEntriesReserveDo(
             options.onRetryExhaustionRecovery
@@ -146,7 +164,7 @@ export function createDefaultResourceInboxDequeuer<V>(
             options.onRetryExhaustionRecovery
                 ? async (key, attempt) => {
                     await finalizeResourceInboxRecovery(dependencies, attempt);
-                    return key as V;
+                    return key;
                 }
                 : undefined
         )
@@ -439,21 +457,6 @@ function toResourceInboxAttempts(
 
 function recordResourceInboxReservation(event: ResourceInboxFairnessTelemetry): void {
     console.info('ResourceInbox reservation', event);
-}
-export interface DequeueResourceEntryOptions {
-    readonly jitterUnit?: () => number;
-    readonly nowEpochMs?: () => number;
-    readonly onReservationTelemetry?: (event: ResourceInboxFairnessTelemetry) => void;
-    readonly onAttemptReleaseTelemetry?: (event: ResourceInboxAttemptReleaseTelemetry) => void;
-    readonly onRetryExhausted?: (
-        exhaustion: ResourceInboxRetryExhaustion
-    ) => Promise<ResourceEntry>;
-    readonly onRetryExhaustionTelemetry?: (
-        exhaustion: ResourceInboxRetryExhaustion | ResourceInboxRetryExhaustionRecovery
-    ) => void;
-    readonly onRetryExhaustionRecovery?: (
-        exhaustion: ResourceInboxRetryExhaustionRecovery
-    ) => Promise<ResourceEntry>;
 }
 
 function toHandlerEntryFailure(
