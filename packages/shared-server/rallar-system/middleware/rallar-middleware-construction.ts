@@ -15,6 +15,7 @@ import type {
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsOutboxProducerProvenanceReader } from '@shared/services/ws-queue-box-server/ws-queue-box-server-dequeue-authority.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
+import type { WsQueueBoxServerReceiptObserver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -93,6 +94,7 @@ export interface CreateRallarMiddlewareOptions {
     readonly wsDeliveryDiagnostics?: WsDeliveryDiagnosticsSink;
     readonly wsOutboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
     readonly wsInboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
+    readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
     /** The WS server's settlement sink; absent, the server's own receipts are settled but observed by nobody. */
     readonly wsOutboundSettlements?: ALDeliverySettlementSink;
     readonly createGroupStateInboxService: (

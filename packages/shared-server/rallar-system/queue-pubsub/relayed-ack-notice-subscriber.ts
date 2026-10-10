@@ -3,7 +3,7 @@ import type { RelayedAckNoticeChannel } from './relayed-ack-notice.ts';
 
 export interface InstallRelayedAckNoticeSubscriberInput extends RelayedAckNoticeChannel {
     /** Counts the ACK against this instance's aggregate; it runs no handler and sends nothing. */
-    readonly acceptRelayedAck: (message: ALMessage) => Promise<void>;
+    readonly acceptRelayedAck: (message: ALMessage, publisherId: string) => Promise<void>;
 }
 
 /** An instance never takes its own relayed ACK back, and a relayed ACK is never relayed again. */
@@ -15,7 +15,7 @@ export function installRelayedAckNoticeSubscriber(
             return;
         }
         try {
-            await input.acceptRelayedAck(notice.message);
+            await input.acceptRelayedAck(notice.message, notice.publisherId);
         }
         catch (error) {
             console.error('Relayed acknowledgement notice receive failed:', error);
