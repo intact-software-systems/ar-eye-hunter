@@ -11,7 +11,11 @@
 // sidecar, stage two completes it and emits the descriptor text.
 
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import {
+    mkdir,
+    readFile,
+    writeFile
+} from 'node:fs/promises';
 import { arch } from 'node:os';
 import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -89,7 +93,12 @@ async function readPostflightCapture({ options }) {
         throw new TypeError('container identity changed between preflight and postflight capture');
     }
     const maintenance = await readScalar({ options, sql: MAINTENANCE_SQL });
-    const record = { ...sidecar.record, postflight_automatic_maintenance_count: maintenance };
+    const record = {
+        ...sidecar.record,
+        ...container.record,
+        ...(await readOverlapRecord({ container: options.container })),
+        postflight_automatic_maintenance_count: maintenance
+    };
     const text = toEnvironmentText({ record });
     const errors = validateApiV1StateWriteEnvironment(text);
     if (errors.length > 0) {

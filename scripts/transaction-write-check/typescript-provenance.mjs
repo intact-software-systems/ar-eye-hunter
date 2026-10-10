@@ -97,28 +97,26 @@ function isCanonicalTypeSourceLoaded(expectedName, location) {
 }
 
 export function resolveCallTargets(call, project) {
-    const expression = call.getExpression();
+    const expression = resolveInvokedExpression({ call });
     const immediate = unwrapExpression(expression);
     if (Node.isArrowFunction(immediate) || Node.isFunctionExpression(immediate)) {
         return { bodies: [immediate], unresolved: false };
     }
-    if (
-        Node.isPropertyAccessExpression(immediate) &&
-        ['apply', 'call'].includes(immediate.getName()) &&
-        immediate.getExpression().getType().getCallSignatures().length > 0
-    ) {
-        const invoked = unwrapExpression(immediate.getExpression());
-        const bodies = resolveCallableBodies(invoked, project);
+    if (expression !== call.getExpression()) {
+        const bodies = resolveCallableBodies(immediate, project);
         return { bodies, unresolved: bodies.length === 0 };
     }
-    if (
-        Node.isPropertyAccessExpression(immediate) &&
-        immediate.getExpression().getText() === 'Reflect' &&
-        immediate.getName() === 'apply'
-    ) {
-        const bodies = resolveCallableBodies(call.getArguments()[0], project);
-        return { bodies, unresolved: bodies.length === 0 };
-    }
+    return resolveAuthoredCallTargets({ expression, project });
+}
+
+/**
+ * @typedef {object} ResolveAuthoredCallTargetsInput
+ * @property {import('ts-morph').Node} expression
+ * @property {import('ts-morph').Project} project
+ */
+
+/** @param {ResolveAuthoredCallTargetsInput} input */
+function resolveAuthoredCallTargets({ expression, project }) {
     const symbol = Node.isPropertyAccessExpression(expression)
         ? expression.getNameNode().getSymbol()
         : expression.getSymbol();
@@ -159,14 +157,55 @@ export function resolveCallTargets(call, project) {
     };
 }
 
+/**
+ * @typedef {object} ResolveInvokedExpressionInput
+ * @property {import('ts-morph').CallExpression | import('ts-morph').NewExpression} call
+ */
+
+/** @param {ResolveInvokedExpressionInput} input */
+function resolveInvokedExpression({ call }) {
+    const expression = unwrapExpression(call.getExpression());
+    if (!Node.isPropertyAccessExpression(expression)) {
+        return call.getExpression();
+    }
+    if (expression.getExpression().getText() === 'Reflect' && expression.getName() === 'apply') {
+        return call.getArguments()[0] ?? call.getExpression();
+    }
+    return ['apply', 'call'].includes(expression.getName()) &&
+            expression.getExpression().getType().getCallSignatures().length > 0
+        ? expression.getExpression()
+        : call.getExpression();
+}
+
+/**
+ * @typedef {object} ResolveInvocationArgumentsInput
+ * @property {import('ts-morph').CallExpression | import('ts-morph').NewExpression} call
+ * @property {Map<import('ts-morph').Node, import('ts-morph').Node>} bindings
+ */
+
+/** @param {ResolveInvocationArgumentsInput} input */
+function resolveInvocationArguments({ call, bindings }) {
+    const expression = unwrapExpression(call.getExpression());
+    if (resolveInvokedExpression({ call }) === call.getExpression()) {
+        return call.getArguments();
+    }
+    if (expression.getName() === 'call') {
+        return call.getArguments().slice(1);
+    }
+    const argumentArray = call.getArguments()[expression.getExpression().getText() === 'Reflect' ? 2 : 1];
+    if (!argumentArray) {
+        return [];
+    }
+    const values = executionValue(argumentArray, bindings);
+    return Node.isArrayLiteralExpression(values) && !values.getElements().some(Node.isSpreadElement)
+        ? values.getElements()
+        : undefined;
+}
+
 // Execution bindings carry only callable values and constructed owners. Passing
 // either value binds a callee parameter; its body is reached only by invocation.
 export function resolveExecutionTargets(call, project, bindings = new Map()) {
-    const callExpression = call.getExpression();
-    const indirect = Node.isPropertyAccessExpression(callExpression) &&
-        ['apply', 'call'].includes(callExpression.getName()) &&
-        callExpression.getExpression().getType().getCallSignatures().length > 0;
-    const expression = executionValue(indirect ? callExpression.getExpression() : callExpression, bindings);
+    const expression = executionValue(resolveInvokedExpression({ call }), bindings);
     const targets = Node.isNewExpression(call) && Node.isClassExpression(expression)
         ? { bodies: expression.getConstructors(), unresolved: false }
         : Node.isNewExpression(call)
@@ -181,14 +220,10 @@ export function resolveExecutionTargets(call, project, bindings = new Map()) {
         : expression !== call.getExpression()
         ? { bodies: resolveCallableBodies(expression, project), unresolved: true }
         : resolveCallTargets(call, project);
+    const arguments_ = resolveInvocationArguments({ call, bindings });
     const invocations = targets.bodies.map((node) => {
         const values = new Map(bindings);
-        const arguments_ = indirect && callExpression.getName() === 'call'
-            ? call.getArguments().slice(1)
-            : indirect && Node.isArrayLiteralExpression(call.getArguments()[1])
-            ? call.getArguments()[1].getElements()
-            : call.getArguments();
-        bindExecutionParameters({ callable: node, arguments_, bindings, values });
+        bindExecutionParameters({ callable: node, arguments_: arguments_ ?? [], bindings, values });
         if (Node.isConstructorDeclaration(node)) {
             bindConstructedOwner({ receiver: call, owner: node.getParent(), bindings, values });
         }
@@ -200,7 +235,7 @@ export function resolveExecutionTargets(call, project, bindings = new Map()) {
         }
         return { node, bindings: values };
     });
-    return { invocations, unresolved: targets.unresolved && invocations.length === 0 };
+    return { invocations, unresolved: arguments_ === undefined || (targets.unresolved && invocations.length === 0) };
 }
 
 /**
@@ -277,9 +312,13 @@ function bindConstructedOwner(input) {
 
 function executionValue(expression, bindings, visited = new Set()) {
     const value = unwrapValueExpression(expression);
-    const declarations = Node.isPropertyAccessExpression(value)
+    const declarations = (Node.isPropertyAccessExpression(value)
         ? resolvedDeclarations(value.getNameNode())
-        : resolvedDeclarations(value);
+        : resolvedDeclarations(value)).flatMap((declaration) =>
+            Node.isShorthandPropertyAssignment(declaration)
+                ? declaration.getValueSymbol()?.getDeclarations() ?? []
+                : [declaration]
+        );
     for (const declaration of declarations) {
         if (visited.has(declaration)) {
             continue;
@@ -392,7 +431,10 @@ export function assignedOutputDeclarations(expression) {
 }
 
 export function declarationInitializer(declaration) {
-    if (Node.isVariableDeclaration(declaration)) {
+    if (
+        Node.isVariableDeclaration(declaration) || Node.isPropertyAssignment(declaration) ||
+        Node.isPropertyDeclaration(declaration)
+    ) {
         return declaration.getInitializer();
     }
     if (Node.isBindingElement(declaration)) {

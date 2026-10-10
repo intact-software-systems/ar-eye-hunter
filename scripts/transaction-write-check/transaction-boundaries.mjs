@@ -346,13 +346,6 @@ export function isSpecializedTransactionImplementation(callable) {
     return allowedOwners !== undefined && owner !== undefined && allowedOwners.has(declarationName(owner));
 }
 
-export function isUnresolvedCallableParameterInvocation(call) {
-    return callableParameterDeclarations(call.getExpression()).some((declaration) =>
-        !isPromiseSettlementParameter(declaration) &&
-        !isReviewedTransactionForwardingCallback(call, declaration.getName())
-    );
-}
-
 export function isReviewedCallableParameterInvocation(call) {
     const declarations = callableParameterDeclarations(call.getExpression());
     return declarations.length > 0 && declarations.every((declaration) =>

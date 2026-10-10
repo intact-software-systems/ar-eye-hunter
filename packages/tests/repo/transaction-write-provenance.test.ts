@@ -13,6 +13,12 @@ describe('transaction write provenance', () => {
         { usage: 'new ImmediateWriter(clock);', invoked: true },
         { usage: 'clock();', invoked: true },
         { usage: 'invoke(clock);', invoked: true },
+        { usage: 'Reflect.apply(invoke, undefined, [clock]);', invoked: true },
+        { usage: 'const args = [clock]; invoke.apply(undefined, args);', invoked: true },
+        { usage: 'const callbacks = { clock }; callbacks.clock();', invoked: true },
+        { usage: 'const callbacks = { clock: clock }; callbacks.clock();', invoked: true },
+        { usage: 'const callbacks = { clock }; void callbacks;', invoked: false },
+        { usage: 'const args = [clock]; void args;', invoked: false },
         { usage: 'writer.readTime();', invoked: true }
     ])('follows reached clock execution for $usage', async ({ usage, invoked }) => {
         const source = `
@@ -97,6 +103,26 @@ describe('transaction write provenance', () => {
         const findings = analyzeTransactionWrites(project);
 
         expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
+    });
+
+    it.each(['invoke.apply', 'Reflect.apply'])('keeps opaque argument arrays unresolved at %s', (operation) => {
+        const invocation = operation === 'Reflect.apply'
+            ? 'Reflect.apply(invoke, undefined, argumentsFromPort)'
+            : 'invoke.apply(undefined, argumentsFromPort)';
+        const findings = analyzeFixture(`
+            interface PSqlSql { begin<T>(work: (sql: PSqlSql) => Promise<T>): Promise<T>; }
+            declare const database: PSqlSql;
+            declare const argumentsFromPort: [() => number];
+            function invoke(clock: () => number) { return clock(); }
+            async function execute() {
+                await database.begin(async sql => { ${invocation}; });
+            }
+        `);
+
+        expect(findings).toContainEqual(expect.objectContaining({
+            rule: 'transaction.unresolved-provenance',
+            operation
+        }));
     });
 
     it('follows imported authored helpers reached from a transaction callback', () => {

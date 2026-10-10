@@ -54,6 +54,46 @@ const PRECOMPUTABLE_METHODS = new Set(['sort', 'toSorted']);
 
 export function analyzeTransactionWrites(project, sourceFiles = project.getSourceFiles()) {
     const findings = new Map();
+    const roots = collectTransactionRoots({ project, sourceFiles, findings });
+    const visited = new Set();
+    for (const root of roots) {
+        analyzeBody({
+            root: root.node,
+            start: root.start,
+            end: root.end,
+            findings,
+            visited,
+            boundary: root.boundary,
+            project
+        });
+    }
+    return [...findings.values()].sort(compareFindings);
+}
+
+/**
+ * @typedef {object} TransactionWriteFinding
+ * @property {string} rule
+ * @property {string} path
+ * @property {number} line
+ * @property {number} column
+ * @property {string} operation
+ * @property {string} boundary
+ *
+ * @typedef {object} TransactionAnalysisRoot
+ * @property {import('ts-morph').Node} node
+ * @property {number} start
+ * @property {number} end
+ * @property {import('ts-morph').Node} boundary
+ * @property {Map<import('ts-morph').Node, import('ts-morph').Node>} bindings
+ *
+ * @typedef {object} TransactionRootCollectionInput
+ * @property {import('ts-morph').Project} project
+ * @property {readonly import('ts-morph').SourceFile[]} sourceFiles
+ * @property {Map<string, TransactionWriteFinding>} findings
+ */
+
+/** @param {TransactionRootCollectionInput} input */
+function collectTransactionRoots({ project, sourceFiles, findings }) {
     const roots = [];
 
     for (const sourceFile of sourceFiles) {
@@ -89,51 +129,48 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
             }
         }
         for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-            const upgradeCallback = indexedDbUpgradeListener(call);
-            if (upgradeCallback) {
-                addCallbackRoots({ callback: upgradeCallback, call, roots, findings, project });
-            }
-            const appInboxCallback = appInboxWriteBoundary(call);
-            if (appInboxCallback) {
-                addCallbackRoots({ callback: appInboxCallback, call, roots, findings, project });
-            }
-            const boundary = transactionBoundary(call);
-            if (!boundary) {
-                continue;
-            }
-            reportTransactionLoop(call, findings, project);
-            if (boundary.kind === 'readonly' || isSpecializedTransactionBoundary(call)) {
-                continue;
-            }
-            if (boundary.kind === 'indexed-db') {
-                const owner = call.getFirstAncestor(isFunctionDeclaration);
-                if (owner) {
-                    roots.push(analysisRoot({
-                        node: owner,
-                        start: call.getEnd(),
-                        boundary: call,
-                        end: indexedDbTransactionAnalysisEnd(owner, call, project)
-                    }));
-                }
-                continue;
-            }
-            addCallbackRoots({ callback: boundary.callback, call, roots, findings, project });
+            collectCallTransactionRoots({ call, roots, findings, project });
         }
     }
+    return roots;
+}
 
-    const visited = new Set();
-    for (const root of roots) {
-        analyzeBody({
-            root: root.node,
-            start: root.start,
-            end: root.end,
-            findings,
-            visited,
-            boundary: root.boundary,
-            project
-        });
+/**
+ * @typedef {object} CallTransactionRootCollectionInput
+ * @property {import('ts-morph').CallExpression} call
+ * @property {TransactionAnalysisRoot[]} roots
+ * @property {Map<string, TransactionWriteFinding>} findings
+ * @property {import('ts-morph').Project} project
+ */
+
+/** @param {CallTransactionRootCollectionInput} input */
+function collectCallTransactionRoots({ call, roots, findings, project }) {
+    for (const callback of [indexedDbUpgradeListener(call), appInboxWriteBoundary(call)]) {
+        if (callback) {
+            addCallbackRoots({ callback, call, roots, findings, project });
+        }
     }
-    return [...findings.values()].sort(compareFindings);
+    const boundary = transactionBoundary(call);
+    if (!boundary) {
+        return;
+    }
+    reportTransactionLoop(call, findings, project);
+    if (boundary.kind === 'readonly' || isSpecializedTransactionBoundary(call)) {
+        return;
+    }
+    if (boundary.kind === 'indexed-db') {
+        const owner = call.getFirstAncestor(isFunctionDeclaration);
+        if (owner) {
+            roots.push(analysisRoot({
+                node: owner,
+                start: call.getEnd(),
+                boundary: call,
+                end: indexedDbTransactionAnalysisEnd(owner, call, project)
+            }));
+        }
+        return;
+    }
+    addCallbackRoots({ callback: boundary.callback, call, roots, findings, project });
 }
 
 function addCallbackRoots(input) {
@@ -507,88 +544,75 @@ function referencesDatabaseResult(expression, project) {
     });
 }
 
+/**
+ * @typedef {object} DatabaseDerivedExpressionInput
+ * @property {import('ts-morph').Node} expression
+ * @property {import('ts-morph').Project} project
+ * @property {Set<import('ts-morph').Node>} visited
+ * @property {Set<string>} visitedCallables
+ * @property {Map<import('ts-morph').Node, import('ts-morph').Node>} parameterValues
+ */
+
+/** @param {DatabaseDerivedExpressionInput} input */
 function isDatabaseDerivedExpression(input) {
-    const { expression, project, visited, visitedCallables, parameterValues } = input;
+    const { expression } = input;
     const value = unwrapValueExpression(expression);
     if (Node.isTaggedTemplateExpression(value)) {
         return isKnownTransactionType(value.getTag());
     }
     if (Node.isIdentifier(value)) {
-        return resolvedDeclarations(value).some((declaration) => {
-            const parameterValue = parameterValues.get(declaration);
-            if (parameterValue) {
-                return isDatabaseDerivedExpression({
-                    expression: parameterValue,
-                    project,
-                    visited,
-                    visitedCallables,
-                    parameterValues
-                });
-            }
-            if (visited.has(declaration)) {
-                return false;
-            }
-            const initializer = declarationInitializer(declaration);
-            if (!initializer) {
-                return false;
-            }
-            visited.add(declaration);
-            return isDatabaseDerivedExpression({
-                expression: initializer,
-                project,
-                visited,
-                visitedCallables,
-                parameterValues
-            });
-        });
+        return isDatabaseDerivedIdentifier({ ...input, expression: value });
     }
     if (Node.isPropertyAccessExpression(value) || Node.isElementAccessExpression(value)) {
-        return isDatabaseDerivedExpression({
-            expression: value.getExpression(),
+        return isDatabaseDerivedExpression({ ...input, expression: value.getExpression() });
+    }
+    if (Node.isCallExpression(value)) {
+        return isDatabaseDerivedCall({ ...input, expression: value });
+    }
+    return directValueExpressions(value).some((child) => isDatabaseDerivedExpression({ ...input, expression: child }));
+}
+
+/** @param {DatabaseDerivedExpressionInput} input */
+function isDatabaseDerivedIdentifier(input) {
+    const { expression, visited, parameterValues } = input;
+    return resolvedDeclarations(expression).some((declaration) => {
+        const parameterValue = parameterValues.get(declaration);
+        if (parameterValue) {
+            return isDatabaseDerivedExpression({ ...input, expression: parameterValue });
+        }
+        if (visited.has(declaration)) {
+            return false;
+        }
+        const initializer = declarationInitializer(declaration);
+        if (!initializer) {
+            return false;
+        }
+        visited.add(declaration);
+        return isDatabaseDerivedExpression({ ...input, expression: initializer });
+    });
+}
+
+/** @param {DatabaseDerivedExpressionInput} input */
+function isDatabaseDerivedCall(input) {
+    const { expression, project, visited, visitedCallables, parameterValues } = input;
+    if (isDirectDatabaseResultCall(expression)) {
+        return true;
+    }
+    const targets = resolveCallTargets(expression, project);
+    if (targets.bodies.length > 0) {
+        return callReturnsDatabaseResult({
+            call: expression,
+            targets: targets.bodies,
             project,
             visited,
             visitedCallables,
             parameterValues
         });
     }
-    if (Node.isCallExpression(value)) {
-        if (isDirectDatabaseResultCall(value)) {
-            return true;
-        }
-        const targets = resolveCallTargets(value, project);
-        if (targets.bodies.length > 0) {
-            return callReturnsDatabaseResult({
-                call: value,
-                targets: targets.bodies,
-                project,
-                visited,
-                visitedCallables,
-                parameterValues
-            });
-        }
-        if (targets.unresolved) {
-            return false;
-        }
-        return value.getArguments().some((argument) =>
-            !isCallbackReference(argument) &&
-            isDatabaseDerivedExpression({
-                expression: argument,
-                project,
-                visited,
-                visitedCallables,
-                parameterValues
-            })
+    return !targets.unresolved &&
+        expression.getArguments().some((argument) =>
+            !isCallbackReference(argument) && isDatabaseDerivedExpression({ ...input, expression: argument })
         );
-    }
-    return directValueExpressions(value).some((child) =>
-        isDatabaseDerivedExpression({
-            expression: child,
-            project,
-            visited,
-            visitedCallables,
-            parameterValues
-        })
-    );
 }
 
 function callReturnsDatabaseResult(input) {

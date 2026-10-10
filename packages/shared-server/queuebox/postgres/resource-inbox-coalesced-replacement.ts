@@ -73,43 +73,8 @@ export async function writeResourceInboxCoalescedReplacement(
     computed: ResourceInboxCoalescedReplacement
 ): Promise<ResourceEntry | null> {
     const rows = computed.operation === 'replace-finished'
-        ? await transaction<ResourceInboxRow[]>`
-            update resource_inbox
-            set ri_resource = ${computed.resource},
-                ri_status = ${computed.status},
-                next_ts = ${computed.nextAt},
-                ri_attempts = 0,
-                start_ts = null,
-                end_ts = null,
-                expire_ts = ${computed.expiresAt}
-            where ri_topic_id = ${computed.key.topicId}
-              and ri_resource_id = ${computed.key.resourceId}
-              and fk_ext_bank_id = ${computed.key.contextId}
-              and ri_type_id = ${computed.typeId}
-              and ri_status = ${computed.expectedStatus}
-              and ri_resource = ${computed.expectedResource}
-              and (((ri_resource::jsonb #>> '{payload,resource}')::jsonb
-                    #>> '{data,__rallarCoalescedWork,generation}')::bigint) =
-                  ${computed.expectedGeneration}
-            returning *
-        `
-        : await transaction<ResourceInboxRow[]>`
-            update resource_inbox
-            set ri_resource = ${computed.resource},
-                ri_status = ${computed.status},
-                next_ts = ${computed.nextAt}
-            where ri_topic_id = ${computed.key.topicId}
-              and ri_resource_id = ${computed.key.resourceId}
-              and fk_ext_bank_id = ${computed.key.contextId}
-              and ri_type_id = ${computed.typeId}
-              and ri_status = ${computed.expectedStatus}
-              and ri_resource = ${computed.expectedResource}
-              and (((ri_resource::jsonb #>> '{payload,resource}')::jsonb
-                    #>> '{data,__rallarCoalescedWork,generation}')::bigint) =
-                  ${computed.expectedGeneration}
-              and ri_attempts = ${computed.expectedAttempts}
-            returning *
-        `;
+        ? await writeFinishedCoalescedReplacement(transaction, computed)
+        : await writePendingCoalescedReplacement(transaction, computed);
     if (rows.length === 0) {
         return null;
     }
@@ -130,4 +95,53 @@ export async function writeResourceInboxCoalescedReplacement(
         );
     }
     return updated;
+}
+
+function writeFinishedCoalescedReplacement(
+    transaction: PSqlSql,
+    computed: ResourceInboxCoalescedReplacement
+): Promise<ResourceInboxRow[]> {
+    return transaction<ResourceInboxRow[]>`
+            update resource_inbox
+            set ri_resource = ${computed.resource},
+                ri_status = ${computed.status},
+                next_ts = ${computed.nextAt},
+                ri_attempts = 0,
+                start_ts = null,
+                end_ts = null,
+                expire_ts = ${computed.expiresAt}
+            where ri_topic_id = ${computed.key.topicId}
+              and ri_resource_id = ${computed.key.resourceId}
+              and fk_ext_bank_id = ${computed.key.contextId}
+              and ri_type_id = ${computed.typeId}
+              and ri_status = ${computed.expectedStatus}
+              and ri_resource = ${computed.expectedResource}
+              and (((ri_resource::jsonb #>> '{payload,resource}')::jsonb
+                    #>> '{data,__rallarCoalescedWork,generation}')::bigint) =
+                  ${computed.expectedGeneration}
+            returning *
+        `;
+}
+
+function writePendingCoalescedReplacement(
+    transaction: PSqlSql,
+    computed: ResourceInboxCoalescedReplacement
+): Promise<ResourceInboxRow[]> {
+    return transaction<ResourceInboxRow[]>`
+            update resource_inbox
+            set ri_resource = ${computed.resource},
+                ri_status = ${computed.status},
+                next_ts = ${computed.nextAt}
+            where ri_topic_id = ${computed.key.topicId}
+              and ri_resource_id = ${computed.key.resourceId}
+              and fk_ext_bank_id = ${computed.key.contextId}
+              and ri_type_id = ${computed.typeId}
+              and ri_status = ${computed.expectedStatus}
+              and ri_resource = ${computed.expectedResource}
+              and (((ri_resource::jsonb #>> '{payload,resource}')::jsonb
+                    #>> '{data,__rallarCoalescedWork,generation}')::bigint) =
+                  ${computed.expectedGeneration}
+              and ri_attempts = ${computed.expectedAttempts}
+            returning *
+        `;
 }
