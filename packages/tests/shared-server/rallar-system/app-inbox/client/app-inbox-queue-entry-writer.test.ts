@@ -1,3 +1,4 @@
+import type { ResourceInboxStatusAndAttempts } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import {
     describe,
     expect,
@@ -27,9 +28,9 @@ const COMMAND = {
 class DurableEnqueueQueue extends InMemoryQueueBox {
     private readonly materializations = new Map<string, Promise<ResourceEntry>>();
 
-    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
+    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
         const entry = await this.getItem(key);
-        return entry !== undefined && statuses.includes(entry.status);
+        return entry === undefined ? undefined : { status: entry.status, attempts: entry.dequeueAudit.attempts };
     }
 
     async writeMaterializedIfAbsentOrReplaceExpired(

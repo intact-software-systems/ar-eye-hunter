@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+
+import type { ResourceInboxStatusAndAttempts } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 
 import type {
@@ -224,9 +226,9 @@ class RegisteredHandlerInbox extends InMemoryQueueBox {
         return await super.enqueueIfAbsent(entry);
     }
 
-    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
+    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
         const entry = await this.getItem(key);
-        return entry !== undefined && statuses.includes(entry.status);
+        return entry === undefined ? undefined : { status: entry.status, attempts: entry.dequeueAudit.attempts };
     }
 
     async writeMaterializedIfAbsentOrReplaceExpired(

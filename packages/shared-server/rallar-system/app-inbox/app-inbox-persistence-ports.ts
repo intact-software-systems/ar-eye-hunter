@@ -1,7 +1,9 @@
-import type { EntityStatus, Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+
+import type { ResourceInboxStatusAndAttempts } from '../../queuebox/postgres/resource-inbox-row-codec.ts';
 
 export interface AppInboxEntryRepository {
-    isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean>;
+    readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined>;
     tryWriteIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry | null>;
     replaceIfObserved(
         expected: ResourceEntry,

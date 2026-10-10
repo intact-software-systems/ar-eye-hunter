@@ -1,3 +1,4 @@
+import type { ResourceInboxStatusAndAttempts } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import type { AppInboxEntryRepository } from '@shared-server/rallar-system/app-inbox/app-inbox-persistence-ports.ts';
 import { CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-topics.ts';
 import { createAppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
@@ -91,9 +92,9 @@ Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async ()
 });
 
 class DurableTimeoutQueue extends InMemoryQueueBox implements AppInboxEntryRepository {
-    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
+    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
         const entry = await this.getItem(key);
-        return entry !== undefined && statuses.includes(entry.status);
+        return entry === undefined ? undefined : { status: entry.status, attempts: entry.dequeueAudit.attempts };
     }
 
     async writeMaterializedIfAbsentOrReplaceExpired(

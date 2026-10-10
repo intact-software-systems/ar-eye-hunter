@@ -9,6 +9,8 @@ import {
     TryWithPolicy,
     tryWithPolicy
 } from '@shared/resilience/TryWith.ts';
+
+import type { ResourceInboxStatusAndAttempts } from '../../../queuebox/postgres/resource-inbox-row-codec.ts';
 import {
     recordRallarTiming,
     timeRallarAsync,
@@ -27,6 +29,17 @@ import type { NormalizedAppInboxOptions } from '../app-inbox-options.ts';
 import { toAppInboxTimingDetails } from '../handler/app-inbox-attempt-timing.ts';
 import type { AppInboxReservationClient } from './app-inbox-reservation-client.ts';
 
+type AppInboxQueueObservation =
+    | 'missing'
+    | 'NEW'
+    | 'RESERVED'
+    | 'RETRY'
+    | 'COMPLETED'
+    | 'FAILED'
+    | 'NON_RETRYABLE'
+    | 'other-status'
+    | 'read-failure';
+
 interface AppInboxWaitPhase<Result> {
     readonly operation: 'read-result' | 'wait-completion';
     readonly enqueue: AppInboxEnqueueInput;
@@ -39,7 +52,7 @@ export namespace AppInboxResultWaiter {
     export type ResultDecoder<Result> = (value: JsonWireValue) => Result;
 
     export interface StatusRepository {
-        isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean>;
+        readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined>;
     }
 
     export interface ResultRepository {
@@ -155,17 +168,7 @@ export class AppInboxResultWaiter {
                 key,
                 action: async () =>
                     await tryWithPolicy(
-                        async () => {
-                            const completed = await this.statusRepository.isEntryWithStatus(key, [
-                                EntityStatus.COMPLETED,
-                                EntityStatus.FAILED,
-                                EntityStatus.NON_RETRYABLE
-                            ]);
-                            if (!completed) {
-                                throw new Error('App inbox entry not found');
-                            }
-                            return true;
-                        },
+                        async () => await this.readCompletionPoll(enqueue, key),
                         this.toWaitPolicy(enqueue, key)
                     ),
                 details: { waitMaxElapsedMsecs: this.options.waitMaxElapsedMsecs }
@@ -196,6 +199,47 @@ export class AppInboxResultWaiter {
             });
             return false;
         }
+    }
+
+    private async readCompletionPoll(enqueue: AppInboxEnqueueInput, key: Key): Promise<boolean> {
+        let observed: ResourceInboxStatusAndAttempts | undefined;
+        try {
+            observed = await this.statusRepository.readStatusAndAttempts(key);
+        }
+        catch (error) {
+            this.recordPoll(enqueue, key, { queueObservation: 'read-failure' });
+            throw error;
+        }
+        this.recordPoll(enqueue, key, {
+            queueObservation: toAppInboxQueueObservation(observed),
+            ...(observed === undefined ? {} : { attempts: observed.attempts })
+        });
+        if (
+            observed?.status !== EntityStatus.COMPLETED &&
+            observed?.status !== EntityStatus.FAILED &&
+            observed?.status !== EntityStatus.NON_RETRYABLE
+        ) {
+            throw new Error('App inbox entry not found');
+        }
+        return true;
+    }
+
+    private recordPoll(enqueue: AppInboxEnqueueInput, key: Key, details: RallarTimingDetails): void {
+        if (!this.options.phaseTiming) {
+            return;
+        }
+        recordRallarTiming({
+            sink: this.timing,
+            event: {
+                component: 'app-inbox-phase',
+                operation: 'wait-poll',
+                serviceId: this.serviceId,
+                requestId: enqueue.resourceId,
+                details: { ...toAppInboxTimingDetails(enqueue, key), ...details }
+            },
+            status: details.queueObservation === 'read-failure' ? 'error' : 'ok',
+            durationMs: 0
+        });
     }
 
     private toWaitPolicy(
@@ -254,5 +298,22 @@ export class AppInboxResultWaiter {
             },
             phase.action
         );
+    }
+}
+
+function toAppInboxQueueObservation(observed: ResourceInboxStatusAndAttempts | undefined): AppInboxQueueObservation {
+    if (observed === undefined) {
+        return 'missing';
+    }
+    switch (observed.status) {
+        case EntityStatus.NEW:
+        case EntityStatus.RESERVED:
+        case EntityStatus.RETRY:
+        case EntityStatus.COMPLETED:
+        case EntityStatus.FAILED:
+        case EntityStatus.NON_RETRYABLE:
+            return observed.status;
+        default:
+            return 'other-status';
     }
 }
