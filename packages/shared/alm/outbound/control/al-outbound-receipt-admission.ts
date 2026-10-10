@@ -14,7 +14,10 @@ import {
     validateALOutboundReceiptAdmission
 } from './compute-al-outbound-receipt-admission.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './write-al-outbound-control-admission-diagnostic.ts';
-import { writeALOutboundReceiptConfirmationDiagnostic } from './write-al-outbound-receipt-confirmation-diagnostic.ts';
+import {
+    toALOutboundReceiptConfirmationDiagnostic,
+    writeALOutboundReceiptConfirmationDiagnostic
+} from './write-al-outbound-receipt-confirmation-diagnostic.ts';
 
 export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
     readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
@@ -75,7 +78,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         receipt: ALReceiptPayload,
         attempt: number
     ): Promise<ALOutboundControlAdmissionResult | 'conflict'> {
-        const { admissionStore, clock } = this.dependencies;
+        const { admissionStore, clock, diagnostics, settlements } = this.dependencies;
         const surface = await admissionStore.readReceiptAdmission({
             originPeerId: receipt.originPeerId,
             msgId: receipt.msgId
@@ -83,13 +86,18 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         const candidate = computeALOutboundReceiptAdmission({ ...surface, receipt, nowMs: clock.nowMs() });
         const issues = validateALOutboundReceiptAdmission(candidate);
         if (issues.length > 0 || candidate.write === undefined) {
-            writeALOutboundReceiptConfirmationDiagnostic(this.dependencies.diagnostics, {
-                control,
-                candidate,
-                attempt,
-                commitOutcome: 'not-attempted',
-                settlement: undefined
-            });
+            if (diagnostics !== undefined) {
+                writeALOutboundReceiptConfirmationDiagnostic(
+                    diagnostics,
+                    toALOutboundReceiptConfirmationDiagnostic({
+                        control,
+                        candidate,
+                        attempt,
+                        commitOutcome: 'not-attempted',
+                        settlement: undefined
+                    })
+                );
+            }
             return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
         const status = await admissionStore.commitBundle({
@@ -102,7 +110,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
             ? toALOutboundReceiptSettlement(candidate.read, candidate.write)
             : undefined;
         // Snapshot the exact fact before an external settlement sink can mutate its retained arrays.
-        writeALOutboundReceiptConfirmationDiagnostic(this.dependencies.diagnostics, {
+        const confirmation = diagnostics === undefined ? undefined : toALOutboundReceiptConfirmationDiagnostic({
             control,
             candidate,
             attempt,
@@ -110,7 +118,12 @@ export class ALOutboundReceiptAdmission<TPrepared> {
             settlement
         });
         if (settlement !== undefined) {
-            this.dependencies.settlements(settlement);
+            settlements(settlement);
+        }
+        if (confirmation !== undefined) {
+            writeALOutboundReceiptConfirmationDiagnostic(diagnostics, confirmation);
+        }
+        if (settlement !== undefined) {
             return { kind: 'committed' };
         }
         return status === 'conflict' ? 'conflict' : { kind: 'rejected', reason: 'AL receipt commit expired' };

@@ -45,37 +45,37 @@ export interface ALOutboundReceiptConfirmationDiagnosticInput {
 
 export function writeALOutboundReceiptConfirmationDiagnostic(
     diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined,
-    input: ALOutboundReceiptConfirmationDiagnosticInput
+    confirmation: ALOutboundReceiptConfirmationDiagnostic
 ): void {
-    if (diagnostics === undefined) {
-        return;
-    }
+    writeALOutboundRuntimeDiagnostic(diagnostics, confirmation);
+}
+
+export function toALOutboundReceiptConfirmationDiagnostic(
+    input: ALOutboundReceiptConfirmationDiagnosticInput
+): ALOutboundReceiptConfirmationDiagnostic {
     const { read, write } = input.candidate;
     const { receipt } = read;
-    writeALOutboundRuntimeDiagnostic(
-        diagnostics,
-        Object.freeze({
-            kind: 'receipt-confirmation',
-            msgId: input.control.id.msgId,
-            typeId: input.control.payload.typeId,
-            controlSenderId: input.control.id.senderId,
-            targetMsgId: receipt.msgId,
-            originPeerId: receipt.originPeerId,
-            expectedRecipientPeerIds: Object.freeze([...receipt.expectedRecipientPeerIds]),
-            confirmedRecipientPeerIds: Object.freeze([...receipt.confirmedRecipientPeerIds]),
-            snapshotVersion: receipt.snapshotVersion,
-            phase: receipt.phase,
-            observedAtEpochMs: receipt.observedAtEpochMs,
-            admissionAtMs: read.nowMs,
-            attempt: input.attempt,
-            senderVersion: read.clientRecord?.version ?? null,
-            pendingBefore: toReceiptSnapshot(read.pending),
-            candidateAfter: toReceiptSnapshot(write?.value),
-            candidateExpiresAtMs: write?.expireAtTimestamp ?? null,
-            commitOutcome: input.commitOutcome,
-            settlement: toReceiptSettlementSnapshot(input.settlement)
-        })
-    );
+    return Object.freeze({
+        kind: 'receipt-confirmation',
+        msgId: input.control.id.msgId,
+        typeId: input.control.payload.typeId,
+        controlSenderId: input.control.id.senderId,
+        targetMsgId: receipt.msgId,
+        originPeerId: receipt.originPeerId,
+        expectedRecipientPeerIds: Object.freeze([...receipt.expectedRecipientPeerIds]),
+        confirmedRecipientPeerIds: Object.freeze([...receipt.confirmedRecipientPeerIds]),
+        snapshotVersion: receipt.snapshotVersion,
+        phase: receipt.phase,
+        observedAtEpochMs: receipt.observedAtEpochMs,
+        admissionAtMs: read.nowMs,
+        attempt: input.attempt,
+        senderVersion: read.clientRecord?.version ?? null,
+        pendingBefore: toReceiptSnapshot(read.pending),
+        candidateAfter: toReceiptSnapshot(write?.value),
+        candidateExpiresAtMs: write?.expireAtTimestamp ?? null,
+        commitOutcome: input.commitOutcome,
+        settlement: toReceiptSettlementSnapshot(input.settlement)
+    });
 }
 
 function toReceiptSnapshot(pending: ALOutboundPendingAckSnapshot | undefined): ALOutboundPendingAckSnapshot | null {

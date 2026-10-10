@@ -339,7 +339,19 @@ it.each([
     });
     const diagnosticsSink = facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.outboundDiagnostics;
     expect(diagnosticsSink).toBeDefined();
-    const fixture = await createReceiptTrackingFixture({ serverPeerId: 'server', diagnosticsSink });
+    const fixture = await createReceiptTrackingFixture({
+        serverPeerId: 'server',
+        diagnosticsSink,
+        settlementSink: (settlement) => {
+            if (settlement.kind === 'acknowledgement' && settlement.confirmedRecipientPeerIds.length > 0) {
+                Reflect.set(settlement.expectedRecipientPeerIds, '0', 'mutated-expected');
+                Reflect.set(settlement.confirmedRecipientPeerIds, '0', 'mutated-confirmed');
+                Reflect.set(settlement.unconfirmedRecipientPeerIds, '0', 'mutated-unconfirmed');
+                Reflect.set(settlement.confirmedHopPeerIds, '0', 'mutated-confirmed-hop');
+                Reflect.set(settlement.unconfirmedHopPeerIds, '0', 'mutated-unconfirmed-hop');
+            }
+        }
+    });
     await fixture.service.enqueueOutboxIfAbsent(roomMessage());
     await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
     await fixture.service.acceptIncomingMessage(receiptMessage('complete', confirmed));
