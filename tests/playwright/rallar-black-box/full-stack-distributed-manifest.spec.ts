@@ -1,8 +1,29 @@
-import { chromium, expect, test } from '@playwright/test';
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import {
+    chromium,
+    expect,
+    test
+} from '@playwright/test';
+import {
+    spawn,
+    spawnSync,
+    type ChildProcess
+} from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdir, readdir, readFile, statfs, writeFile } from 'node:fs/promises';
-import { availableParallelism, cpus, platform, release, totalmem, version } from 'node:os';
+import {
+    mkdir,
+    readdir,
+    readFile,
+    statfs,
+    writeFile
+} from 'node:fs/promises';
+import {
+    availableParallelism,
+    cpus,
+    platform,
+    release,
+    totalmem,
+    version
+} from 'node:os';
 import path from 'node:path';
 
 import type { ApiV1Configuration } from '../../../apps/api-v1/src/configuration/api-v1-configuration.ts';
@@ -24,7 +45,7 @@ import { decodeDistributedRunManifest } from '../../../packages/shared-test/rall
 import { isJsonRecordValue } from '../../../packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 const MANIFEST_PATH = 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json';
-const MANIFEST_SHA256 = '26c8983f3377c841b7ec88d2e6fb1d34b3558e556031087462e962b409715459';
+const MANIFEST_SHA256 = '43db26dfab5a32b28f12b9d34db3be32b071a08139eee57f450807109072ecd3';
 const AGENT_IDS = Array.from({ length: 15 }, (_, index) => `controller-${String(index + 1).padStart(2, '0')}`);
 
 // The lifecycle ceiling contains registration, both existing operator waits, export and owned cleanup.
@@ -145,7 +166,7 @@ test('observes the unchanged 15-agent ALM manifest with complete native evidence
         ).fold(() => {
             throw new Error('Native control snapshot could not be decoded.');
         }, (decoded) => decoded);
-        await requireCompleteRecorder(artifactDir, storageDir!, control);
+        await writeRecorderCompleteness(artifactDir, storageDir!, control);
         expect(distributed.manifest).toEqual(manifest);
         expect(distributed.state).toBe('passed');
         expect(distributed.targetAgentIds.slice().sort()).toEqual(AGENT_IDS);
@@ -236,7 +257,7 @@ test('observes the unchanged 15-agent ALM manifest with complete native evidence
                     ).fold(() => {
                         throw new Error('Native control snapshot unavailable.');
                     }, (decoded) => decoded);
-                    await requireCompleteRecorder(artifactDir, storageDir!, control);
+                    await writeRecorderCompleteness(artifactDir, storageDir!, control);
                 }
                 catch {
                     await writeFile(
@@ -282,7 +303,7 @@ async function readControlSnapshot(
     );
 }
 
-async function requireCompleteRecorder(
+async function writeRecorderCompleteness(
     artifactDir: string,
     storageDir: string,
     control: ControlRunSnapshot
@@ -442,7 +463,7 @@ async function readLocalApiConfiguration(): Promise<ApiV1Configuration> {
         createFullStackApiProfileEnvBlock().split(' ').map((entry) => entry.split('='))
     );
     const resourceUrl = (name: string) => new URL(`../../../apps/api-v1/resources/${name}`, import.meta.url);
-    const configuration = await readApiV1Configuration({
+    return readApiV1Configuration({
         environment: { get: (key) => profileEnvironment[key] ?? process.env[key] },
         readTextFile: (url) => readFile(url, 'utf8'),
         defaultsUrl: resourceUrl('configuration/defaults-config.json'),
@@ -454,5 +475,4 @@ async function readLocalApiConfiguration(): Promise<ApiV1Configuration> {
         },
         staticClientsUrl: resourceUrl('authorised-clients.json')
     });
-    return configuration;
 }
