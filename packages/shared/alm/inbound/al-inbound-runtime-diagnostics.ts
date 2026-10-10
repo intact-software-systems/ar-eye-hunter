@@ -7,10 +7,11 @@ import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
+import type { ALInboundAcknowledgementEvidence } from './control/al-inbound-acknowledgement-evidence.ts';
 
 /**
- * Where an incoming message stopped. `committed` is the only ending that leaves durable work behind,
- * so a delivery that never arrives either did not reach it or was never claimed by a drain.
+ * Where ingress stopped. Pending admission can retain replay work; an origin ACK bypasses inbound
+ * storage and still reaches the outbound owner. This verdict alone does not prove delivery or its absence.
  */
 export type ALInboundAdmissionOutcome =
     | 'committed'
@@ -20,6 +21,8 @@ export type ALInboundAdmissionOutcome =
     | 'pending';
 
 export type ALInboundRuntimeDiagnosticsEvent =
+    | ALInboundAcknowledgementEvidence.Association
+    | ALInboundAcknowledgementEvidence.Handoff
     | Readonly<{
         kind: 'admission-outcome';
         workerId: string;
@@ -118,7 +121,10 @@ export interface ALInboundDeferredEffect {
     readonly dueAtMs: number;
 }
 
-export type ALInboundRuntimeDiagnosticsSink = (event: ALInboundRuntimeDiagnosticsEvent) => void;
+export interface ALInboundRuntimeDiagnosticsSink {
+    (event: ALInboundRuntimeDiagnosticsEvent): void;
+    readonly acknowledgementCapture?: ALInboundAcknowledgementEvidence.Capture;
+}
 
 /**
  * What a claimed effect says about the message it runs, for the join back to its

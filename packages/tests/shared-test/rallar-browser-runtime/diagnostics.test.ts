@@ -7,7 +7,14 @@ import {
     vi
 } from 'vitest';
 
+import { toRallarBlackBoxRuntimeDiagnostic } from '@shared-test/rallar-bb-test/diagnostics.ts';
+import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
+import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import {
     createReceiptTrackingFixture,
@@ -545,4 +552,65 @@ it('records synchronous connection producer diagnostics once across reconnect', 
     await runtime.connect(connect);
     expect(events.filter((event) => event.topic === 'rallar.browser.alm.outbound_diagnostics')).toHaveLength(2);
     expect(events.filter((event) => event.topic === 'rallar.browser.alm.storage_reset')).toHaveLength(2);
+});
+
+it('captures a real terminal ACK through the installed inbound capability and normalized agent event', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect({
+        connection: 'diagnostics',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+    });
+    onTestFinished(async () => {
+        await runtime.close();
+    });
+    const diagnostics = facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.inboundDiagnostics;
+    expect(diagnostics?.acknowledgementCapture).toBeDefined();
+    const accepted: string[] = [];
+    const inbound = createDefaultALInboundMessageRuntime({
+        selfPeerId: 'origin',
+        carrier: 'ws',
+        diagnostics,
+        queueEngine: new InboxOutboxEngine(),
+        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        planIncomingMessage: (msg, _source, observations) => planALMessageHandling(msg, { ...observations, selfPeerId: 'origin' }),
+        dispatchInboxEntry: async () => {},
+        sendControlMessages: async () => {
+            throw new Error('terminal ACK must not relay');
+        },
+        onControlMessage: async (msg) => {
+            accepted.push(msg.id.msgId);
+        }
+    });
+    onTestFinished(() => inbound.dispose());
+    const ack = newALAckControlMessage({ v: 3, msgId: 'received-upward-17', senderId: 'relay', ts: 12 }, {
+        ackedMsgId: 'shot-4',
+        originPeerId: 'origin',
+        logicalRecipientPeerId: 'director',
+        fromPeerId: 'relay',
+        toPeerId: 'origin',
+        carrier: 'rtc',
+        status: 'delivered',
+        observedAtEpochMs: 11
+    });
+    expect((await inbound.admitIncomingMessage(ack, { kind: 'trusted-server' })).right).toEqual({ kind: 'control', handled: false });
+    expect(accepted).toEqual(['received-upward-17']);
+    const event = events.find((event) => decodeRecord(event.data).kind === 'acknowledgement-association');
+    const normalized = toRallarBlackBoxRuntimeDiagnostic({ topic: event!.topic!, severity: 'info', source: 'browser-rallar', payload: event });
+    expect(JSON.parse(JSON.stringify(normalized)).data).toMatchObject({
+        kind: 'acknowledgement-association',
+        phase: 'ingress',
+        terminalOrigin: true,
+        attempts: [],
+        result: 'control',
+        incoming: {
+            controlMsgId: 'received-upward-17',
+            subjectMsgId: 'shot-4',
+            originPeerId: 'origin',
+            logicalRecipientPeerId: 'director',
+            fromPeerId: 'relay',
+            toPeerId: 'origin',
+            carrier: 'ws'
+        }
+    });
+    expect(JSON.stringify(normalized)).not.toContain('secret');
 });

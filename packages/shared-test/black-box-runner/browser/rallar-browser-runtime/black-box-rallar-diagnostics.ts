@@ -1,4 +1,7 @@
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
+import { ALWorkBatchObservations } from '@shared/alm/work/al-work-batch-observations.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { BlackBoxBrowserDiagnosticsDependency } from './browser-rallar-runtime-composition.ts';
 
@@ -127,12 +130,17 @@ export function createBlackBoxRallarDiagnosticsPorts(
                 data: { ...event }
             });
         },
-        inboundDiagnostics: (event) =>
+        inboundDiagnostics: Object.assign((event: ALInboundRuntimeDiagnosticsEvent) =>
             diagnostics.emit({
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.inbound_diagnostics',
                 data: { ...event }
-            }),
+            }), {
+            acknowledgementCapture: {
+                evidence: ALInboundAcknowledgementEvidence,
+                batchObservations: ALWorkBatchObservations
+            }
+        }),
         storage: (event) => {
             effects.orderingTracks.observe(event);
             if (event.kind === 'reset') {
