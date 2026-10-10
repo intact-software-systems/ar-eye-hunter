@@ -61,7 +61,7 @@ describe('state-write environment capture native image provenance', () => {
         try {
             await readCaptureStage({ fixture, stage: 'preflight' });
             const captured = decodeJsonWireText(await readFile(fixture.preflight, 'utf8'));
-            expect(captured).toMatchObject({ record: { image_ref: PIN, image_id: `sha256:${CONFIG}` } });
+            expect(captured).toMatchObject({ containerStartedAt: '2026-10-10T20:00:00.000000001Z', record: { image_ref: PIN, image_id: `sha256:${CONFIG}` } });
         }
         finally {
             await rm(fixture.directory, { recursive: true, force: true });
@@ -343,6 +343,66 @@ describe('state-write environment capture native image provenance', () => {
         }
     });
 
+    it('rejects a same-ID manual restart when RestartCount remains zero', async () => {
+        const fixture = await createCaptureFixture();
+        try {
+            await readCaptureStage({ fixture, stage: 'preflight' });
+            const container = toFixtureObject({ value: decodeJsonWireText(fixture.facts.containerText) });
+            await writeNativeFacts({
+                fixture,
+                facts: {
+                    ...fixture.facts,
+                    containerText: JSON.stringify({
+                        ...container,
+                        State: { ...toFixtureObject({ value: container.State }), StartedAt: '2026-10-10T20:00:00.000000002Z' }
+                    })
+                }
+            });
+            await expect(readCaptureStage({ fixture, stage: 'postflight' })).rejects.toThrow(/container running session changed/);
+            await expect(access(fixture.postflight)).rejects.toThrow();
+        }
+        finally {
+            await rm(fixture.directory, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        { Running: false, StartedAt: '2026-10-10T20:00:00.000000001Z' },
+        { Status: 'paused', Running: true, StartedAt: '2026-10-10T20:00:00.000000001Z' },
+        { Running: true, StartedAt: '' },
+        { Running: true, StartedAt: '0001-01-01T00:00:00Z' },
+        { Running: true, StartedAt: '2026-02-30T20:00:00Z' }
+    ])('rejects unusable native running-session facts $StartedAt', async (state) => {
+        const fixture = await createCaptureFixture();
+        try {
+            const container = toFixtureObject({ value: decodeJsonWireText(fixture.facts.containerText) });
+            await writeNativeFacts({
+                fixture,
+                facts: { ...fixture.facts, containerText: JSON.stringify({ ...container, State: { Status: 'running', ...state } }) }
+            });
+            await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow(/native container running session/);
+            await expect(access(fixture.preflight)).rejects.toThrow();
+        }
+        finally {
+            await rm(fixture.directory, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects an older sidecar without the required session identity', async () => {
+        const fixture = await createCaptureFixture();
+        try {
+            await readCaptureStage({ fixture, stage: 'preflight' });
+            const sidecar = toFixtureObject({ value: decodeJsonWireText(await readFile(fixture.preflight, 'utf8')) });
+            const { containerStartedAt: _missingSession, ...historical } = sidecar;
+            await writeFile(fixture.preflight, JSON.stringify(historical));
+            await expect(readCaptureStage({ fixture, stage: 'postflight' })).rejects.toThrow(/native capture fact must be text/);
+            await expect(access(fixture.postflight)).rejects.toThrow();
+        }
+        finally {
+            await rm(fixture.directory, { recursive: true, force: true });
+        }
+    });
+
     it.each([
         { field: 'containersText', value: 'isolated-perf\nother-postgres', error: 'container_overlap_count must equal 0' },
         { field: 'processesText', value: 'deno run api-v1-state-write-concurrency-bench.ts', error: 'benchmark_process_overlap_count must equal 0' }
@@ -468,6 +528,7 @@ function createNativeFacts({ directory, archive }: { readonly directory: string;
             Platform: 'linux',
             Config: { Cmd: ['postgres', '-c', 'autovacuum=off'] },
             HostConfig: { ShmSize: 268435456, Memory: 4294967296, MemorySwap: 4294967296, NanoCpus: 4000000000, CpuPeriod: 0, CpuQuota: 0, CpusetCpus: '' },
+            State: { Status: 'running', Running: true, StartedAt: '2026-10-10T20:00:00.000000001Z' },
             RestartCount: 0
         }),
         imageText: JSON.stringify({
