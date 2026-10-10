@@ -490,7 +490,7 @@ completeness are absent. Measure those actual facts at the existing admission
 owner before selecting a repair; later registry/epoch observation stays conditional
 on the result. Preserve policy, deadlines, audiences and every acceptance guard.
 
-The next measurement adds a separate typed receipt-confirmation diagnostic through
+The source candidate adds a separate typed receipt-confirmation diagnostic through
 the existing guarded sink. The existing control-admission record and its phase-last
 serialized bytes stay intact. The receipt attempt owner already holds decoded
 receipt audiences/revision, pending state/sender version, computed candidate,
@@ -501,6 +501,30 @@ recording consumer preserves it. Candidate state is not an independent persisted
 readback; settlement emission is not proof of a live handle transition. Real
 client-service and recording-boundary tests establish the evidence capability
 before one further observation selects a demonstrated defect or missing boundary.
+The existing native diagnostic bridge already forwards whole events. Its current
+runtime test processes receipts through the same real service fixture as the
+receipt-tracking tests and asserts the published facts. They share only that coherent
+test setup and its message builders, removing the old duplicate definitions;
+production forwarding does not need another adapter.
+
+Controlled real-service and recording tests observed six missing-fact failures
+before implementation, then 45 passing checks. Fresh review reproduced a
+callback-order defect: a diagnostic lifecycle read before settlement emission
+could expire a committed acknowledgement. The corrected path captures immutable
+facts before mutable settlement consumers, then publishes them after the existing
+settlement. The independent lifecycle regression first failed, then all 47
+covering and 335 affected checks passed. Both service and recording tests retain
+original facts during settlement-time array mutation. Fresh scoped review
+addressed the ordering and documented attempt-coverage limits with no new
+breakage, including full authored and recursive support closure.
+
+Current affected types, package checks and app build passed. The pre-fix broad
+suite passed 15,162 tests/12 skipped; its source binding remains explicit rather
+than becoming a current-fix claim. Storage exceptions stay with the existing
+storage-failure owner without an invented commit-return observation. The capture
+capability and its overhead have not yet been measured in a native run; these
+controlled proofs do not diagnose the earlier native acknowledgement failure or
+establish elapsed performance gain.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
