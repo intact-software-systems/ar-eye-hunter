@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-import { appendFile, copyFile, readFile } from 'node:fs/promises';
+import {
+    appendFile,
+    copyFile,
+    readFile
+} from 'node:fs/promises';
 import { basename } from 'node:path';
 
 // This executable is the native process boundary for the capture CLI tests.
@@ -18,6 +22,12 @@ const argumentsInput = process.argv.slice(2);
 if (command === 'docker') {
     await readDockerFixture({ fixture: decoded, argumentsInput });
 }
+else if (command === 'ps') {
+    if (!('processesText' in decoded) || typeof decoded.processesText !== 'string') {
+        throw new TypeError('native fixture process list must be text');
+    }
+    console.log(decoded.processesText);
+}
 else {
     const version = command === 'deno' ? 'deno 2.9.5\nv8 15.0\ntypescript 6.0' : command === 'npm' ? '11.20' : '';
     console.log(version);
@@ -34,7 +44,10 @@ async function readDockerFixture({ fixture, argumentsInput }) {
             throw new TypeError('archive and export record paths must be strings');
         }
         await appendFile(fixture.exports, `${output}\n`);
-        if ('exportFailure' in fixture && fixture.exportFailure === true) {
+        if (!('exportFailure' in fixture) || typeof fixture.exportFailure !== 'boolean') {
+            throw new TypeError('native export failure fact must be a boolean');
+        }
+        if (fixture.exportFailure) {
             throw new Error('native export failed');
         }
         await copyFile(fixture.archive, output);
@@ -55,7 +68,10 @@ async function readDockerFixture({ fixture, argumentsInput }) {
     const response = fixture[responseName];
     if (responseName === 'sqlText') {
         const sql = argumentsInput[argumentsInput.length - 1];
-        console.log(sql.includes('pg_stat_user_tables') ? ('maintenance' in fixture ? String(fixture.maintenance) : '0') : response);
+        if (!('maintenance' in fixture) || typeof fixture.maintenance !== 'string') {
+            throw new TypeError('native maintenance fact must be text');
+        }
+        console.log(sql.includes('pg_stat_user_tables') ? fixture.maintenance : response);
     }
     else {
         console.log(response);

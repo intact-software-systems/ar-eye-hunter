@@ -282,9 +282,12 @@ metadata acquisition milliseconds (export through metadata/stat, excluding
 initial inspect and final cleanup), so its preparation cost remains visible.
 
 The postflight stage validates before writing, so a descriptor that reaches
-disk is one the pooling protocol accepts. A non-empty preflight database, a
-container restarted mid-run, or an overlapping container fails the capture
-rather than surviving into a verdict.
+disk is one the pooling protocol accepts. It preserves preflight empty-table
+counts and samples current container identity, restart count, governed resources,
+and process/container overlap. A non-empty preflight database, a reported restart,
+changed governed resources, or overlap present at postflight fails capture.
+These boundary samples do not continuously observe transient overlap or resource
+changes that revert before postflight.
 
 The order-balanced protocol runs four positions — approved-base, candidate,
 candidate, approved-base — each against a freshly recreated container, and

@@ -52,6 +52,13 @@ export interface GroupPresenceSummaryWorkOptions {
     readonly formationMetrics?: GroupFormationPresenceSummarySink;
 }
 
+interface ReadTopologyReplanPolicyFactsInput {
+    readonly work: GroupPresenceSummaryWorkData;
+    readonly group: Group;
+    readonly coalescedTopologyEntry: ResourceEntry | null;
+    readonly nowEpochMs: number;
+}
+
 export class GroupPresenceSummaryWork {
     private readonly now: () => number;
     private readonly options: GroupPresenceSummaryWorkOptions;
@@ -94,12 +101,12 @@ export class GroupPresenceSummaryWork {
                 current: current ?? null
             },
             coalescedTopologyEntry,
-            topologyReplanPolicyFacts: await this.readTopologyReplanPolicyFacts(
+            topologyReplanPolicyFacts: await this.readTopologyReplanPolicyFacts({
                 work,
-                group.value,
+                group: group.value,
                 coalescedTopologyEntry,
                 nowEpochMs
-            )
+            })
         };
         assertGroupPresenceSummaryRead(work.aggregateRef, read.presence);
         return read;
@@ -107,11 +114,9 @@ export class GroupPresenceSummaryWork {
 
     /** The policy and planned slot are read only when the enqueue gate will consult them. */
     private async readTopologyReplanPolicyFacts(
-        work: GroupPresenceSummaryWorkData,
-        group: Group,
-        coalescedTopologyEntry: ResourceEntry | null,
-        nowEpochMs: number
+        input: ReadTopologyReplanPolicyFactsInput
     ): Promise<TopologyReplanPolicyFacts> {
+        const { work, group, coalescedTopologyEntry, nowEpochMs } = input;
         const facts = toTopologyReplanEnqueueFacts(work, group, { coalescedTopologyEntry, nowEpochMs });
         if (!consultsTopologyReplanPolicy(facts)) {
             return { consulted: false };

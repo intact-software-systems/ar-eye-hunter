@@ -1,9 +1,27 @@
-import { decodeJsonWireText, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireText,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { access, copyFile, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+    access,
+    copyFile,
+    mkdir,
+    mkdtemp,
+    readdir,
+    readFile,
+    rm,
+    symlink,
+    writeFile
+} from 'node:fs/promises';
 import { arch, tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import {
+    dirname,
+    join,
+    resolve
+} from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { validateApiV1StateWriteEnvironment } from '../../../../../apps/api-v1/scripts/perf/validate-api-v1-state-write-environment.mjs';
@@ -21,6 +39,7 @@ interface CaptureNativeFacts {
     readonly containerText: string;
     readonly imageText: string;
     readonly containersText: string;
+    readonly processesText: string;
     readonly sqlText: string;
     readonly versionText: string;
     readonly maintenance: string;
@@ -303,6 +322,59 @@ describe('state-write environment capture native image provenance', () => {
         }
     });
 
+    it.each([
+        { field: 'RestartCount', value: 1, error: 'fresh_container must equal true' },
+        { field: 'Memory', value: 2147483648, error: 'memory must equal 4294967296' },
+        { field: 'NanoCpus', value: 2000000000, error: 'nano_cpus must equal 4000000000' }
+    ])('rejects same-ID postflight $field drift', async ({ field, value, error }) => {
+        const fixture = await createCaptureFixture();
+        try {
+            await readCaptureStage({ fixture, stage: 'preflight' });
+            const container = toFixtureObject({ value: decodeJsonWireText(fixture.facts.containerText) });
+            const changed = field === 'RestartCount'
+                ? { ...container, RestartCount: value }
+                : { ...container, HostConfig: { ...toFixtureObject({ value: container.HostConfig }), [field]: value } };
+            await writeNativeFacts({ fixture, facts: { ...fixture.facts, containerText: JSON.stringify(changed) } });
+            await expect(readCaptureStage({ fixture, stage: 'postflight' })).rejects.toThrow(error);
+            await expect(access(fixture.postflight)).rejects.toThrow();
+        }
+        finally {
+            await rm(fixture.directory, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        { field: 'containersText', value: 'isolated-perf\nother-postgres', error: 'container_overlap_count must equal 0' },
+        { field: 'processesText', value: 'deno run api-v1-state-write-concurrency-bench.ts', error: 'benchmark_process_overlap_count must equal 0' }
+    ])('rejects new postflight overlap from $field', async ({ field, value, error }) => {
+        const fixture = await createCaptureFixture();
+        try {
+            await readCaptureStage({ fixture, stage: 'preflight' });
+            await writeNativeFacts({ fixture, facts: { ...fixture.facts, [field]: value } });
+            await expect(readCaptureStage({ fixture, stage: 'postflight' })).rejects.toThrow(error);
+            await expect(access(fixture.postflight)).rejects.toThrow();
+        }
+        finally {
+            await rm(fixture.directory, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves preflight emptiness counters when postflight tables contain workload rows', async () => {
+        const fixture = await createCaptureFixture();
+        try {
+            await readCaptureStage({ fixture, stage: 'preflight' });
+            await writeNativeFacts({ fixture, facts: { ...fixture.facts, sqlText: fixture.facts.sqlText.replaceAll('_rows=0', '_rows=42') } });
+            await readCaptureStage({ fixture, stage: 'postflight' });
+            const text = await readFile(fixture.postflight, 'utf8');
+            expect(text).toContain('preflight_app_data_store_rows=0\n');
+            expect(text).toContain('preflight_resource_inbox_rows=0\n');
+            expect(validateApiV1StateWriteEnvironment(text)).toEqual([]);
+        }
+        finally {
+            await rm(fixture.directory, { recursive: true, force: true });
+        }
+    });
+
     it('retains dirty preflight rejection', async () => {
         const fixture = await createCaptureFixture();
         try {
@@ -380,6 +452,7 @@ function createNativeFacts({ directory, archive }: { readonly directory: string;
         archive,
         exports: join(directory, 'exports.txt'),
         containersText: 'isolated-perf',
+        processesText: '',
         versionText: '29.6.2',
         maintenance: '0',
         exportFailure: false,
