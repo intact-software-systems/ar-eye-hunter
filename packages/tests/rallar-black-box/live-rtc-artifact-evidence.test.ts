@@ -71,7 +71,21 @@ describe('live RTC durable artifact evidence', () => {
         setCompleteEvidence(fixture);
     });
     afterEach(async () => {
-        await fixture.close();
+        try {
+            await fixture.expectControlResponsesReleased();
+        }
+        finally {
+            await fixture.close();
+        }
+    });
+
+    it.each([
+        { variant: 'status', status: 503, body: '{"error":"artifact-unavailable"}', error: /toBe/ },
+        { variant: 'JSON parse', status: 200, body: '{malformed}', error: /JSON|Unexpected token/ },
+        { variant: 'bundle decode', status: 200, body: '[]', error: /artifactBundle/ }
+    ])('releases the artifact response after its $variant failure without changing the error', async ({ status, body, error }) => {
+        fixture.state.responseOverrides.set(`GET /runs/${RUN_ID}/artifacts`, { status, body });
+        await expect(fixture.control.expectArtifactBundle({ runId: RUN_ID, commandIds: COMMAND_IDS })).rejects.toThrow(error);
     });
 
     it('accepts initial and final executed receipts beyond the bounded 200-result preview', async () => {

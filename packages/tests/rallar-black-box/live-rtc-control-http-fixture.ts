@@ -1,4 +1,4 @@
-import { request, type APIRequestContext } from '@playwright/test';
+import { request, type APIRequestContext, type APIResponse } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import {
     createServer,
@@ -8,6 +8,9 @@ import {
 } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { expect } from 'vitest';
+
+import { toError } from '@shared/resilience/to-error.ts';
 
 import { parseControlServerMessage } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
@@ -20,6 +23,11 @@ import { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box
 import { normalizeJson, type LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 
 export namespace LiveRtcControlHttpFixture {
+    export interface HttpResponse {
+        readonly status: number;
+        readonly body: string;
+    }
+
     export interface RunRead {
         readonly url: string;
         readonly snapshot: ControlRunSnapshot;
@@ -47,6 +55,7 @@ export namespace LiveRtcControlHttpFixture {
         holdHealthCommand: ((agentId: string) => Promise<void>) | undefined;
         runState: ControlRunState | undefined;
         runReads: RunRead[];
+        responseOverrides: Map<string, HttpResponse>;
     }
 
     export interface Dependencies {
@@ -56,6 +65,8 @@ export namespace LiveRtcControlHttpFixture {
         readonly control: LiveRtcControlClient;
         readonly baseUrl: string;
         readonly diagnosticsRoot: string;
+        readonly controlResponses: readonly APIResponse[];
+        readonly externalResponse: APIResponse;
     }
 }
 
@@ -65,6 +76,8 @@ export class LiveRtcControlHttpFixture {
     readonly control: LiveRtcControlClient;
     readonly baseUrl: string;
     readonly diagnosticsRoot: string;
+    readonly controlResponses: readonly APIResponse[];
+    readonly externalResponse: APIResponse;
     readonly #server: Server;
 
     constructor(dependencies: LiveRtcControlHttpFixture.Dependencies) {
@@ -73,6 +86,8 @@ export class LiveRtcControlHttpFixture {
         this.control = dependencies.control;
         this.baseUrl = dependencies.baseUrl;
         this.diagnosticsRoot = dependencies.diagnosticsRoot;
+        this.controlResponses = dependencies.controlResponses;
+        this.externalResponse = dependencies.externalResponse;
         this.#server = dependencies.server;
     }
 
@@ -80,6 +95,19 @@ export class LiveRtcControlHttpFixture {
         await this.request.dispose();
         await new Promise<void>((resolve, reject) => this.#server.close((error) => error ? reject(error) : resolve()));
         rmSync(this.diagnosticsRoot, { recursive: true, force: true });
+    }
+
+    async expectControlResponsesReleased(): Promise<void> {
+        expect(this.controlResponses.length).toBeGreaterThan(0);
+        for (const response of this.controlResponses) {
+            expect.soft(await readResponseBodyRetention(response), response.url()).toMatch(/Response has been disposed$/);
+        }
+        expect((await this.externalResponse.body()).toString()).toBe('context remains reusable');
+        await this.externalResponse.dispose();
+        await expect(this.externalResponse.body()).rejects.toThrow('Response has been disposed');
+        const nextResponse = await this.request.get(`${this.baseUrl}/runs/context-reuse`);
+        expect(nextResponse.status()).toBe(200);
+        await nextResponse.dispose();
     }
 }
 
@@ -105,7 +133,8 @@ export async function createDefaultLiveRtcControlHttpFixture(): Promise<LiveRtcC
         healthCommandFailure: undefined,
         holdHealthCommand: undefined,
         runState: undefined,
-        runReads: []
+        runReads: [],
+        responseOverrides: new Map()
     };
     const diagnosticsRoot = mkdtempSync(path.join(tmpdir(), 'live-rtc-control-client-'));
     const server = createServer(async (incoming, response) => await writeLiveRtcControlResponse(state, incoming, response));
@@ -116,17 +145,61 @@ export async function createDefaultLiveRtcControlHttpFixture(): Promise<LiveRtcC
     }
     const api = await request.newContext();
     const baseUrl = `http://127.0.0.1:${address.port}`;
+    const controlResponses: APIResponse[] = [];
+    const externalResponse = await api.get(`${baseUrl}/runs/context-negative-control`);
+    const observedRequest = createObservedRequest(api, controlResponses);
     const control = new LiveRtcControlClient({
-        request: api,
+        request: observedRequest,
         baseUrl,
         diagnosticsOutDir: diagnosticsRoot,
         monotonicNow: () => state.nowMs,
         epochNow: () => 0
     });
-    return new LiveRtcControlHttpFixture({ state, server, request: api, control, baseUrl, diagnosticsRoot });
+    return new LiveRtcControlHttpFixture({ state, server, request: api, control, baseUrl, diagnosticsRoot, controlResponses, externalResponse });
+}
+
+function createObservedRequest(api: APIRequestContext, responses: APIResponse[]): APIRequestContext {
+    return new Proxy(api, {
+        get(target, property) {
+            if (property === 'get') {
+                return async (...args: Parameters<APIRequestContext['get']>) => {
+                    const response = await target.get(...args);
+                    responses.push(response);
+                    return response;
+                };
+            }
+            if (property === 'post') {
+                return async (...args: Parameters<APIRequestContext['post']>) => {
+                    const response = await target.post(...args);
+                    responses.push(response);
+                    return response;
+                };
+            }
+            return Reflect.get(target, property, target);
+        }
+    });
+}
+
+async function readResponseBodyRetention(response: APIResponse): Promise<string> {
+    try {
+        await response.body();
+        return 'response body remains available';
+    }
+    catch (cause) {
+        return toError(cause).message;
+    }
 }
 
 async function writeLiveRtcControlResponse(state: LiveRtcControlHttpFixture.State, incoming: IncomingMessage, response: ServerResponse): Promise<void> {
+    const override = state.responseOverrides.get(`${incoming.method} ${incoming.url}`);
+    if (override) {
+        response.writeHead(override.status, { 'content-type': 'application/json' }).end(override.body);
+        return;
+    }
+    if (incoming.url === '/runs/context-negative-control' || incoming.url === '/runs/context-reuse') {
+        response.writeHead(200).end('context remains reusable');
+        return;
+    }
     if (state.artifactRunId !== undefined && incoming.url?.split('/')[2] !== encodeURIComponent(state.artifactRunId)) {
         response.writeHead(404).end();
         return;

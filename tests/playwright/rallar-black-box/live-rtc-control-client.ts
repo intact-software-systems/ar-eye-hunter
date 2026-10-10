@@ -324,13 +324,52 @@ export class LiveRtcControlClient {
         const response = await this.#request.get(
             `${this.#baseUrl}/runs/${encodeURIComponent(runId)}`
         );
-        expect(response.ok()).toBe(true);
-        return decodeControlRunSnapshot(normalizeJson(await response.json()));
+        try {
+            expect(response.ok()).toBe(true);
+            return decodeControlRunSnapshot(normalizeJson(await response.json()));
+        }
+        finally {
+            await response.dispose();
+        }
     }
 
     async executeResult(
         input: LiveRtcControlClient.ExecuteInput
     ): Promise<LiveRtcControlClient.Result> {
+        await this.#enqueueCommand(input);
+
+        let latest: LiveRtcControlClient.Result | undefined;
+        await expect
+            .poll(
+                async () => {
+                    const response = await this.#request.get(
+                        `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}` +
+                            '?limitEvents=0&limitStats=0&limitReports=0&limitHeartbeats=0'
+                    );
+                    try {
+                        expect(response.ok()).toBe(true);
+                        const run = decodeControlRunSnapshot(normalizeJson(await response.json()));
+                        latest = run.results.find(
+                            (result) => result.commandId === input.commandId
+                        );
+                        return Boolean(latest);
+                    }
+                    finally {
+                        await response.dispose();
+                    }
+                },
+                {
+                    timeout: input.timeoutMs ?? 45_000
+                }
+            )
+            .toBe(true);
+        if (!latest) {
+            throw new Error(`Command ${input.commandId} did not return a result.`);
+        }
+        return latest;
+    }
+
+    async #enqueueCommand(input: LiveRtcControlClient.ExecuteInput): Promise<void> {
         const response = await this.#request.post(
             `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}/agents/${
                 encodeURIComponent(
@@ -344,35 +383,15 @@ export class LiveRtcControlClient {
                 }
             }
         );
-        expect(
-            response.status(),
-            `Expected command ${input.commandId} for agent ${input.agentId} to enqueue: ${await response.text()}`
-        ).toBe(202);
-
-        let latest: LiveRtcControlClient.Result | undefined;
-        await expect
-            .poll(
-                async () => {
-                    const response = await this.#request.get(
-                        `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}` +
-                            '?limitEvents=0&limitStats=0&limitReports=0&limitHeartbeats=0'
-                    );
-                    expect(response.ok()).toBe(true);
-                    const run = decodeControlRunSnapshot(normalizeJson(await response.json()));
-                    latest = run.results.find(
-                        (result) => result.commandId === input.commandId
-                    );
-                    return Boolean(latest);
-                },
-                {
-                    timeout: input.timeoutMs ?? 45_000
-                }
-            )
-            .toBe(true);
-        if (!latest) {
-            throw new Error(`Command ${input.commandId} did not return a result.`);
+        try {
+            expect(
+                response.status(),
+                `Expected command ${input.commandId} for agent ${input.agentId} to enqueue: ${await response.text()}`
+            ).toBe(202);
         }
-        return latest;
+        finally {
+            await response.dispose();
+        }
     }
 
     async executeOk(
@@ -753,11 +772,17 @@ export class LiveRtcControlClient {
         const response = await this.#request.get(
             `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}/artifacts`
         );
-        expect(response.ok()).toBe(true);
-        const bundle = requiredJsonRecord(
-            normalizeJson(await response.json()),
-            '$.artifactBundle'
-        );
+        let bundle: LiveRtcJsonRecord;
+        try {
+            expect(response.ok()).toBe(true);
+            bundle = requiredJsonRecord(
+                normalizeJson(await response.json()),
+                '$.artifactBundle'
+            );
+        }
+        finally {
+            await response.dispose();
+        }
         await expectLiveRtcArtifactEvidence(bundle, input, this.#baseUrl);
     }
 

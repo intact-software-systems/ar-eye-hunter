@@ -25,7 +25,50 @@ describe('live RTC command-result polling projection', () => {
     });
 
     afterEach(async () => {
-        await httpFixture.close();
+        try {
+            await httpFixture.expectControlResponsesReleased();
+        }
+        finally {
+            await httpFixture.close();
+        }
+    });
+
+    it.each([
+        { variant: 'status', status: 503, body: '{"error":"snapshot-unavailable"}', error: /toBe/ },
+        { variant: 'JSON parse', status: 200, body: '{malformed}', error: /JSON|Unexpected token/ },
+        { variant: 'snapshot decode', status: 200, body: '{"agents":[{}]}', error: /agentId/ }
+    ])('releases a full snapshot after its $variant failure without changing the error', async ({ status, body, error }) => {
+        httpFixture.state.responseOverrides.set('GET /runs/poll%2Frun', { status, body });
+        await expect(httpFixture.control.fetchRun(run.runId)).rejects.toThrow(error);
+    });
+
+    it('releases an unsuccessful enqueue response after preserving its command diagnostic', async () => {
+        httpFixture.state.responseOverrides.set('POST /runs/poll%2Frun/agents/agent-a/commands', { status: 503, body: 'enqueue-unavailable' });
+        await expect(httpFixture.control.executeResult({
+            runId: run.runId,
+            agentId: 'agent-a',
+            commandId: 'requested',
+            command: { kind: 'health' }
+        })).rejects.toThrow(/Expected command requested for agent agent-a to enqueue: enqueue-unavailable/);
+        expect(httpFixture.state.runReads).toEqual([]);
+    });
+
+    it.each([
+        { variant: 'status', status: 503, body: '{"error":"poll-unavailable"}' },
+        { variant: 'JSON parse', status: 200, body: '{malformed}' },
+        { variant: 'snapshot decode', status: 200, body: '{"results":[{"commandId":"requested","ok":"invalid"}]}' }
+    ])('releases every projected response after a $variant failure', async ({ status, body }) => {
+        httpFixture.state.responseOverrides.set('GET /runs/poll%2Frun?limitEvents=0&limitStats=0&limitReports=0&limitHeartbeats=0', { status, body });
+        await expect(httpFixture.control.executeResult({
+            runId: run.runId,
+            agentId: 'agent-a',
+            commandId: 'requested',
+            command: { kind: 'health' },
+            timeoutMs: 2000
+        })).rejects.toThrow();
+        expect(httpFixture.controlResponses.some((response) => response.url().includes('?limitEvents=0&limitStats=0&limitReports=0&limitHeartbeats=0'))).toBe(
+            true
+        );
     });
 
     it('omits bulky histories on pending and terminal reads while conserving native receipt attribution', async () => {
