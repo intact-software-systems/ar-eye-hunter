@@ -18,7 +18,7 @@ on:
         default: signaling
         type: choice
         options:
-          - off
+          - 'off'
           - signaling
           - native
 
