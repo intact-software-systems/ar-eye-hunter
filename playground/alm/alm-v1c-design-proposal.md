@@ -765,13 +765,33 @@ acceptance remain separate. Prior failures and report versions remain preserved.
 The warning trace passes six tests with the warning, locating it in unchanged browser session/RTC adapter
 code. It remains explicit final-triage evidence, rather than pristine output.
 
-One unchanged captured 15-agent hosted observation is the conditional next slice
-after source approval and publication. It must verify the new associations in
-actual recorder output and join them to positive sender controls; silence stays
-inconclusive. Ordinary uninstrumented 15/30/50 acceptance remains required. This
-diagnostic prerequisite proves neither a historical timeout cause nor native
-fairness benefit. Original failed measurements and pass-with-warning evidence
-remain preserved.
+One unchanged captured 15-agent hosted observation ran at published
+`5c88157d54d87caa78a201aad5669ff345e4308d`: run `38055415807`, attempt 1.
+Retained analysis reports fourteen player setup HTTP timeouts at their declared
+5,000-ms command limit. Thirteen preceding group-create 409 responses are accepted
+by the recipe and are separate from the later timeout. The director completed
+socket connection under its 45-second phase allowance; subsequent RTC readiness
+and shot/ACK traffic were not reached in retained execution. All 73 predicates
+remain unevaluated, with no final storage readback. Zero association/handoff
+records therefore leave actual ACK field survival and return joins unevaluated;
+silence cannot prove loss or nongeneration. Independent full evidence review approves the diagnostic
+report with no findings. A bounded trace of the existing HTTP setup timeout
+owners and retained positive request facts precedes any setup or capture repair. No unchanged-source native
+retry is scheduled. Ordinary uninstrumented 15/30/50 acceptance remains required.
+This observation proves neither a historical timeout cause nor native fairness
+benefit. Original failed measurements and pass-with-warning evidence are preserved.
+
+The published whole-PR static gate also found two new unclassified store spy
+absence assertions in the diagnostic test. The existing registered two-lane
+origin-ACK test already owns the no-read boundary. Reviewed test-only revision
+`71af3050da53e6e7067d5313cfc80073cec36fc2` removes the duplicated spies while
+retaining semantic acceptance, callback, empty-work and diagnostic assertions.
+It introduces no new interaction exception or production behavior. Both focused
+files pass 25 tests with pristine output. The exact whole-PR coupling and style
+gates pass on this committed revision, and independent spec/quality review finds
+no issues. The earlier file-scoped checker was advisory despite exit 0.
+Publication requires the exact CI-resolved full-PR coupling range on the final
+candidate, with each candidate explicitly dispositioned.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
