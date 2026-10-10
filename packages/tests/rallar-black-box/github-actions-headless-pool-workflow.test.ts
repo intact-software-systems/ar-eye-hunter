@@ -20,12 +20,22 @@ import {
 
 import type { ApiJsonValue } from '../../shared/api/api-json-value.ts';
 
+interface WorkflowYamlLoader {
+    load(source: string, options: { schema: object; }): ApiJsonValue | undefined;
+    readonly JSON_SCHEMA: object;
+}
+
+interface WorkflowPlanMatrixOutput {
+    readonly runId: string;
+    readonly distributedRunId: string;
+    readonly matrix: readonly ApiJsonValue[];
+}
+
 const repoRoot = path.resolve(__dirname, '../../..');
 const require = createRequire(path.join(repoRoot, 'package.json'));
-const { load: loadYaml, JSON_SCHEMA } = require('js-yaml') as {
-    load(source: string, options: { schema: object; }): ApiJsonValue | undefined;
-    JSON_SCHEMA: object;
-};
+const yaml = require('js-yaml');
+expect(yaml).toEqual(expect.objectContaining({ load: expect.any(Function), JSON_SCHEMA: expect.any(Object) }));
+const { load: loadYaml, JSON_SCHEMA } = yaml as WorkflowYamlLoader;
 const productionConcurrency = {
     group: 'hetzner-production-distributed-recipe',
     'cancel-in-progress': false,
@@ -179,7 +189,7 @@ describe('GitHub Free distributed recipe workflow', () => {
             expect(result.stdout).toBe('');
             const provenance = JSON.parse(await readFile(path.join(directory, 'runner-provenance.json'), 'utf8'));
             expect(provenance.sourceCommit).toMatch(/^[a-f0-9]{40}$/);
-            expect(provenance.manifestSha256).toBe('26c8983f3377c841b7ec88d2e6fb1d34b3558e556031087462e962b409715459');
+            expect(provenance.manifestSha256).toBe('43db26dfab5a32b28f12b9d34db3be32b071a08139eee57f450807109072ecd3');
             expect(provenance.cpuCount).toBeGreaterThan(0);
             expect(provenance.memoryBytes).toBeGreaterThan(0);
             expect(provenance.diskAvailableBytes).toBeGreaterThan(0);
@@ -189,7 +199,7 @@ describe('GitHub Free distributed recipe workflow', () => {
             expect(provenance.chromium).toMatch(/^[A-Za-z ]+[0-9]+/);
             const retainedManifest = await readFile(path.join(directory, 'source-manifest.json'));
             expect(createHash('sha256').update(retainedManifest).digest('hex')).toBe(
-                '26c8983f3377c841b7ec88d2e6fb1d34b3558e556031087462e962b409715459'
+                '43db26dfab5a32b28f12b9d34db3be32b071a08139eee57f450807109072ecd3'
             );
         }
         finally {
@@ -265,11 +275,9 @@ describe('GitHub Free distributed recipe workflow', () => {
         );
 
         expect(result.status).toBe(0);
-        const output = JSON.parse(result.stdout) as {
-            runId: string;
-            distributedRunId: string;
-            matrix: ApiJsonValue[];
-        };
+        const decoded = JSON.parse(result.stdout);
+        expect(decoded).toEqual(expect.objectContaining({ runId: expect.any(String), distributedRunId: expect.any(String), matrix: expect.any(Array) }));
+        const output = decoded as WorkflowPlanMatrixOutput;
         expect(output.runId).toBe('gh-free-test');
         expect(output.distributedRunId).toBe('dist-gh-free-test');
         expect(output.matrix).toHaveLength(17);

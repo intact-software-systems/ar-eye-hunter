@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type {
     ArenaMatchLifecycleMessage,
@@ -7,7 +11,6 @@ import type {
     GameRealtimeMessage
 } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 import { createAlmScaleRecipes } from '../../shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-recipes.ts';
-import { toLoopChildCommand } from '../../shared-test/rallar-bb-test/loop/to-loop-child-command.ts';
 import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { isJsonRecordValue, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
@@ -74,23 +77,24 @@ function createExpectedLifecycleMessages(): readonly ArenaMatchLifecycleMessage[
                     ...match,
                     status: 'complete',
                     completedAtEpochMs: 1_802_088_060_000,
-                    results: Array.from(
-                        { length: 15 },
-                        (_, index) => ({
-                            sessionId: `fixture-player-${index + 1}`,
-                            username: `Player ${index + 1}`,
-                            scoreDelta: 0,
-                            killsDelta: 0,
-                            deathsDelta: 0,
-                            rank: index + 1
-                        })
-                    )
+                    results: createExpectedMatchResults()
                 },
                 revision: 2,
                 acceptedAtEpochMs: 1_802_088_060_000
             }
         }
     ];
+}
+
+function createExpectedMatchResults(): NonNullable<ArenaMatchState['results']> {
+    return Array.from({ length: 15 }, (_, index) => ({
+        sessionId: `fixture-player-${index + 1}`,
+        username: `Player ${index + 1}`,
+        scoreDelta: 0,
+        killsDelta: 0,
+        deathsDelta: 0,
+        rank: index + 1
+    }));
 }
 
 describe('ALM scale recipes', () => {
@@ -186,6 +190,7 @@ describe('ALM scale recipes', () => {
                 predicate: { operator: 'equals', expected: 6 }
             })
         ]));
+        expect(scale.groupAssertions).toHaveLength(73);
         for (const assertion of scale.groupAssertions) {
             const recipe = scale.recipes.find((recipe) => recipe.recipeId === assertion.source.recipeId)!;
             const sources = flattenCommands(recipe.commands).filter((command) => command.commandId === assertion.source.commandId);
@@ -197,22 +202,12 @@ describe('ALM scale recipes', () => {
     it('authors coherent AR Eye shot and completed-match wire specimens', () => {
         const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 });
         const playerCommands = flattenCommands(scale.recipes[1].commands);
-        const shotLoop = playerCommands.find((command) => command.kind === 'loop' && command.count === 6)!;
-        expect(shotLoop.kind).toBe('loop');
-        if (shotLoop.kind !== 'loop') {
-            throw new Error('Missing shot loop');
-        }
-        const shotTemplate = shotLoop.commands.find((command) => command.kind === 'messages.send')!;
-        const shot = toLoopChildCommand({
-            template: shotTemplate,
-            context: {
-                loopCommandId: 'shots',
-                index: 2,
-                iteration: 3,
-                elapsedMs: 10_000,
-                commandIndex: 0
-            }
-        });
+        const shots = playerCommands.filter((command) => command.kind === 'messages.send');
+        expect(shots).toHaveLength(6);
+        expect(shots.map((command) => 'handleId' in command ? command.handleId : undefined)).toEqual(
+            Array.from({ length: 6 }, (_, index) => `alm-scale-player-shot-${index + 1}`)
+        );
+        const shot = shots[2];
         expect(shot).toMatchObject({
             ack: 'group-leader',
             handleId: 'alm-scale-player-shot-3',

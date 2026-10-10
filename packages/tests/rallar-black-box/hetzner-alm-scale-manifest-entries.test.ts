@@ -84,7 +84,7 @@ describe('ALM scale manifest acceptance', () => {
                 expect(commands.find((command) => command.commandId === `${recipeId}-window`)).toMatchObject({ kind: 'parallel', timeoutMs: 30_000 });
                 expect(commands.find((command) => command.commandId === `${recipeId}-sampler`)).toMatchObject({ kind: 'loop', count: 7, intervalMs: 5_000 });
                 const sends = commands.filter((command) => command.kind === 'messages.send');
-                expect(sends).toHaveLength(role === 'sender' ? 2 : 1);
+                expect(sends).toHaveLength(role === 'sender' ? 2 : 6);
                 for (const send of sends) {
                     expect(send).toMatchObject({
                         carrier: 'rtc-with-ws-fallback',
@@ -139,7 +139,14 @@ describe('ALM scale manifest acceptance', () => {
                     }
                 }
                 else {
-                    expect(commands.find((command) => command.commandId === `${recipeId}-shots`)).toMatchObject({ count: 6, intervalMs: 5_000 });
+                    expect(commands.find((command) => command.commandId === `${recipeId}-shots`)).toMatchObject({ count: 6, intervalMs: 0 });
+                    expect(sends.map((send) => 'handleId' in send ? send.handleId : undefined))
+                        .toEqual(Array.from({ length: 6 }, (_, index) => `${recipeId}-shot-${index + 1}`));
+                    for (const [index, send] of sends.entries()) {
+                        expect(send).toMatchObject({
+                            payload: { payload: { seq: index + 1, payload: { shot: { seq: index + 1, sessionId: '{auth.sessionId}' } } } }
+                        });
+                    }
                     for (const event of ['started', 'ended']) {
                         expect(assertions).toContainEqual(expect.objectContaining({
                             source: { recipeId, commandId: `${recipeId}-${event}-arrival`, path: 'matched' },

@@ -2677,146 +2677,595 @@
                             "expected": "room.ar-eye-hunter.director.event.v1"
                           },
                           {
-                            "kind": "loop",
-                            "commandId": "alm-scale-player-shots",
-                            "count": 6,
-                            "intervalMs": 5000,
-                            "commands": [
+                            "kind": "parallel",
+                            "commandId": "alm-scale-player-shot-workload",
+                            "maxConcurrency": 1,
+                            "groups": [
                               {
-                                "kind": "messages.send",
-                                "commandId": "alm-scale-player-shot-send",
-                                "connection": "alm-scale-player",
-                                "handleId": "alm-scale-player-shot-{loop.iteration}",
-                                "carrier": "rtc-with-ws-fallback",
-                                "roomRef": {
-                                  "applicationId": "rallar-server",
-                                  "workspaceId": "default",
-                                  "groupId": "hetzner-headless-room"
-                                },
-                                "topicId": "room.ar-eye-hunter.director",
-                                "typeId": "room.ar-eye-hunter.director.intent.v1",
-                                "payload": {
-                                  "protocol": "rallar.director.relay.v1",
-                                  "topicId": "room.ar-eye-hunter.director",
-                                  "typeId": "room.ar-eye-hunter.director.intent.v1",
-                                  "roomId": "hetzner-headless-room",
-                                  "epoch": 1,
-                                  "sentAtEpochMs": 1802088000000,
-                                  "payload": {
-                                    "protocol": "ar-eye-hunter.v1",
-                                    "kind": "intent",
-                                    "roomId": "hetzner-headless-room",
-                                    "senderId": "{auth.sessionId}",
-                                    "seq": "{loop.iteration}",
-                                    "sentAtEpochMs": 1802088000000,
-                                    "directorEpoch": 1,
-                                    "payload": {
-                                      "protocol": "ar-eye-hunter.v1",
-                                      "kind": "player-shot-intent",
-                                      "shot": {
-                                        "sessionId": "{auth.sessionId}",
-                                        "username": "{auth.username}",
-                                        "color": "#55ccff",
-                                        "origin": [
-                                          0,
-                                          1.6,
-                                          0
-                                        ],
-                                        "direction": [
-                                          0,
-                                          0,
-                                          1
-                                        ],
-                                        "weaponKind": "pulse-rifle",
-                                        "charged": false,
-                                        "overdrive": false,
-                                        "seq": "{loop.iteration}",
-                                        "sentAtEpochMs": 1802088000000
+                                "groupId": "shots",
+                                "commands": [
+                                  {
+                                    "kind": "parallel",
+                                    "commandId": "alm-scale-player-scheduled-shots",
+                                    "maxConcurrency": 6,
+                                    "groups": [
+                                      {
+                                        "groupId": "shot-1",
+                                        "commands": [
+                                          {
+                                            "kind": "messages.send",
+                                            "commandId": "alm-scale-player-shot-1-send",
+                                            "connection": "alm-scale-player",
+                                            "handleId": "alm-scale-player-shot-1",
+                                            "carrier": "rtc-with-ws-fallback",
+                                            "roomRef": {
+                                              "applicationId": "rallar-server",
+                                              "workspaceId": "default",
+                                              "groupId": "hetzner-headless-room"
+                                            },
+                                            "topicId": "room.ar-eye-hunter.director",
+                                            "typeId": "room.ar-eye-hunter.director.intent.v1",
+                                            "payload": {
+                                              "protocol": "rallar.director.relay.v1",
+                                              "topicId": "room.ar-eye-hunter.director",
+                                              "typeId": "room.ar-eye-hunter.director.intent.v1",
+                                              "roomId": "hetzner-headless-room",
+                                              "epoch": 1,
+                                              "sentAtEpochMs": 1802088000000,
+                                              "payload": {
+                                                "protocol": "ar-eye-hunter.v1",
+                                                "kind": "intent",
+                                                "roomId": "hetzner-headless-room",
+                                                "senderId": "{auth.sessionId}",
+                                                "seq": 1,
+                                                "sentAtEpochMs": 1802088000000,
+                                                "directorEpoch": 1,
+                                                "payload": {
+                                                  "protocol": "ar-eye-hunter.v1",
+                                                  "kind": "player-shot-intent",
+                                                  "shot": {
+                                                    "sessionId": "{auth.sessionId}",
+                                                    "username": "{auth.username}",
+                                                    "color": "#55ccff",
+                                                    "origin": [
+                                                      0,
+                                                      1.6,
+                                                      0
+                                                    ],
+                                                    "direction": [
+                                                      0,
+                                                      0,
+                                                      1
+                                                    ],
+                                                    "weaponKind": "pulse-rifle",
+                                                    "charged": false,
+                                                    "overdrive": false,
+                                                    "seq": 1,
+                                                    "sentAtEpochMs": 1802088000000
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "reliability": "at-least-once",
+                                            "durability": "volatile",
+                                            "ack": "group-leader",
+                                            "ttlMs": 30000,
+                                            "timeoutMs": 5000
+                                          },
+                                          {
+                                            "kind": "messages.observe",
+                                            "commandId": "alm-scale-player-shot-1-acknowledged",
+                                            "connection": "alm-scale-player",
+                                            "handleId": "alm-scale-player-shot-1",
+                                            "state": [
+                                              "acknowledged"
+                                            ],
+                                            "timeoutMs": 30000
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "groupId": "shot-2",
+                                        "commands": [
+                                          {
+                                            "kind": "wait",
+                                            "commandId": "alm-scale-player-shot-2-offset",
+                                            "match": {
+                                              "kind": "diagnostic",
+                                              "topic": "rallar.black-box.alm.scale.shot-offset"
+                                            },
+                                            "absent": true,
+                                            "timeoutMs": 5000
+                                          },
+                                          {
+                                            "kind": "messages.send",
+                                            "commandId": "alm-scale-player-shot-2-send",
+                                            "connection": "alm-scale-player",
+                                            "handleId": "alm-scale-player-shot-2",
+                                            "carrier": "rtc-with-ws-fallback",
+                                            "roomRef": {
+                                              "applicationId": "rallar-server",
+                                              "workspaceId": "default",
+                                              "groupId": "hetzner-headless-room"
+                                            },
+                                            "topicId": "room.ar-eye-hunter.director",
+                                            "typeId": "room.ar-eye-hunter.director.intent.v1",
+                                            "payload": {
+                                              "protocol": "rallar.director.relay.v1",
+                                              "topicId": "room.ar-eye-hunter.director",
+                                              "typeId": "room.ar-eye-hunter.director.intent.v1",
+                                              "roomId": "hetzner-headless-room",
+                                              "epoch": 1,
+                                              "sentAtEpochMs": 1802088000000,
+                                              "payload": {
+                                                "protocol": "ar-eye-hunter.v1",
+                                                "kind": "intent",
+                                                "roomId": "hetzner-headless-room",
+                                                "senderId": "{auth.sessionId}",
+                                                "seq": 2,
+                                                "sentAtEpochMs": 1802088000000,
+                                                "directorEpoch": 1,
+                                                "payload": {
+                                                  "protocol": "ar-eye-hunter.v1",
+                                                  "kind": "player-shot-intent",
+                                                  "shot": {
+                                                    "sessionId": "{auth.sessionId}",
+                                                    "username": "{auth.username}",
+                                                    "color": "#55ccff",
+                                                    "origin": [
+                                                      0,
+                                                      1.6,
+                                                      0
+                                                    ],
+                                                    "direction": [
+                                                      0,
+                                                      0,
+                                                      1
+                                                    ],
+                                                    "weaponKind": "pulse-rifle",
+                                                    "charged": false,
+                                                    "overdrive": false,
+                                                    "seq": 2,
+                                                    "sentAtEpochMs": 1802088000000
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "reliability": "at-least-once",
+                                            "durability": "volatile",
+                                            "ack": "group-leader",
+                                            "ttlMs": 30000,
+                                            "timeoutMs": 5000
+                                          },
+                                          {
+                                            "kind": "messages.observe",
+                                            "commandId": "alm-scale-player-shot-2-acknowledged",
+                                            "connection": "alm-scale-player",
+                                            "handleId": "alm-scale-player-shot-2",
+                                            "state": [
+                                              "acknowledged"
+                                            ],
+                                            "timeoutMs": 30000
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "groupId": "shot-3",
+                                        "commands": [
+                                          {
+                                            "kind": "wait",
+                                            "commandId": "alm-scale-player-shot-3-offset",
+                                            "match": {
+                                              "kind": "diagnostic",
+                                              "topic": "rallar.black-box.alm.scale.shot-offset"
+                                            },
+                                            "absent": true,
+                                            "timeoutMs": 10000
+                                          },
+                                          {
+                                            "kind": "messages.send",
+                                            "commandId": "alm-scale-player-shot-3-send",
+                                            "connection": "alm-scale-player",
+                                            "handleId": "alm-scale-player-shot-3",
+                                            "carrier": "rtc-with-ws-fallback",
+                                            "roomRef": {
+                                              "applicationId": "rallar-server",
+                                              "workspaceId": "default",
+                                              "groupId": "hetzner-headless-room"
+                                            },
+                                            "topicId": "room.ar-eye-hunter.director",
+                                            "typeId": "room.ar-eye-hunter.director.intent.v1",
+                                            "payload": {
+                                              "protocol": "rallar.director.relay.v1",
+                                              "topicId": "room.ar-eye-hunter.director",
+                                              "typeId": "room.ar-eye-hunter.director.intent.v1",
+                                              "roomId": "hetzner-headless-room",
+                                              "epoch": 1,
+                                              "sentAtEpochMs": 1802088000000,
+                                              "payload": {
+                                                "protocol": "ar-eye-hunter.v1",
+                                                "kind": "intent",
+                                                "roomId": "hetzner-headless-room",
+                                                "senderId": "{auth.sessionId}",
+                                                "seq": 3,
+                                                "sentAtEpochMs": 1802088000000,
+                                                "directorEpoch": 1,
+                                                "payload": {
+                                                  "protocol": "ar-eye-hunter.v1",
+                                                  "kind": "player-shot-intent",
+                                                  "shot": {
+                                                    "sessionId": "{auth.sessionId}",
+                                                    "username": "{auth.username}",
+                                                    "color": "#55ccff",
+                                                    "origin": [
+                                                      0,
+                                                      1.6,
+                                                      0
+                                                    ],
+                                                    "direction": [
+                                                      0,
+                                                      0,
+                                                      1
+                                                    ],
+                                                    "weaponKind": "pulse-rifle",
+                                                    "charged": false,
+                                                    "overdrive": false,
+                                                    "seq": 3,
+                                                    "sentAtEpochMs": 1802088000000
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "reliability": "at-least-once",
+                                            "durability": "volatile",
+                                            "ack": "group-leader",
+                                            "ttlMs": 30000,
+                                            "timeoutMs": 5000
+                                          },
+                                          {
+                                            "kind": "messages.observe",
+                                            "commandId": "alm-scale-player-shot-3-acknowledged",
+                                            "connection": "alm-scale-player",
+                                            "handleId": "alm-scale-player-shot-3",
+                                            "state": [
+                                              "acknowledged"
+                                            ],
+                                            "timeoutMs": 30000
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "groupId": "shot-4",
+                                        "commands": [
+                                          {
+                                            "kind": "wait",
+                                            "commandId": "alm-scale-player-shot-4-offset",
+                                            "match": {
+                                              "kind": "diagnostic",
+                                              "topic": "rallar.black-box.alm.scale.shot-offset"
+                                            },
+                                            "absent": true,
+                                            "timeoutMs": 15000
+                                          },
+                                          {
+                                            "kind": "messages.send",
+                                            "commandId": "alm-scale-player-shot-4-send",
+                                            "connection": "alm-scale-player",
+                                            "handleId": "alm-scale-player-shot-4",
+                                            "carrier": "rtc-with-ws-fallback",
+                                            "roomRef": {
+                                              "applicationId": "rallar-server",
+                                              "workspaceId": "default",
+                                              "groupId": "hetzner-headless-room"
+                                            },
+                                            "topicId": "room.ar-eye-hunter.director",
+                                            "typeId": "room.ar-eye-hunter.director.intent.v1",
+                                            "payload": {
+                                              "protocol": "rallar.director.relay.v1",
+                                              "topicId": "room.ar-eye-hunter.director",
+                                              "typeId": "room.ar-eye-hunter.director.intent.v1",
+                                              "roomId": "hetzner-headless-room",
+                                              "epoch": 1,
+                                              "sentAtEpochMs": 1802088000000,
+                                              "payload": {
+                                                "protocol": "ar-eye-hunter.v1",
+                                                "kind": "intent",
+                                                "roomId": "hetzner-headless-room",
+                                                "senderId": "{auth.sessionId}",
+                                                "seq": 4,
+                                                "sentAtEpochMs": 1802088000000,
+                                                "directorEpoch": 1,
+                                                "payload": {
+                                                  "protocol": "ar-eye-hunter.v1",
+                                                  "kind": "player-shot-intent",
+                                                  "shot": {
+                                                    "sessionId": "{auth.sessionId}",
+                                                    "username": "{auth.username}",
+                                                    "color": "#55ccff",
+                                                    "origin": [
+                                                      0,
+                                                      1.6,
+                                                      0
+                                                    ],
+                                                    "direction": [
+                                                      0,
+                                                      0,
+                                                      1
+                                                    ],
+                                                    "weaponKind": "pulse-rifle",
+                                                    "charged": false,
+                                                    "overdrive": false,
+                                                    "seq": 4,
+                                                    "sentAtEpochMs": 1802088000000
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "reliability": "at-least-once",
+                                            "durability": "volatile",
+                                            "ack": "group-leader",
+                                            "ttlMs": 30000,
+                                            "timeoutMs": 5000
+                                          },
+                                          {
+                                            "kind": "messages.observe",
+                                            "commandId": "alm-scale-player-shot-4-acknowledged",
+                                            "connection": "alm-scale-player",
+                                            "handleId": "alm-scale-player-shot-4",
+                                            "state": [
+                                              "acknowledged"
+                                            ],
+                                            "timeoutMs": 30000
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "groupId": "shot-5",
+                                        "commands": [
+                                          {
+                                            "kind": "wait",
+                                            "commandId": "alm-scale-player-shot-5-offset",
+                                            "match": {
+                                              "kind": "diagnostic",
+                                              "topic": "rallar.black-box.alm.scale.shot-offset"
+                                            },
+                                            "absent": true,
+                                            "timeoutMs": 20000
+                                          },
+                                          {
+                                            "kind": "messages.send",
+                                            "commandId": "alm-scale-player-shot-5-send",
+                                            "connection": "alm-scale-player",
+                                            "handleId": "alm-scale-player-shot-5",
+                                            "carrier": "rtc-with-ws-fallback",
+                                            "roomRef": {
+                                              "applicationId": "rallar-server",
+                                              "workspaceId": "default",
+                                              "groupId": "hetzner-headless-room"
+                                            },
+                                            "topicId": "room.ar-eye-hunter.director",
+                                            "typeId": "room.ar-eye-hunter.director.intent.v1",
+                                            "payload": {
+                                              "protocol": "rallar.director.relay.v1",
+                                              "topicId": "room.ar-eye-hunter.director",
+                                              "typeId": "room.ar-eye-hunter.director.intent.v1",
+                                              "roomId": "hetzner-headless-room",
+                                              "epoch": 1,
+                                              "sentAtEpochMs": 1802088000000,
+                                              "payload": {
+                                                "protocol": "ar-eye-hunter.v1",
+                                                "kind": "intent",
+                                                "roomId": "hetzner-headless-room",
+                                                "senderId": "{auth.sessionId}",
+                                                "seq": 5,
+                                                "sentAtEpochMs": 1802088000000,
+                                                "directorEpoch": 1,
+                                                "payload": {
+                                                  "protocol": "ar-eye-hunter.v1",
+                                                  "kind": "player-shot-intent",
+                                                  "shot": {
+                                                    "sessionId": "{auth.sessionId}",
+                                                    "username": "{auth.username}",
+                                                    "color": "#55ccff",
+                                                    "origin": [
+                                                      0,
+                                                      1.6,
+                                                      0
+                                                    ],
+                                                    "direction": [
+                                                      0,
+                                                      0,
+                                                      1
+                                                    ],
+                                                    "weaponKind": "pulse-rifle",
+                                                    "charged": false,
+                                                    "overdrive": false,
+                                                    "seq": 5,
+                                                    "sentAtEpochMs": 1802088000000
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "reliability": "at-least-once",
+                                            "durability": "volatile",
+                                            "ack": "group-leader",
+                                            "ttlMs": 30000,
+                                            "timeoutMs": 5000
+                                          },
+                                          {
+                                            "kind": "messages.observe",
+                                            "commandId": "alm-scale-player-shot-5-acknowledged",
+                                            "connection": "alm-scale-player",
+                                            "handleId": "alm-scale-player-shot-5",
+                                            "state": [
+                                              "acknowledged"
+                                            ],
+                                            "timeoutMs": 30000
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "groupId": "shot-6",
+                                        "commands": [
+                                          {
+                                            "kind": "wait",
+                                            "commandId": "alm-scale-player-shot-6-offset",
+                                            "match": {
+                                              "kind": "diagnostic",
+                                              "topic": "rallar.black-box.alm.scale.shot-offset"
+                                            },
+                                            "absent": true,
+                                            "timeoutMs": 25000
+                                          },
+                                          {
+                                            "kind": "messages.send",
+                                            "commandId": "alm-scale-player-shot-6-send",
+                                            "connection": "alm-scale-player",
+                                            "handleId": "alm-scale-player-shot-6",
+                                            "carrier": "rtc-with-ws-fallback",
+                                            "roomRef": {
+                                              "applicationId": "rallar-server",
+                                              "workspaceId": "default",
+                                              "groupId": "hetzner-headless-room"
+                                            },
+                                            "topicId": "room.ar-eye-hunter.director",
+                                            "typeId": "room.ar-eye-hunter.director.intent.v1",
+                                            "payload": {
+                                              "protocol": "rallar.director.relay.v1",
+                                              "topicId": "room.ar-eye-hunter.director",
+                                              "typeId": "room.ar-eye-hunter.director.intent.v1",
+                                              "roomId": "hetzner-headless-room",
+                                              "epoch": 1,
+                                              "sentAtEpochMs": 1802088000000,
+                                              "payload": {
+                                                "protocol": "ar-eye-hunter.v1",
+                                                "kind": "intent",
+                                                "roomId": "hetzner-headless-room",
+                                                "senderId": "{auth.sessionId}",
+                                                "seq": 6,
+                                                "sentAtEpochMs": 1802088000000,
+                                                "directorEpoch": 1,
+                                                "payload": {
+                                                  "protocol": "ar-eye-hunter.v1",
+                                                  "kind": "player-shot-intent",
+                                                  "shot": {
+                                                    "sessionId": "{auth.sessionId}",
+                                                    "username": "{auth.username}",
+                                                    "color": "#55ccff",
+                                                    "origin": [
+                                                      0,
+                                                      1.6,
+                                                      0
+                                                    ],
+                                                    "direction": [
+                                                      0,
+                                                      0,
+                                                      1
+                                                    ],
+                                                    "weaponKind": "pulse-rifle",
+                                                    "charged": false,
+                                                    "overdrive": false,
+                                                    "seq": 6,
+                                                    "sentAtEpochMs": 1802088000000
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "reliability": "at-least-once",
+                                            "durability": "volatile",
+                                            "ack": "group-leader",
+                                            "ttlMs": 30000,
+                                            "timeoutMs": 5000
+                                          },
+                                          {
+                                            "kind": "messages.observe",
+                                            "commandId": "alm-scale-player-shot-6-acknowledged",
+                                            "connection": "alm-scale-player",
+                                            "handleId": "alm-scale-player-shot-6",
+                                            "state": [
+                                              "acknowledged"
+                                            ],
+                                            "timeoutMs": 30000
+                                          }
+                                        ]
                                       }
-                                    }
+                                    ]
+                                  },
+                                  {
+                                    "kind": "loop",
+                                    "commandId": "alm-scale-player-shots",
+                                    "count": 6,
+                                    "intervalMs": 0,
+                                    "commands": [
+                                      {
+                                        "kind": "messages.receipts",
+                                        "commandId": "alm-scale-player-shot-receipt",
+                                        "connection": "alm-scale-player",
+                                        "handleId": "alm-scale-player-shot-{loop.iteration}",
+                                        "timeoutMs": 5000
+                                      },
+                                      {
+                                        "kind": "assert",
+                                        "commandId": "alm-scale-player-shot-receipt-check-1",
+                                        "source": "resultCache.alm-scale-player-traffic:g1:workload:c1:alm-scale-player-window:g1:commands:c4:alm-scale-player-shot-workload:g1:shots:c2:alm-scale-player-shots:i{loop.iteration}:c1:alm-scale-player-shot-receipt.value.state",
+                                        "operator": "equals",
+                                        "expected": "acknowledged"
+                                      },
+                                      {
+                                        "kind": "assert",
+                                        "commandId": "alm-scale-player-shot-receipt-check-2",
+                                        "source": "resultCache.alm-scale-player-traffic:g1:workload:c1:alm-scale-player-window:g1:commands:c4:alm-scale-player-shot-workload:g1:shots:c2:alm-scale-player-shots:i{loop.iteration}:c1:alm-scale-player-shot-receipt.value.receiptMode",
+                                        "operator": "equals",
+                                        "expected": "leader"
+                                      },
+                                      {
+                                        "kind": "assert",
+                                        "commandId": "alm-scale-player-shot-receipt-check-3",
+                                        "source": "resultCache.alm-scale-player-traffic:g1:workload:c1:alm-scale-player-window:g1:commands:c4:alm-scale-player-shot-workload:g1:shots:c2:alm-scale-player-shots:i{loop.iteration}:c1:alm-scale-player-shot-receipt.value.expectedRecipientPeerIds.length",
+                                        "operator": "equals",
+                                        "expected": 1
+                                      },
+                                      {
+                                        "kind": "assert",
+                                        "commandId": "alm-scale-player-shot-receipt-check-4",
+                                        "source": "resultCache.alm-scale-player-traffic:g1:workload:c1:alm-scale-player-window:g1:commands:c4:alm-scale-player-shot-workload:g1:shots:c2:alm-scale-player-shots:i{loop.iteration}:c1:alm-scale-player-shot-receipt.value.confirmedRecipientPeerIds.length",
+                                        "operator": "equals",
+                                        "expected": 1
+                                      },
+                                      {
+                                        "kind": "assert",
+                                        "commandId": "alm-scale-player-shot-receipt-check-5",
+                                        "source": "resultCache.alm-scale-player-traffic:g1:workload:c1:alm-scale-player-window:g1:commands:c4:alm-scale-player-shot-workload:g1:shots:c2:alm-scale-player-shots:i{loop.iteration}:c1:alm-scale-player-shot-receipt.value.unconfirmedRecipientPeerIds.length",
+                                        "operator": "equals",
+                                        "expected": 0
+                                      },
+                                      {
+                                        "kind": "wait",
+                                        "commandId": "alm-scale-player-shot-expectedRecipientPeerIds",
+                                        "timeoutMs": 1000,
+                                        "match": {
+                                          "kind": "diagnostic",
+                                          "topic": "rallar.bb.messages.receipts",
+                                          "commandId": "alm-scale-player-traffic:g1:workload:c1:alm-scale-player-window:g1:commands:c4:alm-scale-player-shot-workload:g1:shots:c2:alm-scale-player-shots:i{loop.iteration}:c1:alm-scale-player-shot-receipt",
+                                          "payloadPath": "data",
+                                          "contains": "\"expectedRecipientPeerIds\":[\"{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\"]"
+                                        }
+                                      },
+                                      {
+                                        "kind": "wait",
+                                        "commandId": "alm-scale-player-shot-confirmedRecipientPeerIds",
+                                        "timeoutMs": 1000,
+                                        "match": {
+                                          "kind": "diagnostic",
+                                          "topic": "rallar.bb.messages.receipts",
+                                          "commandId": "alm-scale-player-traffic:g1:workload:c1:alm-scale-player-window:g1:commands:c4:alm-scale-player-shot-workload:g1:shots:c2:alm-scale-player-shots:i{loop.iteration}:c1:alm-scale-player-shot-receipt",
+                                          "payloadPath": "data",
+                                          "contains": "\"confirmedRecipientPeerIds\":[\"{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\"]"
+                                        }
+                                      }
+                                    ]
                                   }
-                                },
-                                "reliability": "at-least-once",
-                                "durability": "volatile",
-                                "ack": "group-leader",
-                                "ttlMs": 30000,
-                                "timeoutMs": 5000
-                              },
-                              {
-                                "kind": "messages.observe",
-                                "commandId": "alm-scale-player-shot-acknowledged",
-                                "connection": "alm-scale-player",
-                                "handleId": "alm-scale-player-shot-{loop.iteration}",
-                                "state": [
-                                  "acknowledged"
-                                ],
-                                "timeoutMs": 30000
-                              },
-                              {
-                                "kind": "messages.receipts",
-                                "commandId": "alm-scale-player-shot-receipt",
-                                "connection": "alm-scale-player",
-                                "handleId": "alm-scale-player-shot-{loop.iteration}",
-                                "timeoutMs": 5000
-                              },
-                              {
-                                "kind": "assert",
-                                "commandId": "alm-scale-player-shot-receipt-check-1",
-                                "source": "resultCache.alm-scale-player-traffic:g1:workload:c1:alm-scale-player-window:g1:commands:c4:alm-scale-player-shots:i{loop.iteration}:c3:alm-scale-player-shot-receipt.value.state",
-                                "operator": "equals",
-                                "expected": "acknowledged"
-                              },
-                              {
-                                "kind": "assert",
-                                "commandId": "alm-scale-player-shot-receipt-check-2",
-                                "source": "resultCache.alm-scale-player-traffic:g1:workload:c1:alm-scale-player-window:g1:commands:c4:alm-scale-player-shots:i{loop.iteration}:c3:alm-scale-player-shot-receipt.value.receiptMode",
-                                "operator": "equals",
-                                "expected": "leader"
-                              },
-                              {
-                                "kind": "assert",
-                                "commandId": "alm-scale-player-shot-receipt-check-3",
-                                "source": "resultCache.alm-scale-player-traffic:g1:workload:c1:alm-scale-player-window:g1:commands:c4:alm-scale-player-shots:i{loop.iteration}:c3:alm-scale-player-shot-receipt.value.expectedRecipientPeerIds.length",
-                                "operator": "equals",
-                                "expected": 1
-                              },
-                              {
-                                "kind": "assert",
-                                "commandId": "alm-scale-player-shot-receipt-check-4",
-                                "source": "resultCache.alm-scale-player-traffic:g1:workload:c1:alm-scale-player-window:g1:commands:c4:alm-scale-player-shots:i{loop.iteration}:c3:alm-scale-player-shot-receipt.value.confirmedRecipientPeerIds.length",
-                                "operator": "equals",
-                                "expected": 1
-                              },
-                              {
-                                "kind": "assert",
-                                "commandId": "alm-scale-player-shot-receipt-check-5",
-                                "source": "resultCache.alm-scale-player-traffic:g1:workload:c1:alm-scale-player-window:g1:commands:c4:alm-scale-player-shots:i{loop.iteration}:c3:alm-scale-player-shot-receipt.value.unconfirmedRecipientPeerIds.length",
-                                "operator": "equals",
-                                "expected": 0
-                              },
-                              {
-                                "kind": "wait",
-                                "commandId": "alm-scale-player-shot-expectedRecipientPeerIds",
-                                "timeoutMs": 1000,
-                                "match": {
-                                  "kind": "diagnostic",
-                                  "topic": "rallar.bb.messages.receipts",
-                                  "commandId": "alm-scale-player-traffic:g1:workload:c1:alm-scale-player-window:g1:commands:c4:alm-scale-player-shots:i{loop.iteration}:c3:alm-scale-player-shot-receipt",
-                                  "payloadPath": "data",
-                                  "contains": "\"expectedRecipientPeerIds\":[\"{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\"]"
-                                }
-                              },
-                              {
-                                "kind": "wait",
-                                "commandId": "alm-scale-player-shot-confirmedRecipientPeerIds",
-                                "timeoutMs": 1000,
-                                "match": {
-                                  "kind": "diagnostic",
-                                  "topic": "rallar.bb.messages.receipts",
-                                  "commandId": "alm-scale-player-traffic:g1:workload:c1:alm-scale-player-window:g1:commands:c4:alm-scale-player-shots:i{loop.iteration}:c3:alm-scale-player-shot-receipt",
-                                  "payloadPath": "data",
-                                  "contains": "\"confirmedRecipientPeerIds\":[\"{resultCache.alm-scale-player-ready-status.value.directorStatus.appointment.sessionId}\"]"
-                                }
+                                ]
                               }
                             ]
                           },
