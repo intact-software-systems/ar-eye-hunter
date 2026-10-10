@@ -25,7 +25,7 @@ import type {
 import { decodeControlDistributedRunArtifactBundle } from '@shared-test/rallar-bb-test/schema/control-artifact-envelope.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
+import { parseRtcCaptureMode, type ParsedRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 
 import { readManifestRunnerOptions } from './read-manifest-runner-options.ts';
 import { writeManifestArtifactFiles } from './write-manifest-artifact-files.ts';
@@ -166,10 +166,7 @@ export async function runWorldFleetDistributedRecipe(
     if (source.right === undefined) {
         return source.mapRight(() => true as const);
     }
-    const scopedManifest = source.right.manifest;
-    const manifest = capture.right.mode === undefined
-        ? scopedManifest
-        : { ...scopedManifest, rtcCaptureMode: capture.right.mode };
+    const manifest = applyWorldFleetCaptureMode(source.right.manifest, capture.right);
     const artifactDir = options.artifactDir ?? path.join('artifacts', 'world-fleet', manifest.distributedRunId);
     const run: WorldFleetRun = { options, manifest, dependencies, artifactDir };
     try {
@@ -181,6 +178,14 @@ export async function runWorldFleetDistributedRecipe(
     }
     const operation = await startWorldFleetRun(run);
     return await completeWorldFleetEvidence(run, operation);
+}
+
+/** Apply an admitted RUN selection while preserving every unrelated authored field. */
+export function applyWorldFleetCaptureMode(
+    manifest: RallarBlackBoxDistributedRunManifest,
+    capture: ParsedRtcCaptureMode
+): RallarBlackBoxDistributedRunManifest {
+    return capture.mode === undefined ? manifest : { ...manifest, rtcCaptureMode: capture.mode };
 }
 
 async function startWorldFleetRun(run: WorldFleetRun): Promise<Either<WorldFleetFailure, true>> {

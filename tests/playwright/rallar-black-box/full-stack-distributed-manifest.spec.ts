@@ -44,6 +44,8 @@ import { decodeControlRunSnapshot } from '../../../packages/shared-test/rallar-b
 import { decodeDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
 import { isJsonRecordValue } from '../../../packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
+import { expectWorldFleetManifest } from './expect-world-fleet-manifest.ts';
+
 const MANIFEST_PATH = 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json';
 const MANIFEST_SHA256 = '43db26dfab5a32b28f12b9d34db3be32b071a08139eee57f450807109072ecd3';
 const AGENT_IDS = Array.from({ length: 15 }, (_, index) => `controller-${String(index + 1).padStart(2, '0')}`);
@@ -187,7 +189,7 @@ test('observes the unchanged 15-agent ALM manifest with complete native evidence
             throw new Error('Native control snapshot could not be decoded.');
         }, (decoded) => decoded);
         await writeRecorderCompleteness(artifactDir, storageDir!, control);
-        expect(distributed.manifest).toEqual(manifest);
+        expectWorldFleetManifest(distributed.manifest, manifest, process.env.INPUT_RTC_CAPTURE_MODE);
         expect(distributed.state).toBe('passed');
         expect(distributed.targetAgentIds.slice().sort()).toEqual(AGENT_IDS);
         expect(distributed.targetResolution?.roleAssignments.map(({ agentId, role }) => ({ agentId, role }))).toEqual(
