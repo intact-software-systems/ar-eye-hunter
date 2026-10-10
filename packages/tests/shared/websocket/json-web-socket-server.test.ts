@@ -108,6 +108,75 @@ describe('JsonWebSocketServer', () => {
         expect(second.sent).toEqual(['{"fanout":true}']);
     });
 
+    it('captures actual native invocation and return without changing send failures', () => {
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        const server = new JsonWebSocketServer();
+        const socket = new TestWebSocket('native');
+        const evidence: { nativeCall: 'not-called' | 'invoked' | 'returned'; } = { nativeCall: 'not-called' };
+        server.addConnection(new ConnectionContext({ id: 'one', socket }));
+        const encoded = server.encode({ receipt: true });
+        expect(() => server.sendEncoded('one', encoded, evidence)).toThrow('connection not open');
+        expect(evidence.nativeCall).toBe('not-called');
+        socket.readyState = TestWebSocket.OPEN;
+        const original = new Error('native send failure');
+        const send = vi.spyOn(socket, 'send').mockImplementation(() => {
+            throw original;
+        });
+        try {
+            server.sendEncoded('one', encoded, evidence);
+            expect.fail('native throw required');
+        }
+        catch (error) {
+            expect(error).toBe(original);
+        }
+        expect(evidence.nativeCall).toBe('invoked');
+        send.mockRestore();
+        server.sendEncoded('one', encoded, evidence);
+        expect(evidence.nativeCall).toBe('returned');
+        expect(socket.sent).toEqual([encoded.text]);
+        const later = new Error('later owner failure');
+        expect(() => {
+            server.sendEncoded('one', encoded, evidence);
+            throw later;
+        }).toThrow(later);
+        expect(evidence.nativeCall).toBe('returned');
+        expect(socket.sent).toEqual([encoded.text, encoded.text]);
+    });
+
+    it('does not claim native invocation when the encoded argument throws', () => {
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        const server = new JsonWebSocketServer();
+        const socket = new TestWebSocket('native');
+        socket.readyState = TestWebSocket.OPEN;
+        server.addConnection(new ConnectionContext({ id: 'one', socket }));
+        const evidence: JsonWebSocketServer.SendEvidence = { nativeCall: 'not-called' };
+        const original = new Error('encoded argument failure');
+        const order: string[] = [];
+        const nativeSend = socket.send;
+        Object.defineProperty(socket, 'send', {
+            get() {
+                order.push('method');
+                return nativeSend;
+            }
+        });
+        const encoded = {
+            get text(): string {
+                order.push('argument');
+                throw original;
+            }
+        };
+        try {
+            server.sendEncoded('one', encoded, evidence);
+            expect.fail('encoded getter must throw');
+        }
+        catch (error) {
+            expect(error).toBe(original);
+        }
+        expect(socket.sent).toEqual([]);
+        expect(order).toEqual(['method', 'argument']);
+        expect(evidence.nativeCall).toBe('not-called');
+    });
+
     it('sends an encoded payload only to the captured connection generation', () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
 

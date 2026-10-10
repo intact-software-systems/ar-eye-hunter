@@ -21,6 +21,7 @@ import type {
 } from './al-outbound-message-runtime.ts';
 import type { ALOutboundPendingAdmission } from './al-outbound-pending-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
+import type { ALOutboundReceiptWorkEvidence } from './lane/al-outbound-receipt-observation.ts';
 import { readALOutboundDequeueWait } from './lane/read-al-outbound-dequeue-wait.ts';
 import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
 
@@ -55,19 +56,25 @@ export class ALOutboundMessageEffects<TPrepared> {
         this.dependencies = dependencies;
     }
 
-    async admitPendingMessage(effect: ALOutboundEffectSnapshot<TPrepared>): Promise<ALWorkOutcome> {
+    async admitPendingMessage(
+        effect: ALOutboundEffectSnapshot<TPrepared>,
+        evidence?: ALOutboundReceiptWorkEvidence
+    ): Promise<ALWorkOutcome> {
         const pending = effect.payload;
         const msg = effect.canonicalMessage;
         if (pending.kind !== 'admit-message' || !msg) {
             throw new NonRetryableException('Pending work has no canonical admission');
         }
         const runtime = this.dependencies.runtime;
+        evidence?.recordStage('pending-authority');
         const authority = await runtime.readPendingAdmissionAuthority?.(msg, pending.preparedMessages) ??
             { status: 'authorized' };
+        const nowMs = this.readNowMs();
+        evidence?.recordAuthority(authority.status, nowMs);
         const skip = computeALOutboundRetainedAdmissionSkip({
             msgId: pending.message.msgId,
             expiresAtMs: pending.message.expiresAtMs,
-            nowMs: this.readNowMs(),
+            nowMs,
             disposed: this.dependencies.sendSignal.aborted,
             authority
         });
@@ -77,6 +84,7 @@ export class ALOutboundMessageEffects<TPrepared> {
             }
             return skip.outcome;
         }
+        evidence?.recordStage('pending-commit');
         const result = await this.dependencies.dispatchAdmission.commit({
             msg,
             planner: () => toALOutboundRetainedDispatchPlan(msg, pending),
@@ -85,6 +93,8 @@ export class ALOutboundMessageEffects<TPrepared> {
             origin: 'drain',
             options: { pendingAdmission: effect.entry }
         });
+        evidence?.recordAdmission(result.computed.verdict.kind, result.committed);
+        evidence?.recordStage('pending-settlement');
         this.dependencies.settlements({
             kind: 'admission',
             msgId: pending.message.msgId,
@@ -98,7 +108,11 @@ export class ALOutboundMessageEffects<TPrepared> {
      * The breaker's whole accounting for the dequeue path: the work handler turns a rejection and a
      * thrown store error alike into an outcome, so an attempt that never returns still owes a charge.
      */
-    async admitDequeuedMessage(effect: ALOutboundEffectSnapshot<TPrepared>): Promise<ALWorkAttemptResult> {
+    async admitDequeuedMessage(
+        effect: ALOutboundEffectSnapshot<TPrepared>,
+        evidence?: ALOutboundReceiptWorkEvidence
+    ): Promise<ALWorkAttemptResult> {
+        evidence?.recordStage('dequeue-gate');
         const { resilience } = this.dependencies.runtime.dequeue;
         if (resilience.isNotAllowedThroughToDequeue()) {
             return { status: 'not-ready', readyAtMs: this.readNowMs() + resilience.toCircuitOpenBackoffMs() };
@@ -114,7 +128,7 @@ export class ALOutboundMessageEffects<TPrepared> {
             return wait;
         }
         try {
-            const outcome = await this.readDequeuedAdmissionOutcome(effect);
+            const outcome = await this.readDequeuedAdmissionOutcome(effect, evidence);
             outcome.status === 'retry' ? resilience.failure() : resilience.success();
             return outcome;
         }
@@ -127,17 +141,21 @@ export class ALOutboundMessageEffects<TPrepared> {
     }
 
     private async readDequeuedAdmissionOutcome(
-        effect: ALOutboundEffectSnapshot<TPrepared>
+        effect: ALOutboundEffectSnapshot<TPrepared>,
+        evidence: ALOutboundReceiptWorkEvidence | undefined
     ): Promise<ALWorkOutcome> {
         const runtime = this.dependencies.runtime;
         const msg = effect.canonicalMessage;
         if (!msg) {
             throw new NonRetryableException('Dequeued work has no message');
         }
+        evidence?.recordStage('dequeue-authority');
         const dequeueAuthority = await runtime.readDequeueAuthority?.(msg, effect.entry);
+        evidence?.recordStage('dequeue-supersedence');
         if (await this.dependencies.admissionStore.isMessageSuperseded(msg)) {
             return { status: 'completed' };
         }
+        evidence?.recordStage('dequeue-commit');
         const computed = await this.dependencies.commitDispatchPlan({
             msg,
             dequeueAuthority,
@@ -154,11 +172,13 @@ export class ALOutboundMessageEffects<TPrepared> {
                 ])
             }
         });
+        evidence?.recordAdmission(computed.verdict.kind);
         if (computed.verdict.kind === 'unroutable' && computed.verdict.reason === 'no-route') {
             return { status: 'retry' };
         }
         const [entry] = computed.entries;
         if (computed.msg && entry) {
+            evidence?.recordStage('dequeue-after-admission');
             await runtime.afterDequeueAdmission?.(computed.msg, entry);
         }
         return { status: 'completed' };

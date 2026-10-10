@@ -36,7 +36,12 @@ export interface ALWorkReadySelection {
     readonly earliestDueAtMs: number | undefined;
 }
 
+/** Per-batch private evidence, delivered after the handler's mandatory lifecycle; never a release receipt. */
+export type ALWorkObservationDeferral = (publish: () => void) => void;
+
 export interface ALWorkHandlerDependencies {
+    readonly captureClaimObservations?: boolean;
+
     readonly workerId: string;
     readonly port: ALWorkQueuePort;
     readonly queueEngine: InboxOutboxEngine;
@@ -77,7 +82,11 @@ export interface ALWorkHandlerDependencies {
      * claim that may commit this owner's work rows calls `ALWorkHandler.claimCommitted()` before it
      * runs, or the batch's end could restore an answer that misses those rows.
      */
-    readonly runClaim: (claim: ALWorkClaim, batchStartedAtMs: number) => Promise<ALWorkAttemptResult>;
+    readonly runClaim: (
+        claim: ALWorkClaim,
+        batchStartedAtMs: number,
+        deferObservation?: ALWorkObservationDeferral
+    ) => Promise<ALWorkAttemptResult>;
     readonly diagnostics: ((event: ALWorkDiagnostics) => void) | undefined;
     /**
      * Absent on the server lane and on the browser's memory lanes, which have no storage health
@@ -162,6 +171,7 @@ interface ALWorkCounts {
 interface ALWorkClaimedRun {
     readonly selection: ALWorkReadySelection;
     readonly runStartedAtMs: number;
+    readonly deferObservation: ALWorkObservationDeferral | undefined;
 }
 
 /** What a running batch has accumulated: its outcome counts and the two phases the handler itself times. */
@@ -326,12 +336,18 @@ export class ALWorkHandler {
         if (this.batch !== undefined) {
             return this.batch;
         }
-        this.batch = this.runSelectedWork()
+        const observations = this.dependencies.captureClaimObservations ? new ALWorkBatchObservations() : undefined;
+        this.batch = this.runSelectedWork(observations?.defer)
             .then((ended) => this.endBatch(ended))
             .catch((error) => this.failBatch(toError(error)))
             .finally(() => {
                 this.batch = undefined;
-                this.runPendingCommit();
+                try {
+                    this.runPendingCommit();
+                }
+                finally {
+                    observations?.publish();
+                }
             });
         return this.batch;
     }
@@ -373,7 +389,7 @@ export class ALWorkHandler {
         void this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
     }
 
-    private async runSelectedWork(): Promise<ALWorkBatchEnd> {
+    private async runSelectedWork(deferObservation: ALWorkObservationDeferral | undefined): Promise<ALWorkBatchEnd> {
         const { clock } = this.dependencies;
         const startedAtMs = clock.nowMs();
         const progress: ALWorkBatchProgress = {
@@ -388,7 +404,7 @@ export class ALWorkHandler {
         let run: ALWorkClaimedRun | undefined;
         try {
             if (!this.shutdown.signal.aborted) {
-                run = await this.runClaimedWork(releases, progress);
+                run = await this.runClaimedWork(releases, progress, deferObservation);
             }
         }
         finally {
@@ -409,18 +425,20 @@ export class ALWorkHandler {
      */
     private async runClaimedWork(
         releases: ALWorkRelease[],
-        progress: ALWorkBatchProgress
+        progress: ALWorkBatchProgress,
+        deferObservation: ALWorkObservationDeferral | undefined
     ): Promise<ALWorkClaimedRun | undefined> {
         const { clock, port, pageSize, selectReady } = this.dependencies;
         const selection = await selectReady(port, pageSize);
         const queued = [...selection.claims];
         progress.claimedCount = queued.length;
         const runStartedAtMs = clock.nowMs();
+        const run = { selection, runStartedAtMs, deferObservation };
         for (let claim = queued.shift(); claim !== undefined; claim = queued.shift()) {
             if (this.shutdown.signal.aborted) {
                 return undefined;
             }
-            const release = await this.runOne(claim, runStartedAtMs, progress);
+            const release = await this.runOne(claim, progress, run);
             if (release === undefined) {
                 continue;
             }
@@ -429,7 +447,7 @@ export class ALWorkHandler {
             queued.push(...successors);
             progress.claimedCount += successors.length;
         }
-        return { selection, runStartedAtMs };
+        return run;
     }
 
     /**
@@ -489,14 +507,14 @@ export class ALWorkHandler {
     /** The release the batch's flush owes this claim, or nothing at all for a retained one. */
     private async runOne(
         claim: ALWorkClaim,
-        batchStartedAtMs: number,
-        progress: ALWorkBatchProgress
+        progress: ALWorkBatchProgress,
+        run: ALWorkClaimedRun
     ): Promise<ALWorkRelease | undefined> {
         const { clock, runClaim } = this.dependencies;
         const runStartedAtMs = clock.nowMs();
         let result: ALWorkAttemptResult;
         try {
-            result = await runClaim(claim, batchStartedAtMs);
+            result = await runClaim(claim, run.runStartedAtMs, run.deferObservation);
         }
         catch (error) {
             result = toALWorkFailureOutcome(toError(error));
@@ -587,4 +605,22 @@ function toALWorkFailureOutcome(error: Error): ALWorkOutcome {
     return error instanceof ALAdmissionCorruptionError || error instanceof NonRetryableException
         ? { status: 'non-retryable' }
         : { status: 'retry' };
+}
+
+/** A capture-enabled batch owns these publications only until its mandatory lifecycle ends. */
+class ALWorkBatchObservations {
+    private readonly observations: Array<() => void> = [];
+    readonly defer: ALWorkObservationDeferral = (publish) => {
+        this.observations.push(publish);
+    };
+
+    publish(): void {
+        for (const publish of this.observations) {
+            try {
+                publish();
+            }
+            catch { /* Optional evidence cannot change work lifecycle. */ }
+        }
+        this.observations.length = 0;
+    }
 }

@@ -25,6 +25,7 @@ import type {
     ALOutboundSettledSendResult
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
+import { toALOutboundReceiptFacts } from '../../alm/outbound/lane/al-outbound-receipt-observation.ts';
 import { reconstructALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
@@ -74,6 +75,16 @@ import {
     type WsQueueBoxServerReceiptSocketFacts
 } from './ws-queue-box-server-receipt-observation.ts';
 import { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
+
+interface WsQueueBoxServerPreparedRecipientInput {
+    readonly prepared: Extract<
+        WsQueueBoxServerPreparedMessage,
+        { kind: 'recipient' | 'scoped-recipient' | 'room-recipient' | 'invalidated-session'; }
+    >;
+    readonly lifecycle: ALOutboundMessageRuntime.SendLifecycle;
+    readonly message: ALMessage;
+    readonly transport: JsonWebSocketServer.SendEvidence | undefined;
+}
 
 interface WsQueueBoxServerLiveDeliveryOwners {
     readonly targetResolution: WsQueueBoxServerTargetResolution;
@@ -243,7 +254,9 @@ export class WsQueueBoxServerService {
         const clusterPublication = new WsQueueBoxServerClusterPublication({
             targetResolution,
             canonicalScope: this.admissionStore.canonicalScope,
-            clock: this.clock
+            clock: this.clock,
+            receiptObserver: this.receiptObserver,
+            serverPeerId: this.name
         });
         const deliveryReporting = new WsQueueBoxServerDeliveryReporting({
             outboundOutcome: dependencies.outboundDeliveryOutcome,
@@ -334,6 +347,13 @@ export class WsQueueBoxServerService {
                 resilience: dependencies.dequeueResilience
             },
             diagnostics: dependencies.outboundDiagnostics,
+            receiptWorkObserver: this.receiptObserver === undefined
+                ? undefined
+                : (observation) =>
+                    recordWsQueueBoxServerReceiptObservation(this.receiptObserver, {
+                        ...observation,
+                        serverPeerId: this.name
+                    }),
             settlements: dependencies.outboundSettlements,
             toOutboxEntry: (message: ALMessage) =>
                 QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE),
@@ -633,6 +653,37 @@ export class WsQueueBoxServerService {
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): Promise<ALOutboundSettledSendResult> {
         const message = reconstructALOutboundTransportMessage(prepared.message, lifecycle.canonicalMessage);
+        const facts = this.receiptObserver === undefined ? undefined : toALOutboundReceiptFacts(message);
+        const transport: JsonWebSocketServer.SendEvidence | undefined = facts === undefined
+            ? undefined
+            : { nativeCall: 'not-called' };
+        let result: ALOutboundSettledSendResult | undefined;
+        try {
+            result = this.writePreparedRecipient({ prepared, lifecycle, message, transport });
+            return result;
+        }
+        finally {
+            if (facts !== undefined && transport !== undefined) {
+                recordWsQueueBoxServerReceiptObservation(this.receiptObserver, {
+                    ...facts,
+                    kind: 'receipt-transport',
+                    serverPeerId: this.name,
+                    transport: 'recipient',
+                    nativeCall: transport.nativeCall,
+                    connectionId: prepared.connectionId,
+                    publisherCall: 'absent',
+                    originIsHere: undefined,
+                    outcome: result?.status ?? 'threw',
+                    submissionAttempted: result?.submissionAttempted,
+                    retryAfterMs: result?.retryAfterMs
+                }, lifecycle.deferReceiptObservation);
+            }
+        }
+    }
+
+    private writePreparedRecipient(
+        { prepared, lifecycle, message, transport }: WsQueueBoxServerPreparedRecipientInput
+    ): ALOutboundSettledSendResult {
         if (lifecycle.signal.aborted) {
             return { status: 'cancelled', submissionAttempted: false };
         }
@@ -662,7 +713,7 @@ export class WsQueueBoxServerService {
             ) {
                 return { status: 'no-targets', submissionAttempted: false };
             }
-            this.socket.sendEncoded(prepared.connectionId, encoded);
+            this.socket.sendEncoded(prepared.connectionId, encoded, transport);
             this.recordPreparedRecipientSent(message, encoded.text.length);
             return { status: 'sent', submissionAttempted: true };
         }

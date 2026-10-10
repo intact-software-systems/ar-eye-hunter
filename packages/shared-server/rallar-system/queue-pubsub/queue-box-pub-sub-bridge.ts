@@ -10,6 +10,8 @@ import {
     toALOutboundIdentityKey
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toALOutboundReceiptFacts } from '@shared/alm/outbound/lane/al-outbound-receipt-observation.ts';
+import type { ALWorkObservationDeferral } from '@shared/alm/work/al-work-handler.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
@@ -27,6 +29,10 @@ import type {
     WsServerLiveSendInputDto,
     WsServerLiveSendResult
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import {
+    recordWsQueueBoxServerReceiptObservation,
+    type WsQueueBoxServerReceiptObserver
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { isWsQueueBoxServerReceiptRow } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-row.ts';
 import {
     recordRallarTiming,
@@ -46,7 +52,11 @@ import { requeueRemoteWsOutboxDeliveryFailure } from './requeue-remote-ws-outbox
 export interface QueueBoxPubSubWsService {
     readonly outbox: QueueBoxResourceEntryRepository;
     onOutboxClusterPublishDo(
-        publisher: (message: ALMessage, entry: ResourceEntry) => Promise<void>
+        publisher: (
+            message: ALMessage,
+            entry: ResourceEntry,
+            deferObservation?: ALWorkObservationDeferral
+        ) => Promise<void>
     ): QueueBoxPubSubWsService;
     readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy>;
     sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult;
@@ -59,6 +69,7 @@ export interface CapturedWsRecipientEligibilityInputDto {
 }
 
 export interface InstallQueueBoxPubSubBridgeOptions {
+    readonly receiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly clock?: ALOutboundMessageRuntime.Clock;
     readonly wsQBoxServerService: QueueBoxPubSubWsService;
     readonly bridge: QueueBoxPubSubBridge;
@@ -79,6 +90,7 @@ export interface InstallQueueBoxPubSubBridgeOptions {
 }
 
 interface RegisterQueueBoxOutboxPublisherInput {
+    readonly receiptObserver: WsQueueBoxServerReceiptObserver | undefined;
     readonly wsQBoxServerService: QueueBoxPubSubWsService;
     readonly bridge: QueueBoxPubSubBridge;
     readonly channel: string;
@@ -151,7 +163,8 @@ export function installQueueBoxPubSubBridge(
         channel,
         publisherId,
         timing,
-        filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds
+        filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds,
+        receiptObserver: options.receiptObserver
     });
     const readiness = timeRallarAsync(
         timing,
@@ -187,23 +200,36 @@ export function installQueueBoxPubSubBridge(
 function registerQueueBoxOutboxPublisher(
     options: RegisterQueueBoxOutboxPublisherInput
 ): void {
-    options.wsQBoxServerService.onOutboxClusterPublishDo(async (message, entry) => {
-        const envelope = toPubSubMessage({
-            channel: options.channel,
-            publisherId: options.publisherId,
-            entry
-        });
-        await options.bridge.publish(
-            options.channel,
-            envelope
-        );
-        recordPubSubTiming({
-            timing: options.timing,
-            operation: 'outbox-cluster-publish',
-            message: envelope
-        });
+    options.wsQBoxServerService.onOutboxClusterPublishDo((message, entry, deferObservation) =>
+        writeQueueBoxOutboxPublication({ message, entry, deferObservation }, options)
+    );
+}
+
+async function writeQueueBoxOutboxPublication(
+    publication: {
+        readonly message: ALMessage;
+        readonly entry: ResourceEntry;
+        readonly deferObservation: ALWorkObservationDeferral | undefined;
+    },
+    options: RegisterQueueBoxOutboxPublisherInput
+): Promise<void> {
+    const { message, entry, deferObservation } = publication;
+    const facts = options.receiptObserver === undefined ? undefined : toALOutboundReceiptFacts(message);
+    const serverPeerId = message.id.senderId;
+    let publishCall: 'not-called' | 'invoked' | 'returned' = 'not-called';
+    let directCall: 'not-called' | 'invoked' | 'returned' = 'not-called';
+    let result: WsServerLiveSendResult | undefined;
+    let outcome: 'returned' | 'threw' = 'threw';
+    try {
+        const envelope = toPubSubMessage({ channel: options.channel, publisherId: options.publisherId, entry });
+        publishCall = 'invoked';
+        await options.bridge.publish(options.channel, envelope);
+        publishCall = 'returned';
+        recordPubSubTiming({ timing: options.timing, operation: 'outbox-cluster-publish', message: envelope });
         const policy = await readCapturedPublicationPolicy(options.wsQBoxServerService, message, entry);
-        const result = sendToCapturedLocalTargets({ message, entry, policy }, options);
+        directCall = 'invoked';
+        result = sendToCapturedLocalTargets({ message, entry, policy }, options);
+        directCall = 'returned';
         recordPubSubTiming({
             timing: options.timing,
             operation: 'outbox-direct-send',
@@ -219,7 +245,25 @@ function registerQueueBoxOutboxPublisher(
         if (result.failedCount > 0) {
             throw new Error(`Failed ${result.failedCount} local WS outbox sends`);
         }
-    });
+        outcome = 'returned';
+    }
+    finally {
+        if (facts !== undefined) {
+            recordWsQueueBoxServerReceiptObservation(options.receiptObserver, {
+                ...facts,
+                kind: 'receipt-publication',
+                serverPeerId,
+                publisherId: options.publisherId,
+                publishCall,
+                directCall,
+                outcome,
+                directStatus: result?.status,
+                recipientCount: result?.recipientCount,
+                sentCount: result?.sentCount,
+                failedCount: result?.failedCount
+            }, deferObservation);
+        }
+    }
 }
 
 async function receiveQueueBoxPubSubMessage(

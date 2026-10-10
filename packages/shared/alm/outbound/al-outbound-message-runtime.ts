@@ -32,6 +32,7 @@ import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
 import type { ALVolatileSessionBudget, ALVolatileSessionLimit } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
+import type { ALWorkObservationDeferral } from '../work/al-work-handler.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -40,6 +41,7 @@ import type {
 } from './admission/al-outbound-admission-store.ts';
 import type { ALSessionInvalidationAuthority } from './admission/al-session-invalidation-authority.ts';
 import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
+import type { ALOutboundReceiptWorkObserver } from './lane/al-outbound-receipt-observation.ts';
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
@@ -436,6 +438,7 @@ export namespace ALOutboundMessageRuntime {
         | Readonly<{ status: 'rejected'; reason: string; }>
         | Readonly<{ status: 'not-ready'; reason: string; retryAfterMs: number; }>;
     export interface SendLifecycle {
+        readonly deferReceiptObservation?: ALWorkObservationDeferral;
         readonly canonicalMessage: ALMessage;
         /** This message's own signal: `cancel(msgId)` aborts it directly; disposal aborts every live one. */
         readonly signal: AbortSignal;
@@ -478,6 +481,8 @@ export namespace ALOutboundMessageRuntime {
     }
 
     export interface Dependencies<TPrepared> extends Resources<TPrepared> {
+        /** Absent outside explicitly enabled private server receipt capture. */
+        readonly receiptWorkObserver?: ALOutboundReceiptWorkObserver;
         /** Which transport this owner drives; every settlement it states is stamped with it. */
         readonly carrier: ALDeliveryCarrier;
         readonly dequeue: DequeueSource;
