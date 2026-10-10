@@ -8,7 +8,12 @@ import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALDurableWorkLaneOwnership } from './al-durable-work-ownership.ts';
 import type { ALWorkBatchObservations } from './al-work-batch-observations.ts';
 import { ALWorkEngineMembership } from './al-work-engine-membership.ts';
-import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort, ALWorkRelease } from './al-work-queue-port.ts';
+import type {
+    ALWorkClaim,
+    ALWorkOutcome,
+    ALWorkQueuePort,
+    ALWorkRelease
+} from './al-work-queue-port.ts';
 import {
     ALWorkReadinessMemory,
     type ALWorkCommittedRows,
