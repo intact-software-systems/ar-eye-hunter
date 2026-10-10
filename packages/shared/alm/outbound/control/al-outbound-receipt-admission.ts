@@ -14,6 +14,7 @@ import {
     validateALOutboundReceiptAdmission
 } from './compute-al-outbound-receipt-admission.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './write-al-outbound-control-admission-diagnostic.ts';
+import { writeALOutboundReceiptConfirmationDiagnostic } from './write-al-outbound-receipt-confirmation-diagnostic.ts';
 
 export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
     readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
@@ -42,7 +43,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         if (decoded?.type !== 'receipt') {
             return { kind: 'not-handled' };
         }
-        const admitted = await this.admitReceipt(decoded.payload);
+        const admitted = await this.admitReceipt(control, decoded.payload);
         writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
             control,
             targetMsgId: decoded.payload.msgId,
@@ -52,9 +53,12 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         return admitted;
     }
 
-    private async admitReceipt(receipt: ALReceiptPayload): Promise<ALOutboundControlAdmissionResult> {
+    private async admitReceipt(
+        control: ALMessage,
+        receipt: ALReceiptPayload
+    ): Promise<ALOutboundControlAdmissionResult> {
         for (let attempt = 0; attempt < ALOutboundReceiptAdmission.MAX_ATTEMPTS; attempt += 1) {
-            const result = await this.admitOnce(receipt);
+            const result = await this.admitOnce(control, receipt, attempt + 1);
             if (result !== 'conflict') {
                 return result;
             }
@@ -66,7 +70,11 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         return { kind: 'rejected', reason };
     }
 
-    private async admitOnce(receipt: ALReceiptPayload): Promise<ALOutboundControlAdmissionResult | 'conflict'> {
+    private async admitOnce(
+        control: ALMessage,
+        receipt: ALReceiptPayload,
+        attempt: number
+    ): Promise<ALOutboundControlAdmissionResult | 'conflict'> {
         const { admissionStore, clock } = this.dependencies;
         const surface = await admissionStore.readReceiptAdmission({
             originPeerId: receipt.originPeerId,
@@ -75,6 +83,13 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         const candidate = computeALOutboundReceiptAdmission({ ...surface, receipt, nowMs: clock.nowMs() });
         const issues = validateALOutboundReceiptAdmission(candidate);
         if (issues.length > 0 || candidate.write === undefined) {
+            writeALOutboundReceiptConfirmationDiagnostic(this.dependencies.diagnostics, {
+                control,
+                candidate,
+                attempt,
+                commitOutcome: 'not-attempted',
+                settlement: undefined
+            });
             return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
         const status = await admissionStore.commitBundle({
@@ -83,8 +98,19 @@ export class ALOutboundReceiptAdmission<TPrepared> {
             mutations: [toALOutboundReceiptMutation(candidate.write, receipt)],
             durableEffects: []
         });
-        if (status === 'committed') {
-            this.dependencies.settlements(toALOutboundReceiptSettlement(candidate.read, candidate.write));
+        const settlement = status === 'committed'
+            ? toALOutboundReceiptSettlement(candidate.read, candidate.write)
+            : undefined;
+        // Snapshot the exact fact before an external settlement sink can mutate its retained arrays.
+        writeALOutboundReceiptConfirmationDiagnostic(this.dependencies.diagnostics, {
+            control,
+            candidate,
+            attempt,
+            commitOutcome: status,
+            settlement
+        });
+        if (settlement !== undefined) {
+            this.dependencies.settlements(settlement);
             return { kind: 'committed' };
         }
         return status === 'conflict' ? 'conflict' : { kind: 'rejected', reason: 'AL receipt commit expired' };

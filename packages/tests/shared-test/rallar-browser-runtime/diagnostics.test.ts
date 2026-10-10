@@ -10,6 +10,12 @@ import {
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 
 import {
+    createReceiptTrackingFixture,
+    receiptMessage,
+    roomMessage
+} from '../../shared/services/receipt-tracking-test-fixture.ts';
+import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
+import {
     events,
     facade,
     loadRuntime,
@@ -22,7 +28,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
+    TestWebSocket.instances.length = 0;
 });
 
 it('emits auth restore failure diagnostics when no session or credentials exist', async () => {
@@ -317,6 +326,62 @@ it('records an AL outbound admission diagnostics event into the agent event log'
             }
         })
     ]));
+});
+
+it.each([
+    { confirmed: ['b'], unconfirmed: ['c'], complete: false },
+    { confirmed: ['b', 'c'], unconfirmed: [], complete: true }
+])('records actual receipt confirmation facts for $confirmed into the agent event log', async ({ confirmed, unconfirmed, complete }) => {
+    const runtime = await loadRuntime();
+    await runtime.connect({
+        connection: 'diagnostics',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+    });
+    const diagnosticsSink = facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.outboundDiagnostics;
+    expect(diagnosticsSink).toBeDefined();
+    const fixture = await createReceiptTrackingFixture({ serverPeerId: 'server', diagnosticsSink });
+    await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+    await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+    await fixture.service.acceptIncomingMessage(receiptMessage('complete', confirmed));
+    await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b'], { msgId: 'unsent-message', expectedRecipientPeerIds: ['b', 'c'] }));
+
+    const recorded = JSON.parse(JSON.stringify(events.filter((event) => event.topic === 'rallar.browser.alm.outbound_diagnostics').map((event) => event.data)));
+    expect(recorded).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+            kind: 'receipt-confirmation',
+            msgId: 'receipt-complete',
+            typeId: 'al.control.receipt.v1',
+            targetMsgId: 'room-message-1',
+            originPeerId: 'self',
+            controlSenderId: 'server',
+            snapshotVersion: 7,
+            phase: 'complete',
+            expectedRecipientPeerIds: ['b', 'c'],
+            confirmedRecipientPeerIds: confirmed,
+            pendingBefore: expect.objectContaining({ expectedPeerIds: ['b', 'c'], ackedPeerIds: [] }),
+            candidateAfter: expect.objectContaining({ expectedPeerIds: ['b', 'c'], ackedPeerIds: confirmed }),
+            attempt: 1,
+            commitOutcome: 'committed',
+            settlement: expect.objectContaining({
+                expectedRecipientPeerIds: ['b', 'c'],
+                confirmedRecipientPeerIds: confirmed,
+                unconfirmedRecipientPeerIds: unconfirmed,
+                complete
+            })
+        }),
+        expect.objectContaining({
+            kind: 'receipt-confirmation',
+            targetMsgId: 'unsent-message',
+            pendingBefore: null,
+            candidateAfter: null,
+            senderVersion: expect.any(Number),
+            candidateExpiresAtMs: null,
+            settlement: null,
+            commitOutcome: 'not-attempted'
+        })
+    ]));
+    expect(JSON.stringify(recorded)).not.toContain('secret');
+    await runtime.close();
 });
 
 it('records an AL inbound admission diagnostics event into the agent event log', async () => {

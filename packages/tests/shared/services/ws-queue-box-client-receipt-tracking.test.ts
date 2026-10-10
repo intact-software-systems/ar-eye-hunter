@@ -1,42 +1,23 @@
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import {
     AL_RECEIPT_DEADLINE_GRACE_MS,
-    newALAckControlMessage,
-    newALReceiptControlMessage,
-    type ALReceiptPayload
+    newALAckControlMessage
 } from '@shared/al-contracts/al-control.ts';
-import {
-    createDefaultInMemoryALOutboundRuntimeStores,
-    createVolatileALOutboundRuntimeStores
-} from '@shared/alm/al-runtime-stores.ts';
-import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type {
-    ALOutboundRuntimeDiagnosticsEvent,
-    ALOutboundRuntimeStores,
-    ALVolatileOutboundRuntimeStores
-} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import {
-    decodeALOutboundTransportMessage,
-    type ALOutboundTransportMessage
-} from '@shared/alm/outbound/al-outbound-transport-message.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
-import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
+import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
+import {
+    createReceiptTrackingFixture,
+    receiptMessage,
+    roomMessage,
+    type ReceiptTrackingFixture
+} from './receipt-tracking-test-fixture.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
-
-interface ReceiptTrackingFixture {
-    readonly service: WsQueueBoxClientService;
-    readonly outboundStores: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
-    readonly settlements: ALDeliverySettlement[];
-    readonly diagnostics: ALOutboundRuntimeDiagnosticsEvent[];
-}
 
 describe('WS client receipt tracking for a receiver room send', () => {
     afterEach(() => {
@@ -101,6 +82,13 @@ describe('WS client receipt tracking for a receiver room send', () => {
             unconfirmedRecipientPeerIds: ['c'],
             complete: false
         });
+        expect(fixture.diagnostics.filter((event) => event.kind === 'receipt-confirmation').at(-1)).toMatchObject({
+            phase: 'timed-out',
+            commitOutcome: 'committed',
+            pendingBefore: { expectedPeerIds: ['b', 'c'], ackedPeerIds: [] },
+            candidateAfter: { expectedPeerIds: ['b', 'c'], ackedPeerIds: ['b'] },
+            settlement: { confirmedRecipientPeerIds: ['b'], unconfirmedRecipientPeerIds: ['c'], complete: false }
+        });
     });
 
     it('writes nothing for a repeated receipt or one about a message this origin never sent', async () => {
@@ -111,7 +99,7 @@ describe('WS client receipt tracking for a receiver room send', () => {
         expect(acknowledgements()).toHaveLength(1);
 
         await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
-        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c'], 'unsent-message'));
+        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c'], { msgId: 'unsent-message', expectedRecipientPeerIds: ['b', 'c'] }));
 
         expect(acknowledgements()).toHaveLength(1);
         expect(await fixture.outboundStores.admissionStore.readReceiptState({ originPeerId: 'self', msgId: 'unsent-message' }))
@@ -179,7 +167,7 @@ describe('WS client receipt tracking for a receiver unicast that names its room 
         expect(await readUnicastReceipt()).toBeUndefined();
 
         await fixture.service.acceptIncomingMessage(
-            receiptMessage('admitted', [], 'unicast-message-1', ['b'])
+            receiptMessage('admitted', [], { msgId: 'unicast-message-1', expectedRecipientPeerIds: ['b'] })
         );
         expect(await readUnicastReceipt()).toMatchObject({
             mode: 'receiver',
@@ -187,7 +175,7 @@ describe('WS client receipt tracking for a receiver unicast that names its room 
             ackedPeerIds: []
         });
         await fixture.service.acceptIncomingMessage(
-            receiptMessage('complete', ['b'], 'unicast-message-1', ['b'])
+            receiptMessage('complete', ['b'], { msgId: 'unicast-message-1', expectedRecipientPeerIds: ['b'] })
         );
 
         expect(
@@ -221,7 +209,7 @@ describe('WS client receipt tracking for a receiver unicast that names its room 
         expect([sent.verdict.kind, sent.trackedReceiptAlgo]).toEqual(['admitted', 'leader']);
         expect(await readReceipt(fixture)).toBeUndefined();
 
-        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', [], 'room-message-1', ['c']));
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', [], { msgId: 'room-message-1', expectedRecipientPeerIds: ['c'] }));
         expect(await readReceipt(fixture)).toMatchObject({ mode: 'leader', expectedPeerIds: ['c'], ackedPeerIds: [] });
         const acknowledgements = () => fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement');
         const admittedAcknowledgements = acknowledgements().length;
@@ -229,7 +217,7 @@ describe('WS client receipt tracking for a receiver unicast that names its room 
         await fixture.service.acceptIncomingMessage(serverAck('room-message-1'));
         expect(await readReceipt(fixture)).toMatchObject({ mode: 'leader', expectedPeerIds: ['c'], ackedPeerIds: [] });
         expect(acknowledgements()).toHaveLength(admittedAcknowledgements);
-        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['c'], 'room-message-1', ['c']));
+        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['c'], { msgId: 'room-message-1', expectedRecipientPeerIds: ['c'] }));
 
         expect(acknowledgements().at(-1)).toMatchObject({
             msgId: 'room-message-1',
@@ -352,7 +340,7 @@ describe('WS client receipts the server answers itself (R-S3a-4, D57 as applied)
             ...roomMessage(),
             delivery: { reliability: 'at-least-once', ack: 'group-leader' }
         });
-        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', [], 'room-message-1', ['c']));
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', [], { msgId: 'room-message-1', expectedRecipientPeerIds: ['c'] }));
 
         expect(sent.trackedReceiptAlgo).toBe('leader');
         expect(await readReceipt(fixture)).toMatchObject({ mode: 'leader', expectedPeerIds: ['c'], ackedPeerIds: [] });
@@ -367,11 +355,167 @@ describe('WS client receipt admission edges', () => {
         TestWebSocket.instances.length = 0;
     });
 
+    it.each([
+        { confirmed: ['b'], unconfirmed: ['c'], complete: false },
+        { confirmed: ['b', 'c'], unconfirmed: [], complete: true }
+    ])('retains actual complete-phase confirmation facts for $confirmed', async ({ confirmed, unconfirmed, complete }) => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_000_000);
+        const fixture = await createReceiptTrackingFixture();
+        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+        const before = await fixture.outboundStores.admissionStore.readReceiptAdmission({ originPeerId: 'self', msgId: 'room-message-1' });
+        vi.setSystemTime(1_000_100);
+        const control = receiptMessage('complete', confirmed);
+        vi.setSystemTime(1_000_150);
+
+        await fixture.service.acceptIncomingMessage(control);
+
+        const confirmation = fixture.diagnostics.filter((event) => event.kind === 'receipt-confirmation').at(-1);
+        expect(confirmation).toMatchObject({
+            kind: 'receipt-confirmation',
+            msgId: 'receipt-complete',
+            typeId: AL_CONTROL_RECEIPT_TYPE_ID,
+            controlSenderId: 'server',
+            targetMsgId: 'room-message-1',
+            originPeerId: 'self',
+            expectedRecipientPeerIds: ['b', 'c'],
+            confirmedRecipientPeerIds: confirmed,
+            snapshotVersion: 7,
+            phase: 'complete',
+            observedAtEpochMs: 1_000_100,
+            admissionAtMs: 1_000_150,
+            attempt: 1,
+            senderVersion: before.clientRecord?.version,
+            commitOutcome: 'committed',
+            pendingBefore: { mode: 'receiver', expectedPeerIds: ['b', 'c'], ackedPeerIds: [], deadlineAtMs: 1_030_000 },
+            candidateAfter: { mode: 'receiver', expectedPeerIds: ['b', 'c'], ackedPeerIds: confirmed, deadlineAtMs: 1_030_000 },
+            candidateExpiresAtMs: 1_030_000 + AL_RECEIPT_DEADLINE_GRACE_MS,
+            settlement: {
+                kind: 'acknowledgement',
+                msgId: 'room-message-1',
+                mode: 'receiver',
+                confirmedHopPeerIds: [],
+                unconfirmedHopPeerIds: [],
+                expectedRecipientPeerIds: ['b', 'c'],
+                confirmedRecipientPeerIds: confirmed,
+                unconfirmedRecipientPeerIds: unconfirmed,
+                complete
+            }
+        });
+        expect(before.clientRecord?.version).not.toBe(7);
+        expect(await readReceipt(fixture)).toMatchObject({ expectedPeerIds: ['b', 'c'], ackedPeerIds: confirmed });
+        const acknowledgement = fixture.settlements.filter((event) => event.kind === 'acknowledgement').at(-1)!;
+        expect(acknowledgement).toMatchObject({ confirmedRecipientPeerIds: confirmed, unconfirmedRecipientPeerIds: unconfirmed, complete });
+        Reflect.set(acknowledgement.confirmedRecipientPeerIds, '0', 'changed-after-emission');
+        expect(confirmation).toMatchObject({
+            confirmedRecipientPeerIds: confirmed,
+            candidateAfter: { ackedPeerIds: confirmed },
+            settlement: { confirmedRecipientPeerIds: confirmed }
+        });
+    });
+
+    it('retains explicit absence for unknown receipts and the first admitted pending row', async () => {
+        const fixture = await createReceiptTrackingFixture();
+        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c']));
+        expect(fixture.diagnostics.filter((event) => event.kind === 'receipt-confirmation')).toEqual([
+            expect.objectContaining({
+                pendingBefore: null,
+                candidateAfter: null,
+                candidateExpiresAtMs: null,
+                senderVersion: null,
+                settlement: null,
+                commitOutcome: 'not-attempted',
+                attempt: 1
+            })
+        ]);
+        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+        expect(fixture.diagnostics.filter((event) => event.kind === 'receipt-confirmation').at(-1)).toMatchObject({
+            pendingBefore: null,
+            candidateAfter: { expectedPeerIds: ['b', 'c'], ackedPeerIds: [] },
+            commitOutcome: 'committed',
+            settlement: { complete: false, unconfirmedRecipientPeerIds: ['b', 'c'] }
+        });
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+        expect(fixture.diagnostics.filter((event) => event.kind === 'receipt-confirmation').at(-1)).toMatchObject({
+            pendingBefore: { expectedPeerIds: ['b', 'c'], ackedPeerIds: [] },
+            candidateAfter: { expectedPeerIds: ['b', 'c'], ackedPeerIds: [] },
+            commitOutcome: 'not-attempted',
+            settlement: null
+        });
+    });
+
+    it('retains each actual conflicted or expired attempt without inventing a settlement', async () => {
+        const fixture = await createReceiptTrackingFixture();
+        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+        const store = fixture.outboundStores.admissionStore;
+        const before = await store.readReceiptAdmission({ originPeerId: 'self', msgId: 'room-message-1' });
+        const commitBundle = store.commitBundle.bind(store);
+        const commit = vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle) => {
+            const concurrent = roomMessage();
+            await fixture.service.enqueueOutboxIfAbsent({ ...concurrent, id: { ...concurrent.id, msgId: 'concurrent-send' } });
+            return await commitBundle(bundle);
+        });
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+        expect(fixture.diagnostics.filter((event) => event.kind === 'receipt-confirmation')).toEqual([
+            expect.objectContaining({
+                attempt: 1,
+                senderVersion: before.clientRecord!.version,
+                commitOutcome: 'conflict',
+                pendingBefore: null,
+                settlement: null
+            }),
+            expect.objectContaining({
+                attempt: 2,
+                senderVersion: before.clientRecord!.version + 1,
+                commitOutcome: 'committed',
+                pendingBefore: null,
+                settlement: expect.objectContaining({ complete: false })
+            })
+        ]);
+        commit.mockResolvedValue('conflict');
+        vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c']));
+        expect(fixture.diagnostics.filter((event) => event.kind === 'receipt-confirmation').slice(-3)).toEqual(
+            [1, 2, 3].map((attempt) =>
+                expect.objectContaining({ attempt, commitOutcome: 'conflict', pendingBefore: expect.objectContaining({ ackedPeerIds: [] }), settlement: null })
+            )
+        );
+        commit.mockResolvedValueOnce('expired');
+        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c']));
+        expect(fixture.diagnostics.filter((event) => event.kind === 'receipt-confirmation').at(-1)).toMatchObject({
+            attempt: 1,
+            commitOutcome: 'expired',
+            settlement: null
+        });
+        expect(await readReceipt(fixture)).toMatchObject({ ackedPeerIds: [] });
+        expect(fixture.settlements.filter((event) => event.kind === 'acknowledgement' && event.complete)).toEqual([]);
+    });
+
+    it.each(['absent', 'throwing'] as const)('preserves receipt writes and settlements with an $0 diagnostics sink', async (sink) => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const fixture = await createReceiptTrackingFixture({
+            serverPeerId: 'server',
+            diagnosticsSink: sink === 'absent' ? null : () => {
+                throw new Error('test sink failure');
+            }
+        });
+        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+        const accepted = await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c']));
+        expect(accepted.right).toEqual({ kind: 'control', handled: false });
+        expect(await readReceipt(fixture)).toMatchObject({ ackedPeerIds: ['b', 'c'] });
+        expect(fixture.settlements.filter((event) => event.kind === 'acknowledgement').at(-1)).toMatchObject({
+            complete: true,
+            confirmedRecipientPeerIds: ['b', 'c']
+        });
+    });
+
     it('acknowledges an empty admitted audience at once', async () => {
         const fixture = await createReceiptTrackingFixture();
         await fixture.service.enqueueOutboxIfAbsent(roomMessage());
 
-        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', [], 'room-message-1', []));
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', [], { msgId: 'room-message-1', expectedRecipientPeerIds: [] }));
 
         expect(await readReceipt(fixture)).toMatchObject({ expectedPeerIds: [], ackedPeerIds: [] });
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement')).toEqual([
@@ -453,7 +597,7 @@ describe('WS client receipt admission edges', () => {
         await fixture.service.enqueueOutboxIfAbsent(roomMessage());
 
         await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
-        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c'], 'unsent-message'));
+        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c'], { msgId: 'unsent-message', expectedRecipientPeerIds: ['b', 'c'] }));
 
         expect(fixture.diagnostics.filter((event) => event.kind === 'control-admission')).toEqual([
             {
@@ -486,92 +630,14 @@ describe('WS client receipt admission edges', () => {
         await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
 
         const [admission] = fixture.diagnostics.filter((event) => event.kind === 'control-admission');
-        expect(JSON.stringify(admission)).toContain(
-            `"typeId":"${AL_CONTROL_RECEIPT_TYPE_ID}","targetMsgId":"room-message-1","outcome":"committed","reason":"none","phase":"admitted"`
+        expect(JSON.stringify(admission)).toBe(
+            '{"kind":"control-admission","msgId":"receipt-admitted","typeId":"al.control.receipt.v1","targetMsgId":"room-message-1","outcome":"committed","reason":"none","phase":"admitted"}'
         );
-    });
-
-    it('reads afresh after a version conflict and refuses once the conflicts outlast its attempts', async () => {
-        const fixture = await createReceiptTrackingFixture();
-        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
-        const commit = vi.spyOn(fixture.outboundStores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
-
-        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
-
-        expect(await readReceipt(fixture)).toMatchObject({ expectedPeerIds: ['b', 'c'] });
-        commit.mockResolvedValue('conflict');
-        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c']));
-
-        expect(await readReceipt(fixture)).toMatchObject({ ackedPeerIds: [] });
-        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement' && settlement.complete)).toEqual([]);
     });
 });
 
-interface ReceiptTrackingFixtureInput {
-    readonly serverPeerId: string | undefined;
-    /** The memory pair a volatile send is admitted to; absent, every send uses the one pair. */
-    readonly outboundVolatileStores?: ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage>;
-}
-
-async function createReceiptTrackingFixture(
-    input: ReceiptTrackingFixtureInput = { serverPeerId: 'server' }
-): Promise<ReceiptTrackingFixture> {
-    vi.stubGlobal('WebSocket', TestWebSocket);
-    const client = new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort());
-    const connected = client.connect();
-    await Promise.resolve();
-    TestWebSocket.instances.at(-1)!.open();
-    await connected;
-    const settlements: ALDeliverySettlement[] = [];
-    const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
-    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage });
-    const service = createDefaultWsQueueBoxClientService({
-        outbox: new InMemoryQueueBox(new Map()),
-        socket: client,
-        sessionId: 'self',
-        serverPeerId: input.serverPeerId,
-        outboundStores,
-        outboundVolatileStores: input.outboundVolatileStores,
-        outboundSettlements: (settlement) => settlements.push(settlement),
-        outboundDiagnostics: (event) => diagnostics.push(event)
-    });
-    onTestFinished(() => service.close());
-    return { service, outboundStores, settlements, diagnostics };
-}
-
 async function readReceipt(fixture: ReceiptTrackingFixture) {
     return await fixture.outboundStores.admissionStore.readReceiptState({ originPeerId: 'self', msgId: 'room-message-1' });
-}
-
-function roomMessage(): ALMessage {
-    return {
-        id: { v: 3, msgId: 'room-message-1', ts: Date.now(), senderId: 'self' },
-        route: { topicId: 'room.notification', resourceId: 'resource', contextId: ROOM.groupId },
-        targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
-        constraints: { expiresAtMs: Date.now() + 30_000 },
-        delivery: { reliability: 'at-least-once', ack: 'receiver' },
-        payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' }
-    };
-}
-
-function receiptMessage(
-    phase: ALReceiptPayload['phase'],
-    confirmedRecipientPeerIds: readonly string[],
-    msgId = 'room-message-1',
-    expectedRecipientPeerIds: readonly string[] = ['b', 'c']
-): ALMessage {
-    return newALReceiptControlMessage(
-        { v: 3, msgId: `receipt-${phase}`, senderId: 'server', ts: Date.now() },
-        {
-            msgId,
-            originPeerId: 'self',
-            expectedRecipientPeerIds,
-            confirmedRecipientPeerIds,
-            snapshotVersion: 7,
-            phase,
-            observedAtEpochMs: Date.now()
-        }
-    );
 }
 
 /** The server's own ACK: it speaks for itself as the recipient and is addressed to the origin. */
