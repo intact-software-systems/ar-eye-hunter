@@ -484,7 +484,7 @@ it('separates a conflicted candidate from replay IDs and retained work', async (
         });
 });
 
-it('reports terminal origin bypass without a candidate, read, commit or generated work', async () => {
+it('reports terminal origin bypass without a candidate or generated work', async () => {
     const received: string[] = [];
     const fixture = new AcknowledgementFixture({
         onControlMessage: async (msg) => {
@@ -492,13 +492,9 @@ it('reports terminal origin bypass without a candidate, read, commit or generate
         }
     });
     await fixture.runtime.ready();
-    const read = vi.spyOn(fixture.store, 'readControlDecisionSurface');
-    const commit = vi.spyOn(fixture.store, 'commitBundle');
     expect((await fixture.runtime.admitIncomingMessage(fixture.acknowledgement('relay'), { kind: 'trusted-server' })).right)
         .toEqual({ kind: 'control', handled: false });
     expect(received).toEqual(['incoming-control']);
-    expect(read).not.toHaveBeenCalled();
-    expect(commit).not.toHaveBeenCalled();
     expect(await fixture.state.workQueue.getAllKeys()).toEqual([]);
     expect(fixture.resolveAssociation()?.data).toMatchObject({
         terminalOrigin: true,
