@@ -1,6 +1,11 @@
 import { readFile, realpath } from 'node:fs/promises';
 import { createRequire, findPackageJSON } from 'node:module';
-import { dirname, relative, resolve, sep } from 'node:path';
+import {
+    dirname,
+    relative,
+    resolve,
+    sep
+} from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export type FullStackRtcBuildToolResult<T> = { readonly ok: true; readonly value: T; } | {
@@ -30,8 +35,8 @@ export async function readFullStackRtcBuildToolInputs(): Promise<FullStackRtcBui
         const compilerPackage = fileURLToPath(import.meta.resolve('typescript/package.json', app));
         const compilerResolver = resolve(dirname(compilerPackage), 'lib/getExePath.js');
         const compiler = await import(pathToFileURL(compilerResolver).href);
-        const compilerNative: unknown = compiler.default();
-        if (typeof compilerNative !== 'string') {
+        const compilerNative = decodeCompilerNativePath(compiler.default());
+        if (compilerNative === null) {
             return buildToolFailure();
         }
         const viteEntry = fileURLToPath(import.meta.resolve('vite', app));
@@ -128,6 +133,10 @@ async function readNpmBuildExecutable(repoRoot: string, name: string): Promise<s
 async function readBundlerEntryImports(entry: string): Promise<readonly string[]> {
     const source = await readFile(entry, 'utf8');
     return [...source.matchAll(/from\s+["'](\.\/[^"']+\.mjs)["']/g)].map((match) => resolve(dirname(entry), match[1]!));
+}
+
+function decodeCompilerNativePath(raw: unknown): string | null {
+    return typeof raw === 'string' ? raw : null;
 }
 
 function buildToolFailure(): FullStackRtcBuildToolResult<never> {

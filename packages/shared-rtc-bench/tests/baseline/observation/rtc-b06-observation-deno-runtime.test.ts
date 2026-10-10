@@ -1,6 +1,16 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+    lstat,
+    mkdir,
+    mkdtemp,
+    readdir,
+    readFile,
+    rename,
+    rm,
+    symlink,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -436,6 +446,7 @@ describe('RTC-B06 observation Deno runtime', () => {
                 'apps/api-v1/src/configuration/decode-api-v1-configuration-source.ts',
                 'apps/api-v1/src/configuration/read-api-v1-configuration.ts',
                 'apps/rallar-black-box/playwright-full-stack-api-server.ts',
+                'apps/rallar-black-box/rtc-production-artifacts.ts',
                 'tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts',
                 'apps/rallar-black-box/playwright.full-stack.config.ts',
                 'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-deno-runtime.ts',

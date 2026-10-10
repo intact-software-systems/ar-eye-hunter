@@ -1,7 +1,10 @@
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { lstat, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import {
+    readdir,
+    readFile,
+    writeFile
+} from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 import {
@@ -11,11 +14,18 @@ import {
 import {
     decodeProductionSeal,
     FULL_STACK_RTC_PRODUCTION_POLICY,
-    type FullStackRtcProductionFile,
     type FullStackRtcProductionSeal
 } from '../../packages/shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-production-proof.ts';
 import { Either } from '../../packages/shared/resilience/Either.ts';
 import type { LiveRtcPerformanceAttemptContext } from '../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
+
+import {
+    readConfinedProductionPath,
+    readProductionEntryFiles,
+    readProductionInputs,
+    readProductionOutput,
+    readProductionOwner
+} from './rtc-production-artifacts.ts';
 
 export interface FullStackRtcProductionAttempt {
     readonly repoRoot: string;
@@ -61,11 +71,14 @@ export async function prepareFullStackRtcProduction(
         return productionFailure('production-binding-invalid');
     }
     try {
-        await readProductionOwner(attempt, configuration);
+        await readProductionOwner(attempt.repoRoot, configuration.buildRoot, {
+            baselineId: attempt.baselineId,
+            attempt: attempt.locator
+        });
         if ((await readdir(resolve(configuration.buildRoot, 'output'))).length > 0) {
             return productionFailure('production-binding-invalid');
         }
-        await readProductionInputs(attempt);
+        await readProductionInputs(attempt.repoRoot, attempt.runtimeObservation.sourceHashes);
         await readBoundProductionBuildTools(attempt, dependencies);
         const git = await dependencies.readGit();
         if (JSON.stringify(git) !== JSON.stringify(attempt.runtimeObservation.git)) {
@@ -80,7 +93,7 @@ export async function prepareFullStackRtcProduction(
         if (await dependencies.build(buildArguments, privateEnvironment) !== 0) {
             return productionFailure('production-build-failed');
         }
-        await readProductionInputs(attempt);
+        await readProductionInputs(attempt.repoRoot, attempt.runtimeObservation.sourceHashes);
         await readBoundProductionBuildTools(attempt, dependencies);
         return Either.ofRight(
             await writeCompletedProductionSeal(attempt, configuration, { git, arguments: buildArguments })
@@ -134,15 +147,19 @@ export async function readFullStackRtcProductionSeal(
         return productionFailure('production-binding-invalid');
     }
     try {
-        await readProductionOwner(attempt, configuration);
-        await readProductionInputs(attempt);
+        await readProductionOwner(attempt.repoRoot, configuration.buildRoot, {
+            baselineId: attempt.baselineId,
+            attempt: attempt.locator
+        });
+        await readProductionInputs(attempt.repoRoot, attempt.runtimeObservation.sourceHashes);
         await readBoundProductionBuildTools(attempt, dependencies);
         await readConfinedProductionPath(attempt.repoRoot, resolve(configuration.buildRoot, 'seal.json'), 'file');
         if (JSON.stringify(await dependencies.readGit()) !== JSON.stringify(attempt.runtimeObservation.git)) {
             return productionFailure('production-binding-invalid');
         }
-        const raw: unknown = JSON.parse(await readFile(resolve(configuration.buildRoot, 'seal.json'), 'utf8'));
-        const decoded = decodeProductionSeal(raw);
+        const decoded = decodeProductionSeal(
+            JSON.parse(await readFile(resolve(configuration.buildRoot, 'seal.json'), 'utf8'))
+        );
         if (!decoded) {
             return productionFailure('production-binding-invalid');
         }
@@ -162,7 +179,12 @@ export async function readFullStackRtcProductionSeal(
         ) {
             return productionFailure('production-binding-invalid');
         }
-        return Either.ofRight(decoded);
+        return Either.ofRight({
+            ...decoded,
+            attempt: attempt.locator,
+            git: attempt.runtimeObservation.git,
+            inputFiles: attempt.runtimeObservation.sourceHashes
+        });
     }
     catch {
         return productionFailure('production-binding-invalid');
@@ -288,103 +310,6 @@ async function readBoundProductionBuildTools(
     if (!selected.every((path) => attempt.runtimeObservation.sourceHashes.some((file) => file.path === path))) {
         throw new Error('Selected installed build tools differ from initialized inputs.');
     }
-}
-
-async function readProductionOwner(
-    attempt: FullStackRtcProductionAttempt,
-    configuration: FullStackRtcProductionConfiguration
-): Promise<void> {
-    await readConfinedProductionPath(attempt.repoRoot, configuration.buildRoot, 'directory');
-    await readConfinedProductionPath(attempt.repoRoot, resolve(configuration.buildRoot, 'output'), 'directory');
-    await readConfinedProductionPath(attempt.repoRoot, resolve(configuration.buildRoot, 'owner.json'), 'file');
-    const owner: unknown = JSON.parse(await readFile(resolve(configuration.buildRoot, 'owner.json'), 'utf8'));
-    if (JSON.stringify(owner) !== JSON.stringify({ baselineId: attempt.baselineId, attempt: attempt.locator })) {
-        throw new Error('Unowned production output.');
-    }
-}
-
-async function readProductionInputs(attempt: FullStackRtcProductionAttempt): Promise<void> {
-    for (const file of attempt.runtimeObservation.sourceHashes) {
-        const path = resolve(attempt.repoRoot, file.path);
-        await readConfinedProductionPath(attempt.repoRoot, path, 'file');
-        if (createHash('sha256').update(await readFile(path)).digest('hex') !== file.sha256) {
-            throw new Error('Production source inputs changed.');
-        }
-    }
-}
-
-async function readConfinedProductionPath(root: string, path: string, kind: 'file' | 'directory'): Promise<void> {
-    const confined = relative(root, path);
-    if (isAbsolute(confined) || confined.startsWith(`..${sep}`) || confined === '..') {
-        throw new Error('Escaping production path.');
-    }
-    let current = root;
-    for (const segment of confined.split(sep).filter(Boolean)) {
-        current = resolve(current, segment);
-        const status = await lstat(current);
-        if (status.isSymbolicLink()) {
-            throw new Error('Symlinked production path.');
-        }
-    }
-    const status = await lstat(path);
-    if (
-        (kind === 'file' && !status.isFile()) || (kind === 'directory' && !status.isDirectory()) ||
-        await realpath(path) !== resolve(await realpath(root), confined)
-    ) {
-        throw new Error('Unsafe production path.');
-    }
-}
-
-async function readProductionOutput(buildRoot: string): Promise<readonly FullStackRtcProductionFile[]> {
-    const output = resolve(buildRoot, 'output');
-    const files: FullStackRtcProductionFile[] = [];
-    async function readDirectory(directory: string): Promise<void> {
-        for (const name of (await readdir(directory)).sort()) {
-            const path = resolve(directory, name);
-            const status = await lstat(path);
-            if (status.isSymbolicLink()) {
-                throw new Error('Symlinked build output.');
-            }
-            if (status.isDirectory()) {
-                await readDirectory(path);
-            }
-            else if (status.isFile()) {
-                const bytes = await readFile(path);
-                files.push({
-                    path: relative(output, path).split(sep).join('/'),
-                    sizeBytes: bytes.length,
-                    sha256: createHash('sha256').update(bytes).digest('hex')
-                });
-            }
-            else {
-                throw new Error('Invalid build output.');
-            }
-        }
-    }
-    await readDirectory(output);
-    return files.sort((left, right) => left.path.localeCompare(right.path));
-}
-
-async function readProductionEntryFiles(
-    buildRoot: string,
-    files: readonly FullStackRtcProductionFile[]
-): Promise<readonly string[]> {
-    const raw: unknown = JSON.parse(await readFile(resolve(buildRoot, 'output/.vite/manifest.json'), 'utf8'));
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-        throw new Error('Invalid production manifest.');
-    }
-    const entries = Object.values(raw).filter((value) => value && typeof value === 'object' && value.isEntry === true);
-    const entryFiles = entries.map((value) => value.file);
-    const html = await readFile(resolve(buildRoot, 'output/index.html'), 'utf8');
-    if (
-        entryFiles.length === 0 ||
-        entryFiles.some((path) =>
-            typeof path !== 'string' || !files.some((file) => file.path === path) || !html.includes(path)
-        )
-    ) {
-        throw new Error('Incomplete production manifest.');
-    }
-    return entryFiles.sort();
 }
 
 function productionFailure(code: FullStackRtcProductionFailure['code']): Either<FullStackRtcProductionFailure, never> {

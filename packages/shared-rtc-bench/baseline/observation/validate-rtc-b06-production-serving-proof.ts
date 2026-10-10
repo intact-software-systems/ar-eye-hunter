@@ -1,4 +1,4 @@
-import { validateFullStackRtcProductionProof } from '../../../shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-production-proof.ts';
+import { decodeFullStackRtcProductionProof } from '../../../shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-production-proof.ts';
 import type { RtcBaselineIssueDto, RtcBaselineSampleDto } from '../contracts/rtc-baseline-contracts.ts';
 export function validateRtcB06ProductionServingProof(sample: RtcBaselineSampleDto): readonly RtcBaselineIssueDto[] {
     const observation = sample.runtimeObservation;
@@ -12,7 +12,7 @@ export function validateRtcB06ProductionServingProof(sample: RtcBaselineSampleDt
     const raw = sample.rawEvidence;
     const proof = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw.productionServing : undefined;
     const baselineId = observation.controllerInputs.find((entry) => entry.name === 'baselineId')?.value;
-    const issues = validateFullStackRtcProductionProof(proof, {
+    const decoded = decodeFullStackRtcProductionProof(proof, {
         baselineId: typeof baselineId === 'string' ? baselineId : '',
         attempt: {
             workloadId: sample.identity.workloadId,
@@ -29,7 +29,7 @@ export function validateRtcB06ProductionServingProof(sample: RtcBaselineSampleDt
         git: observation.git,
         inputFiles: observation.sourceHashes
     });
-    return issues.length > 0
+    return decoded.left
         ? [{
             path: '$.rawEvidence.productionServing',
             code: 'production-serving-proof-invalid',

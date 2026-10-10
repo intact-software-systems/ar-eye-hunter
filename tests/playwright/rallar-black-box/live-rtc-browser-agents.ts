@@ -1,4 +1,9 @@
-import { expect, type BrowserContext, type Response } from '@playwright/test';
+import {
+    expect,
+    type BrowserContext,
+    type Page,
+    type Response
+} from '@playwright/test';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { BlackBoxRallarRoomRefreshOptions } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 
@@ -58,7 +63,7 @@ export interface LiveRtcBrowserContextFactory {
 }
 
 export interface LiveRtcBrowserEntryPage {
-    goto(url: string): Promise<unknown>;
+    goto(url: string): ReturnType<Page['goto']> | Promise<void>;
     on(event: 'response', listener: (response: Pick<Response, 'url' | 'status' | 'body'>) => void): void;
     off(event: 'response', listener: (response: Pick<Response, 'url' | 'status' | 'body'>) => void): void;
 }

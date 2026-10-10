@@ -1,3 +1,6 @@
+import type { ApiJsonObject, ApiJsonValue } from '../../../../shared/api/api-json-value.ts';
+import { Either } from '../../../../shared/resilience/Either.ts';
+
 export interface FullStackRtcProductionAttemptIdentity {
     readonly workloadId: string;
     readonly caseId: string;
@@ -48,6 +51,13 @@ export interface FullStackRtcProductionSeal {
     readonly buildArguments: readonly string[];
 }
 
+export interface FullStackRtcProductionSealCandidate
+    extends Omit<FullStackRtcProductionSeal, 'attempt' | 'git' | 'inputFiles'> {
+    readonly attempt: ApiJsonValue;
+    readonly git: ApiJsonValue;
+    readonly inputFiles: readonly ApiJsonValue[];
+}
+
 export interface FullStackRtcServedBuild {
     readonly seal: FullStackRtcProductionSeal;
     readonly servedFiles: readonly FullStackRtcProductionFile[];
@@ -84,13 +94,13 @@ const sealKeys = [
     'buildArguments'
 ];
 
-export function validateFullStackRtcProductionProof(
+export function decodeFullStackRtcProductionProof(
     raw: unknown,
     binding: FullStackRtcProductionBinding
-): readonly string[] {
-    const proof = toRecord(raw);
-    const build = toRecord(proof?.build);
-    const seal = toRecord(build?.seal);
+): Either<readonly string[], FullStackRtcServingProof> {
+    const proof = decodeProductionProofRecord(raw);
+    const build = decodeProductionProofRecord(proof?.build);
+    const seal = decodeProductionProofRecord(build?.seal);
     const issues = validateProductionProofBinding(binding, seal);
     if (
         !proof || !build || !seal || Object.keys(proof).some((key) => !['build', 'entries'].includes(key)) ||
@@ -98,11 +108,35 @@ export function validateFullStackRtcProductionProof(
     ) {
         issues.push('missing-proof');
     }
-    return seal && build && proof ? [...issues, ...validateProductionProofFiles(seal, build, proof)] : issues;
+    if (seal && build && proof) {
+        issues.push(...validateProductionProofFiles(seal, build, proof));
+    }
+    return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(toFullStackRtcServingProof(proof!, binding));
 }
+function toFullStackRtcServingProof(
+    proof: ApiJsonObject,
+    binding: FullStackRtcProductionBinding
+): FullStackRtcServingProof {
+    const build = decodeProductionProofRecord(proof.build)!;
+    const seal = decodeProductionSeal(build.seal)!;
+    const servedFiles = decodeProductionProofFiles(build.servedFiles)!;
+    const entries = (proof.entries as readonly ApiJsonValue[]).map((rawEntry) => {
+        const entry = decodeProductionProofRecord(rawEntry)!;
+        const file = servedFiles.find((file) => file.path === entry.path)!;
+        return { prefix: entry.prefix as FullStackRtcBrowserEntry['prefix'], ...file };
+    });
+    return {
+        build: {
+            seal: { ...seal, attempt: binding.attempt, git: binding.git, inputFiles: binding.inputFiles },
+            servedFiles
+        },
+        entries
+    };
+}
+
 function validateProductionProofBinding(
     binding: FullStackRtcProductionBinding,
-    seal: Record<string, unknown> | null
+    seal: ApiJsonObject | null
 ): string[] {
     if (!seal) {
         return ['missing-seal'];
@@ -158,9 +192,9 @@ function validateProductionProofBinding(
 
 function validateProductionProofAttempt(
     binding: FullStackRtcProductionBinding,
-    seal: Record<string, unknown>
+    seal: ApiJsonObject
 ): string[] {
-    const attempt = toRecord(seal.attempt);
+    const attempt = decodeProductionProofRecord(seal.attempt);
     const fields = Object.keys(binding.attempt) as (keyof FullStackRtcProductionAttemptIdentity)[];
     return !attempt || Object.keys(attempt).length !== fields.length ||
             fields.some((field) => attempt[field] !== binding.attempt[field]) ||
@@ -170,13 +204,13 @@ function validateProductionProofAttempt(
 }
 
 function validateProductionProofFiles(
-    seal: Record<string, unknown>,
-    build: Record<string, unknown>,
-    proof: Record<string, unknown>
+    seal: ApiJsonObject,
+    build: ApiJsonObject,
+    proof: ApiJsonObject
 ): string[] {
     const issues: string[] = [];
-    const files = toFiles(seal.files);
-    const served = toFiles(build.servedFiles);
+    const files = decodeProductionProofFiles(seal.files);
+    const served = decodeProductionProofFiles(build.servedFiles);
     if (
         !files || !served || !files.some((file) => file.path === '.vite/manifest.json') ||
         !files.some((file) => file.path === 'index.html')
@@ -197,12 +231,14 @@ function validateProductionProofFiles(
     if (!Array.isArray(proof.entries)) {
         return [...issues, 'browser-entries'];
     }
-    const entries = proof.entries.map(toRecord);
+    const entries = proof.entries.map(decodeProductionProofRecord);
     for (const entry of entries) {
         const file = entry && served.find((file) => file.path === entry.path);
         if (
             !entry || !file || Object.keys(entry).some((key) => !['prefix', ...fileKeys].includes(key)) ||
-            !['A', 'B', 'C'].includes(String(entry.prefix)) || fileKeys.some((key) => entry[key] !== file[key])
+            typeof entry.prefix !== 'string' || !['A', 'B', 'C'].includes(entry.prefix) || fileKeys.some((key) =>
+                entry[key] !== file[key as keyof FullStackRtcProductionFile]
+            )
         ) {
             issues.push('browser-bytes');
         }
@@ -217,27 +253,33 @@ function validateProductionProofFiles(
     return issues;
 }
 
-function toFiles(raw: unknown | undefined): Record<string, unknown>[] | null {
+function decodeProductionProofFiles(raw: ApiJsonValue | undefined): readonly FullStackRtcProductionFile[] | null {
     if (!Array.isArray(raw)) {
         return null;
     }
-    const files = raw.map(toRecord);
-    const paths = new Set<unknown>();
-    for (const file of files) {
-        if (
-            !file || Object.keys(file).some((key) => !fileKeys.includes(key)) || typeof file.path !== 'string' ||
-            !/^[a-zA-Z0-9._/-]+$/.test(file.path) || file.path.startsWith('/') || file.path.split('/').includes('..') ||
-            typeof file.sizeBytes !== 'number' || !Number.isSafeInteger(file.sizeBytes) || file.sizeBytes < 0 ||
-            typeof file.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(file.sha256) || paths.has(file.path)
-        ) {
+    const files: FullStackRtcProductionFile[] = [];
+    const paths = new Set<string>();
+    for (const file of raw) {
+        if (!isProductionProofFile(file) || paths.has(file.path)) {
             return null;
         }
         paths.add(file.path);
+        files.push(file);
     }
-    return files as Record<string, unknown>[];
+    return files;
 }
 
-function isSafeOrigin(value: unknown | undefined): boolean {
+function isProductionProofFile(raw: unknown): raw is FullStackRtcProductionFile {
+    return !!raw && typeof raw === 'object' && !Array.isArray(raw) &&
+        Object.keys(raw).every((key) => fileKeys.includes(key)) &&
+        'path' in raw && typeof raw.path === 'string' && /^[a-zA-Z0-9._/-]+$/.test(raw.path) &&
+        !raw.path.startsWith('/') && !raw.path.split('/').includes('..') &&
+        'sizeBytes' in raw && typeof raw.sizeBytes === 'number' && Number.isSafeInteger(raw.sizeBytes) &&
+        raw.sizeBytes >= 0 &&
+        'sha256' in raw && typeof raw.sha256 === 'string' && /^[a-f0-9]{64}$/.test(raw.sha256);
+}
+
+function isSafeOrigin(value: ApiJsonValue | undefined): boolean {
     if (typeof value !== 'string') {
         return false;
     }
@@ -251,15 +293,27 @@ function isSafeOrigin(value: unknown | undefined): boolean {
     }
 }
 
-function toRecord(raw: unknown | undefined): Record<string, unknown> | null {
-    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : null;
+function decodeProductionProofRecord(raw: unknown): ApiJsonObject | null {
+    return raw && typeof raw === 'object' && !Array.isArray(raw) && isProductionProofJson(raw)
+        ? raw as ApiJsonObject
+        : null;
 }
 
-export function decodeProductionSeal(raw: unknown): FullStackRtcProductionSeal | null {
-    if (!raw || typeof raw !== 'object') {
+function isProductionProofJson(raw: unknown): raw is ApiJsonValue {
+    if (raw === null || typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') {
+        return true;
+    }
+    if (Array.isArray(raw)) {
+        return raw.every(isProductionProofJson);
+    }
+    return typeof raw === 'object' && raw !== null && Object.values(raw).every(isProductionProofJson);
+}
+
+export function decodeProductionSeal(raw: unknown): FullStackRtcProductionSealCandidate | null {
+    const value = decodeProductionProofRecord(raw);
+    if (!value) {
         return null;
     }
-    const value = raw as Record<string, unknown>;
     if (
         value.version !== 1 ||
         Object.entries(FULL_STACK_RTC_PRODUCTION_POLICY).some(([field, expected]) => value[field] !== expected) ||
@@ -268,31 +322,19 @@ export function decodeProductionSeal(raw: unknown): FullStackRtcProductionSeal |
         !value.attempt || typeof value.attempt !== 'object' || !value.git || typeof value.git !== 'object' ||
         !Array.isArray(value.inputFiles) ||
         !Array.isArray(value.files) ||
-        value.files.some((file) =>
-            !file || typeof file.path !== 'string' || !Number.isSafeInteger(file.sizeBytes) || file.sizeBytes < 0 ||
-            !/^[a-f0-9]{64}$/.test(file.sha256)
-        ) ||
+        value.files.some((rawFile) => {
+            const file = decodeProductionProofRecord(rawFile);
+            return !file || typeof file.path !== 'string' || typeof file.sizeBytes !== 'number' ||
+                !Number.isSafeInteger(file.sizeBytes) || file.sizeBytes < 0 ||
+                typeof file.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(file.sha256);
+        }) ||
         !Array.isArray(value.entryFiles) || value.entryFiles.some((file) => typeof file !== 'string') ||
         !Array.isArray(value.buildArguments) || value.buildArguments.some((argument) => typeof argument !== 'string')
     ) {
         return null;
     }
-    const allowed = [
-        'version',
-        ...Object.keys(FULL_STACK_RTC_PRODUCTION_POLICY),
-        'baselineId',
-        'attempt',
-        'buildRoot',
-        'apiOrigin',
-        'spaOrigin',
-        'git',
-        'inputFiles',
-        'files',
-        'entryFiles',
-        'buildArguments'
-    ];
-    if (Object.keys(value).some((key) => !allowed.includes(key))) {
+    if (Object.keys(value).some((key) => !sealKeys.includes(key))) {
         return null;
     }
-    return raw as FullStackRtcProductionSeal;
+    return raw as FullStackRtcProductionSealCandidate;
 }

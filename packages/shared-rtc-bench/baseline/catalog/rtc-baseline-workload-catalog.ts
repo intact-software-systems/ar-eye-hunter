@@ -393,6 +393,7 @@ const fullStackMemorySourcePaths = [
     'packages/shared/cache/LoanedValue.ts',
     'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-deno-runtime.ts',
     'apps/rallar-black-box/playwright-full-stack-spa-server.ts',
+    'apps/rallar-black-box/rtc-production-artifacts.ts',
     'apps/rallar-black-box/scripts/rtc-production-preview.ts',
     'apps/rallar-black-box/rtc-production-serving-proof.ts',
     'packages/shared-rtc-bench/baseline/observation/validate-rtc-b06-production-serving-proof.ts',

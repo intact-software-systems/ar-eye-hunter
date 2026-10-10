@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import {
-    decodeProductionSeal,
-    validateFullStackRtcProductionProof
+    decodeFullStackRtcProductionProof,
+    decodeProductionSeal
 } from '../../shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-production-proof.ts';
 
 const baselineId = '20261010T100000Z-aaaaaaaaaaaa-e3-memory-gh123-a1';
@@ -62,7 +66,7 @@ const literalProof = {
 
 describe('canonical production serving proof', () => {
     it('accepts a literal sealed production build with exact served bytes and each original A/B/C entry', () => {
-        expect(validateFullStackRtcProductionProof(literalProof, binding)).toEqual([]);
+        expect(decodeFullStackRtcProductionProof(literalProof, binding).right).toEqual(literalProof);
         expect(decodeProductionSeal(literalProof.build.seal)).toEqual(literalProof.build.seal);
     });
     it.each(['serving', 'browser', 'attempt', 'input', 'query', 'mode', 'command', 'missing'] as const)(
@@ -95,15 +99,23 @@ describe('canonical production serving proof', () => {
                     proof.build.servedFiles = [];
                     break;
             }
-            expect(validateFullStackRtcProductionProof(proof, binding).length).toBeGreaterThan(0);
+            expect(decodeFullStackRtcProductionProof(proof, binding).left?.length).toBeGreaterThan(0);
             expect(binding.attempt.outerOrdinal).toBe(1);
         }
     );
+    it('rejects a non-string browser prefix even when its string spelling is an admitted prefix', () => {
+        const proof = structuredClone(literalProof);
+        const malformed = { ...proof, entries: [...proof.entries, { ...proof.entries[0]!, prefix: ['A'] }] };
+        const decoded = decodeFullStackRtcProductionProof(malformed, binding);
+        expect(decoded.right).toBeUndefined();
+        expect(decoded.left).toContain('browser-bytes');
+    });
+
     it('rejects unsafe and duplicate output paths and unknown proof fields', () => {
         const proof = structuredClone(literalProof);
         proof.build.seal.files.push({ path: '../private', sizeBytes: 0, sha256: 'a'.repeat(64) });
-        expect(validateFullStackRtcProductionProof(proof, binding)).toContain('file-inventory');
-        expect(validateFullStackRtcProductionProof({ ...literalProof, credentials: 'private' }, binding)).toContain('missing-proof');
-        expect(validateFullStackRtcProductionProof(null, binding)).toContain('missing-seal');
+        expect(decodeFullStackRtcProductionProof(proof, binding).left).toContain('file-inventory');
+        expect(decodeFullStackRtcProductionProof({ ...literalProof, credentials: 'private' }, binding).left).toContain('missing-proof');
+        expect(decodeFullStackRtcProductionProof(null, binding).left).toContain('missing-seal');
     });
 });

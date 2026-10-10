@@ -146,7 +146,10 @@ describe('shared RTC benchmark package boundaries', () => {
         const consumer = path.join(packageRoot, 'baseline/observation/validate-rtc-b06-production-serving-proof.ts');
         for (const fixture of productionFixturePaths) {
             expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), fixture))).toBe(true);
-            expect(importSpecifiers(fs.readFileSync(fixture, 'utf8'))).toEqual([]);
+            const dependencies = fixture.endsWith('/full-stack-rtc-production-proof.ts')
+                ? ['../../../../shared/api/api-json-value.ts', '../../../../shared/resilience/Either.ts']
+                : [];
+            expect(importSpecifiers(fs.readFileSync(fixture, 'utf8'))).toEqual(dependencies);
         }
         expect(isApprovedImport(consumer, '../../../shared-test/black-box-runner/fixtures/rtc-production/read-full-stack-rtc-build-tool-inputs.ts')).toBe(
             false

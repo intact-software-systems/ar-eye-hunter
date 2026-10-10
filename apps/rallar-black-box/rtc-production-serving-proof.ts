@@ -1,11 +1,16 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, readFile, writeFile } from 'node:fs/promises';
+import {
+    lstat,
+    open,
+    readFile,
+    writeFile
+} from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import {
+    decodeFullStackRtcProductionProof,
     decodeProductionSeal,
-    validateFullStackRtcProductionProof,
     type FullStackRtcBrowserEntry,
     type FullStackRtcProductionFile,
     type FullStackRtcProductionSeal,
@@ -169,25 +174,23 @@ export async function readFullStackRtcServingProof(
         if (!build) {
             return servingFailure('missing-serving-proof');
         }
-        const raw: unknown[] = (await readPrivateProofFile(configuration.buildRoot, 'entries.jsonl')).trim().split('\n')
-            .map((line) => JSON.parse(line));
+        const lines = (await readPrivateProofFile(configuration.buildRoot, 'entries.jsonl')).trim().split('\n');
         const entries: FullStackRtcBrowserEntry[] = [];
-        for (const value of raw) {
-            const entry = decodeBrowserEntry(value, build);
+        for (const line of lines) {
+            const entry = decodeBrowserEntry(JSON.parse(line), build);
             if (!entry) {
                 return servingFailure('served-bytes-mismatch');
             }
             entries.push(entry);
         }
         const proof = { build, entries };
-        return validateFullStackRtcProductionProof(proof, {
-                baselineId: attempt.baselineId,
-                attempt: attempt.locator,
-                git: attempt.runtimeObservation.git,
-                inputFiles: attempt.runtimeObservation.sourceHashes
-            }).length > 0
-            ? servingFailure('missing-serving-proof')
-            : Either.ofRight(proof);
+        const decoded = decodeFullStackRtcProductionProof(proof, {
+            baselineId: attempt.baselineId,
+            attempt: attempt.locator,
+            git: attempt.runtimeObservation.git,
+            inputFiles: attempt.runtimeObservation.sourceHashes
+        });
+        return decoded.left ? servingFailure('missing-serving-proof') : Either.ofRight(decoded.right!);
     }
     catch {
         return servingFailure('missing-serving-proof');
@@ -227,9 +230,11 @@ function toServedFile(path: string, bytes: Uint8Array): FullStackRtcProductionFi
 
 async function readExistingServedBuild(seal: FullStackRtcProductionSeal): Promise<FullStackRtcServedBuild | null> {
     try {
-        const raw: unknown = JSON.parse(await readPrivateProofFile(seal.buildRoot, 'serving.json'));
         const expected = { seal, servedFiles: seal.files.filter((file) => !file.path.startsWith('.')) };
-        return JSON.stringify(raw) === JSON.stringify(expected) ? expected : null;
+        return JSON.stringify(JSON.parse(await readPrivateProofFile(seal.buildRoot, 'serving.json'))) ===
+                JSON.stringify(expected)
+            ? expected
+            : null;
     }
     catch {
         return null;
@@ -249,18 +254,18 @@ function decodeBrowserEntry(raw: unknown, build: FullStackRtcServedBuild): FullS
     if (!raw || typeof raw !== 'object') {
         return null;
     }
-    const value = raw as Record<string, unknown>;
-    if (!['A', 'B', 'C'].includes(String(value.prefix))) {
+    if (!('prefix' in raw) || (raw.prefix !== 'A' && raw.prefix !== 'B' && raw.prefix !== 'C')) {
         return null;
     }
-    const file = build.servedFiles.find((file) => file.path === value.path);
+    const file = build.servedFiles.find((file) => file.path === ('path' in raw ? raw.path : undefined));
     if (
-        !file || value.sha256 !== file.sha256 || value.sizeBytes !== file.sizeBytes ||
-        Object.keys(value).some((key) => !['prefix', 'path', 'sha256', 'sizeBytes'].includes(key))
+        !file || !('sha256' in raw) || raw.sha256 !== file.sha256 || !('sizeBytes' in raw) ||
+        raw.sizeBytes !== file.sizeBytes ||
+        Object.keys(raw).some((key) => !['prefix', 'path', 'sha256', 'sizeBytes'].includes(key))
     ) {
         return null;
     }
-    return { prefix: value.prefix as FullStackRtcBrowserEntry['prefix'], ...file };
+    return { prefix: raw.prefix, ...file };
 }
 
 function servingFailure(code: FullStackRtcServingFailure['code']): Either<FullStackRtcServingFailure, never> {
