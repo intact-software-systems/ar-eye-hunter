@@ -412,10 +412,35 @@ The mode vocabulary remains internal; its exported type and verified behavior
 remain canonical. Exact style dispositions record reviewed composition/JSON
 boundaries and bounded capture cohesion through the existing registry. They
 do not authorize a standards violation or waive later touched-owner review.
-Preserve all normal consumers, fixture inputs, policy and deadlines.
+Preserve all normal consumers, fixture inputs, policy and deadlines during this
+diagnostic.
 Observation overhead and co-location remain confounders; async elapsed phases do
 not establish per-request CPU or an isolated lane-policy improvement. Ordinary
 uninstrumented acceptance remains required.
+
+The captured GitHub diagnostic completed all 15 setups and linked all 90 setup
+request families through qualified server timing. Capture remains partial and
+durable completion unverified. Traffic queued 42 player shots plus the start
+event; every sampler completed, but all traffic windows failed and all 73 group
+assertions remain unevaluated. The retained five-second inter-iteration tails
+start after child completion. The generic loop intentionally has that tested
+contract; acknowledgement observation inside the fixture's serial loop therefore
+adds its duration to the declared shot interval. Native ACK return latency remains
+an independent measurement gap, and these failed runs do not establish speedup.
+
+The next owned correction composes existing bounded parallel branches for six
+shot offsets, each with its send and exact-handle ACK observation. After their
+join, the canonical six-iteration receipt-verification loop has no additional
+interval. The player's enclosing command count and all assertion declarations
+remain identical; receipt, identity, arrival, sample, storage and deadline guards
+remain mandatory. Relative branch-registration jitter is possible. The existing
+30-second window still rejects late ACKs, slow admission or incomplete lifecycle
+work. No generic scheduler contract changes. Canonical manifests may acquire this
+new command topology while previous captured bytes remain immutable. TDD must
+prove actual starts with delayed ACK ingress and full canonical 15-participant
+acceptance, including failure/cancellation cases, before a fresh default-off
+GitHub observation. That run and the remaining ordinary scale proof stay separate
+from deterministic cadence and queue-operation comparisons.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
