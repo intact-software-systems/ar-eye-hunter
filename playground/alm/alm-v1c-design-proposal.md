@@ -460,7 +460,7 @@ The first default-off observation of this candidate failed before worker creatio
 the native Playwright observer still pinned the predecessor manifest digest.
 Actual reviewed bytes match the retained source/provenance; the independent
 expected digest in that consumer is stale. No distributed run or traffic evidence
-was created. The next narrow correction refreshes this native fixture-version pin
+was created. The reviewed narrow correction refreshes this native fixture-version pin
 while retaining current-byte hashing/equality, input restrictions and lifecycle
 ownership. The actual failed guard is behavioral RED. After source review, one
 new default-off invocation must execute past that exact guard for its GREEN;
@@ -468,7 +468,9 @@ subsequent setup/traffic/final outcome remains separately qualified. Existing
 provenance and command-string tests alone cannot prove the inline native guard.
 No additional equality abstraction or test mirror is required for this direct
 version-pin correction. Fresh evidence review approved the complete finding and
-qualified acceptance limits before dependent implementation.
+qualified acceptance limits before dependent implementation. The native spec now
+independently pins the canonical `43db26df…` bytes; complete source review preserved every
+input/lifecycle/evidence guard. Native execution beyond that guard remains pending.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
