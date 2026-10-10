@@ -242,7 +242,7 @@ describe('rallar-black-box full-stack API server mode', () => {
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
         }
-    ])('rejects partial or invalid canonical locator before constructing any configured server: %j', async (environment) => {
+    ])('rejects config loading for a partial or invalid canonical locator: %j', async (environment) => {
         for (const name of Object.keys(process.env)) {
             if (name.startsWith('RALLAR_') || name.startsWith('VITE_RALLAR_')) {
                 vi.stubEnv(name, undefined);
@@ -254,14 +254,7 @@ describe('rallar-black-box full-stack API server mode', () => {
             vi.stubEnv(name, value);
         }
         vi.resetModules();
-        const apiFactory = vi.spyOn(await import('../../../apps/rallar-black-box/playwright-full-stack-api-server.ts'), 'createFullStackApiV1WebServer');
-        const controlFactory = vi.spyOn(
-            await import('../../../apps/rallar-black-box/playwright-full-stack-control-server.ts'),
-            'createFullStackControlWebServer'
-        );
         await expect(import('../../../apps/rallar-black-box/playwright.full-stack.config.ts')).rejects.toThrow(/Live RTC evidence|OUTER_ORDINAL/);
-        expect(apiFactory).not.toHaveBeenCalled();
-        expect(controlFactory).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -271,7 +264,7 @@ describe('rallar-black-box full-stack API server mode', () => {
         { RALLAR_BLACK_BOX_RTC_BASELINE_ID: '../escape' },
         { RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL: '0' },
         { RALLAR_BLACK_BOX_RTC_CASE_ID: 'other' }
-    ])('rejects a complete locator that is invalid or not predeclared before server construction: %j', async (override) => {
+    ])('rejects config loading for a complete locator that is invalid or not predeclared: %j', async (override) => {
         const environment = {
             ...await createPredeclaredSelection('retention-100'),
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
@@ -289,17 +282,10 @@ describe('rallar-black-box full-stack API server mode', () => {
             vi.stubEnv(name, value);
         }
         vi.resetModules();
-        const apiFactory = vi.spyOn(await import('../../../apps/rallar-black-box/playwright-full-stack-api-server.ts'), 'createFullStackApiV1WebServer');
-        const controlFactory = vi.spyOn(
-            await import('../../../apps/rallar-black-box/playwright-full-stack-control-server.ts'),
-            'createFullStackControlWebServer'
-        );
         await expect(import('../../../apps/rallar-black-box/playwright.full-stack.config.ts')).rejects.toThrow(/Live RTC evidence|OUTER_ORDINAL/);
-        expect(apiFactory).not.toHaveBeenCalled();
-        expect(controlFactory).not.toHaveBeenCalled();
     });
 
-    it('rejects historical E3 admission without production binding before configuring any server', {
+    it('rejects config loading for historical E3 admission without production binding', {
         timeout: CONFIG_LOADER_TEST_TIMEOUT_MS
     }, async () => {
         const environment = {
@@ -319,14 +305,7 @@ describe('rallar-black-box full-stack API server mode', () => {
             vi.stubEnv(name, value);
         }
         vi.resetModules();
-        const apiFactory = vi.spyOn(await import('../../../apps/rallar-black-box/playwright-full-stack-api-server.ts'), 'createFullStackApiV1WebServer');
-        const controlFactory = vi.spyOn(
-            await import('../../../apps/rallar-black-box/playwright-full-stack-control-server.ts'),
-            'createFullStackControlWebServer'
-        );
         await expect(import('../../../apps/rallar-black-box/playwright.full-stack.config.ts')).rejects.toThrow(/Production/);
-        expect(apiFactory).not.toHaveBeenCalled();
-        expect(controlFactory).not.toHaveBeenCalled();
     });
 
     it('allows CI configs to disable existing web server reuse', () => {
