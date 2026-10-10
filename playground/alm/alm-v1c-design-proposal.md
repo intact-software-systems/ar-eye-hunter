@@ -428,19 +428,33 @@ contract; acknowledgement observation inside the fixture's serial loop therefore
 adds its duration to the declared shot interval. Native ACK return latency remains
 an independent measurement gap, and these failed runs do not establish speedup.
 
-The next owned correction composes existing bounded parallel branches for six
+The reviewed correction composes existing bounded parallel branches for six
 shot offsets, each with its send and exact-handle ACK observation. After their
 join, the canonical six-iteration receipt-verification loop has no additional
 interval. The player's enclosing command count and all assertion declarations
 remain identical; receipt, identity, arrival, sample, storage and deadline guards
 remain mandatory. Relative branch-registration jitter is possible. The existing
 30-second window still rejects late ACKs, slow admission or incomplete lifecycle
-work. No generic scheduler contract changes. Canonical manifests may acquire this
-new command topology while previous captured bytes remain immutable. TDD must
-prove actual starts with delayed ACK ingress and full canonical 15-participant
-acceptance, including failure/cancellation cases, before a fresh default-off
-GitHub observation. That run and the remaining ordinary scale proof stay separate
-from deterministic cadence and queue-operation comparisons.
+work. The generic scheduler contract remains unchanged. Only canonical manifests
+19/20/21 acquire the new workload topology; previous captured bytes remain immutable.
+
+Meaningful RED observed 0/7/14/21/28-second starts under two-second ACKs. The
+corrected public-boundary case observes 0/5/10/15/20/25. A controlled cohort executes
+actual generated traffic/final commands through fifteen native page runtimes:
+all fifteen recipes complete, 84 shots and two lifecycle events arrive, all fifteen
+completion arrivals precede end, and all 73 canonical assertions resolve and pass.
+Late/missing ACK, slow admission, incorrect audiences and cancellation remain
+failures and late ACKs cannot resurrect end. Physical setup and RTC are outside
+this test; admission/ACK routing and healthy metrics are controlled inputs.
+This establishes cadence and evidence composition, not native cost or speedup.
+
+Full authored/recursive closure and fresh independent spec/quality review passed.
+The app manifest consumer now requires six concrete unique handles and coherent
+sequences under unchanged policy/assertion sources. The workflow test independently
+pins candidate digest `43db26dfab5a32b28f12b9d34db3be32b071a08139eee57f450807109072ecd3`;
+current-byte copy/hash behavior and source-read classification remain unchanged.
+The next default-off GitHub observation and remaining ordinary scale proof stay
+separate from deterministic cadence and queue-operation comparisons.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
