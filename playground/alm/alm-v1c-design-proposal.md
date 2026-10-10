@@ -405,7 +405,14 @@ without masking the API exit or abandoning its owned process.
 One reviewed diagnostic seeks actual setup ingress, queue/handler/transaction and
 durable-result linkage before an owning repair. No logger/event producer, generic
 process framework, duplicate evaluator, new public contract or dependency is
-needed. Preserve all normal consumers, fixture inputs, policy and deadlines.
+needed. Full-file closure makes API-server defaults visible at the app composition
+boundary and passes required normalized inputs to the existing constructor. Its
+full-stack and exhaustive config consumers retain the same default behavior.
+The mode vocabulary remains internal; its exported type and verified behavior
+remain canonical. Exact style dispositions record reviewed composition/JSON
+boundaries and bounded capture cohesion through the existing registry. They
+do not authorize a standards violation or waive later touched-owner review.
+Preserve all normal consumers, fixture inputs, policy and deadlines.
 Observation overhead and co-location remain confounders; async elapsed phases do
 not establish per-request CPU or an isolated lane-policy improvement. Ordinary
 uninstrumented acceptance remains required.
