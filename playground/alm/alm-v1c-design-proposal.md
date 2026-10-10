@@ -456,6 +456,20 @@ current-byte copy/hash behavior and source-read classification remain unchanged.
 The next default-off GitHub observation and remaining ordinary scale proof stay
 separate from deterministic cadence and queue-operation comparisons.
 
+The first default-off observation of this candidate failed before worker creation:
+the native Playwright observer still pinned the predecessor manifest digest.
+Actual reviewed bytes match the retained source/provenance; the independent
+expected digest in that consumer is stale. No distributed run or traffic evidence
+was created. The next narrow correction refreshes this native fixture-version pin
+while retaining current-byte hashing/equality, input restrictions and lifecycle
+ownership. The actual failed guard is behavioral RED. After source review, one
+new default-off invocation must execute past that exact guard for its GREEN;
+subsequent setup/traffic/final outcome remains separately qualified. Existing
+provenance and command-string tests alone cannot prove the inline native guard.
+No additional equality abstraction or test mirror is required for this direct
+version-pin correction. Fresh evidence review approved the complete finding and
+qualified acceptance limits before dependent implementation.
+
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
 WebSocket connect, so that result does not establish this operation's cost or
