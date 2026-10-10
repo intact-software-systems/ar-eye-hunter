@@ -8,9 +8,6 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
-import { installRtcBenchmarkNativeRuntime } from '../native-rtc/rtc-benchmark-native-peer.ts';
-import { createDeterministicRtcTopologyGroupSnapshot } from '../topology/create-deterministic-rtc-topology-group-snapshot.ts';
-
 import {
     parseRtcBaselineAcceptedWorker,
     runRtcBaselineAcceptedWorker,
@@ -25,6 +22,8 @@ import {
     type RtcBaselineResult,
     type RtcBaselineSampleDto
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
+import { installRtcBenchmarkNativeRuntime } from '../native-rtc/rtc-benchmark-native-peer.ts';
+import { createDeterministicRtcTopologyGroupSnapshot } from '../topology/create-deterministic-rtc-topology-group-snapshot.ts';
 
 export interface RtcMulticastSerializationInput {
     readonly peers: number;
@@ -229,14 +228,14 @@ function parseAcceptedCapability(
             )
         );
     }
-    if (issues.length > 0) {
+    if (!peers.ok || !payloadBytes.ok || issues.length > 0) {
         return { ok: false, issues };
     }
     return {
         ok: true,
         value: {
-            peers: peers.ok ? peers.value : 10,
-            payloadBytes: payloadBytes.ok ? payloadBytes.value : 4096
+            peers: peers.value,
+            payloadBytes: payloadBytes.value
         }
     };
 }
@@ -345,7 +344,11 @@ function createConnectionService(peerIds: readonly string[]): RtcMulticastConnec
         rtcSignalingTopicId: 'rtc',
         maxPeerConnections: peerIds.length,
         peerEstablishmentTimeout: { enabled: false, timeoutMs: 5_000 }
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: () => crypto.randomUUID() });
+    }, {
+        faultPort: createPassThroughTransportFaultPort(),
+        createOfferId: () => crypto.randomUUID(),
+        nowEpochMs: () => Date.now()
+    });
     const dispose = (): void => {
         for (const peerId of service.knownPeerIds()) {
             service.removePeerIfPresent(peerId);

@@ -1,3 +1,5 @@
+import { vi } from 'vitest';
+
 import {
     createBlackBoxRallarCongestionCounters,
     type BlackBoxRallarCongestionCounters
@@ -60,7 +62,6 @@ import {
     createScriptedTransportFaultPort,
     type ScriptedTransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
-import { vi } from 'vitest';
 
 export interface BrowserRuntimeFacadeRecords {
     readonly configurationWrites: Array<Parameters<BlackBoxBrowserRallarRuntimeDependency['configure']>[0]>;
@@ -172,7 +173,7 @@ export const facadeBehavior = {
     registerAndLogin: vi.fn<BlackBoxBrowserAuthDependency['registerAndLogin']>(),
     logout: vi.fn<BlackBoxBrowserAuthDependency['logout']>(),
     restore: vi.fn<BlackBoxBrowserAuthDependency['restore']>(),
-    connect: vi.fn<BlackBoxBrowserRallarRuntimeDependency['connect']>(),
+    connect: vi.fn<(options?: RallarScopedOperationOptions) => Promise<void>>(),
     disconnect: vi.fn<BlackBoxBrowserRallarRuntimeDependency['disconnect']>(),
     isConnected: vi.fn<BlackBoxBrowserRallarRuntimeDependency['isConnected']>(),
     readUsage: vi.fn<BlackBoxBrowserMessagesDependency['readUsage']>(),
@@ -420,6 +421,7 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
 };
 
 export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
+    rtcCapture: () => undefined,
     readRtcMessageNacks: async () => [],
     configure: (config) => {
         facadeRecords.configurationWrites.push(config);
@@ -431,7 +433,11 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
     },
     connect: async (options) => {
         facadeRecords.connectionAttempts.push([options]);
-        return await facadeBehavior.connect(options);
+        await facadeBehavior.connect(options);
+        return Object.freeze<BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion>({
+            rtcCapture: { status: 'unavailable', reason: 'absent' },
+            captureOwnershipFailure: () => undefined
+        });
     },
     disconnect: async () => {
         facadeRecords.disconnectCount += 1;

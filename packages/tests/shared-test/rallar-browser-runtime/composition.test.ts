@@ -16,7 +16,7 @@ import * as BrowserRuntimeComposition from '@shared-test/black-box-runner/browse
 import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
 import { createSpaBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 
 import { facade, resetFacade } from './browser-rallar-runtime-test-harness.ts';
 
@@ -134,7 +134,7 @@ it('fresh authored reconnect overrides configured credentials and restores the s
     facade.behavior.registerAndLogin.mockRejectedValue(new Error('A reload must not register again.'));
     const fresh = createDocument(200);
     vi.stubGlobal('window', { __blackBoxRallar: fresh } satisfies BlackBoxRallarRuntimeInstallationTarget);
-    const adapter = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() });
+    const adapter = createDefaultRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() });
     try {
         await adapter.execute({
             kind: 'configure',
@@ -143,14 +143,18 @@ it('fresh authored reconnect overrides configured credentials and restores the s
                 rallar: { apiBaseUrl: 'https://api.example.test', username: 'configured-other-user', password: 'configured-password', register: 'if-needed' }
             }
         });
-        const recipe = createAlmConformanceRecipes({
+        const scenario = createAlmConformanceRecipes({
             group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
             carrier: 'ws',
             typeId: 'restore-proof',
             senderConnection: 'sender',
             receiverConnection: 'receiver',
             deadlineMs: 18_000
-        }).find((scenario) => scenario.scenarioId === 'delivery-reload')!.sender;
+        }).find((scenario) => scenario.scenarioId === 'delivery-reload');
+        if (!scenario) {
+            throw new Error('Expected the canonical delivery-reload conformance recipe.');
+        }
+        const recipe = scenario.sender;
         const reconnect = recipe.commands[recipe.commands.findIndex((command) => command.kind === 'agent.reload') + 1];
         const after = await adapter.execute(reconnect);
         expect(after.ok, JSON.stringify(after.error)).toBe(true);

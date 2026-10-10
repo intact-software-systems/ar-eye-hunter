@@ -1,3 +1,4 @@
+import { BrowserRtcDiagnosticsRuntime } from '@shared-web/browser/rtc-diagnostics/browser-rtc-diagnostics-runtime.ts';
 import {
     beforeEach,
     describe,
@@ -5,6 +6,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
 import { EmptyMediaStream } from '../../shared/rtc-media-test-events.ts';
@@ -14,6 +16,8 @@ import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from '.
 // The factories below annotate their return type on purpose: without it the contextual type of a
 // `vi.mock` factory is a union, and TypeScript then accepts an export name the module does not
 // have. With the annotation a renamed or removed export fails the type check.
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
@@ -45,7 +49,7 @@ const mocks = await vi.hoisted(async () => {
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<MiddlewareModule> => ({
-        initialiseMiddleware: async () => ({ middleware: (await mocks.initialiseApiMiddleware()).middleware, checkpoints: [] })
+        initialiseMiddleware: async () => ({ middleware: (await mocks.initialiseApiMiddleware()).middleware, rtcCaptureReceipt, checkpoints: [] })
     })
 );
 
@@ -280,6 +284,73 @@ describe('Rallar RTC diagnostics', () => {
                 })
             ]
         });
+    });
+
+    it.each(
+        [
+            ['pc', 'resolve'],
+            ['peer', 'resolve'],
+            ['service', 'resolve'],
+            ['runtime', 'resolve'],
+            ['pc', 'reject'],
+            ['peer', 'reject'],
+            ['service', 'reject'],
+            ['runtime', 'reject']
+        ] as const
+    )('fences %s replacement after one delayed stats %s', async (replacement, settlement) => {
+        const originalNative = new SimulatedNativeRtcPeerConnection();
+        const originalPeer = createBrowserRtcPeerTestDouble({ peerId: 'peer-1', status: { state: 'Open', pc: originalNative }, channels: [] });
+        const replacementPeer = createBrowserRtcPeerTestDouble({
+            peerId: 'peer-1',
+            status: { state: 'Open', pc: new SimulatedNativeRtcPeerConnection() },
+            channels: []
+        });
+        let peer = originalPeer;
+        let middleware = createDefaultApiMiddlewareTestDouble({ middleware: { webRtcConnectionService: { readPeer: () => peer } } });
+        const capturedIdentity = originalPeer.connection.getNativeIdentity();
+        const pending = Promise.withResolvers<RTCStatsReport>();
+        const readStats = vi.spyOn(originalNative, 'getStats').mockReturnValue(pending.promise);
+        const runtime = new BrowserRtcDiagnosticsRuntime({
+            readMiddleware: () => middleware,
+            readSession: () => middleware.session,
+            readStatus: () => ({
+                laneId: 'reliable',
+                knownPeerIds: ['peer-1'],
+                activePeerIds: [],
+                readyPeerIds: [],
+                peerIdsWithNoReconnectableLanes: [],
+                peers: []
+            })
+        });
+        const reading = runtime.read();
+        expect(readStats).toHaveBeenCalledTimes(1);
+        if (replacement === 'pc') {
+            originalPeer.connection.status.pc = replacementPeer.connection.status.pc;
+        }
+        else if (replacement === 'peer') {
+            peer = replacementPeer;
+        }
+        else if (replacement === 'service') {
+            Object.assign(middleware.middleware, { webRtcConnectionService: createDefaultApiMiddlewareTestDouble().middleware.webRtcConnectionService });
+        }
+        else {
+            middleware = createDefaultApiMiddlewareTestDouble();
+        }
+        if (settlement === 'resolve') {
+            pending.resolve(createRelayStats());
+        }
+        else {
+            pending.reject(new Error('late-failure'));
+        }
+        const diagnostics = await reading;
+        expect(JSON.parse(JSON.stringify(diagnostics.peers[0]))).toMatchObject({
+            captureIdentity: capturedIdentity,
+            statsObservation: 'retired-during-read',
+            statsAvailable: false,
+            usesRelay: false
+        });
+        expect(diagnostics.peers[0].selectedCandidatePair).toBeUndefined();
+        expect(readStats).toHaveBeenCalledTimes(1);
     });
 
     it('reads RTC diagnostics from peer stats and detects relay candidates', async () => {

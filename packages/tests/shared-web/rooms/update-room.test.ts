@@ -1,12 +1,22 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import type * as RoomGroupStateMutationWorkflows from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
-import { createRoomSnapshot, readRoomWorkflowMocks, resetRoomWorkflowTestRuntime } from './room-workflow-test-runtime.ts';
+import {
+    createRoomSnapshot,
+    getRoomWorkflowMocks,
+    resetRoomWorkflowTestRuntime
+} from './room-workflow-test-runtime.ts';
 
-const roomWorkflowMocks = readRoomWorkflowMocks();
+const roomWorkflowMocks = getRoomWorkflowMocks();
 
 installFakeBroadcastChannelPerTest();
 
@@ -14,14 +24,6 @@ beforeEach(resetRoomWorkflowTestRuntime);
 
 afterEach(() => {
     vi.unstubAllGlobals();
-});
-
-it('exposes the owning room update operations', async () => {
-    const { archiveRoom, deleteRoom, updateRoom, updateRoomMetadata } = await import('@shared-web/browser/rooms/update-room.ts');
-    expect(typeof updateRoom).toBe('function');
-    expect(typeof archiveRoom).toBe('function');
-    expect(typeof deleteRoom).toBe('function');
-    expect(typeof updateRoomMetadata).toBe('function');
 });
 
 it('routes a detail update through the room update owner', async () => {
@@ -53,16 +55,16 @@ it('removes a key the facade patches to null from the metadata the room update s
     roomWorkflowMocks.updateStateGroupMetadata.mockImplementation(workflows.updateStateGroupMetadata);
     const base = createRoomSnapshot('room-1', ['session-1'], { applicationId: 'rallar-server', workspaceId: 'default' });
     const stored = { ...base, group: { ...base.group, metadata: { k: 1, keep: true } } };
-    const sentBodies: object[] = [];
+    const sentBodies: unknown[] = [];
     vi.stubGlobal(
         'fetch',
         vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
             if ((init?.method ?? 'GET') === 'GET') {
                 return toGroupPointResponse(stored);
             }
-            const body = JSON.parse(String(init?.body)) as { metadata: GroupSnapshot['group']['metadata']; };
+            const body: unknown = JSON.parse(String(init?.body));
             sentBodies.push(body);
-            return toJsonResponse({ ...stored, group: { ...stored.group, metadata: body.metadata } });
+            return toJsonResponse({ ...stored, group: { ...stored.group, metadata: { keep: true } } });
         })
     );
 

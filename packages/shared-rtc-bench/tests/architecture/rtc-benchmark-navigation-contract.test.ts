@@ -3,7 +3,7 @@ import path from 'node:path';
 const repoRoot = path.resolve(import.meta.dirname, '../../../..');
 const packageRoot = path.join(repoRoot, 'packages/shared-rtc-bench');
 const executablePaths = [
-    'baseline/command/rtc-baseline-cli.ts',
+    'baseline/command/run-rtc-baseline-cli.ts',
     'workloads/signaling/rtc-peer-connection-diagnostics-burst.ts',
     'workloads/signaling/rtc-ice-candidate-queue-bench.ts',
     'workloads/signaling/rtc-peer-listener-cleanup-bench.ts',

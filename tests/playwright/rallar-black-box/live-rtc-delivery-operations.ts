@@ -1,12 +1,16 @@
 import { expect, type TestInfo } from '@playwright/test';
+
 import { toError } from '@shared/resilience/to-error.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { BlackBoxRallarSendInput } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type {
     RallarBlackBoxTestRtcSendCommand,
     RallarBlackBoxTestWsSendCommand
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+
 import {
     createGroupFormationLifecycleDriver,
+    retainLiveRtcFormationFailure,
     type GroupFormationLifecycleDriver,
     type LiveRtcControlPort
 } from './create-group-formation-lifecycle-driver.ts';
@@ -33,6 +37,7 @@ export interface CreateLiveRtcDeliveryOperationsConfig {
     readonly workspaceId: string;
     readonly messagesRtcTypeId: string;
     readonly messagesRtcTopicId: string;
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly formation: Pick<LiveRtcFormationOperations, 'readiness'>;
 }
 
@@ -50,6 +55,7 @@ interface RunWebSocketOpenSendCloseMatrixInput {
 
 interface RunAllDeliveryPermutationsInput {
     readonly control: LiveRtcControlPort;
+    readonly nativeAcquisition?: LiveRtcControlClient.NativeAcquisition;
     readonly runId: string;
     readonly agents: readonly [
         LiveRtcControlClient.FormationAgent,
@@ -74,6 +80,8 @@ interface RunDeliveryMatrixResult {
     readonly sessions: Readonly<Record<AgentPrefix, string>>;
     readonly scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
     readonly timings: readonly LiveRtcPerformanceTiming[];
+    readonly rtcConnectCaptures: readonly LiveRtcControlClient.CapturedConnection[];
+    readonly nativeAcquisitions: readonly LiveRtcControlClient.NativeAcquisitionProof[];
 }
 
 interface CompleteDeliveryCasesInput {
@@ -217,7 +225,7 @@ export function createLiveRtcDeliveryOperations(
     };
 }
 
-function apiWebSocketUrl(apiBaseUrl: string): string {
+function toApiWebSocketUrl(apiBaseUrl: string): string {
     const url = new URL(apiBaseUrl);
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     url.pathname = '/api/ws/{auth.sessionId}';
@@ -225,7 +233,7 @@ function apiWebSocketUrl(apiBaseUrl: string): string {
     return url.toString();
 }
 
-function transportSlug(transport: TransportUnderTest): string {
+function toTransportSlug(transport: TransportUnderTest): string {
     return transport.replace('.', '-');
 }
 
@@ -237,7 +245,7 @@ interface SendPayloadInput {
     readonly minSnapshotVersion?: number;
 }
 
-function sendPayload(
+function toRtcSendInput(
     runtime: LiveRtcDeliveryRuntime,
     input: SendPayloadInput
 ): BlackBoxRallarSendInput {
@@ -331,7 +339,7 @@ async function runWebSocketOpenSendCloseMatrix(
             command: {
                 kind: 'ws.open',
                 connection,
-                url: apiWebSocketUrl(readLiveRtcAgentApiUrls(runtime.apiBaseUrl)[agent.prefix]),
+                url: toApiWebSocketUrl(readLiveRtcAgentApiUrls(runtime.apiBaseUrl)[agent.prefix]),
                 timeoutMs: 15_000
             },
             timeoutMs: 30_000
@@ -378,7 +386,7 @@ async function sendMatrixPayload(
                 groupId: input.groupId
             },
             timeoutMs: 60_000,
-            send: sendPayload(runtime, {
+            send: toRtcSendInput(runtime, {
                 transport: input.transport,
                 groupId: input.groupId,
                 targetSessionIds: input.targetSessionIds,
@@ -405,16 +413,21 @@ async function runDeliveryMatrix(
         ...input,
         readinessScope: 'owner'
     });
-    const deliveryCases = createDeliveryCases(input);
-    const completed = await completeDeliveryCases(runtime, {
-        run: input,
-        sessions: formation.sessions,
-        deliveryCases
-    });
-    if (input.transport === 'realtime') {
-        await assertRealtimeSenderReadiness(input, formation.sessions);
+    try {
+        const deliveryCases = toDeliveryCases(input);
+        const completed = await completeDeliveryCases(runtime, {
+            run: input,
+            sessions: formation.sessions,
+            deliveryCases
+        });
+        if (input.transport === 'realtime') {
+            await assertRealtimeSenderReadiness(input, formation.sessions);
+        }
+        return toDeliveryMatrixResult(input, formation, completed);
     }
-    return toDeliveryMatrixResult(input, formation, completed);
+    catch (failure) {
+        throw retainLiveRtcFormationFailure({ ...formation, cause: toError(failure), nativeAcquisitionFailure: null });
+    }
 }
 
 async function runAllDeliveryPermutations(
@@ -425,7 +438,31 @@ async function runAllDeliveryPermutations(
         ...input,
         readinessScope: 'all'
     });
-    const slug = transportSlug(input.transport);
+    try {
+        const completed = await completeAllDeliveryPermutations(runtime, input, formation.sessions);
+        return {
+            commandIds: [...formation.commandIds, ...completed.map((entry) => entry.commandId)],
+            sessions: formation.sessions,
+            scenarios: completed.map((entry) => entry.scenario),
+            timings: [
+                ...toReadinessTimings(input, formation, 'all'),
+                ...completed.map((entry) => entry.timing)
+            ],
+            rtcConnectCaptures: formation.rtcConnectCaptures,
+            nativeAcquisitions: formation.nativeAcquisitions
+        };
+    }
+    catch (failure) {
+        throw retainLiveRtcFormationFailure({ ...formation, cause: toError(failure), nativeAcquisitionFailure: null });
+    }
+}
+
+async function completeAllDeliveryPermutations(
+    runtime: LiveRtcDeliveryRuntime,
+    input: RunAllDeliveryPermutationsInput,
+    sessions: Readonly<Record<AgentPrefix, string>>
+): Promise<readonly CompletedDeliveryCase[]> {
+    const slug = toTransportSlug(input.transport);
     const completed: CompletedDeliveryCase[] = [];
     for (const sender of input.agents) {
         const receivers = input.agents.filter(
@@ -450,24 +487,13 @@ async function runAllDeliveryPermutations(
             completed.push(
                 await runDeliveryCase(runtime, {
                     run: input,
-                    sessions: formation.sessions,
+                    sessions,
                     deliveryCase
                 })
             );
         }
     }
-    return {
-        commandIds: [
-            ...formation.commandIds,
-            ...completed.map((entry) => entry.commandId)
-        ],
-        sessions: formation.sessions,
-        scenarios: completed.map((entry) => entry.scenario),
-        timings: [
-            ...toReadinessTimings(input, formation, 'all'),
-            ...completed.map((entry) => entry.timing)
-        ]
-    };
+    return completed;
 }
 
 async function runNackProbe(
@@ -624,7 +650,7 @@ async function expectClosedTransportFailure(
             connection: `${input.agent.connection}-messages-rtc`,
             transport: 'messages.rtc',
             timeoutMs: 10_000,
-            send: sendPayload(runtime, {
+            send: toRtcSendInput(runtime, {
                 transport: 'messages.rtc',
                 groupId: input.groupId,
                 targetSessionIds: [input.targetSessionId],
@@ -746,7 +772,7 @@ interface WaitForDeliveryReceiptsInput {
     readonly startedAtMs: number;
 }
 
-function createDeliveryCases(
+function toDeliveryCases(
     input: RunDeliveryMatrixInput
 ): readonly DeliveryCase[] {
     const [sender, agentB, agentC] = input.agents;
@@ -832,7 +858,9 @@ function toDeliveryMatrixResult(
         timings: [
             ...toReadinessTimings(input, formation, 'owner'),
             ...completed.map((entry) => entry.timing)
-        ]
+        ],
+        rtcConnectCaptures: formation.rtcConnectCaptures,
+        nativeAcquisitions: formation.nativeAcquisitions
     };
 }
 
@@ -1037,7 +1065,7 @@ function toNackProbeCommand(
         },
         minSnapshotVersion: 9_999_999,
         timeoutMs: 45_000,
-        send: sendPayload(runtime, {
+        send: toRtcSendInput(runtime, {
             transport: 'messages.rtc',
             groupId: input.groupId,
             targetSessionIds: [input.targetSessionId],

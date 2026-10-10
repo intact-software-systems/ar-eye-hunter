@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
-import type { RallarBlackBoxTestWaitResultValue } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { decodeRecord } from '../../shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
@@ -15,7 +15,7 @@ describe('rallar-bb-test wait absence', () => {
     // dial before a reset — needs the cursor to say which occurrence it means.
     it('ignores matching events recorded before the cursor', async () => {
         let now = 1_000;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: () => now,
             sleep: async (ms) => {
                 now += ms;
@@ -45,7 +45,7 @@ describe('rallar-bb-test wait absence', () => {
 
     it('accepts a matching event recorded at the cursor', async () => {
         let now = 2_000;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: () => now,
             sleep: async (ms) => {
                 now += ms;
@@ -89,7 +89,7 @@ describe('rallar-bb-test wait absence', () => {
     it('holds the full window and succeeds when nothing matches', async () => {
         let now = 1_000;
         const sleptDurations: number[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: () => now,
             sleep: async (ms) => {
                 sleptDurations.push(ms);
@@ -114,18 +114,17 @@ describe('rallar-bb-test wait absence', () => {
             }
         });
 
-        const value = result.value as RallarBlackBoxTestWaitResultValue;
         expect(result.ok).toBe(true);
-        expect(value.matched).toBe(false);
-        expect(value.absent).toBe(true);
-        expect(value.event).toBeUndefined();
+        expect(result.value).toHaveProperty('matched', false);
+        expect(result.value).toHaveProperty('absent', true);
+        expect(decodeRecord(result.value).event).toBeUndefined();
         expect(sleptDurations).toEqual([2_000]);
         expect(now).toBe(3_000);
     });
 
     it('fails with the offending event when a matching event was already buffered', async () => {
         let now = 1_000;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: () => now,
             sleep: async (ms) => {
                 now += ms;
@@ -149,18 +148,17 @@ describe('rallar-bb-test wait absence', () => {
             }
         });
 
-        const value = result.value as RallarBlackBoxTestWaitResultValue;
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED');
-        expect(value.matched).toBe(true);
-        expect(value.absent).toBe(true);
-        expect(value.event?.topic).toBe('room.forbidden-topic');
+        expect(result.value).toHaveProperty('matched', true);
+        expect(result.value).toHaveProperty('absent', true);
+        expect(result.value).toHaveProperty('event.topic', 'room.forbidden-topic');
     });
 
     it('fails when the matching event arrives during the held window', async () => {
         let now = 1_000;
         let releaseHold: (() => void) | undefined;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: () => now,
             sleep: (ms) =>
                 new Promise<void>((resolve) => {
@@ -199,18 +197,16 @@ describe('rallar-bb-test wait absence', () => {
         releaseHold?.();
 
         const result = await pending;
-        const value = result.value as RallarBlackBoxTestWaitResultValue;
+
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED');
-        expect(value.matched).toBe(true);
-        expect((value.event?.payload as { data: { accessToken: string; }; }).data.accessToken)
-            .toBe('<redacted>');
-        const details = result.error?.details as { event: { payload: { data: { accessToken: string; }; }; }; };
-        expect(details.event.payload.data.accessToken).toBe('<redacted>');
+        expect(result.value).toHaveProperty('matched', true);
+        expect(result.value).toHaveProperty('event.payload.data.accessToken', '<redacted>');
+        expect(result.error?.details).toHaveProperty('event.payload.data.accessToken', '<redacted>');
     });
 
     it('cancels an absence hold when recipe cancellation is requested', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const pending = runtime.execute({
             kind: 'wait',
             commandId: 'absence-cancelled',
@@ -230,24 +226,25 @@ describe('rallar-bb-test wait absence', () => {
         });
 
         const result = await pending;
-        const value = result.value as RallarBlackBoxTestWaitResultValue;
+
         expect(result.status).toBe('cancelled');
-        expect(value.cancelled).toBe(true);
-        expect(value.absent).toBe(true);
-        expect(value.matched).toBe(false);
+        expect(result.value).toHaveProperty('cancelled', true);
+        expect(result.value).toHaveProperty('absent', true);
+        expect(result.value).toHaveProperty('matched', false);
     });
 
     it('rejects absent values other than true at the runtime boundary', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const result = await runtime.execute({
             kind: 'wait',
             commandId: 'absence-invalid-flag',
+            // @ts-expect-error Deliberately exercise an invalid JavaScript absence flag.
             absent: false,
             match: {
                 kind: 'message',
                 topic: 'room.forbidden-topic'
             }
-        } as never);
+        });
 
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_INVALID');
@@ -273,7 +270,7 @@ describe('rallar-bb-test wait absence', () => {
                 kind: 'message',
                 topic: 'room.forbidden-topic'
             }
-        } as never)).toEqual({
+        })).toEqual({
             ok: false,
             error: 'wait.absent must be true when present.',
             messages: ['wait.absent must be true when present.']

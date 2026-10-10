@@ -21,6 +21,7 @@ PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-${RALLAR_PLAYWRIGHT_ROOT}/
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-playwright-install.sh"
+source "${SCRIPT_DIR}/rallar-headless-worker-env.sh"
 
 bool_enabled() {
 	local value="${1:-0}"
@@ -34,38 +35,6 @@ require_command() {
 	fi
 }
 
-run_with_heartbeat() {
-	local label="$1"
-	shift
-
-	local interval="${RALLAR_LONG_COMMAND_HEARTBEAT_SECONDS:-30}"
-	if ! [[ "${interval}" =~ ^[1-9][0-9]*$ ]]; then
-		interval="30"
-	fi
-
-	"$@" &
-	local pid=$!
-
-	while kill -0 "${pid}" 2>/dev/null; do
-		local elapsed=0
-		while [[ "${elapsed}" -lt "${interval}" ]]; do
-			sleep 1
-			if ! kill -0 "${pid}" 2>/dev/null; then
-				break 2
-			fi
-			elapsed=$((elapsed + 1))
-		done
-		echo "  ${label} still running at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-	done
-
-	local status
-	set +e
-	wait "${pid}"
-	status=$?
-	set -e
-	return "${status}"
-}
-
 load_env_file() {
 	if [[ ! -r "${ENV_FILE}" ]]; then
 		echo "Headless worker env file not found: ${ENV_FILE}" >&2
@@ -77,27 +46,6 @@ load_env_file() {
 	# shellcheck disable=SC1090
 	source "${ENV_FILE}"
 	set +a
-}
-
-quote_env_value() {
-	local value="$1"
-	if [[ "${value}" == *$'\n'* || "${value}" == *$'\r'* ]]; then
-		echo "Environment values may not contain newlines." >&2
-		exit 1
-	fi
-	value="${value//\\/\\\\}"
-	value="${value//\"/\\\"}"
-	value="${value//\$/\\\$}"
-	value="${value//\`/\\\`}"
-	printf '"%s"' "${value}"
-}
-
-write_env_var() {
-	local key="$1"
-	local value="${!key-}"
-	if [[ -n "${value}" ]]; then
-		printf '%s=%s\n' "${key}" "$(quote_env_value "${value}")" >>"${tmp_env_file}"
-	fi
 }
 
 validate_positive_integer() {
@@ -181,66 +129,6 @@ validate_worker_env() {
 	validate_positive_integer RALLAR_BLACK_BOX_AGENT_START_INDEX "${RALLAR_BLACK_BOX_AGENT_START_INDEX}"
 	validate_browser_engine RALLAR_BLACK_BOX_BROWSER_ENGINE
 	validate_credentials
-}
-
-write_worker_env_file() {
-	install -d -m 0700 -o root -g root "$(dirname "${ENV_FILE}")"
-	tmp_env_file="$(mktemp "$(dirname "${ENV_FILE}")/.headless-worker.env.XXXXXX")"
-	chmod 0600 "${tmp_env_file}"
-
-	cat >"${tmp_env_file}" <<EOF_ENV
-# Written by scripts/hosted-rallar/controller/09-start-headless-workers.sh.
-# Contains credentials; keep this file root-readable only.
-EOF_ENV
-
-	local required_vars=(
-		RALLAR_BLACK_BOX_SPA_URL
-		RALLAR_BLACK_BOX_CONTROL_URL
-		RALLAR_API_BASE_URL
-		RALLAR_BLACK_BOX_RUN_ID
-		RALLAR_BLACK_BOX_ROOM_ID
-		RALLAR_BLACK_BOX_AGENT_PREFIX
-		RALLAR_BLACK_BOX_AGENT_COUNT
-		RALLAR_BLACK_BOX_AGENT_START_INDEX
-		PLAYWRIGHT_BROWSERS_PATH
-	)
-	local optional_vars=(
-		RALLAR_BLACK_BOX_USERNAME
-		RALLAR_BLACK_BOX_PASSWORD
-		RALLAR_BLACK_BOX_CONTROL_TOKEN
-		RALLAR_BLACK_BOX_CONTROL_READ_TOKEN
-		RALLAR_BLACK_BOX_REPORT_UPLOAD_URL
-		RALLAR_BLACK_BOX_ENVIRONMENT
-		RALLAR_BLACK_BOX_TRANSPORT
-		RALLAR_BLACK_BOX_STATS_INTERVAL_MS
-		RALLAR_BLACK_BOX_HEARTBEAT_INTERVAL_MS
-		RALLAR_APPLICATION_ID
-		RALLAR_BLACK_BOX_APPLICATION_ID
-		RALLAR_WORKSPACE_ID
-		RALLAR_BLACK_BOX_WORKSPACE_ID
-		RALLAR_BLACK_BOX_REGISTER
-		RALLAR_BLACK_BOX_RESTORE_SESSION
-		RALLAR_BLACK_BOX_LOGOUT_ON_CLOSE
-		RALLAR_BLACK_BOX_LEAVE_ROOM_ON_CLOSE
-		RALLAR_BLACK_BOX_HEADLESS_ENTRY
-		RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL
-		RALLAR_BLACK_BOX_BROWSER_ENGINE
-		RALLAR_BLACK_BOX_HEADLESS
-		RALLAR_BLACK_BOX_LAUNCH_TIMEOUT_MS
-		RALLAR_BLACK_BOX_READY_TIMEOUT_MS
-	)
-
-	local key
-	for key in "${required_vars[@]}" "${optional_vars[@]}"; do
-		write_env_var "${key}"
-	done
-
-	while IFS= read -r key; do
-		write_env_var "${key}"
-	done < <(compgen -e | grep -E '^RALLAR_BLACK_BOX_AGENT_[0-9]+_(USERNAME|PASSWORD|CONTROL_TOKEN)$' | sort || true)
-
-	mv "${tmp_env_file}" "${ENV_FILE}"
-	chmod 0600 "${ENV_FILE}"
 }
 
 write_systemd_service() {
@@ -376,7 +264,8 @@ fi
 if bool_enabled "${RALLAR_WRITE_HEADLESS_ENV}"; then
 	apply_default_worker_env
 	validate_worker_env
-	write_worker_env_file
+	install -d -m 0700 -o root -g root "$(dirname "${ENV_FILE}")"
+	write_rallar_headless_worker_env_file "${ENV_FILE}"
 else
 	load_env_file
 	validate_required_value RALLAR_BLACK_BOX_CONTROL_URL

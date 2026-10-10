@@ -28,6 +28,42 @@ import {
 } from './distributed-run-fixture.ts';
 
 describe('distributed recipes targets', () => {
+    it.each([
+        { mode: 'off' as const, expected: 'off' },
+        { mode: 'signaling' as const, expected: 'signaling' },
+        { mode: 'native' as const, expected: 'native' },
+        { mode: undefined, expected: undefined }
+    ])('preserves run capture $expected in the public serialized manifest', ({ mode, expected }) => {
+        const input = {
+            distributedRunId: 'capture-builder',
+            controlRunId: 'capture-control',
+            ...(mode === undefined ? {} : { rtcCaptureMode: mode }),
+            group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'bb-group' },
+            recipes: [recipe],
+            targetAgentIds: ['agent-a'],
+            targetPolicyMode: 'selected-agents' as const,
+            rolePattern: 'all-agents' as const,
+            ackTimeoutMs: 1_000,
+            barrier: { enabled: false as const },
+            startMode: 'manual' as const,
+            groupAssertions: [],
+            createdBy: 'capture-builder-test'
+        };
+
+        const manifest = createDistributedRunManifest(input);
+        const serialized = JSON.parse(JSON.stringify(manifest));
+
+        if (expected === undefined) {
+            expect(manifest).not.toHaveProperty('rtcCaptureMode');
+            expect(serialized).not.toHaveProperty('rtcCaptureMode');
+        }
+        else {
+            expect(manifest).toHaveProperty('rtcCaptureMode', expected);
+            expect(serialized).toHaveProperty('rtcCaptureMode', expected);
+        }
+        expect(manifest.recipes[0].recipe).toEqual(recipe.recipe);
+    });
+
     it('derives target rows from control-agent Rallar identity', () => {
         const rows = distributedRecipeTargetRows({
             run: runSnapshot,

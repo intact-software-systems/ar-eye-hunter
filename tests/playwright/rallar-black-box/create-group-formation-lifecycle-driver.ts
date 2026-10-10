@@ -1,10 +1,28 @@
 import { expect } from '@playwright/test';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
+
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRtcConnectCommand
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import {
+    resolveRequiredRtcCaptureFailure,
+    toBrowserRtcCaptureIntent
+} from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
+import { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
+
 import { readLiveRtcAgentApiUrls } from './live-rtc-agent-environment.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
+import {
+    jsonRecord,
+    stringArrayValue
+} from './live-rtc-evidence-json.ts';
 import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 
 type TransportUnderTest = 'realtime' | 'messages.rtc';
@@ -18,11 +36,13 @@ interface CreateGroupFormationLifecycleDriverConfig {
     readonly workspaceId: string;
     readonly messagesRtcTypeId: string;
     readonly messagesRtcTopicId: string;
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly formation: Pick<LiveRtcFormationOperations, 'readiness'>;
 }
 
 interface RunGroupFormationLifecycleInput {
     readonly control: LiveRtcControlPort;
+    readonly nativeAcquisition?: LiveRtcControlClient.NativeAcquisition;
     readonly runId: string;
     readonly agents: readonly [
         LiveRtcControlClient.FormationAgent,
@@ -39,10 +59,13 @@ interface GroupFormationLifecycleRun {
     readonly commandIds: readonly string[];
     readonly sessions: Readonly<Record<AgentPrefix, string>>;
     readonly readinessDurations: Readonly<Partial<Record<AgentPrefix, number>>>;
+    readonly rtcConnectCaptures: readonly LiveRtcControlClient.CapturedConnection[];
+    readonly nativeAcquisitions: readonly LiveRtcControlClient.NativeAcquisitionProof[];
 }
 
 interface ReconnectFormationAgentInput {
     readonly control: LiveRtcControlPort;
+    readonly nativeAcquisition?: LiveRtcControlClient.NativeAcquisition;
     readonly runId: string;
     readonly reconnectingAgent: LiveRtcControlClient.FormationAgent;
     readonly survivingAgents: readonly [
@@ -112,6 +135,7 @@ export interface SetupGroupMembershipInput {
 
 interface ConnectFormationAgentInput {
     readonly control: LiveRtcControlPort;
+    readonly nativeAcquisition?: LiveRtcControlClient.NativeAcquisition;
     readonly runId: string;
     readonly agent: LiveRtcControlClient.FormationAgent;
     readonly transport: TransportUnderTest;
@@ -122,6 +146,23 @@ interface ConnectFormationAgentInput {
 interface FormationAgentConnection {
     readonly commandId: string;
     readonly sessionId: string;
+    /** Absent when the operation did not explicitly request diagnostics. */
+    readonly rtcCapture?: LiveRtcControlClient.CapturedConnection;
+    /** Present only after this connection's specific acquisition completed. */
+    readonly nativeAcquisition?: LiveRtcControlClient.NativeAcquisitionProof;
+}
+
+interface InitialFormationPair {
+    readonly connections: readonly [FormationAgentConnection, FormationAgentConnection];
+    readonly presenceCommandIds: readonly string[];
+    readonly commandIds: readonly string[];
+}
+
+interface InitialPairPeerReadinessInput {
+    readonly run: RunGroupFormationLifecycleInput;
+    readonly connections: readonly [FormationAgentConnection, FormationAgentConnection];
+    readonly suffix: string;
+    readonly startedAtMs: number;
 }
 
 interface ReconnectedFormationAgent extends FormationAgentConnection {
@@ -205,6 +246,55 @@ interface WaitForCanonicalFormationReadinessInput {
     readonly startedAtMs: number;
 }
 
+export namespace LiveRtcFormationFailure {
+    export interface Input {
+        readonly cause: Error;
+        readonly rtcConnectCaptures: readonly LiveRtcControlClient.CapturedConnection[];
+        readonly nativeAcquisitions: readonly LiveRtcControlClient.NativeAcquisitionProof[];
+        readonly nativeAcquisitionFailure: LiveRtcControlClient.NativeAcquisitionFailure | null;
+    }
+}
+
+/** Completed diagnostic facts survive a later formation or delivery failure. */
+export class LiveRtcFormationFailure extends Error {
+    readonly rtcConnectCaptures: readonly LiveRtcControlClient.CapturedConnection[];
+    readonly nativeAcquisitions: readonly LiveRtcControlClient.NativeAcquisitionProof[];
+    readonly nativeAcquisitionFailure: LiveRtcControlClient.NativeAcquisitionFailure | null;
+
+    constructor(input: LiveRtcFormationFailure.Input) {
+        super(input.cause.message, { cause: input.cause });
+        this.name = 'LiveRtcFormationFailure';
+        this.rtcConnectCaptures = input.rtcConnectCaptures;
+        this.nativeAcquisitions = input.nativeAcquisitions;
+        this.nativeAcquisitionFailure = input.nativeAcquisitionFailure;
+    }
+}
+
+export function retainLiveRtcFormationFailure(input: LiveRtcFormationFailure.Input): Error {
+    const previous = input.cause instanceof LiveRtcFormationFailure ? input.cause : undefined;
+    const rtcConnectCaptures = [...input.rtcConnectCaptures, ...(previous?.rtcConnectCaptures ?? [])];
+    if (rtcConnectCaptures.length === 0 && previous === undefined) {
+        return input.cause;
+    }
+    return new LiveRtcFormationFailure({
+        cause: previous === undefined ? input.cause : toError(previous.cause),
+        rtcConnectCaptures,
+        nativeAcquisitions: [...input.nativeAcquisitions, ...(previous?.nativeAcquisitions ?? [])],
+        nativeAcquisitionFailure: previous?.nativeAcquisitionFailure ?? input.nativeAcquisitionFailure
+    });
+}
+
+function retainConnectionFailure(failure: Error, connections: readonly FormationAgentConnection[]): Error {
+    return retainLiveRtcFormationFailure({
+        cause: failure,
+        rtcConnectCaptures: connections.flatMap((connection) => connection.rtcCapture ? [connection.rtcCapture] : []),
+        nativeAcquisitions: connections.flatMap((connection) =>
+            connection.nativeAcquisition ? [connection.nativeAcquisition] : []
+        ),
+        nativeAcquisitionFailure: null
+    });
+}
+
 export function createGroupFormationLifecycleDriver(
     config: CreateGroupFormationLifecycleDriverConfig
 ): GroupFormationLifecycleDriver {
@@ -222,50 +312,56 @@ async function reconnectFormationAgent(
     const startedAtMs = performance.now();
     const connection = await connectFormationAgent(config, {
         control: input.control,
+        nativeAcquisition: input.nativeAcquisition,
         runId: input.runId,
         agent: input.reconnectingAgent,
         transport: input.transport,
         groupId: input.groupId,
         suffix: input.suffix
     });
-    const [firstReceiverDurationMs, secondReceiverDurationMs] = await Promise.all(
-        [
-            waitForCanonicalFormationReadiness(config, {
-                control: input.control,
-                runId: input.runId,
-                agent: input.survivingAgents[0],
-                roomRef: toGroupRef(config, input.groupId),
-                expectedPeerIds: [input.survivingSessionIds[1], connection.sessionId],
-                suffix: input.suffix,
-                startedAtMs
-            }),
-            waitForCanonicalFormationReadiness(config, {
-                control: input.control,
-                runId: input.runId,
-                agent: input.survivingAgents[1],
-                roomRef: toGroupRef(config, input.groupId),
-                expectedPeerIds: [input.survivingSessionIds[0], connection.sessionId],
-                suffix: input.suffix,
-                startedAtMs
-            }),
-            waitForCanonicalFormationReadiness(config, {
-                control: input.control,
-                runId: input.runId,
-                agent: input.reconnectingAgent,
-                roomRef: toGroupRef(config, input.groupId),
-                expectedPeerIds: input.survivingSessionIds,
-                suffix: `${input.suffix}-settled`,
-                startedAtMs
-            })
-        ]
-    );
-    return {
-        ...connection,
-        receiverReadinessDurationMs: Math.max(
-            firstReceiverDurationMs,
-            secondReceiverDurationMs
-        )
-    };
+    try {
+        const [firstReceiverDurationMs, secondReceiverDurationMs] = await Promise.all(
+            [
+                waitForCanonicalFormationReadiness(config, {
+                    control: input.control,
+                    runId: input.runId,
+                    agent: input.survivingAgents[0],
+                    roomRef: toGroupRef(config, input.groupId),
+                    expectedPeerIds: [input.survivingSessionIds[1], connection.sessionId],
+                    suffix: input.suffix,
+                    startedAtMs
+                }),
+                waitForCanonicalFormationReadiness(config, {
+                    control: input.control,
+                    runId: input.runId,
+                    agent: input.survivingAgents[1],
+                    roomRef: toGroupRef(config, input.groupId),
+                    expectedPeerIds: [input.survivingSessionIds[0], connection.sessionId],
+                    suffix: input.suffix,
+                    startedAtMs
+                }),
+                waitForCanonicalFormationReadiness(config, {
+                    control: input.control,
+                    runId: input.runId,
+                    agent: input.reconnectingAgent,
+                    roomRef: toGroupRef(config, input.groupId),
+                    expectedPeerIds: input.survivingSessionIds,
+                    suffix: `${input.suffix}-settled`,
+                    startedAtMs
+                })
+            ]
+        );
+        return {
+            ...connection,
+            receiverReadinessDurationMs: Math.max(
+                firstReceiverDurationMs,
+                secondReceiverDurationMs
+            )
+        };
+    }
+    catch (failure) {
+        throw retainConnectionFailure(toError(failure), [connection]);
+    }
 }
 
 async function runGroupFormationLifecycle(
@@ -273,32 +369,43 @@ async function runGroupFormationLifecycle(
     input: RunGroupFormationLifecycleInput
 ): Promise<GroupFormationLifecycleRun> {
     const formationConnections = await connectFormationAgents(config, input);
-    const sessions: Readonly<Record<AgentPrefix, string>> = {
-        A: formationConnections.connectResults[0].sessionId,
-        B: formationConnections.connectResults[1].sessionId,
-        C: formationConnections.connectResults[2].sessionId
-    };
-    expect(new Set(Object.values(sessions)).size).toBe(3);
+    try {
+        const sessions: Readonly<Record<AgentPrefix, string>> = {
+            A: formationConnections.connectResults[0].sessionId,
+            B: formationConnections.connectResults[1].sessionId,
+            C: formationConnections.connectResults[2].sessionId
+        };
+        expect(new Set(Object.values(sessions)).size).toBe(3);
 
-    const lifecycleSuffix = `${input.transport.replace('.', '-')}-${input.suffix}${
-        input.readinessScope === 'all' ? '-all' : ''
-    }`;
-    const lifecycle = await connectGroupLifecycle(config, {
-        run: input,
-        sessions,
-        lifecycleSuffix,
-        readinessStartedAtMs: formationConnections.readinessStartedAtMs
-    });
-    return {
-        commandIds: [
-            ...formationConnections.connectResults.map((result) => result.commandId),
-            ...formationConnections.presenceCommandIds,
-            ...formationConnections.initialPairCommandIds,
-            ...lifecycle.commandIds
-        ],
-        sessions,
-        readinessDurations: lifecycle.readinessDurations
-    };
+        const lifecycleSuffix = `${input.transport.replace('.', '-')}-${input.suffix}${
+            input.readinessScope === 'all' ? '-all' : ''
+        }`;
+        const lifecycle = await connectGroupLifecycle(config, {
+            run: input,
+            sessions,
+            lifecycleSuffix,
+            readinessStartedAtMs: formationConnections.readinessStartedAtMs
+        });
+        return {
+            commandIds: [
+                ...formationConnections.connectResults.map((result) => result.commandId),
+                ...formationConnections.presenceCommandIds,
+                ...formationConnections.initialPairCommandIds,
+                ...lifecycle.commandIds
+            ],
+            sessions,
+            readinessDurations: lifecycle.readinessDurations,
+            rtcConnectCaptures: formationConnections.connectResults.flatMap((connection) =>
+                connection.rtcCapture ? [connection.rtcCapture] : []
+            ),
+            nativeAcquisitions: formationConnections.connectResults.flatMap((connection) =>
+                connection.nativeAcquisition ? [connection.nativeAcquisition] : []
+            )
+        };
+    }
+    catch (failure) {
+        throw retainConnectionFailure(toError(failure), formationConnections.connectResults);
+    }
 }
 
 async function connectGroupLifecycle(
@@ -360,50 +467,71 @@ async function connectFormationAgents(
     config: CreateGroupFormationLifecycleDriverConfig,
     input: RunGroupFormationLifecycleInput
 ): Promise<FormationConnections> {
+    const connectA = await connectFormationAgent(config, { ...input, agent: input.agents[0] });
+    let pair: InitialFormationPair;
+    try {
+        pair = await connectFormationPair(config, input, connectA);
+    }
+    catch (failure) {
+        throw retainConnectionFailure(toError(failure), [connectA]);
+    }
+    try {
+        return await connectThirdFormationAgent(config, input, pair);
+    }
+    catch (failure) {
+        throw retainConnectionFailure(toError(failure), pair.connections);
+    }
+}
+
+async function connectFormationPair(
+    config: CreateGroupFormationLifecycleDriverConfig,
+    input: RunGroupFormationLifecycleInput,
+    connectA: FormationAgentConnection
+): Promise<InitialFormationPair> {
     const owner = input.agents[0];
-    const connectA = await connectFormationAgent(config, {
-        ...input,
-        agent: owner
-    });
     const presenceA = await waitForActiveSessions(config, {
         ...input,
         owner,
         expectedSessionIds: [connectA.sessionId]
     });
-    const connectB = await connectFormationAgent(config, {
-        ...input,
-        agent: input.agents[1]
-    });
-    const presenceB = await waitForActiveSessions(config, {
-        ...input,
-        owner,
-        expectedSessionIds: [connectA.sessionId, connectB.sessionId]
-    });
-    const initialPairCommandIds = await connectInitialPair(config, input, [
-        connectA,
-        connectB
-    ]);
-    const readinessStartedAtMs = performance.now();
-    const connectC = await connectFormationAgent(config, {
-        ...input,
-        agent: input.agents[2]
-    });
-    const presenceC = await waitForActiveSessions(config, {
-        ...input,
-        owner,
-        expectedSessionIds: [
-            connectA.sessionId,
-            connectB.sessionId,
-            connectC.sessionId
-        ]
-    });
+    const connectB = await connectFormationAgent(config, { ...input, agent: input.agents[1] });
+    try {
+        const presenceB = await waitForActiveSessions(config, {
+            ...input,
+            owner,
+            expectedSessionIds: [connectA.sessionId, connectB.sessionId]
+        });
+        const commandIds = await connectInitialPair(config, input, [connectA, connectB]);
+        return { connections: [connectA, connectB], presenceCommandIds: [...presenceA, ...presenceB], commandIds };
+    }
+    catch (failure) {
+        throw retainConnectionFailure(toError(failure), [connectB]);
+    }
+}
 
-    return {
-        connectResults: [connectA, connectB, connectC],
-        presenceCommandIds: [...presenceA, ...presenceB, ...presenceC],
-        initialPairCommandIds,
-        readinessStartedAtMs
-    };
+async function connectThirdFormationAgent(
+    config: CreateGroupFormationLifecycleDriverConfig,
+    input: RunGroupFormationLifecycleInput,
+    pair: InitialFormationPair
+): Promise<FormationConnections> {
+    const readinessStartedAtMs = performance.now();
+    const connectC = await connectFormationAgent(config, { ...input, agent: input.agents[2] });
+    try {
+        const presenceC = await waitForActiveSessions(config, {
+            ...input,
+            owner: input.agents[0],
+            expectedSessionIds: [...pair.connections.map((connection) => connection.sessionId), connectC.sessionId]
+        });
+        return {
+            connectResults: [...pair.connections, connectC],
+            presenceCommandIds: [...pair.presenceCommandIds, ...presenceC],
+            initialPairCommandIds: pair.commandIds,
+            readinessStartedAtMs
+        };
+    }
+    catch (failure) {
+        throw retainConnectionFailure(toError(failure), [connectC]);
+    }
 }
 
 async function connectInitialPair(
@@ -429,18 +557,7 @@ async function connectInitialPair(
         expectedLayout: plannedLayout.identity
     });
     const startedAtMs = performance.now();
-    await Promise.all(
-        agents.map(
-            async (agent, index) =>
-                await input.control.waitForPeerReadiness({
-                    runId: input.runId,
-                    agent,
-                    expectedPeerIds: [connections[index === 0 ? 1 : 0].sessionId],
-                    suffix,
-                    startedAtMs
-                })
-        )
-    );
+    await waitForInitialPairPeerReadiness({ run: input, connections, suffix, startedAtMs });
     const activateCommandId = await activateGroup(config, {
         ...lifecycle,
         transport: input.transport
@@ -468,45 +585,162 @@ async function connectInitialPair(
     ];
 }
 
+async function waitForInitialPairPeerReadiness(input: InitialPairPeerReadinessInput): Promise<void> {
+    await Promise.all(
+        input.run.agents.slice(0, 2).map(async (agent, index) =>
+            await input.run.control.waitForPeerReadiness({
+                runId: input.run.runId,
+                agent,
+                expectedPeerIds: [input.connections[index === 0 ? 1 : 0].sessionId],
+                suffix: input.suffix,
+                startedAtMs: input.startedAtMs
+            })
+        )
+    );
+}
+
 async function connectFormationAgent(
     config: CreateGroupFormationLifecycleDriverConfig,
     input: ConnectFormationAgentInput
 ): Promise<FormationAgentConnection> {
     const transport = input.transport.replace('.', '-');
     const commandId = `connect-${input.agent.prefix.toLowerCase()}-${transport}-${input.suffix}`;
-    const result = await input.control.executeOk({
-        ...input,
+    const captureIntent = toBrowserRtcCaptureIntent({ rtcCaptureMode: config.rtcCaptureMode });
+    const acquisition = input.nativeAcquisition;
+    if (
+        acquisition !== undefined &&
+        (captureIntent.connectionIntent !== 'explicit' || captureIntent.requestedConfiguration.mode !== 'native')
+    ) {
+        throw new Error('Native acquisition requires an explicit Native capture request.');
+    }
+    const command = toFormationConnectCommand(config, input, captureIntent.options);
+    const execution = {
+        runId: input.runId,
         agentId: input.agent.agentId,
         commandId,
-        command: {
-            kind: 'rtc.connect',
-            connection: `${input.agent.connection}-${transport}`,
-            actor: input.agent.actor,
-            roomId: input.groupId,
-            applicationId: config.applicationId,
-            workspaceId: config.workspaceId,
-            roomRef: toGroupRef(config, input.groupId),
-            transport: input.transport,
-            rallar: {
-                apiBaseUrl: readLiveRtcAgentApiUrls(config.apiBaseUrl)[input.agent.prefix],
-                restoreSession: true,
-                logoutOnClose: false,
-                leaveRoomOnClose: false,
-                ...(input.transport === 'messages.rtc'
-                    ? {
-                        typeId: config.messagesRtcTypeId,
-                        topicId: config.messagesRtcTopicId
-                    }
-                    : {})
-            },
-            timeoutMs: 45_000
-        },
+        command,
         timeoutMs: 60_000
-    });
-    return {
-        commandId,
-        sessionId: input.control.requireSessionId(result, commandId)
     };
+    const result = await input.control.executeOk(execution);
+    if (captureIntent.connectionIntent !== 'explicit') {
+        return { commandId, sessionId: input.control.requireSessionId(result, commandId) };
+    }
+    const receipt = requireFormationCaptureReceipt(
+        captureIntent.requestedConfiguration,
+        input.control.resultValue(result).rtcCapture
+    );
+    const sessionId = input.control.requireSessionId(result, commandId);
+    const rtcCapture: LiveRtcControlClient.CapturedConnection = {
+        runId: execution.runId,
+        agentId: execution.agentId,
+        commandId,
+        connection: command.connection,
+        transport: command.transport,
+        sessionId,
+        requestedConfiguration: captureIntent.requestedConfiguration,
+        receipt
+    };
+    const nativeAcquisition = acquisition === undefined
+        ? undefined
+        : await acquireFormationNativeCapture(acquisition, rtcCapture);
+    return { commandId, sessionId, rtcCapture, ...(nativeAcquisition === undefined ? {} : { nativeAcquisition }) };
+}
+
+interface FormationConnectCommand extends RallarBlackBoxTestRtcConnectCommand {
+    readonly connection: string;
+    readonly transport: TransportUnderTest;
+}
+
+function toFormationConnectCommand(
+    config: CreateGroupFormationLifecycleDriverConfig,
+    input: ConnectFormationAgentInput,
+    captureOptions: ReturnType<typeof toBrowserRtcCaptureIntent>['options']
+): FormationConnectCommand {
+    return {
+        kind: 'rtc.connect',
+        connection: `${input.agent.connection}-${input.transport.replace('.', '-')}`,
+        actor: input.agent.actor,
+        roomId: input.groupId,
+        applicationId: config.applicationId,
+        workspaceId: config.workspaceId,
+        roomRef: toGroupRef(config, input.groupId),
+        transport: input.transport,
+        rallar: {
+            ...captureOptions,
+            apiBaseUrl: readLiveRtcAgentApiUrls(config.apiBaseUrl)[input.agent.prefix],
+            restoreSession: true,
+            logoutOnClose: false,
+            leaveRoomOnClose: false,
+            ...(input.transport === 'messages.rtc'
+                ? { typeId: config.messagesRtcTypeId, topicId: config.messagesRtcTopicId }
+                : {})
+        },
+        timeoutMs: 45_000
+    };
+}
+
+function requireFormationCaptureReceipt(
+    requested: RtcSignalingDiagnostics.CaptureConfiguration,
+    value: RtcBaselineJson | undefined
+): RtcSignalingDiagnostics.CaptureReceipt {
+    const decoded = toRtcCaptureReadout(value);
+    const rtcCapture = decoded.right ?? { status: 'unavailable' as const, reason: 'unrecognized' as const };
+    const reason = decoded.left ?? resolveRequiredRtcCaptureFailure(requested, rtcCapture);
+    if (reason !== undefined || rtcCapture.status !== 'observed') {
+        throw new RallarRtcCaptureUnverifiedError({
+            requestedConfiguration: requested,
+            rtcCapture,
+            reason: reason ?? 'receipt-unavailable'
+        });
+    }
+    return rtcCapture.value;
+}
+
+async function acquireFormationNativeCapture(
+    acquisition: LiveRtcControlClient.NativeAcquisition,
+    connection: LiveRtcControlClient.CapturedConnection
+): Promise<LiveRtcControlClient.NativeAcquisitionProof> {
+    const receipt = connection.receipt;
+    if (
+        receipt.nativeScopeId.status !== 'observed' || receipt.nativeScopeId.value.length === 0 ||
+        receipt.nativeAvailability.status !== 'observed' ||
+        (receipt.nativeCoverage !== 'attached' && receipt.nativeCoverage !== 'partial')
+    ) {
+        throw nativeFormationAcquisitionFailure({
+            reason: 'native-capture-unavailable',
+            connection,
+            source: null,
+            cause: new Error('The admitted connection has no available Native capture scope.')
+        }, connection);
+    }
+    let result: Either<LiveRtcControlClient.NativeAcquisitionFailure, LiveRtcControlClient.NativeAcquisitionProof>;
+    try {
+        result = await acquisition.readRtcNativeAcquisition(connection);
+    }
+    catch (cause) {
+        throw nativeFormationAcquisitionFailure(
+            { reason: 'acquisition-failed', connection, source: null, cause: toError(cause) },
+            connection
+        );
+    }
+    return result.fold(
+        (failure) => {
+            throw nativeFormationAcquisitionFailure(failure, connection);
+        },
+        (proof) => proof
+    );
+}
+
+function nativeFormationAcquisitionFailure(
+    failure: LiveRtcControlClient.NativeAcquisitionFailure,
+    connection: LiveRtcControlClient.CapturedConnection
+): LiveRtcFormationFailure {
+    return new LiveRtcFormationFailure({
+        cause: failure.cause,
+        rtcConnectCaptures: [connection],
+        nativeAcquisitions: [],
+        nativeAcquisitionFailure: failure
+    });
 }
 
 async function configureMeshTopology(
@@ -524,7 +758,7 @@ async function configureMeshTopology(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `topology/config/requests/${pathSegment(`topology-mesh-${input.suffix}`)}`
+                    `topology/config/requests/${toPathSegment(`topology-mesh-${input.suffix}`)}`
                 ),
                 method: 'PUT',
                 body: {
@@ -556,7 +790,7 @@ async function enterGroupConnectionCycle(
         command: groupReadCommand(config, input.groupId),
         timeoutMs: 15_000
     });
-    const lifecycleState = readFormationEntryLifecycleState(
+    const lifecycleState = toFormationEntryLifecycleState(
         input.control.resultValue(current)
     );
     const operation = lifecycleState === 'forming' ? 'plan' : 'reconfigure';
@@ -571,7 +805,7 @@ async function enterGroupConnectionCycle(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `lifecycle/${operation}/requests/${pathSegment(`${operation}-${input.suffix}`)}`
+                    `lifecycle/${operation}/requests/${toPathSegment(`${operation}-${input.suffix}`)}`
                 ),
                 method: 'POST',
                 body: operation === 'reconfigure' ? { landing: 'hold' } : {}
@@ -584,7 +818,7 @@ async function enterGroupConnectionCycle(
     });
     return {
         commandIds: [readCommandId, commandId],
-        ...readLifecycleStageReceipt(input.control.resultValue(result), commandId)
+        ...toLifecycleStageReceipt(input.control.resultValue(result), commandId)
     };
 }
 
@@ -608,7 +842,7 @@ async function connectPublishedLayout(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `lifecycle/connect/requests/${pathSegment(`connect-${input.suffix}`)}`
+                    `lifecycle/connect/requests/${toPathSegment(`connect-${input.suffix}`)}`
                 ),
                 method: 'POST',
                 body: {
@@ -641,7 +875,7 @@ async function activateGroup(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `lifecycle/activate/requests/${pathSegment(`activate-${transport}-${input.suffix}`)}`
+                    `lifecycle/activate/requests/${toPathSegment(`activate-${transport}-${input.suffix}`)}`
                 ),
                 method: 'POST',
                 body: {}
@@ -679,7 +913,7 @@ async function waitForPlannedLayout(
                 if (!result?.ok) {
                     return false;
                 }
-                const candidate = readActivePublishedLayout(
+                const candidate = toActivePublishedLayout(
                     input.control.resultValue(result)
                 );
                 if (
@@ -735,7 +969,7 @@ async function waitForActiveSessions(
                 if (!result?.ok) {
                     return [];
                 }
-                return readActiveSessionIds(input.control.resultValue(result));
+                return toActiveSessionIds(input.control.resultValue(result));
             },
             {
                 message: `Expected exactly the active sessions ${expectedSessionIds.join(', ')} for ${input.groupId}`,
@@ -845,11 +1079,11 @@ function groupRequestPath(
     groupId: string,
     suffix?: string
 ): string {
-    const groupPath = `/api/state/apps/${pathSegment(config.applicationId)}/workspaces/${
-        pathSegment(
+    const groupPath = `/api/state/apps/${toPathSegment(config.applicationId)}/workspaces/${
+        toPathSegment(
             config.workspaceId
         )
-    }/groups/${pathSegment(groupId)}`;
+    }/groups/${toPathSegment(groupId)}`;
     return suffix ? `${groupPath}/${suffix}` : groupPath;
 }
 
@@ -864,16 +1098,16 @@ function toGroupRef(
     };
 }
 
-function readActivePublishedLayout(
+function toActivePublishedLayout(
     value: Readonly<Record<string, RtcBaselineJson>>
 ): ActivePublishedLayout | undefined {
     const body = jsonRecord(value.body);
-    const snapshot = jsonRecord(body.snapshot);
-    const sourceRevision = jsonRecord(snapshot.sourceGroupStateCausalRevision);
-    const groupRevision = numberValue(sourceRevision.groupRevision);
-    const presenceRevision = numberValue(sourceRevision.presenceRevision);
-    const version = numberValue(snapshot.version);
-    const state = snapshot.state;
+    const snapshot = jsonRecord(body?.snapshot);
+    const sourceRevision = jsonRecord(snapshot?.sourceGroupStateCausalRevision);
+    const groupRevision = toNonnegativeInteger(sourceRevision?.groupRevision);
+    const presenceRevision = toNonnegativeInteger(sourceRevision?.presenceRevision);
+    const version = toNonnegativeInteger(snapshot?.version);
+    const state = snapshot?.state;
     if (
         groupRevision === undefined ||
         presenceRevision === undefined ||
@@ -883,20 +1117,20 @@ function readActivePublishedLayout(
         return undefined;
     }
     return {
-        sessionIds: stringArrayValue(snapshot.activeSessionIds),
+        sessionIds: stringArrayValue(snapshot?.activeSessionIds),
         identity: { groupRevision, presenceRevision, version, state }
     };
 }
 
-function readLifecycleStageReceipt(
+function toLifecycleStageReceipt(
     value: Readonly<Record<string, RtcBaselineJson>>,
     commandId: string
 ): Omit<LifecycleStageReceipt, 'commandIds'> {
     const body = jsonRecord(value.body);
-    const group = jsonRecord(body.group);
-    const causalRevision = jsonRecord(body.causalRevision);
-    const formationEpoch = numberValue(group.formationEpoch);
-    const groupRevision = numberValue(causalRevision.groupRevision);
+    const group = jsonRecord(body?.group);
+    const causalRevision = jsonRecord(body?.causalRevision);
+    const formationEpoch = toNonnegativeInteger(group?.formationEpoch);
+    const groupRevision = toNonnegativeInteger(causalRevision?.groupRevision);
     if (formationEpoch === undefined || groupRevision === undefined) {
         throw new Error(
             `Lifecycle command ${commandId} did not return its formation epoch and group revision.`
@@ -905,26 +1139,27 @@ function readLifecycleStageReceipt(
     return { formationEpoch, groupRevision };
 }
 
-function readActiveSessionIds(
+function toActiveSessionIds(
     value: Readonly<Record<string, RtcBaselineJson>>
 ): readonly string[] {
     const body = jsonRecord(value.body);
-    if (!Array.isArray(body.activeSessions)) {
+    const activeSessions = body?.activeSessions;
+    if (!Array.isArray(activeSessions)) {
         return [];
     }
-    return body.activeSessions
+    return activeSessions
         .flatMap((session) => {
-            const sessionId = jsonRecord(session).sessionId;
+            const sessionId = jsonRecord(session)?.sessionId;
             return typeof sessionId === 'string' ? [sessionId] : [];
         })
         .sort((left, right) => left.localeCompare(right));
 }
 
-function readFormationEntryLifecycleState(
+function toFormationEntryLifecycleState(
     value: Readonly<Record<string, RtcBaselineJson>>
 ): FormationEntryLifecycleState {
     const body = jsonRecord(value.body);
-    const lifecycleState = jsonRecord(body.group).lifecycleState;
+    const lifecycleState = jsonRecord(body?.group)?.lifecycleState;
     if (lifecycleState === 'forming' || lifecycleState === 'active') {
         return lifecycleState;
     }
@@ -933,29 +1168,13 @@ function readFormationEntryLifecycleState(
     );
 }
 
-function jsonRecord(
-    value: RtcBaselineJson | undefined
-): Readonly<Record<string, RtcBaselineJson>> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
-        ? value
-        : {};
-}
-
-function stringArrayValue(
-    value: RtcBaselineJson | undefined
-): readonly string[] {
-    return Array.isArray(value)
-        ? value.filter((entry): entry is string => typeof entry === 'string')
-        : [];
-}
-
-function numberValue(value: RtcBaselineJson | undefined): number | undefined {
+function toNonnegativeInteger(value: RtcBaselineJson | undefined): number | undefined {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
         ? value
         : undefined;
 }
 
-function pathSegment(value: string): string {
+function toPathSegment(value: string): string {
     return encodeURIComponent(value);
 }
 

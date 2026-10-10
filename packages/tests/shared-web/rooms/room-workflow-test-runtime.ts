@@ -1,7 +1,6 @@
 import { vi } from 'vitest';
 
 import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
-import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { StateCacheChangeListener } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -17,6 +16,8 @@ import {
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
 type RoomGroupStateMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
 type RoomMembershipGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-membership-group-state-workflows.ts');
@@ -29,15 +30,14 @@ interface RoomSnapshotScopeFixture {
 
 const roomWorkflowMocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
-    const ctx = createDefaultApiMiddlewareTestDouble();
+    const context = createDefaultApiMiddlewareTestDouble();
     const operationLog: string[] = [];
 
     return {
         operationLog,
         cacheListeners: new Set<StateCacheChangeListener>(),
-        session: ctx.session,
-        ctx,
-        initialiseApiMiddleware: vi.fn(async (): Promise<ApiMiddleware> => ctx),
+        session: context.session,
+        context,
         createAndJoinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['createAndJoinStateGroup']>(),
         joinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['joinStateGroup']>(),
         leaveStateGroup: vi.fn<RoomGroupStateWorkflowsModule['leaveStateGroup']>(),
@@ -54,12 +54,16 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
         transferStateGroupOwnership: vi.fn<RoomMembershipGroupStateWorkflowsModule['transferStateGroupOwnership']>(),
         hydrateStateCache: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['hydrate']>(),
         onCacheChange: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>(),
-        readSession: vi.fn(() => ctx.session)
+        readSession: vi.fn(() => context.session)
     };
 });
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
-    initialiseMiddleware: async (): Promise<BrowserConnectedMiddleware> => ({ middleware: roomWorkflowMocks.ctx.middleware, checkpoints: [] })
+    initialiseMiddleware: async (): Promise<BrowserConnectedMiddleware> => ({
+        middleware: roomWorkflowMocks.context.middleware,
+        rtcCaptureReceipt,
+        checkpoints: []
+    })
 }));
 
 vi.mock(import('@shared-web/browser/rooms/room-group-state-workflows.ts'), () => ({
@@ -132,7 +136,7 @@ vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOrigin
     };
 });
 
-export function readRoomWorkflowMocks(): typeof roomWorkflowMocks {
+export function getRoomWorkflowMocks(): typeof roomWorkflowMocks {
     return roomWorkflowMocks;
 }
 
@@ -142,15 +146,10 @@ export function resetRoomWorkflowTestRuntime(): void {
     roomWorkflowMocks.operationLog.length = 0;
     configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
     roomWorkflowMocks.cacheListeners.clear();
-    resetRoomWorkflowLifecycleMocks();
+    roomWorkflowMocks.readSession.mockReturnValue(roomWorkflowMocks.session);
     resetRoomWorkflowEntryMocks();
     resetRoomWorkflowMutationMocks();
     resetRoomWorkflowCacheMocks();
-}
-
-function resetRoomWorkflowLifecycleMocks(): void {
-    roomWorkflowMocks.readSession.mockReturnValue(roomWorkflowMocks.session);
-    roomWorkflowMocks.initialiseApiMiddleware.mockResolvedValue(roomWorkflowMocks.ctx);
 }
 
 function resetRoomWorkflowEntryMocks(): void {
@@ -253,7 +252,7 @@ export function seedRoomSnapshots(snapshots: readonly GroupSnapshot[]): void {
     }
 }
 
-export function resolveCreateWith(snapshot: GroupSnapshot): void {
+export function mockRoomCreateSuccess(snapshot: GroupSnapshot): void {
     roomWorkflowMocks.createAndJoinStateGroup.mockImplementation(async (input) => {
         roomWorkflowMocks.operationLog.push(`create:${input.displayName}`);
         return snapshot;
@@ -267,7 +266,7 @@ export function rejectCreateWith(error: Error): void {
     });
 }
 
-export function resolveJoinWith(snapshot: GroupSnapshot): void {
+export function mockRoomJoinSuccess(snapshot: GroupSnapshot): void {
     roomWorkflowMocks.joinStateGroup.mockImplementation(async (input) => {
         roomWorkflowMocks.operationLog.push(`join:${input.groupId}`);
         return snapshot;
@@ -281,7 +280,7 @@ export function rejectJoinWith(error: Error): void {
     });
 }
 
-export function resolveLeaveWith(snapshot: GroupSnapshot): void {
+export function mockRoomLeaveSuccess(snapshot: GroupSnapshot): void {
     roomWorkflowMocks.leaveStateGroup.mockImplementation(async (input) => {
         roomWorkflowMocks.operationLog.push(`leave:${input.groupId}`);
         return snapshot;

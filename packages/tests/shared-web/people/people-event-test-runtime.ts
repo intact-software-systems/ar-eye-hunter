@@ -1,16 +1,15 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { OnInboxMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import { vi } from 'vitest';
 
-import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
-import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { StateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
+import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { OnInboxMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import {
     createActiveClientSessionFixture,
@@ -28,6 +27,8 @@ export interface PeopleEventFixtureInput {
     readonly occurredAtEpochMs?: number;
 }
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 const peopleEventMocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
     const context = createDefaultApiMiddlewareTestDouble();
@@ -37,7 +38,7 @@ const peopleEventMocks = await vi.hoisted(async () => {
         session: context.session,
         context,
         hydrateStateCache: vi.fn(async (): Promise<void> => undefined),
-        initialiseApiMiddleware: vi.fn(async (): Promise<ApiMiddleware> => context),
+        initialiseMiddleware: vi.fn<typeof MiddlewareModule.initialiseMiddleware>(),
         listStateClientEvents: vi.fn(async (_principalId: string): Promise<ClientEvent[]> => []),
         listStateClientEventPage: vi.fn(
             async (_principalId: string): Promise<StateEventPage<ClientEvent>> => ({
@@ -58,7 +59,7 @@ const peopleEventMocks = await vi.hoisted(async () => {
 });
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
-    initialiseMiddleware: async (): Promise<BrowserConnectedMiddleware> => ({ middleware: peopleEventMocks.context.middleware, checkpoints: [] })
+    initialiseMiddleware: peopleEventMocks.initialiseMiddleware
 }));
 
 vi.mock(import('@shared-web/browser/state-read/state-event-http-api.ts'), () => ({
@@ -99,7 +100,7 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), () => 
     getAllGroupStateSnapshots: peopleEventMocks.getAllGroupStateSnapshots
 }));
 
-export function readPeopleEventMocks(): typeof peopleEventMocks {
+export function getPeopleEventMocks(): typeof peopleEventMocks {
     return peopleEventMocks;
 }
 
@@ -107,7 +108,11 @@ export function resetPeopleEventTestRuntime(): void {
     vi.clearAllMocks();
     peopleEventMocks.wsInboxCallbacks.clear();
     peopleEventMocks.hydrateStateCache.mockResolvedValue(undefined);
-    peopleEventMocks.initialiseApiMiddleware.mockResolvedValue(peopleEventMocks.context);
+    peopleEventMocks.initialiseMiddleware.mockResolvedValue({
+        middleware: peopleEventMocks.context.middleware,
+        rtcCaptureReceipt,
+        checkpoints: []
+    });
     peopleEventMocks.listStateClientEvents.mockRejectedValue(new Error('client events not mocked'));
     peopleEventMocks.listStateClientEventPage.mockRejectedValue(
         new Error('client event page not mocked')

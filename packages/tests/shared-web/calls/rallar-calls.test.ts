@@ -16,6 +16,8 @@ import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connec
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from '../rtc/browser-rtc-peer-test-double.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
@@ -41,7 +43,11 @@ const mocks = await vi.hoisted(async () => {
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => ({ middleware: (await mocks.initialiseApiMiddleware(options)).middleware, checkpoints: [] })
+        initialiseMiddleware: async (_session, _topic, options) => ({
+            middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
+            rtcCaptureReceipt,
+            checkpoints: []
+        })
     })
 );
 

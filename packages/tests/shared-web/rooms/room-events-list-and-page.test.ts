@@ -1,14 +1,48 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
 
-import { createRoomEvent, createRoomEventPage, readRoomEventMocks, resetRoomEventTestRuntime } from './room-event-test-runtime.ts';
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
+import {
+    createRoomEvent,
+    createRoomEventPage,
+    getRoomEventMocks,
+    resetRoomEventTestRuntime
+} from './room-event-test-runtime.ts';
+
+installFakeBroadcastChannelPerTest();
 
 describe('room event history compatibility', () => {
     beforeEach(resetRoomEventTestRuntime);
 
+    it('rejects a cold public connection when middleware construction fails', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const mocks = getRoomEventMocks();
+        const facade = createRallarFacade();
+        onTestFinished(() => facade.disconnect());
+        await facade.disconnect();
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
+        const failure = new Error('Room middleware construction failed');
+        mocks.initialiseMiddleware.mockRejectedValue(failure);
+
+        await expect(facade.connect()).rejects.toBe(failure);
+
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
+    });
+
     it('lists scoped room events without connecting or hydrating state', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const mocks = readRoomEventMocks();
+        const mocks = getRoomEventMocks();
         const facade = createRallarFacade();
+        await facade.disconnect();
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
         const event = createRoomEvent({
             groupId: 'room-1',
             eventId: 'event-1',
@@ -17,7 +51,7 @@ describe('room event history compatibility', () => {
             workspaceId: 'room-workspace'
         });
         mocks.listStateGroupEvents.mockResolvedValue([event]);
-        mocks.initialiseApiMiddleware.mockRejectedValue(
+        mocks.initialiseMiddleware.mockRejectedValue(
             new Error('Room history reads must not initialize middleware')
         );
         mocks.hydrateStateCache.mockRejectedValue(
@@ -37,6 +71,8 @@ describe('room event history compatibility', () => {
             })
         ).resolves.toEqual([event]);
 
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
         expect(mocks.listStateGroupEvents).toHaveBeenCalledWith(
             'room-1',
             { applicationId: 'room-app', workspaceId: 'room-workspace' },
@@ -50,20 +86,25 @@ describe('room event history compatibility', () => {
 
     it('uses facade defaults for string room event history reads', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const mocks = readRoomEventMocks();
+        const mocks = getRoomEventMocks();
         const facade = createRallarFacade();
+        await facade.disconnect();
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
         const event = createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' });
         facade.setDefaults({
             applicationId: 'default-app',
             workspaceId: 'default-workspace'
         });
         mocks.listStateGroupEvents.mockResolvedValue([event]);
-        mocks.initialiseApiMiddleware.mockRejectedValue(
+        mocks.initialiseMiddleware.mockRejectedValue(
             new Error('Room history reads must not initialize middleware')
         );
 
         await expect(facade.rooms.listEvents('room-1')).resolves.toEqual([event]);
 
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
         expect(mocks.listStateGroupEvents).toHaveBeenCalledWith(
             'room-1',
             { applicationId: 'default-app', workspaceId: 'default-workspace' },
@@ -73,8 +114,11 @@ describe('room event history compatibility', () => {
 
     it('lists room event pages with literal cursor and filter options', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const mocks = readRoomEventMocks();
+        const mocks = getRoomEventMocks();
         const facade = createRallarFacade();
+        await facade.disconnect();
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
         const event = createRoomEvent({
             groupId: 'room-1',
             eventId: 'event-2',
@@ -93,7 +137,7 @@ describe('room event history compatibility', () => {
             workspaceId: 'default-workspace'
         });
         mocks.listStateGroupEventPage.mockResolvedValue(page);
-        mocks.initialiseApiMiddleware.mockRejectedValue(
+        mocks.initialiseMiddleware.mockRejectedValue(
             new Error('Room history reads must not initialize middleware')
         );
         mocks.hydrateStateCache.mockRejectedValue(
@@ -117,6 +161,8 @@ describe('room event history compatibility', () => {
             hasMore: false
         });
 
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
         expect(mocks.listStateGroupEventPage).toHaveBeenCalledWith(
             'room-1',
             { applicationId: 'default-app', workspaceId: 'default-workspace' },

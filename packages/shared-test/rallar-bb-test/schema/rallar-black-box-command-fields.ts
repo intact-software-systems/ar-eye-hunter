@@ -3,6 +3,7 @@ import {
     INDEXED_DB_OPERATION_KINDS,
     INDEXED_DB_OPERATION_OWNERS
 } from '@shared/persistence/indexed-db-operation-observer.ts';
+
 import type { RallarBlackBoxTestCommandKind } from '../rallar-black-box-test-contracts.ts';
 
 export interface RallarBlackBoxCommandFieldSet {
@@ -25,7 +26,7 @@ export const RALLAR_BLACK_BOX_COMMAND_BASE_FIELDS = [
 export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     configure: { required: ['config'], optional: [] },
     'recipe.load': { required: ['recipe'], optional: [] },
-    'recipe.run': { required: [], optional: ['recipe'] },
+    'recipe.run': { required: [], optional: ['recipe', 'rtcCaptureMode', 'expectedRecipeBodyId'] },
     'recipe.cancel': { required: [], optional: ['reason', 'targetCommandId'] },
     loop: {
         required: ['commands'],
@@ -141,6 +142,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     'crdt.open': {
         required: ['name'],
         optional: [
+            'rallar',
             'handle',
             'applicationId',
             'workspaceId',
@@ -212,7 +214,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
 export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
     recipe: {
         required: ['schemaVersion', 'recipeId', 'commands'],
-        optional: ['name', 'description', 'continueOnFailure', 'metadata']
+        optional: ['name', 'description', 'continueOnFailure', 'metadata', 'rtcCaptureMode']
     },
     parallelGroup: { required: ['commands'], optional: ['groupId', 'label', 'metadata'] },
     loopThresholds: {
@@ -236,6 +238,7 @@ export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
             'transport',
             'severity',
             'payloadPath',
+            'payloadFields',
             'equals',
             'contains',
             'exists',

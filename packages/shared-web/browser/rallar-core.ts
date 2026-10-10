@@ -30,7 +30,8 @@ export type {
 
 export type {
     RallarOperationOptions,
-    RallarOperationRetryPredicate
+    RallarOperationRetryPredicate,
+    RallarRtcCaptureContext
 } from '@shared-web/browser/rallar-operation-options.ts';
 
 export type {
@@ -145,3 +146,6 @@ export type {
 } from '@shared/alm/storage/al-storage-event.ts';
 export type { ALStorageUnavailable, ALStorageUnavailableCause } from '@shared/alm/storage/al-storage-unavailable.ts';
 export type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+
+export { RallarRtcCaptureConnectionRequiredError } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
+export { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';

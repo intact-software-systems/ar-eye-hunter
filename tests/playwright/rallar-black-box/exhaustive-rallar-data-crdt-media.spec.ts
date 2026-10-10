@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
+
 import {
     cleanupRallarPage,
     expectFullStackApiReady,
     expectNoSecrets,
     loginUser,
-    openTab,
     readExhaustivePostgresConfig,
     uniqueGroupId
 } from './full-stack-helpers.ts';
@@ -22,7 +22,10 @@ test.describe('exhaustive Rallar Data, CRDT, and Media tabs', () => {
         const groupId = uniqueGroupId(testInfo);
 
         try {
-            await loginUser(page, config, config.userA, {
+            await loginUser({
+                page,
+                config,
+                user: config.userA,
                 groupId,
                 sessionId: `${groupId}-data-session`,
                 tab: 'rallar-data'
@@ -85,7 +88,10 @@ test.describe('exhaustive Rallar Data, CRDT, and Media tabs', () => {
         const groupId = uniqueGroupId(testInfo);
 
         try {
-            await loginUser(page, config, config.userA, {
+            await loginUser({
+                page,
+                config,
+                user: config.userA,
                 groupId,
                 sessionId: `${groupId}-crdt-session`,
                 tab: 'crdt-health'
@@ -140,7 +146,10 @@ test.describe('exhaustive Rallar Data, CRDT, and Media tabs', () => {
         const groupId = uniqueGroupId(testInfo);
 
         try {
-            await loginUser(page, config, config.userA, {
+            await loginUser({
+                page,
+                config,
+                user: config.userA,
                 groupId,
                 sessionId: `${groupId}-media-session`,
                 tab: 'media'

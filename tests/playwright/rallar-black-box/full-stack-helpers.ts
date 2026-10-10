@@ -8,42 +8,41 @@ import {
     type TestInfo
 } from '@playwright/test';
 
+import { isRallarBlackBoxTestError } from '@shared-test/rallar-bb-test/composite-results.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { bindAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
-    type ControlCommandEnvelope
+    type ControlCommandEnvelope,
+    type ControlResultEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type { ControlRunArtifactBundle, ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import {
+    isFiniteNumber,
+    isNonEmptyText
+} from '@shared-test/rallar-bb-test/distributed-artifact-analysis/artifact-json-value-guards.ts';
+import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
+import { decodeControlRunArtifactBundle } from '@shared-test/rallar-bb-test/schema/control-artifact-envelope.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 
 import {
     readFullStackControlBaseUrl,
     toFullStackControlWebSocketUrl
 } from '../../../apps/rallar-black-box/playwright-full-stack-control-server.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestError,
+    RallarBlackBoxTestRecipe
+} from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { startPageDiagnosticsCapture, type PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
-
-export const FULL_STACK_CONTROL_BASE_URL = readFullStackControlBaseUrl();
-export const FULL_STACK_CONTROL_WS_URL = toFullStackControlWebSocketUrl(
-    FULL_STACK_CONTROL_BASE_URL
-);
-export const FULL_STACK_SPA_ORIGIN = normalizeBaseUrl(
-    envValue('VITE_RALLAR_SPA_BASE_URL') ?? 'http://localhost:5176'
-);
 
 export interface FullStackUser {
     readonly username: string;
     readonly password: string;
     readonly clientId: string;
     readonly actor: string;
-}
-
-export interface BrowserAuthSession {
-    readonly clientId: string;
-    readonly username: string;
-    readonly sessionId: string;
-    readonly accessToken: string;
-    readonly expiresAtEpochMs: number;
 }
 
 export interface FullStackConfig {
@@ -58,13 +57,11 @@ export interface FullStackConfig {
     readonly userC: FullStackUser;
 }
 
-export type ExhaustivePostgresConfig =
-    & FullStackConfig
-    & Readonly<{
-        exhaustive: true;
-        controlBaseUrl: string;
-        controlWsUrl: string;
-    }>;
+export interface ExhaustivePostgresConfig extends FullStackConfig {
+    readonly exhaustive: true;
+    readonly controlBaseUrl: string;
+    readonly controlWsUrl: string;
+}
 
 export type ExhaustiveTabId =
     | 'quick-test'
@@ -89,53 +86,23 @@ export type ExhaustiveTabId =
     | 'recipes'
     | 'runs'
     | 'builder'
-    | 'advanced';
+    | 'advanced'
+    | 'fleet';
 
 export type ExhaustiveWorkspace = 'rallar' | 'black-box-runner';
 
-export interface DisposableBrowserContext {
-    readonly context: BrowserContext;
-    readonly page: Page;
-    readonly groupId: string;
-    readonly runId: string;
-    readonly agentId: string;
-    readonly session: BrowserAuthSession;
-}
-
-export interface ControlRunEvent {
-    readonly kind?: string;
-    readonly agentId?: string;
-    readonly commandId?: string;
-    readonly payload?: Readonly<{
-        topic?: string;
-        payload?: Readonly<{ ok?: boolean; }>;
-    }>;
-}
-
-export interface ControlRunSnapshot {
-    readonly results?: readonly ControlResult[];
-    readonly events?: readonly ControlRunEvent[];
-    readonly stats?: readonly unknown[];
-    readonly reports?: readonly unknown[];
-}
-
-export interface TwoAgentRunParticipant {
-    readonly agentId: string;
+export interface TwoAgentRunParticipant extends RecipeRunAgent {
     readonly actor: string;
     readonly connection: string;
     readonly context: BrowserContext;
     readonly page: Page;
-    /** Absent only for a synthetic participant that never opened a real page (e.g. a unit-test double). */
-    readonly diagnostics?: PageDiagnosticsCapture;
+    readonly diagnostics: PageDiagnosticsCapture;
 }
 
-export interface TwoAgentRun {
-    readonly request: APIRequestContext;
-    readonly runId: string;
+export interface TwoAgentRun extends RecipePairRun {
     readonly group: RallarBlackBoxDistributedGroupRef;
     readonly sender: TwoAgentRunParticipant;
     readonly receiver: TwoAgentRunParticipant;
-    readSnapshot(): Promise<ControlRunSnapshot>;
     close(): Promise<void>;
 }
 
@@ -155,24 +122,154 @@ export interface RecipePair {
     readonly receiver: RallarBlackBoxTestRecipe;
 }
 
-/** A recipient recipe whose connect barrier has released; its outcome settles when the recipe does. */
-export interface StartedRecipientRun {
-    readonly outcome: Promise<RecipeRunOutcome>;
+/** An accepted recipe root; its caller owns when result observation starts and joins it. */
+export interface StartedRecipeRun {
+    readonly commandId: string;
+    readOutcome(): Promise<RecipeRunOutcome>;
 }
 
-interface ControlResult {
-    readonly commandId?: string;
-    readonly ok?: boolean;
-    readonly result?: unknown;
-    readonly error?: ControlResultError;
+export interface BrowserControlAgentInput {
+    readonly config: FullStackConfig;
+    readonly user: FullStackUser;
+    readonly runId: string;
+    readonly agentId: string;
+    readonly groupId: string;
+    /** Requests page-diagnostics capture from page creation; omitted for callers that don't read it. */
+    readonly diagnosticsRole?: AlmConformanceRole;
 }
 
-interface ControlResultError {
-    readonly code?: string;
-    readonly message?: string;
-    /** The failing child command's own error when a recipe fails. */
-    readonly details?: ControlResultError;
+/** Owns a manually acquired receiver page through its native case and final evidence. */
+export interface RallarReceiverPageRunInput {
+    readonly browser: Browser;
+    readonly sender: Page;
+    run(receiver: Page): Promise<void>;
+    captureEvidence(receiver: Page | undefined): Promise<void>;
 }
+
+export interface OpenedBrowserControlAgent {
+    readonly context: BrowserContext;
+    readonly page: Page;
+    readonly session: AuthSession;
+    readonly diagnostics?: PageDiagnosticsCapture;
+}
+
+export interface FullStackTestIdentity {
+    readonly project: Pick<TestInfo['project'], 'name'>;
+    readonly workerIndex: number;
+    readonly titlePath: readonly string[];
+}
+
+export interface LoginThroughUiInput {
+    readonly page: Page;
+    readonly config: FullStackConfig;
+    readonly user: FullStackUser;
+    readonly suffix: string;
+    readonly tab?:
+        | 'quick-test'
+        | 'manual-rallar'
+        | 'rallar-server'
+        | 'event-stream'
+        | 'local-workbench'
+        | 'rallar-data'
+        | 'recipes';
+    readonly registerBeforeLogin?: boolean;
+}
+
+export interface LoginUserInput {
+    readonly page: Page;
+    readonly config: FullStackConfig;
+    readonly user: FullStackUser;
+    readonly groupId: string;
+    readonly sessionId: string;
+    readonly tab?: ExhaustiveTabId;
+    readonly workspace?: ExhaustiveWorkspace;
+    readonly registerBeforeLogin?: boolean;
+    readonly rallarLeaveRoomOnClose?: boolean;
+}
+
+export interface EnqueueControlCommandInput {
+    readonly request: APIRequestContext;
+    readonly runId: string;
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly command: RallarBlackBoxTestCommand;
+}
+
+export interface OpenBrowserControlAgentInput extends BrowserControlAgentInput {
+    readonly browser: Browser;
+}
+
+export interface RecipeRunAgent {
+    readonly agentId: string;
+}
+
+/** The actual HTTP and snapshot operations consumed by recipe execution. */
+export interface RecipeRun {
+    readonly request: APIRequestContext;
+    readonly runId: string;
+    readSnapshot(): Promise<ControlRunSnapshot>;
+}
+
+export interface RecipePairRun extends RecipeRun {
+    readonly sender: RecipeRunAgent;
+    readonly receiver: RecipeRunAgent;
+}
+
+export interface CreateTwoAgentRunInput {
+    readonly browser: Browser;
+    readonly request: APIRequestContext;
+    readonly testInfo: FullStackTestIdentity;
+    readonly runId: string;
+}
+
+interface RunnerPanelTarget {
+    readonly tab: ExhaustiveTabId;
+    readonly surfaceLabel?: string;
+}
+
+interface AgentDiagnosticsInput {
+    readonly agentId: string;
+    readonly diagnosticsRole?: AlmConformanceRole;
+}
+
+interface ParticipantBaseInput {
+    readonly browser: Browser;
+    readonly testInfo: FullStackTestIdentity;
+    readonly runId: string;
+    readonly config: FullStackConfig;
+    readonly groupId: string;
+}
+
+interface OpenTwoAgentParticipantInput extends ParticipantBaseInput {
+    readonly user: FullStackUser;
+    readonly role: 'sender' | 'receiver';
+}
+
+interface TwoAgentParticipants {
+    readonly sender: TwoAgentRunParticipant;
+    readonly receiver: TwoAgentRunParticipant;
+}
+
+interface ReceiverConnectBarrierInput {
+    readonly connectCommandId: string;
+    readonly runCommandId: string;
+}
+
+interface FullStackSignInInput {
+    readonly page: Page;
+    readonly config: FullStackConfig;
+    readonly user: FullStackUser;
+    readonly registerBeforeLogin?: boolean;
+    readonly query: URLSearchParams;
+}
+
+export const FULL_STACK_CONTROL_BASE_URL = readFullStackControlBaseUrl();
+export const FULL_STACK_CONTROL_WS_URL = toFullStackControlWebSocketUrl(
+    FULL_STACK_CONTROL_BASE_URL
+);
+export const FULL_STACK_SPA_ORIGIN = normalizeBaseUrl(
+    envValue('VITE_RALLAR_SPA_BASE_URL') ?? 'http://localhost:5176'
+);
 
 const TAB_LABELS: Readonly<Record<ExhaustiveTabId, string>> = {
     'quick-test': 'Quick Test',
@@ -197,12 +294,11 @@ const TAB_LABELS: Readonly<Record<ExhaustiveTabId, string>> = {
     recipes: 'Recipes',
     runs: 'Runs',
     builder: 'Builder',
-    advanced: 'Advanced'
+    advanced: 'Advanced',
+    fleet: 'Fleet'
 };
 
-const RUNNER_PANEL_TARGETS: Partial<
-    Readonly<Record<ExhaustiveTabId, Readonly<{ tab: ExhaustiveTabId; surfaceLabel?: string; }>>>
-> = {
+const RUNNER_PANEL_TARGETS: Partial<Readonly<Record<ExhaustiveTabId, RunnerPanelTarget>>> = {
     'manual-rallar': { tab: 'advanced', surfaceLabel: 'Manual Rallar' },
     'local-workbench': { tab: 'advanced', surfaceLabel: 'Local Workbench' },
     'run-manager': { tab: 'advanced', surfaceLabel: 'Run Manager' },
@@ -288,23 +384,8 @@ export async function expectFullStackApiReady(
     expect(configResponse.headers()['access-control-allow-origin']).toBe(FULL_STACK_SPA_ORIGIN);
 }
 
-export async function loginThroughUi(
-    page: Page,
-    config: FullStackConfig,
-    user: FullStackUser,
-    input: Readonly<{
-        suffix: string;
-        tab?:
-            | 'quick-test'
-            | 'manual-rallar'
-            | 'rallar-server'
-            | 'event-stream'
-            | 'local-workbench'
-            | 'rallar-data'
-            | 'recipes';
-        registerBeforeLogin?: boolean;
-    }>
-): Promise<void> {
+export async function loginThroughUi(input: LoginThroughUiInput): Promise<void> {
+    const { page, config, user } = input;
     const sessionId = `${user.actor}-session-${input.suffix}`;
     await installExhaustiveRequestClientKey(page, config, sessionId);
     const query = new URLSearchParams({
@@ -315,32 +396,13 @@ export async function loginThroughUi(
         sessionId,
         tab: input.tab ?? 'rallar-server'
     });
-
-    await page.goto(`${FULL_STACK_SPA_ORIGIN}/?${query.toString()}`);
-    await expect(page.getByRole('heading', { name: 'Rallar Server Login' })).toBeVisible();
-    await page.getByLabel('API Base URL').fill(config.apiBaseUrl);
-    await page.getByLabel('Username').fill(user.username);
-    await page.getByLabel('Password').fill(user.password);
-    if (input.registerBeforeLogin) {
-        await page.getByLabel('Register before login').check();
-    }
-    await page.getByRole('button', { name: 'Sign in' }).click();
+    await signInFullStackUser({ ...input, query });
     await expect(page.getByRole('tab', { name: 'Rallar Server' })).toBeVisible();
     await expect(page.locator('.run-header')).toContainText(user.username);
 }
 
-export async function loginUser(
-    page: Page,
-    config: FullStackConfig,
-    user: FullStackUser,
-    input: Readonly<{
-        groupId: string;
-        sessionId: string;
-        tab?: ExhaustiveTabId;
-        workspace?: ExhaustiveWorkspace;
-        registerBeforeLogin?: boolean;
-    }>
-): Promise<BrowserAuthSession> {
+export async function loginUser(input: LoginUserInput): Promise<AuthSession> {
+    const { page, config, user } = input;
     await installExhaustiveRequestClientKey(page, config, input.sessionId);
     const query = new URLSearchParams({
         provider: 'browser-rallar',
@@ -351,18 +413,12 @@ export async function loginUser(
         actor: user.actor,
         sessionId: input.sessionId,
         tab: input.tab ?? 'rallar-server',
-        ...(input.workspace ? { workspace: input.workspace } : {})
+        ...(input.workspace ? { workspace: input.workspace } : {}),
+        ...(input.rallarLeaveRoomOnClose === undefined ? {} : {
+            rallarLeaveRoomOnClose: input.rallarLeaveRoomOnClose ? '1' : '0'
+        })
     });
-
-    await page.goto(`${FULL_STACK_SPA_ORIGIN}/?${query.toString()}`);
-    await expect(page.getByRole('heading', { name: 'Rallar Server Login' })).toBeVisible();
-    await page.getByLabel('API Base URL').fill(config.apiBaseUrl);
-    await page.getByLabel('Username').fill(user.username);
-    await page.getByLabel('Password').fill(user.password);
-    if (input.registerBeforeLogin) {
-        await page.getByLabel('Register before login').check();
-    }
-    await page.getByRole('button', { name: 'Sign in' }).click();
+    await signInFullStackUser({ ...input, query });
     await expect(page.locator('.run-header')).toContainText(user.username, { timeout: 30_000 });
     await openTab(page, input.tab ?? 'rallar-server', input.workspace);
     return await readBrowserAuthSession(page);
@@ -388,33 +444,6 @@ export async function installExhaustiveRequestClientKey(
     });
 }
 
-export async function newDisposableContext(
-    browser: Browser,
-    config: FullStackConfig,
-    user: FullStackUser,
-    testInfo: TestInfo,
-    input: Readonly<{
-        tab?: ExhaustiveTabId;
-        workspace?: ExhaustiveWorkspace;
-        groupId?: string;
-        runId?: string;
-        agentId?: string;
-    }> = {}
-): Promise<DisposableBrowserContext> {
-    const context = await browser.newContext();
-    const page = await context.newPage();
-    const groupId = input.groupId ?? uniqueGroupId(testInfo);
-    const runId = input.runId ?? uniqueRunId(testInfo);
-    const agentId = input.agentId ?? uniqueAgentId(testInfo, user.actor);
-    const session = await loginUser(page, config, user, {
-        groupId,
-        sessionId: `${agentId}-session`,
-        tab: input.tab,
-        workspace: input.workspace
-    });
-    return { context, page, groupId, runId, agentId, session };
-}
-
 export async function sendWsTicketFromRestWorkbench(
     page: Page,
     config: FullStackConfig
@@ -436,18 +465,12 @@ export async function sendWsTicketFromRestWorkbench(
     return outgoingRequest.headers();
 }
 
-export async function readBrowserAuthSession(page: Page): Promise<BrowserAuthSession> {
-    const session = await page.evaluate(() => {
+export async function readBrowserAuthSession(page: Page): Promise<AuthSession> {
+    const session: unknown = await page.evaluate(() => {
         const raw = window.localStorage.getItem('auth.session');
-        return raw ? JSON.parse(raw) as unknown : undefined;
-    }) as Partial<BrowserAuthSession> | undefined;
-
-    expect(session?.clientId).toBeTruthy();
-    expect(session?.username).toBeTruthy();
-    expect(session?.sessionId).toBeTruthy();
-    expect(session?.accessToken).toBeTruthy();
-
-    return session as BrowserAuthSession;
+        return raw ? JSON.parse(raw) : undefined;
+    });
+    return decodeFullStackAuthSession(session);
 }
 
 export async function openTab(
@@ -479,28 +502,17 @@ export async function openTab(
     await expect(page.locator(`#panel-${tab}`)).toBeVisible();
 }
 
-export async function enqueueControlCommand(
-    request: APIRequestContext,
-    runId: string,
-    agentId: string,
-    commandId: string,
-    command: unknown
-): Promise<void> {
-    const response = await request.post(
-        `${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/agents/${
-            encodeURIComponent(agentId)
+export async function enqueueControlCommand(input: EnqueueControlCommandInput): Promise<void> {
+    const response = await input.request.post(
+        `${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(input.runId)}/agents/${
+            encodeURIComponent(input.agentId)
         }/commands`,
-        {
-            data: {
-                commandId,
-                command
-            }
-        }
+        { data: { commandId: input.commandId, command: input.command } }
     );
     expect(response.status()).toBe(202);
 }
 
-export async function fetchControlRun(
+export async function readControlRun(
     request: APIRequestContext,
     runId: string
 ): Promise<ControlRunSnapshot> {
@@ -508,7 +520,12 @@ export async function fetchControlRun(
         `${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`
     );
     expect(response.ok()).toBe(true);
-    return await response.json() as ControlRunSnapshot;
+    return decodeControlRunSnapshot(await response.json()).fold(
+        (issue) => {
+            throw new Error(`Invalid control run snapshot: ${issue}`);
+        },
+        (snapshot) => snapshot
+    );
 }
 
 export async function waitForControlCommandOk(
@@ -517,9 +534,8 @@ export async function waitForControlCommandOk(
     commandId: string
 ): Promise<void> {
     await expect.poll(async () => {
-        const run = await fetchControlRun(request, runId);
-        return run.results?.some((result) => result.commandId === commandId && result.ok === true) ??
-            false;
+        const run = await readControlRun(request, runId);
+        return run.results.some((result) => result.commandId === commandId && result.ok === true);
     }, {
         timeout: 30_000
     }).toBe(true);
@@ -531,10 +547,8 @@ export async function waitForControlRunAgent(
     agentId: string
 ): Promise<void> {
     await expect.poll(async () => {
-        const run = await fetchControlRun(request, runId) as {
-            agents?: readonly { agentId?: string; connected?: boolean; }[];
-        };
-        return run.agents?.some((agent) => agent.agentId === agentId && agent.connected) ?? false;
+        const run = await readControlRun(request, runId);
+        return run.agents.some((agent) => agent.agentId === agentId && agent.connected);
     }, {
         timeout: 30_000
     }).toBe(true);
@@ -543,39 +557,28 @@ export async function waitForControlRunAgent(
 export async function exportControlRunArtifacts(
     request: APIRequestContext,
     runId: string
-): Promise<Readonly<Record<string, unknown>>> {
+): Promise<ControlRunArtifactBundle> {
     const response = await request.get(
         `${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/artifacts`
     );
     expect(response.ok()).toBe(true);
-    return await response.json() as Readonly<Record<string, unknown>>;
+    return decodeControlRunArtifactBundle(await response.json()).fold(
+        (issue) => {
+            throw new Error(`Invalid control run artifact: ${issue}`);
+        },
+        (artifact) => artifact
+    );
 }
 
-export interface BrowserControlAgentInput {
-    readonly config: FullStackConfig;
-    readonly user: FullStackUser;
-    readonly runId: string;
-    readonly agentId: string;
-    readonly groupId: string;
-    readonly connection?: string;
-    /** Requests page-diagnostics capture from page creation; omitted for callers that don't read it. */
-    readonly diagnosticsRole?: AlmConformanceRole;
-}
-
-export interface OpenedBrowserControlAgent {
-    readonly context: BrowserContext;
-    readonly page: Page;
-    readonly session: BrowserAuthSession;
-    readonly diagnostics?: PageDiagnosticsCapture;
-}
-
-export async function openBrowserControlAgent(
-    browser: Browser,
-    config: FullStackConfig,
-    user: FullStackUser,
-    input: Omit<BrowserControlAgentInput, 'config' | 'user'>
-): Promise<OpenedBrowserControlAgent> {
-    return await openBrowserControlAgentInContext(await browser.newContext(), { ...input, config, user });
+export async function openBrowserControlAgent(input: OpenBrowserControlAgentInput): Promise<OpenedBrowserControlAgent> {
+    const context = await input.browser.newContext();
+    try {
+        return await openBrowserControlAgentInContext(context, input);
+    }
+    catch (error) {
+        await closeAfterAcquisitionFailure(() => context.close(), error);
+        throw error;
+    }
 }
 
 /**
@@ -587,75 +590,26 @@ export async function openBrowserControlAgentInContext(
     agent: BrowserControlAgentInput
 ): Promise<OpenedBrowserControlAgent> {
     const page = await context.newPage();
-    const diagnostics = toPageDiagnosticsCapture(page, agent);
-    await page.goto(`${FULL_STACK_SPA_ORIGIN}/?${toBrowserControlAgentQuery(agent).toString()}`);
-    await signInIfLoginGateIsVisible(page);
-    await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute(
-        'aria-selected',
-        'true',
-        { timeout: 30_000 }
-    );
-    await expect(page.locator('#panel-local-workbench .control-panel'))
-        .toContainText('registered', { timeout: 30_000 });
-
-    return {
-        context,
-        page,
-        session: await readBrowserAuthSession(page),
-        diagnostics
-    };
-}
-
-function toBrowserControlAgentQuery(agent: BrowserControlAgentInput): URLSearchParams {
-    return new URLSearchParams({
-        mode: 'control',
-        workspace: 'black-box-runner',
-        tab: 'local-workbench',
-        provider: 'browser-rallar',
-        autoConnect: '1',
-        controlUrl: FULL_STACK_CONTROL_WS_URL,
-        runId: agent.runId,
-        agentId: agent.agentId,
-        apiBaseUrl: agent.config.apiBaseUrl,
-        applicationId: agent.config.applicationId,
-        workspaceId: agent.config.workspaceId,
-        roomId: agent.groupId,
-        actor: agent.user.actor,
-        sessionId: `${agent.agentId}-session`,
-        heartbeatIntervalMs: '250',
-        statsIntervalMs: '1000',
-        rallarLeaveRoomOnClose: '0',
-        rallarUsername: agent.user.username,
-        rallarPassword: agent.user.password
-    });
-}
-
-/** Either screen settles first; the workbench of a signed-in context never shows the gate. */
-async function signInIfLoginGateIsVisible(page: Page): Promise<void> {
-    const loginGate = page.getByRole('heading', { name: 'Rallar Server Login' });
-    const workbench = page.getByRole('tab', { name: 'Advanced' });
-    await expect(loginGate.or(workbench).first()).toBeVisible({ timeout: 30_000 });
-    if (await loginGate.isVisible()) {
-        await page.getByRole('button', { name: 'Sign in' }).click();
+    try {
+        const diagnostics = startAgentDiagnosticsCapture(page, agent);
+        await page.goto(`${FULL_STACK_SPA_ORIGIN}/?${toBrowserControlAgentQuery(agent).toString()}`);
+        await signInIfLoginGateIsVisible(page);
+        await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute('aria-selected', 'true', {
+            timeout: 30_000
+        });
+        await expect(page.locator('#panel-local-workbench .control-panel')).toContainText('registered', {
+            timeout: 30_000
+        });
+        return { context, page, session: await readBrowserAuthSession(page), diagnostics };
+    }
+    catch (error) {
+        await closeAfterAcquisitionFailure(() => closeBrowserControlAgentPage(page), error);
+        throw error;
     }
 }
 
-function toPageDiagnosticsCapture(
-    page: Page,
-    input: Readonly<{ agentId: string; diagnosticsRole?: AlmConformanceRole; }>
-): PageDiagnosticsCapture | undefined {
-    return input.diagnosticsRole === undefined
-        ? undefined
-        : startPageDiagnosticsCapture(page, { agentId: input.agentId, role: input.diagnosticsRole });
-}
-
 export async function createTwoAgentRun(
-    input: Readonly<{
-        browser: Browser;
-        request: APIRequestContext;
-        testInfo: TestInfo;
-        runId: string;
-    }>
+    input: CreateTwoAgentRunInput
 ): Promise<TwoAgentRun> {
     const config = readFullStackConfig();
     const group: RallarBlackBoxDistributedGroupRef = {
@@ -671,66 +625,18 @@ export async function createTwoAgentRun(
         group,
         sender,
         receiver,
-        readSnapshot: async () => await fetchControlRun(input.request, input.runId),
+        readSnapshot: async () => await readControlRun(input.request, input.runId),
         close: async () => await closeTwoAgentParticipants([sender, receiver])
     };
 }
 
-/** Closes whatever participant already opened when a later step in the pair fails, then rethrows. */
-async function openTwoAgentParticipants(
-    input: Readonly<{ browser: Browser; request: APIRequestContext; testInfo: TestInfo; runId: string; }>,
-    config: FullStackConfig,
-    groupId: string
-): Promise<Readonly<{ sender: TwoAgentRunParticipant; receiver: TwoAgentRunParticipant; }>> {
-    const base = { browser: input.browser, testInfo: input.testInfo, runId: input.runId, config, groupId };
-    const opened: TwoAgentRunParticipant[] = [];
-    try {
-        const sender = await openTwoAgentParticipant(toParticipantInput(base, 'sender'));
-        opened.push(sender);
-        const receiver = await openTwoAgentParticipant(toParticipantInput(base, 'receiver'));
-        opened.push(receiver);
-        await waitForControlRunAgent(input.request, input.runId, sender.agentId);
-        await waitForControlRunAgent(input.request, input.runId, receiver.agentId);
-        return { sender, receiver };
-    }
-    catch (error) {
-        await closeTwoAgentParticipants(opened);
-        throw error;
-    }
-}
-
-function toParticipantInput(
-    base: Readonly<{
-        browser: Browser;
-        testInfo: TestInfo;
-        runId: string;
-        config: FullStackConfig;
-        groupId: string;
-    }>,
-    role: 'sender' | 'receiver'
-): Parameters<typeof openTwoAgentParticipant>[0] {
-    return {
-        browser: base.browser,
-        testInfo: base.testInfo,
-        runId: base.runId,
-        config: base.config,
-        user: role === 'sender' ? base.config.userA : base.config.userB,
-        role,
-        groupId: base.groupId
-    };
-}
-
 export async function runRecipeOnAgent(
-    run: TwoAgentRun,
-    agent: TwoAgentRunParticipant,
+    run: RecipeRun,
+    agent: RecipeRunAgent,
     recipe: RallarBlackBoxTestRecipe
 ): Promise<RecipeRunOutcome> {
-    const commandId = toRecipeRunCommandId(recipe);
-    await enqueueControlCommand(run.request, run.runId, agent.agentId, commandId, {
-        kind: 'recipe.run',
-        recipe
-    });
-    return await readRecipeRunOutcome(run, commandId);
+    const started = await startRecipeRun(run, agent, recipe);
+    return await started.readOutcome();
 }
 
 /**
@@ -742,7 +648,7 @@ export async function runRecipeOnAgent(
  * receiver recipe that has already settled.
  */
 export async function runRecipePairOnTwoAgents(
-    run: TwoAgentRun,
+    run: RecipePairRun,
     recipes: RecipePair
 ): Promise<RecipePairOutcome> {
     if (
@@ -753,51 +659,74 @@ export async function runRecipePairOnTwoAgents(
             sender: toReloadRecipeRoot(run, run.sender, recipes.sender),
             receiver: toReloadRecipeRoot(run, run.receiver, recipes.receiver)
         });
-        if (bound.left) {
-            throw new Error(`Cannot enqueue paired reload: ${bound.left.join(' ')}`);
-        }
-        const pair = bound.right!;
-        await enqueueControlCommand(
-            run.request,
-            run.runId,
-            run.sender.agentId,
-            pair.sender.commandId,
-            pair.sender.command
+        const pair = bound.fold(
+            (issues) => {
+                throw new Error(`Cannot enqueue paired reload: ${issues.join(' ')}`);
+            },
+            (value) => value
         );
-        await enqueueControlCommand(
-            run.request,
-            run.runId,
-            run.receiver.agentId,
-            pair.receiver.commandId,
-            pair.receiver.command
-        );
-        const [sender, receiver] = await Promise.all([
+        await enqueueControlCommand({
+            request: run.request,
+            runId: run.runId,
+            agentId: run.sender.agentId,
+            commandId: pair.sender.commandId,
+            command: pair.sender.command
+        });
+        await enqueueControlCommand({
+            request: run.request,
+            runId: run.runId,
+            agentId: run.receiver.agentId,
+            commandId: pair.receiver.commandId,
+            command: pair.receiver.command
+        });
+        const [sender, receiver] = await Promise.allSettled([
             readRecipeRunOutcome(run, pair.sender.commandId),
             readRecipeRunOutcome(run, pair.receiver.commandId)
         ]);
-        return { sender, receiver };
+        if (sender.status === 'rejected') {
+            throw sender.reason;
+        }
+        if (receiver.status === 'rejected') {
+            throw receiver.reason;
+        }
+        return { sender: sender.value, receiver: receiver.value };
     }
     const receiverRun = await startRecipientRecipeRun(run, run.receiver, recipes.receiver);
-    const [sender, receiver] = await Promise.all([
-        runRecipeOnAgent(run, run.sender, recipes.sender),
-        receiverRun.outcome
+    const senderRun = await startRecipeRun(run, run.sender, recipes.sender);
+    const [sender, receiver] = await Promise.allSettled([
+        senderRun.readOutcome(),
+        receiverRun.readOutcome()
     ]);
-    return { sender, receiver };
+    if (sender.status === 'rejected') {
+        throw sender.reason;
+    }
+    if (receiver.status === 'rejected') {
+        throw receiver.reason;
+    }
+    return { sender: sender.value, receiver: receiver.value };
+}
+
+/** Accepts the root and captures its original result deadline without starting an unowned observer. */
+export async function startRecipeRun(
+    run: RecipeRun,
+    agent: RecipeRunAgent,
+    recipe: RallarBlackBoxTestRecipe
+): Promise<StartedRecipeRun> {
+    const commandId = await enqueueRecipeRun(run, agent, recipe);
+    const deadlineEpochMs = Date.now() + RECIPE_RUN_TIMEOUT_MS;
+    return { commandId, readOutcome: () => readRecipeRunOutcome(run, commandId, deadlineEpochMs) };
 }
 
 /** Starts a recipient recipe and returns once its connect barrier releases, so a sender can start after it. */
 export async function startRecipientRecipeRun(
-    run: TwoAgentRun,
-    agent: TwoAgentRunParticipant,
+    run: RecipeRun,
+    agent: RecipeRunAgent,
     recipe: RallarBlackBoxTestRecipe
-): Promise<StartedRecipientRun> {
+): Promise<StartedRecipeRun> {
     const connectCommandId = requireConnectCommandId(recipe);
-    const outcome = runRecipeOnAgent(run, agent, recipe);
-    await waitForReceiverConnectBarrier(run, {
-        connectCommandId,
-        runCommandId: toRecipeRunCommandId(recipe)
-    });
-    return { outcome };
+    const started = await startRecipeRun(run, agent, recipe);
+    await waitForReceiverConnectBarrier(run, { connectCommandId, runCommandId: started.commandId });
+    return started;
 }
 
 export async function selectControlRunInManager(
@@ -814,7 +743,7 @@ export async function selectControlRunInManager(
     return panel;
 }
 
-export async function resolveDistributedTargets(
+export async function refreshDistributedTargets(
     page: Page,
     runId: string
 ): Promise<Locator> {
@@ -860,21 +789,60 @@ export async function cleanupRallarPage(page: Page): Promise<void> {
         await clickVisibleButton(page, label);
     }
 
-    await page.evaluate(() => {
-        window.localStorage.clear();
-        window.sessionStorage.clear();
-    }).catch(() => undefined);
+    if (!page.isClosed()) {
+        await page.evaluate(() => {
+            window.localStorage.clear();
+            window.sessionStorage.clear();
+        });
+    }
 }
 
-export function uniqueGroupId(testInfo: TestInfo): string {
+export async function runWithRallarReceiverPage(input: RallarReceiverPageRunInput): Promise<void> {
+    const context = await input.browser.newContext();
+    const failures: PromiseRejectedResult[] = [];
+    let receiver: Page | undefined;
+    const [acquisition] = await Promise.allSettled([Promise.resolve().then(() => context.newPage())]);
+    if (acquisition.status === 'rejected') {
+        failures.push(acquisition);
+    }
+    else {
+        receiver = acquisition.value;
+        const [body] = await Promise.allSettled([Promise.resolve().then(() => input.run(acquisition.value))]);
+        if (body.status === 'rejected') {
+            failures.push(body);
+        }
+    }
+    const finalizationSteps = [
+        () => input.captureEvidence(receiver),
+        () => cleanupRallarPage(input.sender),
+        () => receiver === undefined ? Promise.resolve() : cleanupRallarPage(receiver),
+        () => context.close()
+    ];
+    for (const finalize of finalizationSteps) {
+        const [result] = await Promise.allSettled([Promise.resolve().then(finalize)]);
+        if (result.status === 'rejected') {
+            failures.push(result);
+        }
+    }
+    if (failures.length === 1) {
+        throw failures[0].reason;
+    }
+    if (failures.length > 1) {
+        throw new AggregateError(failures.map((failure) => failure.reason), 'Receiver run and finalization failed.', {
+            cause: failures[0].reason
+        });
+    }
+}
+
+export function uniqueGroupId(testInfo: FullStackTestIdentity): string {
     return uniqueScopedId('rallar-bb-group', testInfo);
 }
 
-export function uniqueRunId(testInfo: TestInfo): string {
+export function uniqueRunId(testInfo: FullStackTestIdentity): string {
     return uniqueScopedId('rallar-bb-run', testInfo);
 }
 
-export function uniqueAgentId(testInfo: TestInfo, prefix = 'agent'): string {
+export function uniqueAgentId(testInfo: FullStackTestIdentity, prefix = 'agent'): string {
     return uniqueScopedId(prefix, testInfo);
 }
 
@@ -882,133 +850,94 @@ export function uniqueSuffix(): string {
     return `${Date.now()}-${crypto.randomUUID()}`;
 }
 
-async function openTwoAgentParticipant(
-    input: Readonly<{
-        browser: Browser;
-        config: FullStackConfig;
-        user: FullStackUser;
-        testInfo: TestInfo;
-        runId: string;
-        groupId: string;
-        role: 'sender' | 'receiver';
-    }>
-): Promise<TwoAgentRunParticipant> {
-    const agentId = uniqueAgentId(input.testInfo, `alm-${input.role}`);
-    const connection = `alm-${input.role}-connection`;
-    const opened = await openBrowserControlAgent(input.browser, input.config, input.user, {
-        runId: input.runId,
-        agentId,
-        groupId: input.groupId,
-        connection,
-        diagnosticsRole: input.role
-    });
+/** Validates the browser/API authentication handoff without changing auth lifetime policy. */
+export function decodeFullStackAuthSession(session: unknown): AuthSession {
+    if (
+        !isJsonRecordValue(session) || !isNonEmptyText(session.clientId) ||
+        !isNonEmptyText(session.username) || !isNonEmptyText(session.sessionId) ||
+        !isNonEmptyText(session.accessToken) || !isFiniteNumber(session.expiresAtEpochMs)
+    ) {
+        throw new Error('The browser authentication session is missing or invalid.');
+    }
     return {
-        agentId,
-        actor: input.user.actor,
-        connection,
-        context: opened.context,
-        page: opened.page,
-        diagnostics: opened.diagnostics
+        clientId: session.clientId,
+        username: session.username,
+        sessionId: session.sessionId,
+        accessToken: session.accessToken,
+        expiresAtEpochMs: session.expiresAtEpochMs
     };
 }
 
-async function closeTwoAgentParticipants(
-    participants: readonly TwoAgentRunParticipant[]
-): Promise<void> {
-    await Promise.all(participants.map(async (participant) => {
-        await cleanupRallarPage(participant.page).catch(() => undefined);
-        await participant.context.close().catch(() => undefined);
-    }));
+/** Owns the newly acquired agent page and its capture listeners, never its borrowed context. */
+export async function closeBrowserControlAgentPage(page: Page): Promise<void> {
+    page.removeAllListeners('pageerror');
+    page.removeAllListeners('console');
+    await page.close();
 }
 
-async function readRecipeRunOutcome(
-    run: TwoAgentRun,
-    commandId: string
-): Promise<RecipeRunOutcome> {
-    const deadlineEpochMs = Date.now() + RECIPE_RUN_TIMEOUT_MS;
-    while (Date.now() < deadlineEpochMs) {
-        const result = await readControlResult(run, commandId);
-        if (result) {
-            return {
-                commandId,
-                ok: result.ok === true,
-                summary: toControlResultSummary(result)
-            };
-        }
-        await waitMs(CONTROL_POLL_INTERVAL_MS);
-    }
-    return {
-        commandId,
-        ok: false,
-        summary: `no control result within ${RECIPE_RUN_TIMEOUT_MS} ms`
-    };
-}
-
-async function waitForReceiverConnectBarrier(
-    run: TwoAgentRun,
-    input: Readonly<{ connectCommandId: string; runCommandId: string; }>
-): Promise<void> {
-    const deadlineEpochMs = Date.now() + RECEIVER_CONNECT_TIMEOUT_MS;
-    while (Date.now() < deadlineEpochMs) {
-        const snapshot = await run.readSnapshot();
-        if (
-            hasConnectedEvent(snapshot, input.connectCommandId) ||
-            findControlResult(snapshot, input.runCommandId) !== undefined
-        ) {
-            return;
-        }
-        await waitMs(CONTROL_POLL_INTERVAL_MS);
-    }
-    console.warn('Receiver connect barrier timed out; releasing the sender anyway', {
-        runId: run.runId,
-        connectCommandId: input.connectCommandId,
-        runCommandId: input.runCommandId,
-        timeoutMs: RECEIVER_CONNECT_TIMEOUT_MS
+function toBrowserControlAgentQuery(agent: BrowserControlAgentInput): URLSearchParams {
+    return new URLSearchParams({
+        mode: 'control',
+        workspace: 'black-box-runner',
+        tab: 'local-workbench',
+        provider: 'browser-rallar',
+        autoConnect: '1',
+        controlUrl: FULL_STACK_CONTROL_WS_URL,
+        runId: agent.runId,
+        agentId: agent.agentId,
+        apiBaseUrl: agent.config.apiBaseUrl,
+        applicationId: agent.config.applicationId,
+        workspaceId: agent.config.workspaceId,
+        roomId: agent.groupId,
+        actor: agent.user.actor,
+        sessionId: `${agent.agentId}-session`,
+        heartbeatIntervalMs: '250',
+        statsIntervalMs: '1000',
+        rallarLeaveRoomOnClose: '0',
+        rallarUsername: agent.user.username,
+        rallarPassword: agent.user.password
     });
 }
 
-async function readControlResult(
-    run: TwoAgentRun,
-    commandId: string
-): Promise<ControlResult | undefined> {
-    return findControlResult(await run.readSnapshot(), commandId);
+function toParticipantInput(
+    base: ParticipantBaseInput,
+    role: 'sender' | 'receiver'
+): OpenTwoAgentParticipantInput {
+    return {
+        browser: base.browser,
+        testInfo: base.testInfo,
+        runId: base.runId,
+        config: base.config,
+        user: role === 'sender' ? base.config.userA : base.config.userB,
+        role,
+        groupId: base.groupId
+    };
 }
 
 function findControlResult(
     snapshot: ControlRunSnapshot,
     commandId: string
-): ControlResult | undefined {
-    return snapshot.results?.find((result) => result.commandId === commandId);
+): ControlResultEnvelope | undefined {
+    return snapshot.results.find((result) => result.commandId === commandId);
 }
 
 function hasConnectedEvent(
     snapshot: ControlRunSnapshot,
     commandId: string
 ): boolean {
-    return snapshot.events?.some((event) => event.commandId === commandId && isConnectedEventPayload(event.payload)) ??
-        false;
+    return snapshot.events.some((event) => event.commandId === commandId && isConnectedEventPayload(event.payload));
 }
 
-function isConnectedEventPayload(payload: ControlRunEvent['payload']): boolean {
-    return payload?.topic === RTC_READINESS_WAIT_TOPIC ||
-        (payload?.topic === COMMAND_RESULT_TOPIC && payload.payload?.ok === true);
-}
-
-function toControlResultSummary(result: ControlResult): string {
-    return result.ok === true ? 'ok' : toControlErrorSummary(result.error);
-}
-
-function toControlErrorSummary(error: ControlResultError | undefined): string {
-    const summary = `${error?.code ?? 'RALLAR_BLACK_BOX_COMMAND_FAILED'}: ${error?.message ?? 'no message'}`;
-    const cause = error?.details;
-    return cause?.code === undefined && cause?.message === undefined
-        ? summary
-        : `${summary} Cause: ${toControlErrorSummary(cause)}`;
+function isConnectedEventPayload(payload: unknown): boolean {
+    return isJsonRecordValue(payload) && (
+        payload.topic === RTC_READINESS_WAIT_TOPIC ||
+        (payload.topic === COMMAND_RESULT_TOPIC && isJsonRecordValue(payload.payload) && payload.payload.ok === true)
+    );
 }
 
 function toReloadRecipeRoot(
-    run: TwoAgentRun,
-    agent: TwoAgentRunParticipant,
+    run: RecipeRun,
+    agent: RecipeRunAgent,
     recipe: RallarBlackBoxTestRecipe
 ): ControlCommandEnvelope {
     return {
@@ -1035,23 +964,7 @@ function requireConnectCommandId(recipe: RallarBlackBoxTestRecipe): string {
     return commandId;
 }
 
-async function waitMs(durationMs: number): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, durationMs));
-}
-
-async function clickVisibleButton(page: Page, name: string): Promise<void> {
-    const button = page.getByRole('button', { name }).first();
-    try {
-        if ((await button.count()) > 0 && await button.isVisible() && await button.isEnabled()) {
-            await button.click({ timeout: 2_000 });
-        }
-    }
-    catch {
-        // Best-effort cleanup intentionally ignores hidden, detached, or disabled buttons.
-    }
-}
-
-function uniqueScopedId(prefix: string, testInfo: TestInfo): string {
+function uniqueScopedId(prefix: string, testInfo: FullStackTestIdentity): string {
     const project = sanitizeId(testInfo.project.name);
     const title = sanitizeId(testInfo.titlePath.slice(-2).join('-'));
     return `${prefix}-${project}-w${testInfo.workerIndex}-${title}-${uniqueSuffix()}`;
@@ -1074,11 +987,215 @@ function hashString(value: string): string {
     return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
+function normalizeBaseUrl(value: string): string {
+    return value.endsWith('/') ? value.slice(0, -1) : value;
+}
+
+/** Either screen settles first; the workbench of a signed-in context never shows the gate. */
+async function signInIfLoginGateIsVisible(page: Page): Promise<void> {
+    const loginGate = page.getByRole('heading', { name: 'Rallar Server Login' });
+    const workbench = page.getByRole('tab', { name: 'Advanced' });
+    await expect(loginGate.or(workbench).first()).toBeVisible({ timeout: 30_000 });
+    if (await loginGate.isVisible()) {
+        await page.getByRole('button', { name: 'Sign in' }).click();
+    }
+}
+
+function startAgentDiagnosticsCapture(
+    page: Page,
+    input: AgentDiagnosticsInput
+): PageDiagnosticsCapture | undefined {
+    return input.diagnosticsRole === undefined
+        ? undefined
+        : startPageDiagnosticsCapture(page, { agentId: input.agentId, role: input.diagnosticsRole });
+}
+
+/** Closes whatever participant already opened when a later step in the pair fails, then rethrows. */
+async function openTwoAgentParticipants(
+    input: CreateTwoAgentRunInput,
+    config: FullStackConfig,
+    groupId: string
+): Promise<TwoAgentParticipants> {
+    const base = { browser: input.browser, testInfo: input.testInfo, runId: input.runId, config, groupId };
+    const opened: TwoAgentRunParticipant[] = [];
+    try {
+        const sender = await openTwoAgentParticipant(toParticipantInput(base, 'sender'));
+        opened.push(sender);
+        const receiver = await openTwoAgentParticipant(toParticipantInput(base, 'receiver'));
+        opened.push(receiver);
+        await waitForControlRunAgent(input.request, input.runId, sender.agentId);
+        await waitForControlRunAgent(input.request, input.runId, receiver.agentId);
+        return { sender, receiver };
+    }
+    catch (error) {
+        await closeAfterAcquisitionFailure(() => closeTwoAgentParticipants(opened), error);
+        throw error;
+    }
+}
+
+async function openTwoAgentParticipant(
+    input: OpenTwoAgentParticipantInput
+): Promise<TwoAgentRunParticipant> {
+    const agentId = uniqueAgentId(input.testInfo, `alm-${input.role}`);
+    const connection = `alm-${input.role}-connection`;
+    const opened = await openBrowserControlAgent({
+        browser: input.browser,
+        config: input.config,
+        user: input.user,
+        runId: input.runId,
+        agentId,
+        groupId: input.groupId,
+        diagnosticsRole: input.role
+    });
+    if (opened.diagnostics === undefined) {
+        await opened.context.close();
+        throw new Error('A completed pair participant must own diagnostics.');
+    }
+    return {
+        agentId,
+        actor: input.user.actor,
+        connection,
+        context: opened.context,
+        page: opened.page,
+        diagnostics: opened.diagnostics
+    };
+}
+
+async function closeTwoAgentParticipants(participants: readonly TwoAgentRunParticipant[]): Promise<void> {
+    const results = await Promise.allSettled(participants.map(async (participant) => {
+        try {
+            await cleanupRallarPage(participant.page);
+        }
+        finally {
+            await participant.context.close();
+        }
+    }));
+    const failures = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
+    if (failures.length > 0) {
+        throw new AggregateError(failures, 'Failed to close full-stack participants.');
+    }
+}
+
+async function readRecipeRunOutcome(
+    run: RecipeRun,
+    commandId: string,
+    deadlineEpochMs = Date.now() + RECIPE_RUN_TIMEOUT_MS
+): Promise<RecipeRunOutcome> {
+    while (Date.now() < deadlineEpochMs) {
+        const result = await readControlResult(run, commandId);
+        if (result) {
+            return {
+                commandId,
+                ok: result.ok === true,
+                summary: toControlResultSummary(result)
+            };
+        }
+        await waitMs(CONTROL_POLL_INTERVAL_MS);
+    }
+    return {
+        commandId,
+        ok: false,
+        summary: `no control result within ${RECIPE_RUN_TIMEOUT_MS} ms`
+    };
+}
+
+async function waitForReceiverConnectBarrier(
+    run: RecipeRun,
+    input: ReceiverConnectBarrierInput
+): Promise<void> {
+    const deadlineEpochMs = Date.now() + RECEIVER_CONNECT_TIMEOUT_MS;
+    while (Date.now() < deadlineEpochMs) {
+        const snapshot = await run.readSnapshot();
+        if (
+            hasConnectedEvent(snapshot, input.connectCommandId) ||
+            findControlResult(snapshot, input.runCommandId) !== undefined
+        ) {
+            return;
+        }
+        await waitMs(CONTROL_POLL_INTERVAL_MS);
+    }
+    console.warn('Receiver connect barrier timed out; releasing the sender anyway', {
+        runId: run.runId,
+        connectCommandId: input.connectCommandId,
+        runCommandId: input.runCommandId,
+        timeoutMs: RECEIVER_CONNECT_TIMEOUT_MS
+    });
+}
+
+async function readControlResult(
+    run: RecipeRun,
+    commandId: string
+): Promise<ControlResultEnvelope | undefined> {
+    return findControlResult(await run.readSnapshot(), commandId);
+}
+
+async function waitMs(durationMs: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, durationMs));
+}
+
+async function clickVisibleButton(page: Page, name: string): Promise<void> {
+    const button = page.getByRole('button', { name }).first();
+    try {
+        if ((await button.count()) > 0 && await button.isVisible() && await button.isEnabled()) {
+            await button.click({ timeout: 2_000 });
+        }
+    }
+    catch {
+        // Best-effort cleanup intentionally ignores hidden, detached, or disabled buttons.
+    }
+}
+
 function envValue(name: string): string | undefined {
     const value = process.env[name]?.trim();
     return value && value.length > 0 ? value : undefined;
 }
 
-function normalizeBaseUrl(value: string): string {
-    return value.endsWith('/') ? value.slice(0, -1) : value;
+async function signInFullStackUser(input: FullStackSignInInput): Promise<void> {
+    await input.page.goto(`${FULL_STACK_SPA_ORIGIN}/?${input.query.toString()}`);
+    await expect(input.page.getByRole('heading', { name: 'Rallar Server Login' })).toBeVisible();
+    await input.page.getByLabel('API Base URL').fill(input.config.apiBaseUrl);
+    await input.page.getByLabel('Username').fill(input.user.username);
+    await input.page.getByLabel('Password').fill(input.user.password);
+    if (input.registerBeforeLogin) {
+        await input.page.getByLabel('Register before login').check();
+    }
+    await input.page.getByRole('button', { name: 'Sign in' }).click();
+}
+
+async function enqueueRecipeRun(
+    run: RecipeRun,
+    agent: RecipeRunAgent,
+    recipe: RallarBlackBoxTestRecipe
+): Promise<string> {
+    const commandId = toRecipeRunCommandId(recipe);
+    await enqueueControlCommand({
+        request: run.request,
+        runId: run.runId,
+        agentId: agent.agentId,
+        commandId,
+        command: { kind: 'recipe.run', recipe }
+    });
+    return commandId;
+}
+
+function toControlResultSummary(result: ControlResultEnvelope): string {
+    return result.ok === true ? 'ok' : toControlErrorSummary(result.error);
+}
+
+function toControlErrorSummary(error: RallarBlackBoxTestError | undefined): string {
+    const summary = `${error?.code ?? 'RALLAR_BLACK_BOX_COMMAND_FAILED'}: ${error?.message ?? 'no message'}`;
+    return isRallarBlackBoxTestError(error?.details)
+        ? `${summary} Cause: ${toControlErrorSummary(error.details)}`
+        : summary;
+}
+
+async function closeAfterAcquisitionFailure(close: () => Promise<void>, originalError: unknown): Promise<void> {
+    try {
+        await close();
+    }
+    catch (cleanupError) {
+        throw new AggregateError([originalError, cleanupError], 'Acquisition failed and cleanup also failed.', {
+            cause: originalError
+        });
+    }
 }

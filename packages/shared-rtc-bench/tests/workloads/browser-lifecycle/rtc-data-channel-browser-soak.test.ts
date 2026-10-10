@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { createRtcBaselineEvidenceAcceptance } from '../../../baseline/acceptance/rtc-baseline-evidence-acceptance.ts';
 import type {
+    RtcBaselineAcceptedArtifact,
     RtcBaselineCaptureManifestDto,
     RtcBaselineEnvironmentDto,
     RtcBaselineExternalAttemptDto,
@@ -25,8 +26,14 @@ interface BrowserSoakModule {
             launchBrowser?: () => Promise<FakeBrowser>;
             nowUtc?: () => string;
         }
-    ): Promise<{ mode: 'diagnostic' | 'raw-evidence'; outputPath: string; output: unknown; }>;
+    ): Promise<{ mode: 'diagnostic' | 'raw-evidence'; outputPath: string; output: RtcBaselineJson; }>;
 }
+
+interface BrowserSoakEvaluationInput {
+    iterationCount: number;
+    iterationIdPrefix: string;
+}
+type BrowserSoakOperation = (input?: BrowserSoakEvaluationInput) => object | void | Promise<object | void>;
 
 interface FakeBrowser {
     newPage(): Promise<FakePage>;
@@ -36,14 +43,14 @@ interface FakeBrowser {
 interface FakePage {
     context(): {
         newCDPSession(): Promise<{
-            send(command: string): Promise<unknown>;
+            send(command: string): Promise<object>;
         }>;
     };
     setContent(html: string): Promise<void>;
     evaluate(
-        operation: unknown,
+        operation: BrowserSoakOperation,
         argument?: { iterationCount: number; iterationIdPrefix: string; }
-    ): Promise<unknown>;
+    ): Promise<object | void>;
 }
 
 const scriptPath = 'packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs';
@@ -207,12 +214,15 @@ function writeInitializedBaseline(
     return baselinePath;
 }
 
-function rawArguments(
-    baselineId: string,
-    phase: 'warmup' | 'retained',
-    outerOrdinal: number,
-    rawResultRelativePath = rawRelativePath(phase, outerOrdinal)
-) {
+interface BrowserSoakRawArguments {
+    baselineId: string;
+    phase: 'warmup' | 'retained';
+    outerOrdinal: number;
+    rawResultRelativePath?: string;
+}
+
+function rawArguments(input: BrowserSoakRawArguments) {
+    const { baselineId, phase, outerOrdinal, rawResultRelativePath = rawRelativePath(input.phase, input.outerOrdinal) } = input;
     return [
         '--capture=raw-evidence',
         `--baseline-id=${baselineId}`,
@@ -339,7 +349,7 @@ class FakePeerConnection {
 
 function semanticBrowser() {
     const close = vi.fn(async () => undefined);
-    const evaluate = vi.fn(async (operation: unknown, argument?: unknown) => {
+    const evaluate = vi.fn(async (operation: BrowserSoakOperation, argument?: BrowserSoakEvaluationInput) => {
         if (typeof operation !== 'function') {
             throw new Error('Expected a browser operation');
         }
@@ -365,14 +375,14 @@ function semanticBrowser() {
 }
 
 function fakeBrowser(
-    soakFactory: (iterationCount: number, iterationIdPrefix: string) => unknown = completedSoak,
+    soakFactory: (iterationCount: number, iterationIdPrefix: string) => object = completedSoak,
     heapValues: readonly (number | null)[] = [1000, 1000]
 ) {
     const close = vi.fn(async () => undefined);
     let heapReadIndex = 0;
     const evaluate = vi.fn(
         async (
-            _operation: unknown,
+            _operation: BrowserSoakOperation,
             argument?: { iterationCount: number; iterationIdPrefix: string; }
         ) => (argument ? soakFactory(argument.iterationCount, argument.iterationIdPrefix) : undefined)
     );
@@ -444,14 +454,20 @@ function rtcB05JsonObject(value: RtcBaselineJson, description: string) {
     return value;
 }
 
+interface BrowserSoakAcceptance {
+    acceptance: ReturnType<typeof createRtcBaselineEvidenceAcceptance>;
+    readStagedJson: ReturnType<typeof vi.fn<() => Promise<{ ok: true; value: RtcBaselineJson; }>>>;
+}
+
 function createAcceptance(
     captureManifest: RtcBaselineCaptureManifestDto,
     staged: RtcBaselineJson,
-    written: unknown[]
-) {
+    written: RtcBaselineAcceptedArtifact[]
+): BrowserSoakAcceptance {
     const readStagedJson = vi.fn(async () => ({ ok: true as const, value: staged }));
     const acceptance = createRtcBaselineEvidenceAcceptance({
         initializeStore: async () => ({ ok: true, value: undefined }),
+        readInitializedConfiguration: async () => ({ ok: true, value: [] }),
         readManifest: async () => ({ ok: true, value: captureManifest }),
         writeAcceptedArtifact: async (_baselineId, artifact) => {
             written.push(artifact);
@@ -551,7 +567,7 @@ function failedSoak(iterationCount: number, iterationIdPrefix: string) {
     };
 }
 
-function expectCausalArtifacts(written: readonly unknown[]) {
+function expectCausalArtifacts(written: readonly RtcBaselineAcceptedArtifact[]) {
     expect(written).toEqual([
         expect.objectContaining({
             artifactKind: 'failure',
@@ -681,7 +697,7 @@ it.each(acceptedRawScenarios)(
                 const launched = fakeBrowser();
                 const relativePath = rawRelativePath(phase, outerOrdinal);
                 await browserSoak.runRtcDataChannelBrowserSoakCli(
-                    rawArguments(baselineId, phase, outerOrdinal),
+                    rawArguments({ baselineId: baselineId, phase: phase, outerOrdinal: outerOrdinal }),
                     {
                         baselineRootPath: rootPath,
                         launchBrowser: async () => launched.browser,
@@ -691,7 +707,7 @@ it.each(acceptedRawScenarios)(
                 const staged = readExternalAttempt(join(baselinePath, relativePath));
                 assertAcceptedAttemptIdentity({ staged, phase, outerOrdinal, relativePath });
                 assertAcceptedMeasurement({ staged, baselineId, phase, outerOrdinal, captureManifest });
-                const written: unknown[] = [];
+                const written: RtcBaselineAcceptedArtifact[] = [];
                 const { acceptance } = createAcceptance(captureManifest, staged, written);
                 const accepted = await acceptance.recordBrowser({
                     baselineId,
@@ -709,7 +725,7 @@ it.each(acceptedRawScenarios)(
             const launchBrowser = vi.fn(async () => fakeBrowser().browser);
             await expect(
                 browserSoak.runRtcDataChannelBrowserSoakCli(
-                    rawArguments(baselineId, lastAttempt.phase, lastAttempt.outerOrdinal),
+                    rawArguments({ baselineId: baselineId, phase: lastAttempt.phase, outerOrdinal: lastAttempt.outerOrdinal }),
                     { baselineRootPath: rootPath, launchBrowser }
                 )
             ).rejects.toThrow('already exists');
@@ -730,11 +746,11 @@ it('rejects bounds, overrides, path escapes, and changed accepted matrices befor
 
     try {
         const invalidArguments = [
-            [...rawArguments(primaryBaselineId, 'retained', 1), '--iterations=25'],
-            rawArguments(primaryBaselineId, 'retained', 0),
-            rawArguments(primaryBaselineId, 'retained', 1000),
-            rawArguments(primaryBaselineId, 'retained', 1, '../outside.json'),
-            rawArguments(primaryBaselineId, 'retained', 1, 'artifacts/staging/other.json')
+            [...rawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1 }), '--iterations=25'],
+            rawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 0 }),
+            rawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1000 }),
+            rawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1, rawResultRelativePath: '../outside.json' }),
+            rawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1, rawResultRelativePath: 'artifacts/staging/other.json' })
         ];
         for (const argumentsList of invalidArguments) {
             await expect(
@@ -751,7 +767,7 @@ it('rejects bounds, overrides, path escapes, and changed accepted matrices befor
         };
         writeFileSync(join(baselinePath, 'manifest.json'), `${JSON.stringify(changedManifest)}\n`);
         await expect(
-            browserSoak.runRtcDataChannelBrowserSoakCli(rawArguments(primaryBaselineId, 'retained', 1), {
+            browserSoak.runRtcDataChannelBrowserSoakCli(rawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1 }), {
                 baselineRootPath: rootPath,
                 launchBrowser
             })
@@ -787,7 +803,7 @@ it('rejects changed initialized B05 controller identity before browser launch', 
 
     try {
         await expect(
-            browserSoak.runRtcDataChannelBrowserSoakCli(rawArguments(primaryBaselineId, 'warmup', 1), {
+            browserSoak.runRtcDataChannelBrowserSoakCli(rawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }), {
                 baselineRootPath: rootPath,
                 launchBrowser
             })
@@ -807,12 +823,12 @@ it('rejects a staged payload whose locator differs from the bridge command', asy
 
     try {
         await browserSoak.runRtcDataChannelBrowserSoakCli(
-            rawArguments(primaryBaselineId, 'warmup', 1),
+            rawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
             { baselineRootPath: rootPath, launchBrowser: async () => fakeBrowser().browser }
         );
         const staged = readExternalAttempt(join(baselinePath, relativePath));
         staged.locator.outerOrdinal = 2;
-        const written: unknown[] = [];
+        const written: RtcBaselineAcceptedArtifact[] = [];
         const { acceptance } = createAcceptance(captureManifest, staged, written);
         const result = await acceptance.recordBrowser({
             baselineId: primaryBaselineId,
@@ -847,7 +863,7 @@ it('recomputes B05 lifecycle invariants after the bridge reads staged evidence',
 
     try {
         await browserSoak.runRtcDataChannelBrowserSoakCli(
-            rawArguments(primaryBaselineId, 'warmup', 1),
+            rawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
             { baselineRootPath: rootPath, launchBrowser: async () => fakeBrowser().browser }
         );
         const staged = readExternalAttempt(join(baselinePath, relativePath));
@@ -861,7 +877,7 @@ it('recomputes B05 lifecycle invariants after the bridge reads staged evidence',
         }
         Reflect.set(soak, 'openedCount', 24);
 
-        const written: unknown[] = [];
+        const written: RtcBaselineAcceptedArtifact[] = [];
         const { acceptance } = createAcceptance(captureManifest, staged, written);
         const result = await acceptance.recordBrowser({
             baselineId: primaryBaselineId,
@@ -895,7 +911,7 @@ it('binds staged raw baseline identity to the trusted record-browser baseline', 
 
     try {
         await browserSoak.runRtcDataChannelBrowserSoakCli(
-            rawArguments(primaryBaselineId, 'warmup', 1),
+            rawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
             { baselineRootPath: rootPath, launchBrowser: async () => fakeBrowser().browser }
         );
         const staged = readExternalAttempt(join(baselinePath, relativePath));
@@ -905,7 +921,7 @@ it('binds staged raw baseline identity to the trusted record-browser baseline', 
         const producerCommand = rtcB05JsonObject(rawEvidence.producerCommand, 'producer command');
         const changedBaselineId = '20260815-ffffffffffff-e2-browser';
         rawIdentity.baselineId = changedBaselineId;
-        producerCommand.arguments = [scriptPath, ...rawArguments(changedBaselineId, 'warmup', 1)];
+        producerCommand.arguments = [scriptPath, ...rawArguments({ baselineId: changedBaselineId, phase: 'warmup', outerOrdinal: 1 })];
         if (sample.runtimeObservation === null) {
             throw new Error('Expected initialized RTC-B05 runtime observation');
         }
@@ -913,7 +929,7 @@ it('binds staged raw baseline identity to the trusted record-browser baseline', 
             (entry) => (entry.name === 'baselineId' ? { ...entry, value: changedBaselineId } : entry)
         );
 
-        const written: unknown[] = [];
+        const written: RtcBaselineAcceptedArtifact[] = [];
         const { acceptance } = createAcceptance(captureManifest, staged, written);
         const result = await acceptance.recordBrowser({
             baselineId: primaryBaselineId,
@@ -948,7 +964,7 @@ it('projects lifecycle failures and the bridge preserves the exact causal remain
 
     try {
         await browserSoak.runRtcDataChannelBrowserSoakCli(
-            rawArguments(primaryBaselineId, 'retained', 2),
+            rawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 2 }),
             {
                 baselineRootPath: rootPath,
                 launchBrowser: async () => launched.browser,
@@ -956,7 +972,7 @@ it('projects lifecycle failures and the bridge preserves the exact causal remain
             }
         );
         const staged = readExternalAttempt(join(baselinePath, relativePath));
-        const written: unknown[] = [];
+        const written: RtcBaselineAcceptedArtifact[] = [];
         const { acceptance, readStagedJson } = createAcceptance(captureManifest, staged, written);
         const bridgeInput = {
             baselineId: primaryBaselineId,
@@ -1008,7 +1024,7 @@ it('fails raw evidence when Chromium exposes only one forced-GC heap value', asy
 
     try {
         await browserSoak.runRtcDataChannelBrowserSoakCli(
-            rawArguments(primaryBaselineId, 'warmup', 1),
+            rawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
             {
                 baselineRootPath: rootPath,
                 launchBrowser: async () => launched.browser
@@ -1022,7 +1038,7 @@ it('fails raw evidence when Chromium exposes only one forced-GC heap value', asy
             })
         ]);
         expect(staged.samples[0].metrics.map(({ metric }) => metric)).not.toContain('heapAfterBytes');
-        const written: unknown[] = [];
+        const written: RtcBaselineAcceptedArtifact[] = [];
         const { acceptance } = createAcceptance(captureManifest, staged, written);
         const accepted = await acceptance.recordBrowser({
             baselineId: primaryBaselineId,
@@ -1059,7 +1075,7 @@ it('closes the browser and leaves no raw file when native execution throws', asy
 
     try {
         await expect(
-            browserSoak.runRtcDataChannelBrowserSoakCli(rawArguments(primaryBaselineId, 'warmup', 1), {
+            browserSoak.runRtcDataChannelBrowserSoakCli(rawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }), {
                 baselineRootPath: rootPath,
                 launchBrowser: async () => launched.browser
             })

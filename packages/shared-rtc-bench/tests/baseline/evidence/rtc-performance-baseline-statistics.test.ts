@@ -25,6 +25,17 @@ const grouping = {
 };
 
 describe('RTC baseline statistics', () => {
+    it('rejects development versus production across distinct Git heads without comparing bundle or output identities', () => {
+        const result = compareRtcBaselinePairedCohorts(
+            { grouping: { ...grouping, configurationIdentity: 'appServingMode=development/default' }, values: [10, 11, 12] },
+            {
+                grouping: { ...grouping, headCommit: 'f'.repeat(40), headTree: 'e'.repeat(40), configurationIdentity: 'appServingMode=production/default' },
+                values: [8, 9, 10]
+            }
+        );
+        expect(result).toMatchObject({ ok: false, issues: [{ code: 'paired-grouping-mismatch', path: '$.candidate.grouping.configurationIdentity' }] });
+    });
+
     it('recomputes raw count, minimum, median, maximum, MAD, and population CV', () => {
         expect(computeRtcBaselineMetricSummary([8, 10, 12])).toEqual({
             count: 3,

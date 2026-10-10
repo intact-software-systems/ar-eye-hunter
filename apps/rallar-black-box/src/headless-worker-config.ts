@@ -1,3 +1,6 @@
+import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
 export type HeadlessWorkerTransport = 'realtime' | 'messages.rtc';
 export type HeadlessWorkerBrowserLogLevel = 'warning' | 'info' | 'debug';
 export type HeadlessWorkerEntry = 'operator-spa' | 'headless';
@@ -7,74 +10,76 @@ export type HeadlessWorkerExitMode =
     | 'after-target-distributed-run-terminal'
     | 'after-idle-ms';
 
-export type HeadlessWorkerCredentials = Readonly<{
-    username: string;
-    password: string;
-}>;
+export interface HeadlessWorkerCredentials {
+    readonly username: string;
+    readonly password: string;
+}
 
-export type HeadlessWorkerAgentConfig = Readonly<{
-    agentId: string;
-    actor: string;
-    sessionId: string;
-    credentials: HeadlessWorkerCredentials;
-    controlToken?: string;
-    url: string;
-}>;
+export interface HeadlessWorkerAgentConfig {
+    readonly agentId: string;
+    readonly actor: string;
+    readonly sessionId: string;
+    readonly credentials: HeadlessWorkerCredentials;
+    readonly controlToken?: string;
+    readonly url: string;
+}
 
-export type HeadlessWorkerConfig = Readonly<{
-    spaUrl: string;
-    controlUrl: string;
-    apiBaseUrl: string;
-    headlessEntry: HeadlessWorkerEntry;
-    browserEngine: HeadlessWorkerBrowserEngine;
-    runId: string;
-    agentPrefix: string;
-    agentCount: number;
-    agentStartIndex: number;
-    roomId: string;
-    applicationId?: string;
-    workspaceId?: string;
-    transport: HeadlessWorkerTransport;
-    statsIntervalMs?: number;
-    heartbeatIntervalMs?: number;
-    controlToken?: string;
-    controlReadToken?: string;
-    reportUploadUrl?: string;
-    environment?: string;
-    fleetRegion?: string;
-    fleetProvider?: string;
-    fleetDatacenter?: string;
-    fleetHostId?: string;
-    fleetAgentPoolId?: string;
-    fleetDeploymentId?: string;
-    fleetBrowserName?: string;
-    fleetBrowserVersion?: string;
-    fleetOs?: string;
-    fleetTags?: readonly string[];
-    fleetLatitude?: number;
-    fleetLongitude?: number;
-    fleetLocationLabel?: string;
-    register: boolean;
-    restoreSession: boolean;
-    logoutOnClose: boolean;
-    leaveRoomOnClose: boolean;
-    browserLogLevel: HeadlessWorkerBrowserLogLevel;
-    headless: boolean;
-    launchTimeoutMs: number;
-    readyTimeoutMs: number;
-    exitMode: HeadlessWorkerExitMode;
-    targetDistributedRunId?: string;
-    controlHttpUrl?: string;
-    idleExitMs?: number;
-    distributedPollIntervalMs: number;
-    agentCredentials: readonly HeadlessWorkerCredentials[];
-    agentControlTokens: readonly (string | undefined)[];
-    agents: readonly HeadlessWorkerAgentConfig[];
-}>;
+export interface HeadlessWorkerConfig {
+    readonly spaUrl: string;
+    readonly controlUrl: string;
+    readonly apiBaseUrl: string;
+    readonly headlessEntry: HeadlessWorkerEntry;
+    readonly browserEngine: HeadlessWorkerBrowserEngine;
+    readonly runId: string;
+    readonly agentPrefix: string;
+    readonly agentCount: number;
+    readonly agentStartIndex: number;
+    readonly roomId: string;
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+    readonly transport: HeadlessWorkerTransport;
+    /** Absent when the worker inherits the SDK host capture default. */
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
+    readonly statsIntervalMs?: number;
+    readonly heartbeatIntervalMs?: number;
+    readonly controlToken?: string;
+    readonly controlReadToken?: string;
+    readonly reportUploadUrl?: string;
+    readonly environment?: string;
+    readonly fleetRegion?: string;
+    readonly fleetProvider?: string;
+    readonly fleetDatacenter?: string;
+    readonly fleetHostId?: string;
+    readonly fleetAgentPoolId?: string;
+    readonly fleetDeploymentId?: string;
+    readonly fleetBrowserName?: string;
+    readonly fleetBrowserVersion?: string;
+    readonly fleetOs?: string;
+    readonly fleetTags?: readonly string[];
+    readonly fleetLatitude?: number;
+    readonly fleetLongitude?: number;
+    readonly fleetLocationLabel?: string;
+    readonly register: boolean;
+    readonly restoreSession: boolean;
+    readonly logoutOnClose: boolean;
+    readonly leaveRoomOnClose: boolean;
+    readonly browserLogLevel: HeadlessWorkerBrowserLogLevel;
+    readonly headless: boolean;
+    readonly launchTimeoutMs: number;
+    readonly readyTimeoutMs: number;
+    readonly exitMode: HeadlessWorkerExitMode;
+    readonly targetDistributedRunId?: string;
+    readonly controlHttpUrl?: string;
+    readonly idleExitMs?: number;
+    readonly distributedPollIntervalMs: number;
+    readonly agentCredentials: readonly HeadlessWorkerCredentials[];
+    readonly agentControlTokens: readonly (string | undefined)[];
+    readonly agents: readonly HeadlessWorkerAgentConfig[];
+}
 
-export type HeadlessWorkerConfigInput = Readonly<{
-    env?: Readonly<Record<string, string | undefined>>;
-}>;
+export interface HeadlessWorkerConfigInput {
+    readonly env?: Readonly<Record<string, string | undefined>>;
+}
 
 export type HeadlessWorkerAgentUrlInput =
     & Omit<
@@ -91,6 +96,14 @@ export type HeadlessWorkerAgentUrlInput =
         | 'distributedPollIntervalMs'
     >
     & Omit<HeadlessWorkerAgentConfig, 'url'>;
+
+interface OptionalCoordinateEnvInput {
+    readonly env: Readonly<Record<string, string | undefined>>;
+    readonly primaryKey: string;
+    readonly fallbackKey: string;
+    readonly min: number;
+    readonly max: number;
+}
 
 const DEFAULT_AGENT_COUNT = 1;
 const DEFAULT_AGENT_START_INDEX = 1;
@@ -117,152 +130,30 @@ export function readHeadlessWorkerConfig(
     const env = input.env ?? {};
     const missing = REQUIRED_ENV.filter((key) => !envValue(env, key));
     if (missing.length > 0) {
-        throw new Error(
-            `Missing required headless worker env: ${missing.join(', ')}`
-        );
+        throw new Error(`Missing required headless worker env: ${missing.join(', ')}`);
     }
 
-    const agentCount = positiveIntegerEnv(
-        env,
-        'RALLAR_BLACK_BOX_AGENT_COUNT',
-        DEFAULT_AGENT_COUNT
-    );
-    const agentStartIndex = positiveIntegerEnv(
-        env,
-        'RALLAR_BLACK_BOX_AGENT_START_INDEX',
-        DEFAULT_AGENT_START_INDEX
-    );
+    const agentCount = positiveIntegerEnv(env, 'RALLAR_BLACK_BOX_AGENT_COUNT', DEFAULT_AGENT_COUNT);
+    const agentStartIndex = positiveIntegerEnv(env, 'RALLAR_BLACK_BOX_AGENT_START_INDEX', DEFAULT_AGENT_START_INDEX);
     const controlUrl = requireEnv(env, 'RALLAR_BLACK_BOX_CONTROL_URL');
-    const exitMode = exitModeEnv(env);
-    const targetDistributedRunId = envValue(
-        env,
-        'RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID'
-    );
-    const idleExitMs = optionalPositiveIntegerEnv(
-        env,
-        'RALLAR_BLACK_BOX_IDLE_EXIT_MS'
-    );
-    if (
-        exitMode === 'after-target-distributed-run-terminal' &&
-        !targetDistributedRunId
-    ) {
-        throw new Error(
-            'RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID is required when ' +
-                'RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-run-terminal'
-        );
-    }
-    if (exitMode === 'after-idle-ms' && idleExitMs === undefined) {
-        throw new Error('RALLAR_BLACK_BOX_IDLE_EXIT_MS must be a positive integer');
-    }
+    const exitRequest = readHeadlessWorkerExitRequest(env);
     const browserEngine = browserEngineEnv(env);
     const agentCredentials = readAgentCredentials(env, agentCount);
     const controlToken = envValue(env, 'RALLAR_BLACK_BOX_CONTROL_TOKEN');
-    const agentControlTokens = readAgentControlTokens(
-        env,
-        agentCount,
-        controlToken
-    );
+    const agentControlTokens = readAgentControlTokens(env, agentCount, controlToken);
     const baseConfig = {
-        spaUrl: normalizeBaseUrl(requireEnv(env, 'RALLAR_BLACK_BOX_SPA_URL')),
+        ...readHeadlessWorkerPageEnvironment(env),
         controlUrl,
-        apiBaseUrl: normalizeBaseUrl(requireEnv(env, 'RALLAR_API_BASE_URL')),
-        headlessEntry: headlessEntryEnv(env),
         browserEngine,
-        runId: requireEnv(env, 'RALLAR_BLACK_BOX_RUN_ID'),
-        agentPrefix: envValue(env, 'RALLAR_BLACK_BOX_AGENT_PREFIX') ??
-            DEFAULT_AGENT_PREFIX,
         agentCount,
         agentStartIndex,
-        roomId: requireEnv(env, 'RALLAR_BLACK_BOX_ROOM_ID'),
-        applicationId: envValue(env, 'RALLAR_APPLICATION_ID') ??
-            envValue(env, 'RALLAR_BLACK_BOX_APPLICATION_ID'),
-        workspaceId: envValue(env, 'RALLAR_WORKSPACE_ID') ??
-            envValue(env, 'RALLAR_BLACK_BOX_WORKSPACE_ID'),
-        transport: transportEnv(
-            env,
-            'RALLAR_BLACK_BOX_TRANSPORT',
-            DEFAULT_TRANSPORT
-        ),
-        statsIntervalMs: optionalPositiveIntegerEnv(
-            env,
-            'RALLAR_BLACK_BOX_STATS_INTERVAL_MS'
-        ),
-        heartbeatIntervalMs: optionalPositiveIntegerEnv(
-            env,
-            'RALLAR_BLACK_BOX_HEARTBEAT_INTERVAL_MS'
-        ),
         controlToken,
-        controlReadToken: envValue(env, 'RALLAR_BLACK_BOX_CONTROL_READ_TOKEN'),
-        reportUploadUrl: envValue(env, 'RALLAR_BLACK_BOX_REPORT_UPLOAD_URL'),
-        environment: envValue(env, 'RALLAR_BLACK_BOX_ENVIRONMENT'),
-        fleetRegion: envValue(env, 'RALLAR_AGENT_REGION') ??
-            envValue(env, 'RALLAR_BLACK_BOX_AGENT_REGION'),
-        fleetProvider: envValue(env, 'RALLAR_AGENT_PROVIDER') ??
-            envValue(env, 'RALLAR_BLACK_BOX_AGENT_PROVIDER'),
-        fleetDatacenter: envValue(env, 'RALLAR_AGENT_DATACENTER') ??
-            envValue(env, 'RALLAR_BLACK_BOX_AGENT_DATACENTER'),
-        fleetHostId: envValue(env, 'RALLAR_AGENT_HOST_ID') ??
-            envValue(env, 'RALLAR_BLACK_BOX_AGENT_HOST_ID'),
-        fleetAgentPoolId: envValue(env, 'RALLAR_AGENT_POOL_ID') ??
-            envValue(env, 'RALLAR_BLACK_BOX_AGENT_POOL_ID'),
-        fleetDeploymentId: envValue(env, 'RALLAR_AGENT_DEPLOYMENT_ID') ??
-            envValue(env, 'RALLAR_BLACK_BOX_AGENT_DEPLOYMENT_ID'),
-        fleetBrowserName: envValue(env, 'RALLAR_AGENT_BROWSER_NAME') ??
-            envValue(env, 'RALLAR_BLACK_BOX_AGENT_BROWSER_NAME') ??
-            browserEngine,
-        fleetBrowserVersion: envValue(env, 'RALLAR_AGENT_BROWSER_VERSION') ??
-            envValue(env, 'RALLAR_BLACK_BOX_AGENT_BROWSER_VERSION'),
-        fleetOs: envValue(env, 'RALLAR_AGENT_OS') ??
-            envValue(env, 'RALLAR_BLACK_BOX_AGENT_OS'),
-        fleetTags: csvEnv(env, 'RALLAR_AGENT_TAGS') ??
-            csvEnv(env, 'RALLAR_BLACK_BOX_AGENT_TAGS'),
-        fleetLatitude: optionalCoordinateEnv(
-            env,
-            'RALLAR_AGENT_LATITUDE',
-            'RALLAR_BLACK_BOX_AGENT_LATITUDE',
-            -90,
-            90
-        ),
-        fleetLongitude: optionalCoordinateEnv(
-            env,
-            'RALLAR_AGENT_LONGITUDE',
-            'RALLAR_BLACK_BOX_AGENT_LONGITUDE',
-            -180,
-            180
-        ),
-        fleetLocationLabel: envValue(env, 'RALLAR_AGENT_LOCATION_LABEL') ??
-            envValue(env, 'RALLAR_BLACK_BOX_AGENT_LOCATION_LABEL'),
-        register: booleanEnv(env, 'RALLAR_BLACK_BOX_REGISTER', false),
-        restoreSession: booleanEnv(env, 'RALLAR_BLACK_BOX_RESTORE_SESSION', false),
-        logoutOnClose: booleanEnv(env, 'RALLAR_BLACK_BOX_LOGOUT_ON_CLOSE', false),
-        leaveRoomOnClose: booleanEnv(
-            env,
-            'RALLAR_BLACK_BOX_LEAVE_ROOM_ON_CLOSE',
-            false
-        ),
-        browserLogLevel: browserLogLevelEnv(
-            env,
-            'RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL',
-            DEFAULT_BROWSER_LOG_LEVEL
-        ),
-        headless: booleanEnv(env, 'RALLAR_BLACK_BOX_HEADLESS', true),
-        launchTimeoutMs: positiveIntegerEnv(
-            env,
-            'RALLAR_BLACK_BOX_LAUNCH_TIMEOUT_MS',
-            DEFAULT_LAUNCH_TIMEOUT_MS
-        ),
-        readyTimeoutMs: positiveIntegerEnv(
-            env,
-            'RALLAR_BLACK_BOX_READY_TIMEOUT_MS',
-            DEFAULT_READY_TIMEOUT_MS
-        ),
-        exitMode,
-        targetDistributedRunId,
+        ...readHeadlessWorkerFleetReportingEnvironment(env, browserEngine),
+        ...readHeadlessWorkerBrowserLifecycleEnvironment(env),
+        ...exitRequest,
         controlHttpUrl: normalizeBaseUrl(
-            envValue(env, 'RALLAR_CONTROL_HTTP_URL') ??
-                controlHttpUrlFromControlUrl(controlUrl)
+            envValue(env, 'RALLAR_CONTROL_HTTP_URL') ?? controlHttpUrlFromControlUrl(controlUrl)
         ),
-        idleExitMs,
         distributedPollIntervalMs: positiveIntegerEnv(
             env,
             'RALLAR_BLACK_BOX_DISTRIBUTED_POLL_INTERVAL_MS',
@@ -271,11 +162,7 @@ export function readHeadlessWorkerConfig(
         agentCredentials,
         agentControlTokens
     };
-
-    return {
-        ...baseConfig,
-        agents: createHeadlessWorkerAgents(baseConfig)
-    };
+    return { ...baseConfig, agents: createHeadlessWorkerAgents(baseConfig) };
 }
 
 export function createHeadlessWorkerAgents(
@@ -320,6 +207,217 @@ export function createHeadlessWorkerAgentUrl(
     params.set('controlUrl', input.controlUrl);
     params.set('runId', input.runId);
     params.set('agentId', input.agentId);
+    applyHeadlessWorkerRallarLaunchParams(params, input);
+    applyHeadlessWorkerFleetReportingParams(params, input);
+    if (input.register) {
+        params.set(
+            'rallarRegister',
+            input.headlessEntry === 'headless' ? 'if-needed' : '1'
+        );
+    }
+    if (input.restoreSession) {
+        params.set('rallarRestoreSession', '1');
+    }
+    return url.toString();
+}
+
+export function controlRunSnapshotUrlFromControlUrl(
+    controlUrl: string,
+    runId: string
+): string {
+    const url = new URL(controlUrl);
+    normalizeControlHttpProtocol(url, controlUrl);
+
+    url.pathname = `/runs/${encodeURIComponent(runId)}`;
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+}
+
+function readHeadlessWorkerExitRequest(
+    env: Readonly<Record<string, string | undefined>>
+): Pick<HeadlessWorkerConfig, 'exitMode' | 'targetDistributedRunId' | 'idleExitMs'> {
+    const exitMode = exitModeEnv(env);
+    const targetDistributedRunId = envValue(
+        env,
+        'RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID'
+    );
+    const idleExitMs = optionalPositiveIntegerEnv(
+        env,
+        'RALLAR_BLACK_BOX_IDLE_EXIT_MS'
+    );
+    if (
+        exitMode === 'after-target-distributed-run-terminal' &&
+        !targetDistributedRunId
+    ) {
+        throw new Error(
+            'RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID is required when ' +
+                'RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-run-terminal'
+        );
+    }
+    if (exitMode === 'after-idle-ms' && idleExitMs === undefined) {
+        throw new Error('RALLAR_BLACK_BOX_IDLE_EXIT_MS must be a positive integer');
+    }
+    return { exitMode, targetDistributedRunId, idleExitMs };
+}
+
+function readHeadlessWorkerPageEnvironment(
+    env: Readonly<Record<string, string | undefined>>
+): Pick<
+    HeadlessWorkerConfig,
+    | 'spaUrl'
+    | 'apiBaseUrl'
+    | 'headlessEntry'
+    | 'runId'
+    | 'agentPrefix'
+    | 'roomId'
+    | 'applicationId'
+    | 'workspaceId'
+    | 'transport'
+    | 'rtcCaptureMode'
+    | 'statsIntervalMs'
+    | 'heartbeatIntervalMs'
+> {
+    return {
+        spaUrl: normalizeBaseUrl(requireEnv(env, 'RALLAR_BLACK_BOX_SPA_URL')),
+        apiBaseUrl: normalizeBaseUrl(requireEnv(env, 'RALLAR_API_BASE_URL')),
+        headlessEntry: headlessEntryEnv(env),
+        runId: requireEnv(env, 'RALLAR_BLACK_BOX_RUN_ID'),
+        agentPrefix: envValue(env, 'RALLAR_BLACK_BOX_AGENT_PREFIX') ??
+            DEFAULT_AGENT_PREFIX,
+        roomId: requireEnv(env, 'RALLAR_BLACK_BOX_ROOM_ID'),
+        applicationId: envValue(env, 'RALLAR_APPLICATION_ID') ??
+            envValue(env, 'RALLAR_BLACK_BOX_APPLICATION_ID'),
+        workspaceId: envValue(env, 'RALLAR_WORKSPACE_ID') ??
+            envValue(env, 'RALLAR_BLACK_BOX_WORKSPACE_ID'),
+        transport: transportEnv(env, 'RALLAR_BLACK_BOX_TRANSPORT', DEFAULT_TRANSPORT),
+        rtcCaptureMode: parseRtcCaptureMode(envValue(env, 'RALLAR_BLACK_BOX_RTC_CAPTURE_MODE')).fold(
+            (issues) => {
+                throw new Error(`RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: ${issues[0].message}`);
+            },
+            (parsed) => parsed.mode
+        ),
+        statsIntervalMs: optionalPositiveIntegerEnv(env, 'RALLAR_BLACK_BOX_STATS_INTERVAL_MS'),
+        heartbeatIntervalMs: optionalPositiveIntegerEnv(env, 'RALLAR_BLACK_BOX_HEARTBEAT_INTERVAL_MS')
+    };
+}
+
+function readHeadlessWorkerFleetReportingEnvironment(
+    env: Readonly<Record<string, string | undefined>>,
+    browserEngine: HeadlessWorkerBrowserEngine
+): Pick<
+    HeadlessWorkerConfig,
+    | 'controlReadToken'
+    | 'reportUploadUrl'
+    | 'environment'
+    | 'fleetRegion'
+    | 'fleetProvider'
+    | 'fleetDatacenter'
+    | 'fleetHostId'
+    | 'fleetAgentPoolId'
+    | 'fleetDeploymentId'
+    | 'fleetBrowserName'
+    | 'fleetBrowserVersion'
+    | 'fleetOs'
+    | 'fleetTags'
+    | 'fleetLatitude'
+    | 'fleetLongitude'
+    | 'fleetLocationLabel'
+> {
+    return {
+        controlReadToken: envValue(env, 'RALLAR_BLACK_BOX_CONTROL_READ_TOKEN'),
+        reportUploadUrl: envValue(env, 'RALLAR_BLACK_BOX_REPORT_UPLOAD_URL'),
+        environment: envValue(env, 'RALLAR_BLACK_BOX_ENVIRONMENT'),
+        fleetRegion: envValue(env, 'RALLAR_AGENT_REGION') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_REGION'),
+        fleetProvider: envValue(env, 'RALLAR_AGENT_PROVIDER') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_PROVIDER'),
+        fleetDatacenter: envValue(env, 'RALLAR_AGENT_DATACENTER') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_DATACENTER'),
+        fleetHostId: envValue(env, 'RALLAR_AGENT_HOST_ID') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_HOST_ID'),
+        fleetAgentPoolId: envValue(env, 'RALLAR_AGENT_POOL_ID') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_POOL_ID'),
+        fleetDeploymentId: envValue(env, 'RALLAR_AGENT_DEPLOYMENT_ID') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_DEPLOYMENT_ID'),
+        fleetBrowserName: envValue(env, 'RALLAR_AGENT_BROWSER_NAME') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_BROWSER_NAME') ??
+            browserEngine,
+        fleetBrowserVersion: envValue(env, 'RALLAR_AGENT_BROWSER_VERSION') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_BROWSER_VERSION'),
+        fleetOs: envValue(env, 'RALLAR_AGENT_OS') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_OS'),
+        fleetTags: csvEnv(env, 'RALLAR_AGENT_TAGS') ??
+            csvEnv(env, 'RALLAR_BLACK_BOX_AGENT_TAGS'),
+        ...readHeadlessWorkerFleetLocationEnvironment(env)
+    };
+}
+
+function readHeadlessWorkerFleetLocationEnvironment(
+    env: Readonly<Record<string, string | undefined>>
+): Pick<HeadlessWorkerConfig, 'fleetLatitude' | 'fleetLongitude' | 'fleetLocationLabel'> {
+    return {
+        fleetLatitude: optionalCoordinateEnv({
+            env,
+            primaryKey: 'RALLAR_AGENT_LATITUDE',
+            fallbackKey: 'RALLAR_BLACK_BOX_AGENT_LATITUDE',
+            min: -90,
+            max: 90
+        }),
+        fleetLongitude: optionalCoordinateEnv({
+            env,
+            primaryKey: 'RALLAR_AGENT_LONGITUDE',
+            fallbackKey: 'RALLAR_BLACK_BOX_AGENT_LONGITUDE',
+            min: -180,
+            max: 180
+        }),
+        fleetLocationLabel: envValue(env, 'RALLAR_AGENT_LOCATION_LABEL') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_LOCATION_LABEL')
+    };
+}
+
+function readHeadlessWorkerBrowserLifecycleEnvironment(
+    env: Readonly<Record<string, string | undefined>>
+): Pick<
+    HeadlessWorkerConfig,
+    | 'register'
+    | 'restoreSession'
+    | 'logoutOnClose'
+    | 'leaveRoomOnClose'
+    | 'browserLogLevel'
+    | 'headless'
+    | 'launchTimeoutMs'
+    | 'readyTimeoutMs'
+> {
+    return {
+        register: booleanEnv(env, 'RALLAR_BLACK_BOX_REGISTER', false),
+        restoreSession: booleanEnv(env, 'RALLAR_BLACK_BOX_RESTORE_SESSION', false),
+        logoutOnClose: booleanEnv(env, 'RALLAR_BLACK_BOX_LOGOUT_ON_CLOSE', false),
+        leaveRoomOnClose: booleanEnv(
+            env,
+            'RALLAR_BLACK_BOX_LEAVE_ROOM_ON_CLOSE',
+            false
+        ),
+        browserLogLevel: browserLogLevelEnv(
+            env,
+            'RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL',
+            DEFAULT_BROWSER_LOG_LEVEL
+        ),
+        headless: booleanEnv(env, 'RALLAR_BLACK_BOX_HEADLESS', true),
+        launchTimeoutMs: positiveIntegerEnv(
+            env,
+            'RALLAR_BLACK_BOX_LAUNCH_TIMEOUT_MS',
+            DEFAULT_LAUNCH_TIMEOUT_MS
+        ),
+        readyTimeoutMs: positiveIntegerEnv(
+            env,
+            'RALLAR_BLACK_BOX_READY_TIMEOUT_MS',
+            DEFAULT_READY_TIMEOUT_MS
+        )
+    };
+}
+
+function applyHeadlessWorkerRallarLaunchParams(params: URLSearchParams, input: HeadlessWorkerAgentUrlInput): void {
     params.set('apiBaseUrl', input.apiBaseUrl);
     params.set('roomId', input.roomId);
     params.set('actor', input.actor);
@@ -330,8 +428,12 @@ export function createHeadlessWorkerAgentUrl(
     params.set('rallarLeaveRoomOnClose', input.leaveRoomOnClose ? '1' : '0');
     params.set('rallarLogoutOnClose', input.logoutOnClose ? '1' : '0');
 
+    setOptionalParam(params, 'rtcCaptureMode', input.rtcCaptureMode);
     setOptionalParam(params, 'applicationId', input.applicationId);
     setOptionalParam(params, 'workspaceId', input.workspaceId);
+}
+
+function applyHeadlessWorkerFleetReportingParams(params: URLSearchParams, input: HeadlessWorkerAgentUrlInput): void {
     setOptionalParam(
         params,
         'statsIntervalMs',
@@ -358,18 +460,6 @@ export function createHeadlessWorkerAgentUrl(
     setOptionalParam(params, 'fleetLatitude', numberString(input.fleetLatitude));
     setOptionalParam(params, 'fleetLongitude', numberString(input.fleetLongitude));
     setOptionalParam(params, 'fleetLocationLabel', input.fleetLocationLabel);
-
-    if (input.register) {
-        params.set(
-            'rallarRegister',
-            input.headlessEntry === 'headless' ? 'if-needed' : '1'
-        );
-    }
-    if (input.restoreSession) {
-        params.set('rallarRestoreSession', '1');
-    }
-
-    return url.toString();
 }
 
 function agentSpaUrl(spaUrl: string, entry: HeadlessWorkerEntry): URL {
@@ -383,19 +473,6 @@ function agentSpaUrl(spaUrl: string, entry: HeadlessWorkerEntry): URL {
             : `${basePath.replace(/\/+$/, '')}/headless/`;
     }
     return url;
-}
-
-export function controlRunSnapshotUrlFromControlUrl(
-    controlUrl: string,
-    runId: string
-): string {
-    const url = new URL(controlUrl);
-    normalizeControlHttpProtocol(url, controlUrl);
-
-    url.pathname = `/runs/${encodeURIComponent(runId)}`;
-    url.search = '';
-    url.hash = '';
-    return url.toString();
 }
 
 function controlHttpUrlFromControlUrl(controlUrl: string): string {
@@ -531,27 +608,18 @@ function optionalPositiveIntegerEnv(
     return parsed;
 }
 
-function optionalCoordinateEnv(
-    env: Readonly<Record<string, string | undefined>>,
-    primaryKey: string,
-    fallbackKey: string,
-    min: number,
-    max: number
-): number | undefined {
+function optionalCoordinateEnv(input: OptionalCoordinateEnvInput): number | undefined {
+    const { env, primaryKey, fallbackKey, min, max } = input;
     const raw = envValue(env, primaryKey) ?? envValue(env, fallbackKey);
     if (!raw) {
         return undefined;
     }
 
-    const parsed = isStrictDecimalNumber(raw) ? Number(raw) : Number.NaN;
+    const parsed = /^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:e[+-]?\d+)?$/i.test(raw) ? Number(raw) : Number.NaN;
     if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
         throw new Error(`${primaryKey} must be between ${min} and ${max}. Received: ${raw}`);
     }
     return parsed;
-}
-
-function isStrictDecimalNumber(value: string): boolean {
-    return /^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:e[+-]?\d+)?$/i.test(value);
 }
 
 function booleanEnv(

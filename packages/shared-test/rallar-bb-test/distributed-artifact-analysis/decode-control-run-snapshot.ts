@@ -1,10 +1,13 @@
 import { Either } from '@shared/resilience/Either.ts';
+import { isAdmissibleControlRtcCaptureResult, toRetainedControlResultEnvelope } from '../control/control-rtc-capture-evidence.ts';
 
 import {
     parseControlClientMessage,
     parseControlServerMessage,
     type ControlClientEnvelope,
-    type ControlEventEnvelope
+    type ControlEventEnvelope,
+    type ControlHeartbeatEnvelope,
+    type ControlResultEnvelope
 } from '../control-protocol.ts';
 import type {
     ControlAgentSnapshot,
@@ -12,6 +15,7 @@ import type {
     ControlRunSnapshot
 } from '../control-snapshots.ts';
 import { decodeControlAgentIdentity } from '../distributed/decode-control-agent-identity.ts';
+import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import {
     decodeArrayItems,
@@ -24,13 +28,19 @@ import {
     toFirstDecodeIssue
 } from './artifact-json-value-guards.ts';
 
-type ControlClientEnvelopeKind = ControlClientEnvelope['kind'];
-
 export const CONTROL_EVENT_ENVELOPE_KINDS = Object.keys(
     { event: true, diagnostic: true, stats: true, report: true } satisfies Record<ControlEventEnvelope['kind'], true>
 ) as readonly ControlEventEnvelope['kind'][];
 
-/** Where a queued command sits: the control run it belongs to and its path in control-run.json. */
+interface ControlRunEvidenceCollections {
+    readonly results: readonly ControlResultEnvelope[];
+    readonly events: readonly ControlEventEnvelope[];
+    readonly stats: readonly ControlEventEnvelope[];
+    readonly reports: readonly ControlEventEnvelope[];
+    readonly heartbeats: readonly ControlHeartbeatEnvelope[];
+}
+
+/** Where a queued command sits in control-run.json. */
 interface QueuedCommandLocation {
     readonly runId: string;
     readonly path: string;
@@ -61,7 +71,10 @@ export function decodeControlRunSnapshot(value: unknown): Either<string, Control
         [isFiniteNumber(value.createdAtEpochMs), 'createdAtEpochMs must be a finite number'],
         [isFiniteNumber(value.updatedAtEpochMs), 'updatedAtEpochMs must be a finite number']
     ]);
-    if (issue !== undefined || !isNonEmptyText(runId)) {
+    if (
+        issue !== undefined || !isNonEmptyText(runId) || !isFiniteNumber(value.createdAtEpochMs) ||
+        !isFiniteNumber(value.updatedAtEpochMs)
+    ) {
         return Either.ofLeft(issue ?? 'runId must be a non-empty string');
     }
     const agents = decodeArrayItems(value.agents, 'agents', decodeControlAgentSnapshot);
@@ -70,18 +83,56 @@ export function decodeControlRunSnapshot(value: unknown): Either<string, Control
         'commands',
         (command, path) => decodeQueuedCommandSnapshot(command, { runId, path })
     );
-    const entryIssue = [
-        agents,
-        commands,
-        decodeClientEnvelopes(value.results, 'results', ['result']),
-        decodeClientEnvelopes(value.events, 'events', CONTROL_EVENT_ENVELOPE_KINDS),
-        decodeClientEnvelopes(value.stats, 'stats', CONTROL_EVENT_ENVELOPE_KINDS),
-        decodeClientEnvelopes(value.reports, 'reports', CONTROL_EVENT_ENVELOPE_KINDS),
-        decodeClientEnvelopes(value.heartbeats, 'heartbeats', ['heartbeat'])
-    ].find((decoded) => decoded.left !== undefined)?.left;
-    return entryIssue === undefined
-        ? Either.ofRight({ ...value, agents: agents.right, commands: commands.right } as ControlRunSnapshot)
-        : Either.ofLeft(entryIssue);
+    const evidence = decodeControlRunEvidenceCollections(value);
+    if (agents.right === undefined || commands.right === undefined || evidence.right === undefined) {
+        return Either.ofLeft(agents.left ?? commands.left ?? evidence.left ?? 'snapshot entries did not decode');
+    }
+    const resultEnvelopes = evidence.right.results.map((envelope) => toRetainedControlResultEnvelope(envelope, commands.right ?? []));
+    const invalid = resultEnvelopes.find((envelope) =>
+        envelope.runId !== runId || (commands.right?.some((command) => command.envelope.commandId === envelope.commandId) && !isAdmissibleControlRtcCaptureResult({
+            command: commands.right?.find((command) => command.envelope.commandId === envelope.commandId)?.envelope,
+            envelope,
+            commands: commands.right ?? [],
+            results: resultEnvelopes
+        }))
+    );
+    return invalid === undefined
+        ? Either.ofRight({
+            runId,
+            createdAtEpochMs: value.createdAtEpochMs,
+            updatedAtEpochMs: value.updatedAtEpochMs,
+            agents: agents.right,
+            commands: commands.right,
+            ...evidence.right,
+            results: resultEnvelopes
+        })
+        : Either.ofLeft(`results: required application or attribution is invalid for ${invalid.commandId}`);
+}
+
+function decodeControlRunEvidenceCollections(
+    value: RallarBlackBoxTestRecord
+): Either<string, ControlRunEvidenceCollections> {
+    const results = decodeClientEnvelopes(value.results, 'results', ['result']);
+    const events = decodeClientEnvelopes(value.events, 'events', CONTROL_EVENT_ENVELOPE_KINDS);
+    const stats = decodeClientEnvelopes(value.stats, 'stats', CONTROL_EVENT_ENVELOPE_KINDS);
+    const reports = decodeClientEnvelopes(value.reports, 'reports', CONTROL_EVENT_ENVELOPE_KINDS);
+    const heartbeats = decodeClientEnvelopes(value.heartbeats, 'heartbeats', ['heartbeat']);
+    if (
+        results.right === undefined || events.right === undefined || stats.right === undefined ||
+        reports.right === undefined || heartbeats.right === undefined
+    ) {
+        return Either.ofLeft(
+            results.left ?? events.left ?? stats.left ?? reports.left ?? heartbeats.left ??
+                'snapshot evidence did not decode'
+        );
+    }
+    return Either.ofRight({
+        results: results.right,
+        events: events.right,
+        stats: stats.right,
+        reports: reports.right,
+        heartbeats: heartbeats.right
+    });
 }
 
 function decodeControlAgentSnapshot(value: unknown, path: string): Either<string, ControlAgentSnapshot> {
@@ -150,11 +201,11 @@ function decodeQueuedCommandSnapshot(
         : Either.ofLeft(`${path}.envelope is not a control command: ${parsed.error}`);
 }
 
-function decodeClientEnvelopes(
+function decodeClientEnvelopes<Kind extends ControlClientEnvelope['kind']>(
     value: unknown,
     path: string,
-    kinds: readonly ControlClientEnvelopeKind[]
-): Either<string, readonly ControlClientEnvelope[]> {
+    kinds: readonly Kind[]
+): Either<string, readonly Extract<ControlClientEnvelope, { kind: Kind; }>[]> {
     return decodeArrayItems(value, path, (item, itemPath) => {
         if (!isJsonRecordValue(item)) {
             return Either.ofLeft(`${itemPath} must be a JSON object`);
@@ -163,8 +214,15 @@ function decodeClientEnvelopes(
         if (!parsed.ok) {
             return Either.ofLeft(`${itemPath} is not a control envelope: ${parsed.error}`);
         }
-        return kinds.includes(parsed.envelope.kind)
+        return isControlEnvelopeKind(parsed.envelope, kinds)
             ? Either.ofRight(parsed.envelope)
             : Either.ofLeft(`${itemPath}.kind must be ${toAlternativesText(kinds)}`);
     });
+}
+
+function isControlEnvelopeKind<Kind extends ControlClientEnvelope['kind']>(
+    envelope: ControlClientEnvelope,
+    kinds: readonly Kind[]
+): envelope is Extract<ControlClientEnvelope, { kind: Kind; }> {
+    return kinds.some((kind) => envelope.kind === kind);
 }

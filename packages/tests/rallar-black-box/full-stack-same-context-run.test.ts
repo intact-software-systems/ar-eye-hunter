@@ -1,4 +1,6 @@
 import * as Playwright from '@playwright/test';
+import { once } from 'node:events';
+import { createServer } from 'node:http';
 import {
     describe,
     expect,
@@ -10,68 +12,10 @@ import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformanc
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
-import type { TwoAgentRun, TwoAgentRunParticipant } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
-import { runRecipeTrioOnSameContext } from '../../../tests/playwright/rallar-black-box/full-stack-same-context-run.ts';
+import type { RecipePairRun } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
+import { openSuccessorPage, runRecipeTrioOnSameContext } from '../../../tests/playwright/rallar-black-box/full-stack-same-context-run.ts';
 
 const group = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
-
-function toAcceptedResponse(url: string): Playwright.APIResponse {
-    return {
-        url: () => url,
-        ok: () => true,
-        status: () => 202,
-        statusText: () => 'Accepted',
-        headers: () => ({}),
-        headersArray: () => [],
-        securityDetails: async () => null,
-        serverAddr: async () => null,
-        body: async () => Buffer.from('{}'),
-        text: async () => '{}',
-        json: async () => ({}),
-        dispose: async () => {},
-        [Symbol.asyncDispose]: async () => {}
-    };
-}
-
-function toParticipant(agentId: string, page: Playwright.Page | undefined): TwoAgentRunParticipant {
-    return {
-        agentId,
-        actor: agentId,
-        connection: agentId,
-        get context(): Playwright.BrowserContext {
-            throw new Error('Enqueue must not create a browser context.');
-        },
-        get page(): Playwright.Page {
-            if (page === undefined) {
-                throw new Error('Only the owner page is closed.');
-            }
-            return page;
-        }
-    };
-}
-
-/** The owner page's ending as the runner drives it: a lifecycle event in the page, the CDP crash, the close. */
-function toOwnerPage(order: string[]): Playwright.Page {
-    let crash: (() => void) | undefined;
-    const cdp = {
-        send: async (method: string) => {
-            order.push(method);
-            crash?.();
-            return new Promise(() => {});
-        }
-    };
-    const page = {
-        evaluate: async (_dispatch: unknown, eventType: string) => void order.push(`dispatch:${eventType}`),
-        waitForTimeout: async () => void order.push('settle'),
-        context: () => ({ newCDPSession: async () => cdp }),
-        waitForEvent: async (event: string) => {
-            await new Promise<void>((resolve) => crash = resolve);
-            order.push(event === 'crash' ? 'crashed' : event);
-        },
-        close: async () => void order.push('close-owner')
-    };
-    return page as unknown as Playwright.Page;
-}
 
 describe('same-context ALM run', () => {
     it('selects durable-takeover on every carrier and flush-on-hide over ws and rtc for the same-context family', () => {
@@ -108,30 +52,87 @@ describe('same-context ALM run', () => {
         }).find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
         const successor = { ...baseline.sender, recipeId: `${baseline.sender.recipeId}-successor` };
         const order: string[] = [];
+        const browser = await Playwright.chromium.launch({ headless: true });
+        const context = await browser.newContext();
+        const ownerPage = await context.newPage();
+        const close = ownerPage.close.bind(ownerPage);
+        vi.spyOn(ownerPage, 'close').mockImplementation(async () => {
+            await close();
+            order.push('close-owner');
+        });
+        await ownerPage.exposeFunction('observeFreeze', () => order.push('dispatch:freeze'));
+        await ownerPage.evaluate(() =>
+            document.addEventListener('freeze', () => {
+                Reflect.get(window, 'observeFreeze')();
+            })
+        );
+        const wait = ownerPage.waitForTimeout.bind(ownerPage);
+        vi.spyOn(ownerPage, 'waitForTimeout').mockImplementation(async (ms) => {
+            expect(ms).toBe(250);
+            await wait(ms);
+            order.push('settle');
+        });
+        const createSession = context.newCDPSession.bind(context);
+        vi.spyOn(context, 'newCDPSession').mockImplementation(async (page) => {
+            const session = await createSession(page);
+            const send = session.send.bind(session);
+            vi.spyOn(session, 'send').mockImplementation(async (...args) => {
+                order.push(args[0]);
+                return await send(...args);
+            });
+            return session;
+        });
+        ownerPage.on('crash', () => order.push('crashed'));
+        const server = createServer((_request, response) => {
+            response.writeHead(202, { 'content-type': 'application/json' });
+            response.end('{}');
+        });
+        server.listen(0, '127.0.0.1');
+        await once(server, 'listening');
+        const address = server.address();
+        if (address === null || typeof address === 'string') {
+            throw new Error('Expected the owned HTTP server address.');
+        }
         const request = await Playwright.request.newContext();
+        const post = request.post.bind(request);
+        const responseUrl = `http://127.0.0.1:${address.port}`;
         vi.spyOn(request, 'post').mockImplementation(async (url, options) => {
             const data = options?.data;
             if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
                 throw new Error('Expected the actual control HTTP command body.');
             }
             order.push(data.commandId);
-            return toAcceptedResponse(url);
+            return await post(responseUrl, options);
         });
-        const run: TwoAgentRun = {
+        const run: RecipePairRun = {
             request,
             runId: 'same-context-run',
-            group,
-            sender: toParticipant('owner-agent', toOwnerPage(order)),
-            receiver: toParticipant('receiver-agent', undefined),
-            readSnapshot: async () => ({ results: order.map((commandId) => ({ commandId, ok: true })) }),
-            close: async () => {
-                throw new Error('Enqueue must not close the run.');
-            }
+            sender: { agentId: 'owner-agent' },
+            receiver: { agentId: 'receiver-agent' },
+            readSnapshot: async () => ({
+                runId: 'same-context-run',
+                createdAtEpochMs: 1,
+                updatedAtEpochMs: 2,
+                agents: [],
+                commands: [],
+                events: [],
+                stats: [],
+                reports: [],
+                heartbeats: [],
+                results: order.filter((commandId) => commandId.endsWith('-run')).map((commandId) => ({
+                    kind: 'result',
+                    protocolVersion: 1,
+                    runId: 'same-context-run',
+                    agentId: 'observed-agent',
+                    commandId,
+                    ok: true
+                }))
+            })
         };
         try {
             const outcome = await runRecipeTrioOnSameContext(
                 run,
-                { owner: run.sender, successor: toParticipant('successor-agent', undefined), ownerEnd },
+                { owner: { ...run.sender, page: ownerPage }, successor: { agentId: 'successor-agent' }, ownerEnd },
                 { sender: baseline.sender, receiver: baseline.receiver, successor }
             );
 
@@ -150,6 +151,59 @@ describe('same-context ALM run', () => {
         finally {
             vi.restoreAllMocks();
             await request.dispose();
+            await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+            await browser.close();
         }
     });
+});
+
+it('closes a newly opened successor page when registration fails, keeping its shared owner context usable', async () => {
+    const browser = await Playwright.chromium.launch({ headless: true });
+    const context = await browser.newContext();
+    const ownerPage = await context.newPage();
+    const request = await Playwright.request.newContext();
+    const failure = new Error('successor registration read failed');
+    vi.spyOn(request, 'get').mockRejectedValueOnce(failure);
+    await context.addInitScript(() =>
+        localStorage.setItem(
+            'auth.session',
+            JSON.stringify({
+                clientId: 'fixture-client',
+                username: 'fixture-user',
+                sessionId: 'fixture-session',
+                accessToken: 'fixture-token',
+                expiresAtEpochMs: 1
+            })
+        )
+    );
+    await context.route('**/*', (route) =>
+        route.fulfill({
+            contentType: 'text/html',
+            body: '<button role="tab" aria-selected="true">Advanced</button><div id="panel-local-workbench"><div class="control-panel">registered</div></div>'
+        }));
+    let acquired: Playwright.Page | undefined;
+    context.on('page', (page) => acquired = page);
+    const owner = { agentId: 'owner', actor: 'owner', connection: 'sender', context, page: ownerPage };
+    const run = {
+        request,
+        runId: 'successor-lifetime',
+        group
+    };
+    try {
+        await expect(openSuccessorPage({
+            run,
+            owner,
+            testInfo: { project: { name: 'successor' }, workerIndex: 0, titlePath: ['successor'] }
+        })).rejects.toBe(failure);
+        expect(acquired?.isClosed()).toBe(true);
+        expect(ownerPage.isClosed()).toBe(false);
+        expect(browser.contexts()).toContain(context);
+        await expect(ownerPage.evaluate(() => 42)).resolves.toBe(42);
+    }
+    finally {
+        vi.restoreAllMocks();
+        await request.dispose();
+        await context.close();
+        await browser.close();
+    }
 });

@@ -1,5 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     afterEach,
     describe,
@@ -8,9 +7,9 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
-import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -22,10 +21,10 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import * as shared from '@shared/mod.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import {
     captureOutboundWorkRunnable,
@@ -35,6 +34,7 @@ import {
 } from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 interface CapturedRtcConnection extends shared.WebRtcConnectionService {
     readonly sendByPeerId: ReadonlyMap<string, readonly object[]>;
@@ -802,7 +802,7 @@ function createConnectionService(connectedPeerIds: readonly string[], readyState
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc-signaling'
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId, nowEpochMs: () => Date.now() });
     vi.spyOn(connectionService, 'readyPeerIdsForLane').mockReturnValue(connectedPeerIds);
     vi.spyOn(connectionService, 'readPeer').mockImplementation((peerId) => peers.get(peerId));
     return Object.assign(connectionService, { sendByPeerId });

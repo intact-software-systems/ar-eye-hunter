@@ -1,7 +1,8 @@
 import { Activity } from 'react';
-import { EventStreamPanel } from '../../diagnostics/events/EventStreamPanel.tsx';
+
+import { EventStreamPanel } from '../../diagnostics/events/event-stream-panel.tsx';
 import { ExecutionFocusPanel } from '../../diagnostics/events/ExecutionFocusPanel.tsx';
-import { RallarTracePanel } from '../../diagnostics/events/RallarTracePanel.tsx';
+import { RallarTracePanel } from '../../diagnostics/events/rallar-trace-panel.tsx';
 import { StatsPanel } from '../../diagnostics/events/StatsPanel.tsx';
 import { RallarServerPanel } from '../../diagnostics/rallar-server/rallar-server-panel.tsx';
 import { CommandHistoryPanel } from '../../runner/advanced/CommandHistoryPanel.tsx';
@@ -15,33 +16,19 @@ import type {
     LegacyShellRuntime
 } from '../legacy-shell-contracts.ts';
 
-export function DiagnosticEvidenceTabPanels({
-    runtime,
-    auth,
-    navigation,
-    globalContext,
-    runnerSelection
-}: Readonly<{
-    runtime: LegacyShellRuntime;
-    auth: LegacyShellAuth;
-    navigation: LegacyShellNavigation;
-    globalContext: LegacyShellGlobalContext;
-    runnerSelection: LegacyShellRunnerSelection;
-}>) {
-    const { state, bootstrap, control } = runtime;
-    const { authSession } = auth;
-    const { activeTab } = navigation;
-    const { globalValues, updateGlobalValue } = globalContext;
-    const {
-        history,
-        activeCommand,
-        now,
-        selectedCommandId,
-        setSelectedCommandId,
-        selectedResult
-    } = runnerSelection;
+interface DiagnosticEvidenceTabPanelsProps {
+    readonly runtime: LegacyShellRuntime;
+    readonly auth: LegacyShellAuth;
+    readonly navigation: LegacyShellNavigation;
+    readonly globalContext: LegacyShellGlobalContext;
+    readonly runnerSelection: LegacyShellRunnerSelection;
+}
 
-    // Hidden, the trace and event panels keep their state and render only when the page is otherwise idle.
+export function DiagnosticEvidenceTabPanels(props: DiagnosticEvidenceTabPanelsProps) {
+    const { state, bootstrap, control } = props.runtime;
+    const { authSession } = props.auth;
+    const { activeTab } = props.navigation;
+    const { globalValues, updateGlobalValue } = props.globalContext;
     return (
         <>
             <section
@@ -52,7 +39,7 @@ export function DiagnosticEvidenceTabPanels({
                 hidden={activeTab !== 'rallar-trace'}
             >
                 <Activity mode={activeTab === 'rallar-trace' ? 'visible' : 'hidden'}>
-                    <RallarTracePanel state={state} authSession={authSession} />
+                    <RallarTracePanel active={activeTab === 'rallar-trace'} state={state} authSession={authSession} />
                 </Activity>
             </section>
             <section
@@ -63,21 +50,12 @@ export function DiagnosticEvidenceTabPanels({
                 hidden={activeTab !== 'event-stream'}
             >
                 <Activity mode={activeTab === 'event-stream' ? 'visible' : 'hidden'}>
-                    <ExecutionFocusPanel
-                        result={selectedResult}
-                        activeCommand={activeCommand}
-                        startedAtEpochMs={state.activeCommandStartedAtEpochMs}
-                        now={now}
-                        redactionOptions={uiRedactionOptions(state, authSession)}
+                    <EventStreamEvidence
+                        runtime={props.runtime}
+                        auth={props.auth}
+                        runnerSelection={props.runnerSelection}
+                        active={activeTab === 'event-stream'}
                     />
-                    <CommandHistoryPanel
-                        history={history}
-                        selectedCommandId={selectedCommandId}
-                        onSelect={setSelectedCommandId}
-                    />
-                    <StatsPanel state={state} />
-                    <FailurePanel state={state} authSession={authSession} />
-                    <EventStreamPanel state={state} />
                 </Activity>
             </section>
             <section
@@ -96,6 +74,35 @@ export function DiagnosticEvidenceTabPanels({
                     onGlobalValueChange={updateGlobalValue}
                 />
             </section>
+        </>
+    );
+}
+
+function EventStreamEvidence(
+    { runtime, auth, runnerSelection, active }:
+        & Pick<DiagnosticEvidenceTabPanelsProps, 'runtime' | 'auth' | 'runnerSelection'>
+        & { readonly active: boolean; }
+) {
+    const { state } = runtime;
+    const { authSession } = auth;
+    const { history, activeCommand, now, selectedCommandId, setSelectedCommandId, selectedResult } = runnerSelection;
+    return (
+        <>
+            <ExecutionFocusPanel
+                result={selectedResult}
+                activeCommand={activeCommand}
+                startedAtEpochMs={state.activeCommandStartedAtEpochMs}
+                now={now}
+                redactionOptions={uiRedactionOptions(state, authSession)}
+            />
+            <CommandHistoryPanel
+                history={history}
+                selectedCommandId={selectedCommandId}
+                onSelect={setSelectedCommandId}
+            />
+            <StatsPanel state={state} />
+            <FailurePanel state={state} authSession={authSession} />
+            <EventStreamPanel active={active} state={state} />
         </>
     );
 }

@@ -10,8 +10,10 @@ import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-dou
 
 const rallarFacadeMocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
+    const { createBrowserRtcCaptureReceiptFixture } = await import('../rtc/browser-rtc-capture-fixture.ts');
     return {
         apiMiddleware: createDefaultApiMiddlewareTestDouble(),
+        rtcCaptureReceipt: createBrowserRtcCaptureReceiptFixture(),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findFirstGroupStateSnapshotRefSessionIdIsIn>(),
         findGroupStateSnapshotByRef: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef>(),
         getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>()
@@ -19,7 +21,11 @@ const rallarFacadeMocks = await vi.hoisted(async () => {
 });
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), async (original): Promise<typeof MiddlewareModule> => ({
     ...await original(),
-    initialiseMiddleware: async () => ({ middleware: rallarFacadeMocks.apiMiddleware.middleware, checkpoints: [] })
+    initialiseMiddleware: async () => ({
+        middleware: rallarFacadeMocks.apiMiddleware.middleware,
+        rtcCaptureReceipt: rallarFacadeMocks.rtcCaptureReceipt,
+        checkpoints: []
+    })
 }));
 vi.mock(import('@shared/api/auth.ts'), async (original): Promise<typeof AuthModule> => ({
     ...await original(),

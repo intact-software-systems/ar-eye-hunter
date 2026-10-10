@@ -15,6 +15,8 @@ import { createDeferred } from '../browser-lifecycle-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from './browser-auth-session-contract-fixture.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 const mocks = readAuthSessionContractMocks();
 
 installFakeBroadcastChannelPerTest();
@@ -212,7 +214,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         });
         mocks.initialiseMiddleware.mockImplementation(async (session) => {
             initializedSessionIds.push(session.sessionId);
-            return { middleware: mocks.ctx.middleware, checkpoints: [] };
+            return { middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
         const facade = createRallarFacade();
 
@@ -274,7 +276,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
             'Rallar connection was cancelled because auth ended.'
         );
 
-        deferred.resolve({ middleware: mocks.ctx.middleware, checkpoints: [] });
+        deferred.resolve({ middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] });
         await expectation;
 
         expect(facade.status()).toBe('idle');
@@ -311,7 +313,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
             })
             .mockImplementationOnce(async (session) => {
                 initializedSessionIds.push(session.sessionId);
-                return { middleware: mocks.ctx.middleware, checkpoints: [] };
+                return { middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] };
             });
         mocks.loginToApi.mockResolvedValue(replacementSession);
         const facade = createRallarFacade();
@@ -329,7 +331,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         expect(facade.status()).toBe('idle');
         expect(facade.isConnected()).toBe(false);
 
-        pendingMiddleware.resolve({ middleware: mocks.ctx.middleware, checkpoints: [] });
+        pendingMiddleware.resolve({ middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] });
         await expect(pendingConnect).rejects.toThrow(
             'Rallar connection was cancelled because auth ended.'
         );

@@ -1,8 +1,13 @@
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type * as React from 'react';
+
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRtcConnectCommand
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { Either } from '@shared/resilience/Either.ts';
-import type * as React from 'react';
+
 import {
     type ManualActionHistoryEntry,
     type ManualWorkbenchAction,
@@ -23,6 +28,7 @@ import { toManualActionLabel } from './to-manual-action-label.ts';
 export namespace ManualWorkbenchActions {
     export interface Input extends ManualRallarWorkbenchOptions {
         readonly values: ManualWorkbenchValues;
+        readonly rtcReadinessResult: Either<string, RallarBlackBoxTestRtcConnectCommand>;
         readonly sequence: number;
         readonly payloadResult: Either<string, RallarMessagePayload>;
         readonly recipeText: string;
@@ -37,18 +43,21 @@ export namespace ManualWorkbenchActions {
     }
 }
 export class ManualWorkbenchActions {
-    private readonly input: ManualWorkbenchActions.Input;
-    constructor(input: ManualWorkbenchActions.Input) {
-        this.input = input;
+    /** Each invocation captures the current draft before admission effects or awaits. */
+    private readonly readCurrentInput: () => ManualWorkbenchActions.Input;
+    constructor(readCurrentInput: () => ManualWorkbenchActions.Input) {
+        this.readCurrentInput = readCurrentInput;
     }
+
     private readonly runManualCommandSet = async (
+        input: ManualWorkbenchActions.Input,
         label: string,
-        commands: readonly RallarBlackBoxTestCommand[],
-        startSequence: number
+        commands: readonly RallarBlackBoxTestCommand[]
     ): Promise<void> => {
-        if (!this.input.lifetime.active) {
+        if (!input.lifetime.active) {
             return;
         }
+        const startSequence = input.sequence;
         const entry: ManualActionHistoryEntry = {
             actionId: `manual-action-${startSequence}`,
             label,
@@ -57,26 +66,26 @@ export class ManualWorkbenchActions {
             ),
             commands: redactRallarBlackBoxValue(
                 commands,
-                uiRedactionOptions(this.input.state, this.input.authSession, [this.input.values.rallarPassword])
+                uiRedactionOptions(input.state, input.authSession, [input.values.rallarPassword])
             ),
-            atEpochMs: this.input.nowMs()
+            atEpochMs: input.nowMs()
         };
 
-        this.input.setSequence((current) => current + commands.length + 1);
-        this.input.setHistory((current) => [...current, entry].slice(-12));
-        this.input.onSelectCommand(entry.commandIds.at(-1) ?? entry.commandIds[0]);
+        input.setSequence((current) => current + commands.length + 1);
+        input.setHistory((current) => [...current, entry].slice(-12));
+        input.onSelectCommand(entry.commandIds.at(-1) ?? entry.commandIds[0]);
 
         try {
-            await this.input.runManualCommands(
+            await input.runManualCommands(
                 commands,
                 label
             );
         }
         catch (error) {
-            if (!this.input.lifetime.active) {
+            if (!input.lifetime.active) {
                 return;
             }
-            this.input.setLocalError(
+            input.setLocalError(
                 error instanceof Error ? error.message : String(error)
             );
         }
@@ -85,100 +94,140 @@ export class ManualWorkbenchActions {
     public readonly runManualAction = async (
         action: ManualWorkbenchAction
     ): Promise<void> => {
-        if (!this.input.lifetime.active) {
+        const input = this.readCurrentInput();
+        if (!input.lifetime.active) {
             return;
         }
-        this.input.setLocalError(undefined);
-        const payloadError = this.input.payloadResult.foldLeft((error) => error);
+        input.setLocalError(undefined);
+        const payloadError = input.payloadResult.foldLeft((error) => error);
         if (action === 'send' && payloadError !== undefined) {
-            this.input.setLocalError(payloadError);
+            input.setLocalError(payloadError);
             return;
         }
-        const selectedGroupId = this.input.values.groupId.trim();
+        if (
+            (action === 'connect' || action === 'join') && input.values.transport !== 'ws' &&
+            this.admitRtcConnect(input) === undefined
+        ) {
+            return;
+        }
+        const selectedGroupId = input.values.groupId.trim();
         if (
             selectedGroupId &&
             ['configure', 'join', 'connect', 'send'].includes(action) &&
-            this.input.globalValues.roomId !== selectedGroupId
+            input.globalValues.roomId !== selectedGroupId
         ) {
-            this.input.onGlobalValueChange('roomId', selectedGroupId);
+            input.onGlobalValueChange('roomId', selectedGroupId);
         }
 
         const label = toManualActionLabel(action);
-        const startSequence = this.input.sequence;
+        const startSequence = input.sequence;
         const commands = toManualWorkbenchCommands({
             action: action,
-            values: this.input.values,
-            payload: this.input.payloadResult.fold(() => null, (payload) => payload),
+            rtcReadinessResult: input.rtcReadinessResult,
+            values: input.values,
+            payload: input.payloadResult.fold(() => null, (payload) => payload),
             sequence: startSequence,
-            requestId: this.input.createRequestId()
+            requestId: input.createRequestId()
         });
-        await this.runManualCommandSet(label, commands, startSequence);
+        await this.runManualCommandSet(input, label, commands);
     };
 
     public readonly runRtcMatrix = async (
         transport: Extract<ManualWorkbenchTransport, 'realtime' | 'messages.rtc'>
     ): Promise<void> => {
-        if (!this.input.lifetime.active) {
+        const input = this.readCurrentInput();
+        if (!input.lifetime.active) {
             return;
         }
-        this.input.setLocalError(undefined);
-        await this.input.payloadResult.fold(
-            async (error) => this.input.setLocalError(error),
+        const rtcConnect = this.admitRtcConnect(input);
+        if (rtcConnect === undefined) {
+            return;
+        }
+        input.setLocalError(undefined);
+        await input.payloadResult.fold(
+            async (error) => input.setLocalError(error),
             async (payload) => {
-                const startSequence = this.input.sequence;
+                const startSequence = input.sequence;
                 const commands = toManualRtcDeliveryMatrixCommands({
-                    values: this.input.values,
+                    rtcConnect,
+                    values: input.values,
                     payload,
                     sequence: startSequence,
                     transport,
-                    requestId: this.input.createRequestId()
+                    requestId: input.createRequestId()
                 });
-                await this.runManualCommandSet(`RTC ${transport} delivery matrix`, commands, startSequence);
+                await this.runManualCommandSet(input, `RTC ${transport} delivery matrix`, commands);
             }
         );
     };
 
     public readonly runRtcNackProbe = async (): Promise<void> => {
-        if (!this.input.lifetime.active) {
+        const input = this.readCurrentInput();
+        if (!input.lifetime.active) {
             return;
         }
-        this.input.setLocalError(undefined);
-        await this.input.payloadResult.fold(
-            async (error) => this.input.setLocalError(error),
+        input.setLocalError(undefined);
+        await input.payloadResult.fold(
+            async (error) => input.setLocalError(error),
             async (payload) => {
-                const startSequence = this.input.sequence;
-                const commands = toManualRtcNackProbeCommands(this.input.values, payload, startSequence);
-                await this.runManualCommandSet('RTC not-yet-in-sync probe', commands, startSequence);
+                const startSequence = input.sequence;
+                const commands = toManualRtcNackProbeCommands(input.values, payload, startSequence);
+                await this.runManualCommandSet(input, 'RTC not-yet-in-sync probe', commands);
             }
         );
     };
 
-    public readonly copyRecipeSnippet = (): Promise<void> => this.copyText(this.input.recipeText);
-    public readonly copyNegativeRecipe = (): Promise<void> => this.copyText(this.input.negativeRecipeText);
-    public readonly copyRtcMatrixRecipe = (): Promise<void> =>
-        this.input.payloadResult.fold(
-            async (error) => {
-                if (this.input.lifetime.active) {
-                    this.input.setLocalError(error);
-                }
-            },
-            (payload) => this.copyText(this.createRtcMatrixRecipeText(payload))
+    public readonly copyRecipeSnippet = (): Promise<void> => {
+        const input = this.readCurrentInput();
+        return this.copyText(input, input.recipeText);
+    };
+    public readonly copyNegativeRecipe = async (): Promise<void> => {
+        const input = this.readCurrentInput();
+        if (!input.lifetime.active || this.admitRtcConnect(input) === undefined) {
+            return;
+        }
+        await this.copyText(input, input.negativeRecipeText);
+    };
+    public readonly copyRtcMatrixRecipe = async (): Promise<void> => {
+        const input = this.readCurrentInput();
+        if (!input.lifetime.active) {
+            return;
+        }
+        const rtcConnect = this.admitRtcConnect(input);
+        if (rtcConnect === undefined) {
+            return;
+        }
+        await input.payloadResult.fold(
+            async (error) => input.setLocalError(error),
+            (payload) => this.copyText(input, this.createRtcMatrixRecipeText(input, payload, rtcConnect))
         );
+    };
 
-    private createRtcMatrixRecipeText(payload: RallarMessagePayload): string {
+    private admitRtcConnect(input: ManualWorkbenchActions.Input): RallarBlackBoxTestRtcConnectCommand | undefined {
+        input.rtcReadinessResult.foldLeft(input.setLocalError);
+        return input.rtcReadinessResult.right;
+    }
+
+    private createRtcMatrixRecipeText(
+        input: ManualWorkbenchActions.Input,
+        payload: RallarMessagePayload,
+        rtcConnect: RallarBlackBoxTestRtcConnectCommand
+    ): string {
         const realtime = toManualRtcDeliveryMatrixCommands({
-            values: this.input.values,
+            rtcConnect,
+            values: input.values,
             payload,
             sequence: 1,
             transport: 'realtime',
-            requestId: this.input.createRequestId()
+            requestId: input.createRequestId()
         });
         const messages = toManualRtcDeliveryMatrixCommands({
-            values: this.input.values,
+            rtcConnect,
+            values: input.values,
             payload,
             sequence: realtime.length + 2,
             transport: 'messages.rtc',
-            requestId: this.input.createRequestId()
+            requestId: input.createRequestId()
         });
         return JSON.stringify(
             {
@@ -194,14 +243,14 @@ export class ManualWorkbenchActions {
         );
     }
 
-    private async copyText(text: string): Promise<void> {
-        if (!(this.input.lifetime.active)) {
+    private async copyText(input: ManualWorkbenchActions.Input, text: string): Promise<void> {
+        if (!(input.lifetime.active)) {
             return;
         }
-        this.input.setLocalError(undefined);
+        input.setLocalError(undefined);
         const written = await writeTextToClipboard(text);
-        if (this.input.lifetime.active) {
-            written.foldLeft(this.input.setLocalError);
+        if (input.lifetime.active) {
+            written.foldLeft(input.setLocalError);
         }
     }
 }

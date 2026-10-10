@@ -7,10 +7,12 @@ import {
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
+    RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestFaultInjectCommand,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
@@ -49,7 +51,7 @@ function findCommand(recipe: RallarBlackBoxTestRecipe, name: string): RallarBlac
 }
 
 function isCongestionScenario(scenario: AlmConformanceScenario): boolean {
-    return (CONGESTION_SCENARIO_IDS as readonly string[]).includes(scenario.scenarioId);
+    return CONGESTION_SCENARIO_IDS.some((scenarioId) => scenarioId === scenario.scenarioId);
 }
 
 /** Runs the named handle read or receipts read and the assertions that follow it, answering the read with one observation. */
@@ -57,7 +59,7 @@ async function readTail(recipe: RallarBlackBoxTestRecipe, from: string, observat
     const start = recipe.commands.findIndex((command) => command.commandId === `${recipe.recipeId}-${from}`);
     const following = recipe.commands.slice(start + 1);
     const end = following.findIndex((command) => command.kind !== 'assert');
-    const runtime = createRallarBlackBoxTestRuntime({
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
         commandExecutor: (command) =>
             command.kind === 'messages.observe' || command.kind === 'messages.receipts'
                 ? { status: 'ok', value: observation }
@@ -68,12 +70,14 @@ async function readTail(recipe: RallarBlackBoxTestRecipe, from: string, observat
 }
 
 /** Each change alone, applied to an observation the read accepts, must fail it: no fact assertion goes unproven. */
-async function readTailForEachChange(
-    recipe: RallarBlackBoxTestRecipe,
-    from: string,
-    observation: object,
-    changes: readonly object[]
-): Promise<readonly boolean[]> {
+interface ReadTailChangeInput {
+    readonly recipe: RallarBlackBoxTestRecipe;
+    readonly from: string;
+    readonly observation: object;
+    readonly changes: readonly object[];
+}
+
+async function readTailForEachChange({ recipe, from, observation, changes }: ReadTailChangeInput): Promise<readonly boolean[]> {
     const results: boolean[] = [];
     for (const change of changes) {
         results.push(await readTail(recipe, from, { ...observation, ...change }));
@@ -81,7 +85,14 @@ async function readTailForEachChange(
     return results;
 }
 
-function toHold(carrier: 'ws' | 'rtc', remaining: 'until-cleared' | 0, cell: CongestionScenarioId, sendCarrier: AlmConformanceCarrier) {
+interface HoldInput {
+    readonly carrier: 'ws' | 'rtc';
+    readonly remaining: 'until-cleared' | 0;
+    readonly cell: CongestionScenarioId;
+    readonly sendCarrier: AlmConformanceCarrier;
+}
+
+function toHold({ carrier, remaining, cell, sendCarrier }: HoldInput): RallarBlackBoxTestFaultInjectCommand {
     const typeId = `alm.conformance.${sendCarrier}.${cell}`;
     return {
         kind: 'fault.inject',
@@ -93,7 +104,7 @@ function toHold(carrier: 'ws' | 'rtc', remaining: 'until-cleared' | 0, cell: Con
     };
 }
 
-function toCounterRead(recipe: RallarBlackBoxTestRecipe, counter: string) {
+function toCounterRead(recipe: RallarBlackBoxTestRecipe, counter: string): RallarBlackBoxTestAssertCommand {
     return {
         kind: 'assert',
         source: `resultCache.${recipe.recipeId}-stats-congestion.value.rallar.congestion.${counter}`,
@@ -174,9 +185,9 @@ describe('backpressure-hands-over', () => {
             'stats'
         ]);
         expect(findCommand(scenario.sender, 'hold-backpressure'))
-            .toMatchObject(toHold('rtc', 'until-cleared', 'backpressure-hands-over', 'rtc-with-ws-fallback'));
+            .toMatchObject(toHold({ carrier: 'rtc', remaining: 'until-cleared', cell: 'backpressure-hands-over', sendCarrier: 'rtc-with-ws-fallback' }));
         expect(findCommand(scenario.sender, 'release-backpressure'))
-            .toMatchObject(toHold('rtc', 0, 'backpressure-hands-over', 'rtc-with-ws-fallback'));
+            .toMatchObject(toHold({ carrier: 'rtc', remaining: 0, cell: 'backpressure-hands-over', sendCarrier: 'rtc-with-ws-fallback' }));
         // Best effort, priority 0: the default drop-low policy drops it under backpressure.
         expect(findCommand(scenario.sender, 'send-1')).toMatchObject({
             kind: 'messages.send',
@@ -188,14 +199,19 @@ describe('backpressure-hands-over', () => {
         });
         expect(await readTail(scenario.sender, 'observe-acknowledged-1', handedOver)).toBe(true);
         expect(
-            await readTailForEachChange(scenario.sender, 'observe-acknowledged-1', handedOver, [
-                { state: 'expired' },
-                { attemptOutcomes: ['not-ready', 'sent'] },
-                { attemptOutcomes: ['refused', 'not-ready'] },
-                { attemptCarriers: ['ws', 'ws'] },
-                { attemptCarriers: ['rtc', 'rtc'] },
-                { attemptRefusalReasons: ['unsupported'] }
-            ])
+            await readTailForEachChange({
+                recipe: scenario.sender,
+                from: 'observe-acknowledged-1',
+                observation: handedOver,
+                changes: [
+                    { state: 'expired' },
+                    { attemptOutcomes: ['not-ready', 'sent'] },
+                    { attemptOutcomes: ['refused', 'not-ready'] },
+                    { attemptCarriers: ['ws', 'ws'] },
+                    { attemptCarriers: ['rtc', 'rtc'] },
+                    { attemptRefusalReasons: ['unsupported'] }
+                ]
+            })
         ).toEqual([false, false, false, false, false, false]);
         expect(findCommand(scenario.sender, 'assert-congestion-handed-over')).toMatchObject(toCounterRead(scenario.sender, 'handedOver'));
         expect(toCommandNames(scenario.receiver)).toEqual([...RECEIVER_PROLOGUE, 'received-1', 'received-2', 'ws-arrival', 'stats']);
@@ -230,9 +246,9 @@ describe('backpressure-refused', () => {
             'stats'
         ]);
         expect(findCommand(scenario.sender, 'hold-backpressure'))
-            .toMatchObject(toHold('rtc', 'until-cleared', 'backpressure-refused', 'rtc'));
+            .toMatchObject(toHold({ carrier: 'rtc', remaining: 'until-cleared', cell: 'backpressure-refused', sendCarrier: 'rtc' }));
         expect(findCommand(scenario.sender, 'release-backpressure'))
-            .toMatchObject(toHold('rtc', 0, 'backpressure-refused', 'rtc'));
+            .toMatchObject(toHold({ carrier: 'rtc', remaining: 0, cell: 'backpressure-refused', sendCarrier: 'rtc' }));
         expect(findCommand(scenario.sender, 'send-1')).toMatchObject({
             kind: 'messages.send',
             carrier: 'rtc',
@@ -242,11 +258,16 @@ describe('backpressure-refused', () => {
         });
         expect(await readTail(scenario.sender, 'observe-rejected-1', refused)).toBe(true);
         expect(
-            await readTailForEachChange(scenario.sender, 'observe-rejected-1', refused, [
-                { failure: { kind: 'refused', reason: 'capacity' } },
-                { failure: { kind: 'unroutable', reason: 'congested' } },
-                { attempts: 1 }
-            ])
+            await readTailForEachChange({
+                recipe: scenario.sender,
+                from: 'observe-rejected-1',
+                observation: refused,
+                changes: [
+                    { failure: { kind: 'refused', reason: 'capacity' } },
+                    { failure: { kind: 'unroutable', reason: 'congested' } },
+                    { attempts: 1 }
+                ]
+            })
         ).toEqual([false, false, false]);
         expect(findCommand(scenario.sender, 'assert-congestion-dropped')).toMatchObject(toCounterRead(scenario.sender, 'dropped'));
         expect(toCommandNames(scenario.receiver)).toEqual([...RECEIVER_PROLOGUE, 'received-1', 'stats']);
@@ -277,7 +298,9 @@ describe('backpressure-deferred', () => {
                 'assert-congestion-deferred',
                 'stats'
             ]);
-            expect(findCommand(scenario.sender, 'hold-backpressure')).toMatchObject(toHold(held, 'until-cleared', 'backpressure-deferred', carrier));
+            expect(findCommand(scenario.sender, 'hold-backpressure')).toMatchObject(
+                toHold({ carrier: held, remaining: 'until-cleared', cell: 'backpressure-deferred', sendCarrier: carrier })
+            );
             // A positive wait on the page's own deferral of this send, so the release follows a written `defer`.
             expect(findCommand(scenario.sender, 'deferral-1')).toEqual({
                 kind: 'wait',
@@ -290,7 +313,9 @@ describe('backpressure-deferred', () => {
                 },
                 timeoutMs: 10_000
             });
-            expect(findCommand(scenario.sender, 'release-backpressure')).toMatchObject(toHold(held, 0, 'backpressure-deferred', carrier));
+            expect(findCommand(scenario.sender, 'release-backpressure')).toMatchObject(
+                toHold({ carrier: held, remaining: 0, cell: 'backpressure-deferred', sendCarrier: carrier })
+            );
             expect(findCommand(scenario.sender, 'send-1')).toMatchObject({
                 kind: 'messages.send',
                 carrier,
@@ -302,13 +327,18 @@ describe('backpressure-deferred', () => {
             const settled = { state: 'acknowledged', attemptOutcomes: ['sent', 'sent', 'sent'] };
             expect(await readTail(scenario.sender, 'observe-acknowledged-1', settled)).toBe(true);
             expect(
-                await readTailForEachChange(scenario.sender, 'observe-acknowledged-1', settled, [
-                    { state: 'rejected' },
-                    { attemptOutcomes: ['refused', 'sent'] },
-                    { attemptOutcomes: ['not-ready'] },
-                    { attemptOutcomes: ['sent', 'not-ready'] },
-                    { attemptOutcomes: [] }
-                ])
+                await readTailForEachChange({
+                    recipe: scenario.sender,
+                    from: 'observe-acknowledged-1',
+                    observation: settled,
+                    changes: [
+                        { state: 'rejected' },
+                        { attemptOutcomes: ['refused', 'sent'] },
+                        { attemptOutcomes: ['not-ready'] },
+                        { attemptOutcomes: ['sent', 'not-ready'] },
+                        { attemptOutcomes: [] }
+                    ]
+                })
             ).toEqual([false, false, false, false, false]);
             expect(findCommand(scenario.sender, 'assert-unsubmitted-held')).toMatchObject({
                 kind: 'assert',

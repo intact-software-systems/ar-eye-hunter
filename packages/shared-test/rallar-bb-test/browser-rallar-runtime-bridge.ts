@@ -6,6 +6,7 @@ import {
     decodeBlackBoxRallarFormationRoom,
     type BlackBoxRallarFormationInputIssue
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/formation/decode-black-box-rallar-formation-input.ts';
+import { toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
 import type {
@@ -21,12 +22,22 @@ let runtimeImportPromise: Promise<void> | undefined;
 
 export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRuntime {
     return {
+        rtcCaptureSupport: Object.freeze({
+            configurationVersion: 1,
+            modes: Object.freeze(['off', 'signaling', 'native'] as const)
+        }),
         authenticate: async (config) =>
             await (await readBrowserRallarRuntime()).authenticate(decodeBlackBoxRallarConnectionConfig(config)),
         connect: async (config) =>
             await (await readBrowserRallarRuntime()).connect(decodeBlackBoxRallarConnectionConfig(config)),
         send: async (input, deadlineEpochMs) => await (await readBrowserRallarRuntime()).send(input, deadlineEpochMs),
-        sendWs: async (input) => await (await readBrowserRallarRuntime()).sendWs(input),
+        sendWs: async (input, capture = {}) => {
+            const captured = toRallarOperationOptions({
+                rtcCaptureMode: capture.rtcCaptureMode,
+                rtcCaptureContext: capture.rtcCaptureContext
+            });
+            return await (await readBrowserRallarRuntime()).sendWs(input, captured);
+        },
         sendMessage: async (input) => await (await readBrowserRallarRuntime()).sendMessage(input),
         observeDelivery: async (input) => await (await readBrowserRallarRuntime()).observeDelivery(input),
         cancelDelivery: async (input) => await (await readBrowserRallarRuntime()).cancelDelivery(input),
@@ -38,6 +49,18 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
         readCongestionCounters: async () => await readBrowserWindow().__blackBoxRallar?.readCongestionCounters(),
         refreshRoom: async (options) => await (await readBrowserRallarRuntime()).refreshRoom(options),
         waitForRoom: async (options) => await (await readBrowserRallarRuntime()).waitForRoom(options),
+        crdt: {
+            open: async (input) => await (await readBrowserRallarRuntime()).crdt.open(input),
+            apply: async (input) => await (await readBrowserRallarRuntime()).crdt.apply(input),
+            read: async (input) => await (await readBrowserRallarRuntime()).crdt.read(input),
+            sync: async (input) => await (await readBrowserRallarRuntime()).crdt.sync(input),
+            health: async (input) => await (await readBrowserRallarRuntime()).crdt.health(input),
+            wait: async (input) => await (await readBrowserRallarRuntime()).crdt.wait(input),
+            undo: async (input) => await (await readBrowserRallarRuntime()).crdt.undo(input),
+            redo: async (input) => await (await readBrowserRallarRuntime()).crdt.redo(input),
+            close: async (input) => await (await readBrowserRallarRuntime()).crdt.close(input),
+            destroy: async (input) => await (await readBrowserRallarRuntime()).crdt.destroy(input)
+        },
         director: createSpaBrowserRallarDirectorRuntime(),
         formation: createSpaBrowserRallarFormationRuntime(),
         close: async () => await (await readBrowserRallarRuntime()).close(),

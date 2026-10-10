@@ -1,5 +1,4 @@
 import { vi } from 'vitest';
-import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -35,6 +34,7 @@ import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { waitForOwnedQueueWork } from './wait-for-owned-queue-work.ts';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 export const room: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
@@ -72,7 +72,7 @@ export class RtcEndpointFixture {
             dataChannelName: 'test',
 
             rtcSignalingTopicId: 'rtc'
-        }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
+        }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId, nowEpochMs: () => Date.now() });
         for (const peerId of typeof peerIds === 'string' ? [peerIds] : peerIds) {
             const peer = createPeer(sessionId, peerId);
             this.peers.set(peerId, peer);

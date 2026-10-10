@@ -1,6 +1,7 @@
 import { browserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
+import { readSession } from '@shared/api/auth.ts';
 
 /** One browser-wide bound matches the existing shared session/carrier work owner. */
 export const BROWSER_DELIVERY_RETENTION = { retainTerminalMs: 60_000, maxEntries: 512 } as const;
@@ -19,6 +20,6 @@ const deliveries = new BrowserRallarDeliveryRegistry({
         }
     }
 });
-const sessionDeliveries = new BrowserSessionDeliveries(deliveries, browserTransportRuntime);
+const sessionDeliveries = new BrowserSessionDeliveries(deliveries, browserTransportRuntime, readSession);
 
 export const browserDeliveryComposition = { nowMs, deliveries, sessionDeliveries };

@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import {
     computeExecuteManifestFingerprint,
     computeExecuteTargetResolutionComparison,
@@ -17,6 +21,7 @@ import type {
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedTargetResolution
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const GROUP: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'app-a',
@@ -216,6 +221,42 @@ describe('Recipe Console Execute manifest', () => {
         expect(draft.fingerprint).toBe(fingerprintText(draft.manifest));
     });
 
+    it.each([undefined, 'off', 'signaling', 'native'] as const)(
+        'preserves authored recipe and step capture while selecting run mode %s',
+        (rtcCaptureMode) => {
+            for (const authored of ['native', 'off'] as const) {
+                const entry = selectedRecipe();
+                const recipe: RallarBlackBoxTestRecipe = {
+                    ...entry.item.recipe,
+                    rtcCaptureMode: authored,
+                    commands: [{ kind: 'rtc.connect', connection: 'authored-capture', rallar: { rtcCaptureMode: authored } }]
+                };
+                const selected = { ...entry, item: { ...entry.item, recipe } };
+                const before = JSON.stringify(recipe);
+                const draft = createExecuteManifestDraft({
+                    distributedRunId: 'distributed-capture',
+                    controlRunId: 'control-a',
+                    group: GROUP,
+                    selectedRecipe: selected,
+                    selectedAgentIds: ['agent-a'],
+                    rtcCaptureMode
+                }).right;
+
+                expect(draft).toBeDefined();
+                expect(draft?.validationIssues).toEqual([]);
+                expect(draft?.manifest.rtcCaptureMode).toBe(rtcCaptureMode);
+                expect(Object.hasOwn(draft?.manifest ?? {}, 'rtcCaptureMode')).toBe(rtcCaptureMode !== undefined);
+                expect(draft?.manifest.recipes[0]?.recipe).toBe(recipe);
+                expect(draft?.manifest.recipes[0]?.recipe?.rtcCaptureMode).toBe(authored);
+                expect(draft?.manifest.recipes[0]?.recipe?.commands).toEqual([
+                    { kind: 'rtc.connect', connection: 'authored-capture', rallar: { rtcCaptureMode: authored } }
+                ]);
+                expect(JSON.stringify(recipe)).toBe(before);
+                expect(JSON.parse(draft?.rawJson ?? 'null')?.rtcCaptureMode).toBe(rtcCaptureMode);
+            }
+        }
+    );
+
     it('projects an authoritative stored manifest without rebuilding its intent', () => {
         const generated = manifestDraft();
         const stored = {
@@ -402,6 +443,9 @@ describe('Recipe Console Execute manifest', () => {
         const changes: readonly RallarBlackBoxDistributedRunManifest[] = [
             { ...manifest, distributedRunId: 'distributed-changed' },
             { ...manifest, controlRunId: 'control-changed' },
+            { ...manifest, rtcCaptureMode: 'off' },
+            { ...manifest, rtcCaptureMode: 'signaling' },
+            { ...manifest, rtcCaptureMode: 'native' },
             { ...manifest, displayName: 'Changed display name' },
             { ...manifest, description: 'Changed description' },
             { ...manifest, group: { ...manifest.group, applicationId: 'app-b' } },

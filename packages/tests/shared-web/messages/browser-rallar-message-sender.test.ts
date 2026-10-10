@@ -1,7 +1,6 @@
 import type { ALQosPolicyRequest } from '@shared-web/browser/rallar-messages.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -140,7 +139,7 @@ describe('Rallar message send', () => {
                 }
             },
             forwarding: {
-                overlayId: toScopedOverlayId(room.group)
+                overlayId: '["app-1","workspace-1","room-1"]'
             }
         });
     });

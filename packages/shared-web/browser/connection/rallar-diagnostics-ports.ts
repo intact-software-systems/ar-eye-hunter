@@ -14,6 +14,7 @@ import {
     type TransportFaultPort,
     type WebSocketSubmissionReadinessFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export interface RallarDiagnosticsPortsInput {
     readonly submissionReadinessFaultPort?: WebSocketSubmissionReadinessFaultPort;
@@ -22,6 +23,7 @@ export interface RallarDiagnosticsPortsInput {
     readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
     readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
     readonly storage?: ALStorageEventSink;
+    readonly signalingDiagnostics?: RtcSignalingDiagnostics['record'];
 }
 
 export interface RallarDiagnosticsPorts {
@@ -31,6 +33,7 @@ export interface RallarDiagnosticsPorts {
     readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink;
     readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink;
     readonly storage: ALStorageEventSink;
+    readonly signalingDiagnostics?: RtcSignalingDiagnostics['record'];
 }
 
 export function createPassThroughALOutboundRuntimeDiagnosticsSink(): ALOutboundRuntimeDiagnosticsSink {
@@ -52,6 +55,7 @@ export function toRallarDiagnosticsPorts(
             createPassThroughIndexedDbOperationObserver(),
         outboundDiagnostics: input?.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink(),
         inboundDiagnostics: input?.inboundDiagnostics ?? createPassThroughALInboundRuntimeDiagnosticsSink(),
-        storage: input?.storage ?? createPassThroughALStorageEventSink()
+        storage: input?.storage ?? createPassThroughALStorageEventSink(),
+        signalingDiagnostics: input?.signalingDiagnostics
     };
 }

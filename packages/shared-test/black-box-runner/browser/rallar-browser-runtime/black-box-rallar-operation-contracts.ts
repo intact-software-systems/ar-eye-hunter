@@ -2,9 +2,11 @@ import type {
     RallarMessagePayload,
     RallarStorageUnavailablePolicy
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRtcRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type {
     RallarConnectStatus,
+    RallarDefaults,
     RallarDirectorRelaySendResult,
     RallarDirectorStatus,
     RallarMessageSelectorInput,
@@ -57,6 +59,7 @@ import type {
     RallarCrdtValidationOptions
 } from '@shared/crdt/mod.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import type { BlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
 
@@ -78,8 +81,10 @@ export interface BlackBoxRallarRoomRef {
     readonly groupId: string;
 }
 
-export interface BlackBoxRallarConfig {
+export interface BlackBoxRallarConfig extends Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'> {
     readonly apiBaseUrl: string;
+    /** Host settings are distinct from the per-operation rtcCaptureMode above. */
+    readonly rtc?: Pick<NonNullable<RallarDefaults['rtc']>, 'captureMode'>;
     readonly applicationId?: string;
     readonly workspaceId?: string;
     readonly scope?: BlackBoxRallarScope;
@@ -196,6 +201,7 @@ export interface BlackBoxRallarDocumentFacts {
 }
 
 export interface BlackBoxRallarConnectDiagnostics {
+    readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     readonly document: BlackBoxRallarDocumentFacts;
     readonly status: 'connected';
     readonly connection: string;
@@ -268,6 +274,7 @@ export type BlackBoxRallarSendDiagnostics =
 
 /** The room fields appear only when the send names a room or an application. */
 export interface BlackBoxRallarWsSendDiagnostics {
+    readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     readonly status: 'sent';
     readonly connection: string;
     readonly actor: string | undefined;
@@ -547,6 +554,7 @@ export interface BlackBoxRallarCrdtRuntimeSummary {
 }
 
 export interface BlackBoxRallarCrdtCommandDiagnostics {
+    readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     readonly status:
         | 'opened'
         | 'applied'

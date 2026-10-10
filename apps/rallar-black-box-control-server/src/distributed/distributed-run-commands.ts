@@ -11,9 +11,10 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import { toDistributedRecipeKey } from '@shared-test/rallar-bb-test/distributed/resolve-distributed-run-targets.ts';
 import { toCommandIdSegment } from '../control-command-queue-policy.ts';
 import type { ControlDistributedRunState, ControlRunState } from '../control-service-state.ts';
-import { toDistributedRecipeKey, toRecipeSelectionsForAgent } from './distributed-run-targeting.ts';
+import { toRecipeSelectionsForAgent } from './distributed-run-targeting.ts';
 
 export interface DistributedPhaseCommand {
     readonly phase: ControlDistributedRunCommandPhase;
@@ -94,18 +95,17 @@ export function bindDistributedAlmReloadCommands(
         sender: toDistributedReloadRoot(distributedRun, sender, terminalSeconds * 1_000),
         receiver: toDistributedReloadRoot(distributedRun, receiver, terminalSeconds * 1_000)
     });
-    if (bound.left) {
-        return Either.ofLeft(bound.left);
-    }
-    return Either.ofRight(commands.map((entry) => {
-        if (entry === sender) {
-            return { ...entry, command: bound.right!.sender.command };
-        }
-        if (entry === receiver) {
-            return { ...entry, command: bound.right!.receiver.command };
-        }
-        return entry;
-    }));
+    return bound.mapRight((pair) =>
+        commands.map((entry) => {
+            if (entry === sender) {
+                return { ...entry, command: pair.sender.command };
+            }
+            if (entry === receiver) {
+                return { ...entry, command: pair.receiver.command };
+            }
+            return entry;
+        })
+    );
 }
 
 export function toDistributedBarrierCommands(
@@ -210,15 +210,16 @@ function toDistributedStartCommand(target: DistributedRecipeTarget): RallarBlack
     const selection = target.selection;
     const commandId = toDistributedCommandId(target, toDistributedRecipeKey(selection) ?? 'recipe');
     const metadata = toDistributedCommandMetadata(target);
-    return selection.recipe
-        ? {
-            kind: 'recipe.run',
-            commandId,
-            label: `Run ${selection.recipe.recipeId}`,
-            recipe: selection.recipe,
-            metadata
-        }
-        : { kind: 'recipe.run', commandId, label: `Run ${selection.recipeId ?? 'loaded recipe'}`, metadata };
+    return {
+        kind: 'recipe.run',
+        commandId,
+        label: `Run ${selection.recipe?.recipeId ?? selection.recipeId}`,
+        ...(selection.recipe === undefined ? {} : { recipe: selection.recipe }),
+        ...(target.distributedRun.manifest.rtcCaptureMode === undefined
+            ? {}
+            : { rtcCaptureMode: target.distributedRun.manifest.rtcCaptureMode }),
+        metadata
+    };
 }
 
 function toRecipePhaseTargets(

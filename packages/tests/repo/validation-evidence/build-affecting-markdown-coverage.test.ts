@@ -22,7 +22,7 @@ const markdownPattern = /\.mdx?$/u;
 const stringLiteralPattern = /(['"`])((?:(?!\1)[^\\\n]|\\.)*?)\1/gu;
 // These tests name README.md only for a file they write into a temporary repository.
 const fixtureOnlyMarkdownReferences: readonly MarkdownReference[] = [
-    { testPath: 'packages/tests/hetzner/distributed-recipe-workflow.test.ts', markdownPath: 'README.md' },
+    { testPath: 'packages/tests/hetzner/controller-deployment.test.ts', markdownPath: 'README.md' },
     { testPath: 'packages/tests/repo/repo-style-reviewed-dispositions.test.ts', markdownPath: 'README.md' }
 ];
 

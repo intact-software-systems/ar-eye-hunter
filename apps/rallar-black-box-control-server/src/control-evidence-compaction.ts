@@ -1,14 +1,26 @@
+import { RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH } from '@shared-test/rallar-bb-test/composite-result-paths.ts';
+import {
+    toRallarBlackBoxCompositeResultTree,
+    type RallarBlackBoxCompositeResultTreeNode
+} from '@shared-test/rallar-bb-test/composite-results.ts';
 import type { ControlEventEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecord,
-    RallarBlackBoxTestRedactionOptions
+    RallarBlackBoxTestRedactionOptions,
+    RallarBlackBoxTestResult
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
+import { decodeJsonValue, decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 
-type DistributedAssessmentEvidenceSource = Pick<ControlDistributedRunSnapshot, 'manifest' | 'commandLinks'>;
+interface DistributedAssessmentEvidenceSource {
+    readonly manifest: ControlDistributedRunSnapshot['manifest'];
+    readonly commandLinks: ControlDistributedRunSnapshot['commandLinks'];
+}
 
 export interface StoredControlResultInput {
     readonly envelope: ControlResultEnvelope;
@@ -56,18 +68,11 @@ export function toControlReportDedupeKey(envelope: ControlEventEnvelope): string
 
 export function toCompactedResultEnvelope(envelope: ControlResultEnvelope): ControlResultEnvelope {
     const result = envelope.result;
-    const value = result?.value;
-    if (!result || !isJsonRecordValue(value) || !Array.isArray(value.results)) {
+    if (!result || (result.kind !== 'recipe.run' && result.kind !== 'loop' && result.kind !== 'parallel')) {
         return envelope;
     }
-
-    return {
-        ...envelope,
-        result: {
-            ...result,
-            value: toCompactedCompositeValue(value)
-        }
-    };
+    const node = toRallarBlackBoxCompositeResultTree([result])[0];
+    return node ? { ...envelope, result: toCompactedResult(node) } : envelope;
 }
 
 export function toDistributedAssessmentEvidenceCommandIds(
@@ -117,20 +122,156 @@ function toCompactedReport(report: RallarBlackBoxTestRecord): RallarBlackBoxTest
     };
 }
 
-function toCompactedCompositeValue(value: RallarBlackBoxTestRecord): RallarBlackBoxTestRecord {
-    const resultCount = Array.isArray(value.results) ? value.results.length : 0;
-    const failedChildren: readonly RallarBlackBoxTestRecord[] = Array.isArray(value.results)
-        ? value.results.filter(isFailedCompositeChild)
-        : [];
-    const failures = failedChildren.slice(0, COMPACTED_CHILD_FAILURE_LIMIT).map(toCompactedChildFailure);
-    const { results: _results, ...rest } = value;
+/** Retains finite result identity and capture facts, not arbitrary successful child payloads. */
+function toCompactedResult(node: RallarBlackBoxCompositeResultTreeNode): RallarBlackBoxTestResult {
+    const result = node.entry.result;
+    const value = decodeRecord(result.value);
+    const composite = result.kind === 'recipe.run' || result.kind === 'loop' || result.kind === 'parallel';
+    const readout = value.rtcCapture === undefined
+        ? undefined
+        : toRtcCaptureReadout(decodeJsonValue(value.rtcCapture)).right;
+    const leaf = result.kind === 'recipe.load'
+        ? toFiniteFields(value, ['recipeId', 'recipeBodyId'])
+        : readout === undefined ? undefined : { ...toFiniteIdentity(value), rtcCapture: readout };
     return {
-        ...rest,
-        resultCount,
-        failureCount: failedChildren.length,
-        ...(failures.length > 0 ? { failures } : {}),
-        resultsOmitted: true
+        commandId: result.commandId,
+        kind: result.kind,
+        status: result.status,
+        ok: result.ok,
+        startedAtEpochMs: result.startedAtEpochMs,
+        endedAtEpochMs: result.endedAtEpochMs,
+        durationMs: result.durationMs,
+        ...(result.replayed === undefined ? {} : { replayed: result.replayed }),
+        ...(result.error === undefined ? {} : { error: { code: result.error.code, message: result.error.message } }),
+        ...(composite
+            ? { value: toCompactedCompositeValue(node) }
+            : leaf === undefined
+            ? {}
+            : { value: leaf })
     };
+}
+
+function toFiniteIdentity(value: RallarBlackBoxTestRecord): RallarBlackBoxTestRecord {
+    const identity = toFiniteFields(value, [
+        'status',
+        'connection',
+        'actor',
+        'transport',
+        'roomId',
+        'applicationId',
+        'workspaceId',
+        'clientId',
+        'sessionId',
+        'username',
+        'laneId',
+        'typeId',
+        'topicId'
+    ]);
+    const document = isJsonRecordValue(value.document)
+        ? toFiniteFields(value.document, ['origin', 'timeOrigin'])
+        : undefined;
+    const scope = isJsonRecordValue(value.scope)
+        ? toFiniteFields(value.scope, ['applicationId', 'workspaceId'])
+        : typeof value.scope === 'string'
+        ? value.scope
+        : undefined;
+    const roomRef = isJsonRecordValue(value.roomRef)
+        ? toFiniteFields(value.roomRef, ['applicationId', 'workspaceId', 'groupId'])
+        : undefined;
+    return {
+        ...identity,
+        ...(document === undefined ? {} : { document }),
+        ...(scope === undefined ? {} : { scope }),
+        ...(roomRef === undefined ? {} : { roomRef })
+    };
+}
+
+/** A fixed domain field projection; objects and arbitrary payloads never pass this boundary. */
+function toFiniteFields(value: RallarBlackBoxTestRecord, fields: readonly string[]): RallarBlackBoxTestRecord {
+    return Object.fromEntries(
+        fields.flatMap((key) =>
+            typeof value[key] === 'string' || (typeof value[key] === 'number' && Number.isFinite(value[key]))
+                ? [[key, value[key]]]
+                : []
+        )
+    );
+}
+
+function toCompactedCompositeValue(node: RallarBlackBoxCompositeResultTreeNode): RallarBlackBoxTestRecord {
+    const value = decodeRecord(node.entry.result.value);
+    const failedChildren = Array.isArray(value.results) ? value.results.filter(isFailedCompositeChild) : [];
+    const failures = failedChildren.slice(0, COMPACTED_CHILD_FAILURE_LIMIT).map(toCompactedChildFailure);
+    const resultCount = typeof value.resultCount === 'number'
+        ? value.resultCount
+        : Array.isArray(value.results)
+        ? value.results.length
+        : node.children.length;
+    const limited = hasLimitedEvidence(node);
+    const {
+        results: _results,
+        groups: _groups,
+        invocation: _invocation,
+        recipeId: _recipeId,
+        resultsOmitted: _resultsOmitted,
+        ...summary
+    } = value;
+    const identity = node.entry.kind === 'recipe.run'
+        ? {
+            recipeId: typeof value.recipeId === 'string' ? value.recipeId : undefined,
+            invocation: toFiniteFields(decodeRecord(value.invocation), [
+                'invocationId',
+                'recipeBodyId',
+                'run',
+                'recipe',
+                'step'
+            ])
+        }
+        : {};
+    return {
+        ...summary,
+        ...identity,
+        resultCount,
+        failureCount: typeof value.failureCount === 'number' ? value.failureCount : failedChildren.length,
+        ...(failures.length > 0 ? { failures } : {}),
+        resultEvidence: { status: limited ? 'limited' : 'finite', payloadsOmitted: true },
+        ...(node.entry.kind === 'parallel'
+            ? { groups: toCompactedParallelGroups(node) }
+            : { results: node.children.map((child) => toCompactedChild(child, node)) })
+    };
+}
+
+function toCompactedChild(
+    node: RallarBlackBoxCompositeResultTreeNode,
+    parent: RallarBlackBoxCompositeResultTreeNode
+): RallarBlackBoxTestRecord {
+    const position = node.entry.position;
+    const result = toCompactedResult(node);
+    if (position.kind === 'root' || position.kind === 'recipe-child') {
+        return { ...result };
+    }
+    return {
+        ...position,
+        commandId: result.commandId,
+        path: toRelativeCompositePath(parent.entry.path, node.entry.path),
+        sourceRecipePath: toRelativeCompositePath(parent.entry.sourceRecipePath, node.entry.sourceRecipePath),
+        result
+    };
+}
+
+function toCompactedParallelGroups(node: RallarBlackBoxCompositeResultTreeNode): readonly RallarBlackBoxTestRecord[] {
+    const value = decodeRecord(node.entry.result.value);
+    const groups = Array.isArray(value.groups) ? value.groups : [];
+    return groups.slice(0, RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands).map((value, groupIndex) => {
+        const group = decodeRecord(value);
+        return {
+            ...toFiniteFields(group, ['groupId', 'commandCount', 'passed', 'failed', 'durationMs']),
+            ...(typeof group.cancelled === 'boolean' ? { cancelled: group.cancelled } : {}),
+            results: node.children.filter((child) =>
+                child.entry.position.kind === 'parallel-child' && child.entry.position.groupIndex === groupIndex
+            )
+                .map((child) => toCompactedChild(child, node))
+        };
+    });
 }
 
 function isFailedCompositeChild(child: unknown): child is RallarBlackBoxTestRecord {
@@ -154,4 +295,20 @@ function toCompactedChildFailure(child: RallarBlackBoxTestRecord): RallarBlackBo
         ok: child.ok ?? result?.ok,
         error: error ? { code: error.code, message: error.message } : undefined
     };
+}
+
+/** Compaction writes the owned child-relative path; the reader rebases it exactly once. */
+function toRelativeCompositePath(parentPath: string, childPath: string): string {
+    return childPath.startsWith(`${parentPath}.`)
+        ? `${RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH}${childPath.slice(parentPath.length)}`
+        : childPath;
+}
+
+function hasLimitedEvidence(node: RallarBlackBoxCompositeResultTreeNode): boolean {
+    const value = decodeRecord(node.entry.result.value);
+    return (Array.isArray(value.groups) &&
+        value.groups.length > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands) ||
+        node.entry.childDecodeIssues.length > 0 ||
+        decodeRecord(decodeRecord(node.entry.result.value).resultEvidence).status === 'limited' ||
+        node.children.some(hasLimitedEvidence);
 }

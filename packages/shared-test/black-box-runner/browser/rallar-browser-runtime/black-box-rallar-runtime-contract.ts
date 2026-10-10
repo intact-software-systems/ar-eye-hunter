@@ -1,5 +1,6 @@
 import type { RallarBlackBoxTestAlmUsage } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
@@ -38,7 +39,8 @@ export interface BlackBoxRallarRoomWaitOptions {
 }
 
 /** The payload is resolved while decoding: the named payload or data, otherwise the whole send. */
-export interface BlackBoxRallarWsSendInput {
+export interface BlackBoxRallarWsSendInput
+    extends Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'> {
     readonly payload: RallarMessagePayload;
     readonly scope?: 'room' | 'world';
     readonly roomId?: string;
@@ -70,7 +72,10 @@ export interface BlackBoxRallarRuntime {
     ): Promise<BlackBoxRallarConnectDiagnostics>;
     /** An absent deadline gives typed-message admission its default wait budget; realtime sends ignore it. */
     send(input: unknown, deadlineEpochMs?: number): Promise<BlackBoxRallarSendDiagnostics>;
-    sendWs(input: unknown): Promise<BlackBoxRallarWsSendDiagnostics>;
+    sendWs(
+        input: unknown,
+        capture?: Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'>
+    ): Promise<BlackBoxRallarWsSendDiagnostics>;
     sendMessage(
         input: unknown
     ): Promise<BlackBoxRallarMessageSendDiagnostics | BlackBoxRallarMessageReplayDiagnostics>;

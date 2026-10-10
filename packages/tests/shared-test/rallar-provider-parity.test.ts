@@ -11,12 +11,13 @@ import type {
     ControlEventEnvelope,
     ControlResultEnvelope
 } from '../../shared-test/rallar-bb-test/control-protocol.ts';
+import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import {
     compareRallarBlackBoxProviderParityReports,
+    createDefaultRallarBlackBoxTestRuntime,
     createRallarBlackBoxProviderParityRecipe,
     createRallarBlackBoxRtcClient,
     createRallarBlackBoxRtcProvider,
-    createRallarBlackBoxTestRuntime,
     normalizeBlackBoxRunnerParityReport,
     normalizeRallarBlackBoxRuntimeParityReport,
     toRallarBlackBoxRunnerParityInteractions,
@@ -25,6 +26,7 @@ import {
     type RallarBlackBoxTestJsonValue,
     type RallarBlackBoxTestResult
 } from '../../shared-test/rallar-bb-test/mod.ts';
+import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { toJsonResponse } from './fake-remote-browser-control-server.ts';
 
 class FakeRemoteControlServer {
@@ -32,16 +34,19 @@ class FakeRemoteControlServer {
     readonly results: ControlResultEnvelope[] = [];
     readonly events: ControlEventEnvelope[] = [];
 
-    fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    readonly fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => this.respondToRequest(input, init);
+
+    private async respondToRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
         const url = new URL(String(input));
         const commandMatch = url.pathname.match(/^\/runs\/([^/]+)\/agents\/([^/]+)\/commands$/);
         if (init?.method === 'POST' && commandMatch) {
             const runId = decodeURIComponent(commandMatch[1]);
             const agentId = decodeURIComponent(commandMatch[2]);
-            const body = JSON.parse(String(init.body ?? '{}')) as {
-                command: RallarBlackBoxTestCommand;
-            };
-            this.recordCommand(runId, agentId, body.command);
+            const body: RallarBlackBoxTestJsonValue = JSON.parse(String(init.body ?? '{}'));
+            if (!isJsonRecordValue(body) || !validateRallarBlackBoxTestCommand(body.command).ok) {
+                throw new Error('Fake control request does not contain a valid command.');
+            }
+            this.recordCommand(runId, agentId, body.command as RallarBlackBoxTestCommand);
             return toJsonResponse({ accepted: true }, 202);
         }
 
@@ -55,7 +60,7 @@ class FakeRemoteControlServer {
         }
 
         return toJsonResponse({ error: 'Not found' }, 404);
-    };
+    }
 
     private recordCommand(runId: string, agentId: string, command: RallarBlackBoxTestCommand): void {
         this.commands.push(command);
@@ -188,9 +193,10 @@ describe('rallar provider parity helpers', () => {
             'reset'
         ]);
         expect(
-            recipe.commands.map((command) => command.metadata?.parity)
-                .filter(Boolean)
-                .map((parity) => (parity as { operation: string; }).operation)
+            recipe.commands.flatMap((command) => {
+                const parity = command.metadata?.parity;
+                return isJsonRecordValue(parity) ? [parity.operation] : [];
+            })
         )
             .toEqual([
                 'configure',
@@ -219,7 +225,7 @@ describe('rallar provider parity helpers', () => {
             includeReceiveWaits: false
         });
         const executedCommands: RallarBlackBoxTestCommand[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: (command, context) => {
                 executedCommands.push(command);
                 if (command.kind === 'rtc.send') {
@@ -299,7 +305,7 @@ describe('rallar provider parity helpers', () => {
     });
 
     it('names facade adapter commands from the runner commandId or the generated sequence', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const request = { roomId: 'rallar-black-box-room', applicationId: 'rallar-server' };
         const generated = createRallarBlackBoxRtcClient(
             runtime,
@@ -322,7 +328,7 @@ describe('rallar provider parity helpers', () => {
     });
 
     it('names the facade adapter connection the way the runner names the RTC connection', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const requests = [
             { actor: 'bob', peerId: 'bob-peer' },
             { name: 'carol', clientId: 'carol-client' },
@@ -342,7 +348,7 @@ describe('rallar provider parity helpers', () => {
     });
 
     it('forwards only text actors and rooms and a finite minimum snapshot version, reading past null request fields', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const runtimeCommands = vi.spyOn(runtime, 'execute');
         const requests = [
             {
@@ -381,7 +387,7 @@ describe('rallar provider parity helpers', () => {
     });
 
     it('hands a message listener no message and a close listener the event when the event carries no JSON payload', () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const client = createRallarBlackBoxRtcClient(runtime, { name: 'alice' }, { commandIdPrefix: 'rallar-bb' });
         const messages: Array<RallarBlackBoxTestJsonValue | undefined> = [];
         const closes: Array<RallarBlackBoxTestJsonValue | RallarBlackBoxTestEvent> = [];

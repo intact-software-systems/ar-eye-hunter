@@ -5,6 +5,7 @@ import type {
     RallarBlackBoxTestResult
 } from '../rallar-black-box-test-contracts.ts';
 import { toBoundedDeadlineCommand } from '../runtime/to-runtime-command-values.ts';
+import type { RecipeCaptureSequence } from './recipe-capture-sequence.ts';
 
 export interface RecipeCommandsPorts {
     readonly now: () => number;
@@ -14,6 +15,13 @@ export interface RecipeCommandsPorts {
 
 export interface RunRecipeCommandsInput {
     readonly recipe: RallarBlackBoxTestRecipe;
+    readonly invocation:
+        & RecipeCaptureSequence.Selection
+        & Readonly<{
+            invocationId: string;
+            /** Runtime acceptance identity, not a content hash of opaque payloads. */
+            recipeBodyId: string;
+        }>;
     /** The recipe.run command's own timeout, reported when the deadline passes. */
     readonly timeoutMs: number | undefined;
     /** Absent when neither the recipe.run command nor its parent sets a deadline. */
@@ -28,7 +36,7 @@ export async function runRecipeCommands(input: RunRecipeCommandsInput): Promise<
     const results: RallarBlackBoxTestResult[] = [];
     for (const child of recipe.commands) {
         if (ports.cancelRequested()) {
-            return toCancelledRecipeOutcome(recipe, results);
+            return toCancelledRecipeOutcome(input, results);
         }
         if (deadlineEpochMs !== undefined && ports.now() >= deadlineEpochMs) {
             return toTimedOutRecipeOutcome(input, results);
@@ -37,34 +45,38 @@ export async function runRecipeCommands(input: RunRecipeCommandsInput): Promise<
         const result = await ports.runChildCommand(command);
         results.push(result);
         if (ports.cancelRequested() || result.status === 'cancelled') {
-            return toCancelledRecipeOutcome(recipe, results);
+            return toCancelledRecipeOutcome(input, results);
         }
         if (!result.ok && recipe.continueOnFailure !== true) {
-            return toFailedRecipeOutcome(recipe, results, result);
+            return toFailedRecipeOutcome(input, results, result);
         }
     }
-    return { status: 'ok', value: { recipeId: recipe.recipeId, results }, nextStatus: 'completed' };
+    return {
+        status: 'ok',
+        value: { recipeId: recipe.recipeId, invocation: input.invocation, results },
+        nextStatus: 'completed'
+    };
 }
 
 function toCancelledRecipeOutcome(
-    recipe: RallarBlackBoxTestRecipe,
+    input: RunRecipeCommandsInput,
     results: readonly RallarBlackBoxTestResult[]
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'cancelled',
-        value: { recipeId: recipe.recipeId, results, cancelled: true },
+        value: { recipeId: input.recipe.recipeId, invocation: input.invocation, results, cancelled: true },
         nextStatus: 'cancelled'
     };
 }
 
 function toFailedRecipeOutcome(
-    recipe: RallarBlackBoxTestRecipe,
+    input: RunRecipeCommandsInput,
     results: readonly RallarBlackBoxTestResult[],
     failed: RallarBlackBoxTestResult
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'failed',
-        value: { recipeId: recipe.recipeId, results },
+        value: { recipeId: input.recipe.recipeId, invocation: input.invocation, results },
         nextStatus: 'failed',
         error: {
             code: 'RALLAR_BLACK_BOX_RECIPE_FAILED',
@@ -80,7 +92,7 @@ function toTimedOutRecipeOutcome(
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'failed',
-        value: { recipeId: input.recipe.recipeId, results, timedOut: true },
+        value: { recipeId: input.recipe.recipeId, invocation: input.invocation, results, timedOut: true },
         error: {
             code: RALLAR_BLACK_BOX_RECIPE_TIMEOUT,
             message: 'Recipe reached its timeout before all commands completed.',

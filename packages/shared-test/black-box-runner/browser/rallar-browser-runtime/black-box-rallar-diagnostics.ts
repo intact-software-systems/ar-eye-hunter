@@ -1,6 +1,5 @@
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import type { BlackBoxBrowserDiagnosticsDependency } from './browser-rallar-runtime-composition.ts';
 
 import type {
     BlackBoxRallarConnectionConfig,
@@ -9,6 +8,8 @@ import type {
 } from './black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarScopeDiagnostics } from './black-box-rallar-operation-policy.ts';
 import { toBlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
+import type { BlackBoxBrowserDiagnosticsDependency } from './browser-rallar-runtime-composition.ts';
+import { toRtcNativeObservationProjection } from './rtc-native-observation-projection.ts';
 
 interface ConsoleWarning {
     readonly topic: string;
@@ -133,6 +134,17 @@ export function createBlackBoxRallarDiagnosticsPorts(
                 topic: 'rallar.browser.alm.inbound_diagnostics',
                 data: { ...event }
             }),
+        signalingDiagnostics: (event) => {
+            const native = toRtcNativeObservationProjection(event);
+            if (native.recognized && !native.event) {
+                return;
+            }
+            diagnostics.emit({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.rtc.signaling_diagnostics',
+                data: native.event ?? { ...event }
+            });
+        },
         storage: (event) => {
             effects.orderingTracks.observe(event);
             if (event.kind === 'reset') {

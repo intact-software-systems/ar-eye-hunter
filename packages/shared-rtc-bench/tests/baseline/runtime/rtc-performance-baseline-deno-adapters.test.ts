@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createDenoRtcBaselineAdapters, type RtcBaselineDenoPort } from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
 import { createRtcBaselineDenoObservation } from '../../../baseline/runtime/rtc-baseline-runtime-observation.ts';
-function createRuntimeDouble() {
+interface RtcBaselineRuntimeDouble {
+    readonly calls: string[];
+    readonly runtime: RtcBaselineDenoPort;
+}
+
+function createRuntimeDouble(): RtcBaselineRuntimeDouble {
     const calls: string[] = [];
     const runtime: RtcBaselineDenoPort = {
         envGet: (name: string) => {
@@ -17,6 +22,29 @@ function createRuntimeDouble() {
         kill: (processId: number, signal: number) => {
             calls.push(`kill:${processId}:${signal}`);
         },
+        ...createRuntimeFileDouble(calls),
+        command: async (executable: string, args: readonly string[]) => {
+            calls.push(`run:${executable}:${args.join(',')}`);
+            const stdout = executable === 'uname' ? '24.6.0\n' : executable === 'sysctl' ? 'Apple M4\n' : 'output\n';
+            return { code: 0, stdout: new TextEncoder().encode(stdout), stderr: new Uint8Array() };
+        },
+        now: () => new Date('2026-08-07T10:00:00.000Z'),
+        performanceNow: () => 123.5,
+        systemMemoryInfo: () => ({ total: 17179869184 }),
+        availableParallelism: () => 10,
+        errors: {
+            NotFound: class NotFound extends Error {},
+            AlreadyExists: class AlreadyExists extends Error {},
+            PermissionDenied: class PermissionDenied extends Error {}
+        }
+    };
+    return {
+        calls,
+        runtime
+    };
+}
+function createRuntimeFileDouble(calls: string[]): Pick<RtcBaselineDenoPort, 'lstat' | 'open' | 'mkdir' | 'readFile' | 'writeFile' | 'remove' | 'readDir'> {
+    return {
         lstat: async (path: string) => {
             calls.push(`lstat:${path}`);
             return {
@@ -47,25 +75,7 @@ function createRuntimeDouble() {
         readDir: async function* (path: string) {
             calls.push(`list:${path}`);
             yield { name: 'one', isFile: true, isDirectory: false, isSymlink: false };
-        },
-        command: async (executable: string, args: readonly string[]) => {
-            calls.push(`run:${executable}:${args.join(',')}`);
-            const stdout = executable === 'uname' ? '24.6.0\n' : executable === 'sysctl' ? 'Apple M4\n' : 'output\n';
-            return { code: 0, stdout: new TextEncoder().encode(stdout), stderr: new Uint8Array() };
-        },
-        now: () => new Date('2026-08-07T10:00:00.000Z'),
-        performanceNow: () => 123.5,
-        systemMemoryInfo: () => ({ total: 17179869184 }),
-        availableParallelism: () => 10,
-        errors: {
-            NotFound: class NotFound extends Error {},
-            AlreadyExists: class AlreadyExists extends Error {},
-            PermissionDenied: class PermissionDenied extends Error {}
         }
-    };
-    return {
-        calls,
-        runtime
     };
 }
 function captureRequest(environmentId: 'E1-local' | 'E5-remote') {
@@ -298,6 +308,31 @@ describe('RTC baseline Deno adapters', () => {
             'read:packages/shared-rtc-bench/deno.json'
         ]);
     });
+    it.each([false, true])('binds selected native tool hashes through the existing owner and fails closed on resolver failure=%s', async (fails) => {
+        const double = createRuntimeDouble();
+        const selected = 'node_modules/@rolldown/binding-linux-x64-gnu/rolldown-binding.linux-x64-gnu.node';
+        double.runtime.command = async () => ({
+            code: fails ? 1 : 0,
+            stdout: new TextEncoder().encode(JSON.stringify([selected])),
+            stderr: new TextEncoder().encode('private override value must never escape')
+        });
+        const result = await createDenoRtcBaselineAdapters(double.runtime).sourceConfigHashing.read([{
+            path: 'node_modules/typescript/package.json',
+            kind: 'config'
+        }]);
+        if (fails) {
+            expect(result).toMatchObject({ ok: false, issues: [{ code: 'unbound-build-tool-owner' }] });
+        }
+        else {
+            expect(result.ok ? result.value : result).toContainEqual({
+                path: selected,
+                kind: 'config',
+                sha256: '277089d91c0bdf4f2e6862ba7e4a07605119431f5d13f726dd352b06f1b206a9'
+            });
+        }
+        expect(JSON.stringify(result)).not.toContain('private override');
+    });
+
     it('returns a typed source/config read failure without a partial hash list', async () => {
         const double = createRuntimeDouble();
         double.runtime.readFile = async (path) => {

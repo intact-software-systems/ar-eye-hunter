@@ -3,9 +3,16 @@ import type {
     RallarBlackBoxDistributedRoleAssignment,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRecipeSelection,
+    RallarBlackBoxDistributedTargetPolicy,
     RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import { computeDistributedTargetResolutionSummary } from '@shared-test/rallar-bb-test/distributed/resolve-distributed-run-targets.ts';
+import {
+    computeDistributedTargetResolutionSummary,
+    toDistributedAgentRecipeSelections
+} from '@shared-test/rallar-bb-test/distributed/resolve-distributed-run-targets.ts';
+import { toMissingRtcCaptureSupportReason } from '@shared-test/rallar-bb-test/distributed/rtc-capture-support.ts';
+import { RecipeCaptureRequirements } from '@shared-test/rallar-bb-test/recipe/recipe-capture-requirements.ts';
+import { snapshotExecutableRecipe } from '@shared-test/rallar-bb-test/recipe/snapshot-executable-recipe.ts';
 
 import type { ControlDistributedRunState, ControlRunState } from '../control-service-state.ts';
 
@@ -22,8 +29,66 @@ export function toNormalizedDistributedRunManifest(
     const controlRunId = manifest.controlRunId.trim();
     return {
         controlRunId,
-        manifest: { ...manifest, controlRunId }
+        manifest: Object.freeze({
+            ...manifest,
+            controlRunId,
+            group: Object.freeze({ ...manifest.group }),
+            recipes: Object.freeze(manifest.recipes.map((selection) =>
+                Object.freeze({
+                    ...selection,
+                    ...(selection.recipe === undefined ? {} : { recipe: snapshotExecutableRecipe(selection.recipe) }),
+                    variables: Object.freeze({ ...selection.variables })
+                })
+            )),
+            variables: Object.freeze({ ...manifest.variables }),
+            roleAssignments: Object.freeze(manifest.roleAssignments.map((assignment) =>
+                Object.freeze({
+                    ...assignment,
+                    recipeIds: Object.freeze([...assignment.recipeIds]),
+                    variables: Object.freeze({ ...assignment.variables })
+                })
+            )),
+            ...(manifest.roleAssignmentPolicy === undefined
+                ? {}
+                : { roleAssignmentPolicy: Object.freeze({ ...manifest.roleAssignmentPolicy }) }),
+            barrier: Object.freeze({ ...manifest.barrier }),
+            targetPolicy: toDistributedTargetPolicySnapshot(manifest.targetPolicy),
+            groupAssertions: Object.freeze(
+                manifest.groupAssertions.map((assertion) =>
+                    Object.freeze({
+                        ...assertion,
+                        source: Object.freeze({ ...assertion.source }),
+                        ...(assertion.scope === undefined ? {} : { scope: Object.freeze({ ...assertion.scope }) }),
+                        ...('predicate' in assertion ? { predicate: Object.freeze({ ...assertion.predicate }) } : {}),
+                        ...('count' in assertion ? { count: Object.freeze({ ...assertion.count }) } : {})
+                    })
+                )
+            ),
+            metadata: Object.freeze({ ...manifest.metadata })
+        })
     };
+}
+
+function toDistributedTargetPolicySnapshot(
+    policy: RallarBlackBoxDistributedTargetPolicy
+): RallarBlackBoxDistributedTargetPolicy {
+    if (policy.mode === 'selected-agents') {
+        return Object.freeze({
+            ...policy,
+            agentIds: Object.freeze([...policy.agentIds])
+        });
+    }
+    if (policy.mode === 'role-map') {
+        return Object.freeze({
+            ...policy,
+            roles: Object.freeze(
+                Object.fromEntries(
+                    Object.entries(policy.roles).map(([role, agents]) => [role, Object.freeze([...agents])])
+                )
+            )
+        });
+    }
+    return Object.freeze({ ...policy });
 }
 
 export function isResolvedTargetPolicy(manifest: RallarBlackBoxDistributedRunManifest): boolean {
@@ -104,25 +169,11 @@ export function toRecipeSelectionsForAgent(
     distributedRun: ControlDistributedRunState,
     agentId: string
 ): readonly RallarBlackBoxDistributedRunRecipeSelection[] {
-    const manifest = distributedRun.manifest;
-    const roles = toRolesForAgent(distributedRun, agentId);
-    const assignedRecipeIds = new Set(
-        toRoleAssignmentsForAgent(distributedRun, agentId).flatMap((assignment) => assignment.recipeIds)
+    return toDistributedAgentRecipeSelections(
+        distributedRun.manifest,
+        distributedRun.targetResolution?.roleAssignments ?? distributedRun.manifest.roleAssignments,
+        agentId
     );
-    const selections = manifest.recipes.filter((selection) => {
-        const recipeId = toDistributedRecipeKey(selection);
-        if (assignedRecipeIds.size > 0 && recipeId && assignedRecipeIds.has(recipeId)) {
-            return true;
-        }
-        if (selection.role) {
-            return roles.has(selection.role);
-        }
-        return assignedRecipeIds.size === 0;
-    });
-
-    return selections.length > 0
-        ? selections
-        : manifest.recipes.filter((selection) => !selection.role);
 }
 
 export function toRolesForAgent(
@@ -154,16 +205,15 @@ export function toRolesForAgent(
     return roles;
 }
 
-export function toDistributedRecipeKey(selection: RallarBlackBoxDistributedRunRecipeSelection): string | undefined {
-    return toTrimmedIdentifier(selection.recipeId) ??
-        toTrimmedIdentifier(selection.recipe?.recipeId) ??
-        toTrimmedIdentifier(selection.role);
-}
-
 export function toDistributedTargetFailure(
-    distributedRun: ControlDistributedRunState
+    distributedRun: ControlDistributedRunState,
+    run: ControlRunState | undefined
 ): ControlDistributedRunState['error'] {
     const manifest = distributedRun.manifest;
+    const captureFailure = toDistributedCaptureFailure(distributedRun, run);
+    if (captureFailure) {
+        return captureFailure;
+    }
     if (distributedRun.targetAgentIds.length === 0) {
         return {
             code: 'RALLAR_BB_DISTRIBUTED_NO_TARGET_AGENTS',
@@ -179,6 +229,40 @@ export function toDistributedTargetFailure(
                 `Resolved ${distributedRun.targetAgentIds.length} target agents, expected ${expectedParticipantCount}.`,
             details: { targetAgentIds: distributedRun.targetAgentIds, expectedParticipantCount }
         };
+    }
+    return undefined;
+}
+
+/** Current support is rechecked without resolving or changing the already selected membership and roles. */
+function toDistributedCaptureFailure(
+    distributedRun: ControlDistributedRunState,
+    run: ControlRunState | undefined
+): ControlDistributedRunState['error'] {
+    const manifest = distributedRun.manifest;
+    const captureBlockers =
+        distributedRun.targetResolution?.blockers.filter((blocker) =>
+            blocker.status === 'missing-rtc-capture-capability'
+        ) ?? [];
+    if (captureBlockers.length > 0) {
+        return {
+            code: 'RALLAR_BB_DISTRIBUTED_CAPTURE_UNSUPPORTED',
+            message: captureBlockers.map((blocker) => `${blocker.agentId}: ${blocker.reason}`).join(' '),
+            details: { blockers: captureBlockers }
+        };
+    }
+    const captureReasons = distributedRun.targetAgentIds.flatMap((agentId) => {
+        const required = new RecipeCaptureRequirements().collect({
+            selections: toRecipeSelectionsForAgent(distributedRun, agentId),
+            run: manifest.rtcCaptureMode
+        });
+        const reason = toMissingRtcCaptureSupportReason(
+            required,
+            run?.agents.get(agentId)?.identity?.capabilities?.rtcCapture
+        );
+        return reason ? [`${agentId}: ${reason}`] : [];
+    });
+    if (captureReasons.length > 0) {
+        return { code: 'RALLAR_BB_DISTRIBUTED_CAPTURE_UNSUPPORTED', message: captureReasons.join(' ') };
     }
     return undefined;
 }
@@ -206,15 +290,6 @@ function toExplicitRoleAssignments(
                 .filter((agentId) => selected.has(agentId))
                 .map((agentId) => ({ role, agentId, recipeIds: [], variables: {} }))
         );
-}
-
-function toRoleAssignmentsForAgent(
-    distributedRun: ControlDistributedRunState,
-    agentId: string
-): readonly RallarBlackBoxDistributedRoleAssignment[] {
-    const assignments = distributedRun.targetResolution?.roleAssignments ??
-        distributedRun.manifest.roleAssignments;
-    return assignments.filter((assignment) => assignment.agentId === agentId);
 }
 
 function toUniqueIdentifiers(values: readonly string[]): string[] {

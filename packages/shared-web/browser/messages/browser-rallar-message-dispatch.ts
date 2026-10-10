@@ -26,6 +26,9 @@ import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
+import { resolveRequiredRtcCaptureFailure } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
+import { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
 import type { RallarStorageUnavailablePolicy } from './rallar-message-contracts.ts';
@@ -51,6 +54,8 @@ interface CarrierAdmission {
 
 export namespace BrowserRallarMessageDispatch {
     export interface Delivery {
+        readonly requestedConfiguration: RtcSignalingDiagnostics.CaptureConfiguration | undefined;
+        readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
         readonly context: ApiMiddleware;
         readonly carrier: ALDeliveryCarrier;
         readonly message: ALMessage;
@@ -75,20 +80,47 @@ export class BrowserRallarMessageDispatch {
     }
 
     send(delivery: BrowserRallarMessageDispatch.Delivery): void {
+        this.verifyCapture(delivery);
         const epoch = this.input.sessionDeliveries.capture(delivery.context);
         if (!epoch) {
             this.input.deliveries.release(delivery.message.id.msgId);
             return;
         }
-        void this.writeLeg(delivery, epoch);
+        const refusal = this.readAdmissionRefusal(delivery);
+        void this.writeLeg(delivery, epoch, refusal);
+    }
+
+    private verifyCapture(delivery: BrowserRallarMessageDispatch.Delivery): void {
+        if (delivery.requestedConfiguration === undefined) {
+            return;
+        }
+        const reason = this.readCaptureFailure(delivery);
+        if (reason !== undefined) {
+            this.input.deliveries.release(delivery.message.id.msgId);
+            throw new RallarRtcCaptureUnverifiedError({
+                requestedConfiguration: delivery.requestedConfiguration,
+                rtcCapture: delivery.rtcCapture,
+                reason
+            });
+        }
+    }
+
+    private readCaptureFailure(
+        delivery: BrowserRallarMessageDispatch.Delivery
+    ): RallarRtcCaptureUnverifiedError.Reason | undefined {
+        return delivery.requestedConfiguration === undefined
+            ? undefined
+            : this.input.sessionDeliveries.captureOwnershipFailure(delivery.context) ??
+                resolveRequiredRtcCaptureFailure(delivery.requestedConfiguration, delivery.rtcCapture);
     }
 
     /** One carrier leg, whose failure is stated as its admission and never thrown. */
     private async writeLeg(
         delivery: BrowserRallarMessageDispatch.Delivery,
-        lifetime: BrowserDeliverySettlements.Epoch
+        lifetime: BrowserDeliverySettlements.Epoch,
+        refusal: CapturedMessageAdmission | undefined
     ): Promise<void> {
-        await this.writeCapturedMessage(delivery, lifetime).catch((caught) => {
+        await this.writeCapturedMessage(delivery, lifetime, refusal).catch((caught) => {
             if (lifetime.isOpen()) {
                 lifetime.settlements[delivery.carrier]({
                     kind: 'admission',
@@ -104,13 +136,14 @@ export class BrowserRallarMessageDispatch {
 
     private async writeCapturedMessage(
         delivery: BrowserRallarMessageDispatch.Delivery,
-        lifetime: BrowserDeliverySettlements.Epoch
+        lifetime: BrowserDeliverySettlements.Epoch,
+        refusal: CapturedMessageAdmission | undefined
     ): Promise<void> {
         if (!lifetime.isOpen()) {
             return;
         }
-        const result = await this.admitCapturedMessage(delivery);
-        if (!lifetime.isOpen()) {
+        const result = refusal ?? await this.writeChannelAdmission(delivery, lifetime);
+        if (result === undefined || !lifetime.isOpen()) {
             return;
         }
         this.input.deliveries.updateDeadline(result.message);
@@ -124,18 +157,46 @@ export class BrowserRallarMessageDispatch {
         wakeQueueBoxEngineIfQueued(delivery.context.middleware.qboxEngine, result);
         if (admission.fallback === 'retry') {
             writeCongestionHandOverDiagnostic(delivery, result);
-            await this.writeCapturedMessage({
+            const fallback: BrowserRallarMessageDispatch.Delivery = {
                 ...delivery,
                 carrier: delivery.carrier === 'rtc' ? 'ws' : 'rtc',
                 message: result.message,
                 canFallback: false
-            }, lifetime);
+            };
+            await this.writeCapturedMessage(fallback, lifetime, this.readAdmissionRefusal(fallback));
             return;
         }
         const end = toCarrierAdmissionEndSettlement(admission, this.input.nowMs());
         if (end) {
             sink(end);
         }
+    }
+
+    /** Storage-unavailable committed nothing; a volatile retry still needs this send's original live owner. */
+    private async writeChannelAdmission(
+        delivery: BrowserRallarMessageDispatch.Delivery,
+        lifetime: BrowserDeliverySettlements.Epoch
+    ): Promise<CapturedMessageAdmission | undefined> {
+        const admitted = await writeStorageAdmission(delivery);
+        if (admitted.verdict.kind !== 'storage-unavailable' || delivery.onStorageUnavailable === 'refuse') {
+            return toCapturedAdmission(admitted, undefined);
+        }
+        const downgrade: ALDeliveryDurabilityDowngrade = {
+            requested: toRequestedDurability(delivery.message),
+            cause: admitted.verdict.cause
+        };
+        const volatile = toVolatileALMessage(delivery.message);
+        const failure = this.readCaptureFailure(delivery);
+        if (!lifetime.isOpen()) {
+            return undefined;
+        }
+        if (failure !== undefined) {
+            return toUnadmittedAdmission(delivery.message, { kind: 'failed', detail: failure });
+        }
+        return toCapturedAdmission(
+            await writeCarrierOutboxAdmission(delivery.context, delivery, volatile),
+            downgrade
+        );
     }
 
     private toCarrierAdmission(
@@ -175,37 +236,43 @@ export class BrowserRallarMessageDispatch {
         this.input.deliveries.watchFallback({
             message: result.message,
             context: delivery.context,
-            readmit: () => this.writeLeg(wsLeg, lifetime)
+            readmit: () => this.writeLeg(wsLeg, lifetime, this.readAdmissionRefusal(wsLeg))
         });
     }
 
-    private async admitCapturedMessage(
+    private readAdmissionRefusal(
         delivery: BrowserRallarMessageDispatch.Delivery
-    ): Promise<CapturedMessageAdmission> {
-        const { message } = delivery;
-        const validated = decodeALMessageValue(message);
-        const issue = delivery.payloadIssues[0];
-        if (issue) {
-            return toUnadmittedAdmission(message, { kind: 'refused', reason: 'oversized', detail: issue.message });
-        }
-        if (validated.left) {
-            return toUnadmittedAdmission(message, {
-                kind: 'refused',
-                reason: validated.left.code,
-                detail: validated.left.message
-            });
-        }
-        if (message.constraints?.expiresAtMs !== undefined && message.constraints.expiresAtMs <= this.input.nowMs()) {
-            return toUnadmittedAdmission(message, {
-                kind: 'expired',
-                detail: 'Message deadline elapsed before carrier admission.'
-            });
-        }
+    ): CapturedMessageAdmission | undefined {
         try {
-            return await writeChannelAdmission(delivery);
+            const { message } = delivery;
+            const validated = decodeALMessageValue(message);
+            const issue = delivery.payloadIssues[0];
+            if (issue) {
+                return toUnadmittedAdmission(message, { kind: 'refused', reason: 'oversized', detail: issue.message });
+            }
+            if (validated.left) {
+                return toUnadmittedAdmission(message, {
+                    kind: 'refused',
+                    reason: validated.left.code,
+                    detail: validated.left.message
+                });
+            }
+            if (
+                message.constraints?.expiresAtMs !== undefined && message.constraints.expiresAtMs <= this.input.nowMs()
+            ) {
+                return toUnadmittedAdmission(message, {
+                    kind: 'expired',
+                    detail: 'Message deadline elapsed before carrier admission.'
+                });
+            }
+            this.verifyCapture(delivery);
+            return undefined;
         }
         catch (caught) {
-            return toUnadmittedAdmission(message, { kind: 'failed', detail: toError(caught).message });
+            if (caught instanceof RallarRtcCaptureUnverifiedError) {
+                throw caught;
+            }
+            return toUnadmittedAdmission(delivery.message, { kind: 'failed', detail: toError(caught).message });
         }
     }
 }
@@ -234,24 +301,6 @@ function writeCongestionHandOverDiagnostic(
 
 function toUnadmittedAdmission(message: ALMessage, verdict: ALDeliveryAdmissionVerdict): CapturedMessageAdmission {
     return { message, verdict, trackedReceiptAlgo: 'none', durabilityDowngrade: undefined };
-}
-
-/** Admitting the same msgId again is sound because a `storage-unavailable` admission committed nothing. */
-async function writeChannelAdmission(
-    delivery: BrowserRallarMessageDispatch.Delivery
-): Promise<CapturedMessageAdmission> {
-    const admitted = await writeStorageAdmission(delivery);
-    if (admitted.verdict.kind !== 'storage-unavailable' || delivery.onStorageUnavailable === 'refuse') {
-        return toCapturedAdmission(admitted, undefined);
-    }
-    const downgrade: ALDeliveryDurabilityDowngrade = {
-        requested: toRequestedDurability(delivery.message),
-        cause: admitted.verdict.cause
-    };
-    return toCapturedAdmission(
-        await writeCarrierOutboxAdmission(delivery.context, delivery, toVolatileALMessage(delivery.message)),
-        downgrade
-    );
 }
 
 /**

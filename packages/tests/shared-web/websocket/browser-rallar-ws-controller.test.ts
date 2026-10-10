@@ -25,6 +25,8 @@ import type { WebSocketClientCallbacks } from '@shared/websocket/json-web-socket
 
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 const mocks = await vi.hoisted(async () => {
     // The shared double must be pulled in dynamically: vi.hoisted runs above the static import
     // transform, so a statically imported factory is still in its temporal dead zone here.
@@ -105,7 +107,11 @@ const webSocketClient = vi.mocked(mocks.ctx.middleware.webSocketQueueBox.socket)
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<typeof MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => ({ middleware: (await mocks.initialiseApiMiddleware(options)).middleware, checkpoints: [] })
+        initialiseMiddleware: async (_session, _topic, options) => ({
+            middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
+            rtcCaptureReceipt,
+            checkpoints: []
+        })
     })
 );
 

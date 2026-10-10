@@ -120,7 +120,11 @@ async function openCongestionFixture(): Promise<CongestionFixture> {
         }
     });
     const feed = new BrowserDeliverySettlements();
-    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, { deliverySettlements: feed, readMiddleware: () => context });
+    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, {
+        deliverySettlements: feed,
+        readMiddleware: () => context,
+        readRtcCaptureReceipt: () => undefined
+    }, () => context.session);
     sessionDeliveries.beginSession(context.session);
     feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const dispatch = new BrowserRallarMessageDispatch({ deliveries, sessionDeliveries, nowMs: Date.now });
@@ -131,19 +135,19 @@ async function openCongestionFixture(): Promise<CongestionFixture> {
         socket,
         send: (strategy, reliability, ack) => {
             sequence += 1;
-            const message = newALMulticastMessage(
-                'a',
-                { topicId: 'chat', resourceId: `congested-${sequence}`, contextId: 'room' },
-                ORIGIN_ROOM,
-                TYPE_ID,
-                { sequence },
-                ack === undefined
-                    ? { reliability, ack: 'none', ttlMs: 30_000 }
-                    : { reliability, ack, ttlMs: 30_000, qos: { ack: { algo: 'hop' } } }
-            );
+            const message = createCongestionMessage(sequence, reliability, ack);
             const carrier: ALDeliveryCarrier = strategy === 'ws' ? 'ws' : 'rtc';
             const handle = deliveries.open(message, carrier);
-            dispatch.send({ context, carrier, message, canFallback: strategy === 'rtc-with-ws-fallback', payloadIssues: [], onStorageUnavailable: 'refuse' });
+            dispatch.send({
+                context,
+                carrier,
+                message,
+                requestedConfiguration: undefined,
+                rtcCapture: { status: 'unavailable', reason: 'absent' },
+                canFallback: strategy === 'rtc-with-ws-fallback',
+                payloadIssues: [],
+                onStorageUnavailable: 'refuse'
+            });
             return handle;
         },
         acceptOnWs: async (message) => void await ws.acceptIncomingMessage(message),
@@ -152,6 +156,19 @@ async function openCongestionFixture(): Promise<CongestionFixture> {
                 (event): event is ALOutboundCongestionDiagnostic => event.kind === 'congestion'
             )
     };
+}
+
+function createCongestionMessage(sequence: number, reliability: 'best-effort' | 'at-least-once', ack: 'receiver' | undefined): ALMessage {
+    return newALMulticastMessage(
+        'a',
+        { topicId: 'chat', resourceId: `congested-${sequence}`, contextId: 'room' },
+        ORIGIN_ROOM,
+        TYPE_ID,
+        { sequence },
+        ack === undefined
+            ? { reliability, ack: 'none', ttlMs: 30_000 }
+            : { reliability, ack, ttlMs: 30_000, qos: { ack: { algo: 'hop' } } }
+    );
 }
 
 function toBackpressureFault(carrier: ScriptedTransportFault['carrier'], remaining: ScriptedTransportFault['remaining']): ScriptedTransportFault {

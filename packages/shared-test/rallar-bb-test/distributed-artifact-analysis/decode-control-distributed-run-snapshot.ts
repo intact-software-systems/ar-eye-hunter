@@ -99,6 +99,7 @@ const TARGET_BLOCKER_STATUSES = Object.keys(
         'stale-agent': true,
         'different-group': true,
         'missing-assertion-capability': true,
+        'missing-rtc-capture-capability': true,
         'agent-without-identity': true
     } satisfies Record<RallarBlackBoxDistributedTargetBlockerStatus, true>
 ) as readonly RallarBlackBoxDistributedTargetBlockerStatus[];
@@ -467,6 +468,9 @@ function decodeTargetBlocker(
         return value.identity === undefined
             ? Either.ofRight({ agentId, status, reason })
             : Either.ofLeft(`${path}.identity must be absent for an agent without identity`);
+    }
+    if (status === 'missing-rtc-capture-capability' && value.identity === undefined) {
+        return Either.ofRight({ agentId, status, reason });
     }
     return decodeControlAgentIdentity(value.identity)
         .mapBoth((issue) => `${path}.${issue}`, (identity) => ({ agentId, status, reason, identity }));

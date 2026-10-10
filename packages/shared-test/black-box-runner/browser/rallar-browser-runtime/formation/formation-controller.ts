@@ -7,9 +7,9 @@ import type {
     RallarRoomFormation,
     RallarRoomFormationStatus
 } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
+import { describeRtcRoomTransport } from '@shared-web/browser/rtc/rtc-room-transport-status.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
-import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarEvent,
     BlackBoxRallarFormationCommandDiagnostics,
@@ -32,8 +32,38 @@ export interface BlackBoxRallarFormationControllerDependencies {
     formation(roomRef: GroupRef): RallarRoomFormation;
     readonly rtc: Pick<RallarRtcFacade, 'roomStatus' | 'waitForRoom' | 'onStatus'>;
     emit(event: Omit<BlackBoxRallarEvent, 'atEpochMs'>): void;
-    readonly emitError: BlackBoxRallarRuntimeDiagnostics['emitError'];
     now(): number;
+}
+
+export interface FormationReadinessCapturedFacts {
+    readonly returnedRoomReason: string | null;
+    readonly laneId: string | null;
+    readonly desiredPeerIds: readonly string[] | null;
+    readonly readyPeerIds: readonly string[] | null;
+    readonly peerIdentitiesTruncated: boolean | null;
+}
+
+const FORMATION_CAPTURED_ROOM_REASONS = [
+    describeRtcRoomTransport('halted'),
+    describeRtcRoomTransport('idle'),
+    describeRtcRoomTransport('partial'),
+    describeRtcRoomTransport('degraded'),
+    describeRtcRoomTransport('idle', 'empty'),
+    describeRtcRoomTransport('idle', 'timeout'),
+    describeRtcRoomTransport('idle', 'failed'),
+    describeRtcRoomTransport('idle', 'aborted'),
+    describeRtcRoomTransport('idle', 'not-connected')
+];
+
+interface FormationReadinessRejection extends FormationReadinessCapturedFacts {
+    readonly kind: 'formation-readiness-rejected';
+    readonly roomTransportState: RallarRtcRoomTransportStatus['state'];
+    readonly summaryAvailable: boolean;
+    readonly roomOpen: boolean;
+    readonly hasDesiredPeers: boolean;
+    readonly desiredPeerCount: number;
+    readonly readyPeerCount: number;
+    readonly waitTerminalCause: 'unknown';
 }
 
 /**
@@ -67,13 +97,21 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
         const formationStatus = this.#dependencies.formation(room.roomRef).status();
         const summary = formationStatus === undefined
             ? undefined
-            : this.#toSummary(room.roomRef, formationStatus, status.rtc);
+            : toFormationSummary(room.roomRef, formationStatus, status.rtc);
         if (
             summary === undefined ||
             summary.room.state !== 'open' ||
             summary.room.desiredPeerIds.length === 0
         ) {
-            throw this.#notReady(room);
+            const observation = toFormationReadinessRejection(status.rtc, summary !== undefined);
+            const error = this.#notReady(room);
+            try {
+                this.#emit('rallar.browser.formation.not-ready', room.roomRef, observation);
+            }
+            catch {
+                // The captured observation must not replace the original readiness failure.
+            }
+            throw error;
         }
 
         const diagnostics: BlackBoxRallarFormationReadinessDiagnostics = {
@@ -90,7 +128,9 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
 
     summary = (roomRef: GroupRef): BlackBoxRallarFormationSummary | undefined => {
         const status = this.#dependencies.formation(roomRef).status();
-        return status === undefined ? undefined : this.#toSummary(roomRef, status);
+        return status === undefined
+            ? undefined
+            : toFormationSummary(roomRef, status, this.#dependencies.rtc.roomStatus(roomRef).rtc);
     };
 
     installDiagnostics = (roomRef: GroupRef): RallarUnsubscribe => {
@@ -100,7 +140,7 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
                 this.#emit(
                     BLACK_BOX_RALLAR_FORMATION_TOPICS.changed,
                     roomRef,
-                    this.#toSummary(roomRef, status)
+                    toFormationSummary(roomRef, status, this.#dependencies.rtc.roomStatus(roomRef).rtc)
                 )
             ),
             handle.onLayout((event) =>
@@ -184,58 +224,6 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
         return summary;
     };
 
-    /**
-     * Built field by field rather than spread: the status declares its absent-capable fields as
-     * required-with-`undefined`, and a spread would carry explicit `undefined` keys into the block
-     * that a recipe's `exists` operator then reads as present.
-     */
-    #toSummary = (
-        roomRef: GroupRef,
-        status: RallarRoomFormationStatus,
-        room: RallarRtcRoomTransportStatus = this.#dependencies.rtc.roomStatus(
-            roomRef
-        ).rtc
-    ): BlackBoxRallarFormationSummary => {
-        return {
-            roomRef,
-            stage: status.stage,
-            formationEpoch: status.formationEpoch,
-            formationAttemptCount: status.formationAttemptCount,
-            ...(status.lastFormationOutcome !== undefined
-                ? { lastFormationOutcome: status.lastFormationOutcome }
-                : {}),
-            causalRevision: status.snapshot.causalRevision,
-            transportState: status.transportState,
-            dialing: status.dialing,
-            memberPolicy: status.memberPolicy,
-            ...(status.accepted !== undefined ? { accepted: status.accepted } : {}),
-            ...(status.planned !== undefined ? { planned: status.planned } : {}),
-            ...(status.condition !== undefined
-                ? { condition: status.condition }
-                : {}),
-            ...(status.coverageRate !== undefined
-                ? { coverageRate: status.coverageRate }
-                : {}),
-            room: this.#toRoomStatus(room)
-        };
-    };
-
-    /** The room block a pin may assert on; the peers array, lane id and read-time clock are dropped. */
-    #toRoomStatus = (
-        room: RallarRtcRoomTransportStatus
-    ): BlackBoxRallarFormationRoomStatus => {
-        return {
-            state: room.state,
-            ...(room.acceptedLayoutIdentity !== undefined
-                ? { acceptedLayoutIdentity: room.acceptedLayoutIdentity }
-                : {}),
-            desiredPeerIds: room.desiredPeerIds,
-            readyPeerIds: room.readyPeerIds,
-            activePeerIds: room.activePeerIds,
-            failedPeerIds: room.failedPeerIds
-        };
-    };
-
     #emit = (topic: string, roomRef: GroupRef, data: object): void => {
         this.#dependencies.emit({
             kind: 'diagnostic',
@@ -245,5 +233,142 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
             workspaceId: roomRef.workspaceId,
             data
         });
+    };
+}
+
+/** Sanitizes only supplemental returned-room facts; readiness policy and counts stay with their owners. */
+export function toFormationReadinessCapturedFacts(
+    input: FormationReadinessCapturedFacts
+): FormationReadinessCapturedFacts {
+    const desiredCandidates = toCapturedPeerIdentities(input.desiredPeerIds);
+    const readyCandidates = toCapturedPeerIdentities(input.readyPeerIds);
+    const desiredPeerIds: string[] | null = desiredCandidates === null ? null : [];
+    const readyPeerIds: string[] | null = readyCandidates === null ? null : [];
+    const facts = {
+        returnedRoomReason: FORMATION_CAPTURED_ROOM_REASONS.find((reason) => reason === input.returnedRoomReason) ??
+            null,
+        laneId: isCapturedPeerIdentity(input.laneId) ? input.laneId : null,
+        desiredPeerIds,
+        readyPeerIds,
+        peerIdentitiesTruncated: input.peerIdentitiesTruncated
+    };
+    if (desiredPeerIds === null || readyPeerIds === null) {
+        facts.peerIdentitiesTruncated = facts.peerIdentitiesTruncated === true ? true : null;
+    }
+    if (
+        (desiredCandidates !== null && desiredCandidates.length > 10) ||
+        (readyCandidates !== null && readyCandidates.length > 10)
+    ) {
+        facts.peerIdentitiesTruncated = true;
+    }
+    if (appendCapturedPeerIdentities(facts, desiredPeerIds, desiredCandidates)) {
+        facts.peerIdentitiesTruncated = true;
+    }
+    if (appendCapturedPeerIdentities(facts, readyPeerIds, readyCandidates)) {
+        facts.peerIdentitiesTruncated = true;
+    }
+    return facts;
+}
+
+/** Each list retains its longest prefix that fits beside previously retained facts. */
+function appendCapturedPeerIdentities(
+    facts: FormationReadinessCapturedFacts,
+    retained: string[] | null,
+    candidates: readonly string[] | null
+): boolean {
+    if (retained === null || candidates === null) {
+        return false;
+    }
+    for (const identity of candidates.slice(0, 10)) {
+        retained.push(identity);
+        // This caps the facts payload, not its recorder envelope or unrelated metadata.
+        if (new TextEncoder().encode(JSON.stringify(facts)).byteLength > 8_192) {
+            retained.pop();
+            return true;
+        }
+    }
+    return false;
+}
+
+function toCapturedPeerIdentities(value: readonly string[] | null): readonly string[] | null {
+    return value !== null && value.every(isCapturedPeerIdentity)
+        ? value
+        : null;
+}
+
+function isCapturedPeerIdentity(value: string | null): boolean {
+    return value !== null && value.length > 0 && value.length <= 256;
+}
+
+function toFormationReadinessRejection(
+    room: RallarRtcRoomTransportStatus,
+    summaryAvailable: boolean
+): FormationReadinessRejection {
+    return {
+        kind: 'formation-readiness-rejected',
+        roomTransportState: room.state,
+        summaryAvailable,
+        roomOpen: room.state === 'open',
+        hasDesiredPeers: room.desiredPeerIds.length > 0,
+        desiredPeerCount: room.desiredPeerIds.length,
+        readyPeerCount: room.readyPeerIds.length,
+        waitTerminalCause: 'unknown',
+        ...toFormationReadinessCapturedFacts({
+            returnedRoomReason: room.reason ?? null,
+            laneId: room.laneId,
+            desiredPeerIds: room.desiredPeerIds,
+            readyPeerIds: room.readyPeerIds,
+            peerIdentitiesTruncated: false
+        })
+    };
+}
+
+/**
+ * Built field by field rather than spread: the status declares its absent-capable fields as
+ * required-with-`undefined`, and a spread would carry explicit `undefined` keys into the block
+ * that a recipe's `exists` operator then reads as present.
+ */
+function toFormationSummary(
+    roomRef: GroupRef,
+    status: RallarRoomFormationStatus,
+    room: RallarRtcRoomTransportStatus
+): BlackBoxRallarFormationSummary {
+    return {
+        roomRef,
+        stage: status.stage,
+        formationEpoch: status.formationEpoch,
+        formationAttemptCount: status.formationAttemptCount,
+        ...(status.lastFormationOutcome !== undefined
+            ? { lastFormationOutcome: status.lastFormationOutcome }
+            : {}),
+        causalRevision: status.snapshot.causalRevision,
+        transportState: status.transportState,
+        dialing: status.dialing,
+        memberPolicy: status.memberPolicy,
+        ...(status.accepted !== undefined ? { accepted: status.accepted } : {}),
+        ...(status.planned !== undefined ? { planned: status.planned } : {}),
+        ...(status.condition !== undefined
+            ? { condition: status.condition }
+            : {}),
+        ...(status.coverageRate !== undefined
+            ? { coverageRate: status.coverageRate }
+            : {}),
+        room: toFormationRoomStatus(room)
+    };
+}
+
+/** The room block a pin may assert on; the peers array, lane id and read-time clock are dropped. */
+function toFormationRoomStatus(
+    room: RallarRtcRoomTransportStatus
+): BlackBoxRallarFormationRoomStatus {
+    return {
+        state: room.state,
+        ...(room.acceptedLayoutIdentity !== undefined
+            ? { acceptedLayoutIdentity: room.acceptedLayoutIdentity }
+            : {}),
+        desiredPeerIds: room.desiredPeerIds,
+        readyPeerIds: room.readyPeerIds,
+        activePeerIds: room.activePeerIds,
+        failedPeerIds: room.failedPeerIds
     };
 }

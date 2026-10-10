@@ -45,8 +45,7 @@
   },
   "include": [
     "**/*.ts",
-    "**/*.d.ts",
-    "../../tests/unit/**/*.ts"
+    "**/*.d.ts"
   ],
   "exclude": [
     "shared-test/scenario-black-box-rtc-config.test.ts",

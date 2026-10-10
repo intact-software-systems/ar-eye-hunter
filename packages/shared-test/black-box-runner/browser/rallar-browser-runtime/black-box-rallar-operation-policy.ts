@@ -176,6 +176,11 @@ export function blackBoxRallarConnectionOperationKeyOf(
 ): string {
     const rallar = config.rallar;
     return JSON.stringify({
+        rtcCaptureMode: config.rallar.rtcCaptureMode,
+        rtcCaptureContext: {
+            run: config.rallar.rtcCaptureContext?.run,
+            recipe: config.rallar.rtcCaptureContext?.recipe
+        },
         connection: config.connection,
         actor: config.actor,
         peerId: config.peerId,

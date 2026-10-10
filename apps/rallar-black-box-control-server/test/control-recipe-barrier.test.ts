@@ -1,9 +1,9 @@
 import { assert, assertEquals } from '@std/assert';
 
 import {
+    decodeControlBarrierEnvelope,
     RALLAR_BLACK_BOX_BARRIER_ARRIVED_TOPIC,
     toBarrierResolvedEvent,
-    type ControlBarrierEnvelope,
     type ControlBarrierResolution
 } from '@shared-test/rallar-bb-test/barrier/control-barrier-protocol.ts';
 import {
@@ -13,7 +13,7 @@ import {
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 import { createAlmConformance3AgentEntry } from '../../rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
 import { ControlAgentSockets } from '../src/control-agent-sockets.ts';
@@ -290,13 +290,13 @@ Deno.test('the agent socket carries a due barrier resolution beside its commands
 
     sockets.sendDispatchableCommands({ runId: 'run-1', agentId: 'agent-1' });
 
-    const frames = sent.map((text) => JSON.parse(text) as { kind: string; } & Partial<ControlBarrierEnvelope>);
-    assertEquals(frames.filter((frame) => frame.kind === 'barrier').map((frame) => frame.barrierId), [BARRIER_ID]);
+    const frames = sent.map((text) => decodeControlBarrierEnvelope(text, { runId: 'run-1', agentId: 'agent-1' }));
+    assertEquals(frames.flatMap((frame) => frame.right === undefined ? [] : [frame.right.barrierId]), [BARRIER_ID]);
 });
 
 Deno.test('two real runtimes pass one recipe barrier through the control service', async () => {
     const service = toRunningTwoAgentRun({ now: 10_000 });
-    const agents = ['agent-1', 'agent-2'].map((agentId) => ({ agentId, runtime: createRallarBlackBoxTestRuntime() }));
+    const agents = ['agent-1', 'agent-2'].map((agentId) => ({ agentId, runtime: createDefaultRallarBlackBoxTestRuntime() }));
     const stop = bridgeBarrierEvents(service, agents);
     try {
         const results = await Promise.all(

@@ -1,7 +1,10 @@
 import { IceConfig } from '../api/api-config.ts';
 import { toError } from '../resilience/to-error.ts';
 import { applyRtcMediaPolicy } from './apply-rtc-media-policy.ts';
-import { flushRtcIceCandidateQueue } from './flush-rtc-ice-candidate-queue.ts';
+import {
+    flushRtcIceCandidateQueue,
+    type FlushRtcIceCandidateQueueObservation
+} from './flush-rtc-ice-candidate-queue.ts';
 import { toQRtcSignalingAdmission, type QRtcSignalingAdmission } from './qrtc-signaling-admission.ts';
 import {
     QRtcSignal,
@@ -10,6 +13,34 @@ import {
     QRtcSignalingSender,
     QRtcSignalingType
 } from './qrtc-signaling-contracts.ts';
+import {
+    attachRtcNativeListener,
+    createRtcNativeBinding,
+    detachRtcNativeListeners,
+    readRtcNativeChannelSnapshot,
+    readRtcNativeSnapshot,
+    toRtcRetiredNativeSnapshot,
+    toRtcUnavailableNativeState,
+    type RtcNativeChannelSnapshotInput,
+    type RtcNativeListener
+} from './rtc-native-observation-boundary.ts';
+import { toRtcCandidateApplication } from './rtc-native-observation-rows.ts';
+import type { RtcNativeObservationScope } from './rtc-native-observation-scope.ts';
+import {
+    readRtcCandidateFragments,
+    readRtcNativeErrorFacts,
+    readRtcNativeEventError,
+    readRtcTransportAttachmentGap,
+    readRtcTransportChain,
+    readRtcTypedErrorUnavailableReason,
+    toRtcNativeErrorIsTyped,
+    toRtcUnavailable
+} from './rtc-native-observation-values.ts';
+import {
+    recordRtcNativeObservation,
+    recordRtcSignalingObservation,
+    type RtcSignalingDiagnostics
+} from './rtc-signaling-diagnostics.ts';
 
 const QRtcSessionState = {
     Idle: 'Idle',
@@ -52,8 +83,67 @@ type QRtcPeerConnectionDiagnosticCounters = {
 };
 
 export namespace QRtcPeerConnection {
+    export interface NativeObservationBatch {
+        readonly observations: NativeObservationCapture[];
+        readonly kind: 'synchronous' | 'operation';
+        readonly parent: NativeObservationBatch | undefined;
+        readonly binding: NativeBinding | undefined;
+        closed: boolean;
+    }
+    export interface NativeObservationCapture {
+        readonly binding: NativeBinding;
+        readonly row: RtcSignalingDiagnostics.NativeObservation;
+    }
+    export interface SignalCapture {
+        readonly nativeBatch: NativeObservationBatch;
+        readonly pc: RTCPeerConnection | undefined;
+        readonly nativeIdentity: RtcSignalingDiagnostics.NativeIdentity;
+    }
+    export interface NativeSignalCapture extends SignalCapture {
+        readonly pc: RTCPeerConnection;
+    }
+    export interface CandidateOperation {
+        readonly nativeBatch: NativeObservationBatch;
+        readonly binding: NativeBinding;
+        readonly operationOrdinal: number;
+        readonly source: 'direct' | 'queue-drain';
+    }
+
+    export interface NativeListenerInput {
+        readonly event: string;
+        readonly listener: EventListener;
+        readonly transport: boolean;
+    }
+    export interface NativeBinding {
+        readonly pc: RTCPeerConnection;
+        readonly admission: RtcNativeObservationScope.Admission;
+        readonly identity: RtcSignalingDiagnostics.NativeIdentity;
+        readonly detach: RtcNativeListener[];
+        readonly transportDetach: RtcNativeListener[];
+        sctp: RTCSctpTransport | undefined;
+        dtls: RTCDtlsTransport | undefined;
+        ice: RTCIceTransport | undefined;
+        transportOrdinal: number;
+        attachmentGap: boolean;
+        listenerCoverage: 'attached' | 'partial' | 'unavailable';
+        transportReason: RtcSignalingDiagnostics.ReadoutUnavailableReason;
+        firstError: RtcSignalingDiagnostics.NativeError | undefined;
+        firstTypedError: RtcSignalingDiagnostics.NativeError | undefined;
+        typedReadUnavailableReason: 'read-failed' | 'unsupported' | undefined;
+        lastState: string;
+        retired: boolean;
+        capturing: boolean;
+        errorCapturing: boolean;
+        errorWindowAttached: boolean;
+    }
+    export interface ChannelObservationBinding {
+        readonly parent: NativeBinding;
+        readonly admission: RtcNativeObservationScope.Admission;
+        readonly identity: RtcSignalingDiagnostics.NativeIdentity;
+    }
     export interface Dependencies {
         createOfferId(): string;
+        readonly signalingDiagnostics?: RtcSignalingDiagnostics;
     }
 
     export interface StateCallbacks {
@@ -144,10 +234,15 @@ export class QRtcPeerConnection {
     private readonly MAX_RECONNECT_ATTEMPTS: number = 5;
     private readonly DISCONNECT_TIMEOUT_MSECS: number = 5000;
 
-    private signalingChain = Promise.resolve();
+    private signalingChain: Promise<void | RtcSignalingDiagnostics.CallerRelease> = Promise.resolve();
     private signalingLifetime = new AbortController();
     private outboundSignalingChain = Promise.resolve();
     private outstandingOfferId: string | undefined;
+
+    private nativeObservation: QRtcPeerConnection.NativeBinding | undefined;
+    private nativeObservationBatch: QRtcPeerConnection.NativeObservationBatch | undefined;
+    private nativeOperationOrdinal = 0;
+    private nativeUnavailableReason: RtcSignalingDiagnostics.ErrorUnavailableReason = 'no-native-object';
 
     private readonly configuration: RTCConfiguration;
     public status: QRtcPeerConnection.Status;
@@ -180,6 +275,13 @@ export class QRtcPeerConnection {
     reset(): QRtcPeerConnection.Status {
         this.diagnostics.resetCount++;
         const retired = this.status;
+        const binding = this.nativeObservation;
+        const final = this.captureNativeRetirement(binding, 'reset');
+        if (this.status !== retired) {
+            return this.status;
+        }
+        this.nativeObservation = undefined;
+        this.nativeUnavailableReason = 'no-native-object';
         this.status = this.toInitialStatus();
         this.signalingLifetime.abort();
         this.signalingLifetime = new AbortController();
@@ -190,6 +292,9 @@ export class QRtcPeerConnection {
         // installs its own, and one that never comes must not still reach the previous owner.
         this.stateCallbacks = {};
         this.closePeerConnectionIfPresent(retired);
+        if (final && binding) {
+            this.publishNativeObservation(final, this.nativeObservationBatch, binding);
+        }
 
         return this.status;
     }
@@ -272,10 +377,6 @@ export class QRtcPeerConnection {
         }
     }
 
-    // ----------------------------------------
-    // Callback registry
-    // ----------------------------------------
-
     onDataChannelDo(id: string, onDataChannel: QRtcOnDataChannelCallback): QRtcPeerConnection {
         this.onDataChannelCallbacks.set(id, onDataChannel);
         return this;
@@ -303,10 +404,6 @@ export class QRtcPeerConnection {
         return this.onRemoteStreamCallbacks.delete(id);
     }
 
-    // ----------------------------------------
-    // Connect logic
-    // ----------------------------------------
-
     connect(callbacks: QRtcPeerConnection.StateCallbacks = {}): void {
         this.diagnostics.connectCallCount++;
         if (this.isOpen() || !this.isReadyToConnect()) {
@@ -331,6 +428,538 @@ export class QRtcPeerConnection {
         pc.ondatachannel = (event) => this.notifyDataChannel(pc, event);
         pc.ontrack = (event) => this.notifyTrack(pc, event);
         this.setupStateChangeCallbacks(pc, callbacks);
+        this.startNativeObservation(pc);
+    }
+
+    beginNativeObservationBatch(): QRtcPeerConnection.NativeObservationBatch {
+        const batch: QRtcPeerConnection.NativeObservationBatch = {
+            observations: [],
+            parent: this.nativeObservationBatch,
+            binding: undefined,
+            kind: 'synchronous',
+            closed: false
+        };
+        this.nativeObservationBatch = batch;
+        return batch;
+    }
+
+    endNativeObservationBatch(batch: QRtcPeerConnection.NativeObservationBatch): void {
+        if (batch.closed) {
+            return;
+        }
+        batch.closed = true;
+        if (this.nativeObservationBatch === batch) {
+            this.nativeObservationBatch = batch.parent;
+        }
+        for (const capture of batch.observations.splice(0)) {
+            this.publishNativeObservation(capture.row, batch.parent, capture.binding);
+        }
+    }
+
+    private createNativeOperationBatch(): QRtcPeerConnection.NativeObservationBatch {
+        return {
+            observations: [],
+            parent: this.nativeObservationBatch,
+            binding: this.nativeObservation,
+            kind: 'operation',
+            closed: false
+        };
+    }
+
+    private captureNativeInvocation<T>(batch: QRtcPeerConnection.NativeObservationBatch, invoke: () => T): T {
+        const previous = this.nativeObservationBatch;
+        this.nativeObservationBatch = batch;
+        try {
+            return invoke();
+        }
+        finally {
+            this.nativeObservationBatch = previous;
+        }
+    }
+
+    getNativeObservationScope(): RtcNativeObservationScope | undefined {
+        const capability = this.dependencies.signalingDiagnostics?.nativeObservation;
+        return capability?.status === 'available' ? capability.scope : undefined;
+    }
+
+    getNativeIdentity(): RtcSignalingDiagnostics.NativeIdentity {
+        return this.nativeObservation?.identity ??
+            Object.freeze({
+                peerConnectionId: toRtcUnavailable(
+                    this.getNativeUnavailableReason()
+                ),
+                channelId: toRtcUnavailable('not-applicable')
+            });
+    }
+
+    private getNativeUnavailableReason(): RtcSignalingDiagnostics.ErrorUnavailableReason {
+        const capability = this.dependencies.signalingDiagnostics?.nativeObservation;
+        if (!capability) {
+            return 'disabled';
+        }
+        if (capability.status === 'unavailable') {
+            return capability.reason;
+        }
+        return capability.scope.getActive() ? this.nativeUnavailableReason : 'scope-disposed';
+    }
+
+    readNativeSnapshot(): RtcSignalingDiagnostics.NativeSnapshot {
+        return this.captureNativeSnapshot(this.nativeObservation);
+    }
+
+    readNativeChannelSnapshot(input: RtcNativeChannelSnapshotInput): RtcSignalingDiagnostics.NativeSnapshot {
+        const parent = input.observation.binding.parent;
+        const previousCapture = parent.capturing;
+        if (previousCapture || parent.retired) {
+            return readRtcNativeChannelSnapshot({ ...input, readFailed: true });
+        }
+        parent.capturing = true;
+        try {
+            const snapshot = readRtcNativeChannelSnapshot(input);
+            return parent.retired
+                ? Object.freeze({ ...snapshot, state: toRtcUnavailableNativeState('read-failed') })
+                : snapshot;
+        }
+        finally {
+            parent.capturing = previousCapture;
+        }
+    }
+
+    disposeNativeObservations(): void {
+        const binding = this.nativeObservation;
+        if (binding) {
+            this.detachNativeObservation(binding);
+        }
+        const batch = this.nativeObservationBatch;
+        if (batch) {
+            batch.closed = true;
+            batch.observations.length = 0;
+            this.nativeObservationBatch = batch.parent;
+        }
+    }
+
+    createChannelObservationBinding(): QRtcPeerConnection.ChannelObservationBinding | undefined {
+        const parent = this.nativeObservation;
+        const scope = this.getNativeObservationScope();
+        if (!parent || parent.retired || !scope || !parent.admission.admitted) {
+            return undefined;
+        }
+        this.bindNativeTransports(parent);
+        if (parent.retired) {
+            return undefined;
+        }
+        const admission = scope.allocate('channel');
+        if (!admission.admitted) {
+            return undefined;
+        }
+        return Object.freeze({
+            parent,
+            admission,
+            identity: Object.freeze({ peerConnectionId: parent.identity.peerConnectionId, channelId: admission.id })
+        });
+    }
+
+    retainChannelNativeError(
+        binding: QRtcPeerConnection.ChannelObservationBinding,
+        error: RtcSignalingDiagnostics.NativeError
+    ): void {
+        if (binding.parent.retired) {
+            return;
+        }
+        binding.parent.errorWindowAttached = true;
+        binding.parent.firstError ??= error;
+        binding.parent.typedReadUnavailableReason = readRtcTypedErrorUnavailableReason(
+            error,
+            binding.parent.typedReadUnavailableReason
+        );
+        if (toRtcNativeErrorIsTyped(error)) {
+            binding.parent.firstTypedError ??= error;
+        }
+    }
+
+    recordChannelObservation(
+        binding: QRtcPeerConnection.ChannelObservationBinding,
+        observation: RtcSignalingDiagnostics.NativeObservation
+    ): void {
+        this.publishNativeObservation(observation, this.nativeObservationBatch, binding.parent);
+    }
+
+    private startNativeObservation(pc: RTCPeerConnection): void {
+        const scope = this.getNativeObservationScope();
+        if (!scope) {
+            return;
+        }
+        const admission = scope.allocate('pc');
+        if (!admission.admitted) {
+            this.nativeUnavailableReason = scope.getActive() ? 'admission-limit' : 'scope-disposed';
+            return;
+        }
+        const binding = createRtcNativeBinding(pc, admission);
+        this.nativeObservation = binding;
+        for (
+            const [event, trigger] of [
+                ['iceconnectionstatechange', 'ice-connection'],
+                ['icegatheringstatechange', 'ice-gathering'],
+                ['signalingstatechange', 'signaling'],
+                ['connectionstatechange', 'connection']
+            ] as const
+        ) {
+            this.attachNativeListener(binding, pc, {
+                event,
+                listener: () => this.observeNativeState(binding, trigger),
+                transport: false
+            });
+        }
+        this.attachNativeListener(binding, pc, {
+            event: 'icecandidateerror',
+            listener: (event) => this.observeNativeError(binding, event, 'ice-candidate-error'),
+            transport: false
+        });
+        this.bindNativeTransports(binding);
+        if (!binding.retired && scope.consumeOrdinary()) {
+            const native = this.captureNativeSnapshot(binding);
+            if (!binding.retired) {
+                this.publishNativeObservation(
+                    {
+                        ...this.nativeSignalIdentity(),
+                        kind: 'native-lifetime',
+                        action: 'created',
+                        native
+                    },
+                    this.nativeObservationBatch,
+                    binding
+                );
+            }
+        }
+    }
+
+    private attachNativeListener(
+        binding: QRtcPeerConnection.NativeBinding,
+        target: EventTarget,
+        input: QRtcPeerConnection.NativeListenerInput
+    ): void {
+        if (binding.retired) {
+            return;
+        }
+        const listener = { target, event: input.event, listener: input.listener };
+        const attached = attachRtcNativeListener(listener);
+        if (binding.retired) {
+            detachRtcNativeListeners([listener]);
+            return;
+        }
+        if (attached) {
+            (input.transport ? binding.transportDetach : binding.detach).push(listener);
+            binding.errorWindowAttached ||= input.event === 'error' || input.event === 'icecandidateerror';
+        }
+        else {
+            binding.listenerCoverage = 'partial';
+        }
+    }
+
+    private bindNativeTransports(binding: QRtcPeerConnection.NativeBinding): void {
+        if (binding.retired || binding.capturing) {
+            return;
+        }
+        binding.capturing = true;
+        try {
+            const chain = readRtcTransportChain(binding.pc);
+            if (binding.retired) {
+                return;
+            }
+            binding.transportReason = chain.reason;
+            if (chain.sctp === binding.sctp && chain.dtls === binding.dtls && chain.ice === binding.ice) {
+                return;
+            }
+            detachRtcNativeListeners(binding.transportDetach.splice(0));
+            if (binding.retired) {
+                return;
+            }
+            binding.sctp = chain.sctp;
+            binding.dtls = chain.dtls;
+            binding.ice = chain.ice;
+            binding.transportOrdinal++;
+            binding.attachmentGap ||= readRtcTransportAttachmentGap(chain);
+            for (
+                const [target, trigger] of [[chain.sctp, 'sctp'], [chain.dtls, 'dtls'], [
+                    chain.ice,
+                    'ice-transport'
+                ]] as const
+            ) {
+                if (target) {
+                    this.attachNativeListener(binding, target, {
+                        event: 'statechange',
+                        listener: () => this.observeNativeState(binding, trigger),
+                        transport: true
+                    });
+                }
+            }
+            if (chain.dtls) {
+                this.attachNativeListener(binding, chain.dtls, {
+                    event: 'error',
+                    listener: (event) => this.observeNativeError(binding, event, 'dtls-error'),
+                    transport: true
+                });
+            }
+        }
+        finally {
+            binding.capturing = false;
+        }
+    }
+
+    private observeNativeState(
+        binding: QRtcPeerConnection.NativeBinding,
+        trigger: RtcSignalingDiagnostics.NativeTrigger,
+        nativeBatch: QRtcPeerConnection.NativeObservationBatch | undefined = this.nativeObservationBatch
+    ): void {
+        const scope = this.getNativeObservationScope();
+        if (binding.retired || binding.capturing || !scope?.getActive()) {
+            return;
+        }
+        if (!scope.getOrdinaryAvailable()) {
+            scope.consumeOrdinary();
+            return;
+        }
+        this.bindNativeTransports(binding);
+        const native = this.captureNativeSnapshot(binding);
+        const state = JSON.stringify(native.state);
+        if (binding.retired || state === binding.lastState) {
+            return;
+        }
+        binding.lastState = state;
+        if (scope.consumeOrdinary()) {
+            this.publishNativeObservation(
+                { ...this.nativeSignalIdentity(), kind: 'native-state', trigger, native },
+                nativeBatch,
+                binding
+            );
+        }
+    }
+
+    private observeNativeError(
+        binding: QRtcPeerConnection.NativeBinding,
+        event: Event,
+        source: RtcSignalingDiagnostics.NativeError['source']
+    ): void {
+        const scope = this.getNativeObservationScope();
+        if (binding.retired || !scope?.getActive() || (binding.firstError && binding.firstTypedError)) {
+            return;
+        }
+        const previousErrorCapture = binding.errorCapturing;
+        binding.errorCapturing = true;
+        let facts: RtcSignalingDiagnostics.NativeErrorFacts;
+        try {
+            facts = readRtcNativeEventError(event);
+        }
+        finally {
+            binding.errorCapturing = previousErrorCapture;
+        }
+        const error = Object.freeze({
+            ...facts,
+            source,
+            identity: binding.identity,
+            nativeSequence: scope.nextSequence()
+        });
+        this.retainNativeError(binding, error);
+    }
+
+    private observeNativeOperationError(
+        binding: QRtcPeerConnection.NativeBinding,
+        caught: unknown,
+        source: 'description-rejection' | 'candidate-rejection',
+        nativeBatch: QRtcPeerConnection.NativeObservationBatch
+    ): void {
+        const scope = this.getNativeObservationScope();
+        if (binding.retired || !scope?.getActive() || (binding.firstError && binding.firstTypedError)) {
+            return;
+        }
+        const facts = this.readNativeErrorFacts(binding, caught);
+        this.retainNativeError(
+            binding,
+            Object.freeze({ ...facts, source, identity: binding.identity, nativeSequence: scope.nextSequence() }),
+            nativeBatch
+        );
+    }
+
+    private readNativeErrorFacts(
+        binding: QRtcPeerConnection.NativeBinding,
+        caught: unknown
+    ): RtcSignalingDiagnostics.NativeErrorFacts {
+        const previousErrorCapture = binding.errorCapturing;
+        binding.errorCapturing = true;
+        try {
+            return readRtcNativeErrorFacts(caught);
+        }
+        finally {
+            binding.errorCapturing = previousErrorCapture;
+        }
+    }
+
+    private retainNativeError(
+        binding: QRtcPeerConnection.NativeBinding,
+        error: RtcSignalingDiagnostics.NativeError,
+        nativeBatch: QRtcPeerConnection.NativeObservationBatch | undefined = this.nativeObservationBatch
+    ): void {
+        if (binding.retired) {
+            return;
+        }
+        const first = !binding.firstError;
+        const typed = !binding.firstTypedError && toRtcNativeErrorIsTyped(error);
+        binding.firstError ??= error;
+        binding.typedReadUnavailableReason = readRtcTypedErrorUnavailableReason(
+            error,
+            binding.typedReadUnavailableReason
+        );
+        if (typed) {
+            binding.firstTypedError = error;
+        }
+        if ((first || typed) && this.getNativeObservationScope()?.consumeOrdinary()) {
+            const native = this.captureNativeSnapshot(binding);
+            if (!binding.retired) {
+                this.publishNativeObservation(
+                    {
+                        ...this.nativeSignalIdentity(),
+                        kind: 'native-first-error',
+                        first: first && typed ? 'both' : first ? 'observed' : 'typed',
+                        error,
+                        native
+                    },
+                    nativeBatch,
+                    binding
+                );
+            }
+        }
+    }
+
+    private captureNativeSnapshot(
+        binding: QRtcPeerConnection.NativeBinding | undefined
+    ): RtcSignalingDiagnostics.NativeSnapshot {
+        const scope = this.getNativeObservationScope();
+        const input = {
+            binding,
+            unavailableReason: this.getNativeUnavailableReason(),
+            identity: binding?.identity ?? this.getNativeIdentity(),
+            nativeSequence: scope?.nextSequence() ?? 0,
+            capture: scope?.getCaptureStatus() ??
+                Object.freeze({
+                    scopeId: toRtcUnavailable(this.getNativeUnavailableReason()),
+                    scope: 'unavailable' as const,
+                    ordinaryRowsSuppressed: false,
+                    admissionLimited: false,
+                    payloadLimited: false
+                }),
+            readFailed: binding?.capturing ?? false
+        };
+        if (!binding || input.readFailed) {
+            return readRtcNativeSnapshot(input);
+        }
+        binding.capturing = true;
+        try {
+            const native = readRtcNativeSnapshot(input);
+            return binding.retired
+                ? Object.freeze({ ...native, state: toRtcUnavailableNativeState('read-failed') })
+                : native;
+        }
+        finally {
+            binding.capturing = false;
+        }
+    }
+
+    private captureNativeRetirement(
+        binding: QRtcPeerConnection.NativeBinding | undefined,
+        retirement: RtcSignalingDiagnostics.Retirement
+    ): RtcSignalingDiagnostics.NativeObservation | undefined {
+        if (!binding || binding.retired) {
+            return undefined;
+        }
+        const captured = this.captureNativeSnapshot(binding);
+        if (binding.retired) {
+            return undefined;
+        }
+        binding.retired = true;
+        const native = toRtcRetiredNativeSnapshot(captured);
+        this.detachNativeObservation(binding);
+        return this.getNativeObservationScope()?.consumeTerminal(binding.admission, 'final')
+            ? Object.freeze({
+                ...this.nativeSignalIdentity(),
+                kind: 'native-lifetime',
+                action: 'retiring',
+                retirement,
+                native
+            })
+            : undefined;
+    }
+
+    private detachNativeObservation(binding: QRtcPeerConnection.NativeBinding): void {
+        binding.retired = true;
+        detachRtcNativeListeners([...binding.detach.splice(0), ...binding.transportDetach.splice(0)]);
+    }
+
+    private nativeSignalIdentity(): RtcSignalingDiagnostics.SignalIdentity {
+        return {
+            localSessionId: this.input.sessionId,
+            peerSessionId: this.input.peerSessionId,
+            signalType: undefined,
+            offerId: undefined
+        };
+    }
+
+    private publishNativeObservation(
+        observation: RtcSignalingDiagnostics.NativeObservation,
+        batch: QRtcPeerConnection.NativeObservationBatch | undefined,
+        binding: QRtcPeerConnection.NativeBinding
+    ): void {
+        const belongs = batch?.kind === 'synchronous' ||
+            (binding === batch?.binding &&
+                !(observation.kind === 'native-lifetime' && observation.action === 'retiring'));
+        if (batch && !batch.closed && belongs) {
+            batch.observations.push(Object.freeze({ binding, row: Object.freeze(observation) }));
+        }
+        else if (batch?.parent) {
+            this.publishNativeObservation(observation, batch.parent, binding);
+        }
+        else {
+            recordRtcNativeObservation(this.dependencies.signalingDiagnostics, Object.freeze(observation));
+        }
+    }
+
+    private async applyLocalDescription(
+        pc: RTCPeerConnection,
+        nativeBatch: QRtcPeerConnection.NativeObservationBatch,
+        description?: RTCLocalSessionDescriptionInit
+    ): Promise<void> {
+        const binding = this.nativeObservation?.pc === pc ? this.nativeObservation : undefined;
+        try {
+            await this.captureNativeInvocation(nativeBatch, () => pc.setLocalDescription(description));
+            if (binding && !binding.retired) {
+                this.observeNativeState(binding, 'transport-attached', nativeBatch);
+            }
+        }
+        catch (caught) {
+            if (binding) {
+                this.observeNativeOperationError(binding, caught, 'description-rejection', nativeBatch);
+            }
+            throw caught;
+        }
+    }
+
+    private async applyRemoteDescription(
+        pc: RTCPeerConnection,
+        description: RTCSessionDescriptionInit,
+        nativeBatch: QRtcPeerConnection.NativeObservationBatch
+    ): Promise<void> {
+        const binding = this.nativeObservation?.pc === pc ? this.nativeObservation : undefined;
+        try {
+            await this.captureNativeInvocation(nativeBatch, () => pc.setRemoteDescription(description));
+            if (binding && !binding.retired) {
+                this.observeNativeState(binding, 'transport-attached', nativeBatch);
+            }
+        }
+        catch (caught) {
+            if (binding) {
+                this.observeNativeOperationError(binding, caught, 'description-rejection', nativeBatch);
+            }
+            throw caught;
+        }
     }
 
     private async handleNegotiationNeeded(pc: RTCPeerConnection): Promise<void> {
@@ -338,13 +967,14 @@ export class QRtcPeerConnection {
             return;
         }
         this.diagnostics.negotiationNeededCount++;
+        const nativeBatch = this.createNativeOperationBatch();
         try {
             if (this.status.makingOffer || pc.signalingState !== 'stable') {
                 this.diagnostics.negotiationSkippedCount++;
                 return;
             }
             this.status.makingOffer = true;
-            await pc.setLocalDescription();
+            await this.applyLocalDescription(pc, nativeBatch);
             if (this.status.pc !== pc) {
                 return;
             }
@@ -373,6 +1003,7 @@ export class QRtcPeerConnection {
             if (this.status.pc === pc) {
                 this.status.makingOffer = false;
             }
+            this.endNativeObservationBatch(nativeBatch);
         }
     }
 
@@ -407,16 +1038,22 @@ export class QRtcPeerConnection {
     }
 
     private async notifyDataChannel(pc: RTCPeerConnection, event: RTCDataChannelEvent): Promise<void> {
-        for (const callback of this.onDataChannelCallbacks.values()) {
-            if (this.status.pc !== pc) {
-                return;
+        const nativeBatch = this.createNativeOperationBatch();
+        try {
+            for (const callback of this.onDataChannelCallbacks.values()) {
+                if (this.status.pc !== pc) {
+                    return;
+                }
+                try {
+                    await this.captureNativeInvocation(nativeBatch, () => callback(event));
+                }
+                catch (caught) {
+                    console.error('RTC data-channel callback failed', toError(caught));
+                }
             }
-            try {
-                await callback(event);
-            }
-            catch (caught) {
-                console.error('RTC data-channel callback failed', toError(caught));
-            }
+        }
+        finally {
+            this.endNativeObservationBatch(nativeBatch);
         }
     }
 
@@ -512,23 +1149,39 @@ export class QRtcPeerConnection {
             : pc.createDataChannel(label, dataChannelDict);
     }
 
-    async handleSignal(signal: QRtcSignal) {
-        const pc = this.status.pc;
-        const application = this.signalingChain
-            .then(
-                async () => {
-                    if (pc && this.status.pc === pc) {
-                        await this.processSignal(pc, signal);
-                    }
-                }
-            );
-        // Native description promises can remain pending after close. Reset releases this
-        // lifetime's callers; native-PC identity guards discard any eventual continuation.
+    async handleSignal(signal: QRtcSignal): Promise<void> {
         const lifetime = this.signalingLifetime.signal;
-        const run = new Promise<void>((resolve, reject) => {
-            const retire = () => resolve();
+        const nativeBatch = this.createNativeOperationBatch();
+        const pc = this.status.pc;
+        const binding = this.nativeObservation?.pc === pc ? this.nativeObservation : undefined;
+        const capture: QRtcPeerConnection.SignalCapture = { pc, nativeIdentity: this.getNativeIdentity(), nativeBatch };
+        const application = this.signalingChain
+            .then(async () => {
+                if (!pc || this.status.pc !== pc) {
+                    this.observeNativeSignal(pc ? 'retired-before-application' : 'no-native-peer', capture, signal);
+                    return;
+                }
+                this.observeNativeSignal('application-started', capture, signal);
+                if (this.status.pc !== pc || lifetime.aborted) {
+                    this.observeNativeSignal('retired-before-application', capture, signal);
+                    return;
+                }
+                try {
+                    await this.processSignal({ ...capture, pc }, signal);
+                    if (binding && !binding.retired) {
+                        this.observeNativeState(binding, 'transport-attached', nativeBatch);
+                    }
+                    this.observeNativeSignal('application-returned', capture, signal);
+                }
+                catch (caught) {
+                    this.observeNativeSignal('application-threw', capture, signal);
+                    throw caught;
+                }
+            });
+        const run = new Promise<RtcSignalingDiagnostics.CallerRelease>((resolve, reject) => {
+            const retire = () => resolve('lifetime-retired');
             lifetime.addEventListener('abort', retire, { once: true });
-            void application.then(resolve, reject).then(() => {
+            void application.then(() => resolve('application-returned'), reject).then(() => {
                 lifetime.removeEventListener('abort', retire);
             });
         });
@@ -536,40 +1189,107 @@ export class QRtcPeerConnection {
             this.diagnostics.inboundSignalingErrorCount++;
             console.error('Signaling chain error', toError(caught));
         });
-        await run;
+        try {
+            const release = await run;
+            this.observeCallerRelease(release, capture, signal);
+        }
+        catch (caught) {
+            this.observeCallerRelease('application-threw', capture, signal);
+            throw caught;
+        }
+        finally {
+            this.endNativeObservationBatch(nativeBatch);
+        }
     }
 
-    private async processSignal(pc: RTCPeerConnection, signal: QRtcSignal): Promise<void> {
+    private observeNativeSignal(
+        disposition: RtcSignalingDiagnostics.NativeDisposition,
+        capture: QRtcPeerConnection.SignalCapture,
+        signal: QRtcSignal
+    ): void {
+        const pc = capture.pc;
+        recordRtcSignalingObservation(this.dependencies.signalingDiagnostics, {
+            kind: 'native-signal-decision',
+            disposition,
+            localSessionId: this.input.sessionId,
+            peerSessionId: this.input.peerSessionId,
+            signalType: signal.signalType,
+            offerId: signal.signalType === 'IceCandidate' ? undefined : signal.offerId,
+            nativeIdentity: capture.nativeIdentity,
+            capturedPeerConnection: pc !== undefined,
+            currentPeerConnection: pc === undefined ? undefined : this.status.pc === pc,
+            offerMatches: undefined,
+            signalingState: undefined
+        });
+    }
+
+    private observeCallerRelease(
+        disposition: RtcSignalingDiagnostics.CallerRelease,
+        capture: QRtcPeerConnection.SignalCapture,
+        signal: QRtcSignal
+    ): void {
+        const pc = capture.pc;
+        recordRtcSignalingObservation(this.dependencies.signalingDiagnostics, {
+            kind: 'signal-caller-release',
+            disposition,
+            localSessionId: this.input.sessionId,
+            peerSessionId: this.input.peerSessionId,
+            signalType: signal.signalType,
+            offerId: signal.signalType === 'IceCandidate' ? undefined : signal.offerId,
+            nativeIdentity: capture.nativeIdentity,
+            capturedPeerConnection: pc !== undefined,
+            currentPeerConnection: pc === undefined ? undefined : this.status.pc === pc
+        });
+    }
+
+    private async processSignal(capture: QRtcPeerConnection.NativeSignalCapture, signal: QRtcSignal): Promise<void> {
         if (signal.signalType === QRtcSignalingType.Answer) {
-            await this.handleAnswer(pc, signal);
+            await this.handleAnswer(capture, signal);
         }
         else if (signal.signalType === QRtcSignalingType.Offer) {
-            await this.handleOffer(pc, signal);
+            await this.handleOffer(capture, signal);
         }
         else {
-            await this.handleInboundIceCandidate(pc, signal.payload.candidate);
+            await this.handleInboundIceCandidate(capture, signal);
         }
     }
 
     private async handleAnswer(
-        pc: RTCPeerConnection,
+        capture: QRtcPeerConnection.NativeSignalCapture,
         signal: Extract<QRtcSignal, { signalType: 'Answer'; }>
     ): Promise<void> {
+        const pc = capture.pc;
         this.diagnostics.inboundAnswerCount++;
-        if (
-            this.status.pc !== pc || signal.offerId !== this.outstandingOfferId ||
-            pc.signalingState !== 'have-local-offer'
-        ) {
+        const currentPeerConnection = this.status.pc === pc;
+        const offerMatches = signal.offerId === this.outstandingOfferId;
+        const signalingState = pc.signalingState;
+        if (!currentPeerConnection || !offerMatches || signalingState !== 'have-local-offer') {
             this.diagnostics.staleAnswerIgnoredCount++;
+            recordRtcSignalingObservation(this.dependencies.signalingDiagnostics, {
+                kind: 'native-signal-decision',
+                disposition: 'answer-ineligible',
+                localSessionId: this.input.sessionId,
+                peerSessionId: this.input.peerSessionId,
+                signalType: signal.signalType,
+                offerId: signal.offerId,
+                nativeIdentity: capture.nativeIdentity,
+                capturedPeerConnection: true,
+                currentPeerConnection,
+                offerMatches,
+                signalingState
+            });
             return;
         }
-        await pc.setRemoteDescription(signal.payload.description);
+        await this.applyRemoteDescription(pc, signal.payload.description, capture.nativeBatch);
+        this.observeNativeSignal('remote-description-returned', capture, signal);
         if (this.status.pc !== pc) {
+            this.observeNativeSignal('retired-after-remote-description', capture, signal);
             return;
         }
         this.outstandingOfferId = undefined;
-        await this.flushIceCandidates(pc);
+        await this.flushIceCandidates(pc, capture.nativeBatch);
         if (this.status.pc !== pc) {
+            this.observeNativeSignal('retired-after-ice-flush', capture, signal);
             return;
         }
         this.status.makingOffer = false;
@@ -577,9 +1297,10 @@ export class QRtcPeerConnection {
     }
 
     private async handleOffer(
-        pc: RTCPeerConnection,
+        capture: QRtcPeerConnection.NativeSignalCapture,
         signal: Extract<QRtcSignal, { signalType: 'Offer'; }>
     ): Promise<void> {
+        const pc = capture.pc;
         this.diagnostics.inboundOfferCount++;
         const collision = this.status.makingOffer || pc.signalingState !== 'stable';
         if (collision) {
@@ -588,28 +1309,35 @@ export class QRtcPeerConnection {
         this.status.ignoreOffer = !this.input.isPolite && collision;
         if (this.status.ignoreOffer) {
             this.diagnostics.ignoredOfferCollisionCount++;
+            this.observeNativeSignal('impolite-offer-ignored', capture, signal);
             return;
         }
         if (collision) {
             this.diagnostics.politeOfferRollbackCount++;
             this.outstandingOfferId = undefined;
             await Promise.all([
-                pc.setLocalDescription({ type: 'rollback' }),
-                pc.setRemoteDescription(signal.payload.description)
+                this.applyLocalDescription(pc, capture.nativeBatch, { type: 'rollback' }),
+                this.applyRemoteDescription(pc, signal.payload.description, capture.nativeBatch)
             ]);
+            this.observeNativeSignal('rollback-and-remote-description-returned', capture, signal);
         }
         else {
-            await pc.setRemoteDescription(signal.payload.description);
+            await this.applyRemoteDescription(pc, signal.payload.description, capture.nativeBatch);
+            this.observeNativeSignal('remote-description-returned', capture, signal);
         }
         if (this.status.pc !== pc) {
+            this.observeNativeSignal('retired-after-remote-description', capture, signal);
             return;
         }
-        await this.flushIceCandidates(pc);
+        await this.flushIceCandidates(pc, capture.nativeBatch);
         if (this.status.pc !== pc) {
+            this.observeNativeSignal('retired-after-ice-flush', capture, signal);
             return;
         }
-        await pc.setLocalDescription();
+        await this.applyLocalDescription(pc, capture.nativeBatch);
+        this.observeNativeSignal('local-answer-description-returned', capture, signal);
         if (this.status.pc !== pc) {
+            this.observeNativeSignal('retired-after-local-description', capture, signal);
             return;
         }
         this.status.makingOffer = false;
@@ -617,10 +1345,26 @@ export class QRtcPeerConnection {
         await this.sendAnswer(pc, signal.offerId);
     }
 
-    private async flushIceCandidates(pc: RTCPeerConnection): Promise<void> {
+    private async flushIceCandidates(
+        pc: RTCPeerConnection,
+        nativeBatch: QRtcPeerConnection.NativeObservationBatch
+    ): Promise<void> {
+        const binding = this.nativeObservation?.pc === pc ? this.nativeObservation : undefined;
+        const operationOrdinal = binding ? ++this.nativeOperationOrdinal : 0;
         await flushRtcIceCandidateQueue({
+            readCandidateError: binding ? (caught) => this.readNativeErrorFacts(binding, caught) : undefined,
+            onCandidateObservation: binding
+                ? (observation) =>
+                    this.observeCandidateApplication(
+                        { binding, operationOrdinal, source: 'queue-drain', nativeBatch },
+                        observation
+                    )
+                : undefined,
             queue: this.status.iceCandidateQueue,
-            peerConnection: pc,
+            peerConnection: {
+                addIceCandidate: (candidate) =>
+                    this.captureNativeInvocation(nativeBatch, () => pc.addIceCandidate(candidate))
+            },
             onCandidateAdded: () => {
                 if (this.status.pc === pc) {
                     this.diagnostics.addedIceCandidateCount++;
@@ -658,22 +1402,29 @@ export class QRtcPeerConnection {
         }
     }
 
-    private async handleInboundIceCandidate(pc: RTCPeerConnection, candidate: RTCIceCandidateInit): Promise<void> {
+    private async handleInboundIceCandidate(
+        capture: QRtcPeerConnection.NativeSignalCapture,
+        signal: Extract<QRtcSignal, { signalType: 'IceCandidate'; }>
+    ): Promise<void> {
+        const pc = capture.pc;
         this.diagnostics.inboundIceCandidateCount++;
         if (this.status.ignoreOffer) {
             this.diagnostics.ignoredIceCandidateForIgnoredOfferCount++;
+            this.observeNativeSignal('ice-ignored', capture, signal);
             return;
         }
         try {
             if (pc.remoteDescription?.type) {
-                await pc.addIceCandidate(candidate);
+                await this.applyNativeCandidate(pc, signal.payload.candidate, capture.nativeBatch);
+                this.observeNativeSignal('ice-added', capture, signal);
                 if (this.status.pc === pc) {
                     this.diagnostics.addedIceCandidateCount++;
                 }
             }
             else {
-                this.status.iceCandidateQueue.push(candidate);
+                this.status.iceCandidateQueue.push(signal.payload.candidate);
                 this.diagnostics.queuedIceCandidateCount++;
+                this.observeNativeSignal('ice-queued', capture, signal);
             }
         }
         catch (caught) {
@@ -682,6 +1433,87 @@ export class QRtcPeerConnection {
                 throw error;
             }
         }
+    }
+
+    private async applyNativeCandidate(
+        pc: RTCPeerConnection,
+        candidate: RTCIceCandidateInit,
+        nativeBatch: QRtcPeerConnection.NativeObservationBatch
+    ): Promise<void> {
+        const binding = this.nativeObservation?.pc === pc ? this.nativeObservation : undefined;
+        const operation = binding
+            ? { binding, operationOrdinal: ++this.nativeOperationOrdinal, source: 'direct' as const, nativeBatch }
+            : undefined;
+        let submitted = false;
+        try {
+            const addition = this.captureNativeInvocation(nativeBatch, () => pc.addIceCandidate(candidate));
+            submitted = true;
+            if (operation) {
+                this.observeCandidateApplication(operation, { candidate, index: 0, stage: 'submitted' });
+            }
+            await addition;
+        }
+        catch (caught) {
+            if (operation && !submitted) {
+                this.observeCandidateApplication(operation, { candidate, index: 0, stage: 'submitted' });
+            }
+            if (operation) {
+                this.observeCandidateApplication(operation, {
+                    candidate,
+                    index: 0,
+                    stage: 'rejected',
+                    error: this.readNativeErrorFacts(operation.binding, caught)
+                });
+            }
+            throw caught;
+        }
+        if (operation) {
+            this.observeCandidateApplication(operation, { candidate, index: 0, stage: 'returned' });
+        }
+    }
+
+    private observeCandidateApplication(
+        operation: QRtcPeerConnection.CandidateOperation,
+        observation: FlushRtcIceCandidateQueueObservation
+    ): void {
+        const scope = this.getNativeObservationScope();
+        if (scope?.getActive() && observation.stage === 'rejected') {
+            this.retainNativeError(
+                operation.binding,
+                Object.freeze({
+                    ...observation.error,
+                    source: 'candidate-rejection',
+                    identity: operation.binding.identity,
+                    nativeSequence: scope.nextSequence()
+                }),
+                operation.nativeBatch
+            );
+        }
+        if (!scope?.consumeOrdinary()) {
+            return;
+        }
+        const fragments = readRtcCandidateFragments(observation.candidate, {
+            ice: operation.binding.ice,
+            reason: operation.binding.transportReason
+        });
+        const candidate = toRtcCandidateApplication({
+            operation,
+            observation,
+            fragments,
+            currentPeerConnection: this.status.pc === operation.binding.pc,
+            nativeSequence: scope.nextSequence(),
+            capture: scope.getCaptureStatus()
+        });
+        this.publishNativeObservation(
+            {
+                ...this.nativeSignalIdentity(),
+                signalType: 'IceCandidate',
+                kind: 'native-candidate-application',
+                candidate
+            },
+            operation.nativeBatch,
+            operation.binding
+        );
     }
 
     async handleReconnect(): Promise<void> {
@@ -823,7 +1655,6 @@ export class QRtcPeerConnection {
             throw new Error('PeerConnection not initialized');
         }
 
-        // Replace local stream reference
         this.status.localStream = stream;
 
         // Add or replace tracks per kind (audio/video). ReplaceTrack supports device switching.
@@ -854,8 +1685,8 @@ export class QRtcPeerConnection {
             return;
         }
 
-        for (const t of stream.getAudioTracks()) {
-            t.enabled = enabled;
+        for (const track of stream.getAudioTracks()) {
+            track.enabled = enabled;
         }
     }
 
@@ -865,8 +1696,8 @@ export class QRtcPeerConnection {
             return;
         }
 
-        for (const t of stream.getVideoTracks()) {
-            t.enabled = enabled;
+        for (const track of stream.getVideoTracks()) {
+            track.enabled = enabled;
         }
     }
 
@@ -882,9 +1713,9 @@ export class QRtcPeerConnection {
             ? stream.getAudioTracks()
             : stream.getVideoTracks();
 
-        for (const t of tracks) {
+        for (const track of tracks) {
             try {
-                t.stop();
+                track.stop();
             }
             catch {
                 // ignore

@@ -1,3 +1,4 @@
+import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import { toControlCommandIssue, type ControlCommandIssue } from '../control/control-command-issue.ts';
 import {
     validateAllowedFields,
@@ -19,6 +20,9 @@ export function validateRecipeFields(recipe: RallarBlackBoxTestRecord, path: str
     const fields = RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.recipe;
     return [
         ...validateAllowedFields(recipe, fields, path),
+        ...(parseRtcCaptureMode(recipe.rtcCaptureMode).left ?? []).map((issue) =>
+            toControlCommandIssue(`${path}.rtcCaptureMode: ${issue.message}`)
+        ),
         ...(recipe.schemaVersion === 1 ? [] : [toControlCommandIssue(`${path}.schemaVersion must be 1.`)]),
         ...validateRequiredFields({ record: recipe, fields, path, ownMessageFields: RECIPE_FIELDS_WITH_OWN_MESSAGE }),
         ...validateStringField(recipe, 'recipeId', path),

@@ -1,3 +1,6 @@
+import { toBlackBoxRallarSerializedError } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-serialized-error.ts';
+import { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
+
 import type {
     RallarBlackBoxTestCleanupInput,
     RallarBlackBoxTestCommandOutcome,
@@ -24,6 +27,13 @@ export function toTerminalCleanupReason(
 }
 
 export function decodeThrownCommandOutcome(error: unknown): RallarBlackBoxTestCommandOutcome {
+    if (error instanceof RallarRtcCaptureUnverifiedError) {
+        return {
+            status: 'failed',
+            error: { code: error.code, message: error.message, details: toBlackBoxRallarSerializedError(error) },
+            nextStatus: 'failed'
+        };
+    }
     return isAbortError(error)
         ? {
             status: 'cancelled',

@@ -16,10 +16,12 @@ import type {
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from './browser-rallar-message-dispatch.ts';
 import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
@@ -33,7 +35,7 @@ export namespace BrowserRallarMessagesController {
         readonly wsInbox: BrowserWebSocketInbox;
         /** Where `channel(...)` registers a definition's recovery owner, for the resync recovery to find. */
         readonly recoveryOwners: BrowserChannelRecoveryOwners;
-        connect(): Promise<ApiMiddleware>;
+        connect(capture?: Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'>): Promise<ApiMiddleware>;
         readMiddleware(): ApiMiddleware | undefined;
         requireMiddleware(): ApiMiddleware;
         requireSession(): AuthSession;
@@ -69,6 +71,7 @@ export class BrowserRallarMessagesController {
             creation: input.creation,
             deliveries: input.deliveries,
             dispatch,
+            sessionDeliveries: input.sessionDeliveries,
             inputValidator,
             connect: input.connect,
             requireSession: input.requireSession,
@@ -79,6 +82,19 @@ export class BrowserRallarMessagesController {
             resolveRoomSendFence: input.resolveRoomSendFence
         });
 
+        this.operations = this.createOperations(
+            inputValidator,
+            input.recoveryOwners,
+            () => input.requireMiddleware().middleware.volatileBudget.readReport(input.nowMs())
+        );
+        this.crdtTransport = createRallarCrdtMessageTransport(this.operations);
+    }
+
+    private createOperations(
+        inputValidator: BrowserMessageInputValidator,
+        recoveryOwners: BrowserChannelRecoveryOwners,
+        readUsage: RallarMessagesOperations['readUsage']
+    ): RallarMessagesOperations {
         const rtc: RallarMessagesOperations['rtc'] = {
             send: async <T>(sendInput: RallarRtcSendInput<T>) => await this.sender.sendRtc(sendInput, undefined),
             onMessage: <T>(
@@ -98,9 +114,9 @@ export class BrowserRallarMessagesController {
             sender: this.sender,
             rtc,
             ws,
-            recoveryOwners: input.recoveryOwners
+            recoveryOwners
         });
-        this.operations = {
+        return {
             rtc,
             ws,
             channel: <T>(
@@ -109,8 +125,7 @@ export class BrowserRallarMessagesController {
             room: <T>(
                 definition: RallarRoomMessageChannelDefinition
             ): RallarTypedMessageChannel<T> => channels.room<T>(definition),
-            readUsage: () => input.requireMiddleware().middleware.volatileBudget.readReport(input.nowMs())
+            readUsage
         };
-        this.crdtTransport = createRallarCrdtMessageTransport(this.operations);
     }
 }

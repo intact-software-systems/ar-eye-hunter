@@ -6,6 +6,7 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupId } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
+import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 
 export type RallarBrowserConnectStatus = 'idle' | 'connecting' | 'connected';
 
@@ -152,7 +153,7 @@ export class BrowserFacadeRuntimeState implements RallarBrowserFacadeRuntimeCont
         this.runtimeDefaults = defaults
             ? cloneRallarRuntimeDefaults(defaults)
             : undefined;
-        this.defaultScope = defaults
+        this.defaultScope = defaults?.applicationId
             ? {
                 applicationId: defaults.applicationId,
                 workspaceId: defaults.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID
@@ -249,8 +250,12 @@ export class BrowserFacadeRuntimeState implements RallarBrowserFacadeRuntimeCont
 export function cloneRallarRuntimeDefaults(
     defaults: RallarDefaults
 ): RallarDefaults {
+    const parsed = parseRtcCaptureMode(defaults.rtc?.captureMode);
+    if (parsed.left) {
+        throw new Error(parsed.left[0].message);
+    }
     return {
-        applicationId: defaults.applicationId,
+        ...(defaults.applicationId === undefined ? {} : { applicationId: defaults.applicationId }),
         ...(defaults.workspaceId !== undefined
             ? { workspaceId: defaults.workspaceId }
             : {}),

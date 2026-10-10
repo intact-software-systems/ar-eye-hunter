@@ -363,10 +363,15 @@ function createChannel(input: ChannelInput): ChannelFixture {
     const inputValidator = new BrowserMessageInputValidator({ readMaxPayloadBytes: () => 64 * 1024 });
     const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
     const feed = new BrowserDeliverySettlements();
-    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, { deliverySettlements: feed, readMiddleware: () => context });
+    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, {
+        deliverySettlements: feed,
+        readMiddleware: () => context,
+        readRtcCaptureReceipt: () => undefined
+    }, () => context.session);
     sessionDeliveries.beginSession(context.session);
     const epoch = feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const sender = new BrowserRallarMessageSender({
+        sessionDeliveries,
         creation: {
             createUnicast: newALUnicastMessage,
             createMulticast: newALMulticastMessage,

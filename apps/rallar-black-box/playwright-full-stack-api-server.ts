@@ -1,3 +1,8 @@
+import {
+    readFullStackRtcIceFixtureRequests,
+    type ReadFullStackRtcIceFixtureRequestsInput
+} from '../../packages/shared-test/black-box-runner/fixtures/read-full-stack-rtc-ice-fixture-requests.ts';
+
 export const FULL_STACK_API_SERVER_MODES = [
     'postgres',
     'memory'
@@ -5,20 +10,53 @@ export const FULL_STACK_API_SERVER_MODES = [
 
 export type FullStackApiServerMode = typeof FULL_STACK_API_SERVER_MODES[number];
 
-type EnvReader = Readonly<Record<string, string | undefined>>;
+type FullStackEnvironment = Readonly<Record<string, string | undefined>>;
 
-export type FullStackApiV1WebServer = Readonly<{
-    command: string;
-    url: string;
-    reuseExistingServer: boolean;
-    timeout: number;
-}>;
+export interface FullStackApiV1WebServer {
+    readonly command: string;
+    readonly url: string;
+    readonly reuseExistingServer: boolean;
+    readonly timeout: number;
+}
+
+export interface FullStackApiV1WebServerInput {
+    readonly mode: FullStackApiServerMode;
+    readonly apiBaseUrl: string;
+    readonly spaBaseUrl: string;
+    readonly reuseExistingServer: boolean;
+    readonly requireFreshPostgres: boolean;
+    readonly environment: FullStackEnvironment;
+    readonly admittedRtcCaseId: ReadFullStackRtcIceFixtureRequestsInput['admittedCaseId'];
+}
+
+export interface DefaultFullStackApiV1WebServerInput {
+    readonly mode?: FullStackApiServerMode;
+    readonly apiBaseUrl?: string;
+    readonly spaBaseUrl?: string;
+    readonly reuseExistingServer?: boolean;
+    readonly requireFreshPostgres?: boolean;
+    readonly environment?: FullStackEnvironment;
+    readonly admittedRtcCaseId?: ReadFullStackRtcIceFixtureRequestsInput['admittedCaseId'];
+}
+
+export interface FullStackReadinessHttpEvidence {
+    readonly service: 'API' | 'control';
+    readonly ok: boolean;
+    readonly status: number;
+    readonly statusText: string;
+}
+
+export interface FullStackConfiguredServiceEvidenceInput {
+    readonly api: FullStackConfiguredServiceProbe;
+    readonly control: FullStackConfiguredServiceProbe;
+    readonly expectedApiBaseUrl: string;
+}
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8080';
 const DEFAULT_SPA_BASE_URL = 'http://localhost:5176';
 
 export function readFullStackApiServerMode(
-    env: EnvReader = process.env
+    env: FullStackEnvironment = process.env
 ): FullStackApiServerMode {
     const raw = env.RALLAR_BLACK_BOX_API_MODE?.trim();
     if (!raw) {
@@ -35,45 +73,59 @@ export function readFullStackApiServerMode(
 }
 
 export function readFullStackApiBaseUrl(
-    env: EnvReader = process.env
+    env: FullStackEnvironment = process.env
 ): string {
     return normalizeBaseUrl(env.VITE_RALLAR_API_BASE_URL ?? DEFAULT_API_BASE_URL);
 }
 
 export function readFullStackSpaBaseUrl(
-    env: EnvReader = process.env
+    env: FullStackEnvironment = process.env
 ): string {
     return normalizeBaseUrl(env.VITE_RALLAR_SPA_BASE_URL ?? DEFAULT_SPA_BASE_URL);
 }
 
-export function createFullStackApiV1WebServer(
-    input: Readonly<{
-        mode?: FullStackApiServerMode;
-        apiBaseUrl?: string;
-        spaBaseUrl?: string;
-        reuseExistingServer?: boolean;
-        requireFreshPostgres?: boolean;
-    }> = {}
+export function createDefaultFullStackApiV1WebServer(
+    input: DefaultFullStackApiV1WebServerInput
 ): FullStackApiV1WebServer {
-    const mode = input.mode ?? readFullStackApiServerMode();
+    const environment = input.environment ?? process.env;
+    return createFullStackApiV1WebServer({
+        mode: input.mode ?? readFullStackApiServerMode(environment),
+        apiBaseUrl: input.apiBaseUrl ?? readFullStackApiBaseUrl(environment),
+        spaBaseUrl: input.spaBaseUrl ?? readFullStackSpaBaseUrl(environment),
+        reuseExistingServer: input.reuseExistingServer ?? true,
+        requireFreshPostgres: input.requireFreshPostgres ?? false,
+        admittedRtcCaseId: input.admittedRtcCaseId ?? null,
+        environment
+    });
+}
+
+export function createFullStackApiV1WebServer(
+    input: FullStackApiV1WebServerInput
+): FullStackApiV1WebServer {
+    const environment = input.environment;
+    const mode = input.mode;
     if (input.requireFreshPostgres === true && mode !== 'postgres') {
         throw new Error('Fresh Postgres API isolation requires mode postgres.');
     }
     const apiBaseUrl = normalizeBaseUrl(
-        input.apiBaseUrl ?? readFullStackApiBaseUrl()
+        input.apiBaseUrl
     );
     const spaBaseUrl = normalizeBaseUrl(
-        input.spaBaseUrl ?? readFullStackSpaBaseUrl()
+        input.spaBaseUrl
     );
+
+    const iceRequests = mode === 'memory'
+        ? readFullStackRtcIceFixtureRequests({ environment, admittedCaseId: input.admittedRtcCaseId })
+        : 20;
 
     return {
         command: mode === 'memory'
-            ? createMemoryApiCommand(apiBaseUrl, spaBaseUrl)
+            ? createMemoryApiCommand(apiBaseUrl, spaBaseUrl, iceRequests)
             : createPostgresApiCommand(apiBaseUrl, spaBaseUrl),
         url: `${apiBaseUrl}/api/config`,
-        reuseExistingServer: input.requireFreshPostgres === true
+        reuseExistingServer: mode === 'memory' || input.requireFreshPostgres === true
             ? false
-            : input.reuseExistingServer ?? true,
+            : input.reuseExistingServer,
         timeout: mode === 'memory' ? 120_000 : 90_000
     };
 }
@@ -109,12 +161,7 @@ export function assertFullStackApiConfigEvidence(
 }
 
 export function assertFullStackReadinessHttpEvidence(
-    input: Readonly<{
-        service: 'API' | 'control';
-        ok: boolean;
-        status: number;
-        statusText: string;
-    }>
+    input: FullStackReadinessHttpEvidence
 ): void {
     if (!input.ok) {
         throw new Error(
@@ -153,11 +200,7 @@ export type FullStackConfiguredServiceProbe =
     }>;
 
 export async function evaluateFullStackConfiguredServiceEvidence(
-    input: Readonly<{
-        api: FullStackConfiguredServiceProbe;
-        control: FullStackConfiguredServiceProbe;
-        expectedApiBaseUrl: string;
-    }>
+    input: FullStackConfiguredServiceEvidenceInput
 ): Promise<'ready' | 'unavailable'> {
     if (input.api.kind === 'reachable') {
         assertFullStackReadinessHttpEvidence({
@@ -185,7 +228,7 @@ export async function evaluateFullStackConfiguredServiceEvidence(
         : 'ready';
 }
 
-export function createFullStackApiProfileEnvBlock(): string {
+function createFullStackApiProfileEnvBlock(): string {
     return [
         'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory',
         'RALLAR_LOGIN_USER_RATE_LIMIT=100',
@@ -194,7 +237,7 @@ export function createFullStackApiProfileEnvBlock(): string {
     ].join(' ');
 }
 
-export function createFullStackApiUrlEnvBlock(apiBaseUrl: string): string {
+function createFullStackApiUrlEnvBlock(apiBaseUrl: string): string {
     const normalizedApiBaseUrl = normalizeBaseUrl(apiBaseUrl);
     return [
         `RALLAR_API_BASE_URL=${normalizedApiBaseUrl}`,
@@ -202,7 +245,7 @@ export function createFullStackApiUrlEnvBlock(apiBaseUrl: string): string {
     ].join(' ');
 }
 
-export function createFullStackSpaCorsOrigins(spaBaseUrl: string): string {
+function createFullStackSpaCorsOrigins(spaBaseUrl: string): string {
     const normalizedSpaBaseUrl = normalizeBaseUrl(spaBaseUrl);
     const url = new URL(normalizedSpaBaseUrl);
     const origins = [url.origin];
@@ -226,10 +269,10 @@ export function portFromBaseUrl(apiBaseUrl: string): number {
     return url.protocol === 'https:' ? 443 : 80;
 }
 
-function createMemoryApiCommand(apiBaseUrl: string, spaBaseUrl: string): string {
+function createMemoryApiCommand(apiBaseUrl: string, spaBaseUrl: string, iceRequests: number): string {
     return `cd ../.. && CORS_ORIGINS=${createFullStackSpaCorsOrigins(spaBaseUrl)} PORT=${portFromBaseUrl(apiBaseUrl)} ${
         createFullStackApiUrlEnvBlock(apiBaseUrl)
-    } ${createFullStackApiProfileEnvBlock()} deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+    } ${createFullStackApiProfileEnvBlock()} RALLAR_ICE_RATE_LIMIT_REQUESTS=${iceRequests} deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
 }
 
 function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string): string {
