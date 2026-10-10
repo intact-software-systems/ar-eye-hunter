@@ -470,7 +470,37 @@ No additional equality abstraction or test mirror is required for this direct
 version-pin correction. Fresh evidence review approved the complete finding and
 qualified acceptance limits before dependent implementation. The native spec now
 independently pins the canonical `43db26df…` bytes; complete source review preserved every
-input/lifecycle/evidence guard. Native execution beyond that guard remains pending.
+input/lifecycle/evidence guard. The subsequent default-off invocation executed
+beyond that guard into registration, setup and traffic. Fresh independent evidence
+review verified guard GREEN separately from the failed workload.
+
+Thirteen players now issue all six shot starts near the declared five-second
+offsets. The incomplete player has four starts, three samples and no final result
+or cleanup event. The run admits 82 shots and retains 43 identity-consistent
+director intents, but only 27 successful leader observations. Fourteen samplers
+complete all seven readings; all 73 final predicates remain unevaluated. These
+facts support cadence composition and preserve failed native acceptance. They
+do not isolate adaptive lane-policy, CPU, wire-loss or final-storage benefit.
+
+One exact timed-out handle has director arrival and a committed receipt control
+10,251 ms before its observer timeout. Committed receipt admission records a
+pending-row update; a partial confirmed audience can still leave the handle
+pending. The native receipt audience, pending before/after and emitted settlement
+completeness are absent. Measure those actual facts at the existing admission
+owner before selecting a repair; later registry/epoch observation stays conditional
+on the result. Preserve policy, deadlines, audiences and every acceptance guard.
+
+The next measurement adds a separate typed receipt-confirmation diagnostic through
+the existing guarded sink. The existing control-admission record and its phase-last
+serialized bytes stay intact. The receipt attempt owner already holds decoded
+receipt audiences/revision, pending state/sender version, computed candidate,
+commit disposition and the logical settlement. Retain those closed facts without
+another backend read, callback, collector or confirmation policy. Copy retained
+data rather than referring to mutable owner state, and verify that the native
+recording consumer preserves it. Candidate state is not an independent persisted
+readback; settlement emission is not proof of a live handle transition. Real
+client-service and recording-boundary tests establish the evidence capability
+before one further observation selects a demonstrated defect or missing boundary.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
