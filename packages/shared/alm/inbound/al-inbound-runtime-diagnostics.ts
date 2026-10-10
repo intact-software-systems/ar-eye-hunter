@@ -26,7 +26,7 @@ export type ALInboundRuntimeDiagnosticsEvent =
     | Readonly<{
         kind: 'admission-outcome';
         workerId: string;
-        /** The message this ingress decided on, for following delivery when the admission and drain events are captured. */
+        /** Original message identifier for this admission observation. */
         msgId: string;
         typeId: string;
         /** The carrier the message arrived on. */
