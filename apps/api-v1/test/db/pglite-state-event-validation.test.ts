@@ -1,10 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { groupStateEventWorkspaceKey } from '@shared-server/rallar-system/state-events/postgres/group-state-event-workspace-key.ts';
@@ -278,7 +275,7 @@ Deno.test(
 
 Deno.test('PSqlResourceInboxRepository rejects a persisted null attempt count', async () => {
     await withPGliteSql(async (sql) => {
-        const inbox = createPSqlResourceInboxRepository(sql);
+        const inbox = createPSqlResourceInboxRepository(sql, () => new Date());
         const nullAttempts = createResourceEntry('null-attempts', {
             payload: { text: 'mandatory attempts' },
             typeId: 'APP_OUTBOX',
@@ -304,7 +301,7 @@ Deno.test('PSqlResourceInboxRepository replay is independent of PostgreSQL DateS
     await withPGliteSql(async (sql) => {
         await sql`set datestyle to 'SQL, DMY'`;
 
-        const inbox = createPSqlResourceInboxRepository(sql);
+        const inbox = createPSqlResourceInboxRepository(sql, () => new Date());
         const base = createResourceEntry('datestyle-replay', {
             payload: { text: 'datestyle independent' },
             typeId: 'APP_OUTBOX',
@@ -362,7 +359,7 @@ Deno.test('PSqlResourceInboxRepository preserves supported expanded-year rollove
     await withPGliteSql(async (sql) => {
         await sql`set datestyle to 'SQL, DMY'`;
 
-        const inbox = createPSqlResourceInboxRepository(sql);
+        const inbox = createPSqlResourceInboxRepository(sql, () => new Date());
         const base = createResourceEntry('expanded-year-replay', {
             payload: { text: 'expanded year' },
             typeId: 'APP_OUTBOX',
@@ -396,7 +393,7 @@ Deno.test(
     'PGlite reclaims stale AppInbox exhaustion as an exact finalization generation',
     async () => {
         await withPGliteSql(async (sql) => {
-            const inbox = createPSqlResourceInboxRepository(sql);
+            const inbox = createPSqlResourceInboxRepository(sql, () => new Date());
             const queue = new PSqlQueueBox(inbox);
             const exhausted = {
                 ...createResourceEntry('pglite-finalization-recovery', {

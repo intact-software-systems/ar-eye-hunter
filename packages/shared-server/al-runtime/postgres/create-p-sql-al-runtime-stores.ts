@@ -6,8 +6,11 @@ import {
     type ALRuntimeStoreFactories,
     type ALRuntimeStoreId
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
-import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
-import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import {
+    DEFAULT_AL_REPOSITORY_TTL_MS,
+    normalizeALRuntimeStoreRetention,
+    type ALRuntimeStoreRetentionConfig
+} from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import {
@@ -17,12 +20,14 @@ import {
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
+
 import type { PSqlRuntimeStateRepository } from '../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { PSqlAdmissionWorkBackend } from './p-sql-admission-work-backend.ts';
 
 export interface CreatePSqlALRuntimeStoresInput {
     readonly repository: PSqlRuntimeStateRepository;
     readonly namespace: string;
+    readonly nowMs: () => number;
     readonly orderingTrackTtlMs: number;
     readonly supersedenceTrackTtlMs: number;
     readonly retention: ALRuntimeStoreRetentionConfig | undefined;
@@ -72,10 +77,10 @@ export function createPSqlALInboundRuntimeStores(
     input: CreatePSqlALRuntimeStoresInput
 ): ALInboundRuntimeStores {
     const namespace = `${input.namespace}:inbound:admission`;
-    const backend = new PSqlAdmissionWorkBackend(input.repository.sql, namespace);
+    const backend = new PSqlAdmissionWorkBackend(input.repository.sql, namespace, input.nowMs);
     return {
         admissionStore: createALInboundAdmissionStore({
-            nowMs: Date.now,
+            nowMs: input.nowMs,
             namespace,
             backend,
             orderingTrackTtlMs: input.orderingTrackTtlMs,
@@ -92,10 +97,10 @@ export function createPSqlALOutboundRuntimeStores<TPrepared>(
     input: CreatePSqlALOutboundRuntimeStoresInput<TPrepared>
 ): ALOutboundRuntimeStores<TPrepared> {
     const namespace = `${input.namespace}:outbound:admission`;
-    const backend = new PSqlAdmissionWorkBackend(input.repository.sql, namespace);
+    const backend = new PSqlAdmissionWorkBackend(input.repository.sql, namespace, input.nowMs);
     return {
         admissionStore: createALOutboundAdmissionStore({
-            nowMs: Date.now,
+            nowMs: input.nowMs,
             namespace,
             canonicalScope: namespace,
             backend,
@@ -110,14 +115,14 @@ export function createPSqlALOutboundRuntimeStores<TPrepared>(
 export function createDefaultPSqlALInboundRuntimeStores(
     options: CreateDefaultPSqlALRuntimeStoresInput
 ): ALInboundRuntimeStores {
-    return createPSqlALInboundRuntimeStores(toDefaultPSqlALRuntimeStoresInput(options));
+    return createPSqlALInboundRuntimeStores(toDefaultPSqlALRuntimeStoresInput(options, Date.now));
 }
 
 export function createDefaultPSqlALOutboundRuntimeStores<TPrepared>(
     options: CreateDefaultPSqlALOutboundRuntimeStoresInput<TPrepared>
 ): ALOutboundRuntimeStores<TPrepared> {
     return createPSqlALOutboundRuntimeStores({
-        ...toDefaultPSqlALRuntimeStoresInput(options),
+        ...toDefaultPSqlALRuntimeStoresInput(options, Date.now),
         decodePrepared: options.decodePrepared
     });
 }
@@ -149,10 +154,12 @@ export function resolveServerWsQBoxALOutboundRuntimeStores(
 }
 
 function toDefaultPSqlALRuntimeStoresInput(
-    options: CreateDefaultPSqlALRuntimeStoresInput
+    options: CreateDefaultPSqlALRuntimeStoresInput,
+    nowMs: () => number
 ): CreatePSqlALRuntimeStoresInput {
     return {
         repository: options.repository,
+        nowMs,
         namespace: options.namespace ?? DEFAULT_NAMESPACE,
         orderingTrackTtlMs: options.orderingTrackTtlMs ?? DEFAULT_AL_REPOSITORY_TTL_MS,
         supersedenceTrackTtlMs: options.supersedenceTrackTtlMs ?? 5 * 60_000,

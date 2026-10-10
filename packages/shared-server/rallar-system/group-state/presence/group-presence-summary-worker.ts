@@ -7,6 +7,7 @@ import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
@@ -45,7 +46,7 @@ export interface GroupPresenceSummaryWorkOptions {
     readonly outboxQueueReader: OutboxQueueReader;
     readonly recomputeDebounceMs: number;
     readonly database?: PSqlSql;
-    readonly now?: () => number;
+    readonly now: () => number;
     readonly serviceId: string;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationPresenceSummarySink;
@@ -57,7 +58,7 @@ export class GroupPresenceSummaryWork {
 
     public constructor(options: GroupPresenceSummaryWorkOptions) {
         this.options = options;
-        this.now = options.now ?? Date.now;
+        this.now = options.now;
     }
 
     public async read(
@@ -177,7 +178,8 @@ export class GroupPresenceSummaryWork {
         if (computed.topologyReplan.decision === 'enqueue') {
             await writeCoalescedAppOutboxWork(
                 transaction,
-                computed.topologyReplan.work
+                computed.topologyReplan.work,
+                () => new Date(this.now())
             );
         }
     }

@@ -1,51 +1,38 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { Sql } from 'postgres';
+
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
-import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-
-import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
-import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-
 import {
     createPSqlResourceInboxRepository,
     type PSqlResourceInboxRepository
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-
-import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-
-import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-
-import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
-import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
-
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
-
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
-
-import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-
+import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
-import type { Sql } from 'postgres';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { toApiV1PostgresClient } from '../../src/db/api-v1-database-lifecycle.ts';
 import { createInstrumentedStateWriteSql, type StateWriteSqlMetrics } from './create-instrumented-state-write-sql.ts';
-
 import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
 import { STATE_WRITE_REQUIRED_CONCURRENCY } from './state-write/api-v1-state-write-benchmark-options.ts';
 
@@ -73,6 +60,7 @@ export interface CreateStateWriteServiceRuntimeInput {
 
 export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRuntimeInput): StateWriteServiceRuntime {
     const { sql, serviceId, context, timing } = input;
+    const nowEpochMs = Date.now;
     const instrumentedSql = createInstrumentedStateWriteSql({
         sql: toApiV1PostgresClient(sql),
         metrics: context.sql,
@@ -83,7 +71,7 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
         serviceId,
         timing
     });
-    const resourceInbox = createPSqlResourceInboxRepository(instrumentedSql);
+    const resourceInbox = createPSqlResourceInboxRepository(instrumentedSql, () => new Date(nowEpochMs()));
     const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox), {
         onAttemptReleaseTelemetry: (event) => context.attemptReleases.push(event)
     });
@@ -118,6 +106,7 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
         }
     );
     const topology = createStateWriteTopologyService({
+        nowEpochMs,
         database: instrumentedSql,
         serviceId,
         timing,
@@ -168,6 +157,7 @@ function createStateWriteDomainServices(
 }
 
 interface StateWriteTopologyServiceInput extends StateWriteDomainServiceInput {
+    readonly nowEpochMs: () => number;
     readonly runtimeRepository: PSqlRuntimeStateRepository;
     readonly groupState: GroupStateService;
     readonly groupStateRepository: GroupStateRepository;
@@ -177,6 +167,7 @@ interface StateWriteTopologyServiceInput extends StateWriteDomainServiceInput {
 }
 
 function createStateWriteTopologyService({
+    nowEpochMs,
     database,
     serviceId,
     timing,
@@ -199,7 +190,7 @@ function createStateWriteTopologyService({
         groupStateRepository,
         configRepository: topologyConfigRepository,
         planning: topologyRuntimeOwners.planning,
-        nowEpochMs: () => Date.now(),
+        nowEpochMs,
         isPlatformAdmin: () => false,
         outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
     });

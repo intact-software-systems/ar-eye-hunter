@@ -1,11 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import {
-    EntityStatus,
-    NEVER_EXPIRE_TS,
-    type ResourceEntry
-} from '@shared/queuebox/ResourceEntry.ts';
 import {
     describe,
     expect,
@@ -13,6 +6,14 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import {
+    EntityStatus,
+    NEVER_EXPIRE_TS,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 
 import {
     createRuntimeStatePostgresSql,
@@ -32,7 +33,7 @@ describe('Postgres observed QueueBox reservation', () => {
             dequeueAudit: { attempts: 1, startTs: expiry.subtract({ seconds: 1 }) }
         };
         await first.enqueue(reserved);
-        const persisted = await createPSqlResourceInboxRepository(sql).entries.findAnyByKey(entry.key);
+        const persisted = await createPSqlResourceInboxRepository(sql, () => new Date()).entries.findAnyByKey(entry.key);
         expect(persisted).toBeDefined();
         vi.useFakeTimers({ toFake: ['Date'] });
         onTestFinished(() => {
@@ -210,8 +211,8 @@ async function createStorage() {
     };
     return {
         sql,
-        first: new PSqlQueueBox(createPSqlResourceInboxRepository(sql)),
-        second: new PSqlQueueBox(createPSqlResourceInboxRepository(otherSql)),
+        first: new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date())),
+        second: new PSqlQueueBox(createPSqlResourceInboxRepository(otherSql, () => new Date())),
         entry
     };
 }

@@ -157,7 +157,7 @@ interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDepend
 export function createApiV1MutationRuntime(
     input: CreateApiV1MutationRuntimeInput
 ): ApiV1MutationRuntime {
-    const resources = createApiV1MutationResources(input.database);
+    const resources = createApiV1MutationResources(input.database, input.nowEpochMs);
     const stateDependencies = createApiV1StateMutationDependencies(input, resources);
     const mutationFactories = createApiV1MutationInboxFactories(input, resources);
     const groupStateService = createMutationGroupStateService(input, resources);
@@ -232,9 +232,10 @@ function createMutationGroupStateService(
 }
 
 function createApiV1MutationResources(
-    database: PSqlSql
+    database: PSqlSql,
+    nowEpochMs: () => number
 ): ApiV1MutationResources {
-    const resourceInboxRepository = createPSqlResourceInboxRepository(database);
+    const resourceInboxRepository = createPSqlResourceInboxRepository(database, () => new Date(nowEpochMs()));
     const resourceInboxResultsRepository = new ResourceInboxResultsRepository(database);
     const runtimeStateRepository = new PSqlRuntimeStateRepository(database);
     const authSessionRepository = new AuthSessionRepository(runtimeStateRepository);

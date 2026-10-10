@@ -78,7 +78,8 @@ export function computeCoalescedAppOutboxWork(
 
 export async function writeCoalescedAppOutboxWork(
     transaction: PSqlSql,
-    computed: ComputedCoalescedAppOutboxWork
+    computed: ComputedCoalescedAppOutboxWork,
+    now: () => Date
 ): Promise<void> {
     if (computed.operation === 'insert') {
         await writeAppOutboxInsert(transaction, computed.entryWrite);
@@ -105,7 +106,7 @@ export async function writeCoalescedAppOutboxWork(
         return;
     }
 
-    const replaced = await new PSqlResourceInboxEntryRepository(transaction).replacePendingIfMatch(
+    const replaced = await new PSqlResourceInboxEntryRepository(transaction, now).replacePendingIfMatch(
         expected,
         computed.entryWrite.entry,
         expectedGeneration

@@ -1,6 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import {
     describe,
     expect,
@@ -8,9 +6,10 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
-import { peekOutboundWorkReadyAt } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
+import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
@@ -42,6 +41,7 @@ import {
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { peekOutboundWorkReadyAt } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 import {
     createRuntimeStatePostgresSql,
     requirePostgresDatabaseUrl,
@@ -310,22 +310,35 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             resilience: resilience
         });
         const accepted: string[] = [];
-        await expect.poll(async () => {
-            await controller.dequeueForCompute(async (_key, attempt) => {
-                const reserved = attempt.entry;
-                if (reserved.dequeueAudit.attempts === 1) {
-                    const replacement = await other.workQueue.replaceIfObserved(reserved, { ...reserved, resource: 'captured immutable facts' });
-                    if (replacement === null) {
-                        throw new Error('Expected authority replacement to win');
-                    }
-                    expect(reserved.resource).toBe('message-work');
-                    throw new ResourceInboxHandlerEntryError(replacement, new Error('Later domain write conflicted'));
+        await controller.dequeueForCompute(async (_key, attempt) => {
+            const reserved = attempt.entry;
+            if (reserved.dequeueAudit.attempts === 1) {
+                const replacement = await other.workQueue.replaceIfObserved(reserved, { ...reserved, resource: 'captured immutable facts' });
+                if (replacement === null) {
+                    throw new Error('Expected authority replacement to win');
                 }
-                accepted.push(reserved.resource);
-                return reserved.resource;
-            });
-            return await other.workQueue.getItem(entry.key);
-        }, { timeout: 5_000 }).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 2 } });
+                expect(reserved.resource).toBe('message-work');
+                throw new ResourceInboxHandlerEntryError(replacement, new Error('Later domain write conflicted'));
+            }
+            accepted.push(reserved.resource);
+            return reserved.resource;
+        });
+        const failed = await other.workQueue.getItem(entry.key);
+        expect(failed).toMatchObject({ resource: 'captured immutable facts', dequeueAudit: { attempts: 1 } });
+        expect(failed!.dequeueAudit.nextTs).toBeDefined();
+        // Make this persisted retry eligible in the SQL reservation clock domain.
+        expect(
+            await other.workQueue.replaceIfObserved(failed!, {
+                ...failed!,
+                dequeueAudit: { ...failed!.dequeueAudit, nextTs: Temporal.Instant.fromEpochMilliseconds(0) }
+            })
+        ).not.toBeNull();
+        await controller.dequeueForCompute(async (_key, attempt) => {
+            accepted.push(attempt.entry.resource);
+            return attempt.entry.resource;
+        });
+        expect(await other.workQueue.getItem(entry.key))
+            .toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 2 } });
         expect(accepted).toEqual(['captured immutable facts']);
     });
 
@@ -602,7 +615,7 @@ async function createStorage(
     onTestFinished(() => otherSql.end());
     return {
         backend: new PSqlAdmissionWorkBackend(sql, namespace, nowMs),
-        other: new PSqlAdmissionWorkBackend(otherSql, namespace),
+        other: new PSqlAdmissionWorkBackend(otherSql, namespace, Date.now),
         entry: createEntry(namespace),
         ownedKeys
     };

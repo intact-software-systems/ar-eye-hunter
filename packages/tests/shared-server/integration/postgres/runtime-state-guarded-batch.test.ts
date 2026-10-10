@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import {
     PSqlResourceInboxEntryRepository,
@@ -20,6 +24,7 @@ import {
 import { computeRuntimeStateGuardedBatchWrite } from '@shared-server/runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 import {
@@ -28,28 +33,17 @@ import {
     groupRef,
     transitionCommand
 } from '../../rallar-system/group-state/mutation/group-mutation-test-runtime.ts';
-import { createRuntimeStatePostgresSql } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
+import { createRuntimeStatePostgresSql, requirePostgresDatabaseUrl } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
-const POSTGRES_INTEGRATION_ENABLED = readEnv('RALLAR_POSTGRES_INTEGRATION') === '1';
+const POSTGRES_INTEGRATION_ENABLED = process.env.RALLAR_POSTGRES_INTEGRATION === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
 const FUTURE_MS = Date.parse('2100-01-02T03:04:05.678Z');
-
-type GlobalEnv = Readonly<{
-    Deno?: Readonly<{
-        env: Readonly<{
-            get(key: string): string | undefined;
-        }>;
-    }>;
-    process?: Readonly<{
-        env?: Readonly<Record<string, string | undefined>>;
-    }>;
-}>;
 
 describe('Postgres runtime-state guarded batches', () => {
     postgresIt(
         'executes a non-empty guarded batch through postgres.js',
         async () => {
-            const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
+            const sql = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl());
             const repository = new PSqlRuntimeStateRepository(sql);
             const namespace = `guarded-batch-${crypto.randomUUID()}`;
             const computed = computeRuntimeStateGuardedBatchWrite({
@@ -108,7 +102,7 @@ describe('Postgres runtime-state guarded batches', () => {
     postgresIt(
         'rolls reset writes back when the final presence-summary outbox entry conflicts',
         async () => {
-            const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
+            const sql = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl());
             const runtime = new PSqlRuntimeStateRepository(sql);
             const ref = uniqueResetGroupRef();
             const seedNamespace = `reset-rollback-seed-${crypto.randomUUID()}`;
@@ -161,7 +155,7 @@ describe('Postgres runtime-state guarded batches', () => {
                     runtime,
                     RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE
                 );
-                const outbox = new PSqlResourceInboxEntryRepository(sql);
+                const outbox = new PSqlResourceInboxEntryRepository(sql, () => new Date());
                 expect(await outbox.writeIfAbsentOrMatch(mismatchingOutboxEntry)).toBe('inserted');
 
                 await expect(sql.begin(async (transaction) => await writeGroupMutation(transaction, computed)))
@@ -220,7 +214,7 @@ describe('Postgres runtime-state guarded batches', () => {
     );
 });
 
-function resetLayoutSnapshot(ref: ReturnType<typeof uniqueResetGroupRef>): RallarOverlayTopologySnapshot {
+function resetLayoutSnapshot(ref: GroupRef): RallarOverlayTopologySnapshot {
     return {
         sourceGroupStateCausalRevision: { groupRevision: 0, presenceRevision: 0 },
         state: 'active',
@@ -245,7 +239,7 @@ function uniqueResetGroupRef() {
     };
 }
 
-function resetRead(ref: ReturnType<typeof uniqueResetGroupRef>) {
+function resetRead(ref: GroupRef) {
     const initial = createGroupAuthorityRead({ lifecycleState: 'active' });
     const group = { ...initial.group!.value, ...ref };
     const actorMember = { ...initial.actorMember!, ...ref };
@@ -269,19 +263,4 @@ function resetRead(ref: ReturnType<typeof uniqueResetGroupRef>) {
             value: actorMember
         }
     };
-}
-
-function requireDatabaseUrl(): string {
-    const databaseUrl = readEnv('DATABASE_URL');
-    if (!databaseUrl) {
-        throw new Error(
-            'DATABASE_URL is required when RALLAR_POSTGRES_INTEGRATION=1'
-        );
-    }
-    return databaseUrl;
-}
-
-function readEnv(key: string): string | undefined {
-    const globals = globalThis as GlobalEnv;
-    return globals.Deno?.env.get(key) ?? globals.process?.env?.[key];
 }

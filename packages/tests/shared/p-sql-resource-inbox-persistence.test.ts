@@ -1,40 +1,31 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import {
-    computeResourceInboxObservedReplacement,
-    ResourceInboxInvariantCorruptionError
-} from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import {
-    EntityStatus,
-    type Key,
-    type ResourceEntry
-} from '@shared/queuebox/ResourceEntry.ts';
 import {
     afterEach,
-    beforeAll,
     describe,
     expect,
     it,
     vi
 } from 'vitest';
 
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import {
+    computeResourceInboxObservedReplacement,
+    ResourceInboxInvariantCorruptionError
+} from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import type { ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
+
 import {
     createResourceInboxQueryCapture,
     createResourceInboxSqlHarness,
     findStoredResourceInboxRow,
-    toStoredResourceInboxTimestamp,
-    type ResourceInboxRow
+    toStoredResourceInboxTimestamp
 } from './p-sql-resource-inbox-test-harness.ts';
-
-type PSqlResourceInboxRepositoryModule = typeof import('@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts');
-
-let repositoryModule: PSqlResourceInboxRepositoryModule;
-
-beforeAll(async () => {
-    repositoryModule = await import(
-        '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts'
-    );
-});
 
 afterEach(() => {
     vi.useRealTimers();
@@ -45,7 +36,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:30.000Z'));
         const capture = createResourceInboxQueryCapture();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
+        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
 
         await repo.reservations.findEntriesSkipLocked({
             typeIds: new Set(['APP_INBOX']),
@@ -64,7 +55,7 @@ describe('PostgreSQL resource inbox persistence', () => {
 
     it('claims only retry rows at least thirty seconds overdue through the fairness selector', async () => {
         const capture = createResourceInboxQueryCapture();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
+        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
         const overdueBeforeEpochMs = Date.parse('2026-01-01T00:00:00.000Z');
 
         await repo.reservations.findOverdueRetryEntriesSkipLocked(
@@ -87,7 +78,7 @@ describe('PostgreSQL resource inbox persistence', () => {
 
     it('uses a configured two-attempt budget in PostgreSQL reservation selectors', async () => {
         const capture = createResourceInboxQueryCapture();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
+        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
 
         await repo.reservations.findEntriesSkipLocked({
             typeIds: new Set(['APP_INBOX']),
@@ -102,7 +93,7 @@ describe('PostgreSQL resource inbox persistence', () => {
 
     it('uses database time and the configured budget for ordinary work advertisement', async () => {
         const capture = createResourceInboxQueryCapture();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
+        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
 
         await repo.reservations.isEntriesToLock(
             new Set(['APP_INBOX']),
@@ -119,7 +110,7 @@ describe('PostgreSQL resource inbox persistence', () => {
 
     it('uses a safely bound database interval for timeout work advertisement', async () => {
         const capture = createResourceInboxQueryCapture();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
+        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
 
         await repo.reservations.isTimeoutOnReservedEntries(
             new Set(['APP_INBOX']),
@@ -138,7 +129,7 @@ describe('PostgreSQL resource inbox persistence', () => {
 
     it('uses a safely bound database interval for timeout claiming', async () => {
         const capture = createResourceInboxQueryCapture();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
+        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
 
         await repo.reservations.findTimedOutReservedEntriesSkipLocked({
             typeIds: new Set(['APP_INBOX']),
@@ -159,7 +150,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         'rejects invalid timeout claim interval %s before SQL',
         async (timeSinceStartMs) => {
             const capture = createResourceInboxQueryCapture();
-            const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
+            const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
 
             await expect(
                 repo.reservations.findTimedOutReservedEntriesSkipLocked({
@@ -174,7 +165,7 @@ describe('PostgreSQL resource inbox persistence', () => {
 
     it('uses database time for the persisted reservation start timestamp', async () => {
         const capture = createResourceInboxQueryCapture();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
+        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
         const entry = createEntry(createKey('db-clock-start'), {
             text: 'db clock',
             expiryTs: Temporal.Instant.from('9999-01-01T00:00:00Z')
@@ -189,7 +180,7 @@ describe('PostgreSQL resource inbox persistence', () => {
 
     it('advances finalization generation with exact attempt and live reservation fences', async () => {
         const capture = createResourceInboxQueryCapture();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
+        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
         const entry = {
             ...createEntry(createKey('finalization-generation'), {
                 text: 'recover',
@@ -221,7 +212,7 @@ describe('PostgreSQL resource inbox persistence', () => {
 
     it('advertises stale finalization recovery using only the database clock', async () => {
         const capture = createResourceInboxQueryCapture();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
+        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
 
         await repo.finalization.isRetryExhaustionFinalizationRequired(
             new Set(['APP_INBOX']),
@@ -243,7 +234,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const entry = createEntry(createKey('idempotent-outbox'), {
             text: 'immutable',
             createdBy: 'alice',
@@ -285,7 +276,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const key = createKey(`microsecond-${_field}`);
         const original = createEntry(key, {
             text: 'immutable',
@@ -373,7 +364,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         persisted
     ) => {
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const key = createKey(`rounding-${field}-${_scenario}`);
         const entry = createEntry(key, {
             text: 'immutable',
@@ -430,7 +421,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const entry = createEntry(createKey(`collision-${_field}`), {
             text: 'immutable',
             createdBy: 'alice',
@@ -455,7 +446,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const entry = createEntry(createKey('invalid-lifecycle'), {
             text: 'immutable',
             expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z')
@@ -548,7 +539,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const entry = createEntry(createKey(`invalid-${_scenario}`), {
             text: 'immutable',
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
@@ -572,7 +563,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const entry = createEntry(createKey('invalid-created-expiry-order'), {
             text: 'immutable',
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00.000001'),
@@ -639,7 +630,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const entry = createEntry(createKey(`valid-${_scenario}`), {
             text: 'immutable',
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
@@ -665,7 +656,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const completedAt = new Date('2026-01-01T00:01:00.000Z');
         const entry = createEntry(createKey('reserved-finish'), {
             text: 'reserved',
@@ -708,7 +699,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const releasedAt = Temporal.Instant.from('2026-01-01T00:01:00.123Z');
         const entry = createEntry(createKey('reserved-release'), {
             text: 'reserved',
@@ -759,7 +750,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         disposition
     ) => {
         const capture = createResourceInboxQueryCapture();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
+        const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
 
         const entry = createEntry(createKey(`invalid-${_scenario}`), {
             text: 'invalid release',
@@ -774,7 +765,7 @@ describe('PostgreSQL resource inbox persistence', () => {
 
     it('rejects a nonterminal finish status before issuing SQL', async () => {
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const sqlCallsBefore = harness.sqlCalls.length;
 
         await expect(repo.finalization.finishReserved(
@@ -791,7 +782,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const activeKey = createKey('active-1');
         const expiredKey = createKey('expired-1');
 
@@ -849,7 +840,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const key = createKey('replace-1');
         const original = createEntry(key, {
             text: 'original',
@@ -882,7 +873,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const key = createKey('replace-observed');
         const observed = await repo.entries.write(createEntry(key, {
             text: 'observed',
@@ -926,7 +917,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const recreatedKey = createKey('replace-recreated');
         const recreatedObserved = await repo.entries.write(createEntry(recreatedKey, {
             text: 'observed',
@@ -965,7 +956,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const active = createEntry(createKey('active-1'), {
             text: 'active',
             expiryTs: Temporal.Now.instant().add({ minutes: 5 })
@@ -997,7 +988,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const key = createKey('immutable-1');
         const original = createEntry(key, {
             text: 'original',
@@ -1042,7 +1033,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const harness = createResourceInboxSqlHarness();
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const repo = createPSqlResourceInboxRepository(harness.sql, () => new Date());
         const active = createEntry(createKey('active-1'), {
             text: 'active',
             expiryTs: Temporal.Now.instant().add({ minutes: 5 })

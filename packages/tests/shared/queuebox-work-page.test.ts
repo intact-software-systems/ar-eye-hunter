@@ -1,5 +1,3 @@
-import '../setup-browser-indexeddb.ts';
-
 import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
@@ -12,6 +10,7 @@ import {
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { PSqlResourceInboxReservationRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-reservation-repository.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
 import { IndexedDbConnection, openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -24,7 +23,7 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 
-import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import '../setup-browser-indexeddb.ts';
 import { createPSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 
 interface QueueWorkQueryPlan {
@@ -284,7 +283,7 @@ it('bounds SQL rows visited across a large unrelated gap on both the first and s
             return await Reflect.apply(target, receiver, arguments_);
         }
     });
-    const repository = new PSqlResourceInboxReservationRepository(explainedSql);
+    const repository = new PSqlResourceInboxReservationRepository(explainedSql, () => new Date());
     const request = { typeId: 'page-work', status: EntityStatus.NEW, maxToRead: 16, cursor: null } as const;
 
     const first = await repository.readWorkPage(request);
@@ -311,7 +310,7 @@ async function createQueue(storage: 'memory' | 'indexeddb' | 'pglite'): Promise<
             return (await createIndexedDbQueue()).queue;
         case 'pglite': {
             const { sql } = await createPSqlAdmissionTestStorage();
-            return new PSqlQueueBox(createPSqlResourceInboxRepository(sql));
+            return new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()));
         }
     }
 }

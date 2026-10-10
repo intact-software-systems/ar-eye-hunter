@@ -1,7 +1,6 @@
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import assert from 'node:assert/strict';
+
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
@@ -11,12 +10,14 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import assert from 'node:assert/strict';
+
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
-import { readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
-
-import { createResourceEntry } from './pglite-auth-test-harness.ts';
+import {
+    createResourceEntry,
+    readPGliteDatabaseEpochMs,
+    withPGliteSql
+} from './pglite-auth-test-harness.ts';
 
 Deno.test(
     [
@@ -26,13 +27,14 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = createPSqlResourceInboxRepository(sql);
+            const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
             const credentialIssuer = createHmacAuthCredentialIssuer(
                 'pglite-logout-secret-0123456789abcdef'
             );
-            const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
+
             const appAuth = new AppAuthInboxService(
                 {
                     inboxQueueReader: inboxReader,
@@ -117,13 +119,14 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = createPSqlResourceInboxRepository(sql);
+            const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
             const credentialIssuer = createHmacAuthCredentialIssuer(
                 'pglite-fence-secret-0123456789abcdef'
             );
-            const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
+
             const appAuth = new AppAuthInboxService(
                 {
                     inboxQueueReader: inboxReader,

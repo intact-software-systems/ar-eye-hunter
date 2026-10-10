@@ -1,42 +1,48 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import {
     computeAppOutboxInsert,
     writeAppOutboxInsert
 } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
-import { computeGroupConnectTriggerEntry } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
-import { decodeGroupConnectTriggerWork } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
-import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
-import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
-import { MEMBERS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
-import { createGroupConnectTriggerWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-group-connect-trigger-work-handler.ts';
-import {
-    computePublicationConnectTriggerRequests
-} from '@shared-server/rallar-system/topology/replay/work/group-connect-trigger-requests.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { describe, expect, it } from 'vitest';
-import { createResilience } from '../inbox/group-state-inbox-test-runtime.ts';
-import { createAuthorityHarness } from '../inbox/group-state-inbox-test-runtime.ts';
-
+import { computeGroupConnectTriggerEntry, decodeGroupConnectTriggerWork } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import {
     GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
     GroupConnectTriggerLatchCorruptionError,
     GroupConnectTriggerLatchRepository,
     toGroupConnectTriggerStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
+import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
+import { MEMBERS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import {
+    createGroupConnectTriggerWorkHandler,
     petitionGroupConnectTrigger,
     toAutomaticGroupConnectCommand
 } from '@shared-server/rallar-system/topology/replay/work/create-group-connect-trigger-work-handler.ts';
+import {
+    computePublicationConnectTriggerRequests
+} from '@shared-server/rallar-system/topology/replay/work/group-connect-trigger-requests.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
-import { createGroupAuthorityFacts, createGroupAuthorityRead, transitionCommand } from './group-mutation-test-runtime.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { createAuthorityHarness, createResilience } from '../inbox/group-state-inbox-test-runtime.ts';
+import {
+    createGroupAuthorityFacts,
+    createGroupAuthorityRead,
+    transitionCommand
+} from './group-mutation-test-runtime.ts';
 
 describe('automatic retry connect intent', () => {
     it('atomically creates durable intent with the retry plan and an immediate publication check', () => {
@@ -294,7 +300,9 @@ describe('retry handoff commit races and replay', () => {
     it('rolls back latch consumption and group transition after an immutable outbox collision', async () => {
         const { harness, computed, latches } = await connectWriteHarness();
         const entry = computed.outboxWrites[0]!.entry;
-        await harness.database.begin((tx) => new PSqlResourceInboxEntryRepository(tx).writeIfAbsentOrMatch({ ...entry, resource: 'collision' }));
+        await harness.database.begin((tx) =>
+            new PSqlResourceInboxEntryRepository(tx, () => new Date(harness.nowEpochMs)).writeIfAbsentOrMatch({ ...entry, resource: 'collision' })
+        );
         const before = new Map(harness.runtimeRepository.data);
         await expect(harness.database.begin((tx) => writeGroupMutation(tx, computed))).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
         expect(harness.runtimeRepository.data).toEqual(before);
@@ -367,7 +375,6 @@ describe('retry handoff commit races and replay', () => {
 
     it('rolls back publication transaction work and gives a later publication its own immutable identity', async () => {
         const { harness, latches } = await connectWriteHarness();
-        const port = { latches, readGroup: async () => null, readPlanned: async () => null, submitCommand: async () => {}, nowEpochMs: () => 0 };
         const source = computeGroupConnectTriggerEntry({
             work: { kind: 'intent', ...IDENTITY, wakeIdentity: 'source' },
             senderId: 'origin',

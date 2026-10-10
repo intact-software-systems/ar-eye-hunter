@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+
 import {
     toResourceInboxReservationOptions,
     type ResourceInboxReleaseDisposition,
@@ -13,6 +14,7 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { Either } from '@shared/resilience/Either.ts';
+
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryRepository } from './p-sql-resource-inbox-entry-repository.ts';
 import type { ResourceInboxObservedReplacement } from './replace-observed-resource-inbox-entry.ts';
@@ -50,9 +52,11 @@ export namespace PSqlResourceInboxReservationRepository {
 
 export class PSqlResourceInboxReservationRepository {
     private readonly sql: PSqlSql;
+    private readonly now: () => Date;
 
-    constructor(sql: PSqlSql) {
+    constructor(sql: PSqlSql, now: () => Date) {
         this.sql = sql;
+        this.now = now;
     }
 
     async readWorkPage(input: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
@@ -330,7 +334,7 @@ export class PSqlResourceInboxReservationRepository {
         if (computed.expected.entry.status !== EntityStatus.RESERVED) {
             return null;
         }
-        return await new PSqlResourceInboxEntryRepository(this.sql).writeObservedReplacement(computed);
+        return await new PSqlResourceInboxEntryRepository(this.sql, this.now).writeObservedReplacement(computed);
     }
 
     async requeueObservedDeliveryFailure(

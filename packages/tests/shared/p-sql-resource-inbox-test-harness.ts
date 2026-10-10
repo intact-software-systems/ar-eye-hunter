@@ -1,24 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
-export interface ResourceInboxRow {
-    ri_row_id: bigint;
-    ri_resource_id: string;
-    ri_topic_id: string;
-    ri_resource: string;
-    ri_type_id: string;
-    ri_status: string;
-    fk_ext_bank_id: string;
-    system_date: string;
-    created_by: string;
-    created_ts: string;
-    expire_ts: string;
-    start_ts: string | null;
-    end_ts: string | null;
-    next_ts: string | null;
-    ri_attempts: bigint | null;
-}
+import type {
+    PSqlParameter,
+    PSqlRows,
+    PSqlSql
+} from '@shared-server/postgres/p-sql-sql.ts';
+import type { ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
 export interface ResourceInboxQuery {
     readonly query: string;
@@ -224,12 +212,6 @@ function executeResourceInboxUpdate(input: ResourceInboxQueryExecution): PSqlRow
         return executeObservedReplacement(input);
     }
     if (
-        input.query.includes('set ri_status = , end_ts') &&
-        input.query.includes('returning *')
-    ) {
-        return executeRetryUpdate(input);
-    }
-    if (
         input.query.includes('ri_status = \'reserved\'') &&
         input.query.includes('returning ri_row_id')
     ) {
@@ -300,30 +282,6 @@ function executeObservedReplacement(input: ResourceInboxQueryExecution): PSqlRow
     return [cloneRow(updated)];
 }
 
-function executeRetryUpdate(input: ResourceInboxQueryExecution): PSqlRows {
-    const status = requireStringParameter(input.values[0], 'resource inbox retry status');
-    const endTs = input.values[1];
-    const nextTs = input.values[2];
-    const topicId = requireStringParameter(input.values[3], 'resource inbox topic id');
-    const resourceId = requireStringParameter(input.values[4], 'resource inbox resource id');
-    const contextId = requireStringParameter(input.values[5], 'resource inbox context id');
-    const reserved = requireStringParameter(input.values[6], 'resource inbox reserved status');
-    const expectedAttempts = requireIntegerParameter(input.values[7], 'resource inbox attempts');
-    const row = input.state.rows.get(`${contextId}::${topicId}::${resourceId}`);
-    if (
-        !row ||
-        row.ri_status !== reserved ||
-        row.ri_attempts !== BigInt(expectedAttempts) ||
-        isExpired(row.expire_ts)
-    ) {
-        return [];
-    }
-    row.ri_status = status;
-    row.end_ts = toOptionalString(endTs);
-    row.next_ts = toOptionalString(nextTs);
-    return [cloneRow(row)];
-}
-
 function executeCompletionUpdate(input: ResourceInboxQueryExecution): PSqlRows {
     const status = requireStringParameter(input.values[0], 'resource inbox completion status');
     const completedAt = input.values[1];
@@ -347,13 +305,10 @@ function executeCompletionUpdate(input: ResourceInboxQueryExecution): PSqlRows {
 }
 
 function executeReservationUpdate(input: ResourceInboxQueryExecution): PSqlRows {
-    const usesDatabaseStart = input.query.includes('start_ts = now()');
     const status = requireStringParameter(input.values[0], 'resource inbox reservation status');
     const attempts = requireIntegerParameter(input.values[1], 'resource inbox attempts');
-    const remaining = input.values.slice(2);
-    const [startTs, endTs, nextTs, topicValue, resourceValue, contextValue] = usesDatabaseStart
-        ? [new Date(), ...remaining]
-        : remaining;
+    const startTs = new Date();
+    const [endTs, nextTs, topicValue, resourceValue, contextValue] = input.values.slice(2);
     const topicId = requireStringParameter(topicValue, 'resource inbox topic id');
     const resourceId = requireStringParameter(resourceValue, 'resource inbox resource id');
     const contextId = requireStringParameter(contextValue, 'resource inbox context id');

@@ -1,38 +1,14 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { beforeAll, describe, expect, it } from 'vitest';
 
-if (!('Temporal' in globalThis)) {
-    Object.assign(globalThis, { Temporal });
-}
-
-type PSqlResourceInboxRepositoryModule = typeof import('@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts');
-
-type ResourceInboxRow = {
-    ri_row_id: bigint;
-    ri_resource_id: string;
-    ri_topic_id: string;
-    ri_resource: string;
-    ri_type_id: string;
-    ri_status: string;
-    fk_ext_bank_id: string;
-    system_date: string;
-    created_by: string;
-    created_ts: string;
-    expire_ts: string;
-    start_ts: string | null;
-    end_ts: string | null;
-    next_ts: string | null;
-    ri_attempts: bigint | null;
-};
-
-let repositoryModule: PSqlResourceInboxRepositoryModule;
-
-beforeAll(async () => {
-    repositoryModule = await import(
-        '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts'
-    );
-});
+import { createPSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 
 describe('PostgreSQL resource inbox reservation', () => {
     it('returns Either left for expired rows and Either right for reserved rows', async () => {
@@ -41,8 +17,10 @@ describe('PostgreSQL resource inbox reservation', () => {
             'expired-1',
             Temporal.Now.instant().subtract({ seconds: 1 })
         );
-        const harness = createSqlHarness([toRow(active, 1n), toRow(expired, 2n)]);
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const { sql } = await createPSqlAdmissionTestStorage();
+        const repo = createPSqlResourceInboxRepository(sql, () => new Date());
+        await repo.entries.write(active);
+        await repo.entries.write(expired);
 
         const skipped = await repo.reservations.startProcessingEntity(expired);
         expect(skipped.left).toEqual({
@@ -67,8 +45,9 @@ describe('PostgreSQL resource inbox reservation', () => {
                 nextTs: Temporal.Now.instant().subtract({ seconds: 30 })
             }
         } satisfies ResourceEntry;
-        const harness = createSqlHarness([toRow(exhausted, 1n)]);
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const { sql } = await createPSqlAdmissionTestStorage();
+        const repo = createPSqlResourceInboxRepository(sql, () => new Date());
+        await repo.entries.write(exhausted);
 
         const skipped = await repo.reservations.startProcessingEntity(exhausted);
 
@@ -89,8 +68,9 @@ describe('PostgreSQL resource inbox reservation', () => {
                 nextTs: Temporal.Now.instant().subtract({ seconds: 30 })
             }
         } satisfies ResourceEntry;
-        const harness = createSqlHarness([toRow(exhausted, 1n)]);
-        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const { sql } = await createPSqlAdmissionTestStorage();
+        const repo = createPSqlResourceInboxRepository(sql, () => new Date());
+        await repo.entries.write(exhausted);
 
         const skipped = await repo.reservations.startProcessingEntity(exhausted, 2);
 
@@ -100,63 +80,6 @@ describe('PostgreSQL resource inbox reservation', () => {
         });
     });
 });
-
-function createSqlHarness(seedRows: ResourceInboxRow[]) {
-    const rows = new Map(
-        seedRows.map((row) => [toCompositeKey(row), row] as const)
-    );
-
-    const sql = ((
-        stringsOrValues: TemplateStringsArray | readonly unknown[],
-        ...values: unknown[]
-    ) => {
-        if (!isTemplateCall(stringsOrValues)) {
-            return stringsOrValues;
-        }
-
-        const query = normalizeQuery(stringsOrValues);
-        if (
-            query.includes('update resource_inbox') &&
-            query.includes('set ri_status =') &&
-            query.includes('ri_attempts =') &&
-            query.includes('expire_ts > (now() at time zone \'utc\')')
-        ) {
-            const [status, attempts, endTs, nextTs, topicId, resourceId, contextId, maxAttempts] = values;
-            const key = `${contextId}::${topicId}::${resourceId}`;
-            const row = rows.get(key);
-
-            if (
-                !row ||
-                Date.parse(row.expire_ts) <= Date.now() ||
-                (maxAttempts !== undefined && Number(row.ri_attempts) >= Number(maxAttempts))
-            ) {
-                return [];
-            }
-
-            const updated: ResourceInboxRow = {
-                ...row,
-                ri_status: status as string,
-                ri_attempts: BigInt(attempts as number),
-                start_ts: new Date().toISOString(),
-                end_ts: toOptionalString(endTs),
-                next_ts: toOptionalString(nextTs)
-            };
-            rows.set(key, updated);
-            return [cloneRow(updated)];
-        }
-
-        throw new Error(`Unhandled SQL in test harness: ${query}`);
-    }) as {
-        (
-            stringsOrValues: TemplateStringsArray | readonly unknown[],
-            ...values: unknown[]
-        ): unknown;
-    };
-
-    return {
-        sql: sql as never
-    };
-}
 
 function createEntry(resourceId: string, expiryTs: Temporal.Instant): ResourceEntry {
     return {
@@ -178,44 +101,4 @@ function createEntry(resourceId: string, expiryTs: Temporal.Instant): ResourceEn
             attempts: 0
         }
     };
-}
-
-function toRow(entry: ResourceEntry, rowId: bigint): ResourceInboxRow {
-    return {
-        ri_row_id: rowId,
-        ri_resource_id: entry.key.resourceId,
-        ri_topic_id: entry.key.topicId,
-        ri_resource: entry.resource,
-        ri_type_id: entry.typeId,
-        ri_status: entry.status,
-        fk_ext_bank_id: entry.key.contextId,
-        system_date: entry.audit.createdTs.toPlainDate().toString(),
-        created_by: entry.audit.createdBy,
-        created_ts: entry.audit.createdTs.toString(),
-        expire_ts: entry.audit.expiryTs.toString(),
-        start_ts: null,
-        end_ts: null,
-        next_ts: null,
-        ri_attempts: BigInt(entry.dequeueAudit.attempts ?? 0)
-    };
-}
-
-function toCompositeKey(row: ResourceInboxRow): string {
-    return `${row.fk_ext_bank_id}::${row.ri_topic_id}::${row.ri_resource_id}`;
-}
-
-function cloneRow(row: ResourceInboxRow): ResourceInboxRow {
-    return { ...row };
-}
-
-function isTemplateCall(value: unknown): value is TemplateStringsArray {
-    return Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, 'raw');
-}
-
-function normalizeQuery(strings: TemplateStringsArray): string {
-    return strings.join(' ').replace(/\s+/g, ' ').trim().toLowerCase();
-}
-
-function toOptionalString(value: unknown): string | null {
-    return value == null ? null : String(value);
 }

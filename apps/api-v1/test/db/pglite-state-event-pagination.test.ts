@@ -10,7 +10,7 @@ import { groupStateEventWorkspaceKey } from '@shared-server/rallar-system/state-
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 
 import { toPersistedAuthSessionFixture, withPGliteSql } from './pglite-auth-test-harness.ts';
 import {
@@ -391,7 +391,7 @@ Deno.test(
             const [summaryRows] = await sql<NumericCountRow[]>`
       select count(*) as count
       from resource_inbox
-      where ri_topic_id = ${APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC}
+      where ri_topic_id = ${GROUP_PRESENCE_SUMMARY_TOPIC}
         and ri_resource like ${'%collision-request%'}
     `;
             assert.equal(Number(summaryRows?.count ?? 0), 0);
@@ -477,7 +477,7 @@ Deno.test(
             const divergentResource = JSON.stringify({
                 collision: 'preexisting-divergent-summary-work'
             });
-            await createPSqlResourceInboxRepository(sql).entries.write({
+            await createPSqlResourceInboxRepository(sql, () => new Date()).entries.write({
                 ...summaryWrite.entry,
                 resource: divergentResource
             });
@@ -502,7 +502,7 @@ Deno.test(
         and event_id = ${ingress.facts.eventId}
     `;
             assert.equal(Number(eventRows?.count ?? 0), 0);
-            const storedCollision = await createPSqlResourceInboxRepository(sql).entries.findAnyByKey(
+            const storedCollision = await createPSqlResourceInboxRepository(sql, () => new Date()).entries.findAnyByKey(
                 summaryWrite.entry.key
             );
             assert.equal(storedCollision?.resource, divergentResource);

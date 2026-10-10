@@ -379,7 +379,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         expect(collisionEntry.key).toEqual(expectedEntry.key);
         expect(collisionEntry.resource).not.toBe(expectedEntry.resource);
         await harness.database.begin(async (transaction) => {
-            await createPSqlResourceInboxRepository(transaction).entries.writeIfAbsentOrMatch(collisionEntry);
+            await createPSqlResourceInboxRepository(transaction, () => new Date(harness.nowEpochMs)).entries.writeIfAbsentOrMatch(collisionEntry);
         });
         expect(harness.database.outboxEntries.size).toBe(initialOutboxCount + 1);
         const enqueue = await createAuthenticatedTopologyEnqueue({

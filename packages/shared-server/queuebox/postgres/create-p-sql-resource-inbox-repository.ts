@@ -16,11 +16,11 @@ export interface PSqlResourceInboxRepository {
 
 export function createPSqlResourceInboxRepository(
     sql: PSqlSql,
-    now: () => Date = () => new Date()
+    now: () => Date
 ): PSqlResourceInboxRepository {
     return {
         entries: new PSqlResourceInboxEntryRepository(sql, now),
-        reservations: new PSqlResourceInboxReservationRepository(sql),
+        reservations: new PSqlResourceInboxReservationRepository(sql, now),
         finalization: new PSqlResourceInboxFinalizationRepository(sql),
         maintenance: new PSqlResourceInboxMaintenance(sql),
         transaction: async <T>(

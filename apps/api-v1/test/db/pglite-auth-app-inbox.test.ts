@@ -1,3 +1,5 @@
+import assert from 'node:assert/strict';
+
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
@@ -6,26 +8,26 @@ import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/aut
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import assert from 'node:assert/strict';
+
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
 
-import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
-
 Deno.test('PGlite AppAuth atomically commits auth state, results, completion, and ticket CAS', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = new PSqlRuntimeStateRepository(sql);
-        const resourceInbox = createPSqlResourceInboxRepository(sql);
+        const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
+        const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
         const resourceResults = new ResourceInboxResultsRepository(sql);
         const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
         const secret = 'pglite-auth-secret-0123456789abcdef-extra';
         const credentialIssuer = createHmacAuthCredentialIssuer(secret);
-        const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
+
         const appAuth = new AppAuthInboxService(
             {
                 inboxQueueReader: inboxReader,
@@ -208,10 +210,11 @@ async function waitForPGliteQueueRows(input: WaitForPGliteQueueRowsInput): Promi
 Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = new PSqlRuntimeStateRepository(sql);
-        const resourceInbox = createPSqlResourceInboxRepository(sql);
+        const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
+        const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
         const resourceResults = new ResourceInboxResultsRepository(sql);
         const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
-        const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
+
         const user = {
             clientId: 'policy-client',
             username: 'policy-user',
@@ -297,10 +300,11 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = createPSqlResourceInboxRepository(sql);
+            const databaseNowEpochMs = await readPGliteDatabaseEpochMs(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(databaseNowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
-            const databaseNowEpochMs = await readPGliteDatabaseEpochMs(sql);
+
             let authFactNowEpochMs = databaseNowEpochMs;
             const issuer = createHmacAuthCredentialIssuer(
                 'pglite-auth-delayed-facts-secret-0123456789abcdef'

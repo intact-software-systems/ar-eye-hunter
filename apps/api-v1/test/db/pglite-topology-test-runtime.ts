@@ -241,7 +241,7 @@ async function createPGliteTopologyWorkSetup(sql: PGliteSql, commandId: string):
         60_000,
         () => nowEpochMs
     );
-    const resourceInbox = createPSqlResourceInboxRepository(sql);
+    const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
     return { sql, nowEpochMs, groupRef, groupSnapshot, topologyManagement, executionRepository, resourceInbox };
 }
 
@@ -333,7 +333,7 @@ async function planTopologyWorkPublication(
 }
 
 async function registerTopologyWorkDelivery(setup: PGliteTopologyWorkSetup): Promise<PGliteTopologyWorkDelivery> {
-    const { sql, resourceInbox, topologyManagement, executionRepository, nowEpochMs } = setup;
+    const { sql, resourceInbox, topologyManagement, executionRepository } = setup;
     const queue = new PSqlQueueBox(resourceInbox);
     const publisherStreamId = '00000000-0000-4000-8000-000000000001';
     const topologyDelivery = new PSqlRtcTopologyDeliveryRepository(sql);

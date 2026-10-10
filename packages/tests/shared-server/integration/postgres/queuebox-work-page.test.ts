@@ -33,14 +33,14 @@ describe('Postgres QueueBox work pages', () => {
                 await sql.end();
             }
         });
-        const queue = new PSqlQueueBox(createPSqlResourceInboxRepository(sql));
+        const queue = new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()));
         for (const resourceId of ['first', 'second', 'waiting']) {
             await queue.enqueue(createEntry(typeId, resourceId));
         }
         const request = { typeId, status: EntityStatus.NEW, maxToRead: 2, cursor: null } as const;
         const page = await sql.begin(async (transaction) => {
             await transaction`set transaction read only`;
-            const reader = new PSqlQueueBox(createPSqlResourceInboxRepository(transaction));
+            const reader = new PSqlQueueBox(createPSqlResourceInboxRepository(transaction, () => new Date()));
             return await reader.readWorkPage(request);
         });
         expect(page.entries.map((entry) => entry.resource)).toEqual(['first', 'second']);

@@ -1,29 +1,22 @@
 import assert from 'node:assert/strict';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import {
+    CrdtMutationConflictError,
+    type CrdtMutationResult
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import {
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
     type RallarCrdtDocumentRef,
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
-
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-
-import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-
-import {
-    CrdtMutationConflictError,
-    type CrdtMutationResult
-} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
@@ -72,10 +65,10 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const now = await pgliteQueueNow(sql);
-            const service = productionService({ queueSql: sql, database: sql, now });
+            const { service, inboxQueueReader } = createProductionCrdtInboxHarness({ queueSql: sql, database: sql, now });
             const command = await appendCommand(now, 'policy-delivery', 'policy-update');
             service.writeCrdtCommandNoWaiting(command);
-            await drainCrdtInbox(sql, service.inboxQueueReader);
+            await drainCrdtInbox(sql, inboxQueueReader);
 
             const result = await readCrdtResult(sql, 'policy-delivery');
             assert.equal(result.status, 'rejected');
@@ -89,7 +82,7 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const now = await pgliteQueueNow(sql);
-            const resourceInbox = createPSqlResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
             const queue = new PSqlQueueBox(resourceInbox);
             const authorityReads: string[] = [];
             let wakes = 0;
@@ -167,7 +160,7 @@ for (const stage of FAILURE_STAGES) {
         await withPGliteSql(async (sql) => {
             const now = await pgliteQueueNow(sql);
             const database = withInjectedTransactionFailure(sql, stage);
-            const service = productionService({ queueSql: sql, database, now, allow: true });
+            const { service, inboxQueueReader } = createProductionCrdtInboxHarness({ queueSql: sql, database, now, allow: true });
             await service.createAndEnqueueAppend({
                 update: update(`${stage}-update`, now - 10_000),
                 deliveryId: `${stage}-delivery`,
@@ -186,7 +179,7 @@ for (const stage of FAILURE_STAGES) {
                 capturedAtEpochMs: now,
                 expireAtEpochMs: now + 60_000
             });
-            await drainCrdtInbox(sql, service.inboxQueueReader);
+            await drainCrdtInbox(sql, inboxQueueReader);
 
             const [domain] = await sql<CrdtMutationRollbackCountsRow[]>`
         select
@@ -207,12 +200,13 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const now = await pgliteQueueNow(sql);
-            const service = productionService({ queueSql: sql, database: sql, now, allow: true });
+            const { service, inboxQueueReader } = createProductionCrdtInboxHarness({ queueSql: sql, database: sql, now, allow: true });
             const original = update('shared-update', now - 10_000, 'original');
 
             await enqueueAndDrain({
                 sql,
                 service,
+                inboxQueueReader,
                 envelope: original,
                 deliveryId: 'session-1:delivery-1',
                 sessionId: 'session-1',
@@ -221,6 +215,7 @@ Deno.test(
             await enqueueAndDrain({
                 sql,
                 service,
+                inboxQueueReader,
                 envelope: original,
                 deliveryId: 'session-2:delivery-2',
                 sessionId: 'session-2',
@@ -229,6 +224,7 @@ Deno.test(
             await enqueueAndDrain({
                 sql,
                 service,
+                inboxQueueReader,
                 envelope: update('shared-update', now - 10_000, 'changed'),
                 deliveryId: 'session-3:delivery-3',
                 sessionId: 'session-3',
@@ -271,7 +267,7 @@ Deno.test(
             const database = withOneCrdtConflict(sql, () => {
                 allowed = false;
             });
-            const service = productionService({
+            const { service, inboxQueueReader } = createProductionCrdtInboxHarness({
                 queueSql: sql,
                 database,
                 now,
@@ -282,6 +278,7 @@ Deno.test(
             await enqueueAndDrain({
                 sql,
                 service,
+                inboxQueueReader,
                 envelope: update('revoked-update', now - 10_000),
                 deliveryId: 'revoked-delivery',
                 sessionId: 'session-1',
@@ -317,9 +314,9 @@ interface ProductionServiceInput {
     readonly isAllowed?: () => boolean;
 }
 
-function productionService(input: ProductionServiceInput) {
+function createProductionCrdtInboxHarness(input: ProductionServiceInput) {
     const { queueSql, database, now, allow = false, isAllowed = () => true } = input;
-    const resourceInbox = createPSqlResourceInboxRepository(queueSql);
+    const resourceInbox = createPSqlResourceInboxRepository(queueSql, () => new Date(now));
     const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
     const service = createApiCrdtInboxService({
         inboxQueueReader,
@@ -348,7 +345,7 @@ function productionService(input: ProductionServiceInput) {
             ? [{ documentType: 'checklist', rollout: 'production' }]
             : [{ documentType: '*', rollout: 'disabled' }]
     });
-    return Object.assign(service, { inboxQueueReader });
+    return { service, inboxQueueReader };
 }
 
 async function appendCommand(now: number, commandId: string, updateId: string) {
@@ -403,7 +400,8 @@ async function pgliteQueueNow(sql: PGliteSql): Promise<number> {
 
 interface EnqueueAndDrainInput {
     readonly sql: PGliteSql;
-    readonly service: ReturnType<typeof productionService>;
+    readonly service: AppCrdtInboxService;
+    readonly inboxQueueReader: InboxQueueReader;
     readonly envelope: RallarCrdtUpdateEnvelope;
     readonly deliveryId: string;
     readonly sessionId: string;
@@ -411,7 +409,7 @@ interface EnqueueAndDrainInput {
 }
 
 async function enqueueAndDrain(input: EnqueueAndDrainInput): Promise<void> {
-    const { sql, service, envelope, deliveryId, sessionId, capturedAtEpochMs } = input;
+    const { sql, service, inboxQueueReader, envelope, deliveryId, sessionId, capturedAtEpochMs } = input;
     await service.createAndEnqueueAppend({
         update: envelope,
         deliveryId,
@@ -430,7 +428,7 @@ async function enqueueAndDrain(input: EnqueueAndDrainInput): Promise<void> {
         capturedAtEpochMs,
         expireAtEpochMs: capturedAtEpochMs + 60_000
     });
-    await drainCrdtInbox(sql, service.inboxQueueReader);
+    await drainCrdtInbox(sql, inboxQueueReader);
 }
 
 async function drainCrdtInbox(
