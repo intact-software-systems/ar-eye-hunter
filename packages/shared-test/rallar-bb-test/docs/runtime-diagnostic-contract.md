@@ -137,7 +137,7 @@ every session the page opens. The event's `data` is the event itself:
 - `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
   `commit-phases`, `effect-drain`, `readiness-probe`, `control-admission`,
   `receipt-confirmation`, or `congestion`
-- `durationMs`: how long that phase took, on every kind but `commit-phases`
+- `durationMs`: how long that phase took, on every kind but `commit-phases`,
   `control-admission`, `receipt-confirmation` and `congestion`: `commit-phases` splits its own into the two halves
   below, and `control-admission` is a verdict, not a phase. On
   `readiness-probe` it is not a phase of a commit at all but what that owner's
@@ -256,9 +256,12 @@ every session the page opens. The event's `data` is the event itself:
   `not-handled`/`control`, joined by `msgId`; a committed receipt is also
   the acknowledgement settlement on the send's handle (`messages.receipts`
   reads the logical recipients)
-- `receipt-confirmation` is a separate closed observation for each actual
-  receipt admission attempt, including rejected, conflicted and expired
-  attempts. The existing `control-admission` bytes and phase-last field order
+- `receipt-confirmation` is a separate closed observation for each receipt
+  admission attempt that reaches a validation decision or actual commit
+  return, including rejected, conflicted and expired attempts. Read/commit
+  exceptions remain with the existing storage-failure owner and produce no
+  new confirmation observation or invented commit disposition. The existing
+  `control-admission` bytes and phase-last field order
   are unchanged. It carries the receipt control's `msgId`, `typeId` and
   `controlSenderId`, the decoded `targetMsgId` and `originPeerId`, exact
   `expectedRecipientPeerIds` and `confirmedRecipientPeerIds`, `snapshotVersion`,
@@ -281,8 +284,12 @@ every session the page opens. The event's `data` is the event itself:
   Missing pending, candidate, expiry, sender version or settlement is explicitly
   `null`, preserved in serialized recordings. A noncommitted attempt has no
   settlement; a `complete` phase may still carry incomplete logical
-  confirmation. Lists and records are copied and frozen before publication;
-  no application payload, credentials or arbitrary error prose is retained.
+  confirmation. Lists and records are copied and frozen before any mutable
+  settlement consumer runs; external diagnostic publication follows the
+  existing settlement emission so an observational lifecycle read cannot
+  preempt that acknowledgement. Rejected or noncommitted attempts have no
+  settlement emission to precede publication.
+  No application payload, credentials or arbitrary error prose is retained.
   The existing guarded sink tolerates absence/failure without changing the
   receipt result, store writes, retry/deadline policy or settlement effects.
   The native browser diagnostic port records these fields on the same outbound

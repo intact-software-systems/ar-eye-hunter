@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import {
@@ -7,6 +8,7 @@ import {
     newALAckControlMessage
 } from '@shared/al-contracts/al-control.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
@@ -355,13 +357,77 @@ describe('WS client receipt admission edges', () => {
         TestWebSocket.instances.length = 0;
     });
 
+    it.each(['control-admission', 'receipt-confirmation'] as const)(
+        'preserves acknowledgement within receipt grace when a %s observer reads the handle lifecycle',
+        async (observedKind) => {
+            vi.useFakeTimers({ toFake: ['Date'] });
+            vi.setSystemTime(1_000_000);
+            const registry = new BrowserRallarDeliveryRegistry({
+                nowMs: () => Date.now(),
+                retainTerminalMs: 60_000,
+                maxEntries: 512,
+                cancel: () => undefined
+            });
+            const message = roomMessage();
+            const handle = registry.open(message, 'ws');
+            const observedStates: string[] = [];
+            const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
+            const fixture = await createReceiptTrackingFixture({
+                serverPeerId: 'server',
+                diagnosticsSink: (event) => {
+                    diagnostics.push(event);
+                    if (event.kind === observedKind && event.phase === 'complete') {
+                        observedStates.push(handle.lifecycle().state);
+                    }
+                },
+                settlementSink: (settlement) => registry.record(settlement)
+            });
+            expect((await fixture.service.enqueueOutboxIfAbsent(message)).verdict.kind).toBe('admitted');
+            vi.setSystemTime(1_030_001);
+
+            const result = await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c']));
+
+            expect(result.right).toEqual({ kind: 'control', handled: false });
+            expect(observedStates).toEqual(['acknowledged']);
+            expect(handle.lifecycle()).toMatchObject({
+                state: 'acknowledged',
+                evidence: { expectedRecipientPeerIds: ['b', 'c'], confirmedRecipientPeerIds: ['b', 'c'] }
+            });
+            expect(await readReceipt(fixture)).toMatchObject({ expectedPeerIds: ['b', 'c'], ackedPeerIds: ['b', 'c'] });
+            expect(diagnostics.filter((event) => event.kind === 'receipt-confirmation').at(-1)).toMatchObject({
+                confirmedRecipientPeerIds: ['b', 'c'],
+                candidateAfter: { expectedPeerIds: ['b', 'c'], ackedPeerIds: ['b', 'c'] },
+                commitOutcome: 'committed',
+                settlement: {
+                    expectedRecipientPeerIds: ['b', 'c'],
+                    confirmedRecipientPeerIds: ['b', 'c'],
+                    unconfirmedRecipientPeerIds: [],
+                    confirmedHopPeerIds: [],
+                    unconfirmedHopPeerIds: [],
+                    complete: true
+                }
+            });
+        }
+    );
+
     it.each([
         { confirmed: ['b'], unconfirmed: ['c'], complete: false },
         { confirmed: ['b', 'c'], unconfirmed: [], complete: true }
     ])('retains actual complete-phase confirmation facts for $confirmed', async ({ confirmed, unconfirmed, complete }) => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000_000);
-        const fixture = await createReceiptTrackingFixture();
+        const fixture = await createReceiptTrackingFixture({
+            serverPeerId: 'server',
+            settlementSink: (settlement) => {
+                if (settlement.kind === 'acknowledgement' && settlement.confirmedRecipientPeerIds.length > 0) {
+                    Reflect.set(settlement.expectedRecipientPeerIds, '0', 'mutated-expected');
+                    Reflect.set(settlement.confirmedRecipientPeerIds, '0', 'mutated-confirmed');
+                    Reflect.set(settlement.unconfirmedRecipientPeerIds, '0', 'mutated-unconfirmed');
+                    Reflect.set(settlement.confirmedHopPeerIds, '0', 'mutated-confirmed-hop');
+                    Reflect.set(settlement.unconfirmedHopPeerIds, '0', 'mutated-unconfirmed-hop');
+                }
+            }
+        });
         await fixture.service.enqueueOutboxIfAbsent(roomMessage());
         await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
         const before = await fixture.outboundStores.admissionStore.readReceiptAdmission({ originPeerId: 'self', msgId: 'room-message-1' });
@@ -404,14 +470,14 @@ describe('WS client receipt admission edges', () => {
             }
         });
         expect(before.clientRecord?.version).not.toBe(7);
-        expect(await readReceipt(fixture)).toMatchObject({ expectedPeerIds: ['b', 'c'], ackedPeerIds: confirmed });
         const acknowledgement = fixture.settlements.filter((event) => event.kind === 'acknowledgement').at(-1)!;
-        expect(acknowledgement).toMatchObject({ confirmedRecipientPeerIds: confirmed, unconfirmedRecipientPeerIds: unconfirmed, complete });
-        Reflect.set(acknowledgement.confirmedRecipientPeerIds, '0', 'changed-after-emission');
-        expect(confirmation).toMatchObject({
-            confirmedRecipientPeerIds: confirmed,
-            candidateAfter: { ackedPeerIds: confirmed },
-            settlement: { confirmedRecipientPeerIds: confirmed }
+        expect(acknowledgement).toMatchObject({
+            expectedRecipientPeerIds: ['mutated-expected', 'c'],
+            confirmedRecipientPeerIds: complete ? ['mutated-confirmed', 'c'] : ['mutated-confirmed'],
+            unconfirmedRecipientPeerIds: ['mutated-unconfirmed'],
+            confirmedHopPeerIds: ['mutated-confirmed-hop'],
+            unconfirmedHopPeerIds: ['mutated-unconfirmed-hop'],
+            complete
         });
     });
 

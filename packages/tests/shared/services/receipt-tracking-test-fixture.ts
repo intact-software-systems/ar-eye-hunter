@@ -3,7 +3,7 @@ import { onTestFinished, vi } from 'vitest';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALReceiptControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALDeliverySettlement, ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALOutboundRuntimeDiagnosticsEvent,
     ALOutboundRuntimeDiagnosticsSink,
@@ -35,6 +35,7 @@ interface ReceiptMessageInput {
 export interface ReceiptTrackingFixtureInput {
     readonly serverPeerId: string | undefined;
     readonly diagnosticsSink?: ALOutboundRuntimeDiagnosticsSink | null;
+    readonly settlementSink?: ALDeliverySettlementSink;
     /** The memory pair a volatile send is admitted to; absent, every send uses the one pair. */
     readonly outboundVolatileStores?: ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage>;
 }
@@ -58,7 +59,10 @@ export async function createReceiptTrackingFixture(
         serverPeerId: input.serverPeerId,
         outboundStores,
         outboundVolatileStores: input.outboundVolatileStores,
-        outboundSettlements: (settlement) => settlements.push(settlement),
+        outboundSettlements: (settlement) => {
+            settlements.push(settlement);
+            input.settlementSink?.(settlement);
+        },
         outboundDiagnostics: input.diagnosticsSink === null ? undefined : input.diagnosticsSink ?? ((event) => diagnostics.push(event))
     });
     onTestFinished(() => service.close());
