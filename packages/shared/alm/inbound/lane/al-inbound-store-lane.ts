@@ -60,6 +60,27 @@ import {
  */
 export const AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS = 64;
 
+/** The one grouped send the control claims of a batch share, keyed by the array their selection returned. */
+interface ALInboundControlSendRound {
+    readonly sends: readonly ALInboundClaimedControlSend[];
+    readonly sent: Promise<void>;
+}
+
+/** One settled claim's measurements, so the event that reports them is built from one input. */
+interface ALInboundClaimSettlement {
+    readonly claim: ALWorkClaim;
+    readonly effect: ALPersistedInboundEffect;
+    readonly outcome: ALWorkOutcome;
+    readonly durationMs: number;
+    readonly batchStartedAtMs: number;
+    readonly startedAtMs: number;
+}
+
+interface ALInboundBatchRunOrder {
+    readonly batchStartedAtMs: number;
+    readonly effectIds: string[];
+}
+
 export namespace ALInboundStoreLane {
     export interface Input {
         /** Named on every diagnostic this lane states. */
@@ -107,7 +128,7 @@ export class ALInboundStoreLane {
         const workPort = createALInboundLaneWorkPort(this.dependencies);
         this.admission = new ALInboundMessageAdmission({ ...this.dependencies, workPort });
         this.controlAdmission = createALInboundLaneControlAdmission(this.dependencies, workPort);
-        this.delivery = new ALInboundAdmittedDelivery(this.dependencies);
+        this.delivery = new ALInboundAdmittedDelivery({ ...this.dependencies, lane: input.lane });
         const workType = toALInboundWorkType(input.stores.admissionStore.namespace, input.runtime.carrier);
         this.storageRecovery = input.stores.createStorageRecovery?.({
             name: input.runtime.carrier,
@@ -549,27 +570,6 @@ export class ALInboundStoreLane {
     private readNowMs(): number {
         return this.dependencies.clock.nowMs();
     }
-}
-
-/** The one grouped send the control claims of a batch share, keyed by the array their selection returned. */
-interface ALInboundControlSendRound {
-    readonly sends: readonly ALInboundClaimedControlSend[];
-    readonly sent: Promise<void>;
-}
-
-/** One settled claim's measurements, so the event that reports them is built from one input. */
-interface ALInboundClaimSettlement {
-    readonly claim: ALWorkClaim;
-    readonly effect: ALPersistedInboundEffect;
-    readonly outcome: ALWorkOutcome;
-    readonly durationMs: number;
-    readonly batchStartedAtMs: number;
-    readonly startedAtMs: number;
-}
-
-interface ALInboundBatchRunOrder {
-    readonly batchStartedAtMs: number;
-    readonly effectIds: string[];
 }
 
 /** The runtime's dependencies over this lane's own store pair and worker. */

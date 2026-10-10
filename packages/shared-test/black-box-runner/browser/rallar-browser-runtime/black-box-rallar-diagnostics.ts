@@ -3,7 +3,6 @@ import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-in
 import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
 import { ALWorkBatchObservations } from '@shared/alm/work/al-work-batch-observations.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import type { BlackBoxBrowserDiagnosticsDependency } from './browser-rallar-runtime-composition.ts';
 
 import type {
     BlackBoxRallarConnectionConfig,
@@ -12,6 +11,8 @@ import type {
 } from './black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarScopeDiagnostics } from './black-box-rallar-operation-policy.ts';
 import { toBlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
+import type { BlackBoxBrowserDiagnosticsDependency } from './browser-rallar-runtime-composition.ts';
+import { toRtcNativeObservationProjection } from './rtc-native-observation-projection.ts';
 
 interface ConsoleWarning {
     readonly topic: string;
@@ -97,6 +98,18 @@ export class BlackBoxRallarRuntimeDiagnostics {
         });
     };
 
+    emitSignalingDiagnostic(event: Parameters<NonNullable<RallarDiagnosticsPorts['signalingDiagnostics']>>[0]): void {
+        const native = toRtcNativeObservationProjection(event);
+        if (native.recognized && !native.event) {
+            return;
+        }
+        this.emit({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.rtc.signaling_diagnostics',
+            data: native.event ?? { ...event }
+        });
+    }
+
     private context(config: BlackBoxRallarConnectionConfig): RuntimeEventContext {
         return {
             connection: config.connection,
@@ -141,6 +154,7 @@ export function createBlackBoxRallarDiagnosticsPorts(
                 batchObservations: ALWorkBatchObservations
             }
         }),
+        signalingDiagnostics: (event) => diagnostics.emitSignalingDiagnostic(event),
         storage: (event) => {
             effects.orderingTracks.observe(event);
             if (event.kind === 'reset') {

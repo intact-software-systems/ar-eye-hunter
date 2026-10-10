@@ -1,3 +1,11 @@
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import {
@@ -14,8 +22,10 @@ import { BrowserSessionConnectionLifecycle, type RallarSessionConnectionInput } 
 import { toALDurableOwnerLockName, type ALBrowserLockOptions } from '@shared/alm/storage/al-browser-locks.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
+
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
 
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
@@ -38,6 +48,34 @@ vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
 }));
 
 describe('Browser transport cleanup', () => {
+    it('disposes native observations after a throwing peer-disconnect loop and continues shutdown', async () => {
+        const effects: string[] = [];
+        const middleware = createDefaultApiMiddlewareTestDouble({
+            middleware: {
+                webRtcConnectionService: {
+                    knownPeerIds: () => ['peer'],
+                    disconnectPeer: () => {
+                        effects.push('disconnect');
+                        throw new Error('disconnect failed');
+                    },
+                    disposeNativeObservations: () => {
+                        effects.push('observation-disposed');
+                    }
+                }
+            }
+        });
+        vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
+            effects.push('socket-closed');
+        });
+        mocks.readSession.mockReturnValue(middleware.session);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
+        const transport = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
+        onTestFinished(() => transport.shutdown());
+        await transport.init(toInitOptions());
+        transport.shutdown();
+        expect(effects).toEqual(['disconnect', 'observation-disposed', 'socket-closed']);
+    });
+
     it('continues transport and lifecycle cleanup when a detach participant fails', async () => {
         const middleware = createDefaultApiMiddlewareTestDouble();
         const effects: string[] = [];
@@ -45,7 +83,7 @@ describe('Browser transport cleanup', () => {
             effects.push('transport-closed');
         });
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
@@ -96,7 +134,7 @@ describe('Browser transport cleanup', () => {
             effects.push('transport-closed');
         });
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
@@ -150,7 +188,7 @@ describe('Browser transport cleanup', () => {
             effects.push('transport-closed');
         });
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
@@ -244,12 +282,12 @@ describe('Browser transport cleanup', () => {
         await vi.waitFor(() => {
             expect(initializationSessions).toEqual(['session-old', 'session-new']);
         });
-        resolveSecond?.({ middleware: second.middleware, checkpoints: [] });
+        resolveSecond?.({ middleware: second.middleware, rtcCaptureReceipt, checkpoints: [] });
         await expect(secondConnection).resolves.toMatchObject({
-            session: { sessionId: 'session-new' }
+            middleware: { session: { sessionId: 'session-new' } }
         });
 
-        resolveFirst?.({ middleware: first.middleware, checkpoints: [] });
+        resolveFirst?.({ middleware: first.middleware, rtcCaptureReceipt, checkpoints: [] });
         await expect(firstConnection).rejects.toThrow(
             'Rallar connection was cancelled because auth ended.'
         );
@@ -276,6 +314,7 @@ describe('Browser transport cleanup', () => {
         onTestFinished(() => transportRuntime.shutdown());
 
         const pending = transportRuntime.init({
+            rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
@@ -283,7 +322,7 @@ describe('Browser transport cleanup', () => {
             onResyncRequired: () => {}
         });
         transportRuntime.shutdown();
-        resolveMiddleware?.({ middleware: middleware.middleware, checkpoints: [] });
+        resolveMiddleware?.({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
 
         await expect(pending).rejects.toThrow(
             'Rallar connection was cancelled because auth ended.'
@@ -335,7 +374,7 @@ describe('Browser transport cleanup', () => {
         });
 
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
@@ -437,7 +476,7 @@ describe('Browser transport cleanup', () => {
         const firstDisconnect = sessionController.connectionOperations.disconnect();
         const secondDisconnect = sessionController.connectionOperations.disconnect();
         expect(secondDisconnect).toBe(firstDisconnect);
-        resolveMiddleware?.({ middleware: middleware.middleware, checkpoints: [] });
+        resolveMiddleware?.({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
 
         await Promise.all([firstDisconnect, secondDisconnect]);
         await expect(pendingConnect).rejects.toThrow(
@@ -459,7 +498,7 @@ describe('the session volatile limits seam', () => {
     it('hands the composition\'s limit reader to the session\'s middleware initialisation', async () => {
         const middleware = createDefaultApiMiddlewareTestDouble();
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const readVolatileSessionLimits = () => ({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3, maxBytes: 4_096 });
@@ -486,7 +525,7 @@ describe('the session\'s durable work claim', () => {
         const browser = stubGrantedWebLocks();
         const middleware = createDefaultApiMiddlewareTestDouble();
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
 
@@ -510,7 +549,7 @@ describe('the session\'s durable work claim', () => {
             effects.push('transport-closed');
         });
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
 
@@ -543,7 +582,7 @@ describe('the session\'s durable work claim', () => {
         await vi.waitFor(() => expect(browser.heldCount()).toBe(1));
         transportRuntime.shutdown();
         expect(effects).toEqual([]);
-        resolveMiddleware?.({ middleware: middleware.middleware, checkpoints: [] });
+        resolveMiddleware?.({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
 
         await expect(pending).rejects.toThrow('Rallar connection was cancelled because auth ended.');
         expect(effects).toEqual(['transport-closed', 'lock-released']);
@@ -571,7 +610,7 @@ describe('the session\'s durable work claim', () => {
         });
         const middleware = createDefaultApiMiddlewareTestDouble();
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
 
@@ -581,11 +620,16 @@ describe('the session\'s durable work claim', () => {
     });
 });
 
+interface GrantedWebLocksFixture {
+    readonly names: readonly string[];
+    heldCount(): number;
+}
+
 /**
  * A browser whose every lock request is granted at once and held until its callback settles; `effects` hears
  * `lock-released` the moment a request's signal aborts.
  */
-function stubGrantedWebLocks(effects: string[] = []): { readonly names: readonly string[]; heldCount(): number; } {
+function stubGrantedWebLocks(effects: string[] = []): GrantedWebLocksFixture {
     const names: string[] = [];
     let held = 0;
     const request = async <T>(name: string, options: ALBrowserLockOptions, callback: () => Promise<T>): Promise<T> => {
@@ -608,6 +652,7 @@ function stubGrantedWebLocks(effects: string[] = []): { readonly names: readonly
 
 function toInitOptions(): BrowserTransportInitOptions {
     return {
+        rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
         qosProvider: undefined,
         readVolatileSessionLimits: undefined,
         deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
@@ -618,6 +663,7 @@ function toInitOptions(): BrowserTransportInitOptions {
 
 function toConnectionInput(session: AuthSession): RallarSessionConnectionInput {
     return {
+        rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
         session,
         scope: undefined,
         operationOptions: {},
@@ -635,7 +681,7 @@ interface DeliveryObservationFixture {
 
 function createDeliveryObservation(transport: BrowserTransportRuntime): DeliveryObservationFixture {
     const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
-    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, transport);
+    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, transport, () => transport.readMiddleware()?.session);
     onTestFinished(() => {
         deliveries.releaseAll();
     });

@@ -424,11 +424,13 @@ function createPeerFallbackFixture(rtcVerdict: ALDeliveryAdmissionVerdict): Peer
     const feed = new BrowserDeliverySettlements();
     const sessionDeliveries = new BrowserSessionDeliveries(deliveries, {
         deliverySettlements: feed,
-        readMiddleware: () => context
-    });
+        readMiddleware: () => context,
+        readRtcCaptureReceipt: () => undefined
+    }, () => context.session);
     sessionDeliveries.beginSession(context.session);
     const epoch = feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const sender = new BrowserRallarMessageSender({
+        sessionDeliveries,
         creation: {
             createUnicast: newALUnicastMessage,
             createMulticast: newALMulticastMessage,

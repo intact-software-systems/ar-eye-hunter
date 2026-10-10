@@ -7,6 +7,7 @@ import {
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { assert } from '@std/assert';
 
+import { controlRunEventsJsonl, controlRunResultsJsonl, createControlRunArtifactBundle } from '../src/control-artifacts.ts';
 import { createRallarBlackBoxControlService } from '../src/control-service.ts';
 import {
     assertJsonEquals,
@@ -96,6 +97,37 @@ Deno.test('control service stores results and suppresses completed resume comman
     assertJsonEquals(run.agents[0].completedCommandIds, ['configure-1']);
     assertJsonEquals(run.agents[0].resumeCompletedCommandIds, []);
 });
+
+for (const outerOnly of [false, true]) {
+    Deno.test(`bounded snapshot restores retained ${outerOnly ? 'outer-only' : 'ordinary'} facts after completed queue entries are trimmed`, () => {
+        const service = createRallarBlackBoxControlService(toControlServiceInput({
+            runtimeRetentionBounds: { commands: 0, results: 1 }
+        }));
+        service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
+        const command = assertRight(
+            service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'configure-retained', command: toConfigureCommand() })
+        );
+        service.takeDispatchableCommands('run-1', 'agent-1');
+        const result = toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command, ok: true });
+        assert(result.kind === 'result');
+        assertJsonEquals(service.receiveClientEnvelope(outerOnly ? { ...result, result: undefined } : result).accepted, true);
+        const snapshot = service.snapshotForPersistence({});
+        assertJsonEquals(snapshot.runs[0].commands.length, 0);
+        assertJsonEquals(snapshot.runs[0].results.length, 1);
+        const restored = createRallarBlackBoxControlService(toControlServiceInput());
+        restored.restoreSnapshot(snapshot);
+        const run = restored.snapshotRun('run-1');
+        assert(run);
+        assertJsonEquals(run.results[0].commandId, 'configure-retained');
+        const unavailable = { status: 'unavailable', reason: 'queued-command-not-retained' };
+        assertJsonEquals(run.results[0].attribution, unavailable);
+        assertJsonEquals(JSON.parse(controlRunResultsJsonl(run)).attribution, unavailable);
+        assertJsonEquals(JSON.parse(controlRunEventsJsonl(run)).attribution, unavailable);
+        const bundle = createControlRunArtifactBundle(run, 1_000);
+        assertJsonEquals(JSON.parse(bundle.files['report.json']).resultsList[0].attribution, unavailable);
+        assertJsonEquals(run.results[0].result, outerOnly ? undefined : result.result);
+    });
+}
 
 Deno.test('control service hardens command enqueueing and run tokens', () => {
     let now = 1_000;
@@ -402,7 +434,10 @@ Deno.test('control service compacts recipe run results while preserving distribu
     assert(recipeResult);
     const value = recipeResult.result?.value;
     assert(isJsonRecordValue(value));
-    assertJsonEquals(value.results, undefined);
+    assert(Array.isArray(value.results));
+    assertJsonEquals(value.results.length, 1);
+    assertJsonEquals(value.results[0].commandId, 'health-child');
+    assertJsonEquals(value.resultEvidence, { status: 'finite', payloadsOmitted: true });
     assertJsonEquals(value.resultCount, 1);
 });
 
@@ -460,7 +495,8 @@ Deno.test('control service compact result failure counts include all composite c
     assert(loopResult);
     const value = loopResult.result?.value;
     assert(isJsonRecordValue(value) && Array.isArray(value.failures));
-    assertJsonEquals(value.results, undefined);
+    assertJsonEquals(value.results, []);
+    assertJsonEquals(value.resultEvidence, { status: 'limited', payloadsOmitted: true });
     assertJsonEquals(value.resultCount, 25);
     assertJsonEquals(value.failureCount, 25);
     assertJsonEquals(value.failures.length, 20);

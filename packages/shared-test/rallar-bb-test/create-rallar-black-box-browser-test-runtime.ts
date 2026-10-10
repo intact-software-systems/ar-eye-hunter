@@ -2,6 +2,7 @@ import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-mess
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+
 import {
     dispatchAlmBrowserCommand,
     type RallarBlackBoxAlmBrowserPort,
@@ -11,7 +12,6 @@ import { decodeALCongestionCounters } from './alm/decode-al-congestion-counters.
 import { decodeRallarBlackBoxTestAlmUsage } from './alm/decode-rallar-black-box-test-alm-usage.ts';
 import {
     createBrowserCommandAbortScope,
-    sleep,
     withBrowserCommandAbort
 } from './browser/browser-command-cancellation.ts';
 import type {
@@ -31,6 +31,7 @@ import { BrowserRtcCommands } from './browser/browser-rtc-commands.ts';
 import { BrowserRtcStream } from './browser/browser-rtc-stream.ts';
 import { BrowserWebSocketCommands } from './browser/browser-web-socket-commands.ts';
 import { toRallarBrowserEventInput } from './browser/to-rallar-browser-event-input.ts';
+import { decodeRtcCaptureSupport } from './distributed/rtc-capture-support.ts';
 import type {
     RallarBlackBoxTestAlmUsage,
     RallarBlackBoxTestCleanupInput,
@@ -40,6 +41,12 @@ import type {
     RallarBlackBoxTestRecord
 } from './rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from './runtime/create-rallar-black-box-test-runtime.ts';
+import { sleepWithAbort } from './runtime/sleep-with-abort.ts';
+
+export interface CreateRallarBlackBoxBrowserTestRuntimeInput extends BrowserCommandEnvironment {
+    readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+    readonly idFactory: (prefix: string) => string;
+}
 
 const DEFAULT_WS_OPEN_TIMEOUT_MS = 5_000;
 const DEFAULT_HTTP_BODY_LIMIT = 64_000;
@@ -56,13 +63,13 @@ namespace BrowserCommandAdapter {
 }
 
 class BrowserCommandAdapter {
-    private readonly environment: BrowserCommandEnvironment;
+    private readonly environment: CreateRallarBlackBoxBrowserTestRuntimeInput;
     private readonly sockets: BrowserWebSocketCommands;
     private readonly http: BrowserHttpRequests;
     private readonly rtc: BrowserRtcCommands;
     private readonly features: BrowserRallarFeatureCommands;
 
-    constructor(environment: BrowserCommandEnvironment) {
+    constructor(environment: CreateRallarBlackBoxBrowserTestRuntimeInput) {
         this.environment = environment;
         this.sockets = new BrowserWebSocketCommands(environment);
         this.http = new BrowserHttpRequests(environment);
@@ -76,7 +83,7 @@ class BrowserCommandAdapter {
     ): Promise<RallarBlackBoxTestCommandOutcome | undefined> {
         const delayMs = toCommandLocalDelayMs(command);
         if (delayMs > 0) {
-            await sleep(delayMs, context.abortSignal?.());
+            await this.environment.sleep(delayMs, context.abortSignal?.());
         }
         if (FEATURE_COMMAND_PREFIXES.some((prefix) => command.kind.startsWith(prefix))) {
             return await this.features.dispatch(command, context);
@@ -175,7 +182,7 @@ class BrowserCommandAdapter {
                     wsTicket: undefined
                 }),
             resolveConnection: (command, context) => resolveAlmConnectionName(command, context.config()),
-            sleep: (ms) => sleep(ms),
+            sleep: (ms) => this.environment.sleep(ms),
             now: () => this.environment.now()
         };
     }
@@ -213,24 +220,34 @@ class BrowserCommandAdapter {
     }
 }
 
-export function createRallarBlackBoxBrowserTestRuntime(
+export function createDefaultRallarBlackBoxBrowserTestRuntime(
     options: CreateRallarBlackBoxBrowserTestRuntimeOptions = {}
 ): RallarBlackBoxBrowserTestRuntime {
-    const adapter = new BrowserCommandAdapter({
+    let sequence = 1;
+    return createRallarBlackBoxBrowserTestRuntime({
         rallarRuntime: options.rallarRuntime,
         fetch: options.fetch ?? globalThis.fetch?.bind(globalThis),
         webSocketFactory: options.webSocketFactory ?? createDefaultBrowserWebSocketFactory(),
         defaultWsOpenTimeoutMs: options.defaultWsOpenTimeoutMs ?? DEFAULT_WS_OPEN_TIMEOUT_MS,
         defaultHttpBodyLimit: options.defaultHttpBodyLimit ?? DEFAULT_HTTP_BODY_LIMIT,
         now: options.now ?? Date.now,
-        readSession: readOptionalBrowserSession,
-        requestId: () => crypto.randomUUID()
+        readSession: options.readSession ?? readOptionalBrowserSession,
+        requestId: options.requestId ?? (() => crypto.randomUUID()),
+        sleep: options.sleep ?? sleepWithAbort,
+        idFactory: options.idFactory ?? ((prefix) => `${prefix}-${sequence++}`)
     });
-    const rallarRuntime = options.rallarRuntime;
+}
+
+export function createRallarBlackBoxBrowserTestRuntime(
+    input: CreateRallarBlackBoxBrowserTestRuntimeInput
+): RallarBlackBoxBrowserTestRuntime {
+    const dependencies = Object.freeze({ ...input });
+    const adapter = new BrowserCommandAdapter(dependencies);
+    const rallarRuntime = dependencies.rallarRuntime;
     const runtime = createRallarBlackBoxTestRuntime({
-        now: options.now,
-        sleep: options.sleep,
-        idFactory: options.idFactory,
+        now: dependencies.now,
+        sleep: dependencies.sleep,
+        idFactory: dependencies.idFactory,
         commandExecutor: (command, context) => adapter.dispatch(command, context),
         cleanup: (input, context) => adapter.cleanupOwnedResources(input, context),
         readAlmUsage: rallarRuntime === undefined
@@ -241,6 +258,10 @@ export function createRallarBlackBoxBrowserTestRuntime(
             : async () => decodeCongestionCountersResultValue(await rallarRuntime.readCongestionCounters())
     });
 
+    Object.defineProperty(runtime, 'rtcCaptureSupport', {
+        value: decodeRtcCaptureSupport(dependencies.rallarRuntime?.rtcCaptureSupport).right?.support,
+        enumerable: true
+    });
     return Object.assign(runtime, {
         receiveRallarBrowserEvent(event: RallarBlackBoxBrowserRallarEvent): void {
             runtime.recordEvent(toRallarBrowserEventInput(event));

@@ -11,12 +11,14 @@ import {
     createTwoAgentRun,
     openBrowserControlAgent,
     readFullStackConfig,
-    runRecipeOnAgent,
+    startRecipeRun,
     startRecipientRecipeRun,
     uniqueAgentId,
     waitForControlRunAgent,
     type RecipePair,
     type RecipePairOutcome,
+    type RecipePairRun,
+    type RecipeRunAgent,
     type RecipeRunOutcome,
     type TwoAgentRun,
     type TwoAgentRunParticipant
@@ -31,6 +33,10 @@ export type ThirdAgentRole = Extract<AlmConformanceRole, 'recipient-b' | 'siblin
 /** The two-agent run plus its third agent. */
 export interface ThreeAgentRun extends TwoAgentRun {
     readonly third: TwoAgentRunParticipant;
+}
+
+export interface ThreeAgentRecipeRun extends RecipePairRun {
+    readonly third: RecipeRunAgent;
 }
 
 export interface RecipeTrio extends RecipePair {
@@ -65,7 +71,13 @@ export async function createThreeAgentRun(input: CreateThreeAgentRunInput): Prom
         };
     }
     catch (error) {
-        await Promise.all([run.close(), ...opened.map(closeParticipant)]);
+        const cleanup = await Promise.allSettled([run.close(), ...opened.map(closeParticipant)]);
+        const failures = cleanup.filter((result) => result.status === 'rejected').map((result) => result.reason);
+        if (failures.length > 0) {
+            throw new AggregateError([error, ...failures], 'Third-agent acquisition and cleanup failed.', {
+                cause: error
+            });
+        }
         throw error;
     }
 }
@@ -76,17 +88,27 @@ export async function createThreeAgentRun(input: CreateThreeAgentRunInput): Prom
  * roles that leave the group (recipient-b, the sender) are never its only owner, whose leave is refused.
  */
 export async function runRecipeTrioOnThreeAgents(
-    run: ThreeAgentRun,
+    run: ThreeAgentRecipeRun,
     recipes: RecipeTrio
 ): Promise<RecipeTrioOutcome> {
     const receiverRun = await startRecipientRecipeRun(run, run.receiver, recipes.receiver);
     const thirdRun = await startRecipientRecipeRun(run, run.third, recipes.third);
-    const [sender, receiver, third] = await Promise.all([
-        runRecipeOnAgent(run, run.sender, recipes.sender),
-        receiverRun.outcome,
-        thirdRun.outcome
+    const senderRun = await startRecipeRun(run, run.sender, recipes.sender);
+    const [sender, receiver, third] = await Promise.allSettled([
+        senderRun.readOutcome(),
+        receiverRun.readOutcome(),
+        thirdRun.readOutcome()
     ]);
-    return { sender, receiver, third };
+    if (sender.status === 'rejected') {
+        throw sender.reason;
+    }
+    if (receiver.status === 'rejected') {
+        throw receiver.reason;
+    }
+    if (third.status === 'rejected') {
+        throw third.reason;
+    }
+    return { sender: sender.value, receiver: receiver.value, third: third.value };
 }
 
 /** Each agent names its own connections, so the third agent uses the receiver's connection label. */
@@ -94,13 +116,19 @@ async function openThirdAgent(input: CreateThreeAgentRunInput, run: TwoAgentRun)
     const config = readFullStackConfig();
     const user = input.thirdRole === 'sibling' ? config.userA : config.userC;
     const agentId = uniqueAgentId(input.testInfo, `alm-${input.thirdRole}`);
-    const opened = await openBrowserControlAgent(input.browser, config, user, {
+    const opened = await openBrowserControlAgent({
+        browser: input.browser,
+        config,
+        user,
         runId: input.runId,
         agentId,
         groupId: run.group.groupId,
-        connection: run.receiver.connection,
         diagnosticsRole: input.thirdRole
     });
+    if (opened.diagnostics === undefined) {
+        await opened.context.close();
+        throw new Error('A completed third participant must own diagnostics.');
+    }
     return {
         agentId,
         actor: user.actor,
@@ -112,6 +140,10 @@ async function openThirdAgent(input: CreateThreeAgentRunInput, run: TwoAgentRun)
 }
 
 async function closeParticipant(participant: TwoAgentRunParticipant): Promise<void> {
-    await cleanupRallarPage(participant.page).catch(() => undefined);
-    await participant.context.close().catch(() => undefined);
+    try {
+        await cleanupRallarPage(participant.page);
+    }
+    finally {
+        await participant.context.close();
+    }
 }

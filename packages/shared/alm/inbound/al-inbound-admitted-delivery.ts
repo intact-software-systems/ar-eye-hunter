@@ -2,6 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
+import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALInboundAdmissionStore } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { shouldRetryALInboundDelivery } from './al-inbound-effect-intent.ts';
@@ -12,24 +13,13 @@ import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundStoredPlanningObservations
 } from './al-inbound-planner-snapshot.ts';
+import {
+    recordALInboundDiagnostic,
+    toALInboundClaimIdentity,
+    type ALInboundDispatchDisposition
+} from './al-inbound-runtime-diagnostics.ts';
 import { isAuthorizedStoredWsClientDelivery } from './al-inbound-source-validation.ts';
 import type { ALPersistedInboundEffect } from './al-inbound-work-entry.ts';
-
-export namespace ALInboundAdmittedDelivery {
-    export interface Dependencies extends
-        Pick<
-            ALInboundMessageRuntime.Dependencies,
-            | 'admissionStore'
-            | 'planIncomingMessage'
-            | 'dispatchInboxEntry'
-            | 'canDispatchMessage'
-            | 'forwardMessage'
-            | 'forwardRetriedCopy'
-            | 'clock'
-            | 'effectPreparation'
-            | 'onResyncRequired'
-        > {}
-}
 
 /** The stored surface one eligibility read decided on, so the delivery that follows reads none of it again. */
 export interface ALInboundDeliveryObservation {
@@ -60,6 +50,26 @@ interface ALInboundAdmittedForward {
 const NOT_READY: ALInboundDeliveryReadiness = { ready: false, observed: undefined };
 const READY_WITHOUT_OBSERVATION: ALInboundDeliveryReadiness = { ready: true, observed: undefined };
 
+export namespace ALInboundAdmittedDelivery {
+    export interface Dependencies extends
+        Pick<
+            ALInboundMessageRuntime.Dependencies,
+            | 'admissionStore'
+            | 'planIncomingMessage'
+            | 'dispatchInboxEntry'
+            | 'canDispatchMessage'
+            | 'forwardMessage'
+            | 'forwardRetriedCopy'
+            | 'clock'
+            | 'effectPreparation'
+            | 'onResyncRequired'
+            | 'diagnostics'
+            | 'effectWorkerId'
+        > {
+        readonly lane: ALStoreDurability;
+    }
+}
+
 export class ALInboundAdmittedDelivery {
     private readonly dependencies: ALInboundAdmittedDelivery.Dependencies;
     private readonly admissionStore: ALInboundAdmissionStore;
@@ -88,16 +98,18 @@ export class ALInboundAdmittedDelivery {
             return NOT_READY;
         }
         const payload = effect.payload;
-        if (payload.kind === 'send-control' || payload.kind === 'admit-message' || payload.kind === 'admit-control') {
-            return READY_WITHOUT_OBSERVATION;
-        }
-        if (payload.kind === 'release-buffered') {
-            return await this.readBufferedReleaseReadiness(payload.trackKey, payload.seq, nowMs);
+        switch (payload.kind) {
+            case 'send-control':
+            case 'admit-message':
+            case 'admit-control':
+                return READY_WITHOUT_OBSERVATION;
+            case 'release-buffered':
+                return await this.readBufferedReleaseReadiness(payload.trackKey, payload.seq, nowMs);
         }
         const observed = await this.readStoredDeliveryObservation(
             payload.message,
             nowMs,
-            payload.kind === 'forward-message' && payload.retryPeerIds !== undefined ? payload.fromPeerId : undefined
+            toRetriedForwardingPeerId(effect)
         );
         if (shouldRetryALInboundDelivery(observed.plan)) {
             return NOT_READY;
@@ -126,8 +138,10 @@ export class ALInboundAdmittedDelivery {
             read.source,
             computeALInboundBufferedReleasePlanningObservations(read)
         );
-        const ready = !shouldRetryALInboundDelivery(plan) && await this.isLocalDeliveryReady(read.snapshot.msg, plan);
-        return ready ? READY_WITHOUT_OBSERVATION : NOT_READY;
+        return {
+            ready: !shouldRetryALInboundDelivery(plan) && await this.isLocalDeliveryReady(read.snapshot.msg, plan),
+            observed: undefined
+        };
     }
 
     /**
@@ -171,7 +185,7 @@ export class ALInboundAdmittedDelivery {
             return false;
         }
         return readiness.kind !== 'ready' || plan.dropReason !== undefined || !plan.localDelivery.enabled ||
-            (this.dependencies.canDispatchMessage?.(msg) ?? true);
+            this.dependencies.canDispatchMessage?.(msg) !== false;
     }
 
     /**
@@ -187,10 +201,12 @@ export class ALInboundAdmittedDelivery {
         observed: ALInboundDeliveryObservation | undefined
     ): Promise<'completed' | 'retry'> {
         if (this.shutdown.signal.aborted) {
+            this.recordDispatchDecision(effect, observed, 'shutdown');
             return 'retry';
         }
         const nowMs = this.dependencies.clock.nowMs();
         if (effect.expireAtTimestamp <= nowMs) {
+            this.recordDispatchDecision(effect, observed, 'expired');
             throw new NonRetryableException('Inbound work expired before delivery');
         }
 
@@ -202,7 +218,7 @@ export class ALInboundAdmittedDelivery {
             case 'dispatch-local':
                 return await this.dispatchAdmittedMessage(
                     observed ?? await this.readStoredDeliveryObservation(effect.payload.message, nowMs, undefined),
-                    effect.expireAtTimestamp
+                    effect
                 );
             case 'send-control':
                 throw new NonRetryableException(
@@ -213,7 +229,7 @@ export class ALInboundAdmittedDelivery {
                     observed: observed ?? await this.readStoredDeliveryObservation(
                         effect.payload.message,
                         nowMs,
-                        effect.payload.retryPeerIds === undefined ? undefined : effect.payload.fromPeerId
+                        toRetriedForwardingPeerId(effect)
                     ),
                     fromPeerId: effect.payload.fromPeerId,
                     retryPeerIds: effect.payload.retryPeerIds,
@@ -223,7 +239,7 @@ export class ALInboundAdmittedDelivery {
             case 'release-buffered':
                 return await this.releaseBufferedMessage(
                     { trackKey: effect.payload.trackKey, seq: effect.payload.seq, effectId: effect.effectId },
-                    effect.expireAtTimestamp
+                    effect
                 );
         }
     }
@@ -231,7 +247,7 @@ export class ALInboundAdmittedDelivery {
     /** A release commits its own ordering progress first; the message it frees reaches the page after. */
     private async releaseBufferedMessage(
         input: ALInboundOrderedDelivery.ReleaseInput,
-        expireAtTimestamp: number
+        effect: ALPersistedInboundEffect
     ): Promise<'completed' | 'retry'> {
         const release = await this.orderedDelivery.release(input);
         if (typeof release === 'string') {
@@ -242,45 +258,103 @@ export class ALInboundAdmittedDelivery {
         }
         return await this.dispatchAdmittedMessage(
             await this.readStoredDeliveryObservation(release.message, this.dependencies.clock.nowMs(), undefined),
-            expireAtTimestamp
+            effect
         );
     }
 
     private async dispatchAdmittedMessage(
         observed: ALInboundDeliveryObservation,
-        expireAtTimestamp: number
+        effect: ALPersistedInboundEffect
     ): Promise<'completed' | 'retry'> {
         const { msg, plan, source } = observed;
-        if (this.shutdown.signal.aborted || shouldRetryALInboundDelivery(plan)) {
+        if (this.shutdown.signal.aborted) {
+            this.recordDispatchDecision(effect, observed, 'shutdown');
+            return 'retry';
+        }
+        if (shouldRetryALInboundDelivery(plan)) {
+            this.recordDispatchDecision(effect, observed, 'plan-retry');
             return 'retry';
         }
         const entry = toALInboundDispatchEntry(
             this.dependencies.effectPreparation.createInboxEntry(msg),
             msg,
-            expireAtTimestamp
+            effect.expireAtTimestamp
         );
-        if (entry.audit.expiryTs.epochMilliseconds <= this.dependencies.clock.nowMs()) {
-            throw new NonRetryableException('Inbound message expired before delivery');
-        }
-        if (plan.dropReason || !plan.localDelivery.enabled) {
+        this.requireDispatchTime(entry.audit.expiryTs.epochMilliseconds, effect, observed);
+        if (plan.dropReason) {
+            this.recordDispatchDecision(effect, observed, 'plan-dropped');
             return await this.orderedDelivery.complete(msg);
         }
-
+        if (!plan.localDelivery.enabled) {
+            this.recordDispatchDecision(effect, observed, 'local-disabled');
+            return await this.orderedDelivery.complete(msg);
+        }
         const ordered = await this.readOrderedDispatchOutcome(msg);
         if (ordered !== 'dispatch') {
+            this.recordDispatchDecision(
+                effect,
+                observed,
+                ordered === 'completed' ? 'ordering-completed' : 'ordering-retry'
+            );
             return ordered;
         }
         if (this.shutdown.signal.aborted || this.dependencies.canDispatchMessage?.(msg) === false) {
+            this.recordDispatchDecision(
+                effect,
+                observed,
+                this.shutdown.signal.aborted ? 'shutdown' : 'consumer-unavailable'
+            );
             return 'retry';
         }
-        if (entry.audit.expiryTs.epochMilliseconds <= this.dependencies.clock.nowMs()) {
+        this.requireDispatchTime(entry.audit.expiryTs.epochMilliseconds, effect, observed);
+        let dispatched: void | 'completed' | 'retry';
+        try {
+            dispatched = await this.dependencies.dispatchInboxEntry(entry, plan, source);
+        }
+        catch (error) {
+            this.recordDispatchDecision(effect, observed, 'port-threw');
+            throw error;
+        }
+        if (dispatched === 'retry') {
+            this.recordDispatchDecision(effect, observed, 'port-retry');
+            return 'retry';
+        }
+        this.recordDispatchDecision(effect, observed, 'port-returned');
+        return await this.orderedDelivery.complete(msg);
+    }
+
+    private requireDispatchTime(
+        expiresAtMs: number,
+        effect: ALPersistedInboundEffect,
+        observed: ALInboundDeliveryObservation
+    ): void {
+        if (expiresAtMs <= this.dependencies.clock.nowMs()) {
+            this.recordDispatchDecision(effect, observed, 'expired');
             throw new NonRetryableException('Inbound message expired before delivery');
         }
-        const dispatched = await this.dependencies.dispatchInboxEntry(entry, plan, source);
-        if (dispatched === 'retry') {
-            return 'retry';
+    }
+
+    private recordDispatchDecision(
+        effect: ALPersistedInboundEffect,
+        observed: ALInboundDeliveryObservation | undefined,
+        disposition: ALInboundDispatchDisposition
+    ): void {
+        if (effect.payload.kind !== 'dispatch-local' && effect.payload.kind !== 'release-buffered') {
+            return;
         }
-        return await this.orderedDelivery.complete(msg);
+        recordALInboundDiagnostic(this.dependencies.diagnostics, {
+            kind: 'dispatch-decision',
+            lane: this.dependencies.lane,
+            workerId: this.dependencies.effectWorkerId,
+            effectId: effect.effectId,
+            msgId: observed?.msg.id.msgId ??
+                toALInboundClaimIdentity(effect.payload).msgId,
+            typeId: observed?.msg.payload.typeId ?? null,
+            carrier: effect.carrier,
+            attempts: effect.attempts,
+            atEpochMs: this.dependencies.clock.nowMs(),
+            disposition
+        });
     }
 
     /**
@@ -289,15 +363,16 @@ export class ALInboundAdmittedDelivery {
      */
     private async readOrderedDispatchOutcome(msg: ALMessage): Promise<'completed' | 'retry' | 'dispatch'> {
         const readiness = await this.orderedDelivery.readiness(msg);
-        if (readiness.kind === 'waiting') {
-            return 'retry';
+        switch (readiness.kind) {
+            case 'waiting':
+                return 'retry';
+            case 'completed':
+                return 'completed';
+            case 'resync-required':
+                return await this.orderedDelivery.reject(msg, readiness.completedThrough);
+            case 'ready':
+                return 'dispatch';
         }
-        if (readiness.kind === 'completed') {
-            return 'completed';
-        }
-        return readiness.kind === 'resync-required'
-            ? await this.orderedDelivery.reject(msg, readiness.completedThrough)
-            : 'dispatch';
     }
 
     private async forwardAdmittedMessage(forward: ALInboundAdmittedForward): Promise<'completed' | 'retry'> {
@@ -326,4 +401,10 @@ export class ALInboundAdmittedDelivery {
             });
         return forwarded === 'retry' ? 'retry' : 'completed';
     }
+}
+
+/** Only a retried forward substitutes its current parent for the stored arrival peer. */
+function toRetriedForwardingPeerId(effect: ALPersistedInboundEffect): string | undefined {
+    const payload = effect.payload;
+    return payload.kind === 'forward-message' && payload.retryPeerIds !== undefined ? payload.fromPeerId : undefined;
 }

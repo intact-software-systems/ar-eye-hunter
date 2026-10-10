@@ -229,11 +229,23 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             agentId: 'agent-a',
             commandId: 'stream-a',
             ok: true,
-            result: summary
+            result: {
+                commandId: 'stream-a',
+                kind: 'rtc.stream',
+                status: 'ok',
+                ok: true,
+                startedAtEpochMs: 1_000,
+                endedAtEpochMs: 2_000,
+                durationMs: 1_000,
+                value: summary
+            }
         };
-        const performance = analyzedPerformance(
-            files(distributedRun(), [exported], [envelope])
-        );
+        const artifactFiles = files(distributedRun(), [exported], [envelope]);
+        const decoded = toDistributedArtifactSnapshots(artifactFiles, 2_000);
+        expect(decoded.left).toBeUndefined();
+        expect(decoded.right?.controlRun.results).toHaveLength(1);
+        expect(decoded.right?.controlRun.results[0].result?.value).toEqual(summary);
+        const performance = analyzedPerformance(artifactFiles);
 
         expect(performance.streamTiming).toMatchObject({
             streamCount: 1,

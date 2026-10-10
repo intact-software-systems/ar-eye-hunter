@@ -194,8 +194,9 @@ Deno.test('external command and result collisions cannot impersonate reload work
     assertRight(collided.enqueueCommand({ ...rootRequest, commandId: prefix.commandId, command: prefix.command }));
     assertEquals(collided.enqueueCommand(rootRequest).left?.code, 'command-payload-conflict');
     const forged = createRallarBlackBoxControlService(toControlServiceInput());
-    forged.receiveClientEnvelope(toSuccessfulResult(queued));
-    assertEquals(forged.enqueueCommand(rootRequest).left?.code, 'command-payload-conflict');
+    assertEquals(forged.receiveClientEnvelope(toSuccessfulResult(queued)).accepted, false);
+    assertEquals(forged.snapshotRun('run-1'), undefined);
+    assertEquals(assertRight(forged.enqueueCommand(rootRequest)), queued);
 });
 
 Deno.test('rate limits defer derived execution and the allowlist still rejects reload', () => {

@@ -1,4 +1,9 @@
-import { expect, test, type Locator } from '@playwright/test';
+import {
+    expect,
+    test,
+    type Locator
+} from '@playwright/test';
+
 import {
     cleanupRallarPage,
     expectFullStackApiReady,
@@ -69,7 +74,10 @@ test.describe('exhaustive auth and groups clients', () => {
         const groupId = uniqueGroupId(testInfo);
 
         try {
-            await loginUser(page, config, config.userA, {
+            await loginUser({
+                page,
+                config,
+                user: config.userA,
                 groupId,
                 sessionId: `${groupId}-groups-session`,
                 tab: 'rooms-clients'

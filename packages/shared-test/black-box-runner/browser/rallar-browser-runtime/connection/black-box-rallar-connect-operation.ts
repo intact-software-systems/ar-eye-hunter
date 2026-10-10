@@ -1,5 +1,11 @@
+import {
+    resolveRequiredRtcCaptureFailure,
+    toBrowserRtcCaptureIntent
+} from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import type {
     BlackBoxRallarConsoleDiagnostics,
@@ -45,6 +51,8 @@ type LifecycleSubscriptions = Pick<
 interface ConnectionAttempt {
     readonly config: BlackBoxRallarConnectionConfig;
     readonly context: BlackBoxRallarLifecycleOperationContext;
+    readonly requestedConfiguration: RtcSignalingDiagnostics.CaptureConfiguration | undefined;
+    completion: BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion | undefined;
     phase: string;
     lifecycleSubscriptions: LifecycleSubscriptions | undefined;
     unsubscribeConsoleDiagnostics: (() => void) | undefined;
@@ -74,7 +82,16 @@ export class BlackBoxRallarConnectOperation {
         this.#input = input;
     }
 
-    connect = (config: BlackBoxRallarConnectionConfig): Promise<BlackBoxRallarConnectDiagnostics> => {
+    connect = (requested: BlackBoxRallarConnectionConfig): Promise<BlackBoxRallarConnectDiagnostics> => {
+        const captured = toBrowserRtcCaptureIntent(requested.rallar);
+        const config = {
+            ...requested,
+            rallar: {
+                ...requested.rallar,
+                rtcCaptureMode: captured.options.rtcCaptureMode,
+                rtcCaptureContext: captured.options.rtcCaptureContext
+            }
+        };
         const { lifecycle, connectionState } = this.#input;
         const activeAuthentication = lifecycle.authenticationConfig();
         if (
@@ -89,17 +106,22 @@ export class BlackBoxRallarConnectOperation {
         }
         return lifecycle.runConnect(blackBoxRallarConnectionOperationKeyOf(config), (context) => {
             const queuedRejection = toConnectedTargetRejection(connectionState.get(), config);
-            return queuedRejection ? Promise.reject(queuedRejection) : this.#runConnect(config, context);
+            return queuedRejection
+                ? Promise.reject(queuedRejection)
+                : this.#runConnect(config, context, captured.requestedConfiguration);
         });
     };
 
     async #runConnect(
         config: BlackBoxRallarConnectionConfig,
-        context: BlackBoxRallarLifecycleOperationContext
+        context: BlackBoxRallarLifecycleOperationContext,
+        requestedConfiguration: RtcSignalingDiagnostics.CaptureConfiguration | undefined
     ): Promise<BlackBoxRallarConnectDiagnostics> {
         const attempt: ConnectionAttempt = {
             config,
             context,
+            requestedConfiguration,
+            completion: undefined,
             phase: 'validate-config',
             lifecycleSubscriptions: undefined,
             unsubscribeConsoleDiagnostics: undefined
@@ -142,8 +164,10 @@ export class BlackBoxRallarConnectOperation {
             this.#input.typedChannels.subscribe(config);
         }
         connectionState.set(state);
-        const connected = this.#toConnectDiagnostics(state);
+        const connected = this.#toConnectDiagnostics(state, attempt.completion?.rtcCapture);
+        this.#assertAttemptEligible(attempt);
         diagnostics.emitDiagnostic(config, 'rallar.browser.connect_completed', connected);
+        this.#assertAttemptEligible(attempt);
         return connected;
     }
 
@@ -177,7 +201,7 @@ export class BlackBoxRallarConnectOperation {
     }
 
     async #openConnection(attempt: ConnectionAttempt): Promise<void> {
-        const { config, context } = attempt;
+        const { config } = attempt;
         const { rallar, diagnostics, health } = this.#input;
         attempt.phase = 'rallar-connect';
         diagnostics.emitConnectPhaseStarted(config, attempt.phase, {
@@ -185,9 +209,15 @@ export class BlackBoxRallarConnectOperation {
             dataChannelLanes: config.rallar.dataChannelLanes,
             ...health.getStatusDiagnostics(config)
         });
-        await rallar.connect({ timeoutMs: config.rallar.timeoutMs, dataChannelLanes: config.rallar.dataChannelLanes });
-        context.assertCurrent();
+        attempt.completion = await rallar.connect({
+            timeoutMs: config.rallar.timeoutMs,
+            dataChannelLanes: config.rallar.dataChannelLanes,
+            rtcCaptureMode: config.rallar.rtcCaptureMode,
+            rtcCaptureContext: config.rallar.rtcCaptureContext
+        });
+        this.#assertAttemptEligible(attempt);
         diagnostics.emitConnectPhaseCompleted(config, attempt.phase, { ...health.getStatusDiagnostics(config) });
+        this.#assertAttemptEligible(attempt);
         if (!config.roomId) {
             return;
         }
@@ -199,12 +229,47 @@ export class BlackBoxRallarConnectOperation {
         };
         attempt.phase = 'room-join';
         diagnostics.emitConnectPhaseStarted(config, attempt.phase, roomContext);
-        await rallar.rooms.join(config.roomId, { timeoutMs: config.rallar.timeoutMs, scope: roomContext.scope });
-        context.assertCurrent();
+        await rallar.rooms.join(config.roomId, {
+            timeoutMs: config.rallar.timeoutMs,
+            scope: roomContext.scope,
+            rtcCaptureMode: config.rallar.rtcCaptureMode,
+            rtcCaptureContext: config.rallar.rtcCaptureContext
+        });
+        this.#assertAttemptEligible(attempt);
         diagnostics.emitConnectPhaseCompleted(config, attempt.phase, {
             ...roomContext,
             ...health.getStatusDiagnostics(config)
         });
+    }
+
+    #assertAttemptEligible(attempt: ConnectionAttempt): void {
+        const rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt> =
+            attempt.completion?.rtcCapture ?? { status: 'unavailable', reason: 'absent' };
+        try {
+            attempt.context.assertCurrent();
+        }
+        catch (caught) {
+            if (attempt.requestedConfiguration) {
+                throw new RallarRtcCaptureUnverifiedError({
+                    requestedConfiguration: attempt.requestedConfiguration,
+                    rtcCapture,
+                    reason: 'operation-not-current'
+                });
+            }
+            throw caught;
+        }
+        if (!attempt.requestedConfiguration) {
+            return;
+        }
+        const reason = attempt.completion?.captureOwnershipFailure() ??
+            resolveRequiredRtcCaptureFailure(attempt.requestedConfiguration, rtcCapture);
+        if (reason) {
+            throw new RallarRtcCaptureUnverifiedError({
+                requestedConfiguration: attempt.requestedConfiguration,
+                rtcCapture,
+                reason
+            });
+        }
     }
 
     #subscribeConnection(
@@ -293,12 +358,16 @@ export class BlackBoxRallarConnectOperation {
         };
     }
 
-    #toConnectDiagnostics(state: BlackBoxRallarConnectionState.Value): BlackBoxRallarConnectDiagnostics {
+    #toConnectDiagnostics(
+        state: BlackBoxRallarConnectionState.Value,
+        rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt> | undefined
+    ): BlackBoxRallarConnectDiagnostics {
         const { config, session } = state;
         const { health } = this.#input;
         const transport = resolveBlackBoxRallarTransport(config);
         const typedMessages = isBlackBoxRallarTypedMessagesTransport(transport);
         return {
+            rtcCapture: rtcCapture ?? { status: 'unavailable', reason: 'absent' },
             status: 'connected',
             document: health.readDocument(),
             connection: config.connection,

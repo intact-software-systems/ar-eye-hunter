@@ -17,6 +17,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         expected: {
             values: [
                 'DEFAULT_REALTIME_DATA_CHANNEL_LANE',
+                'RallarRtcCaptureConnectionRequiredError',
+                'RallarRtcCaptureUnverifiedError',
                 'createRallarCrdtFacade',
                 'createRallarDataFacade',
                 'createRallarFacade',
@@ -213,6 +215,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRoomTransportStatus',
                 'RallarRtcCandidateDiagnostics',
                 'RallarRtcCandidatePairDiagnostics',
+                'RallarRtcCaptureContext',
                 'RallarRtcDiagnostics',
                 'RallarRtcDiagnosticsOptions',
                 'RallarRtcLaneStatus',
@@ -289,6 +292,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
             values: [
                 'AL_DELIVERY_ADMITTED_STATES',
                 'AL_DELIVERY_STATES',
+                'RallarRtcCaptureConnectionRequiredError',
+                'RallarRtcCaptureUnverifiedError',
                 'configureApiClient',
                 'matchesRallarMessageSelector',
                 'normalizeApiBaseUrl',
@@ -391,6 +396,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRoomSummary',
                 'RallarRoomSwitchOperation',
                 'RallarRoomSwitchPartialFailureError',
+                'RallarRtcCaptureContext',
                 'RallarRtcSendInput',
                 'RallarScopedOperationOptions',
                 'RallarSessionHeartbeat',

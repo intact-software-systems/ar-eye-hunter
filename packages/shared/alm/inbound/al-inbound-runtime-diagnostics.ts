@@ -20,7 +20,47 @@ export type ALInboundAdmissionOutcome =
     | 'unauthorized'
     | 'pending';
 
+export type ALInboundDispatchDisposition =
+    | 'shutdown'
+    | 'expired'
+    | 'plan-retry'
+    | 'plan-dropped'
+    | 'local-disabled'
+    | 'ordering-completed'
+    | 'ordering-retry'
+    | 'consumer-unavailable'
+    | 'port-returned'
+    | 'port-retry'
+    | 'port-threw';
+
+export interface ALInboundDispatchDecision {
+    readonly kind: 'dispatch-decision';
+    readonly lane: ALStoreDurability;
+    readonly workerId: string;
+    readonly effectId: string;
+    readonly msgId: string | null;
+    readonly typeId: string | null;
+    readonly carrier: ALDeliveryCarrier;
+    readonly attempts: number;
+    readonly atEpochMs: number;
+    readonly disposition: ALInboundDispatchDisposition;
+}
+
+/** One concrete WS selection; exact callback settlement is not a native application receipt. */
+export interface ALInboundConsumerInvocation {
+    readonly kind: 'consumer-invocation';
+    readonly msgId: string;
+    readonly typeId: string;
+    readonly carrier: 'ws';
+    readonly selection: 'exact-type' | 'absent';
+    readonly outcome: 'returned' | 'retry' | 'threw' | 'not-invoked';
+    readonly beganAtMs: number;
+    readonly settledAtMs: number;
+}
+
 export type ALInboundRuntimeDiagnosticsEvent =
+    | ALInboundDispatchDecision
+    | ALInboundConsumerInvocation
     | ALInboundAcknowledgementEvidence.Association
     | ALInboundAcknowledgementEvidence.Handoff
     | Readonly<{
@@ -224,5 +264,17 @@ function toAcceptanceDiagnostics(
             return { outcome: 'not-handled', reason: `storage-unavailable: ${acceptance.unavailable.cause}` };
         default:
             return { outcome: 'not-handled', reason: acceptance.kind };
+    }
+}
+/** Diagnostics are supplemental: a failed sink must not change delivery or replace its original error. */
+export function recordALInboundDiagnostic(
+    sink: ALInboundRuntimeDiagnosticsSink | undefined,
+    event: ALInboundRuntimeDiagnosticsEvent
+): void {
+    try {
+        sink?.(event);
+    }
+    catch {
+        // No second sink or arbitrary error text escapes this optional observation boundary.
     }
 }

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import {
     cleanupRallarPage,
     expectFullStackApiReady,
@@ -22,7 +23,10 @@ test.describe('exhaustive events topology trace and diagnostics', () => {
         const groupId = uniqueGroupId(testInfo);
 
         try {
-            await loginUser(page, config, config.userA, {
+            await loginUser({
+                page,
+                config,
+                user: config.userA,
                 groupId,
                 sessionId: `${groupId}-events-session`,
                 tab: 'quick-test'

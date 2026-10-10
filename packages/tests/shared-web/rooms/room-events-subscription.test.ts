@@ -1,4 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
@@ -8,7 +13,7 @@ import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-run
 import {
     createRoomEvent,
     dispatchRoomWsMessage,
-    readRoomEventMocks,
+    getRoomEventMocks,
     resetRoomEventTestRuntime,
     toRoomEventEnvelopeMessage
 } from './room-event-test-runtime.ts';
@@ -158,7 +163,7 @@ describe('room event subscriptions', () => {
 
     it('does not replay missed events when a room subscription reconnects', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const mocks = readRoomEventMocks();
+        const mocks = getRoomEventMocks();
         const facade = createRallarFacade();
         const eventIds: string[] = [];
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
@@ -174,7 +179,7 @@ describe('room event subscriptions', () => {
 
         await facade.disconnect();
         expect(
-            mocks.ctx.middleware.webSocketQueueBox.removeAnyInboxMessageCallback
+            mocks.context.middleware.webSocketQueueBox.removeAnyInboxMessageCallback
         ).toHaveBeenCalledWith('rallar:ws:any-message');
         await facade.connect();
 

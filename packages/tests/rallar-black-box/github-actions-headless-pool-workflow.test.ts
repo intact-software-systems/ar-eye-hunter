@@ -8,34 +8,30 @@ import {
     stat,
     writeFile
 } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { load } from 'js-yaml';
 import {
     describe,
     expect,
     it
 } from 'vitest';
 
-import type { ApiJsonValue } from '../../shared/api/api-json-value.ts';
+import {
+    formatJsonSchemaValidationErrors,
+    validateJsonSchema,
+    type JsonSchema
+} from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
-interface WorkflowYamlLoader {
-    load(source: string, options: { schema: object; }): ApiJsonValue | undefined;
-    readonly JSON_SCHEMA: object;
-}
-
-interface WorkflowPlanMatrixOutput {
+interface GitHubFreeMatrixOutput {
     readonly runId: string;
     readonly distributedRunId: string;
-    readonly matrix: readonly ApiJsonValue[];
+    readonly matrix: readonly { readonly shard_index: number; readonly agent_start_index: number; readonly agent_count: number; }[];
 }
 
 const repoRoot = path.resolve(__dirname, '../../..');
-const require = createRequire(path.join(repoRoot, 'package.json'));
-const yaml = require('js-yaml');
-expect(yaml).toEqual(expect.objectContaining({ load: expect.any(Function), JSON_SCHEMA: expect.any(Object) }));
-const { load: loadYaml, JSON_SCHEMA } = yaml as WorkflowYamlLoader;
+const osEnvironment = { PATH: process.env.PATH, LANG: 'C', LC_ALL: 'C' };
 const productionConcurrency = {
     group: 'hetzner-production-distributed-recipe',
     'cancel-in-progress': false,
@@ -79,14 +75,96 @@ interface WorkflowDocument {
     readonly jobs?: Readonly<Record<string, WorkflowJob>>;
 }
 
+const workflowSchema: JsonSchema = {
+    type: 'object',
+    $defs: {
+        scalarMap: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } },
+        step: {
+            type: 'object',
+            properties: {
+                if: { type: 'string' },
+                name: { type: 'string' },
+                uses: { type: 'string' },
+                run: { type: 'string' },
+                with: { $ref: '#/$defs/scalarMap' },
+                env: { type: 'object', additionalProperties: { type: 'string' } }
+            }
+        },
+        job: {
+            type: 'object',
+            properties: {
+                if: { type: 'string' },
+                uses: { type: 'string' },
+                env: { $ref: '#/$defs/scalarMap' },
+                'runs-on': { type: 'string' },
+                environment: {
+                    anyOf: [{ type: 'string' }, { type: 'object', required: ['name'], properties: { name: { type: 'string' }, url: { type: 'string' } } }]
+                },
+                strategy: {
+                    type: 'object',
+                    properties: { 'max-parallel': { type: 'string' }, matrix: { type: 'object', properties: { shard: { type: 'string' } } } }
+                },
+                needs: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
+                with: { $ref: '#/$defs/scalarMap' },
+                steps: { type: 'array', items: { $ref: '#/$defs/step' } }
+            }
+        }
+    },
+    properties: {
+        concurrency: {
+            type: 'object',
+            required: ['group', 'cancel-in-progress'],
+            properties: { group: { type: 'string' }, 'cancel-in-progress': { type: 'boolean' }, queue: { type: 'string' } }
+        },
+        jobs: { type: 'object', additionalProperties: { $ref: '#/$defs/job' } },
+        on: {
+            type: 'object',
+            properties: {
+                workflow_dispatch: {
+                    type: 'object',
+                    properties: {
+                        inputs: {
+                            type: 'object',
+                            additionalProperties: {
+                                type: 'object',
+                                properties: {
+                                    default: { type: ['string', 'number', 'boolean'] },
+                                    type: { type: 'string' },
+                                    options: { type: 'array', items: { type: 'string' } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+};
+
+const matrixSchema: JsonSchema = {
+    type: 'object',
+    required: ['runId', 'distributedRunId', 'matrix'],
+    properties: {
+        runId: { type: 'string' },
+        distributedRunId: { type: 'string' },
+        matrix: {
+            type: 'array',
+            items: {
+                type: 'object',
+                required: ['shard_index', 'agent_start_index', 'agent_count'],
+                properties: { shard_index: { type: 'number' }, agent_start_index: { type: 'number' }, agent_count: { type: 'number' } }
+            }
+        }
+    }
+};
+
 async function readWorkflow(): Promise<WorkflowDocument> {
-    const document = loadYaml(await readFile(workflowPath, 'utf8'), { schema: JSON_SCHEMA });
-    expect(document).toEqual(expect.objectContaining({
-        concurrency: expect.any(Object),
-        on: expect.any(Object),
-        jobs: expect.any(Object)
-    }));
-    return document as WorkflowDocument;
+    const workflow: unknown = load(await readFile(workflowPath, 'utf8'));
+    const validation = validateJsonSchema(workflowSchema, workflow);
+    if (!validation.ok) {
+        throw new Error(formatJsonSchemaValidationErrors(validation.errors));
+    }
+    return workflow as WorkflowDocument;
 }
 
 const required = <T>(value: T | undefined, description: string): T => {
@@ -151,6 +229,7 @@ describe('GitHub Free distributed recipe workflow', () => {
         const measurement = findStep(local, 'Observe frozen 15-agent manifest');
         expect(measurement.env).toMatchObject({
             CI: '1',
+            INPUT_RTC_CAPTURE_MODE: '${{ inputs.rtc_capture_mode }}',
             RALLAR_BLACK_BOX_FULL_STACK: '1',
             RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '1',
             RALLAR_BLACK_BOX_API_MODE: 'memory',
@@ -175,6 +254,47 @@ describe('GitHub Free distributed recipe workflow', () => {
         });
     });
 
+    it.each(['', 'off', 'signaling', 'native'])('passes the selected RUN capture %j through the local process boundary', async (mode) => {
+        const local = required((await readWorkflow()).jobs?.['all-local'], 'all-local job');
+        const measurement = findStep(local, 'Observe frozen 15-agent manifest');
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-local-capture-launch-'));
+        try {
+            await writeFile(
+                path.join(directory, 'npx'),
+                `#!/bin/sh
+node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE, args: process.argv.slice(1)}))' -- "$@"
+`
+            );
+            await chmod(path.join(directory, 'npx'), 0o700);
+            const environment = Object.fromEntries(
+                Object.entries(required(measurement.env, 'local launch environment')).map(([name, value]) => [
+                    name,
+                    value === '${{ inputs.rtc_capture_mode }}' ? mode : String(value)
+                ])
+            );
+            const launched = spawnSync('bash', ['-c', required(measurement.run, 'local launch command')], {
+                cwd: repoRoot,
+                encoding: 'utf8',
+                env: { ...osEnvironment, ...environment, PATH: `${directory}:${osEnvironment.PATH}` }
+            });
+            expect(launched.status).toBe(0);
+            expect(JSON.parse(launched.stdout)).toEqual({
+                capture: mode,
+                args: [
+                    'playwright',
+                    'test',
+                    '--config',
+                    'apps/rallar-black-box/playwright.full-stack.config.ts',
+                    'tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts',
+                    '--retries=0'
+                ]
+            });
+        }
+        finally {
+            await rm(directory, { force: true, recursive: true });
+        }
+    });
+
     it('retains runner resources and exact source before service startup can fail', async () => {
         const local = required((await readWorkflow()).jobs?.['all-local'], 'all-local job');
         const capture = findStep(local, 'Record runner provenance');
@@ -183,20 +303,33 @@ describe('GitHub Free distributed recipe workflow', () => {
             const result = spawnSync('bash', ['-c', required(capture.run, 'provenance command')], {
                 cwd: repoRoot,
                 encoding: 'utf8',
-                env: { ...process.env, RALLAR_BLACK_BOX_STORAGE_DIR: directory }
+                env: { ...osEnvironment, RALLAR_BLACK_BOX_STORAGE_DIR: directory }
             });
             expect(result.status).toBe(0);
             expect(result.stdout).toBe('');
-            const provenance = JSON.parse(await readFile(path.join(directory, 'runner-provenance.json'), 'utf8'));
-            expect(provenance.sourceCommit).toMatch(/^[a-f0-9]{40}$/);
-            expect(provenance.manifestSha256).toBe('43db26dfab5a32b28f12b9d34db3be32b071a08139eee57f450807109072ecd3');
+            const provenance: unknown = JSON.parse(await readFile(path.join(directory, 'runner-provenance.json'), 'utf8'));
+            expect(provenance).toEqual(expect.objectContaining({
+                sourceCommit: expect.stringMatching(/^[a-f0-9]{40}$/),
+                manifestSha256: '43db26dfab5a32b28f12b9d34db3be32b071a08139eee57f450807109072ecd3',
+                cpuCount: expect.any(Number),
+                memoryBytes: expect.any(Number),
+                diskAvailableBytes: expect.any(Number),
+                os: expect.objectContaining({ platform: expect.any(String), release: expect.any(String), version: expect.any(String) }),
+                node: expect.stringMatching(/^v[0-9]+/),
+                deno: expect.stringMatching(/^deno [0-9]+/),
+                chromium: expect.stringMatching(/^[A-Za-z ]+[0-9]+/)
+            }));
+            if (
+                provenance === null || typeof provenance !== 'object' ||
+                !('cpuCount' in provenance) || typeof provenance.cpuCount !== 'number' ||
+                !('memoryBytes' in provenance) || typeof provenance.memoryBytes !== 'number' ||
+                !('diskAvailableBytes' in provenance) || typeof provenance.diskAvailableBytes !== 'number'
+            ) {
+                throw new Error('Missing runner resource evidence.');
+            }
             expect(provenance.cpuCount).toBeGreaterThan(0);
             expect(provenance.memoryBytes).toBeGreaterThan(0);
             expect(provenance.diskAvailableBytes).toBeGreaterThan(0);
-            expect(provenance).toHaveProperty('os');
-            expect(provenance.node).toMatch(/^v[0-9]+/);
-            expect(provenance.deno).toMatch(/^deno [0-9]+/);
-            expect(provenance.chromium).toMatch(/^[A-Za-z ]+[0-9]+/);
             const retainedManifest = await readFile(path.join(directory, 'source-manifest.json'));
             expect(createHash('sha256').update(retainedManifest).digest('hex')).toBe(
                 '43db26dfab5a32b28f12b9d34db3be32b071a08139eee57f450807109072ecd3'
@@ -224,7 +357,7 @@ describe('GitHub Free distributed recipe workflow', () => {
             const result = spawnSync('bash', ['-c', required(preflight.run, 'local input preflight')], {
                 cwd: repoRoot,
                 encoding: 'utf8',
-                env: { ...process.env, ...baseline, ...override }
+                env: { ...osEnvironment, ...baseline, ...override }
             });
             expect(result.status).toBe(Object.keys(override).length === 0 ? 0 : 1);
             expect(result.stdout).toBe('');
@@ -275,9 +408,12 @@ describe('GitHub Free distributed recipe workflow', () => {
         );
 
         expect(result.status).toBe(0);
-        const decoded = JSON.parse(result.stdout);
-        expect(decoded).toEqual(expect.objectContaining({ runId: expect.any(String), distributedRunId: expect.any(String), matrix: expect.any(Array) }));
-        const output = decoded as WorkflowPlanMatrixOutput;
+        const decoded: unknown = JSON.parse(result.stdout);
+        const validation = validateJsonSchema(matrixSchema, decoded);
+        if (!validation.ok) {
+            throw new Error(formatJsonSchemaValidationErrors(validation.errors));
+        }
+        const output = decoded as GitHubFreeMatrixOutput;
         expect(output.runId).toBe('gh-free-test');
         expect(output.distributedRunId).toBe('dist-gh-free-test');
         expect(output.matrix).toHaveLength(17);
@@ -326,7 +462,7 @@ describe('GitHub Free distributed recipe workflow', () => {
                 cwd: repoRoot,
                 encoding: 'utf8',
                 env: {
-                    ...process.env,
+                    ...osEnvironment,
                     INPUT_RUN_ID: 'github-free-topology-no-rollout',
                     TARGET_AGENT_COUNT: '15',
                     AGENTS_PER_JOB: '1',

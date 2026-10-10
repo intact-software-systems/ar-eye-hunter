@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRtcSendCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 function toCommands(kind: 'recipe.run' | 'loop' | 'parallel'): RallarBlackBoxTestCommand {
     const commands: readonly RallarBlackBoxTestCommand[] = [
@@ -24,9 +24,9 @@ describe('runtime cancellation lifetime', () => {
         async (kind) => {
             const entered = Promise.withResolvers<void>();
             const release = Promise.withResolvers<void>();
-            const effects: unknown[] = [];
+            const effects: RallarBlackBoxTestRtcSendCommand['send'][] = [];
             const cleanups: string[] = [];
-            const runtime = createRallarBlackBoxTestRuntime({
+            const runtime = createDefaultRallarBlackBoxTestRuntime({
                 cleanup: async (cleanup) => {
                     cleanups.push(cleanup.reason);
                 },
@@ -43,11 +43,16 @@ describe('runtime cancellation lifetime', () => {
                 }
             });
             const run = runtime.execute(toCommands(kind));
-            await entered.promise;
-            await runtime.execute({ kind: 'recipe.cancel' });
-            await runtime.execute({ kind: 'health' });
-            await runtime.execute({ kind: 'stats' });
-            release.resolve();
+            try {
+                await entered.promise;
+                await runtime.execute({ kind: 'recipe.cancel' });
+                await runtime.execute({ kind: 'health' });
+                await runtime.execute({ kind: 'stats' });
+            }
+            finally {
+                release.resolve();
+                await run;
+            }
             const result = await run;
             expect.soft(result.status).toBe('cancelled');
             expect.soft(effects).toEqual(['blocked']);

@@ -1,29 +1,31 @@
-import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { JsonComparisonObject } from '@shared-test/json-compare/compare-json-values.ts';
+import type { ControlDistributedRunArtifactBundle } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+
+import type { WorldFleetArtifactDependencies } from './run-world-fleet-distributed-recipe.ts';
+
+interface ManifestArtifactFiles {
+    readonly artifactDir: string;
+    readonly bundle: ControlDistributedRunArtifactBundle;
+}
 
 export async function writeManifestArtifactFiles(
-    artifactDir: string,
-    bundle: JsonComparisonObject
+    { artifactDir, bundle }: ManifestArtifactFiles,
+    artifacts: WorldFleetArtifactDependencies
 ): Promise<'written' | 'unavailable'> {
     let status: 'written' | 'unavailable' = 'written';
-    await writeFile(path.join(artifactDir, 'artifact-bundle.json'), JSON.stringify(bundle, null, 2) + '\n')
+    await artifacts.writeFile(path.join(artifactDir, 'artifact-bundle.json'), JSON.stringify(bundle, null, 2) + '\n')
         .catch(() => {
             status = 'unavailable';
         });
-    if (bundle.files === null || typeof bundle.files !== 'object' || Array.isArray(bundle.files)) {
-        return 'unavailable';
-    }
     for (const [fileName, contents] of Object.entries(bundle.files)) {
         if (!safeArtifactBundleFileName(fileName)) {
             continue;
         }
-        if (typeof contents !== 'string') {
-            status = 'unavailable';
-            continue;
-        }
-        await writeFile(path.join(artifactDir, fileName), contents.endsWith('\n') ? contents : `${contents}\n`)
+        await artifacts.writeFile(
+            path.join(artifactDir, fileName),
+            contents.endsWith('\n') ? contents : `${contents}\n`
+        )
             .catch(() => {
                 status = 'unavailable';
             });

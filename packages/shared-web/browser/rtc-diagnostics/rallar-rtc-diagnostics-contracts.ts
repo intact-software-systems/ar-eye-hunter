@@ -3,6 +3,7 @@ import type { WebRtcConnectionService } from '@shared/services/web-rtc-connectio
 import type { WebRtcGroupManagerDiagnostics } from '@shared/services/web-rtc-group-manager.ts';
 import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 import type { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 /**
  * What this peer has signaled and what has reached it. A handshake that stalls names its own hop:
@@ -100,6 +101,14 @@ export interface RallarRtcCandidatePairDiagnostics {
 }
 
 export interface RallarRtcPeerDiagnostics {
+    readonly captureIdentity: RtcSignalingDiagnostics.NativeIdentity;
+    readonly statsObservation:
+        | 'current-at-completion'
+        | 'retired-during-read'
+        | 'no-native-peer'
+        | 'unsupported'
+        | 'no-selected-pair'
+        | 'read-failed';
     readonly peerId: string;
     readonly connection: RallarRtcPeerConnectionStatus;
     readonly connectionDiagnostics?: QRtcPeerConnection.Diagnostics;

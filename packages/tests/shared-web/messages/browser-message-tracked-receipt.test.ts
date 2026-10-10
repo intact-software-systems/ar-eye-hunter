@@ -286,8 +286,20 @@ describe('the leader receipt of a group-leader room send reaches its handle', ()
         const handle = harness.send(createLeaderSend(SESSION_ID, 'leader-acknowledged-ws'));
         await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
 
-        await ws.acceptIncomingMessage(toServerReceipt(handle.msgId, 'admitted', ['director'], []));
-        await ws.acceptIncomingMessage(toServerReceipt(handle.msgId, 'complete', ['director'], ['director']));
+        await ws.acceptIncomingMessage(createServerReceipt({
+            msgId: handle.msgId,
+            phase: 'admitted',
+            expectedRecipientPeerIds: ['director'],
+            confirmedRecipientPeerIds: [],
+            nowMs: Date.now
+        }));
+        await ws.acceptIncomingMessage(createServerReceipt({
+            msgId: handle.msgId,
+            phase: 'complete',
+            expectedRecipientPeerIds: ['director'],
+            confirmedRecipientPeerIds: ['director'],
+            nowMs: Date.now
+        }));
 
         await expect.poll(() => handle.lifecycle().state).toBe('acknowledged');
         expect(handle.lifecycle()).toMatchObject({
@@ -327,8 +339,20 @@ describe('the claim of an exclusive room send reaches its handle', () => {
         const handle = harness.send(createExclusiveSend('receiver'));
         await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
 
-        await ws.acceptIncomingMessage(toServerReceipt(handle.msgId, 'admitted', ['b', 'c'], []));
-        await ws.acceptIncomingMessage(toServerReceipt(handle.msgId, 'complete', ['b', 'c'], ['b', 'c']));
+        await ws.acceptIncomingMessage(createServerReceipt({
+            msgId: handle.msgId,
+            phase: 'admitted',
+            expectedRecipientPeerIds: ['b', 'c'],
+            confirmedRecipientPeerIds: [],
+            nowMs: Date.now
+        }));
+        await ws.acceptIncomingMessage(createServerReceipt({
+            msgId: handle.msgId,
+            phase: 'complete',
+            expectedRecipientPeerIds: ['b', 'c'],
+            confirmedRecipientPeerIds: ['b', 'c'],
+            nowMs: Date.now
+        }));
 
         await expect.poll(() => handle.lifecycle().state).toBe('acknowledged');
         expect(handle.lifecycle().evidence).toMatchObject({
@@ -343,7 +367,7 @@ describe('the claim of an exclusive room send reaches its handle', () => {
         const handle = harness.send(createExclusiveSend('receiver'));
         await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
 
-        await ws.acceptIncomingMessage(toServerNack(handle.msgId, 'held-by-other'));
+        await ws.acceptIncomingMessage(createServerNack(handle.msgId, 'held-by-other', Date.now));
 
         await expect.poll(() => handle.lifecycle().state).toBe('rejected');
         expect(handle.lifecycle().evidence.attempts).toHaveLength(1);
@@ -358,7 +382,7 @@ describe('the claim of an exclusive room send reaches its handle', () => {
         const handle = harness.send(createExclusiveSend('none'));
         await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
 
-        await ws.acceptIncomingMessage(toServerNack(handle.msgId, 'held-by-other'));
+        await ws.acceptIncomingMessage(createServerNack(handle.msgId, 'held-by-other', Date.now));
 
         await expect.poll(() => handle.lifecycle().evidence.relayRejection).toEqual({
             relay: 'trusted-server',
@@ -431,29 +455,32 @@ function createExclusiveSend(ack: 'receiver' | 'none'): ALMessage {
     });
 }
 
-function toServerNack(msgId: string, reason: ALNackReason): ALMessage {
+function createServerNack(msgId: string, reason: ALNackReason, nowMs: () => number): ALMessage {
     return newALNackControlMessage(
-        { v: 3, msgId: `nack-${reason}-${msgId}`, senderId: SERVER_PEER_ID, ts: Date.now() },
-        { msgId, fromPeerId: SERVER_PEER_ID, toPeerId: SESSION_ID, reason, observedAtEpochMs: Date.now() }
+        { v: 3, msgId: `nack-${reason}-${msgId}`, senderId: SERVER_PEER_ID, ts: nowMs() },
+        { msgId, fromPeerId: SERVER_PEER_ID, toPeerId: SESSION_ID, reason, observedAtEpochMs: nowMs() }
     );
 }
 
-function toServerReceipt(
-    msgId: string,
-    phase: ALReceiptPayload['phase'],
-    expectedRecipientPeerIds: readonly string[],
-    confirmedRecipientPeerIds: readonly string[]
-): ALMessage {
+interface CreateServerReceiptInput {
+    readonly msgId: string;
+    readonly phase: ALReceiptPayload['phase'];
+    readonly expectedRecipientPeerIds: readonly string[];
+    readonly confirmedRecipientPeerIds: readonly string[];
+    readonly nowMs: () => number;
+}
+
+function createServerReceipt(input: CreateServerReceiptInput): ALMessage {
     return newALReceiptControlMessage(
-        { v: 3, msgId: `receipt-${phase}-${msgId}`, senderId: SERVER_PEER_ID, ts: Date.now() },
+        { v: 3, msgId: `receipt-${input.phase}-${input.msgId}`, senderId: SERVER_PEER_ID, ts: input.nowMs() },
         {
-            msgId,
+            msgId: input.msgId,
             originPeerId: SESSION_ID,
-            expectedRecipientPeerIds,
-            confirmedRecipientPeerIds,
+            expectedRecipientPeerIds: input.expectedRecipientPeerIds,
+            confirmedRecipientPeerIds: input.confirmedRecipientPeerIds,
             snapshotVersion: 4,
-            phase,
-            observedAtEpochMs: Date.now()
+            phase: input.phase,
+            observedAtEpochMs: input.nowMs()
         }
     );
 }
@@ -509,7 +536,11 @@ function createDispatchHarness(
         }
     });
     const feed = new BrowserDeliverySettlements();
-    const sessionDeliveries = new BrowserSessionDeliveries(registry, { deliverySettlements: feed, readMiddleware: () => middleware });
+    const sessionDeliveries = new BrowserSessionDeliveries(registry, {
+        deliverySettlements: feed,
+        readMiddleware: () => middleware,
+        readRtcCaptureReceipt: () => undefined
+    }, () => middleware.session);
     sessionDeliveries.beginSession(middleware.session);
     feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const dispatch = new BrowserRallarMessageDispatch({ deliveries: registry, sessionDeliveries, nowMs: Date.now });
@@ -519,6 +550,8 @@ function createDispatchHarness(
         send: (message) => {
             const handle = registry.open(message, carrier);
             dispatch.send({
+                requestedConfiguration: undefined,
+                rtcCapture: { status: 'unavailable', reason: 'absent' },
                 context: middleware,
                 carrier,
                 message,

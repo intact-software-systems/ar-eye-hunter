@@ -63,4 +63,20 @@ describe('rallar-black-box runtime store expected failures', () => {
             lastError: ran.left
         });
     });
+
+    it('refuses syntactically valid malformed JSON before loading or executing it', async () => {
+        window.history.replaceState({}, '', '/?provider=simulated');
+        const { rallarBlackBoxRuntimeStore } = await import('../../../apps/rallar-black-box/src/runtime-store.ts');
+        const before = rallarBlackBoxRuntimeStore.getSnapshot().state.commandHistory.length;
+        const loaded = await rallarBlackBoxRuntimeStore.loadRecipeFromJson('{"schemaVersion":1,"recipeId":"invalid","commands":"health"}');
+        expect(loaded.right).toBeUndefined();
+        expect(loaded.left).toContain('commands');
+        const ran = await rallarBlackBoxRuntimeStore.runCommandFromJsonText('{"kind":"health","includeRtcDiagnostics":"yes"}');
+        expect(ran.right).toBeUndefined();
+        expect(ran.left).toContain('includeRtcDiagnostics');
+        expect(rallarBlackBoxRuntimeStore.getSnapshot().state.commandHistory).toHaveLength(before);
+        const valid = await rallarBlackBoxRuntimeStore.runCommandFromJsonText('{"kind":"health"}');
+        expect(valid.right).toEqual({ kind: 'health' });
+        expect(valid.left).toBeUndefined();
+    });
 });

@@ -153,8 +153,11 @@ function createDefaultAuthFixture(emitState: () => void): AuthFixture {
     onTestFinished(() => runtime.clearAuthExpiryTimer());
     const middleware = createDefaultApiMiddlewareTestDouble();
     const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
-    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, transportRuntime);
-    const connect = vi.fn<RallarSessionConnectionLifecycle['connect']>().mockResolvedValue(middleware);
+    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, transportRuntime, readSession);
+    const connect = vi.fn<RallarSessionConnectionLifecycle['connect']>().mockResolvedValue({
+        middleware,
+        rtcCapture: { status: 'unavailable', reason: 'absent' }
+    });
     runtime.setConnectState('connected');
     const disconnect = async (): Promise<void> => {
         runtime.setConnectState('idle');
@@ -166,7 +169,7 @@ function createDefaultAuthFixture(emitState: () => void): AuthFixture {
         connectionRuntime: runtime,
         transportRuntime,
         authRuntime: runtime,
-        connectionLifecycle: { connect, disconnect },
+        connectionLifecycle: { connect, disconnect, readRtcCaptureConfiguration: () => transportRuntime.readRtcCaptureConfiguration() },
         emitState,
         closeDataScopes: () => Promise.resolve()
     });

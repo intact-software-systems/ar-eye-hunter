@@ -1,4 +1,6 @@
 import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
+import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import {
     isRallarBlackBoxProviderMode,
@@ -35,6 +37,7 @@ export interface RallarBlackBoxBootstrapLaunchSettings {
     readonly heartbeatIntervalMs: number | undefined;
     readonly statsIntervalMs: number | undefined;
     readonly transport: RallarBlackBoxBootstrapTransport | undefined;
+    readonly rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode | undefined;
     readonly rallarRegister: RallarBlackBoxBootstrapRegister | undefined;
     readonly rallarAuthStorage: AuthSessionStorageKind | undefined;
     readonly rallarRestoreSession: boolean | undefined;
@@ -49,6 +52,8 @@ export interface RallarBlackBoxBootstrapLaunchComputed {
     readonly issues: readonly RallarBlackBoxBootstrapIssue[];
 }
 
+export const RALLAR_BLACK_BOX_BOOTSTRAP_TRANSPORTS = ['realtime', 'messages.rtc'] as const;
+
 interface LaunchSettingReader<Value> {
     readonly setting: LaunchSetting;
     readonly expectation: string;
@@ -60,8 +65,6 @@ interface LaunchSettingReading<Value> {
     readonly value: Value | undefined;
     readonly issues: readonly RallarBlackBoxBootstrapIssue[];
 }
-
-export const RALLAR_BLACK_BOX_BOOTSTRAP_TRANSPORTS = ['realtime', 'messages.rtc'] as const;
 
 const STRICT_DECIMAL_NUMBER = /^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:e[+-]?\d+)?$/i;
 const NON_NEGATIVE_INTEGER = /^\d+$/;
@@ -109,6 +112,7 @@ export function computeRallarBlackBoxBootstrapLaunch(
         heartbeatIntervalMs: toLaunchSettingReading(sources, toIntervalReader('heartbeatIntervalMs')),
         statsIntervalMs: toLaunchSettingReading(sources, toIntervalReader('statsIntervalMs')),
         transport: toLaunchSettingReading(sources, TRANSPORT_READER),
+        rtcCaptureMode: toCaptureModeLaunchReading(sources),
         rallarRegister: toLaunchSettingReading(sources, REGISTER_READER),
         rallarAuthStorage: toLaunchSettingReading(sources, AUTH_STORAGE_READER),
         rallarRestoreSession: toLaunchSettingReading(sources, toBooleanReader('rallarRestoreSession')),
@@ -125,6 +129,7 @@ export function computeRallarBlackBoxBootstrapLaunch(
             heartbeatIntervalMs: readings.heartbeatIntervalMs.value,
             statsIntervalMs: readings.statsIntervalMs.value,
             transport: readings.transport.value,
+            rtcCaptureMode: readings.rtcCaptureMode.value,
             rallarRegister: readings.rallarRegister.value,
             rallarAuthStorage: readings.rallarAuthStorage.value,
             rallarRestoreSession: readings.rallarRestoreSession.value,
@@ -135,6 +140,26 @@ export function computeRallarBlackBoxBootstrapLaunch(
         },
         issues: Object.values(readings).flatMap((reading) => reading.issues)
     };
+}
+
+/** Capture diagnostics never echo the rejected launch text. */
+function toCaptureModeLaunchReading(
+    sources: BootstrapLaunchSources
+): LaunchSettingReading<RtcSignalingDiagnostics.CaptureMode> {
+    const launch = resolveLaunchValue(sources, 'rtcCaptureMode');
+    if (launch === undefined) {
+        return { value: undefined, issues: [] };
+    }
+    return parseRtcCaptureMode(launch.text).fold<LaunchSettingReading<RtcSignalingDiagnostics.CaptureMode>>(
+        (issues) => ({
+            value: undefined,
+            issues: issues.map((issue) => ({
+                launchKey: launch.launchKey,
+                message: `${launch.launchKey}: ${issue.message}`
+            }))
+        }),
+        (parsed) => ({ value: parsed.mode, issues: [] })
+    );
 }
 
 function toLaunchSettingReading<Value>(

@@ -1,9 +1,7 @@
 import * as timers from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 import {
-    createRallarBlackBoxTestRuntime,
-    type RallarBlackBoxTestAssertResultValue,
-    type RallarBlackBoxTestWaitResultValue
+    createDefaultRallarBlackBoxTestRuntime
 } from '../../../shared-test/rallar-bb-test/mod.ts';
 import { createDeterministicRuntime } from './create-deterministic-runtime.ts';
 
@@ -38,12 +36,11 @@ describe('rallar-bb runtime evidence', () => {
                 exists: true
             }
         });
-        const value = result.value as RallarBlackBoxTestWaitResultValue;
 
         expect(result.ok).toBe(true);
-        expect(value.matched).toBe(true);
-        expect(value.event?.topic).toBe('rallar.browser.realtime.message');
-        expect(value.event?.payload).toEqual({
+        expect(result.value).toHaveProperty('matched', true);
+        expect(result.value).toHaveProperty('event.topic', 'rallar.browser.realtime.message');
+        expect(result.value).toHaveProperty('event.payload', {
             data: {
                 topic: 'room.position',
                 x: 10
@@ -52,7 +49,7 @@ describe('rallar-bb runtime evidence', () => {
     });
 
     it('waits for future runtime events with payload contains matches', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const wait = runtime.execute({
             kind: 'wait',
             commandId: 'wait-position-future',
@@ -77,11 +74,10 @@ describe('rallar-bb runtime evidence', () => {
             }
         });
         const result = await wait;
-        const value = result.value as RallarBlackBoxTestWaitResultValue;
 
         expect(result.ok).toBe(true);
-        expect(value.matched).toBe(true);
-        expect(value.event?.payload).toEqual({
+        expect(result.value).toHaveProperty('matched', true);
+        expect(result.value).toHaveProperty('event.payload', {
             data: {
                 text: 'hello future-position payload'
             }
@@ -89,7 +85,7 @@ describe('rallar-bb runtime evidence', () => {
     });
 
     it('fails wait commands when the requested evidence times out', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
 
         const result = await runtime.execute({
             kind: 'wait',
@@ -100,16 +96,15 @@ describe('rallar-bb runtime evidence', () => {
                 topic: 'missing-message'
             }
         });
-        const value = result.value as RallarBlackBoxTestWaitResultValue;
 
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_TIMEOUT');
-        expect(value.matched).toBe(false);
-        expect(value.timedOut).toBe(true);
+        expect(result.value).toHaveProperty('matched', false);
+        expect(result.value).toHaveProperty('timedOut', true);
     });
 
     it('cancels pending wait commands when recipe cancellation is requested', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const wait = runtime.execute({
             kind: 'wait',
             commandId: 'wait-cancelled',
@@ -127,11 +122,10 @@ describe('rallar-bb runtime evidence', () => {
             reason: 'operator requested stop'
         });
         const result = await wait;
-        const value = result.value as RallarBlackBoxTestWaitResultValue;
 
         expect(result.status).toBe('cancelled');
-        expect(value.cancelled).toBe(true);
-        expect(value.matched).toBe(false);
+        expect(result.value).toHaveProperty('cancelled', true);
+        expect(result.value).toHaveProperty('matched', false);
     });
 
     it('redacts matched wait events in command results', async () => {
@@ -166,10 +160,9 @@ describe('rallar-bb runtime evidence', () => {
                 equals: 'secure'
             }
         });
-        const value = result.value as RallarBlackBoxTestWaitResultValue;
 
         expect(result.ok).toBe(true);
-        expect(value.event?.payload).toEqual({
+        expect(result.value).toHaveProperty('event.payload', {
             data: {
                 topic: 'secure',
                 token: '<redacted>'
@@ -196,10 +189,9 @@ describe('rallar-bb runtime evidence', () => {
             operator: 'gte',
             expected: 1
         });
-        const value = result.value as RallarBlackBoxTestAssertResultValue;
 
         expect(result.ok).toBe(true);
-        expect(value).toMatchObject({
+        expect(result.value).toMatchObject({
             commandId: 'assert-message-count',
             source: 'state.messages.length',
             operator: 'gte',
@@ -239,11 +231,10 @@ describe('rallar-bb runtime evidence', () => {
             operator: 'equals',
             expected: 'different assert-secret'
         });
-        const value = result.value as RallarBlackBoxTestAssertResultValue;
 
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_ASSERT_FAILED');
-        expect(value).toMatchObject({
+        expect(result.value).toMatchObject({
             actual: '<redacted>',
             expected: '<redacted>',
             exists: true,
@@ -265,10 +256,9 @@ describe('rallar-bb runtime evidence', () => {
             operator: 'exists',
             expected: false
         });
-        const value = result.value as RallarBlackBoxTestAssertResultValue;
 
         expect(result.ok).toBe(true);
-        expect(value).toMatchObject({
+        expect(result.value).toMatchObject({
             exists: false,
             passed: true
         });
@@ -284,12 +274,11 @@ describe('rallar-bb runtime evidence', () => {
             operator: 'equals',
             expected: 'room.position'
         });
-        const value = result.value as RallarBlackBoxTestAssertResultValue;
 
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_ASSERT_FAILED');
-        expect(value.exists).toBe(false);
-        expect(value.passed).toBe(false);
+        expect(result.value).toHaveProperty('exists', false);
+        expect(result.value).toHaveProperty('passed', false);
     });
 
     it('asserts nested values and last command results', async () => {

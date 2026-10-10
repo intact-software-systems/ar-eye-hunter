@@ -1,4 +1,5 @@
 import type { RallarBlackBoxTestConfig, RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
+import type { RecipeCaptureSequence } from '../recipe/recipe-capture-sequence.ts';
 
 import type { CommandWithId, RallarBlackBoxBrowserRallarConnectionConfig } from './browser-command-contracts.ts';
 import {
@@ -50,20 +51,25 @@ export function toRallarAuthConnectionConfig(
 
 export function toRallarConnectionConfig(
     command: Extract<CommandWithId, { kind: 'rtc.connect'; }>,
-    config: RallarBlackBoxTestConfig | undefined
+    config: RallarBlackBoxTestConfig | undefined,
+    capture?: RecipeCaptureSequence.Selection
 ): RallarBlackBoxBrowserRallarConnectionConfig {
     return {
         connection: command.connection ?? resolveDefaultConnection(config),
         actor: command.actor ?? config?.actor,
         roomId: command.roomId ?? config?.roomId,
         roomRef: command.roomRef,
-        rallar: toRtcConnectRallarConfig(command, config)
+        rallar: {
+            ...toRtcConnectRallarConfig(command, config),
+            ...toRecipeCaptureConnectionInput(capture, command.rallar)
+        }
     };
 }
 
 export function toRallarWebSocketConnectionConfig(
     command: WsSendCommand,
-    config: RallarBlackBoxTestConfig | undefined
+    config: RallarBlackBoxTestConfig | undefined,
+    capture?: RecipeCaptureSequence.Selection
 ): RallarBlackBoxBrowserRallarConnectionConfig {
     const configuredRallar = config?.rallar ?? {};
     const data = decodeBrowserCommandRecord(command.data) ?? {};
@@ -85,6 +91,7 @@ export function toRallarWebSocketConnectionConfig(
         rallar: {
             ...configuredRallar,
             ...(apiBaseUrl ? { apiBaseUrl } : {}),
+            ...toRecipeCaptureConnectionInput(capture, undefined),
             transport: 'realtime',
             restoreSession: configuredRallar.restoreSession ?? true,
             ...(expectedSessionId ? { expectedSessionId } : {}),
@@ -183,4 +190,15 @@ function decodeWebSocketScope(value: unknown): 'room' | 'world' | undefined {
 
 function resolveFirstDefined<T>(values: readonly T[]): T | undefined {
     return values.find((value) => value !== undefined);
+}
+
+/** Projects owned sources; the SDK alone decides precedence and construction. */
+export function toRecipeCaptureConnectionInput(
+    capture: RecipeCaptureSequence.Selection | undefined,
+    step: RallarBlackBoxTestRecord | undefined
+): RallarBlackBoxTestRecord {
+    return capture === undefined ? {} : {
+        rtcCaptureMode: step?.rtcCaptureMode ?? capture.step,
+        rtcCaptureContext: { run: capture.run, recipe: capture.recipe }
+    };
 }

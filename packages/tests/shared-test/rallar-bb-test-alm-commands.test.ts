@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-error-message-prefixes.ts';
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 import {
@@ -7,7 +12,7 @@ import {
 } from '../../shared-test/rallar-bb-test/black-box-runner-adapter.ts';
 import type { RallarBlackBoxBrowserRallarRuntime } from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
     type RallarBlackBoxTestEvent,
@@ -15,9 +20,13 @@ import {
     type RallarBlackBoxTestRecord,
     type RallarBlackBoxTestState
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
-import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import {
+    formatJsonSchemaValidationErrors,
+    isJsonRecordValue,
+    validateJsonSchema
+} from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 const ALM_COMMAND_KINDS = [
     'messages.send',
@@ -107,10 +116,6 @@ const STORAGE_COUNTS = {
     byKind: { read: 3, 'work-write': 4 }
 };
 
-function decodeCapturedInput(value: unknown): RallarBlackBoxTestRecord {
-    return typeof value === 'object' && value !== null ? value as RallarBlackBoxTestRecord : {};
-}
-
 function createAlmRuntimeCaptures(): AlmRuntimeCaptures {
     return {
         sendMessage: [],
@@ -131,31 +136,31 @@ function createAlmBrowserRuntimeFake(
         connect: async () => ({ connected: true }),
         send: async () => ({ sent: true }),
         sendMessage: async (input) => {
-            captures.sendMessage.push(decodeCapturedInput(input));
+            captures.sendMessage.push(input);
             return SEND_DIAGNOSTICS;
         },
         observeDelivery: async (input) => {
-            captures.observeDelivery.push(decodeCapturedInput(input));
+            captures.observeDelivery.push(input);
             return DELIVERY_OBSERVATION;
         },
         cancelDelivery: async (input) => {
-            captures.cancelDelivery.push(decodeCapturedInput(input));
+            captures.cancelDelivery.push(input);
             return { ...DELIVERY_OBSERVATION, state: 'cancelled' };
         },
         readReceipts: async (input) => {
-            captures.readReceipts.push(decodeCapturedInput(input));
+            captures.readReceipts.push(input);
             return DELIVERY_OBSERVATION;
         },
         submitControl: async (input) => {
-            captures.submitControl.push(decodeCapturedInput(input));
+            captures.submitControl.push(input);
             return CONTROL_SUBMISSION;
         },
         injectFault: async (input) => {
-            captures.injectFault.push(decodeCapturedInput(input));
+            captures.injectFault.push(input);
             return undefined;
         },
         readStorageCounters: async (input) => {
-            captures.readStorageCounters.push(decodeCapturedInput(input));
+            captures.readStorageCounters.push(input);
             return STORAGE_COUNTS;
         },
         readAlmUsage: async () => undefined,
@@ -597,7 +602,8 @@ describe('ALM recipe commands', () => {
 describe('ALM browser adapter execution', () => {
     it('sends a typed message and observes its delivery through the page runtime', async () => {
         const captures = createAlmRuntimeCaptures();
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: createAlmBrowserRuntimeFake(captures)
         });
         await runtime.execute({
@@ -655,7 +661,8 @@ describe('ALM browser adapter execution', () => {
 
     it('reads a trusted server\'s refusal before admission from a delivery observation (S3c-i C3)', async () => {
         const rejection = { relay: 'trusted-server', reason: 'unauthorized' } as const;
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
                 observeDelivery: async () => ({
@@ -685,7 +692,8 @@ describe('ALM browser adapter execution', () => {
         { relay: 'trusted-server', reason: 'held-by-other' } as const
     ])('reads a $relay $reason refusal from a delivery observation, on its failure and its evidence', async (rejection) => {
         const failure = { kind: 'relay-rejected', rejection } as const;
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
                 observeDelivery: async () => ({
@@ -717,7 +725,8 @@ describe('ALM browser adapter execution', () => {
             atMs: 5,
             detail: 'three not-ready'
         } as const;
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
                 observeDelivery: async () => ({ ...DELIVERY_OBSERVATION, carrierFallback })
@@ -745,11 +754,12 @@ describe('ALM browser adapter execution', () => {
             connection: 'aliceRtc',
             replayOnCarrier: { handleId: 'handle-1', carrier: 'ws' }
         } as const;
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createAlmBrowserRuntimeFake(captures),
                 sendMessage: async (input) => {
-                    captures.sendMessage.push(decodeCapturedInput(input));
+                    captures.sendMessage.push(input);
                     return replayed;
                 }
             }
@@ -762,7 +772,8 @@ describe('ALM browser adapter execution', () => {
         expect(captures.sendMessage[0]).toMatchObject({ replayOnCarrier: { handleId: 'handle-1', carrier: 'ws' } });
         expect(captures.sendMessage[0]).not.toHaveProperty('handleId');
 
-        const refusing = createRallarBlackBoxBrowserTestRuntime({
+        const refusing = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
                 sendMessage: async () => ({ ...replayed, verdict: 'delivered' })
@@ -777,7 +788,7 @@ describe('ALM browser adapter execution', () => {
 
     it('submits a raw control through the page runtime and reads its carrier verdict, refusing an unknown one', async () => {
         const captures = createAlmRuntimeCaptures();
-        const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createAlmBrowserRuntimeFake(captures) });
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ readSession: () => undefined, rallarRuntime: createAlmBrowserRuntimeFake(captures) });
 
         const result = await runtime.execute(RAW_CONTROL_COMMAND);
 
@@ -793,7 +804,8 @@ describe('ALM browser adapter execution', () => {
         });
         expect(topicsOf(runtime.state())).toContain('rallar.bb.messages.control');
 
-        const refusing = createRallarBlackBoxBrowserTestRuntime({
+        const refusing = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
                 submitControl: async () => ({ ...CONTROL_SUBMISSION, verdict: 'delivered' })
@@ -808,7 +820,7 @@ describe('ALM browser adapter execution', () => {
 
     it('resolves the message a raw control answers from an earlier result, and fails naming a reference none returned', async () => {
         const captures = createAlmRuntimeCaptures();
-        const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createAlmBrowserRuntimeFake(captures) });
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ readSession: () => undefined, rallarRuntime: createAlmBrowserRuntimeFake(captures) });
         const answer = {
             ...RAW_CONTROL_COMMAND,
             msgId: 'retired-ack-{resultCache.alm-send.value.msgId}',
@@ -829,7 +841,8 @@ describe('ALM browser adapter execution', () => {
             toPeerId: 'origin-ws'
         });
 
-        const unresolved = await createRallarBlackBoxBrowserTestRuntime({
+        const unresolved = await createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: createAlmBrowserRuntimeFake(createAlmRuntimeCaptures())
         }).execute({ ...answer, commandId: 'alm-raw-control-unresolved' });
         expect(unresolved.error).toMatchObject({
@@ -840,11 +853,12 @@ describe('ALM browser adapter execution', () => {
 
     it('carries a rejected send through as a successful command value with its envelope msgId', async () => {
         const captures = createAlmRuntimeCaptures();
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createAlmBrowserRuntimeFake(captures),
                 sendMessage: async (input) => {
-                    captures.sendMessage.push(decodeCapturedInput(input));
+                    captures.sendMessage.push(input);
                     return REJECTED_SEND_DIAGNOSTICS;
                 }
             }
@@ -877,7 +891,8 @@ describe('ALM browser adapter execution', () => {
 
     it('injects the connection, handle, and observe timeout the page runtime requires', async () => {
         const captures = createAlmRuntimeCaptures();
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: createAlmBrowserRuntimeFake(captures)
         });
         await runtime.execute({
@@ -917,7 +932,8 @@ describe('ALM browser adapter execution', () => {
 
     it('counts inbound typed messages and fails when the window closes short', async () => {
         const captures = createAlmRuntimeCaptures();
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: createAlmBrowserRuntimeFake(captures)
         });
         await runtime.execute({
@@ -958,7 +974,8 @@ describe('ALM browser adapter execution', () => {
 
     it('aborts a messages.received poll promptly when the recipe is cancelled', async () => {
         const captures = createAlmRuntimeCaptures();
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: createAlmBrowserRuntimeFake(captures)
         });
 
@@ -988,7 +1005,8 @@ describe('ALM browser adapter execution', () => {
 
     it('holds the absence window and fails when a matching message arrived', async () => {
         const captures = createAlmRuntimeCaptures();
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: createAlmBrowserRuntimeFake(captures)
         });
         runtime.receiveRallarBrowserEvent(inboundMessageEvent('msg-9'));
@@ -1020,7 +1038,8 @@ describe('ALM browser adapter execution', () => {
 
     it('injects faults, reads storage counters, and records the agent reload request', async () => {
         const captures = createAlmRuntimeCaptures();
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: createAlmBrowserRuntimeFake(captures)
         });
 
@@ -1074,7 +1093,8 @@ describe('ALM browser adapter execution', () => {
 
     it('cancels a delivery and reads its receipts through the page runtime', async () => {
         const captures = createAlmRuntimeCaptures();
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: createAlmBrowserRuntimeFake(captures)
         });
 
@@ -1101,7 +1121,8 @@ describe('ALM browser adapter execution', () => {
 
     it('fails a command whose page-runtime result is missing a field instead of defaulting it', async () => {
         const captures = createAlmRuntimeCaptures();
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createAlmBrowserRuntimeFake(captures),
                 readStorageCounters: async () => ({ total: 4, byOwner: { 'al-admission': 4 }, byKind: {} })
@@ -1139,7 +1160,8 @@ describe('ALM browser adapter execution', () => {
         { field: 'carrierFallback', value: { from: 'server', to: 'ws', reason: 'not-ready', atMs: 5, detail: 'x' } },
         { field: 'carrierFallback', value: { from: 'rtc', to: 'ws', reason: 'not-ready' } }
     ])('fails an observation whose page-runtime result carries an unusable $field', async ({ field, value }) => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
                 observeDelivery: async () => ({ ...DELIVERY_OBSERVATION, [field]: value })
@@ -1163,7 +1185,8 @@ describe('ALM browser adapter execution', () => {
 
     it('fails a send whose page-runtime result names an unknown carrier', async () => {
         const captures = createAlmRuntimeCaptures();
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createAlmBrowserRuntimeFake(captures),
                 sendMessage: async () => ({ ...SEND_DIAGNOSTICS, carrier: 'quic' })
@@ -1219,7 +1242,8 @@ describe('ALM browser adapter execution', () => {
         ];
 
         for (const testCase of cases) {
-            const runtime = createRallarBlackBoxBrowserTestRuntime({
+            const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                readSession: () => undefined,
                 rallarRuntime: {
                     ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
                     readReceipts: () => Promise.reject(new TypeError(testCase.message))
@@ -1239,7 +1263,7 @@ describe('ALM browser adapter execution', () => {
 });
 
 async function runAlmKindThroughRtcSendStep(kind: string) {
-    const provider = createRallarBlackBoxRtcProvider(createRallarBlackBoxTestRuntime(), { commandIdPrefix: 'rallar-bb' });
+    const provider = createRallarBlackBoxRtcProvider(createDefaultRallarBlackBoxTestRuntime(), { commandIdPrefix: 'rallar-bb' });
     return await executeBlackBox(
         [
             {
@@ -1293,7 +1317,7 @@ describe('ALM commands on the in-process runner adapter', () => {
 
     it('rejects every browser-only ALM kind instead of translating it to an RTC send', async () => {
         const client = createRallarBlackBoxRtcClient(
-            createRallarBlackBoxTestRuntime(),
+            createDefaultRallarBlackBoxTestRuntime(),
             { connection: 'alice' },
             { commandIdPrefix: 'rallar-bb' }
         );

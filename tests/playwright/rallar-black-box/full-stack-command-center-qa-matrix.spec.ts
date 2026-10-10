@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
 import {
     expectFullStackApiReady,
     loginThroughUi,
@@ -65,10 +66,7 @@ test.describe('full-stack command-center QA matrix', () => {
         await expectFullStackApiReady(request, config);
 
         const suffix = uniqueSuffix();
-        await loginThroughUi(page, config, config.userA, {
-            suffix: `qa-matrix-${suffix}`,
-            tab: 'rallar-server'
-        });
+        await loginThroughUi({ page, config, user: config.userA, suffix: `qa-matrix-${suffix}`, tab: 'rallar-server' });
 
         const ticketHeaders = await sendWsTicketFromRestWorkbench(page, config);
         expect(ticketHeaders.authorization).toMatch(/^Bearer /);

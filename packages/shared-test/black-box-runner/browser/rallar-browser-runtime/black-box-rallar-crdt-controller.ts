@@ -1,5 +1,11 @@
+import {
+    resolveRequiredRtcCaptureFailure,
+    toBrowserRtcCaptureIntent
+} from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
+import { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
+import type { BrowserRallarCrdtDocument } from '@shared-web/browser/crdt/browser-rallar-crdt-document.ts';
 import { crdtCatchUpHttpApi } from '@shared-web/browser/crdt/crdt-catch-up-http-api.ts';
-import type { RallarCrdtDocument, RallarCrdtOpenOptions, RallarFacade } from '@shared-web/browser/rallar.ts';
+import type { RallarCrdtDocument, RallarCrdtOpenOptions } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
     RallarCrdtDocumentHealth,
@@ -10,7 +16,9 @@ import type {
     RallarCrdtTransportStrategy,
     RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+
 import { BlackBoxRallarCrdtResourceController } from './black-box-rallar-crdt-resource-controller.ts';
 import type { BlackBoxRallarRuntimeDiagnostics } from './black-box-rallar-diagnostics.ts';
 import type {
@@ -24,6 +32,7 @@ import type {
     BlackBoxRallarEvent
 } from './black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarScopeDiagnostics } from './black-box-rallar-operation-policy.ts';
+import type { BlackBoxBrowserRallarRuntimeDependency } from './browser-rallar-runtime-composition.ts';
 import {
     decodeBlackBoxRallarCrdtApplyInput,
     decodeBlackBoxRallarCrdtHandle,
@@ -68,7 +77,10 @@ function raceCrdtOperationWithClose<TResult>(
 export namespace BlackBoxRallarCrdtController {
     export interface Input extends BlackBoxRallarGenerationPort {
         operationSignal(): AbortSignal;
-        readonly facade: Pick<RallarFacade, 'crdt' | 'isConnected'>;
+        readonly facade: Pick<
+            BlackBoxBrowserRallarRuntimeDependency,
+            'crdt' | 'isConnected' | 'connect' | 'rtcCapture'
+        >;
         now(): number;
         delay(ms: number): Promise<void>;
         currentConnectionConfig(): BlackBoxRallarConnectionConfig | undefined;
@@ -103,7 +115,19 @@ export namespace BlackBoxRallarCrdtController {
         readonly progress: WaitProgress;
     }
 
+    export interface ConnectionAdmission {
+        readonly config: BlackBoxRallarConnectionConfig | undefined;
+        readonly initialLiveAdmission: BrowserRallarCrdtDocument.InitialLiveAdmission | undefined;
+    }
+
+    export interface ScopeResolution {
+        readonly scope: RallarCrdtOpenOptions['scope'];
+    }
+
     export interface DiagnosticsInput {
+        readonly status: BlackBoxRallarCrdtCommandDiagnostics['status'];
+        readonly handle: string;
+        readonly document: RallarCrdtDocument<RallarCrdtJsonValue>;
         readonly update?: RallarCrdtUpdateEnvelope<RallarCrdtOperationBatch>;
         readonly result?: BlackBoxRallarCrdtCommandDiagnostics['result'];
         readonly value?: RallarCrdtJsonValue;
@@ -113,6 +137,13 @@ export namespace BlackBoxRallarCrdtController {
         readonly stableForMs?: number;
         readonly conditions?: readonly BlackBoxRallarCrdtWaitCondition[];
         readonly lastSyncResult?: RallarCrdtSyncResult;
+    }
+
+    export interface DiagnosticPublicationInput {
+        readonly topic: string;
+        readonly handle: string;
+        readonly data: BlackBoxRallarEvent['data'];
+        readonly config?: BlackBoxRallarConnectionConfig;
     }
 }
 
@@ -131,7 +162,13 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
     ): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
         const input = decodeBlackBoxRallarCrdtOpenInput(rawInput);
         const handle = input.handle ?? input.name;
-        const openOptions = this.#toCrdtOpenOptions(input);
+        const scope = this.#toCrdtOpenScope(input).fold(
+            (error) => {
+                throw error;
+            },
+            (resolved) => resolved.scope
+        );
+        const openOptions = this.#toCrdtOpenOptions(input, scope);
         const generation = this.#input.generation();
         let config: BlackBoxRallarConnectionConfig | undefined;
         try {
@@ -139,10 +176,11 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
                 throw new Error('CRDT document open was cancelled because the Rallar runtime closed.');
             }
             const document = await this.#resources.open(handle, async () => {
-                config = await this.#ensureCrdtLiveConnection(input);
+                const admission = await this.#ensureCrdtLiveConnection(input);
+                config = admission.config;
                 const opened = await this.#input.facade.crdt.open<RallarCrdtJsonValue>(
                     input.name,
-                    openOptions
+                    { ...openOptions, initialLiveAdmission: admission.initialLiveAdmission }
                 );
                 if (!this.#input.isCurrent(generation)) {
                     await opened.close();
@@ -150,10 +188,13 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
                 }
                 return opened;
             });
-            const diagnostics = this.#toCrdtDiagnostics('opened', handle, document, {
+            const diagnostics = this.#toCrdtDiagnostics({
+                status: 'opened',
+                handle,
+                document,
                 transportStrategy: input.transport
             });
-            this.#emitCrdtDiagnostic('rallar.browser.crdt.opened', handle, diagnostics, config);
+            this.#emitCrdtDiagnostic({ topic: 'rallar.browser.crdt.opened', handle, data: diagnostics, config });
             return diagnostics;
         }
         catch (caught) {
@@ -180,10 +221,13 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
             try {
                 const update = await document.applyLocal(batch);
                 assertCurrent();
-                const diagnostics = this.#toCrdtDiagnostics('applied', handle, document, {
+                const diagnostics = this.#toCrdtDiagnostics({
+                    status: 'applied',
+                    handle,
+                    document,
                     update
                 });
-                this.#emitCrdtDiagnostic('rallar.browser.crdt.applied', handle, diagnostics);
+                this.#emitCrdtDiagnostic({ topic: 'rallar.browser.crdt.applied', handle, data: diagnostics });
                 return diagnostics;
             }
             catch (caught) {
@@ -204,10 +248,13 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
     ): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
         const handle = decodeBlackBoxRallarCrdtHandle(input);
         const document = this.#resources.require(handle);
-        const diagnostics = this.#toCrdtDiagnostics('read', handle, document, {
+        const diagnostics = this.#toCrdtDiagnostics({
+            status: 'read',
+            handle,
+            document,
             value: document.read()
         });
-        this.#emitCrdtDiagnostic('rallar.browser.crdt.read', handle, diagnostics);
+        this.#emitCrdtDiagnostic({ topic: 'rallar.browser.crdt.read', handle, data: diagnostics });
         return diagnostics;
     }
 
@@ -221,11 +268,14 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
             try {
                 const result = await document.sync(options);
                 assertCurrent();
-                const diagnostics = this.#toCrdtDiagnostics('synced', handle, document, {
+                const diagnostics = this.#toCrdtDiagnostics({
+                    status: 'synced',
+                    handle,
+                    document,
                     result,
                     transportStrategy: transport
                 });
-                this.#emitCrdtDiagnostic('rallar.browser.crdt.synced', handle, diagnostics);
+                this.#emitCrdtDiagnostic({ topic: 'rallar.browser.crdt.synced', handle, data: diagnostics });
                 return diagnostics;
             }
             catch (caught) {
@@ -246,8 +296,8 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
     ): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
         const handle = decodeBlackBoxRallarCrdtHandle(input);
         const document = this.#resources.require(handle);
-        const diagnostics = this.#toCrdtDiagnostics('health', handle, document);
-        this.#emitCrdtDiagnostic('rallar.browser.crdt.health', handle, diagnostics);
+        const diagnostics = this.#toCrdtDiagnostics({ status: 'health', handle, document });
+        this.#emitCrdtDiagnostic({ topic: 'rallar.browser.crdt.health', handle, data: diagnostics });
         return diagnostics;
     }
 
@@ -283,10 +333,13 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
                     ...(operationGroupId ? { operationGroupId } : {})
                 });
                 assertCurrent();
-                const diagnostics = this.#toCrdtDiagnostics('undone', handle, document, {
+                const diagnostics = this.#toCrdtDiagnostics({
+                    status: 'undone',
+                    handle,
+                    document,
                     update
                 });
-                this.#emitCrdtDiagnostic('rallar.browser.crdt.undone', handle, diagnostics);
+                this.#emitCrdtDiagnostic({ topic: 'rallar.browser.crdt.undone', handle, data: diagnostics });
                 return diagnostics;
             }
             catch (caught) {
@@ -317,10 +370,13 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
                     ...(operationGroupId ? { operationGroupId } : {})
                 });
                 assertCurrent();
-                const diagnostics = this.#toCrdtDiagnostics('redone', handle, document, {
+                const diagnostics = this.#toCrdtDiagnostics({
+                    status: 'redone',
+                    handle,
+                    document,
                     update
                 });
-                this.#emitCrdtDiagnostic('rallar.browser.crdt.redone', handle, diagnostics);
+                this.#emitCrdtDiagnostic({ topic: 'rallar.browser.crdt.redone', handle, data: diagnostics });
                 return diagnostics;
             }
             catch (caught) {
@@ -343,12 +399,12 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
         const lease = this.#resources.lease();
         this.#resources.assertCurrent(lease, 'CRDT operation completed after the runtime closed.');
         const diagnostics = await this.#resources.release(handle, async (document) => {
-            const diagnostics = this.#toCrdtDiagnostics('closed', handle, document);
+            const diagnostics = this.#toCrdtDiagnostics({ status: 'closed', handle, document });
             await document.close();
             return diagnostics;
         });
         this.#resources.assertCurrent(lease, 'CRDT operation completed after the runtime closed.');
-        this.#emitCrdtDiagnostic('rallar.browser.crdt.closed', handle, diagnostics);
+        this.#emitCrdtDiagnostic({ topic: 'rallar.browser.crdt.closed', handle, data: diagnostics });
         return diagnostics;
     }
 
@@ -359,12 +415,12 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
         const lease = this.#resources.lease();
         this.#resources.assertCurrent(lease, 'CRDT operation completed after the runtime closed.');
         const diagnostics = await this.#resources.release(handle, async (document) => {
-            const diagnostics = this.#toCrdtDiagnostics('destroyed', handle, document);
+            const diagnostics = this.#toCrdtDiagnostics({ status: 'destroyed', handle, document });
             await document.destroy();
             return diagnostics;
         });
         this.#resources.assertCurrent(lease, 'CRDT operation completed after the runtime closed.');
-        this.#emitCrdtDiagnostic('rallar.browser.crdt.destroyed', handle, diagnostics);
+        this.#emitCrdtDiagnostic({ topic: 'rallar.browser.crdt.destroyed', handle, data: diagnostics });
         return diagnostics;
     }
 
@@ -391,17 +447,17 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
             try {
                 await document.close();
                 this.#resources.delete(handle);
-                this.#emitCrdtDiagnostic(
-                    'rallar.browser.crdt.closed',
+                this.#emitCrdtDiagnostic({
+                    topic: 'rallar.browser.crdt.closed',
                     handle,
-                    {
+                    data: {
                         status: 'closed',
                         handle,
                         ref: document.ref,
                         reason: 'runtime-close'
                     },
                     config
-                );
+                });
             }
             catch (caught) {
                 const error = toError(caught);
@@ -445,44 +501,46 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
         };
     }
 
-    #toCrdtOpenScope(input: BlackBoxRallarCrdtOpenInput): RallarCrdtOpenOptions['scope'] {
+    #toCrdtOpenScope(
+        input: BlackBoxRallarCrdtOpenInput
+    ): Either<Error, BlackBoxRallarCrdtController.ScopeResolution> {
         const scope = input.scope;
         const kind = scope?.kind;
         const roomRef = this.#crdtRoomRef(input);
         if (kind === 'app') {
-            return { kind: 'app' };
+            return Either.ofRight({ scope: { kind: 'app' } });
         }
         if (kind === 'principal') {
             const principalId = scope?.principalId ?? input.principalId;
             if (!principalId) {
-                throw new Error('CRDT principal scope requires principalId.');
+                return Either.ofLeft(new Error('CRDT principal scope requires principalId.'));
             }
-            return { kind: 'principal', principalId };
+            return Either.ofRight({ scope: { kind: 'principal', principalId } });
         }
         if (kind === 'custom') {
             const customScope = scope?.customScope ?? input.customScope;
             if (!customScope) {
-                throw new Error('CRDT custom scope requires customScope.');
+                return Either.ofLeft(new Error('CRDT custom scope requires customScope.'));
             }
-            return { kind: 'custom', customScope };
+            return Either.ofRight({ scope: { kind: 'custom', customScope } });
         }
         if (kind === 'room') {
             if (!roomRef) {
-                throw new Error('CRDT room scope requires a scoped room reference.');
+                return Either.ofLeft(new Error('CRDT room scope requires a scoped room reference.'));
             }
-            return { kind: 'room', roomRef };
+            return Either.ofRight({ scope: { kind: 'room', roomRef } });
         }
         if (input.principalId) {
-            return { kind: 'principal', principalId: input.principalId };
+            return Either.ofRight({ scope: { kind: 'principal', principalId: input.principalId } });
         }
         if (input.customScope) {
-            return { kind: 'custom', customScope: input.customScope };
+            return Either.ofRight({ scope: { kind: 'custom', customScope: input.customScope } });
         }
         if (roomRef) {
-            return { kind: 'room', roomRef };
+            return Either.ofRight({ scope: { kind: 'room', roomRef } });
         }
 
-        return undefined;
+        return Either.ofRight({ scope: undefined });
     }
 
     #toCrdtConnectionConfig(input: BlackBoxRallarCrdtOpenInput): BlackBoxRallarConnectionConfig {
@@ -521,9 +579,9 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
     }
 
     #toCrdtOpenOptions(
-        input: BlackBoxRallarCrdtOpenInput
+        input: BlackBoxRallarCrdtOpenInput,
+        scope: RallarCrdtOpenOptions['scope']
     ): RallarCrdtOpenOptions<RallarCrdtJsonValue> {
-        const scope = this.#toCrdtOpenScope(input);
         return {
             ...(input.applicationId ? { applicationId: input.applicationId } : {}),
             ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
@@ -547,60 +605,94 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
 
     async #ensureCrdtLiveConnection(
         input: BlackBoxRallarCrdtOpenInput
-    ): Promise<BlackBoxRallarConnectionConfig | undefined> {
+    ): Promise<BlackBoxRallarCrdtController.ConnectionAdmission> {
         if ((input.transport ?? 'local-only') === 'local-only') {
-            return undefined;
+            return { config: undefined, initialLiveAdmission: undefined };
         }
         if (!input.apiBaseUrl) {
             if (this.#input.facade.isConnected()) {
-                return this.#input.currentConnectionConfig();
+                const captured = toBrowserRtcCaptureIntent(input.rallar ?? {});
+                const completion = await this.#input.facade.connect(captured.options);
+                if (captured.requestedConfiguration) {
+                    const reason = resolveRequiredRtcCaptureFailure(
+                        captured.requestedConfiguration,
+                        completion.rtcCapture
+                    );
+                    if (reason) {
+                        throw new RallarRtcCaptureUnverifiedError({
+                            requestedConfiguration: captured.requestedConfiguration,
+                            rtcCapture: completion.rtcCapture,
+                            reason
+                        });
+                    }
+                }
+                const requestedConfiguration = captured.requestedConfiguration;
+                return {
+                    config: this.#input.currentConnectionConfig(),
+                    initialLiveAdmission: requestedConfiguration
+                        ? {
+                            readFailure: () => {
+                                const reason = completion.captureOwnershipFailure();
+                                return reason
+                                    ? new RallarRtcCaptureUnverifiedError({
+                                        requestedConfiguration,
+                                        rtcCapture: completion.rtcCapture,
+                                        reason
+                                    })
+                                    : undefined;
+                            }
+                        }
+                        : undefined
+                };
             }
             throw new Error('crdt.open requires apiBaseUrl or an existing Rallar connection for live transports.');
         }
 
         const config = this.#toCrdtConnectionConfig(input);
         await this.#input.ensureLiveConnection(config, input.transport ?? 'ws');
-        return config;
+        return { config, initialLiveAdmission: undefined };
     }
 
     #toCrdtDiagnostics(
-        status: BlackBoxRallarCrdtCommandDiagnostics['status'],
-        handle: string,
-        document: RallarCrdtDocument<RallarCrdtJsonValue>,
-        options: BlackBoxRallarCrdtController.DiagnosticsInput = {}
+        input: BlackBoxRallarCrdtController.DiagnosticsInput
     ): BlackBoxRallarCrdtCommandDiagnostics {
+        const { status, handle, document } = input;
         const health = document.health();
-        let value = options.value;
+        let value = input.value;
         if (value === undefined && status !== 'closed' && status !== 'destroyed') {
             value = document.read();
         }
 
+        const receipt = health.transportStrategy === 'local-only' ? undefined : this.#input.facade.rtcCapture();
         return {
+            rtcCapture: health.transportStrategy === 'local-only'
+                ? { status: 'unavailable', reason: 'not-applicable' }
+                : receipt
+                ? { status: 'observed', value: receipt }
+                : { status: 'unavailable', reason: 'absent' },
             status,
             handle,
             ref: document.ref,
-            ...(options.transportStrategy ? { transportStrategy: options.transportStrategy } : {}),
-            ...(options.update ? { updateId: options.update.updateId } : {}),
+            ...(input.transportStrategy ? { transportStrategy: input.transportStrategy } : {}),
+            ...(input.update ? { updateId: input.update.updateId } : {}),
             ...(value !== undefined ? { value } : {}),
-            ...(options.result !== undefined ? { result: options.result } : {}),
+            ...(input.result !== undefined ? { result: input.result } : {}),
             health,
             pendingUpdateCount: document.pendingUpdates().length,
             failedPendingUpdateCount: document.failedPendingUpdates().length,
             dependencyBlockedUpdateCount: document.dependencyBlockedUpdates().length,
-            ...(options.attempts !== undefined ? { attempts: options.attempts } : {}),
-            ...(options.waitedMs !== undefined ? { waitedMs: options.waitedMs } : {}),
-            ...(options.stableForMs !== undefined ? { stableForMs: options.stableForMs } : {}),
-            ...(options.conditions ? { conditions: options.conditions } : {}),
-            ...(options.lastSyncResult !== undefined ? { lastSyncResult: options.lastSyncResult } : {})
+            ...(input.attempts !== undefined ? { attempts: input.attempts } : {}),
+            ...(input.waitedMs !== undefined ? { waitedMs: input.waitedMs } : {}),
+            ...(input.stableForMs !== undefined ? { stableForMs: input.stableForMs } : {}),
+            ...(input.conditions ? { conditions: input.conditions } : {}),
+            ...(input.lastSyncResult !== undefined ? { lastSyncResult: input.lastSyncResult } : {})
         };
     }
 
     #emitCrdtDiagnostic(
-        topic: string,
-        handle: string,
-        data: BlackBoxRallarEvent['data'],
-        config?: BlackBoxRallarConnectionConfig
+        input: BlackBoxRallarCrdtController.DiagnosticPublicationInput
     ): void {
+        const { topic, handle, data, config } = input;
         this.#input.emit({
             kind: 'diagnostic',
             topic,
@@ -655,7 +747,10 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
                 progress.stableSinceEpochMs ??= currentEpochMs;
                 if (currentEpochMs - progress.stableSinceEpochMs >= stableForMs) {
                     request.assertCurrent();
-                    return this.#toCrdtDiagnostics('wait_matched', input.handle, document, {
+                    return this.#toCrdtDiagnostics({
+                        status: 'wait_matched',
+                        handle: input.handle,
+                        document,
                         value,
                         result: { matched: true, matchedAtEpochMs: currentEpochMs },
                         attempts: progress.attempts,
@@ -684,19 +779,27 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
         request: BlackBoxRallarCrdtController.WaitRequest
     ): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
         const { input, document, progress } = request;
-        this.#emitCrdtDiagnostic('rallar.browser.crdt.waiting', input.handle, {
-            status: 'waiting',
+        this.#emitCrdtDiagnostic({
+            topic: 'rallar.browser.crdt.waiting',
             handle: input.handle,
-            ref: document.ref,
-            timeoutMs: input.timeoutMs ?? 10_000,
-            intervalMs: input.intervalMs ?? 250,
-            stableForMs: input.stableForMs ?? 0,
-            conditions: input.conditions,
-            sync: input.sync
+            data: {
+                status: 'waiting',
+                handle: input.handle,
+                ref: document.ref,
+                timeoutMs: input.timeoutMs ?? 10_000,
+                intervalMs: input.intervalMs ?? 250,
+                stableForMs: input.stableForMs ?? 0,
+                conditions: input.conditions,
+                sync: input.sync
+            }
         });
         try {
             const diagnostics = await this.#pollCrdtWait(request);
-            this.#emitCrdtDiagnostic('rallar.browser.crdt.wait_matched', input.handle, diagnostics);
+            this.#emitCrdtDiagnostic({
+                topic: 'rallar.browser.crdt.wait_matched',
+                handle: input.handle,
+                data: diagnostics
+            });
             return diagnostics;
         }
         catch (caught) {

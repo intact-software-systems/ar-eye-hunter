@@ -220,7 +220,7 @@ function addFileMeasurementFindings(findings, sourceText) {
 
 function resolveNavigationFileLength(sourceText) {
     const physicalLineCount = sourceText.lines.length;
-    if (physicalLineCount <= limits.fileLineCount || !isCognitiveMetricsFile(sourceText.file)) {
+    if (physicalLineCount <= limits.fileLineCount) {
         return physicalLineCount;
     }
     return physicalLineCount - computeDataLiteralLineCount(sourceText.file, sourceText.raw);

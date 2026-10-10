@@ -11,8 +11,7 @@ import {
 } from '../../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import * as sharedDistributedRecipes from '../../../shared-test/rallar-bb-test/mod.ts';
 import {
-    createRallarBlackBoxTestRuntime,
-    deriveAdvancedDiagnosticHandoffTargets as deriveSharedAdvancedDiagnosticHandoffTargets
+    createDefaultRallarBlackBoxTestRuntime
 } from '../../../shared-test/rallar-bb-test/mod.ts';
 import { distributedArtifactBundle, distributedControlRun, distributedRun } from './distributed-run-fixture.ts';
 
@@ -105,23 +104,17 @@ describe('distributed recipes monitor', () => {
     });
 
     it('exports deterministic selected-failure evidence from the app compatibility barrel', () => {
-        expect(Reflect.get(
-            distributedRecipeCompatibility,
-            'computeDistributedRunFailureEvidenceDestinations'
-        )).toBeTypeOf('function');
+        expect(distributedRecipeCompatibility.computeDistributedRunFailureEvidenceDestinations).toBeTypeOf('function');
         expect(computeDistributedRunFailureEvidenceDestinations).toBe(
             sharedDistributedRecipes.computeDistributedRunFailureEvidenceDestinations
         );
     });
 
     it('exports deterministic Advanced diagnostic handoffs from the app compatibility barrel', () => {
-        const compatibilityExport = Reflect.get(
-            distributedRecipeCompatibility,
-            'deriveAdvancedDiagnosticHandoffTargets'
-        );
+        const compatibilityExport = distributedRecipeCompatibility.deriveAdvancedDiagnosticHandoffTargets;
 
         expect(compatibilityExport).toBeTypeOf('function');
-        expect(compatibilityExport).toBe(deriveSharedAdvancedDiagnosticHandoffTargets);
+        expect(compatibilityExport).toBe(sharedDistributedRecipes.deriveAdvancedDiagnosticHandoffTargets);
     });
 
     it('derives available evidence destinations for each selected failure instead of the first failure', () => {
@@ -520,7 +513,7 @@ describe('distributed recipes monitor', () => {
             }]
         } satisfies DistributedRecipeCatalogItem['recipe'];
         let now = 3_000;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: () => {
                 now += 10;
                 return now;

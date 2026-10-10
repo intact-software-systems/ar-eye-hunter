@@ -1,4 +1,5 @@
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
@@ -189,8 +190,16 @@ export class BlackBoxRallarConnectionRuntime {
                     requireBlackBoxRallarInput(decodeBlackBoxRallarSendCommand(input)),
                     decodeBlackBoxCommandNumber(deadlineEpochMs)
                 ),
-            sendWs: async (input) =>
-                await wsSend.sendWs(requireBlackBoxRallarInput(decodeBlackBoxRallarWsSendInput(input))),
+            sendWs: async (input, capture = {}) => {
+                const captured = toRallarOperationOptions({
+                    rtcCaptureMode: capture.rtcCaptureMode,
+                    rtcCaptureContext: capture.rtcCaptureContext
+                });
+                return await wsSend.sendWs({
+                    ...requireBlackBoxRallarInput(decodeBlackBoxRallarWsSendInput(input)),
+                    ...captured
+                });
+            },
             sendMessage: async (input) =>
                 await deliveryLedger.sendMessage(
                     requireBlackBoxRallarInput(decodeBlackBoxRallarMessageSendInput(input))
@@ -379,7 +388,6 @@ function createProductControllers(
             formation: (roomRef) => rallar.rooms.formation(roomRef),
             rtc: rallar.rtc,
             emit: diagnostics.emit,
-            emitError: diagnostics.emitError,
             now: input.clock.now
         }),
         ...createMessagingControllers(foundation, input.clock)

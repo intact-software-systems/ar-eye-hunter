@@ -21,6 +21,7 @@ import {
     computeALDeliveryUnobservable
 } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import {
     BrowserMessageFallbackController,
     type BrowserMessageFallbackCandidate
@@ -28,6 +29,7 @@ import {
 
 /** The mutable observation of one message; the handle handed to the sender closes over exactly this object. */
 interface DeliveryObservation {
+    readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     readonly msgId: string;
     readonly listeners: Set<RallarMessageDeliveryListener>;
     readonly waits: Map<number, DeliveryWait>;
@@ -84,13 +86,20 @@ export class BrowserRallarDeliveryRegistry {
     }
 
     /** Returns the existing handle for the same msgId, because a fallback re-sends the same envelope. */
-    open(message: ALMessage, carrier: ALDeliveryCarrier): RallarMessageHandle {
+    open(
+        message: ALMessage,
+        carrier: ALDeliveryCarrier,
+        rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt> = Object.freeze({
+            status: 'unavailable',
+            reason: 'absent'
+        })
+    ): RallarMessageHandle {
         const existing = this.entries.get(message.id.msgId);
         if (existing !== undefined) {
             return existing.handle;
         }
 
-        const observation = this.createObservation(message, carrier);
+        const observation = this.createObservation(message, carrier, rtcCapture);
         const entry: DeliveryEntry = { observation, handle: this.createHandle(observation) };
         this.entries.set(observation.msgId, entry);
         this.retainEntries();
@@ -163,8 +172,13 @@ export class BrowserRallarDeliveryRegistry {
         return this.entries.size;
     }
 
-    private createObservation(message: ALMessage, carrier: ALDeliveryCarrier): DeliveryObservation {
+    private createObservation(
+        message: ALMessage,
+        carrier: ALDeliveryCarrier,
+        rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>
+    ): DeliveryObservation {
         return {
+            rtcCapture,
             msgId: message.id.msgId,
             listeners: new Set(),
             waits: new Map(),
@@ -185,6 +199,7 @@ export class BrowserRallarDeliveryRegistry {
         return {
             msgId: observation.lifecycle.msgId,
             typeId: observation.lifecycle.typeId,
+            rtcCapture: () => observation.rtcCapture,
             lifecycle: () => this.readLifecycle(observation),
             onEvent: (listener) => subscribeToObservation(observation, listener),
             wait: async (options) => await this.wait(observation, options ?? {}),

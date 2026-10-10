@@ -35,7 +35,7 @@ interface ApiV1ConfigurationEnvironmentOverlay extends MutableSourceObject {
         replay: MutableSourceObject;
     };
     appInbox: MutableSourceObject & { completionWait: MutableSourceObject; };
-    ice: MutableSourceObject;
+    ice: MutableSourceObject & { rateLimit: MutableSourceObject; };
     crdt: MutableSourceObject;
     blackBox: MutableSourceObject & {
         operatorToken: MutableSourceObject;
@@ -129,7 +129,7 @@ function createEnvironmentOverlay(): ApiV1ConfigurationEnvironmentOverlay {
             replay: {}
         },
         appInbox: { completionWait: {} },
-        ice: {},
+        ice: { rateLimit: {} },
         crdt: {},
         blackBox: { operatorToken: {}, pgliteEvidence: {} },
         observability: {}
@@ -364,6 +364,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         name: 'RALLAR_ICE_MODE',
         decode: decodeString,
         apply: (source, value) => source.ice.mode = value
+    },
+    {
+        name: 'RALLAR_ICE_RATE_LIMIT_REQUESTS',
+        decode: decodeNumber,
+        apply: (source, value) => source.ice.rateLimit.requests = value
     },
     {
         name: 'METERED_APP_NAME',

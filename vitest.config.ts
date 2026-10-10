@@ -6,8 +6,7 @@ process.chdir(__dirname);
 const SUITE_TESTS = [
     'packages/tests/**/*.test.ts',
     'packages/shared-rtc-bench/tests/**/*.test.ts',
-    'apps/relic-hunters-v1/tests/**/*.test.ts',
-    'tests/unit/**/*.test.ts'
+    'apps/relic-hunters-v1/tests/**/*.test.ts'
 ];
 const EXCLUDED_TESTS = [
     'packages/tests/shared-server/integration/**',

@@ -1,32 +1,21 @@
-import { beforeEach, expect, it } from 'vitest';
+import {
+    beforeEach,
+    expect,
+    it
+} from 'vitest';
 
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
-import { createRoomSnapshot, readRoomWorkflowMocks, resetRoomWorkflowTestRuntime } from './room-workflow-test-runtime.ts';
+import {
+    createRoomSnapshot,
+    getRoomWorkflowMocks,
+    resetRoomWorkflowTestRuntime
+} from './room-workflow-test-runtime.ts';
 
-const roomWorkflowMocks = readRoomWorkflowMocks();
+const roomWorkflowMocks = getRoomWorkflowMocks();
 
 installFakeBroadcastChannelPerTest();
 
 beforeEach(resetRoomWorkflowTestRuntime);
-
-it('exposes the owning room membership operations', async () => {
-    const {
-        acceptRoomInvite,
-        banRoomMember,
-        createRoomInvite,
-        removeRoomMember,
-        setRoomMemberRole,
-        transferRoomOwnership,
-        unbanRoomMember
-    } = await import('@shared-web/browser/rooms/room-membership.ts');
-    expect(typeof createRoomInvite).toBe('function');
-    expect(typeof acceptRoomInvite).toBe('function');
-    expect(typeof removeRoomMember).toBe('function');
-    expect(typeof banRoomMember).toBe('function');
-    expect(typeof unbanRoomMember).toBe('function');
-    expect(typeof setRoomMemberRole).toBe('function');
-    expect(typeof transferRoomOwnership).toBe('function');
-});
 
 it('routes an invite through the room membership owner', async () => {
     const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');

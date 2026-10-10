@@ -1,25 +1,18 @@
-import { RTC_BASELINE_WORKLOAD_CATALOG } from '../catalog/rtc-baseline-workload-catalog.ts';
 import type {
     RtcBaselineCaptureRequestDto,
-    RtcBaselineControllerInputDto,
     RtcBaselineIssueDto,
-    RtcBaselineResolvedConfigurationValueDto,
     RtcBaselineResult,
-    RtcBaselineRuntimeObservationDto,
-    RtcBaselineWorkerCommandDto
+    RtcBaselineRuntimeObservationDto
 } from '../contracts/rtc-baseline-contracts.ts';
-import { resolveRtcBaselineConfiguration } from '../contracts/rtc-baseline-validation.ts';
+import {
+    createRtcBaselineRuntimeObservationInput,
+    type RtcBaselineObservationInput
+} from './create-rtc-baseline-runtime-observation-input.ts';
+import {
+    RTC_BASELINE_CAPTURE_ENVIRONMENT_NAME,
+    type RtcBaselineCaptureAdmission
+} from './rtc-baseline-capture-admission.ts';
 import type { DenoRtcBaselineAdapters } from './rtc-baseline-deno-adapters.ts';
-
-export interface RtcBaselineObservationInput {
-    sourcePaths: readonly string[];
-    configurationInputs: readonly RtcBaselineControllerInputDto[];
-    controllerInputs: readonly RtcBaselineControllerInputDto[];
-    resolvedConfiguration: readonly RtcBaselineResolvedConfigurationValueDto[];
-    workerCommand: RtcBaselineWorkerCommandDto;
-    deviations: readonly string[];
-    allowlistedEnvironment: Readonly<Record<string, string>>;
-}
 
 export const RTC_BASELINE_ENVIRONMENT_NAMES = [
     'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS',
@@ -32,7 +25,8 @@ export const RTC_BASELINE_ENVIRONMENT_NAMES = [
     'RALLAR_BLACK_BOX_RTC_CASE_ID',
     'RALLAR_BLACK_BOX_RTC_INPUT_KEY',
     'RALLAR_BLACK_BOX_RTC_INTENDED_PHASE',
-    'RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL'
+    'RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL',
+    RTC_BASELINE_CAPTURE_ENVIRONMENT_NAME
 ] as const;
 const chromiumVersionScript = [
     'const { execFileSync } = require(\'node:child_process\');',
@@ -74,11 +68,6 @@ export interface RtcBaselineRuntimeObserver {
     ): Promise<RtcBaselineResult<RtcBaselineRuntimeObservationDto>>;
 }
 
-export interface RtcBaselineRuntimeObservationSetup {
-    files: readonly { path: string; kind: 'source' | 'config'; }[];
-    observation: RtcBaselineObservationInput;
-}
-
 export type RtcBaselineCaptureObserver = (
     request: RtcBaselineCaptureRequestDto,
     initialized?: RtcBaselineRuntimeObservationDto
@@ -89,88 +78,6 @@ function issue(message: string) {
         path: '$.observation',
         code: 'observation-failed',
         message: message.replace(/^Error: /, '')
-    };
-}
-
-function redactPersistedEnvironment(values: Readonly<Record<string, string>>) {
-    return Object.fromEntries(
-        Object.entries(values).map(([name, value]) => [
-            name,
-            name === 'DATABASE_URL' ? (value.length > 0 ? 'present' : 'absent') : value
-        ])
-    );
-}
-
-export function createRtcBaselineRuntimeObservationInput(
-    request: RtcBaselineCaptureRequestDto,
-    allowlistedEnvironment: Readonly<Record<string, string>>,
-    initialized?: RtcBaselineRuntimeObservationDto
-): RtcBaselineResult<RtcBaselineRuntimeObservationSetup> {
-    const cases = request.workloadIds.flatMap((workloadId: string) => {
-        const workload = RTC_BASELINE_WORKLOAD_CATALOG.find((entry) => entry.workloadId === workloadId);
-        if (!workload) {
-            return [];
-        }
-        return workload.cases.filter((entry) =>
-            workloadId === 'RTC-B06'
-                ? entry.inputKey.startsWith(request.environmentId.toLowerCase())
-                : true
-        );
-    });
-    const files = cases.flatMap(
-        (entry: { sourcePaths: readonly string[]; configPaths: readonly string[]; }) => [
-            ...entry.sourcePaths.map((path: string) => ({ path, kind: 'source' as const })),
-            ...entry.configPaths.map((path: string) => ({ path, kind: 'config' as const }))
-        ]
-    );
-    const uniqueFiles = files.filter(
-        (entry, index) => files.findIndex((candidate) => candidate.path === entry.path) === index
-    );
-    const runtime = cases[0]?.runtime ?? { executable: 'deno', prefixArguments: [] };
-    const resolvedConfiguration: RtcBaselineResolvedConfigurationValueDto[] = [];
-    const configurationInputs: RtcBaselineControllerInputDto[] = [];
-    for (const descriptor of cases.flatMap((entry) => entry.configuration)) {
-        const initializedValue = initialized?.resolvedConfiguration.find(
-            (entry) =>
-                entry.field === descriptor.field &&
-                JSON.stringify(entry.caseKey) === JSON.stringify(descriptor.caseKey)
-        );
-        const environmentName = descriptor.allowlistedEnvironmentVariable;
-        const environmentValue = environmentName ? allowlistedEnvironment[environmentName] : undefined;
-        const resolved = resolveRtcBaselineConfiguration(descriptor, {
-            cliValue: initializedValue?.source === 'cli' ? initializedValue.value : undefined,
-            environmentValue
-        });
-        if (!resolved.ok) {
-            return resolved;
-        }
-        resolvedConfiguration.push(resolved.value);
-        if (resolved.value.source === 'environment') {
-            configurationInputs.push({ name: environmentName!, value: environmentValue!, secret: false });
-        }
-    }
-    const controllerInputs = initialized?.controllerInputs ?? [
-        { name: 'baselineId', value: request.baselineId, secret: false },
-        { name: 'workloadIds', value: request.workloadIds.join(','), secret: false },
-        { name: 'environmentId', value: request.environmentId, secret: false }
-    ];
-    return {
-        ok: true,
-        value: {
-            files: uniqueFiles,
-            observation: {
-                sourcePaths: uniqueFiles.map((entry) => entry.path),
-                configurationInputs,
-                resolvedConfiguration,
-                controllerInputs,
-                workerCommand: {
-                    redactedArgv: { executable: runtime.executable, arguments: runtime.prefixArguments },
-                    projection: { fixedWorkerFlags: [], configurationFlags: [] }
-                },
-                deviations: [],
-                allowlistedEnvironment: redactPersistedEnvironment(allowlistedEnvironment)
-            }
-        }
     };
 }
 
@@ -247,19 +154,19 @@ export function createRtcBaselineRuntimeObservation(
     };
 }
 
-export function createRtcBaselineDenoObservation(
-    adapters: Pick<
-        DenoRtcBaselineAdapters,
-        'git' | 'runtimeHost' | 'process' | 'sourceConfigHashing' | 'environment' | 'clock'
-    >
-): RtcBaselineCaptureObserver {
+type RtcBaselineDenoObservationAdapters = Pick<
+    DenoRtcBaselineAdapters,
+    'git' | 'runtimeHost' | 'process' | 'sourceConfigHashing' | 'environment' | 'clock'
+>;
+
+function createDenoRuntimeObserver(adapters: RtcBaselineDenoObservationAdapters): RtcBaselineRuntimeObserver {
     function unwrap<T>(result: RtcBaselineResult<T>): T {
         if (!result.ok) {
             throw new Error(JSON.stringify(result.issues));
         }
         return result.value;
     }
-    const observe = createRtcBaselineRuntimeObservation({
+    return createRtcBaselineRuntimeObservation({
         async readGit() {
             const [headCommit, headTree, ref, status] = await Promise.all([
                 adapters.git.readHeadCommit(),
@@ -298,9 +205,19 @@ export function createRtcBaselineDenoObservation(
         nowUtc: adapters.clock.nowUtc,
         monotonicNowMs: adapters.clock.monotonicNowMs
     });
+}
+
+export function createRtcBaselineDenoObservation(
+    adapters: Pick<
+        DenoRtcBaselineAdapters,
+        'git' | 'runtimeHost' | 'process' | 'sourceConfigHashing' | 'environment' | 'clock'
+    >,
+    captureAdmission?: RtcBaselineCaptureAdmission
+): RtcBaselineCaptureObserver {
+    const observe = createDenoRuntimeObserver(adapters);
     return async (request, initialized) => {
         const environment = adapters.environment.readAllowlisted(RTC_BASELINE_ENVIRONMENT_NAMES);
-        const input = createRtcBaselineRuntimeObservationInput(request, environment, initialized);
+        const input = createRtcBaselineRuntimeObservationInput(request, environment, { initialized, captureAdmission });
         if (!input.ok) {
             return input;
         }

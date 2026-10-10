@@ -28,6 +28,7 @@ export function createRallarSessionConnectionOperations(
         defaults: () => input.connectionRuntime.defaults(),
         connect: (options) => input.authLifecycle.connect(options),
         disconnect: () => input.authLifecycle.disconnect(),
+        rtcCapture: () => input.transportRuntime.readRtcCaptureReceipt(),
         status: () => input.connectionRuntime.readConnectState(),
         isConnected: () =>
             input.connectionRuntime.readConnectState() === 'connected' &&

@@ -1,12 +1,12 @@
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import { describe, expect, it } from 'vitest';
+import type { RallarBlackBoxTestRuntimeEventInput } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import type { RallarBlackBoxTestMessagesObserveResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
+import type { AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
-
-type LifecycleCarrier = 'ws' | 'rtc' | 'rtc-with-ws-fallback';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 describe('ALM lifecycle recipe evidence', () => {
     it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)(
@@ -140,7 +140,7 @@ describe('ALM lifecycle recipe evidence', () => {
         const assertion = scenario.sender.commands.find((command) => command.commandId?.endsWith('assert-expired-1'));
         expect(observe).toBeDefined();
         expect(assertion).toBeDefined();
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: async (command) =>
                 command.kind === 'messages.observe'
                     ? { status: 'ok', value: { state: 'failed' } }
@@ -163,7 +163,7 @@ async function runSubmissionReceipts(
             : /-(observe-transport-accepted|receipts|cancel)-1$/.test(command.commandId!)
     );
     expect(submission).toHaveLength(9);
-    const runtime = createRallarBlackBoxTestRuntime({
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
         commandExecutor: async (command) => command.kind === 'assert' ? undefined : { status: 'ok', value: evidence }
     });
     const results = [];
@@ -200,7 +200,7 @@ async function expectPayloadWaitRejects(
     specimens: readonly Record<string, string>[]
 ): Promise<void> {
     for (const specimen of specimens) {
-        const runtime = createRallarBlackBoxTestRuntime({ sleep: async () => {} });
+        const runtime = createDefaultRallarBlackBoxTestRuntime({ sleep: async () => {} });
         runtime.recordEvent({
             kind: 'message',
             topic: 'typed',
@@ -214,16 +214,16 @@ async function expectPayloadWaitRejects(
 async function expectReplacementPair(
     replacement: RallarBlackBoxTestCommand,
     old: RallarBlackBoxTestCommand,
-    carrier: LifecycleCarrier
+    carrier: AlmConformanceCarrier
 ): Promise<void> {
-    const runtime = createRallarBlackBoxTestRuntime({ sleep: async () => {} });
+    const runtime = createDefaultRallarBlackBoxTestRuntime({ sleep: async () => {} });
     runtime.recordEvent(toLifecycleEvent('actual-replacement', { marker: 'delivery-lifecycle', specimen: 'supersedence', carrier, revision: 'replacement' }));
     expect((await runtime.execute(replacement)).value).toMatchObject({ event: { payload: { data: { msgId: 'actual-replacement' } } } });
     runtime.recordEvent(toLifecycleEvent('escaped-old', { marker: 'delivery-lifecycle', specimen: 'supersedence', carrier, revision: 'old' }));
     expect((await runtime.execute(old)).error?.code).toBe('RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED');
 }
 
-function toLifecycleEvent(msgId: string, payload: Record<string, string>) {
+function toLifecycleEvent(msgId: string, payload: Record<string, string>): RallarBlackBoxTestRuntimeEventInput {
     return {
         kind: 'message' as const,
         topic: 'typed',

@@ -32,13 +32,11 @@ import {
     distributedRecipeMatches
 } from '../../../apps/rallar-black-box/src/legacy/runner/distributed-recipes/distributed-recipe-catalog.ts';
 import {
-    configuredDistributedRecipeCatalogItem as sharedConfiguredDistributedRecipeCatalogItem,
-    createRallarBlackBoxTestRuntime,
-    DISTRIBUTED_RECIPE_CATALOG as SHARED_DISTRIBUTED_RECIPE_CATALOG,
-    distributedRecipeMatches as sharedDistributedRecipeMatches,
+    createDefaultRallarBlackBoxTestRuntime,
     getRallarBlackBoxCommandHistory,
     projectDistributedRecipeCatalog
 } from '../../shared-test/rallar-bb-test/mod.ts';
+import * as sharedDistributedRecipes from '../../shared-test/rallar-bb-test/mod.ts';
 import type { RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     AGENT_A_IDENTITY,
@@ -85,21 +83,11 @@ describe('distributed recipes catalog', () => {
                 groupId: 'arena-1'
             }
         });
-        const createGroupCommand = recipe.commands[0] as
-            | Extract<typeof recipe.commands[number], { kind: 'http.request'; }>
-            | undefined;
-        const upsertMemberCommand = recipe.commands[1] as
-            | Extract<typeof recipe.commands[number], { kind: 'http.request'; }>
-            | undefined;
-        const connectCommand = recipe.commands.find((command) => command.kind === 'rtc.connect') as
-            | Extract<typeof recipe.commands[number], { kind: 'rtc.connect'; }>
-            | undefined;
-        const loopCommand = recipe.commands.find((command) => command.kind === 'loop') as
-            | Extract<typeof recipe.commands[number], { kind: 'loop'; }>
-            | undefined;
-        const sendCommand = loopCommand?.commands[0] as
-            | Extract<typeof recipe.commands[number], { kind: 'rtc.send'; }>
-            | undefined;
+        const createGroupCommand = recipe.commands[0];
+        const upsertMemberCommand = recipe.commands[1];
+        const connectCommand = recipe.commands.find((command) => command.kind === 'rtc.connect');
+        const loopCommand = recipe.commands.find((command) => command.kind === 'loop');
+        const sendCommand = loopCommand?.commands.find((command) => command.kind === 'rtc.send');
         const preview = distributedRecipeCommandPreview(recipe);
 
         const groupRequestId = createRallarBlackBoxEnsureGroupRequestId({
@@ -211,9 +199,7 @@ describe('distributed recipes catalog', () => {
             readyPeerCount: 1,
             readyTimeoutMs: 10_000
         });
-        const stream = recipe.commands.find((command) => command.kind === 'rtc.stream') as
-            | Extract<typeof recipe.commands[number], { kind: 'rtc.stream'; }>
-            | undefined;
+        const stream = recipe.commands.find((command) => command.kind === 'rtc.stream');
 
         expect(recipe.commands.map((command) => command.kind)).toContain('rtc.stream');
         expect(recipe.commands.map((command) => command.kind)).not.toContain('loop');
@@ -258,12 +244,8 @@ describe('distributed recipes catalog', () => {
             executionMode: 'stream',
             rateHz: 10
         });
-        const connect = recipe.commands.find((command) => command.kind === 'rtc.connect') as
-            | Extract<typeof recipe.commands[number], { kind: 'rtc.connect'; }>
-            | undefined;
-        const stream = recipe.commands.find((command) => command.kind === 'rtc.stream') as
-            | Extract<typeof recipe.commands[number], { kind: 'rtc.stream'; }>
-            | undefined;
+        const connect = recipe.commands.find((command) => command.kind === 'rtc.connect');
+        const stream = recipe.commands.find((command) => command.kind === 'rtc.stream');
 
         expect(recipe.description).toContain('10 Hz');
         expect(stream).toMatchObject({
@@ -319,12 +301,8 @@ describe('distributed recipes catalog', () => {
                 maxDroppedFrames: 4
             }
         });
-        const strictStream = strictRecipe.commands.find((command) => command.kind === 'rtc.stream') as
-            | Extract<typeof strictRecipe.commands[number], { kind: 'rtc.stream'; }>
-            | undefined;
-        const tolerantStream = tolerantRecipe.commands.find((command) => command.kind === 'rtc.stream') as
-            | Extract<typeof tolerantRecipe.commands[number], { kind: 'rtc.stream'; }>
-            | undefined;
+        const strictStream = strictRecipe.commands.find((command) => command.kind === 'rtc.stream');
+        const tolerantStream = tolerantRecipe.commands.find((command) => command.kind === 'rtc.stream');
 
         expect(strictStream).toMatchObject({
             thresholds: {
@@ -717,9 +695,6 @@ describe('distributed recipes catalog', () => {
                 group,
                 readyPeerCount: 2,
                 readyTimeoutMs: 10_000
-            } as Parameters<typeof createRallarBlackBoxRtcRealtimeRecipe>[0] & {
-                readyPeerCount: number;
-                readyTimeoutMs: number;
             }
         );
         const smoke = createRallarBlackBoxRtcSmokeRecipe(
@@ -727,9 +702,6 @@ describe('distributed recipes catalog', () => {
                 group,
                 readyPeerCount: 1,
                 readyTimeoutMs: 10_000
-            } as Parameters<typeof createRallarBlackBoxRtcSmokeRecipe>[0] & {
-                readyPeerCount: number;
-                readyTimeoutMs: number;
             }
         );
         const parity = createRallarBlackBoxProviderParityLiveRecipe(
@@ -737,9 +709,6 @@ describe('distributed recipes catalog', () => {
                 group,
                 readyPeerCount: 1,
                 readyTimeoutMs: 10_000
-            } as Parameters<typeof createRallarBlackBoxProviderParityLiveRecipe>[0] & {
-                readyPeerCount: number;
-                readyTimeoutMs: number;
             }
         );
 
@@ -815,7 +784,7 @@ describe('distributed recipes catalog', () => {
                         }
                     }
                 ]
-            } as Parameters<typeof distributedRecipePreflight>[0]
+            }
         );
 
         expect(unsafe.warnings).toEqual(expect.arrayContaining([
@@ -830,7 +799,7 @@ describe('distributed recipes catalog', () => {
 
     it('runs the app-local composite evidence fixture in the browser-agent runtime', async () => {
         const fixture = RALLAR_BLACK_BOX_RECIPE_FIXTURES.find((entry) => entry.fixtureId === 'composite-evidence');
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
 
         for (const command of fixture!.recipe.commands) {
             const result = await runtime.execute(command);
@@ -877,10 +846,10 @@ describe('distributed recipes catalog', () => {
             RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID
         ].map((fixtureId) => projection.entries.find((entry) => entry.item.itemId === fixtureId)?.item.recipe);
 
-        expect(DISTRIBUTED_RECIPE_CATALOG).toBe(SHARED_DISTRIBUTED_RECIPE_CATALOG);
+        expect(DISTRIBUTED_RECIPE_CATALOG).toBe(sharedDistributedRecipes.DISTRIBUTED_RECIPE_CATALOG);
         expect(configuredDistributedRecipeCatalogItem)
-            .toBe(sharedConfiguredDistributedRecipeCatalogItem);
-        expect(distributedRecipeMatches).toBe(sharedDistributedRecipeMatches);
+            .toBe(sharedDistributedRecipes.configuredDistributedRecipeCatalogItem);
+        expect(distributedRecipeMatches).toBe(sharedDistributedRecipes.distributedRecipeMatches);
         expect(projection.entries).toHaveLength(RALLAR_BLACK_BOX_RECIPE_FIXTURES.length);
         expect(projection.profiles).toEqual(expect.arrayContaining([
             'green',

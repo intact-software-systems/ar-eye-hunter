@@ -3,7 +3,7 @@ import { setImmediate } from 'node:timers/promises';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { RallarBlackBoxTestState } from '../../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '../../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '../../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 describe('runtime state observer isolation', () => {
     it.each([
@@ -12,12 +12,12 @@ describe('runtime state observer isolation', () => {
         { delivery: 'later', failure: 'throw' },
         { delivery: 'later', failure: 'reject' }
     ])('isolates $failure on $delivery delivery and retains healthy subscriptions', async ({ delivery, failure }) => {
-        const runtime = createRallarBlackBoxTestRuntime();
-        const unhandled: unknown[] = [];
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
+        let unhandledCount = 0;
         const snapshots: RallarBlackBoxTestState[] = [];
         const failingSnapshots: RallarBlackBoxTestState[] = [];
-        const recordUnhandled = (reason: unknown) => {
-            unhandled.push(reason);
+        const recordUnhandled = () => {
+            unhandledCount += 1;
         };
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
         process.on('unhandledRejection', recordUnhandled);
@@ -42,7 +42,7 @@ describe('runtime state observer isolation', () => {
             expect(snapshots.at(-1)?.commandHistory).toContainEqual(result);
             expect(failingSnapshots.at(-1)?.commandHistory).toContainEqual(result);
             await setImmediate();
-            expect(unhandled).toEqual([]);
+            expect(unhandledCount).toBe(0);
 
             unsubscribeFailing();
             unsubscribeHealthy();
@@ -60,7 +60,7 @@ describe('runtime state observer isolation', () => {
 
     it('finishes commands while an observer remains pending', async () => {
         const pending = Promise.withResolvers<void>();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const unsubscribe = runtime.subscribe(() => pending.promise);
         try {
             const result = await runtime.execute({ kind: 'health' });

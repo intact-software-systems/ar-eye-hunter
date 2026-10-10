@@ -68,6 +68,10 @@ function isWaitEventMatch(event: RallarBlackBoxTestEvent, match: RallarBlackBoxT
         return false;
     }
     return WAIT_EVENT_ROUTING_KEYS.every((key) => match[key] === undefined || event[key] === match[key]) &&
+        Object.entries(match.payloadFields ?? {}).every(([path, expected]) => {
+            const lookup = decodePayloadPathValue(event.payload, path);
+            return lookup.exists && isSameJsonValue(lookup.value, expected);
+        }) &&
         isWaitEventPayloadMatch(event, match);
 }
 

@@ -5,7 +5,7 @@ import type { RallarBlackBoxTestStorageCountersResultValue } from '@shared-test/
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
@@ -31,7 +31,7 @@ async function runStorageWindow(
         command.kind === 'storage.counters' ||
         (command.kind === 'assert' && command.source.includes('storage-window'))
     );
-    const runtime = createRallarBlackBoxTestRuntime({
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
         commandExecutor: (command) => command.kind === 'storage.counters' ? { status: 'ok', value: window } : undefined
     });
     return (await runtime.execute({ kind: 'recipe.run', recipe: { ...recipe, commands } })).ok;

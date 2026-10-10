@@ -1,4 +1,5 @@
 import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
+import { validateCommandCaptureSelection } from './validate-command-capture-selection.ts';
 
 import { validateRecipeFields } from './validate-recipe-fields.ts';
 
@@ -8,23 +9,40 @@ export function validateExecutableRecipe(recipe: RallarBlackBoxTestRecipe): read
         ...validateRecipeFields({ ...recipe }, 'Recipe').map((issue) => issue.message),
         ...(recipe.recipeId ? [] : ['Recipe requires recipeId.']),
         ...(commands.length > 0 ? [] : ['Recipe requires at least one command.']),
-        ...validateInlineRecipes(commands)
+        ...commands.flatMap(validateExecutableCommand)
     ];
     return [...new Set(issues)];
 }
 
-function validateInlineRecipes(commands: readonly RallarBlackBoxTestCommand[]): readonly string[] {
-    return commands.flatMap((command) => {
-        switch (command.kind) {
-            case 'recipe.load':
-            case 'recipe.run':
-                return command.recipe === undefined ? [] : validateExecutableRecipe(command.recipe);
-            case 'loop':
-                return validateInlineRecipes(command.commands ?? []);
-            case 'parallel':
-                return validateInlineRecipes((command.groups ?? []).flatMap((group) => group.commands ?? []));
-            default:
-                return [];
-        }
-    });
+/** Validates only executable children; application payloads are outside this typed boundary. */
+export function validateExecutableCommand(command: RallarBlackBoxTestCommand): readonly string[] {
+    const issues = [...validateCommandCaptureSelection({ ...command })];
+    switch (command.kind) {
+        case 'recipe.run':
+            if (
+                command.expectedRecipeBodyId !== undefined &&
+                (typeof command.expectedRecipeBodyId !== 'string' || command.expectedRecipeBodyId.trim() === '' ||
+                    command.recipe !== undefined)
+            ) {
+                issues.push('expectedRecipeBodyId requires a nonempty acknowledged load token and no inline recipe.');
+            }
+            if (command.recipe !== undefined) {
+                issues.push(...validateExecutableRecipe(command.recipe));
+            }
+            break;
+        case 'recipe.load':
+            if (command.recipe !== undefined) {
+                issues.push(...validateExecutableRecipe(command.recipe));
+            }
+            break;
+        case 'loop':
+            issues.push(...(command.commands ?? []).flatMap(validateExecutableCommand));
+            break;
+        case 'parallel':
+            for (const group of command.groups ?? []) {
+                issues.push(...(group.commands ?? []).flatMap(validateExecutableCommand));
+            }
+            break;
+    }
+    return issues;
 }

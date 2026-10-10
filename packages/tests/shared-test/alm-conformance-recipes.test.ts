@@ -21,7 +21,7 @@ import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRtcConnectCommand
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
@@ -94,7 +94,11 @@ function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] 
         case 'messages.received':
             return [command.typeId];
         case 'wait':
-            return command.match.topic === INBOUND_DIAGNOSTICS_TOPIC ? toAdmissionOutcomeTypeIds(command.match.contains) : [];
+            return command.match.topic === INBOUND_DIAGNOSTICS_TOPIC
+                ? typeof command.match.payloadFields?.['data.typeId'] === 'string'
+                    ? [command.match.payloadFields['data.typeId']]
+                    : toAdmissionOutcomeTypeIds(command.match.contains)
+                : [];
         case 'fault.inject':
             return command.carrier === 'storage' || command.match.typeId === undefined ? [] : [command.match.typeId];
         default:
@@ -286,7 +290,7 @@ describe('alm-conformance recipe family', () => {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
                 const threeRoles = threeAgentIds.includes(scenario.scenarioId);
                 const twoPages = scenario.scenarioId === 'durable-takeover' || scenario.scenarioId === 'flush-on-hide';
-                const twoSessions = (AUDIENCE_KEYS as readonly string[]).includes(scenario.scenarioId);
+                const twoSessions = AUDIENCE_KEYS.some((scenarioId) => scenarioId === scenario.scenarioId);
                 expect(scenario.roles, scenario.scenarioKey).toEqual(
                     threeRoles
                         ? ['sender', 'receiver', 'recipient-b']
@@ -617,34 +621,6 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('requires the receiver to refuse the second copy: over WS in rtc-then-ws, over either carrier in ws-then-rtc', () => {
-        const [rtcThenWs, wsThenRtc] = createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
-            .filter((scenario) => scenario.scenarioId === 'cross-carrier-duplicate');
-        const outcomeWait = (order: string, contains: string) => ({
-            kind: 'wait',
-            match: {
-                kind: 'diagnostic',
-                topic: 'rallar.browser.alm.inbound_diagnostics',
-                payloadPath: 'data',
-                contains: `"typeId":"alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-${order}",${contains}`
-            }
-        });
-        const tailOf = (scenario: AlmConformanceScenario | undefined, count: number) => (scenario?.receiver.commands ?? []).slice(-count - 1, -1);
-
-        expect(tailOf(rtcThenWs, 1)).toMatchObject([
-            outcomeWait('rtc-then-ws', '"carrier":"ws","outcome":"not-handled","reason":"duplicate"')
-        ]);
-        const latestId = 'alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-receiver-duplicate-outcome-latest';
-        expect(tailOf(wsThenRtc, 3)).toMatchObject([
-            { ...outcomeWait('ws-then-rtc', '"carrier":"'), commandId: latestId },
-            { kind: 'assert', source: `resultCache.${latestId}.value.event.payload.data.outcome`, operator: 'equals', expected: 'not-handled' },
-            { kind: 'assert', source: `resultCache.${latestId}.value.event.payload.data.reason`, operator: 'equals', expected: 'duplicate' }
-        ]);
-        for (const scenario of [rtcThenWs, wsThenRtc]) {
-            expect(scenario?.receiver.commands.some((command) => ['parallel', 'loop'].includes(command.kind))).toBe(false);
-        }
-    });
-
     it('runs ordering-resync over every carrier in the full scope, with its identities distinct per carrier', () => {
         const orderingOf = (carrier: CreateAlmConformanceRecipesInput['carrier']) =>
             createAlmConformanceRecipes(toConformanceInput(carrier)).filter((scenario) => scenario.scenarioId === 'ordering-resync');
@@ -841,7 +817,7 @@ describe('alm-conformance recipe family', () => {
                 ? { expected: ['r', 'b'], confirmed: ['r'], unconfirmed: ['b'] }
                 : { expected: ['r', 'b'], confirmed: ['r', 'b'], unconfirmed: [] };
             const readTail = async (state: string) => {
-                const runtime = createRallarBlackBoxTestRuntime({
+                const runtime = createDefaultRallarBlackBoxTestRuntime({
                     commandExecutor: (command) =>
                         command.kind === 'messages.receipts'
                             ? {

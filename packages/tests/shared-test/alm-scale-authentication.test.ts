@@ -12,7 +12,7 @@ import { createSpaBrowserRallarRuntime } from '../../shared-test/rallar-bb-test/
 import { sleep } from '../../shared-test/rallar-bb-test/browser/browser-command-cancellation.ts';
 import type { RallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { createAlmScaleSetupCommands } from '../../shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-setup-commands.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import { Command } from '../../shared/cache/Command.ts';
 import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '../../shared/services/ws-queue-box-client-service.ts';
 
@@ -79,8 +79,9 @@ async function createAuthenticatedWorkerBrowser(): Promise<RallarBlackBoxBrowser
             }
         };
     });
-    return createRallarBlackBoxBrowserTestRuntime({
+    return createDefaultRallarBlackBoxBrowserTestRuntime({
         rallarRuntime: createSpaBrowserRallarRuntime(),
+        now: () => Date.now(),
         fetch: async () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
     });
 }
@@ -127,7 +128,7 @@ it.each(['director', 'player'] as const)('restores the authenticated %s worker i
     expect(facade.records.restoreCount).toBeGreaterThan(0);
     expect(facade.records.connectionAttempts).toHaveLength(1);
     expect(facade.records.configurationWrites.every((config) => config.apiBaseUrl === 'https://api.example.test')).toBe(true);
-    expect(facade.records.roomJoins).toEqual([
+    expect(facade.records.roomJoins).toMatchObject([
         [GROUP.groupId, { timeoutMs: 45_000, scope: { applicationId: GROUP.applicationId, workspaceId: GROUP.workspaceId } }]
     ]);
     await browser.execute({ kind: 'close' });

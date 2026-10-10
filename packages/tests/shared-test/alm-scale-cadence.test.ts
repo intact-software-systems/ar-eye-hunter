@@ -23,7 +23,7 @@ import type { RallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-te
 import { replaceCommandPlaceholders } from '@shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
 import { createAlmScalePayload } from '@shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-payload.ts';
 import { createAlmScaleRecipes } from '@shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-recipes.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { computeDistributedGroupAssertionResults } from '@shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
 import type {
@@ -134,7 +134,7 @@ it('starts all six generated shots on five-second offsets despite two-second lea
     });
     vi.stubGlobal('window', { __blackBoxRallar: native });
     const bridge = createSpaBrowserRallarRuntime();
-    const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: bridge, now: Date.now });
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ rallarRuntime: bridge, now: Date.now });
     const starts: ShotStart[] = [];
     facade.behavior.typedSend.mockImplementation(async (payload) => openShot(toScaleWirePayload(decodeJsonValue(payload)), starts));
     facade.behavior.directorStatus.mockReturnValue({
@@ -258,7 +258,7 @@ class ScaleActor {
     }
 
     private createBrowserRuntime(): RallarBlackBoxBrowserTestRuntime {
-        return createRallarBlackBoxBrowserTestRuntime({
+        return createDefaultRallarBlackBoxBrowserTestRuntime({
             now: Date.now,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
@@ -286,29 +286,33 @@ class ScaleActor {
                 readStorageCounters: async (command) =>
                     this.native.readStorageCounters(requireBlackBoxRallarInput(decodeBlackBoxRallarStorageCountersInput(command))),
                 close: async () => this.native.close(),
-                director: {
-                    appoint: async () => {
-                        throw new Error('Appointment is established before traffic');
-                    },
-                    resign: async () => {
-                        throw new Error('No resignation in scale traffic');
-                    },
-                    relayStart: async () => {
-                        throw new Error('No relay control in scale traffic');
-                    },
-                    relayStop: async () => {
-                        throw new Error('No relay control in scale traffic');
-                    },
-                    intent: async () => {
-                        throw new Error('Scale uses typed shot sends');
-                    },
-                    syncRequest: async () => {
-                        throw new Error('No sync request in scale traffic');
-                    },
-                    status: async () => ({ directorStatus: { active: true, appointment: { sessionId: 'director-session' } } })
-                }
+                director: this.createDirectorPort()
             }
         });
+    }
+
+    private createDirectorPort() {
+        return {
+            appoint: async () => {
+                throw new Error('Appointment is established before traffic');
+            },
+            resign: async () => {
+                throw new Error('No resignation in scale traffic');
+            },
+            relayStart: async () => {
+                throw new Error('No relay control in scale traffic');
+            },
+            relayStop: async () => {
+                throw new Error('No relay control in scale traffic');
+            },
+            intent: async () => {
+                throw new Error('Scale uses typed shot sends');
+            },
+            syncRequest: async () => {
+                throw new Error('No sync request in scale traffic');
+            },
+            status: async () => ({ directorStatus: { active: true, appointment: { sessionId: 'director-session' } } })
+        };
     }
 
     async connect(): Promise<void> {

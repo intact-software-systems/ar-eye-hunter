@@ -24,7 +24,11 @@ import type {
 } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundResyncRequired } from '../alm/inbound/al-inbound-resync-required.ts';
-import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
+import {
+    recordALInboundDiagnostic,
+    type ALInboundConsumerInvocation,
+    type ALInboundRuntimeDiagnosticsSink
+} from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import {
     AL_SUBMISSION_NOT_READY_RETRY_MS,
@@ -133,7 +137,7 @@ export namespace WsQueueBoxClientService {
         readonly sessionId: string;
         /**
          * The peer id the WS server answers as, learned from `/api/config` (D57 as applied, Q3); undefined when the server
-         * names none (it predates S3c-i, R-S3c-i-6), so the client tracks no server hop.
+         * names none, so the client tracks no server hop.
          */
         readonly serverPeerId: string | undefined;
         readonly qosProvider?: ALQosInputProvider;
@@ -524,9 +528,12 @@ export class WsQueueBoxClientService {
     ): Promise<void | 'retry'> {
         const message = decodePersistedALMessage(entry.resource);
         this.requireInboxDeliveryTime(entry);
-        const selected = this.onInboxMessageCallbacks.get(message.payload.typeId) ??
+        const exact = this.onInboxMessageCallbacks.get(message.payload.typeId);
+        const selected = exact ??
             (plan.ownership.exclusive ? this.onInboxMessageCallbacks.get(WsQueueBoxClientService.ALL_IN) : undefined);
-        const selectedResult = await selected?.onMessage(message, entry);
+        const selectedResult = exact === undefined
+            ? await this.dispatchWithoutExactConsumer(message, entry, selected)
+            : await this.dispatchExactConsumer(message, entry, exact);
         if (selectedResult === 'retry') {
             return 'retry';
         }
@@ -562,6 +569,53 @@ export class WsQueueBoxClientService {
         ) {
             return 'retry';
         }
+    }
+
+    private async dispatchWithoutExactConsumer(
+        message: ALMessage,
+        entry: ResourceEntry,
+        selected: OnInboxMessageCallback | undefined
+    ): Promise<void | 'retry'> {
+        const nowMs = this.dependencies.inboundRuntime.clock.nowMs();
+        this.recordConsumerInvocation(message, nowMs, { selection: 'absent', outcome: 'not-invoked' });
+        return await selected?.onMessage(message, entry);
+    }
+
+    private async dispatchExactConsumer(
+        message: ALMessage,
+        entry: ResourceEntry,
+        selected: OnInboxMessageCallback
+    ): Promise<void | 'retry'> {
+        const beganAtMs = this.dependencies.inboundRuntime.clock.nowMs();
+        let result: void | 'retry';
+        try {
+            result = await selected.onMessage(message, entry);
+        }
+        catch (error) {
+            this.recordConsumerInvocation(message, beganAtMs, { selection: 'exact-type', outcome: 'threw' });
+            throw error;
+        }
+        this.recordConsumerInvocation(message, beganAtMs, {
+            selection: 'exact-type',
+            outcome: result === 'retry' ? 'retry' : 'returned'
+        });
+        return result;
+    }
+
+    private recordConsumerInvocation(
+        message: ALMessage,
+        beganAtMs: number,
+        result: Pick<ALInboundConsumerInvocation, 'selection' | 'outcome'>
+    ): void {
+        recordALInboundDiagnostic(this.dependencies.inboundDiagnostics, {
+            kind: 'consumer-invocation',
+            msgId: message.id.msgId,
+            typeId: message.payload.typeId,
+            carrier: 'ws',
+            ...result,
+            beganAtMs,
+            settledAtMs: this.dependencies.inboundRuntime.clock.nowMs()
+        });
     }
 
     private requireInboxDeliveryTime(entry: ResourceEntry): void {

@@ -31,18 +31,19 @@ import {
     type BrowserCrdtComposition,
     type BrowserSessionCoreComposition
 } from '@shared-web/browser/composition/browser-session-composition.ts';
+import type { BrowserRallarCrdtFacade } from '@shared-web/browser/crdt/create-rallar-crdt-facade.ts';
 import type {
     RallarDirectorFacade,
     RallarDirectorRelayConfig,
     RallarDirectorRelayHandle
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
+import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
     RallarConnectionOperations
 } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/rallar-core.ts';
-import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import type {
     RallarRealtimeFacade,
     RallarWsFacade
@@ -68,6 +69,8 @@ import {
     createScriptedTransportFaultPort,
     type ScriptedTransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import {
     createBlackBoxRallarCongestionCounters,
     type BlackBoxRallarCongestionCounters
@@ -92,12 +95,23 @@ import {
     type BlackBoxRoomStateRefreshOptions
 } from './refresh-black-box-browser-room-state.ts';
 
+export namespace BlackBoxBrowserRallarRuntimeDependency {
+    export interface ConnectCompletion {
+        readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
+        captureOwnershipFailure(): ReturnType<BrowserSessionDeliveries['captureOwnershipFailure']>;
+    }
+}
+
 // The runner awaits these effects but deliberately does not expose browser middleware or room handles.
 export interface BlackBoxBrowserRallarRuntimeDependency
-    extends Pick<RallarConnectionOperations, 'configure' | 'setDefaults' | 'status' | 'isConnected' | 'session'> {
+    extends
+        Pick<
+            RallarConnectionOperations,
+            'configure' | 'setDefaults' | 'status' | 'isConnected' | 'session' | 'rtcCapture'
+        > {
     connect(
         options?: Parameters<RallarConnectionOperations['connect']>[0]
-    ): Promise<void>;
+    ): Promise<BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion>;
     disconnect(): Promise<void>;
     refreshRoomState(
         roomRef: GroupRef,
@@ -177,7 +191,7 @@ export interface BlackBoxBrowserRtcDependency extends
         | 'onStatus'
     > {}
 
-export interface BlackBoxBrowserCrdtDependency extends Pick<RallarCrdtFacade, 'open'> {}
+export interface BlackBoxBrowserCrdtDependency extends Pick<BrowserRallarCrdtFacade, 'open'> {}
 
 export interface BlackBoxBrowserDirectorDependency extends Pick<RallarDirectorFacade, 'appoint' | 'resign' | 'status'> {
     createRelay(
@@ -246,8 +260,13 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
     });
 }
 
+interface BlackBoxBrowserMessagingPortsInput {
+    readonly session: BrowserSessionCoreComposition;
+    readonly state: BrowserStateComposition;
+}
+
 function toBlackBoxBrowserMessagingPorts(
-    input: Readonly<{ session: BrowserSessionCoreComposition; state: BrowserStateComposition; }>
+    input: BlackBoxBrowserMessagingPortsInput
 ): Pick<BlackBoxBrowserRuntimeComponents, 'deliveries' | 'peers'> {
     const { session, state } = input;
     return {
@@ -343,6 +362,7 @@ interface BlackBoxBrowserRuntimeComponents {
     readonly deliveries: BlackBoxBrowserDeliveriesDependency;
     readonly peers: BlackBoxBrowserPeersDependency;
 }
+
 function toBlackBoxBrowserRuntimeDependency(
     components: BlackBoxBrowserRuntimeComponents
 ): BlackBoxBrowserRallarRuntimeDependency {
@@ -350,7 +370,12 @@ function toBlackBoxBrowserRuntimeDependency(
     return {
         ...session.connection,
         connect: async (options) => {
-            await session.connection.connect(options);
+            const connected = await session.session.connectWithRtcCapture(options);
+            return Object.freeze({
+                rtcCapture: connected.rtcCapture,
+                captureOwnershipFailure: () =>
+                    browserDeliveryComposition.sessionDeliveries.captureOwnershipFailure(connected.middleware)
+            });
         },
         readRtcMessageNacks: async (messageId) =>
             await readBlackBoxRtcMessageNacks(

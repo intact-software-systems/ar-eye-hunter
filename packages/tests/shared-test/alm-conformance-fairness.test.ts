@@ -11,7 +11,7 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
     AL_VOLATILE_SESSION_MAX_BYTES
@@ -67,7 +67,7 @@ async function readLedgerTail(recipe: RallarBlackBoxTestRecipe, from: string, le
     const start = recipe.commands.findIndex((command) => command.commandId === `${recipe.recipeId}-${from}`);
     const following = recipe.commands.slice(start + 1);
     const end = following.findIndex((command) => command.kind !== 'assert');
-    const runtime = createRallarBlackBoxTestRuntime({ readAlmUsage: async () => ledger });
+    const runtime = createDefaultRallarBlackBoxTestRuntime({ readAlmUsage: async () => ledger });
     const commands = [recipe.commands[start], ...following.slice(0, end === -1 ? following.length : end)];
     return (await runtime.execute({ kind: 'recipe.run', recipe: { ...recipe, commands } })).ok;
 }
@@ -80,7 +80,7 @@ async function runAfterDrains(command: RallarBlackBoxTestCommand, promotedCounts
     if (command.kind !== 'loop') {
         throw new Error(`${command.commandId} is not a loop.`);
     }
-    const runtime = createRallarBlackBoxTestRuntime();
+    const runtime = createDefaultRallarBlackBoxTestRuntime();
     for (const promoted of promotedCounts) {
         runtime.recordEvent({
             kind: 'diagnostic',

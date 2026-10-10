@@ -18,6 +18,11 @@ on:
         description: Deploy and restart the Hetzner API/control services before the run
         type: boolean
         default: true
+      rtc_capture_mode:
+        description: Optional RUN RTC capture mode (off, signaling or native); blank preserves the authored manifest
+        required: false
+        type: string
+        default: ''
       manifest_path:
         description: Repo path to a distributed run manifest JSON file
         required: true
@@ -284,6 +289,7 @@ jobs:
       control_url: ${{ inputs.control_url }}
       control_http_url: ${{ inputs.control_http_url }}
       manifest_path: ${{ inputs.manifest_path }}
+      rtc_capture_mode: ${{ inputs.rtc_capture_mode }}
       application_id: ${{ inputs.application_id }}
       workspace_id: ${{ inputs.workspace_id }}
       register_before_login: ${{ inputs.register_before_login }}
@@ -379,6 +385,7 @@ jobs:
           set +a
           npm --workspace rallar-black-box run worker:headless
         env:
+          RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: ${{ vars.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE }}
           CI: '1'
           RALLAR_BLACK_BOX_SPA_URL: ${{ inputs.spa_url }}
           RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}
@@ -423,6 +430,7 @@ jobs:
       control_url: ${{ inputs.control_url }}
       control_http_url: ${{ inputs.control_http_url }}
       manifest_path: ${{ inputs.manifest_path }}
+      rtc_capture_mode: ${{ inputs.rtc_capture_mode }}
       application_id: ${{ inputs.application_id }}
       workspace_id: ${{ inputs.workspace_id }}
       register_before_login: ${{ inputs.register_before_login }}
@@ -500,6 +508,7 @@ jobs:
         run: npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts --retries=0
         env:
           CI: '1'
+          INPUT_RTC_CAPTURE_MODE: ${{ inputs.rtc_capture_mode }}
           RALLAR_BLACK_BOX_FULL_STACK: '1'
           RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '1'
           RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING: '${{ inputs.capture_setup_timing }}'

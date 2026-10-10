@@ -34,6 +34,7 @@ export const LAUNCH_ENVIRONMENT_KEYS = {
     sessionId: 'VITE_RALLAR_SESSION_ID',
     roomId: 'VITE_RALLAR_ROOM_ID',
     transport: 'VITE_RALLAR_TRANSPORT',
+    rtcCaptureMode: 'VITE_RALLAR_RTC_CAPTURE_MODE',
     rallarUsername: 'VITE_RALLAR_USERNAME',
     rallarPassword: 'VITE_RALLAR_PASSWORD',
     rallarRegister: 'VITE_RALLAR_REGISTER',

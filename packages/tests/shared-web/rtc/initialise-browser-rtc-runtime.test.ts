@@ -1,5 +1,3 @@
-import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
-import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import {
     afterEach,
     beforeEach,
@@ -10,15 +8,13 @@ import {
     vi
 } from 'vitest';
 
-import '../../setup-browser-indexeddb.ts';
-
-import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
-
+import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
 import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import {
     initialiseRtcConnectionService,
     initialiseRtcOverlayMulticastManager
@@ -29,6 +25,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
     ALVolatileSessionBudget
@@ -47,9 +44,12 @@ import {
 } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort, createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { QRtcSignalingMessage } from '@shared/webrtc/qrtc-signaling-contracts.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
+import '../../setup-browser-indexeddb.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import {
     createNativeRtcConnectionFixture,
     installNativeRtcRuntime
@@ -66,8 +66,13 @@ describe('browser RTC runtime composition', () => {
         configureBrowserALRuntimeStores('self', { scope: defaultStateScope(), diagnosticsPorts });
     });
 
-    it('retains an incoming offer while signaling starts and admits it after the selected layout is ready', async () => {
+    it.each(['off', 'signaling', 'native'] as const)('keeps inbound admission and native application with %s capture', async (mode) => {
         const nativeRuntime = installNativeRtcRuntime();
+        const signalingEvents: RtcSignalingDiagnostics.Event[] = [];
+        const consumerEvents: ALInboundRuntimeDiagnosticsEvent[] = [];
+        const configuredDiagnostics = toRallarDiagnosticsPorts({
+            signalingDiagnostics: (event) => signalingEvents.push(event)
+        });
         const networkConnectStarted = Promise.withResolvers<void>();
         const networkConnect = Promise.withResolvers<void>();
         const socket = new JsonWebSocketClient('ws://rtc-fixture.invalid', createPassThroughTransportFaultPort());
@@ -79,27 +84,50 @@ describe('browser RTC runtime composition', () => {
             outbox: new InMemoryQueueBox(),
             socket,
             sessionId: 'self',
-            serverPeerId: 'server'
+            serverPeerId: 'server',
+            inboundDiagnostics: (event) => consumerEvents.push(event)
         });
-        const initializing = initialiseRtcConnectionService({
+        const connectionInput = {
             webSocketQueueBox: queueBox,
             qboxEngine: new InboxOutboxEngine(),
             clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
             iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
             dataChannelName: 'test',
             rtcSignalingTopicId: 'rtc',
-            faultPort: diagnosticsPorts.transportFaultPort
-        });
+            faultPort: diagnosticsPorts.transportFaultPort,
+            signalingDiagnostics: configuredDiagnostics.signalingDiagnostics,
+            rtcCaptureConfiguration: { mode, origin: 'step' } as const,
+            connectionId: { status: 'observed', value: 'connection-inbound' } as const
+        };
+        const initializing = initialiseRtcConnectionService(connectionInput);
 
         try {
             await networkConnectStarted.promise;
             await receiveOffer(queueBox, 'startup-peer');
             networkConnect.resolve();
-            const service = await initializing;
+            const initialized = await initializing;
+            expect(initialized.rtcCaptureReceipt).toMatchObject({
+                configuration: { mode, origin: 'step' },
+                application: { status: 'applied', mode },
+                connectionId: { status: 'observed', value: 'connection-inbound' }
+            });
+            const service = initialized.webRtcConnectionService;
 
             expect(service.knownPeerIds()).toEqual([]);
             expect(nativeRuntime.createdConnections).toHaveLength(0);
             expect(service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
+            await vi.waitFor(() =>
+                expect(consumerEvents).toContainEqual(expect.objectContaining({
+                    kind: 'consumer-invocation',
+                    outcome: 'retry'
+                }))
+            );
+            if (mode !== 'off') {
+                expect(signalingEvents).toContainEqual(expect.objectContaining({ kind: 'service-signal-route', disposition: 'policy-retry' }));
+            }
+            else {
+                expect(signalingEvents).toEqual([]);
+            }
             expect(service.ensurePeerConnectionStarted('direct-startup-peer').left).toMatchObject({
                 kind: 'dial-denied',
                 reason: 'browser-runtime-initializing'
@@ -130,7 +158,7 @@ describe('browser RTC runtime composition', () => {
         finally {
             networkConnect.resolve();
             try {
-                const service = await initializing;
+                const { webRtcConnectionService: service } = await initializing;
                 for (const peerId of service.knownPeerIds()) {
                     service.disconnectPeer(peerId);
                 }
@@ -144,6 +172,30 @@ describe('browser RTC runtime composition', () => {
                 }
             }
         }
+    });
+
+    it('disposes only diagnostic scope when the original signaling connection rejects', async () => {
+        const events: RtcSignalingDiagnostics.Event[] = [];
+        const failure = new Error('private-connect-failure');
+        const socket = new JsonWebSocketClient('ws://rtc-fixture.invalid', createPassThroughTransportFaultPort());
+        vi.spyOn(socket, 'connect').mockRejectedValue(failure);
+        const queueBox = createDefaultWsQueueBoxClientService({ outbox: new InMemoryQueueBox(), socket, sessionId: 'self', serverPeerId: 'server' });
+        onTestFinished(() => queueBox.close());
+        await expect(initialiseRtcConnectionService({
+            webSocketQueueBox: queueBox,
+            qboxEngine: new InboxOutboxEngine(),
+            clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
+            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc',
+            faultPort: diagnosticsPorts.transportFaultPort,
+            signalingDiagnostics: (event) => events.push(event),
+            rtcCaptureConfiguration: { mode: 'native', origin: 'step' },
+            connectionId: { status: 'observed', value: 'connection-failure' }
+        })).rejects.toBe(failure);
+        expect(events).toContainEqual(
+            expect.objectContaining({ kind: 'native-observation-status', stage: 'disposed', capture: expect.objectContaining({ scope: 'disposed' }) })
+        );
     });
 
     it('supersedes retained RTC work with the configured conformance policy before native submission', async () => {

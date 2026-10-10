@@ -396,6 +396,76 @@
       }
     },
     {
+      "name": "blockedRoomPresenceIsAdmitted",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupId}",
+            "status": "active",
+            "lifecycleState": "forming",
+            "transportState": "flowing"
+          },
+          "members": [
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}",
+              "principalId": "{aliceClientId}",
+              "status": "active"
+            },
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}",
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ],
+          "activeSessions": [
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}",
+              "principalId": "{aliceClientId}",
+              "sessionId": "{aliceSessionId}",
+              "generationId": "generation-{runId}",
+              "status": "active",
+              "disconnectedAtEpochMs": null
+            },
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}",
+              "principalId": "{bobClientId}",
+              "sessionId": "{bobSessionId}",
+              "generationId": "generation-{runId}",
+              "status": "active",
+              "disconnectedAtEpochMs": null
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "blockedSendIsNackedBeforeActivation",
       "type": "ws.send",
       "connection": "wsBob",
@@ -675,6 +745,76 @@
       }
     },
     {
+      "name": "allowedRoomPresenceIsAdmitted",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{allowedGroupId}",
+            "status": "active",
+            "lifecycleState": "forming",
+            "transportState": "flowing"
+          },
+          "members": [
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{allowedGroupId}",
+              "principalId": "{aliceClientId}",
+              "status": "active"
+            },
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{allowedGroupId}",
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ],
+          "activeSessions": [
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{allowedGroupId}",
+              "principalId": "{aliceClientId}",
+              "sessionId": "{aliceSessionId}",
+              "generationId": "generation-{runId}",
+              "status": "active",
+              "disconnectedAtEpochMs": null
+            },
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{allowedGroupId}",
+              "principalId": "{bobClientId}",
+              "sessionId": "{bobSessionId}",
+              "generationId": "generation-{runId}",
+              "status": "active",
+              "disconnectedAtEpochMs": null
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "allowedSendReachesAliceWhileForming",
       "type": "ws.send",
       "connection": "wsBob",
@@ -843,6 +983,76 @@
       },
       "expect": {
         "status": 200
+      }
+    },
+    {
+      "name": "defaultRoomPresenceIsAdmitted",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{defaultDataGroupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{defaultDataGroupId}",
+            "status": "active",
+            "lifecycleState": "forming",
+            "transportState": "flowing"
+          },
+          "members": [
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{defaultDataGroupId}",
+              "principalId": "{aliceClientId}",
+              "status": "active"
+            },
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{defaultDataGroupId}",
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ],
+          "activeSessions": [
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{defaultDataGroupId}",
+              "principalId": "{aliceClientId}",
+              "sessionId": "{aliceSessionId}",
+              "generationId": "generation-{runId}",
+              "status": "active",
+              "disconnectedAtEpochMs": null
+            },
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{defaultDataGroupId}",
+              "principalId": "{bobClientId}",
+              "sessionId": "{bobSessionId}",
+              "generationId": "generation-{runId}",
+              "status": "active",
+              "disconnectedAtEpochMs": null
+            }
+          ]
+        }
       }
     },
     {
@@ -1180,6 +1390,76 @@
       },
       "expect": {
         "status": 200
+      }
+    },
+    {
+      "name": "pausedRejoinPresenceIsAdmitted",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{allowedGroupId}",
+            "status": "active",
+            "lifecycleState": "forming",
+            "transportState": "halted"
+          },
+          "members": [
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{allowedGroupId}",
+              "principalId": "{aliceClientId}",
+              "status": "active"
+            },
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{allowedGroupId}",
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ],
+          "activeSessions": [
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{allowedGroupId}",
+              "principalId": "{aliceClientId}",
+              "sessionId": "{aliceSessionId}",
+              "generationId": "generation-{runId}",
+              "status": "active",
+              "disconnectedAtEpochMs": null
+            },
+            {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{allowedGroupId}",
+              "principalId": "{bobClientId}",
+              "sessionId": "{bobSessionId}",
+              "generationId": "generation-paused-rejoin-{runId}",
+              "status": "active",
+              "disconnectedAtEpochMs": null
+            }
+          ]
+        }
       }
     },
     {

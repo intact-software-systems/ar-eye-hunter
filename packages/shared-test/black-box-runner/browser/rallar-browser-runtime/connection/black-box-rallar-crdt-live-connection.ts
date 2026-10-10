@@ -70,11 +70,20 @@ export class BlackBoxRallarCrdtLiveConnection {
         });
         diagnostics.emitDiagnostic(config, 'rallar.browser.crdt.configure_completed', { defaults });
         if (rallar.isConnected()) {
+            await rallar.connect({
+                rtcCaptureMode: config.rallar.rtcCaptureMode,
+                rtcCaptureContext: config.rallar.rtcCaptureContext
+            });
+            context.assertCurrent();
             return;
         }
         const session = await this.#input.authentication.sessionForAuthentication(config);
         context.assertCurrent();
-        await rallar.connect({ timeoutMs: config.rallar.timeoutMs });
+        await rallar.connect({
+            timeoutMs: config.rallar.timeoutMs,
+            rtcCaptureMode: config.rallar.rtcCaptureMode,
+            rtcCaptureContext: config.rallar.rtcCaptureContext
+        });
         context.assertCurrent();
         if (config.roomId) {
             await rallar.rooms.join(config.roomId, {

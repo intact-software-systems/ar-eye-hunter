@@ -3,10 +3,13 @@ import type {
     RallarBrowserFacadeRuntimeContext,
     RallarConnectionRuntimePort
 } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
-import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
-import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
+    BrowserTransportRuntime,
+    BrowserTransportRuntimePort
+} from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
+import type {
+    ApiMiddleware,
     RallarConnectionOperations,
     RallarDefaults,
     RallarScopedOperationOptions
@@ -42,6 +45,8 @@ export interface RallarSessionController {
     readonly connectionOperations: RallarConnectionOperations;
     readonly auth: RallarAuthFacade;
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
+    connectWithRtcCapture(options?: RallarScopedOperationOptions): Promise<BrowserTransportRuntime.Connection>;
+    acquireConnection(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
     readMiddleware(): ApiMiddleware | undefined;
     requireMiddleware(): ApiMiddleware;
@@ -94,6 +99,8 @@ export function createRallarSessionController(
         connectionOperations,
         auth,
         connect: (connectionOptions) => authLifecycle.connect(connectionOptions),
+        connectWithRtcCapture: (connectionOptions) => authLifecycle.connectWithRtcCapture(connectionOptions),
+        acquireConnection: (connectionOptions) => authLifecycle.acquireConnection(connectionOptions),
         disconnect: () => authLifecycle.disconnect(),
         readMiddleware: () => options.connectionRuntime.readMiddleware(),
         requireMiddleware: () => options.connectionRuntime.requireMiddleware(),

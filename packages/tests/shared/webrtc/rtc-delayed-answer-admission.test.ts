@@ -1,4 +1,10 @@
-import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    afterEach,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { createDefaultInMemoryALInboundRuntimeStores, createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -51,7 +57,7 @@ it('settles an answer delayed by admission conflict without applying it to a rep
 
         rtcSignalingTopicId: 'rtc',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId, nowEpochMs: () => Date.now() });
     const blockerStarted = Promise.withResolvers<void>();
     const releaseBlocker = Promise.withResolvers<void>();
     queueBoxClient.onInboxMessageDo('blocker', {

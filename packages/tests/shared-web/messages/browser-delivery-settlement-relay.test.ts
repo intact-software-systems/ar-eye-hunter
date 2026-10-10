@@ -143,7 +143,11 @@ function createTab(sessionId: string): RelayTab {
     const registry = new BrowserRallarDeliveryRegistry({ nowMs: () => 0, ...BROWSER_DELIVERY_RETENTION, cancel: () => {} });
     const middleware = createDefaultApiMiddlewareTestDouble();
     const feed = new BrowserDeliverySettlements();
-    const sessionDeliveries = new BrowserSessionDeliveries(registry, { deliverySettlements: feed, readMiddleware: () => middleware });
+    const sessionDeliveries = new BrowserSessionDeliveries(registry, {
+        deliverySettlements: feed,
+        readMiddleware: () => middleware,
+        readRtcCaptureReceipt: () => undefined
+    }, () => middleware.session);
     sessionDeliveries.beginSession(middleware.session);
     const observers = sessionDeliveries.observers;
     const channel = new BrowserALSessionChannel({

@@ -17,7 +17,7 @@ import type { RallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-
 import { isRallarBlackBoxTestResult } from '../../shared-test/rallar-bb-test/composite-results.ts';
 import { createAlmScalePayload } from '../../shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-payload.ts';
 import { createAlmScaleRecipes } from '../../shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-recipes.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '../../shared-test/rallar-bb-test/distributed-run.ts';
 import { computeDistributedGroupAssertionResults } from '../../shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
 import type { DistributedGroupAssertionRecipeEvidence } from '../../shared-test/rallar-bb-test/distributed/group-assertions-evidence.ts';
@@ -110,7 +110,7 @@ async function runSampler(
 ): Promise<SamplerExecution> {
     let index = 0;
     let now = 1_000;
-    const runtime = createRallarBlackBoxBrowserTestRuntime({
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
         now: () => now,
         sleep: async (ms) => {
             now += ms;
@@ -251,7 +251,7 @@ function createTrafficReceipt(scenario: TrafficScenario, handleId: string): Blac
 
 function createTrafficRuntime(scenario: TrafficScenario): RallarBlackBoxBrowserTestRuntime {
     const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-    return createRallarBlackBoxBrowserTestRuntime({
+    return createDefaultRallarBlackBoxBrowserTestRuntime({
         now: Date.now,
         sleep,
         rallarRuntime: {

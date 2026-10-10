@@ -24,6 +24,7 @@ import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export type {
     RallarDiagnosticsPorts,
@@ -71,37 +72,8 @@ export interface ApiMiddleware {
 
 export type RallarConnectStatus = 'idle' | 'connecting' | 'connected';
 
-interface RallarRoomDefaults {
-    readonly roomId?: string;
-    readonly roomRef?: GroupRef;
-}
-
-interface RallarRealtimeDefaults {
-    readonly laneId?: string;
-    readonly openTimeoutMs?: number;
-}
-
-interface RallarRtcDefaults {
-    readonly waitTimeoutMs?: number;
-    readonly connectOnWait?: boolean;
-    readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
-    readonly maxPeerConnections?: number;
-    readonly rttReportingDegreeLimit?: number;
-    readonly bootstrapDegree?: number;
-}
-
-interface RallarMessageDefaults {
-    readonly maxPayloadBytes?: number;
-}
-
-interface RallarOperationDefaults {
-    readonly timeoutMs?: number;
-    readonly maxAttempts?: number;
-    readonly shouldRetry?: RallarOperationRetryPredicate;
-}
-
 export interface RallarDefaults {
-    readonly applicationId: ApplicationId;
+    readonly applicationId?: ApplicationId;
     readonly workspaceId?: WorkspaceId;
     readonly room?: RallarRoomDefaults;
     readonly realtime?: RallarRealtimeDefaults;
@@ -131,6 +103,7 @@ export interface RallarStartResult {
 }
 
 export interface RallarSetupInput extends RallarApiClientConfig, RallarDefaults {
+    readonly applicationId: ApplicationId;
     readonly start?: RallarStartOptions;
 }
 
@@ -140,6 +113,7 @@ export interface RallarConnectionOperations {
     defaults(): RallarDefaults | undefined;
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
+    rtcCapture(): RtcSignalingDiagnostics.CaptureReceipt | undefined;
     status(): RallarConnectStatus;
     isConnected(): boolean;
     session(): AuthSession | undefined;
@@ -154,4 +128,34 @@ export interface RallarConnectionOperations {
 
 export interface RallarConnectionFacade extends RallarConnectionOperations {
     start(options?: RallarStartOptions): Promise<RallarStartResult>;
+}
+
+interface RallarRoomDefaults {
+    readonly roomId?: string;
+    readonly roomRef?: GroupRef;
+}
+
+interface RallarRealtimeDefaults {
+    readonly laneId?: string;
+    readonly openTimeoutMs?: number;
+}
+
+interface RallarRtcDefaults {
+    readonly captureMode?: RtcSignalingDiagnostics.CaptureMode;
+    readonly waitTimeoutMs?: number;
+    readonly connectOnWait?: boolean;
+    readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
+    readonly maxPeerConnections?: number;
+    readonly rttReportingDegreeLimit?: number;
+    readonly bootstrapDegree?: number;
+}
+
+interface RallarMessageDefaults {
+    readonly maxPayloadBytes?: number;
+}
+
+interface RallarOperationDefaults {
+    readonly timeoutMs?: number;
+    readonly maxAttempts?: number;
+    readonly shouldRetry?: RallarOperationRetryPredicate;
 }

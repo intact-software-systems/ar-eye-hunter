@@ -1,6 +1,9 @@
 import { createRallarFacade } from '@shared-web/browser/composition/create-rallar-facade.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
 
+export { RallarRtcCaptureConnectionRequiredError } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
+export { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
+
 export { createRallarFacade } from '@shared-web/browser/composition/create-rallar-facade.ts';
 
 export {
@@ -54,7 +57,8 @@ export type {
 
 export type {
     RallarOperationOptions,
-    RallarOperationRetryPredicate
+    RallarOperationRetryPredicate,
+    RallarRtcCaptureContext
 } from '@shared-web/browser/rallar-operation-options.ts';
 
 export type {

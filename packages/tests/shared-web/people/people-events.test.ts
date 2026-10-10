@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
 
 import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
@@ -11,7 +17,7 @@ import {
     createPeopleRoomSnapshot,
     createPeopleSnapshot,
     dispatchPeopleWsMessage,
-    readPeopleEventMocks,
+    getPeopleEventMocks,
     resetPeopleEventTestRuntime,
     toPeopleEventMessage
 } from './people-event-test-runtime.ts';
@@ -20,6 +26,23 @@ installFakeBroadcastChannelPerTest();
 
 describe('people events', () => {
     beforeEach(resetPeopleEventTestRuntime);
+
+    it('rejects a cold public connection when middleware construction fails', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const mocks = getPeopleEventMocks();
+        const facade = createRallarFacade();
+        onTestFinished(() => facade.disconnect());
+        await facade.disconnect();
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
+        const failure = new Error('People middleware construction failed');
+        mocks.initialiseMiddleware.mockRejectedValue(failure);
+
+        await expect(facade.connect()).rejects.toBe(failure);
+
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
+    });
 
     it('delivers client state events through people.onEvent with filtering and unsubscribe', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
@@ -103,7 +126,7 @@ describe('people events', () => {
 
     it('uses refresh snapshots as convergence without replaying missed event callbacks', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const mocks = readPeopleEventMocks();
+        const mocks = getPeopleEventMocks();
         const facade = createRallarFacade();
         let roomEventCount = 0;
         const peopleEvents: ClientEvent[] = [];
@@ -143,8 +166,11 @@ describe('people events', () => {
 
     it('lists people events without connecting or hydrating state caches', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const mocks = readPeopleEventMocks();
+        const mocks = getPeopleEventMocks();
         const facade = createRallarFacade();
+        await facade.disconnect();
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
         const event = createPeopleEvent({
             principalId: 'alice',
             eventId: 'client-event-1',
@@ -153,7 +179,7 @@ describe('people events', () => {
             workspaceId: 'people-workspace'
         });
         mocks.listStateClientEvents.mockResolvedValue([event]);
-        mocks.initialiseApiMiddleware.mockRejectedValue(
+        mocks.initialiseMiddleware.mockRejectedValue(
             new Error('People history reads must not initialize middleware')
         );
         mocks.hydrateStateCache.mockRejectedValue(
@@ -168,6 +194,8 @@ describe('people events', () => {
             })
         ).resolves.toEqual([event]);
 
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
         expect(mocks.listStateClientEvents).toHaveBeenCalledWith(
             'alice',
             { applicationId: 'people-app', workspaceId: 'people-workspace' },
@@ -181,8 +209,11 @@ describe('people events', () => {
 
     it('lists people event pages with cursor options', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const mocks = readPeopleEventMocks();
+        const mocks = getPeopleEventMocks();
         const facade = createRallarFacade();
+        await facade.disconnect();
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
         const event = createPeopleEvent({
             principalId: 'alice',
             eventId: 'client-event-2',
@@ -201,7 +232,7 @@ describe('people events', () => {
             workspaceId: 'default-workspace'
         });
         mocks.listStateClientEventPage.mockResolvedValue(page);
-        mocks.initialiseApiMiddleware.mockRejectedValue(
+        mocks.initialiseMiddleware.mockRejectedValue(
             new Error('People history reads must not initialize middleware')
         );
         mocks.hydrateStateCache.mockRejectedValue(
@@ -216,6 +247,8 @@ describe('people events', () => {
             })
         ).resolves.toEqual(page);
 
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
         expect(mocks.listStateClientEventPage).toHaveBeenCalledWith(
             'alice',
             { applicationId: 'default-app', workspaceId: 'default-workspace' },
@@ -230,7 +263,7 @@ describe('people events', () => {
 
     it('replays people events explicitly and deduplicates live overlap', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const mocks = readPeopleEventMocks();
+        const mocks = getPeopleEventMocks();
         const facade = createRallarFacade();
         const events: ClientEvent[] = [];
         const messages: RallarMessage<ClientEvent>[] = [];

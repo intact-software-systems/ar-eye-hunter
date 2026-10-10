@@ -1,17 +1,23 @@
-import { PeerId } from '../api/api-config.ts';
+import type { PeerId } from '../api/api-config.ts';
 import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
 
 interface PeerConnectionAttemptState {
-    peerId: PeerId;
-    attempts: number;
-    firstAttemptAtEpochMs: number;
-    lastAttemptAtEpochMs: number;
-    exhaustedAtEpochMs?: number;
-    retryAfterEpochMs?: number;
+    readonly peerId: PeerId;
+    readonly attempts: number;
+    readonly firstAttemptAtEpochMs: number;
+    readonly lastAttemptAtEpochMs: number;
+    readonly exhaustedAtEpochMs?: number;
+    readonly retryAfterEpochMs?: number;
+}
+
+interface ExhaustedPeerConnectionAttemptState extends PeerConnectionAttemptState {
+    readonly exhaustedAtEpochMs: number;
+    readonly retryAfterEpochMs: number;
 }
 
 export namespace RtcPeerConnectionAttemptBudget {
     export interface Input {
+        readonly nowEpochMs: () => number;
         readonly readPolicy: () => WebRtcConnectionService.PeerConnectionAttemptBudgetPolicy;
         readonly onExhausted: (event: WebRtcConnectionService.PeerConnectionAttemptExhaustedEvent) => void;
     }
@@ -40,7 +46,8 @@ export class RtcPeerConnectionAttemptBudget {
             return undefined;
         }
 
-        return this.toPeerConnectionAttemptDiagnostics(state);
+        const policy = this.input.readPolicy();
+        return this.toPeerConnectionAttemptDiagnostics(state, policy);
     }
 
     readDiagnostics(): WebRtcConnectionService.PeerConnectionAttemptBudgetDiagnostics {
@@ -55,7 +62,7 @@ export class RtcPeerConnectionAttemptBudget {
             return undefined;
         }
 
-        const now = Date.now();
+        const now = this.input.nowEpochMs();
         const current = this.peerConnectionAttemptStateByPeerId.get(peerId);
         if (
             current?.retryAfterEpochMs !== undefined &&
@@ -63,7 +70,11 @@ export class RtcPeerConnectionAttemptBudget {
         ) {
             if (now < current.retryAfterEpochMs) {
                 return this.toPeerConnectionAttemptExhaustedEvent(
-                    current,
+                    {
+                        ...current,
+                        exhaustedAtEpochMs: current.exhaustedAtEpochMs,
+                        retryAfterEpochMs: current.retryAfterEpochMs
+                    },
                     policy
                 );
             }
@@ -114,7 +125,7 @@ export class RtcPeerConnectionAttemptBudget {
         policy: WebRtcConnectionService.PeerConnectionAttemptBudgetPolicy,
         exhaustedAtEpochMs: number
     ): WebRtcConnectionService.PeerConnectionAttemptExhaustedEvent {
-        const exhausted: PeerConnectionAttemptState = {
+        const exhausted: ExhaustedPeerConnectionAttemptState = {
             ...state,
             exhaustedAtEpochMs,
             retryAfterEpochMs: exhaustedAtEpochMs + policy.cooldownMs
@@ -130,22 +141,20 @@ export class RtcPeerConnectionAttemptBudget {
     }
 
     private toPeerConnectionAttemptExhaustedEvent(
-        state: PeerConnectionAttemptState,
+        state: ExhaustedPeerConnectionAttemptState,
         policy: WebRtcConnectionService.PeerConnectionAttemptBudgetPolicy
     ): WebRtcConnectionService.PeerConnectionAttemptExhaustedEvent {
         return {
             ...this.toPeerConnectionAttemptDiagnostics(state, policy),
-            exhaustedAtEpochMs: state.exhaustedAtEpochMs ??
-                state.lastAttemptAtEpochMs,
-            retryAfterEpochMs: state.retryAfterEpochMs ??
-                state.lastAttemptAtEpochMs + policy.cooldownMs,
+            exhaustedAtEpochMs: state.exhaustedAtEpochMs,
+            retryAfterEpochMs: state.retryAfterEpochMs,
             reason: 'peer-connection-attempt-budget-exhausted'
         };
     }
 
     private toPeerConnectionAttemptDiagnostics(
         state: PeerConnectionAttemptState,
-        policy: WebRtcConnectionService.PeerConnectionAttemptBudgetPolicy = this.input.readPolicy()
+        policy: WebRtcConnectionService.PeerConnectionAttemptBudgetPolicy
     ): WebRtcConnectionService.PeerConnectionAttemptDiagnostics {
         return {
             peerId: state.peerId,

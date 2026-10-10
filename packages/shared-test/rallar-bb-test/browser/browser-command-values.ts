@@ -1,4 +1,6 @@
 import { isBlackBoxCommandRecord } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarBlackBoxTestConfig } from '../rallar-black-box-test-contracts.ts';
 import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
 
 import type { RallarBlackBoxBrowserRallarTransport } from './browser-command-contracts.ts';
@@ -20,4 +22,13 @@ export function decodeRtcTransport(value: unknown): RallarBlackBoxBrowserRallarT
 
 export function toPositiveInteger(value: number | undefined, fallback: number): number {
     return value !== undefined && Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+/** Structured signaling sends may acquire an SDK connection; raw WebSocket writes never do. */
+export function isRallarSignalingWebSocketMessage(
+    data: RallarMessagePayload,
+    config: RallarBlackBoxTestConfig | undefined
+): boolean {
+    return config?.control?.providerMode === 'browser-rallar' && isBlackBoxCommandRecord(data) &&
+        ['typeId', 'topicId', 'contextId', 'resourceId'].some((key) => data[key] !== undefined);
 }

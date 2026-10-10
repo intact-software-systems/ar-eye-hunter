@@ -1,15 +1,73 @@
 import { describe, expect, it } from 'vitest';
 import { executeBlackBox } from '../../../shared-test/black-box-runner/execute-black-box.ts';
 import {
+    createDefaultRallarBlackBoxTestRuntime,
     createRallarBlackBoxRtcProvider,
-    createRallarBlackBoxTestRuntime,
     getRallarBlackBoxCommandHistory,
     type RallarBlackBoxTestCommand
 } from '../../../shared-test/rallar-bb-test/mod.ts';
 
 describe('rallar-bb runtime facade', () => {
+    it.each([false, true])('settling reset preserves the current assignment; reassigned=%s', async (reassigned) => {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const effects: string[] = [];
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
+            commandExecutor: async (command, context) => {
+                if (command.kind === 'reset') {
+                    entered.resolve();
+                    await release.promise;
+                    context.recordEvent({ kind: 'event', topic: 'reset-A-settled', commandId: command.commandId });
+                    return { status: 'ok', value: { reset: true }, nextStatus: 'idle' };
+                }
+                if (command.kind === 'health') {
+                    effects.push(command.commandId!);
+                    return { status: 'ok', value: { healthy: true }, nextStatus: context.state().status };
+                }
+                return undefined;
+            }
+        });
+        const original = { runId: 'reset-A', agentId: 'agent-A' };
+        const current = reassigned ? { runId: 'reset-B', agentId: 'agent-B' } : original;
+        const resetting = runtime.execute({ kind: 'reset', commandId: 'reset-A-command' }, original);
+        await entered.promise;
+        try {
+            const configured = await runtime.execute({ kind: 'configure', commandId: 'B-config', config: { defaults: { connection: 'B' } } }, current);
+            const loaded = await runtime.execute({
+                kind: 'recipe.load',
+                commandId: 'B-load',
+                recipe: { schemaVersion: 1, recipeId: 'B-body', commands: [{ kind: 'health', commandId: 'B-health' }] }
+            }, current);
+            expect(configured.ok).toBe(true);
+            expect(loaded.ok).toBe(true);
+            const before = runtime.state();
+            release.resolve();
+            const resetResult = await resetting;
+            const settled = runtime.state();
+            console.info('Reset ownership witness', JSON.stringify({ reassigned, before, settled, resetResult }));
+            if (reassigned) {
+                expect.soft(settled.currentConfig).toEqual(before.currentConfig);
+                expect.soft(settled.resultCache).toEqual(before.resultCache);
+                expect.soft(settled.status).toBe(before.status);
+                expect.soft(settled.events.some((event) => event.topic === 'reset-A-settled')).toBe(false);
+            }
+            else {
+                expect(settled.currentConfig).toBeUndefined();
+                expect(settled.status).toBe('idle');
+                expect(Object.keys(settled.resultCache)).toEqual(['reset-A-command']);
+            }
+            const run = await runtime.execute({ kind: 'recipe.run', commandId: 'B-run' }, current);
+            expect.soft(run.ok).toBe(reassigned);
+            expect.soft(effects.length).toBe(reassigned ? 1 : 0);
+        }
+        finally {
+            release.resolve();
+            await resetting;
+        }
+    });
+
     it('drives a black-box runner RTC scenario through the facade adapter', async () => {
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: async (command, context) => {
                 if (command.kind === 'rtc.connect') {
                     return {
@@ -164,7 +222,7 @@ describe('rallar-bb runtime facade', () => {
             },
             minSnapshotVersion: 7
         };
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: (command, context) => {
                 executedCommands.push(command);
                 if (command.kind === 'rtc.connect') {

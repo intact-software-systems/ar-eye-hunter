@@ -3,10 +3,17 @@ import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestTransport
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import {
+    decodeJsonValue,
+    decodeRecord,
+    decodeText
+} from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
 
@@ -38,6 +45,8 @@ export interface ManualWorkbenchValues {
     readonly targetClient: string;
     readonly multicastClients: string;
     readonly transport: ManualWorkbenchTransport;
+    readonly rtcReadinessText: string;
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly deliveryMode: ManualDeliveryMode;
     readonly wsUrl: string;
     readonly topic: string;
@@ -74,7 +83,7 @@ export interface ManualReceivedMessage {
     readonly sender: string;
     readonly topic: string;
     readonly atEpochMs: number;
-    readonly payload: unknown;
+    readonly payload: ApiJsonValue | undefined;
     readonly commandId: string | undefined;
 }
 
@@ -117,6 +126,7 @@ export const DEFAULT_MANUAL_WORKBENCH_VALUES: ManualWorkbenchValues = {
     groupId: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.roomId,
     scopeText: '',
     roomRefText: '',
+    rtcReadinessText: '',
     minSnapshotVersion: 0,
     connection: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.connection,
     targetClient: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.targetClient,
@@ -139,7 +149,10 @@ export const DEFAULT_MANUAL_WORKBENCH_VALUES: ManualWorkbenchValues = {
 
 export function decodeManualPayloadText(text: string): Either<string, RallarMessagePayload> {
     try {
-        return Either.ofRight(JSON.parse(text));
+        const payload = decodeJsonValue(JSON.parse(text));
+        return payload === undefined
+            ? Either.ofLeft('Payload has no JSON representation.')
+            : Either.ofRight(payload);
     }
     catch (error) {
         return Either.ofLeft(error instanceof Error ? error.message : String(error));
@@ -185,7 +198,7 @@ export function toManualReceivedMessages(
                     innerDelivery.senderId,
                     innerDelivery.sender,
                     event.actor
-                ]) ?? '-',
+                ].map(decodeText)) ?? '-',
                 topic: toFirstText([
                     payload.topicId,
                     payload.topic,
@@ -193,19 +206,19 @@ export function toManualReceivedMessages(
                     innerDelivery.topic,
                     envelope.topic,
                     event.topic
-                ]) ?? event.topic,
+                ].map(decodeText)) ?? event.topic,
                 atEpochMs: typeof payload.receivedAtEpochMs === 'number'
                     ? payload.receivedAtEpochMs
                     : event.atEpochMs,
-                payload: payload.data ?? event.payload,
+                payload: decodeJsonValue(payload.data ?? event.payload),
                 commandId: event.commandId
             };
         });
 }
 
-function toFirstText(values: readonly unknown[]): string | undefined {
+function toFirstText(values: readonly (string | undefined)[]): string | undefined {
     for (const value of values) {
-        if (typeof value === 'string' && value.trim().length > 0) {
+        if (value !== undefined && value.trim().length > 0) {
             return value;
         }
     }

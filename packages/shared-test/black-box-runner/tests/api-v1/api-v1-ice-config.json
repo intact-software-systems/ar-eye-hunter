@@ -114,6 +114,53 @@
       }
     },
     {
+      "name": "spendRemainingDefaultIceBudget",
+      "type": "loop",
+      "count": 19,
+      "steps": [
+        {
+          "name": "readCachedIceConfiguration{loop.iteration}",
+          "type": "http",
+          "connection": "api",
+          "request": {
+            "method": "GET",
+            "path": "/api/webrtc/ice",
+            "headers": {
+              "Authorization": "{aliceAuthHeader}",
+              "x-client-id": "{aliceClientId}"
+            }
+          },
+          "expect": {
+            "status": 200,
+            "maxDurationMs": 10000,
+            "body": {
+              "iceServers": [],
+              "expiresAtEpochMs": "integer"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "denyIceRequest21",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/webrtc/ice",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 429,
+        "body": {
+          "error": "Too many ICE configuration requests"
+        }
+      }
+    },
+    {
       "name": "openApiListsIceConfig",
       "type": "http",
       "connection": "api",

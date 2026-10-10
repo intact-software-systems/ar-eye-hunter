@@ -1,14 +1,15 @@
 import { vi } from 'vitest';
-import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import type { TransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
-import {
+import type {
     QRtcSignalingMessage,
     QRtcSignalingTransport,
     QRtcSignalingTransportInput
 } from '@shared/webrtc/qrtc-signaling-contracts.ts';
+
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 export interface NativeRtcRuntime {
     readonly createdConnections: readonly SimulatedNativeRtcPeerConnection[];
@@ -46,54 +47,85 @@ export interface NativeRtcConnectionFixture {
     dispose(): void;
 }
 
+namespace NativeRtcSignalingTransport {
+    export interface Input {
+        readonly sessionId: string;
+        readonly token: string;
+        readonly rtcSignalingTopicId: string;
+    }
+}
+
+class NativeRtcSignalingTransport implements QRtcSignalingTransport {
+    private readonly input: NativeRtcSignalingTransport.Input;
+    private connected: QRtcSignalingTransportInput | undefined;
+    readonly sentSignals: QRtcSignalingMessage[] = [];
+
+    constructor(input: NativeRtcSignalingTransport.Input) {
+        this.input = input;
+    }
+
+    async connect(input: QRtcSignalingTransportInput): Promise<void> {
+        this.connected = input;
+    }
+
+    async send(message: QRtcSignalingMessage): Promise<void> {
+        this.sentSignals.push(message);
+    }
+
+    readonly receiveResource = async (resource: string, senderId = 'z-peer'): Promise<void | 'retry'> => {
+        const connected = this.connected;
+        if (!connected) {
+            throw new Error('Connect the signaling transport before receiving');
+        }
+        const envelope = newALUnicastMessage(
+            senderId,
+            newALEventRoute(this.input.rtcSignalingTopicId, this.input.sessionId),
+            this.input.sessionId,
+            'rtc',
+            null
+        );
+        return await connected.callbacks.onMessage(this.input.sessionId, this.input.token, { ...envelope, payload: { ...envelope.payload, resource } });
+    };
+
+    readonly receive = (message: QRtcSignalingMessage): Promise<void | 'retry'> => this.receiveResource(JSON.stringify(message), message.fromId);
+}
+
 export function createNativeRtcConnectionFixture(
     input: WebRtcConnectionService.InputDto,
     runtime: NativeRtcRuntime,
     faultPort: TransportFaultPort
 ): NativeRtcConnectionFixture {
-    let connected: QRtcSignalingTransportInput | undefined;
-    const sentSignals: QRtcSignalingMessage[] = [];
-    const signaler: QRtcSignalingTransport = {
-        connect: async (value) => {
-            connected = value;
-        },
-        send: async (message) => {
-            sentSignals.push(message);
-        }
-    };
-    const service = new WebRtcConnectionService(signaler, input, {
+    const signaler = new NativeRtcSignalingTransport(input);
+    const dependencies = {
         faultPort,
-        createOfferId: new DeterministicRtcOfferIds().createOfferId
-    });
+        createOfferId: new DeterministicRtcOfferIds().createOfferId,
+        nowEpochMs: () => Date.now()
+    };
     const allocatedPeers: WebRtcConnectionService.Peer[] = [];
+    const service = new WebRtcConnectionService(signaler, input, dependencies);
     service.onRtcPeerLifecycleDo('native-fixture', {
         onCreated: (peer) => {
             allocatedPeers.push(peer);
         },
         onDeleted: () => {}
     });
-    const receiveResource = async (resource: string, senderId = 'z-peer'): Promise<void | 'retry'> => {
-        if (!connected) {
-            throw new Error('Connect the signaling transport before receiving');
-        }
-        const envelope = newALUnicastMessage(senderId, newALEventRoute(input.rtcSignalingTopicId, input.sessionId), input.sessionId, 'rtc', null);
-        return await connected.callbacks.onMessage(input.sessionId, input.token, { ...envelope, payload: { ...envelope.payload, resource } });
-    };
     return {
         service,
         signaler,
-        sentSignals,
-        receiveResource,
-        receive: (message) => receiveResource(JSON.stringify(message), message.fromId),
+        sentSignals: signaler.sentSignals,
+        receiveResource: signaler.receiveResource,
+        receive: signaler.receive,
         createdPeerIds: () =>
-            allocatedPeers.filter((peer) => runtime.createdConnections.some((native) => native === peer.connection.status.pc)).map((peer) => peer.peerId),
+            allocatedPeers.filter((peer) => runtime.createdConnections.some((nativeConnection) => nativeConnection === peer.connection.status.pc)).map((peer) =>
+                peer.peerId
+            ),
         nativePeer: (peerId) => {
-            const pc = service.readPeer(peerId)?.connection.status.pc;
-            const native = runtime.createdConnections.find((candidate) => candidate === pc);
-            if (!native) {
+            const nativePeerConnection = service.readPeer(peerId)?.connection.status.pc;
+            const nativeConnection = runtime.createdConnections.find((candidate) => candidate === nativePeerConnection);
+            if (!nativeConnection) {
                 throw new Error(`No native peer for ${peerId}`);
             }
-            return native;
+            return nativeConnection;
         },
         dispose: () => {
             for (const peerId of service.knownPeerIds()) {

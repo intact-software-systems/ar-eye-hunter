@@ -140,21 +140,41 @@ test('observes the unchanged 15-agent ALM manifest with complete native evidence
         }, { timeout: 90_000, intervals: [1_000] }).toEqual(AGENT_IDS);
 
         stage = 'manifest-operation';
-        await runWorldFleetDistributedRecipe({
+        const operation = await runWorldFleetDistributedRecipe({
             controlBaseUrl,
             manifestPath: MANIFEST_PATH,
             artifactDir,
+            rtcCaptureMode: process.env.INPUT_RTC_CAPTURE_MODE,
             pollMs: 2_000,
-            timeoutMs: 330_000,
+            timeoutMs: 330_000
+        }, {
+            fetch: (url, init) => fetch(url, { ...init, signal: harnessAbort.signal }),
+            readManifestText: (filePath) => readFile(filePath, 'utf8'),
+            artifacts: {
+                mkdir: async (directory) => {
+                    await mkdir(directory, { recursive: true });
+                },
+                writeFile: async (filePath, contents) => {
+                    await writeFile(filePath, contents);
+                }
+            },
+            clock: {
+                now: Date.now,
+                wait: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+            },
+            log: console.log,
+            warn: console.warn,
             prepareEvidenceExport: async () => {
                 cleanup = await stopOwnedWorker(worker!);
                 if (cleanup !== 'reaped') {
                     throw new Error('Owned worker completion failed.');
                 }
                 producerCompletedBeforeExport = true;
-            },
-            fetchFn: (url, init) => fetch(url, { ...init, signal: harnessAbort.signal })
+            }
         });
+        operation.fold((failure) => {
+            throw new Error(failure.kind === 'runtime' ? failure.cause.message : failure.message);
+        }, () => undefined);
         stage = 'native-acceptance';
         const distributed = decodeControlDistributedRunSnapshot(
             JSON.parse(await readFile(path.join(artifactDir, 'distributed-run.json'), 'utf8'))

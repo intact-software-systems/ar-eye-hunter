@@ -6,14 +6,26 @@ import {
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { JsonComparisonObject, JsonValue } from '@shared-test/json-compare/compare-json-values.ts';
-import { decodeDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
+import type {
+    ControlDistributedRunArtifactBundle,
+    ControlDistributedRunSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
-    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES,
-    type RallarBlackBoxDistributedRunManifest,
-    type RallarBlackBoxDistributedRunState
+    decodeControlDistributedRunSnapshot,
+    decodeTargetResolution
+} from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
+import {
+    decodeDistributedRunManifest,
+    toDistributedRunManifestValidationText
+} from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
+import type {
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { decodeControlDistributedRunArtifactBundle } from '@shared-test/rallar-bb-test/schema/control-artifact-envelope.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 
 import { readManifestRunnerOptions } from './read-manifest-runner-options.ts';
 import { writeManifestArtifactFiles } from './write-manifest-artifact-files.ts';
@@ -21,366 +33,522 @@ import { writeManifestArtifactFiles } from './write-manifest-artifact-files.ts';
 export interface WorldFleetDistributedRecipeRunnerOptions {
     readonly controlBaseUrl: string;
     readonly manifestPath: string;
+    /** Absent when preserving the manifest's authored control run identity. */
     readonly controlRunId?: string;
+    /** Absent or blank when preserving authored RUN capture. */
+    readonly rtcCaptureMode?: string;
+    /** Absent when the existing endpoint does not require a bearer token. */
     readonly token?: string;
+    /** Absent for artifacts/world-fleet/<distributedRunId>. */
     readonly artifactDir?: string;
     readonly pollMs: number;
     readonly timeoutMs: number;
-    readonly fetchFn?: typeof fetch;
-    /** Caller-owned producer completion runs after the operation and before final native export. */
-    readonly prepareEvidenceExport?: () => Promise<void>;
 }
 
-interface DistributedRunObservation {
-    readonly state: RallarBlackBoxDistributedRunState;
+export interface WorldFleetDistributedRecipeDependencies {
+    readonly fetch: typeof fetch;
+    readonly readManifestText: (filePath: string) => Promise<string>;
+    readonly artifacts: WorldFleetArtifactDependencies;
+    readonly clock: WorldFleetClock;
+    readonly log: (message: string) => void;
+    readonly warn: (message: string) => void;
+    /** Await producer completion after operation settlement and before final native exports. */
+    readonly prepareEvidenceExport: () => Promise<void>;
 }
 
-interface EvidenceExportResult {
-    readonly fileName: string;
-    readonly status: 'written' | 'unavailable';
-    readonly failure: SafeFailureMetadata | null;
+export interface WorldFleetArtifactDependencies {
+    readonly mkdir: (directory: string) => Promise<void>;
+    readonly writeFile: (filePath: string, contents: string | Uint8Array) => Promise<void>;
 }
 
-interface NativeArtifactRequestDto {
-    readonly artifactDir: string;
-    readonly fileName: string;
+export interface WorldFleetClock {
+    readonly now: () => number;
+    readonly wait: (milliseconds: number) => Promise<void>;
+}
+
+export interface WorldFleetExpectedFailure {
+    readonly kind: 'validation' | 'protocol' | 'policy' | 'terminal' | 'timeout' | 'lifecycle' | 'export';
+    readonly message: string;
+    readonly requestFailure?: WorldFleetSafeFailureMetadata;
+}
+
+export interface WorldFleetRuntimeFailure {
+    readonly kind: 'runtime';
+    readonly operation: string;
+    readonly cause: Error;
+    readonly requestFailure?: WorldFleetSafeFailureMetadata;
+}
+
+export type WorldFleetFailure = WorldFleetExpectedFailure | WorldFleetRuntimeFailure;
+
+interface WorldFleetRequest {
     readonly pathname: string;
+    readonly method: 'GET' | 'POST';
+    /** Absent for GET requests. */
+    readonly body?: string;
 }
 
-interface ManifestCompletionDto {
+interface WorldFleetRun {
+    readonly options: WorldFleetDistributedRecipeRunnerOptions;
     readonly manifest: RallarBlackBoxDistributedRunManifest;
+    readonly dependencies: WorldFleetDistributedRecipeDependencies;
     readonly artifactDir: string;
-    readonly operationFailure: Error | undefined;
-    readonly completionLifecycleFailure: Error | undefined;
 }
 
-interface SafeFailureMetadata {
+interface WorldFleetManifestSource {
+    readonly manifest: RallarBlackBoxDistributedRunManifest;
+    readonly sourceText: string;
+}
+
+interface WorldFleetSafeFailureMetadata {
     readonly code: string;
     readonly method: string | null;
     readonly pathname: string | null;
     readonly httpStatus: number | null;
 }
 
-class ControlRequestFailure extends Error {
-    readonly metadata: SafeFailureMetadata;
+interface WorldFleetEvidenceExport {
+    readonly fileName: string;
+    readonly status: 'written' | 'unavailable';
+    readonly failure: WorldFleetFailure | undefined;
+}
 
-    constructor(metadata: SafeFailureMetadata) {
-        super(
-            metadata.httpStatus === null
-                ? `${metadata.method} ${metadata.pathname} request failed.`
-                : `${metadata.method} ${metadata.pathname} failed with ${metadata.httpStatus}.`
-        );
-        this.metadata = metadata;
-    }
+interface WorldFleetCompletion {
+    readonly operationFailure: WorldFleetFailure | undefined;
+    readonly lifecycleFailure: WorldFleetFailure | undefined;
+    readonly exports: readonly WorldFleetEvidenceExport[];
+}
+
+interface WorldFleetNativeArtifact {
+    readonly fileName: string;
+    readonly pathname: string;
 }
 
 const TERMINAL_STATES = new Set(['passed', 'failed', 'cancelled', 'timed-out']);
 
 async function main(): Promise<void> {
-    await runWorldFleetDistributedRecipe(readManifestRunnerOptions(process.argv.slice(2), process.env));
+    const options = readManifestRunnerOptions(process.argv.slice(2), process.env);
+    const dependencies: WorldFleetDistributedRecipeDependencies = {
+        fetch,
+        readManifestText: (filePath) => readFile(filePath, 'utf8'),
+        artifacts: {
+            mkdir: async (directory) => {
+                await mkdir(directory, { recursive: true });
+            },
+            writeFile: async (filePath, contents) => {
+                await writeFile(filePath, contents);
+            }
+        },
+        clock: { now: Date.now, wait: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)) },
+        prepareEvidenceExport: async () => undefined,
+        log: console.log,
+        warn: console.warn
+    };
+    const outcome = await runWorldFleetDistributedRecipe(options, dependencies);
+    outcome.fold((failure) => {
+        throw new Error(toWorldFleetFailureText(failure));
+    }, () => undefined);
 }
 
 export async function runWorldFleetDistributedRecipe(
-    runnerOptions: WorldFleetDistributedRecipeRunnerOptions
-): Promise<void> {
-    const sourceManifest = await readFile(runnerOptions.manifestPath, 'utf8');
-    const manifestValue: JsonValue = JSON.parse(sourceManifest);
-    if (!isRecord(manifestValue)) {
-        throw new Error('Invalid distributed manifest.');
+    options: WorldFleetDistributedRecipeRunnerOptions,
+    dependencies: WorldFleetDistributedRecipeDependencies
+): Promise<Either<WorldFleetFailure, true>> {
+    const capture = parseRtcCaptureMode(options.rtcCaptureMode?.trim() === '' ? undefined : options.rtcCaptureMode)
+        .mapLeft((issues): WorldFleetFailure => ({
+            kind: 'validation',
+            message: issues.map((issue) => issue.message).join('\n')
+        }));
+    if (capture.right === undefined) {
+        return capture.mapRight(() => true as const);
     }
-    const manifest = decodeDistributedRunManifest(
-        applyWorldFleetControlRunIdOverride(manifestValue, runnerOptions.controlRunId)
-    ).fold(
-        () => {
-            throw new Error('Invalid distributed manifest.');
-        },
-        (decoded) => decoded
-    );
-    const artifactDir = runnerOptions.artifactDir ?? path.join('artifacts', 'world-fleet', manifest.distributedRunId);
-    await mkdir(artifactDir, { recursive: true });
-    await writeFile(path.join(artifactDir, 'source-manifest.json'), sourceManifest);
-
-    let operationFailure: Error | undefined;
+    const source = await readWorldFleetManifest(options, dependencies.readManifestText);
+    if (source.right === undefined) {
+        return source.mapRight(() => true as const);
+    }
+    const scopedManifest = source.right.manifest;
+    const manifest = capture.right.mode === undefined
+        ? scopedManifest
+        : { ...scopedManifest, rtcCaptureMode: capture.right.mode };
+    const artifactDir = options.artifactDir ?? path.join('artifacts', 'world-fleet', manifest.distributedRunId);
+    const run: WorldFleetRun = { options, manifest, dependencies, artifactDir };
     try {
-        await startManifestDistributedRun(runnerOptions, manifest);
-        const terminal = await waitForState(runnerOptions, manifest.distributedRunId, 'terminal');
-        if (terminal.state !== 'passed') {
-            throw new Error(`Distributed run did not pass: ${terminal.state}.`);
-        }
+        await dependencies.artifacts.mkdir(artifactDir);
+        await dependencies.artifacts.writeFile(path.join(artifactDir, 'source-manifest.json'), source.right.sourceText);
     }
-    catch (error) {
-        operationFailure = error instanceof Error ? error : new Error('Manifest operation failed.');
+    catch (cause) {
+        return Either.ofLeft({ kind: 'runtime', operation: 'write source manifest', cause: toError(cause) });
     }
-
-    let completionLifecycleFailure: Error | undefined;
-    try {
-        await runnerOptions.prepareEvidenceExport?.();
-    }
-    catch {
-        // Caller failure text can contain private process configuration; retain only safe metadata.
-        completionLifecycleFailure = new Error('Completion lifecycle preparation failed.');
-    }
-    await writeManifestCompletionEvidence(runnerOptions, {
-        manifest,
-        artifactDir,
-        operationFailure,
-        completionLifecycleFailure
-    });
+    const operation = await startWorldFleetRun(run);
+    return await completeWorldFleetEvidence(run, operation);
 }
 
-async function writeManifestCompletionEvidence(
-    runnerOptions: WorldFleetDistributedRecipeRunnerOptions,
-    completion: ManifestCompletionDto
-): Promise<void> {
-    const evidenceExport = await writeDistributedRunEvidence(
-        runnerOptions,
-        completion.manifest,
-        completion.artifactDir
-    );
-    let completionMetadataFailure: Error | undefined;
-    await writeFile(
-        path.join(completion.artifactDir, 'evidence-export.json'),
-        JSON.stringify(
-            {
-                operationFailure: completion.operationFailure
-                    ? toSafeFailureMetadata(completion.operationFailure)
-                    : null,
-                completionLifecycleFailure: completion.completionLifecycleFailure
-                    ? toSafeFailureMetadata(completion.completionLifecycleFailure)
-                    : null,
-                exports: evidenceExport,
-                streamCompleteness: 'unverified',
-                completenessLimitation:
-                    'Caller must configure recorder storage. JSONL routes can return bounded fallback; HTTP success does not prove complete storage. Bundle files are previews; runtime snapshots depend on retention.'
-            },
-            null,
-            2
-        ) + '\n'
-    ).catch(() => {
-        completionMetadataFailure = new Error('Required evidence export failed: evidence-export.json.');
-    });
-    const completionFailure = completion.operationFailure ?? completion.completionLifecycleFailure ??
-        completionMetadataFailure;
-    if (completionFailure) {
-        throw completionFailure;
-    }
-    if (evidenceExport.some((result) => result.status === 'unavailable')) {
-        throw new Error('Required evidence export failed.');
-    }
-}
-
-export function applyWorldFleetControlRunIdOverride(
-    manifest: RallarBlackBoxDistributedRunManifest,
-    controlRunId?: string
-): RallarBlackBoxDistributedRunManifest;
-export function applyWorldFleetControlRunIdOverride(
-    manifest: JsonComparisonObject,
-    controlRunId?: string
-): JsonComparisonObject;
-export function applyWorldFleetControlRunIdOverride(
-    manifest: RallarBlackBoxDistributedRunManifest | JsonComparisonObject,
-    controlRunId?: string
-): RallarBlackBoxDistributedRunManifest | JsonComparisonObject {
-    const cleanControlRunId = controlRunId?.trim();
-    return cleanControlRunId ? { ...manifest, controlRunId: cleanControlRunId } : manifest;
-}
-
-async function startManifestDistributedRun(
-    runnerOptions: WorldFleetDistributedRecipeRunnerOptions,
-    manifest: RallarBlackBoxDistributedRunManifest
-): Promise<void> {
-    const resolution = await readControlJson(runnerOptions, '/distributed-runs/resolve-targets', {
-        method: 'POST',
-        body: JSON.stringify({ manifest })
-    });
-    if (!isRecord(resolution) || !isRecord(resolution.summary) || typeof resolution.summary.selected !== 'number') {
-        throw new Error('Invalid target preflight response.');
+async function startWorldFleetRun(run: WorldFleetRun): Promise<Either<WorldFleetFailure, true>> {
+    const { manifest, dependencies } = run;
+    const resolution = await readWorldFleetTargetResolution(run);
+    if (resolution.right === undefined) {
+        return resolution.mapRight(() => true as const);
     }
     const expected = manifest.targetPolicy.expectedParticipantCount;
-    if (expected !== undefined && resolution.summary.selected !== expected) {
-        throw new Error(`Target preflight mismatch: selected ${resolution.summary.selected}, expected ${expected}.`);
+    dependencies.log(
+        `target preflight: selected ${resolution.right.summary.selected}/${
+            expected ?? 'unspecified'
+        }; blockers ${resolution.right.blockers.length}`
+    );
+    dependencies.log(`role counts: ${JSON.stringify(resolution.right.summary.roleCounts)}`);
+    dependencies.log(`regions: ${JSON.stringify(resolution.right.summary.regions)}`);
+    dependencies.log(`providers: ${JSON.stringify(resolution.right.summary.providers)}`);
+    if (expected !== undefined && resolution.right.summary.selected !== expected) {
+        return Either.ofLeft({
+            kind: 'policy',
+            message: `Target preflight mismatch: selected ${resolution.right.summary.selected}, expected ${expected}.`
+        });
     }
-    await readControlJson(runnerOptions, '/distributed-runs', { method: 'POST', body: JSON.stringify({ manifest }) });
-    const runPath = `/distributed-runs/${encodeURIComponent(manifest.distributedRunId)}`;
-    await readControlJson(runnerOptions, `${runPath}/stage`, { method: 'POST', body: '{}' });
-    const ready = await waitForState(runnerOptions, manifest.distributedRunId, 'ready');
-    if (ready.state !== 'ready' && ready.state !== 'running') {
-        throw new Error(`Distributed run reached ${ready.state} before start.`);
-    }
-    if (ready.state === 'ready') {
-        await readControlJson(runnerOptions, `${runPath}/start`, { method: 'POST', body: '{}' });
-    }
+    return await createAndStageWorldFleetRun(run);
 }
 
-async function waitForState(
-    runnerOptions: WorldFleetDistributedRecipeRunnerOptions,
-    distributedRunId: string,
-    phase: 'ready' | 'terminal'
-): Promise<DistributedRunObservation> {
-    const startedAt = Date.now();
-    while (Date.now() - startedAt <= runnerOptions.timeoutMs) {
-        const snapshot = await readControlJson(
-            runnerOptions,
-            `/distributed-runs/${encodeURIComponent(distributedRunId)}`,
-            { method: 'GET' }
-        );
-        const state = RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES.find((candidate) => candidate === snapshot.state);
-        if (state === undefined) {
-            throw new Error('Invalid distributed run snapshot.');
-        }
-        if (
-            TERMINAL_STATES.has(state) ||
-            (phase === 'ready' && (state === 'ready' || state === 'running'))
-        ) {
-            return { state };
-        }
-        await delay(runnerOptions.pollMs);
+async function createAndStageWorldFleetRun(run: WorldFleetRun): Promise<Either<WorldFleetFailure, true>> {
+    const created = await readWorldFleetSnapshotResponse(run, {
+        pathname: '/distributed-runs',
+        method: 'POST',
+        body: JSON.stringify({ manifest: run.manifest })
+    });
+    if (created.right === undefined) {
+        return created.mapRight(() => true as const);
     }
-    throw new Error(`Timed out waiting for distributed run ${distributedRunId}.`);
+    run.dependencies.log(`created: ${created.right.state}`);
+    const staged = await readWorldFleetSnapshotResponse(run, {
+        pathname: `${toRunPath(run.manifest)}/stage`,
+        method: 'POST',
+        body: '{}'
+    });
+    if (staged.right === undefined) {
+        return staged.mapRight(() => true as const);
+    }
+    run.dependencies.log(`staged: ${staged.right.state}`);
+    return await startAndFinishWorldFleetRun(run);
 }
 
-async function writeDistributedRunEvidence(
-    runnerOptions: WorldFleetDistributedRecipeRunnerOptions,
-    manifest: RallarBlackBoxDistributedRunManifest,
-    artifactDir: string
-): Promise<readonly EvidenceExportResult[]> {
-    const distributedPath = `/distributed-runs/${encodeURIComponent(manifest.distributedRunId)}`;
-    const controlPath = `/runs/${encodeURIComponent(manifest.controlRunId)}`;
-    const bundleExport = await writeArtifactBundle(runnerOptions, `${distributedPath}/artifacts`, artifactDir);
-    const exports = [bundleExport];
+async function startAndFinishWorldFleetRun(run: WorldFleetRun): Promise<Either<WorldFleetFailure, true>> {
+    const ready = await readWorldFleetState(run, 'readiness');
+    if (ready.right === undefined) {
+        return ready.mapRight(() => true as const);
+    }
+    if (ready.right.state !== 'ready' && ready.right.state !== 'running') {
+        return Either.ofLeft({
+            kind: 'terminal',
+            message: `Distributed run reached ${ready.right.state} before start.`
+        });
+    }
+    if (ready.right.state === 'ready') {
+        const started = await readWorldFleetSnapshotResponse(run, {
+            pathname: `${toRunPath(run.manifest)}/start`,
+            method: 'POST',
+            body: '{}'
+        });
+        if (started.right === undefined) {
+            return started.mapRight(() => true as const);
+        }
+        run.dependencies.log(`started: ${started.right.state}`);
+    }
+    return await finishWorldFleetRun(run);
+}
+
+async function finishWorldFleetRun(run: WorldFleetRun): Promise<Either<WorldFleetFailure, true>> {
+    const terminal = await readWorldFleetState(run, 'terminal');
+    if (terminal.right === undefined) {
+        return terminal.mapRight(() => true as const);
+    }
+    run.dependencies.log(`terminal: ${terminal.right.state}`);
+    return terminal.right.state === 'passed'
+        ? Either.ofRight(true)
+        : Either.ofLeft({ kind: 'terminal', message: `Distributed run did not pass: ${terminal.right.state}.` });
+}
+
+async function readWorldFleetState(
+    run: WorldFleetRun,
+    phase: 'readiness' | 'terminal'
+): Promise<Either<WorldFleetFailure, ControlDistributedRunSnapshot>> {
+    const startedAt = run.dependencies.clock.now();
+    while (run.dependencies.clock.now() - startedAt <= run.options.timeoutMs) {
+        const snapshot = await readWorldFleetSnapshotResponse(run, {
+            pathname: toRunPath(run.manifest),
+            method: 'GET'
+        });
+        if (snapshot.left !== undefined) {
+            return snapshot;
+        }
+        const reached = snapshot.fold(() => false, (snapshot) =>
+            TERMINAL_STATES.has(snapshot.state) ||
+            (phase === 'readiness' && (snapshot.state === 'ready' || snapshot.state === 'running')));
+        if (reached) {
+            return snapshot;
+        }
+        try {
+            await run.dependencies.clock.wait(run.options.pollMs);
+        }
+        catch (cause) {
+            return Either.ofLeft({ kind: 'runtime', operation: 'wait for distributed run', cause: toError(cause) });
+        }
+    }
+    return Either.ofLeft({
+        kind: 'timeout',
+        message: `Timed out waiting for distributed run ${run.manifest.distributedRunId}.`
+    });
+}
+
+async function readWorldFleetManifest(
+    options: WorldFleetDistributedRecipeRunnerOptions,
+    readManifestText: WorldFleetDistributedRecipeDependencies['readManifestText']
+): Promise<Either<WorldFleetFailure, WorldFleetManifestSource>> {
+    let value: unknown;
+    let sourceText: string;
+    try {
+        sourceText = await readManifestText(options.manifestPath);
+        value = JSON.parse(sourceText);
+    }
+    catch (cause) {
+        return Either.ofLeft({ kind: 'runtime', operation: 'read manifest', cause: toError(cause) });
+    }
+    const controlRunId = options.controlRunId?.trim();
+    const overridden = controlRunId && value !== null && typeof value === 'object' && !Array.isArray(value)
+        ? { ...value, controlRunId }
+        : value;
+    return decodeDistributedRunManifest(overridden).mapLeft((issues): WorldFleetFailure => ({
+        kind: 'validation',
+        message: toDistributedRunManifestValidationText(issues)
+    })).mapRight((manifest) => ({ manifest, sourceText }));
+}
+
+async function readWorldFleetTargetResolution(
+    run: WorldFleetRun
+): Promise<Either<WorldFleetFailure, RallarBlackBoxDistributedTargetResolution>> {
+    const response = await readWorldFleetHttpJson(run, {
+        pathname: '/distributed-runs/resolve-targets',
+        method: 'POST',
+        body: JSON.stringify({ manifest: run.manifest })
+    });
+    return response.flatMap(
+        (failure) => Either.ofLeft<WorldFleetFailure, RallarBlackBoxDistributedTargetResolution>(failure),
+        (value) => decodeTargetResolution(value).mapLeft((message) => ({ kind: 'protocol', message }))
+    );
+}
+
+async function readWorldFleetSnapshotResponse(
+    run: WorldFleetRun,
+    request: WorldFleetRequest
+): Promise<Either<WorldFleetFailure, ControlDistributedRunSnapshot>> {
+    const response = await readWorldFleetHttpJson(run, request);
+    return response.flatMap(
+        (failure) => Either.ofLeft<WorldFleetFailure, ControlDistributedRunSnapshot>(failure),
+        (value) => decodeControlDistributedRunSnapshot(value).mapLeft((message) => ({ kind: 'protocol', message }))
+    );
+}
+
+async function exportWorldFleetArtifacts(run: WorldFleetRun): Promise<Either<WorldFleetFailure, true>> {
+    const response = await readWorldFleetHttpJson(run, {
+        pathname: `${toRunPath(run.manifest)}/artifacts`,
+        method: 'GET'
+    });
+    const bundle = response.flatMap(
+        (failure) => Either.ofLeft<WorldFleetFailure, ControlDistributedRunArtifactBundle>(failure),
+        (value) =>
+            decodeControlDistributedRunArtifactBundle(value).mapLeft((message) => ({ kind: 'protocol', message }))
+    );
+    return await bundle.fold(
+        async (failure) => Either.ofLeft<WorldFleetFailure, true>(failure),
+        (bundle) => writeWorldFleetArtifacts(run, bundle)
+    );
+}
+
+async function writeWorldFleetArtifacts(
+    run: WorldFleetRun,
+    bundle: ControlDistributedRunArtifactBundle
+): Promise<Either<WorldFleetFailure, true>> {
+    const status = await writeManifestArtifactFiles(
+        { artifactDir: run.artifactDir, bundle },
+        run.dependencies.artifacts
+    );
+    return status === 'written'
+        ? Either.ofRight(true)
+        : Either.ofLeft({ kind: 'export', message: 'Required evidence export failed: artifact-bundle.json.' });
+}
+
+async function completeWorldFleetEvidence(
+    run: WorldFleetRun,
+    operation: Either<WorldFleetFailure, true>
+): Promise<Either<WorldFleetFailure, true>> {
+    let lifecycleFailure: WorldFleetFailure | undefined;
+    try {
+        await run.dependencies.prepareEvidenceExport();
+    }
+    catch {
+        lifecycleFailure = { kind: 'lifecycle', message: 'Completion lifecycle preparation failed.' };
+    }
+    const bundle = await exportWorldFleetArtifacts(run);
+    const exports: WorldFleetEvidenceExport[] = [{
+        fileName: 'artifact-bundle.json',
+        status: bundle.left ? 'unavailable' : 'written',
+        failure: bundle.left
+    }];
+    const controlPath = `/runs/${encodeURIComponent(run.manifest.controlRunId)}`;
     for (
         const [fileName, pathname] of [
-            ['distributed-run.json', distributedPath],
+            ['distributed-run.json', toRunPath(run.manifest)],
             ['control-run.json', controlPath],
             ['events.jsonl', `${controlPath}/events.jsonl`],
             ['results.jsonl', `${controlPath}/results.jsonl`]
         ]
     ) {
-        exports.push(await writeNativeArtifact(runnerOptions, { artifactDir, fileName, pathname }));
+        exports.push(await writeWorldFleetNativeArtifact(run, { fileName, pathname }));
     }
-    return exports;
+    const metadata = await writeWorldFleetCompletionMetadata(run, {
+        operationFailure: operation.left,
+        lifecycleFailure,
+        exports
+    });
+    const failure = operation.left ?? lifecycleFailure ?? metadata.left ??
+        exports.find((entry) => entry.failure)?.failure;
+    return failure === undefined ? Either.ofRight(true) : Either.ofLeft(failure);
 }
 
-async function writeArtifactBundle(
-    runnerOptions: WorldFleetDistributedRecipeRunnerOptions,
-    pathname: string,
-    artifactDir: string
-): Promise<EvidenceExportResult> {
+async function writeWorldFleetCompletionMetadata(
+    run: WorldFleetRun,
+    completion: WorldFleetCompletion
+): Promise<Either<WorldFleetFailure, true>> {
+    const metadata = {
+        operationFailure: toWorldFleetSafeFailureMetadata(completion.operationFailure),
+        completionLifecycleFailure: toWorldFleetSafeFailureMetadata(completion.lifecycleFailure),
+        exports: completion.exports.map((entry) => ({
+            ...entry,
+            failure: toWorldFleetSafeFailureMetadata(entry.failure)
+        })),
+        streamCompleteness: 'unverified',
+        completenessLimitation:
+            'Caller must configure recorder storage. JSONL routes can return bounded fallback; HTTP success does not prove complete storage. Bundle files are previews; runtime snapshots depend on retention.'
+    };
     try {
-        const bundle = await readControlJson(runnerOptions, pathname, { method: 'GET' });
-        const status = await writeManifestArtifactFiles(artifactDir, bundle);
-        return {
-            fileName: 'artifact-bundle.json',
-            status,
-            failure: status === 'unavailable' ? toSafeFailureMetadata(new Error()) : null
-        };
-    }
-    catch (error) {
-        return {
-            fileName: 'artifact-bundle.json',
-            status: 'unavailable',
-            failure: toSafeFailureMetadata(error instanceof Error ? error : new Error('Evidence export failed.'))
-        };
-    }
-}
-
-async function writeNativeArtifact(
-    runnerOptions: WorldFleetDistributedRecipeRunnerOptions,
-    artifact: NativeArtifactRequestDto
-): Promise<EvidenceExportResult> {
-    const response = await readControlResponse(runnerOptions, artifact.pathname, { method: 'GET' });
-    if (response.left) {
-        return { fileName: artifact.fileName, status: 'unavailable', failure: toSafeFailureMetadata(response.left) };
-    }
-    try {
-        const nativeContents = await response.fold(
-            (error) => {
-                throw error;
-            },
-            (nativeResponse) => nativeResponse.arrayBuffer()
+        await run.dependencies.artifacts.writeFile(
+            path.join(run.artifactDir, 'evidence-export.json'),
+            JSON.stringify(metadata, null, 2) + '\n'
         );
-        await writeFile(path.join(artifact.artifactDir, artifact.fileName), new Uint8Array(nativeContents));
-        return { fileName: artifact.fileName, status: 'written', failure: null };
+        return Either.ofRight(true);
     }
     catch {
-        return { fileName: artifact.fileName, status: 'unavailable', failure: toSafeFailureMetadata(new Error()) };
+        return Either.ofLeft({ kind: 'export', message: 'Required evidence export failed: evidence-export.json.' });
     }
 }
 
-async function readControlJson(
-    runnerOptions: WorldFleetDistributedRecipeRunnerOptions,
-    pathname: string,
-    request: RequestInit
-): Promise<JsonComparisonObject> {
-    const response = (await readControlResponse(runnerOptions, pathname, request)).fold(
-        (error) => {
-            throw error;
-        },
-        (nativeResponse) => nativeResponse
-    );
+async function writeWorldFleetNativeArtifact(
+    run: WorldFleetRun,
+    artifact: WorldFleetNativeArtifact
+): Promise<WorldFleetEvidenceExport> {
+    const response = await readWorldFleetHttpResponse(run, { method: 'GET', pathname: artifact.pathname });
+    if (response.left) {
+        return {
+            fileName: artifact.fileName,
+            status: 'unavailable',
+            failure: {
+                kind: 'export',
+                message: `Required evidence export failed: ${artifact.fileName}.`,
+                requestFailure: response.left.requestFailure
+            }
+        };
+    }
     try {
-        const parsed: JsonValue = JSON.parse(await response.text());
-        if (!isRecord(parsed)) {
-            throw new Error('Expected a JSON object.');
-        }
-        return parsed;
+        const bytes = new Uint8Array(await response.right!.arrayBuffer());
+        await run.dependencies.artifacts.writeFile(path.join(run.artifactDir, artifact.fileName), bytes);
+        return { fileName: artifact.fileName, status: 'written', failure: undefined };
     }
     catch {
-        throw new Error(`Invalid JSON response from ${request.method} ${pathname}.`);
+        return {
+            fileName: artifact.fileName,
+            status: 'unavailable',
+            failure: { kind: 'export', message: 'Required evidence export failed.' }
+        };
     }
 }
 
-async function readControlResponse(
-    runnerOptions: WorldFleetDistributedRecipeRunnerOptions,
-    pathname: string,
-    request: RequestInit
-): Promise<Either<Error, Response>> {
+function toWorldFleetSafeFailureMetadata(failure: WorldFleetFailure | undefined): WorldFleetSafeFailureMetadata | null {
+    if (failure === undefined) {
+        return null;
+    }
+    return 'requestFailure' in failure && failure.requestFailure !== undefined
+        ? failure.requestFailure
+        : { code: 'operation-or-write-failed', method: null, pathname: null, httpStatus: null };
+}
+
+async function readWorldFleetHttpJson(
+    run: WorldFleetRun,
+    request: WorldFleetRequest
+): Promise<Either<WorldFleetFailure, unknown>> {
+    const response = await readWorldFleetHttpResponse(run, request);
+    if (response.left) {
+        return Either.ofLeft(response.left);
+    }
     try {
-        const response = await (runnerOptions.fetchFn ?? fetch)(
-            new URL(pathname, normalizedBaseUrl(runnerOptions.controlBaseUrl)),
+        return Either.ofRight(await response.right!.json());
+    }
+    catch {
+        return Either.ofLeft({
+            kind: 'runtime',
+            operation: `${request.method} ${request.pathname}`,
+            cause: new Error('Invalid JSON response.')
+        });
+    }
+}
+
+async function readWorldFleetHttpResponse(
+    run: WorldFleetRun,
+    request: WorldFleetRequest
+): Promise<Either<WorldFleetFailure, Response>> {
+    const operation = `${request.method} ${request.pathname}`;
+    try {
+        const response = await run.dependencies.fetch(
+            new URL(request.pathname, toControlBaseUrl(run.options.controlBaseUrl)),
             {
-                ...request,
+                method: request.method,
+                ...(request.body === undefined ? {} : { body: request.body }),
                 headers: {
                     'Content-Type': 'application/json',
-                    ...(runnerOptions.token ? { Authorization: `Bearer ${runnerOptions.token}` } : {})
+                    ...(run.options.token ? { Authorization: `Bearer ${run.options.token}` } : {})
                 }
             }
         );
         if (!response.ok) {
-            return Either.ofLeft(
-                new ControlRequestFailure({
+            return Either.ofLeft({
+                kind: 'protocol',
+                message: `${operation} failed with ${response.status}.`,
+                requestFailure: {
                     code: 'control-http-failed',
-                    method: request.method ?? 'GET',
-                    pathname,
+                    method: request.method,
+                    pathname: request.pathname,
                     httpStatus: response.status
-                })
-            );
+                }
+            });
         }
         return Either.ofRight(response);
     }
     catch {
-        return Either.ofLeft(
-            new ControlRequestFailure({
+        return Either.ofLeft({
+            kind: 'runtime',
+            operation,
+            cause: new Error('Control request failed.'),
+            requestFailure: {
                 code: 'control-request-failed',
-                method: request.method ?? 'GET',
-                pathname,
+                method: request.method,
+                pathname: request.pathname,
                 httpStatus: null
-            })
-        );
+            }
+        });
     }
 }
 
-function isRecord(value: JsonValue | undefined): value is JsonComparisonObject {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
+function toRunPath(manifest: RallarBlackBoxDistributedRunManifest): string {
+    return `/distributed-runs/${encodeURIComponent(manifest.distributedRunId)}`;
 }
 
-function toSafeFailureMetadata(error: Error): SafeFailureMetadata {
-    return error instanceof ControlRequestFailure
-        ? error.metadata
-        : { code: 'operation-or-write-failed', method: null, pathname: null, httpStatus: null };
-}
-
-function normalizedBaseUrl(value: string): URL {
+function toControlBaseUrl(value: string): URL {
     const url = new URL(value);
     if (!url.pathname.endsWith('/')) {
         url.pathname = `${url.pathname}/`;
@@ -388,15 +556,13 @@ function normalizedBaseUrl(value: string): URL {
     return url;
 }
 
-function delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+function toWorldFleetFailureText(failure: WorldFleetFailure): string {
+    return failure.kind === 'runtime' ? failure.cause.message : failure.message;
 }
 
 if (path.resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
-    main().catch(() => {
-        console.error(
-            'Manifest operation failed; inspect the retained evidence-export.json for safe failure metadata.'
-        );
+    main().catch((error: unknown) => {
+        console.error(toError(error).message);
         process.exitCode = 1;
     });
 }

@@ -1,18 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
-    createRallarBlackBoxBrowserTestRuntime,
+    createDefaultRallarBlackBoxBrowserTestRuntime,
     getRallarBlackBoxEvents,
     toRallarBlackBoxMessages,
     type RallarBlackBoxBrowserRallarConnectionConfig,
     type RallarBlackBoxBrowserRallarRuntime
 } from '../../../shared-test/rallar-bb-test/mod.ts';
-import { createBrowserRallarRequiredMethodsTestDouble } from '.././browser-rallar-required-methods-test-double.ts';
+import { createBrowserRallarRequiredMethodsTestDouble } from '../browser-rallar-required-methods-test-double.ts';
 import { BrowserWebSocketFixture } from './browser-websocket-fixture.ts';
 
 describe('rallar-bb runtime sockets', () => {
     it('executes browser-native WebSocket commands through the adapter', async () => {
         const sockets: BrowserWebSocketFixture[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             webSocketFactory: (url) => {
                 const socket = new BrowserWebSocketFixture(url, { echoMessages: true, bufferedAmountAfterSend: 42 });
                 sockets.push(socket);
@@ -63,7 +64,8 @@ describe('rallar-bb runtime sockets', () => {
     it('refuses a ws.send without data before writing to the raw socket or the Rallar signaling', async () => {
         const sockets: BrowserWebSocketFixture[] = [];
         const signalingSends: Parameters<NonNullable<RallarBlackBoxBrowserRallarRuntime['sendWs']>>[0][] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             webSocketFactory: (url) => {
                 const socket = new BrowserWebSocketFixture(url, {});
                 sockets.push(socket);
@@ -97,7 +99,8 @@ describe('rallar-bb runtime sockets', () => {
 
     it('keeps ws.send on an open raw socket in browser Rallar provider mode', async () => {
         const sockets: BrowserWebSocketFixture[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             webSocketFactory: (url) => {
                 const socket = new BrowserWebSocketFixture(url, { echoMessages: true });
                 sockets.push(socket);
@@ -151,7 +154,8 @@ describe('rallar-bb runtime sockets', () => {
     it('cleans up browser WS and Rallar resources after a cancelled recipe', async () => {
         const sockets: BrowserWebSocketFixture[] = [];
         const rallarCalls: string[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             webSocketFactory: (url) => {
                 const socket = new BrowserWebSocketFixture(url);
                 sockets.push(socket);
@@ -224,7 +228,8 @@ describe('rallar-bb runtime sockets', () => {
 
     it('routes ws.send through browser Rallar signaling when no raw socket is open', async () => {
         const sends: Parameters<NonNullable<RallarBlackBoxBrowserRallarRuntime['sendWs']>>[0][] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
@@ -298,7 +303,8 @@ describe('rallar-bb runtime sockets', () => {
         const sockets: BrowserWebSocketFixture[] = [];
         const connects: RallarBlackBoxBrowserRallarConnectionConfig[] = [];
         const sends: Parameters<NonNullable<RallarBlackBoxBrowserRallarRuntime['sendWs']>>[0][] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             webSocketFactory: (url) => {
                 const socket = new BrowserWebSocketFixture(url);
                 sockets.push(socket);

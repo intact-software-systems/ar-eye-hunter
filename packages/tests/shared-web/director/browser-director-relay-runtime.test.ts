@@ -15,6 +15,8 @@ import {
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type AppointRoomDirectorModule = typeof import('@shared-web/browser/director/appoint-room-director.ts');
@@ -49,7 +51,11 @@ const mocks = await vi.hoisted(async () => {
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => ({ middleware: (await mocks.initialiseApiMiddleware(options)).middleware, checkpoints: [] })
+        initialiseMiddleware: async (_session, _topic, options) => ({
+            middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
+            rtcCaptureReceipt,
+            checkpoints: []
+        })
     })
 );
 

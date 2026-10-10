@@ -1,4 +1,11 @@
-import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
+import {
+    defineConfig,
+    devices,
+    type PlaywrightTestConfig
+} from '@playwright/test';
+import { fileURLToPath } from 'node:url';
+
+import { loadLiveRtcPerformanceAttempt } from '../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
 
 import {
     createDefaultFullStackApiV1WebServer,
@@ -11,6 +18,12 @@ import {
     createFullStackControlWebServer,
     readFullStackControlBaseUrl
 } from './playwright-full-stack-control-server.ts';
+import {
+    createDefaultFullStackRtcProductionDependencies,
+    createFullStackRtcPreviewServer,
+    prepareFullStackRtcProduction,
+    readFullStackRtcProductionSeal
+} from './playwright-full-stack-spa-server.ts';
 
 const fullStackEnabled = process.env.RALLAR_BLACK_BOX_FULL_STACK === '1' ||
     process.env.RALLAR_BLACK_BOX_FULL_STACK === 'true';
@@ -45,6 +58,48 @@ if (liveRtcClusterEnabled && (fullStackApiServerMode !== 'postgres' || clusterAp
     throw new Error('Live RTC cluster proof requires Postgres and distinct B/C API base URLs.');
 }
 
+// The test composition root admits the complete predeclared selection before
+// constructing any API, SPA or control server configuration.
+const admittedRtcAttempt = fullStackEnabled
+    ? await loadLiveRtcPerformanceAttempt({
+        repoRoot: fileURLToPath(new URL('../../', import.meta.url)),
+        environment: process.env
+    })
+    : null;
+
+const productionConfiguration = {
+    buildRoot: process.env.RALLAR_BLACK_BOX_RTC_BUILD_ROOT ?? '',
+    apiBaseUrl: fullStackApiBaseUrl,
+    spaBaseUrl: fullStackSpaBaseUrl,
+    environment: process.env
+};
+const preparedProduction = admittedRtcAttempt?.locator.environmentId === 'E3-memory'
+    ? process.env.RALLAR_BLACK_BOX_RTC_BUILD_SEALED === '1'
+        ? await readFullStackRtcProductionSeal(admittedRtcAttempt, productionConfiguration)
+        : await prepareFullStackRtcProduction(
+            admittedRtcAttempt,
+            productionConfiguration,
+            createDefaultFullStackRtcProductionDependencies(admittedRtcAttempt.repoRoot)
+        )
+    : null;
+if (preparedProduction?.left) {
+    throw new Error(preparedProduction.left.message);
+}
+if (preparedProduction?.right) {
+    process.env.RALLAR_BLACK_BOX_RTC_BUILD_SEALED = '1';
+}
+const spaWebServer = preparedProduction?.right
+    ? createFullStackRtcPreviewServer(preparedProduction.right)
+    : {
+        command: `cd ../.. && npm --workspace ${
+            headlessSpaEnabled ? 'rallar-black-box-headless' : 'rallar-black-box'
+        } run dev -- --port ${portFromBaseUrl(fullStackSpaBaseUrl)} --force`,
+        env: { VITE_RALLAR_API_BASE_URL: fullStackApiBaseUrl },
+        url: headlessSpaEnabled ? `${fullStackSpaBaseUrl}/headless/` : fullStackSpaBaseUrl,
+        reuseExistingServer,
+        timeout: 60_000
+    };
+
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     ...(fullStackEnabled
         ? [
@@ -54,7 +109,9 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                 spaBaseUrl: fullStackSpaBaseUrl,
                 reuseExistingServer,
                 requireFreshPostgres: requireFreshPostgresApi,
-                timingCaptureDirectory
+                timingCaptureDirectory,
+                admittedRtcCaseId: admittedRtcAttempt?.locator.caseId ?? null,
+                environment: process.env
             }),
             ...(liveRtcClusterEnabled
                 ? clusterApiBaseUrls.map((apiBaseUrl) =>
@@ -63,23 +120,15 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                         apiBaseUrl,
                         spaBaseUrl: fullStackSpaBaseUrl,
                         reuseExistingServer,
-                        requireFreshPostgres: requireFreshPostgresApi
+                        requireFreshPostgres: requireFreshPostgresApi,
+                        admittedRtcCaseId: admittedRtcAttempt?.locator.caseId ?? null,
+                        environment: process.env
                     })
                 )
                 : [])
         ]
         : []),
-    {
-        command: `cd ../.. && npm --workspace ${
-            headlessSpaEnabled ? 'rallar-black-box-headless' : 'rallar-black-box'
-        } run dev -- --port ${portFromBaseUrl(fullStackSpaBaseUrl)} --force`,
-        env: {
-            VITE_RALLAR_API_BASE_URL: fullStackApiBaseUrl
-        },
-        url: headlessSpaEnabled ? `${fullStackSpaBaseUrl}/headless/` : fullStackSpaBaseUrl,
-        reuseExistingServer,
-        timeout: 60_000
-    },
+    spaWebServer,
     createFullStackControlWebServer({
         baseUrl: fullStackControlBaseUrl,
         reuseExistingServer

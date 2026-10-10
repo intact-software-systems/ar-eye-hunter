@@ -8,6 +8,8 @@ import {
 import { SimulatedMediaStream, SimulatedMediaTrack } from '../../shared/native-rtc-media-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
@@ -26,7 +28,7 @@ const mocks = await vi.hoisted(async () => {
 });
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), (): Partial<MiddlewareModule> => ({
-    initialiseMiddleware: async () => ({ middleware: (await mocks.initialiseApiMiddleware()).middleware, checkpoints: [] })
+    initialiseMiddleware: async () => ({ middleware: (await mocks.initialiseApiMiddleware()).middleware, rtcCaptureReceipt, checkpoints: [] })
 }));
 
 vi.mock(
