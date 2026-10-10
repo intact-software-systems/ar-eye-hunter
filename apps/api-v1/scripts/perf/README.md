@@ -261,6 +261,26 @@ node apps/api-v1/scripts/perf/capture-api-v1-state-write-environment.mjs \
   --out tmp/perf/env/position-1.txt
 ```
 
+Preflight uses the already installed pinned image; it does not pull from a registry.
+Docker stores may expose a configuration ID (classic store) or an OCI index ID
+(containerd store). `read-api-v1-state-write-image-identity.mjs` derives the
+existing governed `image_id` from original configuration bytes. For containerd,
+it binds the actual container's selected manifest descriptor to the local export,
+checks original manifest and configuration SHA256 digests, sizes and declared
+platform, and retains their provenance separately from the reconstructed export
+index. The reconstructed index digest is not the pinned repository digest.
+Classic exports must hash to the native container image ID.
+
+This capture requires a POSIX `tar` supporting `-tf`, `-tvf` and `-xOf` with
+`--` before the named member, and Docker image-save platform selection. The
+reader was verified with native macOS BSD tar on the retained arm64 export;
+Linux/GNU tar and Windows execution have not been verified by that local proof.
+No layers are extracted, metadata/process output is bounded, and temporary
+exports are removed after success or failure. Local export and metadata I/O
+occur before benchmark timing. The preflight sidecar records archive size and
+metadata acquisition milliseconds (export through metadata/stat, excluding
+initial inspect and final cleanup), so its preparation cost remains visible.
+
 The postflight stage validates before writing, so a descriptor that reaches
 disk is one the pooling protocol accepts. A non-empty preflight database, a
 container restarted mid-run, or an overlapping container fails the capture

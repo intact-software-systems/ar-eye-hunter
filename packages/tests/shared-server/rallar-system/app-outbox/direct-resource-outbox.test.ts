@@ -349,16 +349,18 @@ describe('direct resource outbox writes', () => {
             'group-state.snapshot',
             'group-directory.snapshot'
         ]);
-        expect(
-            messages.every(
-                (message) =>
-                    message.targets.mode === 'broadcast' &&
-                    message.targets.scope === 'room' &&
-                    message.targets.groupRef.applicationId === 'app-1' &&
-                    message.ordering === undefined &&
-                    message.constraints.expiresAtMs === EXPIRE_AT_EPOCH_MS
-            )
-        ).toBe(true);
+        for (const message of messages) {
+            const targets = message.targets;
+            if (
+                targets === undefined || targets.mode !== 'broadcast' || targets.scope !== 'room' ||
+                targets.groupRef === undefined || message.constraints === undefined
+            ) {
+                throw new TypeError('Group sync message requires room broadcast targets and constraints');
+            }
+            expect(targets.groupRef.applicationId).toBe('app-1');
+            expect(message.ordering).toBeUndefined();
+            expect(message.constraints.expiresAtMs).toBe(EXPIRE_AT_EPOCH_MS);
+        }
     });
 
     it('computes immutable APP_OUTBOX topology work from accepted causal data', async () => {

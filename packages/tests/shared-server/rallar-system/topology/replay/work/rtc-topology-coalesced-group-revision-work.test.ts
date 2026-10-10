@@ -212,6 +212,9 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         });
         const merged = decodePersistedALMessage(second.entryWrite.entry.resource);
 
+        if (merged.audit === undefined || merged.constraints === undefined) {
+            throw new TypeError('Merged topology message requires audit and constraints');
+        }
         expect(merged.id.ts).toBe(unexpiredBaseEpochMs);
         expect(merged.audit.createdTs).toBe(unexpiredBaseEpochMs);
         expect(merged.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs);
@@ -268,6 +271,9 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         const revivedMessage = decodePersistedALMessage(revived.entryWrite.entry.resource);
 
         expect(revived.entryWrite.entry.dequeueAudit.attempts).toBe(0);
+        if (revivedMessage.constraints === undefined) {
+            throw new TypeError('Revived topology message requires constraints');
+        }
         expect(revivedMessage.id.ts).toBe(unexpiredBaseEpochMs);
         expect(revivedMessage.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs);
         expect(revived.entryWrite.entry.audit).toEqual(first.entryWrite.entry.audit);

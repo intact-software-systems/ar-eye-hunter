@@ -16,6 +16,10 @@ import { arch } from 'node:os';
 import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs, promisify } from 'node:util';
+import {
+    readApiV1StateWriteImageIdentity,
+    toImageManifestDescriptor
+} from './read-api-v1-state-write-image-identity.mjs';
 import { ENVIRONMENT_FIELDS, validateApiV1StateWriteEnvironment } from './validate-api-v1-state-write-environment.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -53,40 +57,40 @@ const MAINTENANCE_SQL = 'SELECT coalesce(sum(autovacuum_count + autoanalyze_coun
 const BENCHMARK_PROCESS_MARKER = 'api-v1-state-write-concurrency-bench';
 
 export async function captureApiV1StateWriteEnvironment(argumentsInput = process.argv.slice(2)) {
-    const options = readCaptureOptions(argumentsInput);
+    const options = readCaptureOptions({ argumentsInput });
     const captured = options.stage === 'preflight'
-        ? await readPreflightCapture(options)
-        : await readPostflightCapture(options);
+        ? await readPreflightCapture({ options })
+        : await readPostflightCapture({ options });
     await mkdir(dirname(options.out), { recursive: true });
     await writeFile(options.out, captured.text);
     console.log(`Wrote ${options.out}`);
 }
 
-async function readPreflightCapture(options) {
-    const container = await readContainerRecord(options.container);
-    const image = await readImageRecord(container.imageId);
-    const postgres = await readPostgresRecord(options);
+async function readPreflightCapture({ options }) {
+    const container = await readContainerRecord({ container: options.container });
+    const image = await readApiV1StateWriteImageIdentity({ container });
+    const postgres = await readPostgresRecord({ options });
     const record = {
-        ...image,
+        ...image.record,
         ...container.record,
         ...postgres,
         ...(await readToolchainRecord()),
-        ...(await readOverlapRecord(options.container)),
+        ...(await readOverlapRecord({ container: options.container })),
         host_architecture: arch()
     };
-    assertPreflightIsClean(record);
-    return { text: `${JSON.stringify({ containerId: container.id, record }, null, 2)}\n` };
+    validatePreflightIsClean({ record });
+    return { text: `${JSON.stringify({ containerId: container.id, imageProof: image.proof, record }, null, 2)}\n` };
 }
 
-async function readPostflightCapture(options) {
-    const sidecar = JSON.parse(await readFile(options.preflight, 'utf8'));
-    const container = await readContainerRecord(options.container);
+async function readPostflightCapture({ options }) {
+    const sidecar = toCapturedSidecar({ text: await readFile(options.preflight, 'utf8') });
+    const container = await readContainerRecord({ container: options.container });
     if (container.id !== sidecar.containerId) {
         throw new TypeError('container identity changed between preflight and postflight capture');
     }
-    const maintenance = await readScalar(options, MAINTENANCE_SQL);
+    const maintenance = await readScalar({ options, sql: MAINTENANCE_SQL });
     const record = { ...sidecar.record, postflight_automatic_maintenance_count: maintenance };
-    const text = toEnvironmentText(record);
+    const text = toEnvironmentText({ record });
     const errors = validateApiV1StateWriteEnvironment(text);
     if (errors.length > 0) {
         throw new TypeError(`captured environment is not governed-valid: ${errors.join('; ')}`);
@@ -97,7 +101,7 @@ async function readPostflightCapture(options) {
 // The pooled comparison only means anything if every source ran against an
 // equivalently empty database, so a dirty preflight fails here rather than
 // surviving into a verdict.
-function assertPreflightIsClean(record) {
+function validatePreflightIsClean({ record }) {
     const dirty = ENVIRONMENT_FIELDS.filter(
         (field) => field.startsWith('preflight_') && record[field] !== '0'
     );
@@ -106,55 +110,56 @@ function assertPreflightIsClean(record) {
     }
 }
 
-async function readContainerRecord(container) {
-    const inspected = JSON.parse(await readDockerJson(['container', 'inspect', container]));
-    const host = inspected.HostConfig;
+async function readContainerRecord({ container }) {
+    const inspected = toNativeObject({
+        value: JSON.parse(await readDockerJson({ argumentsInput: ['container', 'inspect', container] }))
+    });
+    const host = toNativeObject({ value: inspected.HostConfig });
+    const config = toNativeObject({ value: inspected.Config });
+    const id = toNativeText({ value: inspected.Id });
+    const imageId = toNativeText({ value: inspected.Image });
+    if (id.length === 0 || !/^sha256:[0-9a-f]{64}$/.test(imageId)) {
+        throw new TypeError('native container identities must be complete');
+    }
     return {
-        id: inspected.Id,
-        imageId: inspected.Image,
+        id,
+        imageId,
+        manifest: toImageManifestDescriptor({ value: inspected.ImageManifestDescriptor }),
         record: {
-            platform: inspected.Platform,
-            command: inspected.Config.Cmd.join(' '),
-            shm_size: String(host.ShmSize),
-            memory: String(host.Memory),
-            memory_swap: String(host.MemorySwap),
-            nano_cpus: String(host.NanoCpus),
-            cpu_period: String(host.CpuPeriod),
-            cpu_quota: String(host.CpuQuota),
-            cpu_set: host.CpusetCpus,
-            fresh_container: String(inspected.RestartCount === 0)
+            platform: toNativeText({ value: inspected.Platform }),
+            command: toNativeArguments({ value: config.Cmd }).join(' '),
+            shm_size: String(toNativeCounter({ value: host.ShmSize })),
+            memory: String(toNativeCounter({ value: host.Memory })),
+            memory_swap: String(toNativeCounter({ value: host.MemorySwap })),
+            nano_cpus: String(toNativeCounter({ value: host.NanoCpus })),
+            cpu_period: String(toNativeCounter({ value: host.CpuPeriod })),
+            cpu_quota: String(toNativeCounter({ value: host.CpuQuota })),
+            cpu_set: toNativeText({ value: host.CpusetCpus }),
+            fresh_container: String(toNativeCounter({ value: inspected.RestartCount }) === 0)
         }
     };
 }
 
-async function readImageRecord(imageId) {
-    const inspected = JSON.parse(await readDockerJson(['image', 'inspect', imageId]));
-    const repoDigest = inspected.RepoDigests[0];
-    return {
-        image_ref: repoDigest,
-        image_id: inspected.Id,
-        repo_digest: repoDigest,
-        image_architecture: inspected.Architecture,
-        image_os: inspected.Os,
-        entrypoint: inspected.Config.Entrypoint[0]
-    };
-}
-
-async function readDockerJson(argumentsInput) {
-    const { stdout } = await execFileAsync('docker', [...argumentsInput, '--format', '{{json .}}']);
+async function readDockerJson({ argumentsInput }) {
+    const { stdout } = await execFileAsync('docker', [...argumentsInput, '--format', '{{json .}}'], {
+        timeout: 15_000,
+        maxBuffer: 65_536
+    });
     return stdout;
 }
 
-async function readPostgresRecord(options) {
+async function readPostgresRecord({ options }) {
     const settings = await readPsqlPairs(
-        options,
-        `SELECT name, setting FROM pg_settings WHERE name IN (${toSqlList(GOVERNED_SETTINGS)})`
+        {
+            options,
+            sql: `SELECT name, setting FROM pg_settings WHERE name IN (${toSqlList({ values: GOVERNED_SETTINGS })})`
+        }
     );
-    const rows = await readPsqlPairs(options, toRowCountSql());
+    const rows = await readPsqlPairs({ options, sql: toRowCountSql() });
     return {
         ...settings,
         ...rows,
-        preflight_automatic_maintenance_count: await readScalar(options, MAINTENANCE_SQL)
+        preflight_automatic_maintenance_count: await readScalar({ options, sql: MAINTENANCE_SQL })
     };
 }
 
@@ -164,25 +169,31 @@ function toRowCountSql() {
     ).join(' UNION ALL ');
 }
 
-function toSqlList(values) {
+function toSqlList({ values }) {
     return values.map((value) => `'${value}'`).join(', ');
 }
 
-async function readPsqlPairs(options, sql) {
-    const stdout = await readPsql(options, sql);
+async function readPsqlPairs({ options, sql }) {
+    const stdout = await readPsql({ options, sql });
     const record = {};
     for (const line of stdout.split('\n').filter((value) => value.length > 0)) {
         const separator = line.indexOf('=');
+        if (
+            separator < 1 || !ENVIRONMENT_FIELDS.includes(line.slice(0, separator)) ||
+            Object.hasOwn(record, line.slice(0, separator))
+        ) {
+            throw new TypeError('native SQL facts must contain unique named values');
+        }
         record[line.slice(0, separator)] = line.slice(separator + 1);
     }
     return record;
 }
 
-async function readScalar(options, sql) {
-    return (await readPsql(options, sql)).trim();
+async function readScalar({ options, sql }) {
+    return (await readPsql({ options, sql })).trim();
 }
 
-async function readPsql(options, sql) {
+async function readPsql({ options, sql }) {
     const { stdout } = await execFileAsync('docker', [
         'exec',
         options.container,
@@ -195,30 +206,39 @@ async function readPsql(options, sql) {
         '-F=',
         '-c',
         sql
-    ]);
+    ], { timeout: 15_000, maxBuffer: 65_536 });
     return stdout;
 }
 
 async function readToolchainRecord() {
-    const deno = await readCommandOutput('deno', ['--version']);
+    const deno = await readCommandOutput({ command: 'deno', argumentsInput: ['--version'] });
     return {
         node: process.versions.node,
-        npm: await readCommandOutput('npm', ['--version']),
-        deno: readDenoComponent(deno, 'deno'),
-        deno_v8: readDenoComponent(deno, 'v8'),
-        deno_typescript: readDenoComponent(deno, 'typescript'),
-        docker: await readCommandOutput('docker', ['version', '--format', '{{.Server.Version}}']),
-        docker_compose: await readCommandOutput('docker', ['compose', 'version', '--short'])
+        npm: await readCommandOutput({ command: 'npm', argumentsInput: ['--version'] }),
+        deno: toDenoComponent({ versionText: deno, name: 'deno' }),
+        deno_v8: toDenoComponent({ versionText: deno, name: 'v8' }),
+        deno_typescript: toDenoComponent({ versionText: deno, name: 'typescript' }),
+        docker: await readCommandOutput({
+            command: 'docker',
+            argumentsInput: ['version', '--format', '{{.Server.Version}}']
+        }),
+        docker_compose: await readCommandOutput({
+            command: 'docker',
+            argumentsInput: ['compose', 'version', '--short']
+        })
     };
 }
 
-function readDenoComponent(versionText, name) {
+function toDenoComponent({ versionText, name }) {
     const line = versionText.split('\n').find((value) => value.startsWith(`${name} `));
     return line === undefined ? '' : line.slice(name.length + 1).split(' ')[0];
 }
 
-async function readOverlapRecord(container) {
-    const { stdout } = await execFileAsync('docker', ['ps', '--format', '{{.Names}}']);
+async function readOverlapRecord({ container }) {
+    const { stdout } = await execFileAsync('docker', ['ps', '--format', '{{.Names}}'], {
+        timeout: 15_000,
+        maxBuffer: 65_536
+    });
     const others = stdout.split('\n').filter((name) => name.length > 0 && name !== container);
     return {
         container_overlap_count: String(others.length),
@@ -227,18 +247,18 @@ async function readOverlapRecord(container) {
 }
 
 async function readBenchmarkProcessCount() {
-    const { stdout } = await execFileAsync('ps', ['-A', '-o', 'command=']);
+    const { stdout } = await execFileAsync('ps', ['-A', '-o', 'command='], { timeout: 15_000, maxBuffer: 1_048_576 });
     return stdout
         .split('\n')
         .filter((line) => line.includes(BENCHMARK_PROCESS_MARKER) && !line.includes('ps -A')).length;
 }
 
-async function readCommandOutput(command, argumentsInput) {
-    const { stdout } = await execFileAsync(command, argumentsInput);
+async function readCommandOutput({ command, argumentsInput }) {
+    const { stdout } = await execFileAsync(command, argumentsInput, { timeout: 15_000, maxBuffer: 65_536 });
     return stdout.trim();
 }
 
-function toEnvironmentText(record) {
+function toEnvironmentText({ record }) {
     const missing = ENVIRONMENT_FIELDS.filter((field) => typeof record[field] !== 'string');
     if (missing.length > 0) {
         throw new TypeError(`captured environment is missing fields: ${missing.join(', ')}`);
@@ -246,7 +266,7 @@ function toEnvironmentText(record) {
     return `${ENVIRONMENT_FIELDS.map((field) => `${field}=${record[field]}`).join('\n')}\n`;
 }
 
-function readCaptureOptions(argumentsInput) {
+function readCaptureOptions({ argumentsInput }) {
     const { values } = parseArgs({
         args: argumentsInput,
         options: {
@@ -269,15 +289,60 @@ function readCaptureOptions(argumentsInput) {
             throw new TypeError(`--${name} is required`);
         }
     }
-    return { ...toDatabaseIdentity(values['database-url']), ...values, out: values.out };
+    return { ...toDatabaseIdentity({ databaseUrl: values['database-url'] }), ...values, out: values.out };
 }
 
-function toDatabaseIdentity(databaseUrl) {
+function toDatabaseIdentity({ databaseUrl }) {
     const parsed = new URL(databaseUrl);
     return {
         databaseUser: decodeURIComponent(parsed.username),
         databaseName: decodeURIComponent(parsed.pathname.replace(/^\//, ''))
     };
+}
+
+function toCapturedSidecar({ text }) {
+    const sidecar = toNativeObject({ value: JSON.parse(text) });
+    const record = toNativeObject({ value: sidecar.record });
+    const capturedRecord = {};
+    for (const [field, value] of Object.entries(record)) {
+        if (!ENVIRONMENT_FIELDS.includes(field)) {
+            throw new TypeError('preflight sidecar must contain governed fields');
+        }
+        capturedRecord[field] = toNativeText({ value });
+    }
+    return { containerId: toNativeText({ value: sidecar.containerId }), record: capturedRecord };
+}
+
+/** @param {{ value: unknown }} input */
+function toNativeObject({ value }) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new TypeError('native capture facts must be an object');
+    }
+    return /** @type {Record<string, unknown>} */ (value);
+}
+
+/** @param {{ value: unknown }} input */
+function toNativeText({ value }) {
+    if (typeof value !== 'string') {
+        throw new TypeError('native capture fact must be text');
+    }
+    return value;
+}
+
+/** @param {{ value: unknown }} input */
+function toNativeCounter({ value }) {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+        throw new TypeError('native capture counter must be a nonnegative integer');
+    }
+    return value;
+}
+
+/** @param {{ value: unknown }} input */
+function toNativeArguments({ value }) {
+    if (!Array.isArray(value) || value.length === 0) {
+        throw new TypeError('native container command must be a nonempty argument array');
+    }
+    return value.map((argument) => toNativeText({ value: argument }));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
