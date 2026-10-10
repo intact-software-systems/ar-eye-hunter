@@ -1,16 +1,15 @@
 import assert from 'node:assert/strict';
 import { scheduler } from 'node:timers/promises';
 
-import {
-    RALLAR_CRDT_OPERATION_VERSION,
-    RALLAR_CRDT_PROTOCOL_VERSION,
-    type RallarCrdtDocumentRef,
-    type RallarCrdtOperationBatch,
-    type RallarCrdtUpdateEnvelope
-} from '@shared/crdt/mod.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import {
+    CrdtMutationConflictError,
+    type CrdtMutationCommand,
+    type CrdtMutationComputedWrite
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import { createCrdtMutationService, type CrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import {
     computeCrdtOutboxProvenance,
     writeCrdtOutboxProvenance
@@ -23,22 +22,18 @@ import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    RALLAR_CRDT_OPERATION_VERSION,
+    RALLAR_CRDT_PROTOCOL_VERSION,
+    type RallarCrdtDocumentRef,
+    type RallarCrdtOperationBatch,
+    type RallarCrdtUpdateEnvelope
+} from '@shared/crdt/mod.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
-
-import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-
-import {
-    CrdtMutationConflictError,
-    type CrdtMutationCommand,
-    type CrdtMutationComputedWrite
-} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
-
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 
 import { TestWebSocket } from '../../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
@@ -272,7 +267,7 @@ async function verifyIdenticalOutboxCollisionRollback(): Promise<void> {
         });
         const computed = await computeValidatedWrite(service, input);
         const entries = readCollisionEntries(computed);
-        await createPSqlResourceInboxRepository(sql).entries.write(entries.collision);
+        await createPSqlResourceInboxRepository(sql, () => new Date()).entries.write(entries.collision);
 
         const transactionRejected = await sql.begin(
             async (transaction) => await writePSqlCrdtMutation(transaction, computed)
@@ -309,7 +304,7 @@ async function assertFirstMutationCommitted(
 }
 
 async function computeValidatedWrite(
-    service: ReturnType<typeof createCrdtMutationService>,
+    service: CrdtMutationService,
     input: CrdtMutationCommand
 ): Promise<CrdtMutationComputedWrite> {
     const read = await service.read(input);
@@ -374,7 +369,7 @@ async function readResourceInboxCount(sql: PGliteSql, entry: ResourceEntry): Pro
 
 async function apply(
     sql: PGliteSql,
-    service: ReturnType<typeof createCrdtMutationService>,
+    service: CrdtMutationService,
     input: CrdtMutationCommand
 ): Promise<void> {
     const read = await service.read(input);

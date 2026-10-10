@@ -37,9 +37,9 @@ export interface GroupDeltaProducerFixture {
 export async function createGroupDeltaProducer(sql?: PSqlSql): Promise<GroupDeltaProducerFixture> {
     const database = sql ?? (await createPSqlAdmissionTestStorage()).sql;
     const repository = new PSqlRuntimeStateRepository(database);
-    const resources = createPSqlResourceInboxRepository(database);
-    const queue = new PSqlQueueBox(resources);
     const now = Date.now();
+    const resources = createPSqlResourceInboxRepository(database, () => new Date(now));
+    const queue = new PSqlQueueBox(resources);
     const groupId = `proved-${crypto.randomUUID()}`;
     const runtime = await seedConnectedGroup(groupId, now);
     for (const namespace of Object.values(GroupNamespaces)) {

@@ -230,8 +230,8 @@ async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInbou
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     };
-    const firstBackend = new PSqlAdmissionWorkBackend(first, namespace);
-    const secondBackend = new PSqlAdmissionWorkBackend(second, namespace);
+    const firstBackend = new PSqlAdmissionWorkBackend(first, namespace, Date.now);
+    const secondBackend = new PSqlAdmissionWorkBackend(second, namespace, Date.now);
     return [
         {
             admissionStore: createALInboundAdmissionStore({

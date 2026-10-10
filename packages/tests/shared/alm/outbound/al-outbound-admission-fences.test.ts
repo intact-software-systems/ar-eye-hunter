@@ -1,5 +1,3 @@
-import '../../../setup-browser-indexeddb.ts';
-
 import {
     describe,
     expect,
@@ -8,6 +6,7 @@ import {
     vi
 } from 'vitest';
 
+import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import {
     createTestALOutboundControlAdmission,
     createTestALOutboundWorkPort
@@ -52,8 +51,7 @@ import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts'
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
-import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
-
+import '../../../setup-browser-indexeddb.ts';
 import { createPSqlAdmissionTestStorage } from '../../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import {
     computeOutboundTestAdmission,
@@ -262,7 +260,7 @@ async function createFenceFixture(storage: FenceStorage): Promise<FenceFixture> 
 async function createPGliteFenceBackend(namespace: string): Promise<Omit<FenceFixture, 'store'>> {
     const { sql, repository } = await createPSqlAdmissionTestStorage();
     return {
-        backend: new PSqlAdmissionWorkBackend(sql, namespace),
+        backend: new PSqlAdmissionWorkBackend(sql, namespace, Date.now),
         readAdmissionState: async () => toAdmissionStateFingerprint(await repository.findAllEntries(namespace))
     };
 }

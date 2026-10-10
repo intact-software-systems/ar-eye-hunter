@@ -1,4 +1,3 @@
-import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
@@ -10,6 +9,7 @@ import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { requireRecord } from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
@@ -49,7 +49,7 @@ Deno.test(
         await withPGliteSql(async (sql) => {
             const nowEpochMs = Date.parse('2026-07-23T00:00:00.000Z');
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = createPSqlResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
             const authSessions = new AuthSessionRepository(runtime);
@@ -263,7 +263,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
     await withPGliteSql(async (sql) => {
         const nowEpochMs = Date.parse('2026-07-23T00:00:00.000Z');
         const runtime = new PSqlRuntimeStateRepository(sql);
-        const resourceInbox = createPSqlResourceInboxRepository(sql);
+        const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
         const authority: IssuedAuthSession = {
             clientId: 'owner',
             sessionId: 'retry-owner-session',

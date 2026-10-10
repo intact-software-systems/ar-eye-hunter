@@ -1,42 +1,28 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-
 import {
     createPSqlResourceInboxRepository,
     type PSqlResourceInboxRepository
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-
-import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-
-import { GROUP_TOPOLOGY_CONFIG_NAMESPACE } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
-
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+import { GROUP_TOPOLOGY_CONFIG_NAMESPACE } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
-
-import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
-
-import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
-import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
-import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
-
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
-
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { PostgresAppInboxWorkerTrace, TopologyReadBarrierPrimitive } from './postgres-app-inbox-worker-runtime.ts';
 
@@ -65,7 +51,7 @@ export function createPostgresAppInboxWorkerServices(
     const runtimeRepository = new PSqlRuntimeStateRepository(input.sql);
     const topologyRuntimeRepository = createTopologyRuntimeRepository(input, runtimeRepository);
     const authSessions = new AuthSessionRepository(runtimeRepository);
-    const resourceInbox = createPSqlResourceInboxRepository(input.sql);
+    const resourceInbox = createPSqlResourceInboxRepository(input.sql, () => new Date(input.atEpochMs));
     const inbox = createPostgresAppInboxWorkerInbox(resourceInbox, input.trace);
     const resourceInboxResults = new ResourceInboxResultsRepository(input.sql);
     const waitOptions = createPostgresAppInboxWorkerWaitOptions(input.atEpochMs);

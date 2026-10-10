@@ -1,23 +1,17 @@
 import assert from 'node:assert/strict';
 
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-
+import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
-
 import {
     authorizeTestCrdtCommand,
     queueNow,
@@ -36,7 +30,7 @@ interface ResourceInboxResultPayloadRow {
 }
 
 interface RetryMutationScenario {
-    readonly service: ReturnType<typeof createApiCrdtInboxService>;
+    readonly service: AppCrdtInboxService;
     readonly inboxQueueReader: InboxQueueReader;
     readonly documentAuthorityReadCount: () => number;
 }
@@ -66,7 +60,7 @@ function createRetryMutationScenario(sql: PGliteSql, now: number): RetryMutation
     const database = withCompetingWrite(sql, now, () => {
         membershipAllowed = false;
     });
-    const resourceInbox = createPSqlResourceInboxRepository(sql);
+    const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(now));
     const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
     return {
         service: createApiCrdtInboxService({
@@ -102,7 +96,7 @@ function createRetryMutationScenario(sql: PGliteSql, now: number): RetryMutation
 }
 
 async function enqueueOwnerUpdate(
-    service: ReturnType<typeof createApiCrdtInboxService>,
+    service: AppCrdtInboxService,
     now: number
 ): Promise<void> {
     await service.createAndEnqueueAppend({

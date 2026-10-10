@@ -39,7 +39,7 @@ let repository: PSqlResourceInboxEntryRepository;
 beforeAll(async () => {
     storage = await createResourceInboxPollTestStorage();
     sql = storage.sql;
-    repository = new PSqlResourceInboxEntryRepository(sql);
+    repository = new PSqlResourceInboxEntryRepository(sql, () => new Date());
 });
 afterAll(async () => await storage?.close());
 beforeEach(async () => await sql`delete from resource_inbox`);
@@ -79,7 +79,7 @@ describe('resource inbox poll projection', () => {
 
     it('reads only status and attempts in one bounded exact-key SQL statement', async () => {
         const capture = createResourceInboxQueryCapture();
-        const entries = new PSqlResourceInboxEntryRepository(capture.sql);
+        const entries = new PSqlResourceInboxEntryRepository(capture.sql, () => new Date());
         expect(await entries.readStatusAndAttempts(key)).toBeUndefined();
         expect(capture.queries).toEqual([{
             query: 'select ri_status, ri_attempts from resource_inbox where ri_topic_id = and ri_resource_id = and fk_ext_bank_id = and expire_ts > limit 1',

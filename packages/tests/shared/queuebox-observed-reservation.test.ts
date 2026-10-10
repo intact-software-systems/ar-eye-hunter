@@ -1,8 +1,14 @@
-import '../setup-browser-indexeddb.ts';
-
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
+
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
 import { IndexedDbConnection, openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -15,14 +21,8 @@ import {
     toKeyAsString,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
-import {
-    describe,
-    expect,
-    it,
-    onTestFinished
-} from 'vitest';
 
-import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import '../setup-browser-indexeddb.ts';
 import { createPSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 
 describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s observed QueueBox reservation', (storage) => {
@@ -246,7 +246,7 @@ async function createQueue(storage: 'memory' | 'indexeddb' | 'pglite'): Promise<
         }
         case 'pglite': {
             const { sql } = await createPSqlAdmissionTestStorage();
-            return new PSqlQueueBox(createPSqlResourceInboxRepository(sql));
+            return new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()));
         }
     }
 }

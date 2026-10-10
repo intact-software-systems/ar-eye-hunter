@@ -100,8 +100,8 @@ async function createStores(): Promise<readonly [ALOutboundAdmissionStore<Outbou
         retention: normalizeALRuntimeStoreRetention()
     };
     return [
-        createALOutboundAdmissionStore({ ...configuration, backend: new PSqlAdmissionWorkBackend(first, namespace) }),
-        createALOutboundAdmissionStore({ ...configuration, backend: new PSqlAdmissionWorkBackend(second, namespace) })
+        createALOutboundAdmissionStore({ ...configuration, backend: new PSqlAdmissionWorkBackend(first, namespace, Date.now) }),
+        createALOutboundAdmissionStore({ ...configuration, backend: new PSqlAdmissionWorkBackend(second, namespace, Date.now) })
     ];
 }
 

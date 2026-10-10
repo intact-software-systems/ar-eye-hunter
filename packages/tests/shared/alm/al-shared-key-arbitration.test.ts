@@ -1,5 +1,3 @@
-import '../../setup-browser-indexeddb.ts';
-
 import {
     describe,
     expect,
@@ -13,7 +11,7 @@ import {
     newALUnicastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
-import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
+import { planALMessageHandling, type ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
@@ -50,6 +48,7 @@ import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import '../../setup-browser-indexeddb.ts';
 import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import {
     computeOutboundTestAdmission,
@@ -286,7 +285,7 @@ async function createPGliteArbitrationFixture(namespace: string): Promise<Arbitr
     const { sql, repository } = await createPSqlAdmissionTestStorage();
     return {
         namespace,
-        backend: new PSqlAdmissionWorkBackend(sql, namespace),
+        backend: new PSqlAdmissionWorkBackend(sql, namespace, Date.now),
         readRow: async (key) => toRowWitness(await repository.findEntry(namespace, key))
     };
 }
@@ -375,7 +374,7 @@ function toInboundPlanningContext(message: ALMessage, nowMs: number) {
 }
 
 interface InboundDecision {
-    readonly plan: ReturnType<typeof planALMessageHandling>;
+    readonly plan: ALMessageHandlingPlan;
     readonly bundle: ALInboundCommitBundle;
 }
 

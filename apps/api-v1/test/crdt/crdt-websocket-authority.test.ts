@@ -226,7 +226,7 @@ async function createCrdtWebSocketAuthorityFixture(
     const clients = new ClientStateRepository(runtime, new PSqlClientStateEventRepository(sql));
     await clients.insertPrincipal(principal());
     await clients.insertInstance(instance());
-    const resourceInbox = createPSqlResourceInboxRepository(sql);
+    const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(NOW));
     const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
     const service = createCrdtAuthorityInbox({ sql, auth, clients, resourceInbox, inboxQueueReader });
     const queue = new InMemoryQueueBox();

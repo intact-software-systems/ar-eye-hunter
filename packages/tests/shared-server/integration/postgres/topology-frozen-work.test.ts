@@ -1,14 +1,15 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
     it
 } from 'vitest';
 
-import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-
-import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
@@ -19,6 +20,7 @@ import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topol
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -87,14 +89,14 @@ describe('Postgres topology frozen work', () => {
 
 interface FrozenWorkHarness {
     readonly outboxQueueReader: OutboxQueueReader;
-    readonly resources: ReturnType<typeof createPSqlResourceInboxRepository>;
+    readonly resources: PSqlResourceInboxRepository;
     readonly snapshots: RtcTopologySnapshotRepository;
     readonly executionRepository: RtcTopologyExecutionRepository;
     readonly topologyService: RallarRtcTopologyService;
 }
 
 function createFrozenWorkHarness(sql: PSqlSql, now: () => number): FrozenWorkHarness {
-    const resources = createPSqlResourceInboxRepository(sql);
+    const resources = createPSqlResourceInboxRepository(sql, () => new Date(now()));
     const outboxQueueReader = new OutboxQueueReader(new PSqlQueueBox(resources));
     const runtimeRepository = new PSqlRuntimeStateRepository(sql);
     const groupStateRepository = createTestGroupStateRepository(

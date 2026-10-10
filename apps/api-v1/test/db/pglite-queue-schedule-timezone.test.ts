@@ -1,11 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import assert from 'node:assert/strict';
+
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import assert from 'node:assert/strict';
+
 import {
     createResourceEntry,
     readPGliteDatabaseEpochMs,
@@ -19,7 +18,7 @@ import {
 Deno.test('PGlite scheduled entries stay invisible until next_ts under a skewed session time zone', async () => {
     await withPGliteSql(async (sql) => {
         await sql.exec('set time zone \'Etc/GMT-5\'');
-        const repository = createPSqlResourceInboxRepository(sql);
+        const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queueBox = new PSqlQueueBox(repository);
         const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
 
@@ -60,7 +59,7 @@ Deno.test('PGlite scheduled entries stay invisible until next_ts under a skewed 
 Deno.test('PGlite retry release delay is honored under a skewed session time zone', async () => {
     await withPGliteSql(async (sql) => {
         await sql.exec('set time zone \'Etc/GMT-5\'');
-        const repository = createPSqlResourceInboxRepository(sql);
+        const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queueBox = new PSqlQueueBox(repository);
 
         await repository.entries.writeIfAbsentOrMatch(createResourceEntry('retry-delayed'));

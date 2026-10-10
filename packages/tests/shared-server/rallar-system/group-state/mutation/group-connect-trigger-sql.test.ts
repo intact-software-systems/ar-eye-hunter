@@ -1,4 +1,12 @@
 import { PGlite } from '@electric-sql/pglite';
+import { readFileSync } from 'node:fs';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
@@ -35,9 +43,7 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import { readFileSync } from 'node:fs';
-import { vi } from 'vitest';
-import { describe, expect, it } from 'vitest';
+
 import { createPGliteSqlClient } from '../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
 import { createRuntimeStatePostgresSql, requirePostgresDatabaseUrl } from '../../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 import { createGroupAuthorityFacts, createGroupAuthorityRead } from './group-mutation-test-runtime.ts';
@@ -48,7 +54,7 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
     sqlIt('rolls back a late outbox collision, commits the exact latch with group/plan, and rejects stale replay', async () => {
         await withConnectSql(backend, async (sql, applicationId) => {
             const { computed, runtime, identity } = await seedConnectWrite(sql, applicationId);
-            const outbox = new PSqlResourceInboxEntryRepository(sql);
+            const outbox = new PSqlResourceInboxEntryRepository(sql, () => new Date());
             const entry = computed.outboxWrites[0]!.entry;
             await outbox.writeIfAbsentOrMatch({ ...entry, resource: 'collision' });
             const latches = new GroupConnectTriggerLatchRepository(runtime);
@@ -229,7 +235,7 @@ async function withConnectSql(backend: 'memory' | 'postgres', run: (sql: PSqlSql
 
 function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string) {
     const runtimeRepository = new PSqlRuntimeStateRepository(sql);
-    const resources = createPSqlResourceInboxRepository(sql);
+    const resources = createPSqlResourceInboxRepository(sql, () => new Date());
     const queue = new PSqlQueueBox(resources);
     const outboxQueueReader = new OutboxQueueReader(queue);
     const read = createGroupAuthorityRead({ applicationId, lifecycleState: 'planned', formationEpoch: 3 });

@@ -1,25 +1,20 @@
 import {
-    createTestALOutboundControlAdmission,
-    createTestALOutboundWorkPort
-} from '@shared-test/shared/create-test-al-outbound-work-port.ts';
-import { toALOutboundMessageReference } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
-import {
     describe,
     expect,
     it,
     vi
 } from 'vitest';
-import {
-    computeOutboundTestAdmission,
-    peekOutboundWorkReadyAt
-} from '../shared/alm/outbound-runtime-test-fixture.ts';
-import { readInboundTestMessageOwner } from '../shared/alm/read-inbound-test-message-owner.ts';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
 import { createTestALInboundControlAdmission } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
+import {
+    createTestALOutboundControlAdmission,
+    createTestALOutboundWorkPort
+} from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALInboundAdmissionStore, ALInboundWriteRequest } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { toALOutboundMessageReference } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
@@ -34,6 +29,11 @@ import {
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import { createPSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
+import {
+    computeOutboundTestAdmission,
+    peekOutboundWorkReadyAt
+} from '../shared/alm/outbound-runtime-test-fixture.ts';
+import { readInboundTestMessageOwner } from '../shared/alm/read-inbound-test-message-owner.ts';
 
 interface IndexedRecord {
     readonly index: number;
@@ -48,7 +48,7 @@ describe('PostgreSQL inbound admission', () => {
     it('lists prefix rows through runtime-state pages when available', async () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:inbound:paged-list';
-        const backend = new PSqlAdmissionWorkBackend(sql, namespace);
+        const backend = new PSqlAdmissionWorkBackend(sql, namespace, Date.now);
         const prefix = 'effect:';
         const total = RUNTIME_STATE_PREFIX_READ_PAGE_SIZE + 2;
 
@@ -82,7 +82,7 @@ describe('PostgreSQL inbound admission', () => {
 
     it('returns a read-only admission result without opening a SQL transaction', async () => {
         const { sql } = await createPSqlAdmissionTestStorage();
-        const backend = new PSqlAdmissionWorkBackend(sql, 'psql-test:read-only');
+        const backend = new PSqlAdmissionWorkBackend(sql, 'psql-test:read-only', Date.now);
         vi.spyOn(sql, 'begin').mockRejectedValue(new Error('A read-only result must not begin a write'));
 
         await expect(backend.write((read) => read.read('missing', decodeIndexedRecord))).resolves.toBeUndefined();
@@ -94,7 +94,7 @@ describe('PostgreSQL inbound admission', () => {
         const store = createALInboundAdmissionStore({
             nowMs: Date.now,
             namespace,
-            backend: new PSqlAdmissionWorkBackend(sql, namespace),
+            backend: new PSqlAdmissionWorkBackend(sql, namespace, Date.now),
             orderingTrackTtlMs: 5 * 60_000,
             supersedenceTrackTtlMs: 5 * 60_000,
             retention: normalizeALRuntimeStoreRetention(),
@@ -128,7 +128,7 @@ describe('PostgreSQL inbound admission', () => {
     it('records inbound receipt progress while retaining message provenance', async () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:inbound:admission';
-        const backend = new PSqlAdmissionWorkBackend(sql, namespace);
+        const backend = new PSqlAdmissionWorkBackend(sql, namespace, Date.now);
         const store = createALInboundAdmissionStore({
             nowMs: Date.now,
             namespace,
@@ -217,7 +217,7 @@ describe('PostgreSQL outbound admission', () => {
     it('conditionally advances sender version and persists durable effects in one commit', async () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:outbound:admission';
-        const backend = new PSqlAdmissionWorkBackend(sql, namespace);
+        const backend = new PSqlAdmissionWorkBackend(sql, namespace, Date.now);
         const store = createALOutboundAdmissionStore({
             decodePrepared: decodePreparedOutboundSend,
             nowMs: Date.now,
@@ -293,7 +293,7 @@ describe('PostgreSQL outbound admission', () => {
     it('bumps the owning sender version when accepting outbound control messages', async () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:outbound:admission';
-        const backend = new PSqlAdmissionWorkBackend(sql, namespace);
+        const backend = new PSqlAdmissionWorkBackend(sql, namespace, Date.now);
         const store = createALOutboundAdmissionStore({
             decodePrepared: decodePreparedOutboundSend,
             nowMs: Date.now,

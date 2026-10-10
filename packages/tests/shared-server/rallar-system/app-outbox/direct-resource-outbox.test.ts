@@ -13,10 +13,8 @@ import type {
     PSqlSql
 } from '@shared-server/postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import type { ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { computeAppOutboxInsert, writeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import {
     writeCoalescedAppOutboxWork,
@@ -45,8 +43,7 @@ import {
     EnqueuedType,
     InMemoryQueueBox
 } from '@shared/mod.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import type { WsOutboxDeliveryOutcome } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -304,7 +301,7 @@ describe('direct resource outbox writes', () => {
 
         await expect(
             runInPSqlTransaction(database.sql, async (transaction) => {
-                await createPSqlResourceInboxRepository(transaction).entries.writeIfAbsentOrMatch({
+                await createPSqlResourceInboxRepository(transaction, () => new Date(CREATED_AT_EPOCH_MS)).entries.writeIfAbsentOrMatch({
                     ...entries[0]!,
                     resource: JSON.stringify({ corrupt: true })
                 });
@@ -517,7 +514,7 @@ describe('direct resource outbox writes', () => {
         await expect(
             runInPSqlTransaction(
                 database.sql,
-                async (transaction) => await writeCoalescedAppOutboxWork(transaction, computed)
+                async (transaction) => await writeCoalescedAppOutboxWork(transaction, computed, () => new Date(CREATED_AT_EPOCH_MS))
             )
         ).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
         expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(first.resource);
@@ -533,18 +530,18 @@ describe('direct resource outbox writes', () => {
         const third = thirdWork.entryWrite.entry;
         const successor = thirdWork.successorWrite.entry;
         await runInPSqlTransaction(database.sql, async (transaction) => {
-            await createPSqlResourceInboxRepository(transaction).entries.writeIfAbsentOrMatch(first);
+            await createPSqlResourceInboxRepository(transaction, () => new Date(CREATED_AT_EPOCH_MS)).entries.writeIfAbsentOrMatch(first);
         });
         await runInPSqlTransaction(
             database.sql,
-            async (transaction) => await writeCoalescedAppOutboxWork(transaction, nextWork)
+            async (transaction) => await writeCoalescedAppOutboxWork(transaction, nextWork, () => new Date(CREATED_AT_EPOCH_MS))
         );
         expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(next.resource);
 
         database.reserve(next);
         await runInPSqlTransaction(
             database.sql,
-            async (transaction) => await writeCoalescedAppOutboxWork(transaction, thirdWork)
+            async (transaction) => await writeCoalescedAppOutboxWork(transaction, thirdWork, () => new Date(CREATED_AT_EPOCH_MS))
         );
 
         expect(database.rows.get(toRowKey(next))?.ri_resource).toBe(next.resource);
@@ -855,34 +852,16 @@ function assertUntrustedGroupStateSync(computed: object): void {
     Reflect.apply(computeGroupStateSyncEntries, undefined, [computed, 'server-1']);
 }
 
-interface TestResourceInboxRow {
-    ri_row_id: bigint;
-    ri_resource_id: string;
-    ri_topic_id: string;
-    ri_resource: string;
-    ri_type_id: string;
-    ri_status: string;
-    fk_ext_bank_id: string;
-    system_date: string;
-    created_by: string;
-    created_ts: string;
-    expire_ts: string;
-    start_ts: string | null;
-    end_ts: string | null;
-    next_ts: string | null;
-    ri_attempts: bigint;
-}
-
 interface ResourceInboxTestDatabase {
     readonly sql: PSqlSql;
-    readonly rows: Map<string, TestResourceInboxRow>;
+    readonly rows: Map<string, ResourceInboxRow>;
     readonly beginCalls: number;
     readonly nestedBeginCalls: number;
     reserve(entry: ResourceEntry): void;
 }
 
 function createResourceInboxDatabase(): ResourceInboxTestDatabase {
-    let rows = new Map<string, TestResourceInboxRow>();
+    let rows = new Map<string, ResourceInboxRow>();
     let beginCalls = 0;
     let nestedBeginCalls = 0;
     function rootSql(values: readonly PSqlParameter[]): object;
@@ -935,7 +914,7 @@ function createResourceInboxDatabase(): ResourceInboxTestDatabase {
 }
 
 function createResourceInboxTransaction(
-    rows: Map<string, TestResourceInboxRow>,
+    rows: Map<string, ResourceInboxRow>,
     onNestedBegin: () => void
 ): PSqlSql {
     function transaction(values: readonly PSqlParameter[]): object;
@@ -967,7 +946,7 @@ function createResourceInboxTransaction(
 }
 
 function executeResourceInboxQuery(
-    rows: Map<string, TestResourceInboxRow>,
+    rows: Map<string, ResourceInboxRow>,
     query: string,
     values: readonly PSqlParameter[]
 ): PSqlRows {
@@ -984,7 +963,7 @@ function executeResourceInboxQuery(
 }
 
 function insertResourceInboxTestRow(
-    rows: Map<string, TestResourceInboxRow>,
+    rows: Map<string, ResourceInboxRow>,
     values: readonly PSqlParameter[]
 ): PSqlRows {
     const row = toTestRow(values, BigInt(rows.size + 1));
@@ -997,7 +976,7 @@ function insertResourceInboxTestRow(
 }
 
 function readResourceInboxTestRow(
-    rows: Map<string, TestResourceInboxRow>,
+    rows: Map<string, ResourceInboxRow>,
     values: readonly PSqlParameter[]
 ): PSqlRows {
     const topicId = readStringParameter(values[0], 'topic id');
@@ -1008,7 +987,7 @@ function readResourceInboxTestRow(
 }
 
 function updateResourceInboxTestRow(
-    rows: Map<string, TestResourceInboxRow>,
+    rows: Map<string, ResourceInboxRow>,
     values: readonly PSqlParameter[]
 ): PSqlRows {
     const resource = readStringParameter(values[0], 'resource');
@@ -1039,7 +1018,7 @@ function updateResourceInboxTestRow(
     return [{ ...row }];
 }
 
-function toTestRow(values: readonly PSqlParameter[], rowId: bigint): TestResourceInboxRow {
+function toTestRow(values: readonly PSqlParameter[], rowId: bigint): ResourceInboxRow {
     return {
         ri_row_id: rowId,
         ri_resource_id: readStringParameter(values[0], 'resource id'),
@@ -1093,7 +1072,7 @@ function readCoalescedGeneration(resource: string): number {
     return envelope.data.__rallarCoalescedWork.generation;
 }
 
-function toRowKey(value: ResourceEntry | TestResourceInboxRow): string {
+function toRowKey(value: ResourceEntry | ResourceInboxRow): string {
     if ('key' in value) {
         return `${value.key.contextId}::${value.key.topicId}::${value.key.resourceId}`;
     }

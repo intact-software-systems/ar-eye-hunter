@@ -42,7 +42,7 @@ export class PSqlResourceInboxEntryRepository {
     private readonly reader: PSqlResourceInboxEntryReader;
     private readonly now: () => Date;
 
-    constructor(sql: PSqlSql, now: () => Date = () => new Date()) {
+    constructor(sql: PSqlSql, now: () => Date) {
         this.sql = sql;
         this.now = now;
         this.reader = new PSqlResourceInboxEntryReader(sql, now);

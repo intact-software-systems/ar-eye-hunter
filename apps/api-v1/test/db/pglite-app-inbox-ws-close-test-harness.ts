@@ -19,12 +19,13 @@ import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/sta
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { FUTURE_MS } from './pglite-auth-test-harness.ts';
 
 export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promise<PGliteAppInboxWsCloseHarness> {
     const runtime = new PSqlRuntimeStateRepository(sql);
-    const resourceInbox = createPSqlResourceInboxRepository(sql);
+    const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const resourceResults = new ResourceInboxResultsRepository(sql);
     const reader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
     const secondReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
@@ -122,7 +123,7 @@ function assertPGliteQueueRow(found: boolean, type: AppInboxType): void {
     }
 }
 
-interface PGliteAppInboxWsCloseHarness {
+export interface PGliteAppInboxWsCloseHarness {
     readonly authority: IssuedAuthSession;
     readonly runtime: PSqlRuntimeStateRepository;
     readonly resourceInbox: PSqlResourceInboxRepository;

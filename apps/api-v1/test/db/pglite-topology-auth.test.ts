@@ -5,6 +5,7 @@ import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postg
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -35,6 +36,7 @@ import {
     newALUntargetedMessage
 } from '@shared/mod.ts';
 import { configureRttRepository } from '@shared/repository/rtt-repository.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
@@ -67,7 +69,7 @@ interface AcceptedTopologyHttpCommand {
 
 interface ProcessedTopologyCommand {
     readonly command: TopologyAppInboxCommand;
-    readonly result: Awaited<ReturnType<typeof submitPGliteTopologyCommand>>;
+    readonly result: Either<AppInboxFailure, TopologyAppInboxResult>;
 }
 
 Deno.test(
@@ -76,7 +78,7 @@ Deno.test(
         await withPGliteSql(async (sql) => {
             const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = createPSqlResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
             const authSessions = new AuthSessionRepository(runtime);
