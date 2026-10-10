@@ -26,7 +26,7 @@ export type ALInboundRuntimeDiagnosticsEvent =
     | Readonly<{
         kind: 'admission-outcome';
         workerId: string;
-        /** The message this ingress decided on, so one delivery can be followed to the drain that ran it. */
+        /** The message this ingress decided on, for following delivery when the admission and drain events are captured. */
         msgId: string;
         typeId: string;
         /** The carrier the message arrived on. */
@@ -49,7 +49,7 @@ export type ALInboundRuntimeDiagnosticsEvent =
         selectionDurationMs: number;
         /** The port's reservation of the rows that read cleared. */
         claimDurationMs: number;
-        /** Every claim's own work, summed — the same claims `claim-settled` reports one by one. */
+        /** Every claim's own work, summed; individual `claim-settled` records may be absent. */
         runDurationMs: number;
         /** Every release this batch wrote, summed. */
         releaseDurationMs: number;
@@ -60,7 +60,11 @@ export type ALInboundRuntimeDiagnosticsEvent =
          * `batchStartedAtMs`. `durationMs` and `queueWaitMs` run from the batch's own earlier start.
          */
         startedAtMs: number;
-        /** The batch's run order; each id is also a `claim-settled.effectId` unless that claim threw. */
+        /**
+         * The batch's run order. An id joins to `claim-settled.effectId` when that claim returns a
+         * reportable outcome and guarded diagnostic projection/publication succeeds. An absent
+         * settlement event establishes no claim outcome.
+         */
         claimedEffectIds: readonly string[];
         /** Due rows this batch's page saw and did not run, oldest first. */
         deferred: readonly ALInboundDeferredEffect[];
@@ -128,7 +132,8 @@ export interface ALInboundRuntimeDiagnosticsSink {
 
 /**
  * What a claimed effect says about the message it runs, for the join back to its
- * `admission-outcome`. Null is absence, not a name: `payloadKind` says which effect withheld it.
+ * `admission-outcome` when both events are captured. Null is absence, not a name:
+ * `payloadKind` says which effect withheld it.
  */
 export interface ALInboundClaimIdentity {
     readonly msgId: string | null;
@@ -181,8 +186,9 @@ export interface ALInboundAdmissionDiagnostics {
 }
 
 /**
- * Names an ending that otherwise leaves no trace at all: an `unauthorized` drop writes nothing,
- * sends no NACK and returns no error, so without this it reads exactly like a delivery still coming.
+ * Projects the admission result for optional publication. An `unauthorized` drop writes nothing
+ * and sends no NACK; its captured diagnostic can distinguish that refusal from pending delivery.
+ * Diagnostic absence alone establishes neither outcome.
  */
 export function toALInboundAdmissionDiagnostics(
     admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Admission>
