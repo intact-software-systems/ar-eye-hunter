@@ -522,9 +522,41 @@ Current affected types, package checks and app build passed. The pre-fix broad
 suite passed 15,162 tests/12 skipped; its source binding remains explicit rather
 than becoming a current-fix claim. Storage exceptions stay with the existing
 storage-failure owner without an invented commit-return observation. The capture
-capability and its overhead have not yet been measured in a native run; these
-controlled proofs do not diagnose the earlier native acknowledgement failure or
-establish elapsed performance gain.
+capability is now present in a reviewed native run; its overhead remains
+unisolated. These controlled proofs do not diagnose the earlier native
+acknowledgement failure or establish elapsed performance gain.
+
+The current default-off native observation retains 35 actual confirmations:
+28 committed partial inputs, six complete inputs before successful observers,
+and one complete input after its observer timed out but within the message TTL.
+No retained complete confirmation precedes that timed-out observer's bound;
+read/commit failures can leave no confirmation record, so absence is not proof
+of non-arrival. Native acceptance remains failed: 81 shots, 56 identity-consistent
+director intents, ten successful observers and 71 timeouts; thirteen final
+recipes/samplers/cleanup actors, missing two; no end or final storage and all
+73 predicates unevaluated. One director start receipt confirms the actual
+fourteen-player audience. Fresh evidence and scoped wording review preserve
+these limits without earning a downstream repair or performance benefit.
+
+The next observation belongs upstream: actual authenticated logical-recipient
+ACK admission, frozen aggregate count/deadline/result, and complete receipt
+publication/return. Logical ACKs use AL control admission or verified relay;
+they are distinct from AppInbox domain mutation handling. Existing admin
+snapshots are bounded, process-local outbound projections and can omit this
+client-originated subject. Current timing records omit exact ACK/count facts
+and support only scalar details; flags alone cannot recover the missing span.
+
+Use the existing opt-in API-child stdout, safe JSONL/summary and workflow
+artifact lifecycle for a narrowly typed private owner observation. Retain
+actual identities, frozen sets, clocks/revisions, typed count outcome and
+existing enqueue result without another authorization/query/write or policy
+engine. Preserve immutable capture and guarded publication after existing
+effects, default-off behavior, error/exit/line/signal/reap limits and closed
+safe fields. No wire/persisted/admin API or dependency change is required.
+Logger and collector loss remain possible; partial capture and absent rows
+remain unknown rather than proving absent ACKs. The source capability needs
+real-owner and actual recorder RED/GREEN before one captured native observation;
+all native predicates remain fixed and capture costs remain unisolated.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
