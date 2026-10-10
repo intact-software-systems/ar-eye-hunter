@@ -4,10 +4,16 @@ import type {
     ALOutboundMessageRuntime,
     ALOutboundSettledSendResult
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
+import { toALOutboundReceiptFacts } from '../../alm/outbound/lane/al-outbound-receipt-observation.ts';
+import type { ALWorkObservationDeferral } from '../../alm/work/al-work-handler.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
+import {
+    recordWsQueueBoxServerReceiptObservation,
+    type WsQueueBoxServerReceiptObserver
+} from './ws-queue-box-server-receipt-observation.ts';
 import {
     computeWsQueueBoxServerReceiptRepublishDelayMs,
     isWsQueueBoxServerReceiptRow
@@ -19,13 +25,19 @@ export namespace WsQueueBoxServerClusterPublication {
      * Hands one durable outbox row to every other instance and delivers it to this instance's own targets. The
      * publisher reads the row's captured policy itself, so the audience it was admitted to is read once.
      */
-    export type Publisher = (message: ALMessage, entry: ResourceEntry) => Promise<void>;
+    export type Publisher = (
+        message: ALMessage,
+        entry: ResourceEntry,
+        deferObservation?: ALWorkObservationDeferral
+    ) => Promise<void>;
 
     export interface Dependencies {
         readonly targetResolution: WsQueueBoxServerTargetResolution;
         /** The outbound owner's canonical scope, which locates the outbox row a publication names. */
         readonly canonicalScope: string;
         readonly clock: ALOutboundMessageRuntime.Clock;
+        readonly receiptObserver?: WsQueueBoxServerReceiptObserver;
+        readonly serverPeerId?: string;
     }
 
     export type ClusterPreparedMessage = Extract<
@@ -69,21 +81,55 @@ export class WsQueueBoxServerClusterPublication {
     ): Promise<ALOutboundSettledSendResult> {
         return prepared.kind === 'cluster-local-complete'
             ? { status: 'sent', submissionAttempted: true }
-            : await this.writeReceiptRow(lifecycle.canonicalMessage);
+            : await this.writeReceiptRow(lifecycle.canonicalMessage, lifecycle.deferReceiptObservation);
     }
 
     /** The publisher also delivers to this instance, so a receipt whose origin is here now completes. */
-    private async writeReceiptRow(message: ALMessage): Promise<ALOutboundSettledSendResult> {
-        const originIsHere = this.#dependencies.targetResolution.resolveOutboundRecipients(message).length > 0;
-        await this.#publisher?.(message, {
-            ...QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX),
-            key: toALOutboundCanonicalKey(this.#dependencies.canonicalScope, message)
-        });
-        return originIsHere ? { status: 'sent', submissionAttempted: true } : {
-            status: 'not-ready',
-            submissionAttempted: false,
-            retryAfterMs: computeWsQueueBoxServerReceiptRepublishDelayMs(message, this.#dependencies.clock.nowMs()),
-            reason: 'WS receipt origin has no session on this instance'
-        };
+    private async writeReceiptRow(
+        message: ALMessage,
+        deferObservation: ALWorkObservationDeferral | undefined
+    ): Promise<ALOutboundSettledSendResult> {
+        const facts = this.#dependencies.receiptObserver === undefined ? undefined : toALOutboundReceiptFacts(message);
+        const serverPeerId = this.#dependencies.serverPeerId ?? message.id.senderId;
+        let publisherCall: 'absent' | 'invoked' | 'returned' = 'absent';
+        let originIsHere: boolean | undefined;
+        let result: ALOutboundSettledSendResult | undefined;
+        try {
+            originIsHere = this.#dependencies.targetResolution.resolveOutboundRecipients(message).length > 0;
+            const publisher = this.#publisher;
+            if (publisher !== undefined) {
+                const entry = {
+                    ...QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX),
+                    key: toALOutboundCanonicalKey(this.#dependencies.canonicalScope, message)
+                };
+                publisherCall = 'invoked';
+                await publisher(message, entry, deferObservation);
+                publisherCall = 'returned';
+            }
+            result = originIsHere ? { status: 'sent', submissionAttempted: true } : {
+                status: 'not-ready',
+                submissionAttempted: false,
+                retryAfterMs: computeWsQueueBoxServerReceiptRepublishDelayMs(message, this.#dependencies.clock.nowMs()),
+                reason: 'WS receipt origin has no session on this instance'
+            };
+            return result;
+        }
+        finally {
+            if (facts !== undefined) {
+                recordWsQueueBoxServerReceiptObservation(this.#dependencies.receiptObserver, {
+                    ...facts,
+                    kind: 'receipt-transport',
+                    serverPeerId,
+                    transport: 'cluster-receipt',
+                    nativeCall: 'not-called',
+                    connectionId: undefined,
+                    publisherCall,
+                    originIsHere,
+                    outcome: result?.status ?? 'threw',
+                    submissionAttempted: result?.submissionAttempted,
+                    retryAfterMs: result?.retryAfterMs
+                }, deferObservation);
+            }
+        }
     }
 }

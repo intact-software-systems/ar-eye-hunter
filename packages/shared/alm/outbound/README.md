@@ -66,6 +66,30 @@ expiry, retry, and exhausted-attempt recovery. A queued native send retains its 
 transport settlement; it does not block available peers or complete merely because the carrier
 accepted local queue ownership.
 
+## Private server receipt work evidence
+
+[`ALOutboundReceiptWorkEvidence`](./lane/al-outbound-receipt-observation.ts) owns the
+closed receipt/work snapshot for a decoded claim. The lane captures the immutable
+receipt, worker, effect kind, attempt count and existing audit/batch/lease stamps;
+message effects add the authority, actual admission return and known failure stage.
+`effectLocator` hashes the exact effect/attempt id; `workLocator` hashes the exact
+work key. They are compact diagnostic joins, not authority: raw identities may
+contain session, trace or prepared-message data and are never published.
+
+Capture-enabled [`ALWorkHandler`](../work/al-work-handler.ts) batches supply a
+private observation deferral capability. The lane carries it on the existing send
+lifecycle to the WS recipient/cluster owner and registered publisher. Each producer
+freezes its own facts before deferring the sink call. The handler drains that bounded
+batch after release, timing, readiness/end and pending-commit scheduling, also on
+failure; no new clock or storage read is made. Disabled batches create no capture
+buffer. A `callbackOutcome` is the callback's actual return or `threw`, never a
+release-success receipt. A retained callback can settle and release later, outside
+that batch; this server receipt transport currently returns settled results only.
+
+The [WS server map](../../services/ws-queue-box-server/README.md#private-receipt-evidence)
+owns the native, publisher and wrapper distinctions. Missing or lost evidence proves
+no negative delivery fact, and producer clocks are not synchronized across processes.
+
 ## Construction and registration
 
 WS client, WS server, and RTC multicast composition supply a completed admission

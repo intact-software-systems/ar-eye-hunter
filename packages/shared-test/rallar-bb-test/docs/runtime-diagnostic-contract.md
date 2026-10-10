@@ -660,6 +660,37 @@ are the sync points of a paired `agent.reload`.
   `flush-on-hide` reads the same on the successor page after the lane fired the
   owner page's `freeze` event and crashed it.
 
+## Private API server receipt capture
+
+The gated API timing stream carries `wsReceipt` separately from browser diagnostics.
+The [WS server owner map](../../../shared/services/ws-queue-box-server/README.md#private-receipt-evidence)
+names the producers and the [safe capture projection](../../../../apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts)
+owns the retained closed fields. Existing socket-decision, ack-count, ack-relay and
+receipt-outbox records remain intact. Three additional variants join a generated
+receipt's control id, subject/origin, phase and exact audience snapshot:
+
+- `receipt-work`: worker id, compact effect/work locators, actual effect kind,
+  reservation attempts and audit/batch/lease stamps, actual callback return or
+  `threw`, known stage and already-owned authority/admission/decision-clock facts.
+  The effect locator also locates a send's attempt id. No raw effect/key is retained.
+- `receipt-transport`: recipient or cluster-receipt selection, actual native call
+  state, publisher call state and wrapper result. Native `returned` proves only
+  submission. A native call may have happened before an enclosing throw; a generic
+  failure settlement's `submissionAttempted: false` cannot prove otherwise.
+- `receipt-publication`: actual publish/direct call states, returned direct status
+  (`sent-live`, `no-recipients`, `expired`, `partial-failure`, `failed`) and counts,
+  plus publisher return/throw. A returned publication can coexist with wrapper
+  `not-ready`; a returned direct failure can precede a publisher throw.
+
+Facts are frozen before mutable consumers and sink calls wait for the real work
+batch's mandatory release/end logic. Callback evidence never asserts release
+success or retained-claim settlement. Omitted optional facts are unavailable at
+that owner. Clocks remain producer-local. Unsafe supplied new fields reject the
+whole new record; arbitrary payload/error prose is excluded. The existing 64 KiB
+line bound, mode 0600 files, EOF/partial/loss summaries and unverified durable
+request-completion meaning remain unchanged. This capture neither proves a prior
+run used it nor confirms client ingress, delivery repair or a performance gain.
+
 ## Compatibility
 
 Adding optional fields to diagnostic payloads is compatible.

@@ -908,6 +908,47 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
+    // One private receipt sanitizer owns all seven closed record variants. Its
+    // explicit scalar allowlists reject unsafe declared values before producing
+    // safe JSON; splitting the validation would hide that single capture boundary.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 59
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeReceiptReturn'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeClosedReceiptFields'
+    }),
+    // The decoded claim's receipt projection narrows JSON bytes to a frozen,
+    // closed fact contract. Raw identities become compact locators; no unknown
+    // or application payload escapes into work policy or the observation DTO.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/lane/al-outbound-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toALOutboundReceiptFacts'
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/lane/al-outbound-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isReceiptFacts'
+    }),
+    // Selection, execution, release and readiness are one batch lifecycle. Its
+    // private capture-enabled buffer drains only after that mandatory lifecycle;
+    // the outbound README traces each real owner without a generic event layer.
+    Object.freeze({
+        path: 'packages/shared/alm/work/al-work-handler.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 52
+    }),
     // Private receipt capture decodes raw stdout JSON into a closed safe JSON
     // projection. These exact decoder/field-retention symbols validate each raw
     // value before retaining it; no unknown reaches authority or count policy.

@@ -1,7 +1,14 @@
 import type { ApiJsonObject, ApiJsonValue } from '../../../packages/shared/api/api-json-value.ts';
 
 export interface SafeApiWsReceiptObservationDto extends ApiJsonObject {
-    readonly kind: 'socket-decision' | 'ack-count' | 'ack-relay' | 'receipt-outbox';
+    readonly kind:
+        | 'socket-decision'
+        | 'ack-count'
+        | 'ack-relay'
+        | 'receipt-outbox'
+        | 'receipt-work'
+        | 'receipt-transport'
+        | 'receipt-publication';
     readonly serverPeerId: string;
 }
 
@@ -16,10 +23,154 @@ export function toSafeApiWsReceiptObservation(value: unknown): SafeApiWsReceiptO
             return toSafeAckCount(value);
         case 'ack-relay':
             return toSafeAckRelay(value);
+        case 'receipt-work':
+        case 'receipt-transport':
+        case 'receipt-publication':
+            return toSafeReceiptReturn(value);
         case 'receipt-outbox':
             return toSafeReceiptOutbox(value);
         default:
             return undefined;
+    }
+}
+
+function toSafeReceiptReturn(record: Readonly<Record<string, unknown>>): SafeApiWsReceiptObservationDto | undefined {
+    const receipt = toSafeReceipt(record.receipt);
+    if (!receipt || !isSafeApiTimingIdentity(record.receiptControlMsgId)) {
+        return undefined;
+    }
+    const contract = RECEIPT_RETURN_FIELDS[String(record.kind)];
+    const fields = toSafeClosedReceiptFields(record, contract);
+    if (fields === undefined) {
+        return undefined;
+    }
+    return {
+        kind: record.kind as SafeApiWsReceiptObservationDto['kind'],
+        serverPeerId: String(record.serverPeerId),
+        receiptControlMsgId: record.receiptControlMsgId,
+        receipt,
+        ...fields
+    };
+}
+
+interface ReceiptReturnField {
+    readonly name: string;
+    readonly kind: 'identity' | 'number' | 'boolean' | readonly string[];
+    readonly optional?: boolean;
+}
+
+const OUTBOX_VERDICT_KINDS = [
+    'admitted',
+    'duplicate',
+    'pending',
+    'deferred',
+    'refused',
+    'unroutable',
+    'superseded',
+    'expired',
+    'skipped',
+    'storage-unavailable',
+    'failed'
+];
+
+/** The three private return records have one explicit closed scalar allowlist each. */
+const RECEIPT_RETURN_FIELDS: Readonly<Record<string, readonly ReceiptReturnField[]>> = {
+    'receipt-work': [
+        { name: 'workerId', kind: 'identity' },
+        { name: 'effectLocator', kind: 'identity' },
+        { name: 'workLocator', kind: 'identity' },
+        { name: 'attempts', kind: 'number' },
+        { name: 'batchStartedAtMs', kind: 'number' },
+        { name: 'claimStartedAtMs', kind: 'number', optional: true },
+        { name: 'leaseUntilMs', kind: 'number', optional: true },
+        { name: 'readyAtMs', kind: 'number', optional: true },
+        { name: 'decisionAtMs', kind: 'number', optional: true },
+        { name: 'effectKind', kind: ['admit-message', 'dequeue-message', 'send-prepared'] },
+        { name: 'callbackOutcome', kind: ['completed', 'retry', 'not-ready', 'non-retryable', 'retained', 'threw'] },
+        {
+            name: 'stage',
+            kind: [
+                'claim',
+                'ended',
+                'expired',
+                'pending-authority',
+                'pending-commit',
+                'pending-settlement',
+                'dequeue-gate',
+                'dequeue-authority',
+                'dequeue-supersedence',
+                'dequeue-commit',
+                'dequeue-after-admission',
+                'send'
+            ]
+        },
+        { name: 'authority', kind: ['authorized', 'rejected', 'not-ready'], optional: true },
+        {
+            name: 'admissionVerdict',
+            kind: OUTBOX_VERDICT_KINDS,
+            optional: true
+        },
+        { name: 'phase', kind: ['immediate', 'dequeue'], optional: true },
+        { name: 'admissionCommitted', kind: 'boolean', optional: true }
+    ],
+    'receipt-transport': [
+        { name: 'transport', kind: ['recipient', 'cluster-receipt'] },
+        { name: 'nativeCall', kind: ['not-called', 'invoked', 'returned'] },
+        { name: 'publisherCall', kind: ['absent', 'invoked', 'returned'] },
+        {
+            name: 'outcome',
+            kind: ['sent', 'no-targets', 'not-ready', 'failed', 'cancelled', 'expired', 'superseded', 'threw']
+        },
+        { name: 'retryAfterMs', kind: 'number', optional: true },
+        { name: 'originIsHere', kind: 'boolean', optional: true },
+        { name: 'submissionAttempted', kind: 'boolean', optional: true },
+        { name: 'connectionId', kind: 'identity', optional: true }
+    ],
+    'receipt-publication': [
+        { name: 'publisherId', kind: 'identity' },
+        { name: 'publishCall', kind: ['not-called', 'invoked', 'returned'] },
+        { name: 'directCall', kind: ['not-called', 'invoked', 'returned'] },
+        { name: 'outcome', kind: ['returned', 'threw'] },
+        {
+            name: 'directStatus',
+            kind: ['sent-live', 'no-recipients', 'expired', 'failed', 'partial-failure'],
+            optional: true
+        },
+        { name: 'recipientCount', kind: 'number', optional: true },
+        { name: 'sentCount', kind: 'number', optional: true },
+        { name: 'failedCount', kind: 'number', optional: true }
+    ]
+};
+
+/** Reject an unsafe supplied value; omit only absent optional fields and unlisted fields. */
+function toSafeClosedReceiptFields(
+    record: Readonly<Record<string, unknown>>,
+    contract: readonly ReceiptReturnField[]
+): Record<string, ApiJsonValue> | undefined {
+    const safe: Record<string, ApiJsonValue> = {};
+    for (const field of contract) {
+        const value = record[field.name];
+        if (value === undefined && field.optional) {
+            continue;
+        }
+        if (!isSafeReceiptScalar(value, field.kind)) {
+            return undefined;
+        }
+        safe[field.name] = value;
+    }
+    return safe;
+}
+
+function isSafeReceiptScalar(value: unknown, kind: ReceiptReturnField['kind']): value is string | number | boolean {
+    switch (kind) {
+        case 'identity':
+            return isSafeApiTimingIdentity(value);
+        case 'number':
+            return isNonNegativeApiTimingNumber(value);
+        case 'boolean':
+            return typeof value === 'boolean';
+        default:
+            return isAllowedApiTimingString(value, kind);
     }
 }
 
@@ -212,19 +363,6 @@ function toSafeReceipt(record: unknown): ApiJsonObject | undefined {
     };
 }
 
-const OUTBOX_VERDICT_KINDS = [
-    'admitted',
-    'duplicate',
-    'pending',
-    'deferred',
-    'refused',
-    'unroutable',
-    'superseded',
-    'expired',
-    'skipped',
-    'storage-unavailable',
-    'failed'
-];
 const OUTBOX_VERDICT_REASONS = [
     'not-yet-in-sync',
     'unauthorized',

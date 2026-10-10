@@ -13,6 +13,7 @@ import {
     toALDurableWorkLaneOwnership,
     type ALDurableWorkOwnership
 } from '../../work/al-durable-work-ownership.ts';
+import type { ALWorkObservationDeferral } from '../../work/al-work-handler.ts';
 import {
     AL_WORK_READINESS_MEMORY_MS,
     ALWorkHandler,
@@ -55,6 +56,10 @@ import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from '../control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
 import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
+import {
+    createALOutboundReceiptWorkEvidence,
+    type ALOutboundReceiptWorkEvidence
+} from './al-outbound-receipt-observation.ts';
 import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
 import { computeALOutboundCommittedRows, hasWrittenWork } from './compute-al-outbound-committed-rows.ts';
 
@@ -327,23 +332,45 @@ export class ALOutboundStoreLane<TPrepared> {
         };
     }
 
-    private async runOutboundClaim(claim: ALWorkClaim): Promise<ALWorkAttemptResult> {
+    private async runOutboundClaim(
+        claim: ALWorkClaim,
+        batchStartedAtMs: number,
+        deferObservation?: ALWorkObservationDeferral
+    ): Promise<ALWorkAttemptResult> {
+        const observer = this.input.runtime.receiptWorkObserver;
+        let evidence: ALOutboundReceiptWorkEvidence | undefined;
+        let result: ALWorkAttemptResult | undefined;
         try {
             const work = await this.readExpirableOutboundWork(claim.entry);
             if (work === undefined) {
                 return { status: 'completed' };
             }
+            evidence = observer === undefined
+                ? undefined
+                : createALOutboundReceiptWorkEvidence({
+                    effect: work,
+                    workerId: this.input.workerId,
+                    batchStartedAtMs,
+                    deferObservation
+                });
             if (commitsALOutboundWorkOutsideLane(work.payload.kind)) {
                 this.work.claimCommitted();
             }
-            return await this.runDurableEffect(work);
+            result = await this.runDurableEffect(work, evidence);
+            return result;
         }
         catch (error) {
             // A planner that is still waiting for authority owes no attempt: reschedule, never charge it.
             if (error instanceof Error && isNotReadyException(error)) {
-                return { status: 'not-ready', readyAtMs: this.readNowMs() + error.delayMs };
+                result = { status: 'not-ready', readyAtMs: this.readNowMs() + error.delayMs };
+                return result;
             }
             throw error;
+        }
+        finally {
+            if (observer !== undefined) {
+                evidence?.publish(observer, result);
+            }
         }
     }
 
@@ -376,29 +403,33 @@ export class ALOutboundStoreLane<TPrepared> {
     }
 
     private async runDurableEffect(
-        effect: ALOutboundEffectSnapshot<TPrepared>
+        effect: ALOutboundEffectSnapshot<TPrepared>,
+        evidence: ALOutboundReceiptWorkEvidence | undefined
     ): Promise<ALWorkAttemptResult> {
         // Before anything else: a cancelled or handed-over message's remaining work completes silently, of any kind --
         // no `attempt-started`, no `expired`, no repair. A live attempt already past `attempt-started`
         // still terminates its own `attempt-settled cancelled` -- stated by the effects layer if the
         // abort lands before the carrier runs, or by the carrier's own settlement if it lands during it.
         if (this.isEndedEffect(effect)) {
+            evidence?.recordStage('ended');
             return { status: 'completed' };
         }
         if (effect.expireAtTimestamp <= this.readNowMs()) {
+            evidence?.recordStage('expired');
             this.emitWorkExpiry(effect);
             return { status: 'completed' };
         }
 
         switch (effect.payload.kind) {
             case 'admit-message':
-                return await this.effects.admitPendingMessage(effect);
+                return await this.effects.admitPendingMessage(effect, evidence);
             case 'dequeue-message':
-                return await this.effects.admitDequeuedMessage(effect);
+                return await this.effects.admitDequeuedMessage(effect, evidence);
             case 'admit-control':
                 return await this.repairAdmission.replayControlAdmission(effect.payload);
             case 'send-prepared':
-                return await this.runPreparedSend(effect, effect.payload);
+                evidence?.recordStage('send');
+                return await this.runPreparedSend(effect, effect.payload, evidence?.deferObservation);
             case 'ack-timeout':
                 await this.repairAdmission.retryPendingAck(effect.payload.msgId);
                 return { status: 'completed' };
@@ -425,7 +456,8 @@ export class ALOutboundStoreLane<TPrepared> {
     /** One attempt on one prepared copy: the attempt is stated before its carrier can settle it. */
     private async runPreparedSend(
         effect: ALOutboundEffectSnapshot<TPrepared>,
-        payload: Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'send-prepared'; }>
+        payload: Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'send-prepared'; }>,
+        deferReceiptObservation: ALWorkObservationDeferral | undefined
     ): Promise<ALWorkAttemptResult> {
         const canonicalMessage = effect.canonicalMessage;
         if (!canonicalMessage) {
@@ -445,6 +477,7 @@ export class ALOutboundStoreLane<TPrepared> {
                 payload,
                 lifecycle: {
                     canonicalMessage,
+                    deferReceiptObservation,
                     signal,
                     expiresAtMs: effect.expireAtTimestamp,
                     leaseUntilMs: effect.leaseUntilMs
@@ -525,7 +558,9 @@ export class ALOutboundStoreLane<TPrepared> {
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
             claimSuccessor: undefined,
-            runClaim: (claim) => this.runOutboundClaim(claim),
+            captureClaimObservations: runtime.receiptWorkObserver !== undefined,
+            runClaim: (claim, batchStartedAtMs, deferObservation) =>
+                this.runOutboundClaim(claim, batchStartedAtMs, deferObservation),
             diagnostics: (event) => this.recordWorkDiagnostics(event),
             storageHealth: stores.storageHealth,
             durableOwnership: toALDurableWorkLaneOwnership(this.input.durableWorkOwnership, workType)

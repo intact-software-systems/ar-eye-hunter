@@ -29,8 +29,8 @@ scope authority or lifecycle.
 ## Private receipt evidence
 
 [`WsQueueBoxServerReceiptObservation`](./ws-queue-box-server-receipt-observation.ts)
-is the private typed union for socket decision, count, relay publication and receipt
-outbox results. The authority carries its already-read peer/scope/clock facts; the
+is the private typed union for socket decision, count, relay publication, receipt
+outbox, receipt work, transport and publication results. The authority carries its already-read peer/scope/clock facts; the
 service reports its final actual socket result. Relayed counts carry the actual
 notice publisher, without claiming authentication by a receiving socket.
 
@@ -40,6 +40,28 @@ observation together. `recordAck` reports after constructing that result;
 A thrown enqueue exposes no enqueue verdict; an actual returned enqueue verdict
 is captured before the settlement consumer and remains observable if settlement
 throws. Sink failures are guarded. Diagnostics have no authority over delivery.
+
+Receipt claims add `receipt-work` from the [AL receipt/work owner](../../alm/outbound/lane/al-outbound-receipt-observation.ts).
+`receipt-transport` comes from the prepared recipient or cluster receipt owner.
+The [JSON socket owner](../../websocket/json-web-socket-server.ts) updates a private
+caller-owned buffer immediately before and after actual `socket.send`; it invokes
+no sink and reads no clock. `nativeCall` distinguishes `not-called`, `invoked` and
+`returned`, independently of the wrapper's `outcome`. Native return establishes
+submission, not arrival; a later failure can coexist with `returned`. A carrier
+throw's generic settlement `submissionAttempted: false` does not contradict an
+observed native invocation.
+
+The registered [pubsub publisher](../../../shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts)
+reports `receipt-publication`: actual publish call, direct call and direct returned
+status/counts. Publisher return may accompany cluster-wrapper `not-ready` when
+this instance has no origin session. A direct failed-count result may make the
+publisher throw after publication returned. These facts remain separate.
+
+Work, transport and publication facts are frozen at their actual owners. Their
+sink calls share the current AL work batch's private deferral boundary and run
+after its mandatory release, clocks and end logic. Deferral is not evidence that
+release succeeded. No observer is constructed by disabled composition, and no
+receipt copies, native buffer or diagnostic batch collection are then created.
 
 The API default composition gates this observer with existing `timingLogs` and
 [`createApiV1WsReceiptObserver`](../../../../apps/api-v1/src/composition/create-api-v1-ws-receipt-observer.ts).

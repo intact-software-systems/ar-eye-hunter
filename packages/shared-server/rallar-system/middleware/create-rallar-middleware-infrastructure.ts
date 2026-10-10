@@ -52,6 +52,7 @@ export function createRallarMiddlewareInfrastructure(
         ? installQueueBoxPubSubBridge({
             ...options.queuePubSubBridge,
             wsQBoxServerService,
+            receiptObserver: options.wsReceiptObserver,
             wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
         })
         : Promise.resolve();

@@ -4,8 +4,15 @@ import type { ALAckPayload, ALReceiptPayload } from '../../al-contracts/al-contr
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
+import type { ALOutboundSettledSendResult } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundEnqueueResult } from '../../alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundReceiptFacts,
+    ALOutboundReceiptWorkObservation
+} from '../../alm/outbound/lane/al-outbound-receipt-observation.ts';
+import type { ALWorkObservationDeferral } from '../../alm/work/al-work-handler.ts';
 import type { StateScope } from '../../api/state-types.ts';
+import type { WsServerLiveSendResult } from './ws-queue-box-server-contracts.ts';
 
 export interface WsQueueBoxServerReceiptSocketFacts {
     readonly fromPeerId: string | undefined;
@@ -47,7 +54,37 @@ export interface WsQueueBoxServerReceiptOutboxVerdict {
     readonly limit: Extract<ALDeliveryAdmissionVerdict, { readonly kind: 'refused'; }>['limit'];
 }
 
+export interface WsQueueBoxServerReceiptTransportObservation extends ALOutboundReceiptFacts {
+    readonly kind: 'receipt-transport';
+    readonly serverPeerId: string;
+    readonly transport: 'recipient' | 'cluster-receipt';
+    /** Actual native socket.send invocation/return; neither establishes recipient delivery. */
+    readonly nativeCall: 'not-called' | 'invoked' | 'returned';
+    readonly connectionId: string | undefined;
+    readonly publisherCall: 'absent' | 'invoked' | 'returned';
+    readonly originIsHere: boolean | undefined;
+    readonly outcome: ALOutboundSettledSendResult['status'] | 'threw';
+    readonly submissionAttempted: boolean | undefined;
+    readonly retryAfterMs: number | undefined;
+}
+
+export interface WsQueueBoxServerReceiptPublicationObservation extends ALOutboundReceiptFacts {
+    readonly kind: 'receipt-publication';
+    readonly serverPeerId: string;
+    readonly publisherId: string;
+    readonly publishCall: 'not-called' | 'invoked' | 'returned';
+    readonly directCall: 'not-called' | 'invoked' | 'returned';
+    readonly outcome: 'returned' | 'threw';
+    readonly directStatus: WsServerLiveSendResult['status'] | undefined;
+    readonly recipientCount: number | undefined;
+    readonly sentCount: number | undefined;
+    readonly failedCount: number | undefined;
+}
+
 export type WsQueueBoxServerReceiptObservation =
+    | (ALOutboundReceiptWorkObservation & { readonly serverPeerId: string; })
+    | WsQueueBoxServerReceiptTransportObservation
+    | WsQueueBoxServerReceiptPublicationObservation
     | (WsQueueBoxServerReceiptAckFacts & WsQueueBoxServerReceiptSocketFacts & {
         readonly kind: 'socket-decision';
         readonly serverPeerId: string;
@@ -86,13 +123,21 @@ export type WsQueueBoxServerReceiptObserver = (observation: WsQueueBoxServerRece
 
 export function recordWsQueueBoxServerReceiptObservation(
     observer: WsQueueBoxServerReceiptObserver | undefined,
-    observation: WsQueueBoxServerReceiptObservation
+    observation: WsQueueBoxServerReceiptObservation,
+    deferObservation?: ALWorkObservationDeferral
 ): void {
-    try {
-        observer?.(Object.freeze(observation));
+    const immutable = Object.freeze(observation);
+    const publish = () => {
+        try {
+            observer?.(immutable);
+        }
+        catch { /* Producer loss is possible; optional evidence must preserve the owner's result and exception. */ }
+    };
+    if (deferObservation === undefined) {
+        publish();
     }
-    catch {
-        // Producer loss is possible; optional evidence must preserve the owner's result and exception.
+    else {
+        deferObservation(publish);
     }
 }
 
