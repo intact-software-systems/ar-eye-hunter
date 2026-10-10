@@ -775,11 +775,63 @@ and shot/ACK traffic were not reached in retained execution. All 73 predicates
 remain unevaluated, with no final storage readback. Zero association/handoff
 records therefore leave actual ACK field survival and return joins unevaluated;
 silence cannot prove loss or nongeneration. Independent full evidence review approves the diagnostic
-report with no findings. A bounded trace of the existing HTTP setup timeout
-owners and retained positive request facts precedes any setup or capture repair. No unchanged-source native
+report with no findings. The reviewed bounded trace joins thirteen exact member
+request IDs to successful AppInbox enqueue and 142 retries. A retry does not
+distinguish an existing nonterminal entry from a failed read. Partial capture
+proves neither absent handler execution nor absent response production;
+controller-12's group timeout remains unmatched. No unchanged-source native
 retry is scheduled. Ordinary uninstrumented 15/30/50 acceptance remains required.
 This observation proves neither a historical timeout cause nor native fairness
 benefit. Original failed measurements and pass-with-warning evidence are preserved.
+
+The selected next discriminator replaces the result waiter's existing boolean
+point read with a narrow canonical status/attempt projection under the same
+topic/resource/context key, expiration predicate and one-row bound. It adds no
+second per-poll query and transfers no resource payload. Existing terminal
+decisions, result retrieval, retry/fallback policy and caller-visible outcomes
+remain acceptance constraints. Verified public contracts must be assessed at
+their current owners before an implementation changes their surface.
+
+With existing phase timing enabled, an actually attempted poll may retain
+`queueObservation` as `missing`, `NEW`, `RESERVED`, `RETRY`, `COMPLETED`, `FAILED`,
+`NON_RETRYABLE`, `other-status`, or `read-failure`, plus valid-row attempts and
+existing exact request/key identities. `RESERVED` records claim state, not active
+handler execution. Read failures remain failures through the existing retry
+owner. The existing safe API projector must explicitly admit these categories and
+exclude arbitrary strings, resource/response payloads, credentials, raw errors
+and additional timestamps. Optional observation failure must preserve mandatory
+results and errors.
+
+The observation behavior is implemented and covered by direct repository, waiter
+and safe-capture tests, affected types, PostgreSQL parity and whole-PR static
+gates. Independent review found incomplete standards remediation: hidden reader
+clocks and duplicated fixture materialization. Scoped review confirms one existing test-support owner and deterministic retry
+coverage. Required-clock checkpoint `34d4d565f94c95ccde9b7b354c2db0e74871eb8a`
+now resolves defaults at actual API/AL composition and passes 388 focused tests
+with three skipped plus production/test/API types. Independent I1 review
+approves the immutable correction after full 73-file and complete-deletion
+closure. Main subsequently advanced through PR #633 and created fourteen real
+content conflicts. The local repair preserves its required runner dependencies
+and typed results together with completion and independent export/failure
+evidence. Real database/API and affected package/build checks pass. Independent
+integration review found an explicit-capture effective-manifest acceptance bug
+and duplicated runner protocol fixtures. Correction1 passes 85 affected tests
+with actual caller RED/GREEN, one fetch/CLI protocol owner and affected type/static
+checks; scoped review approves both fixes and full affected-file closure with no
+new findings. Exact publication gates and publication remain. Expected PostgreSQL
+diagnostic noise and production chunk warnings remain disclosed costs for final
+triage. Measured facade/headless growth uses
+the user-authorized 255/330 KiB bounds, with six other facade bounds and strict
+build/comparison rules intact. Raising the limits saves no bytes. Original PGlite
+timeout causes remain unproven; no native or performance benefit is inferred.
+SQL and capture cost remain unmeasured;
+sampled polls promise no final-at-timeout or shutdown snapshot, complete capture
+or browser receipt. After exact publication, one new-source hosted observation
+will test category/attempt survival. The blank RTC
+capture input preserves authored selection; the runtime chooses its default from
+actual connection intent, host settings and signaling-sink availability. Equal
+explicit inputs do not establish the same runtime or capture overhead. Diagnostic
+capture success still cannot replace ordinary native scale acceptance.
 
 The published whole-PR static gate also found two new unclassified store spy
 absence assertions in the diagnostic test. The existing registered two-lane
