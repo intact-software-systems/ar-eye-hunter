@@ -1,8 +1,3 @@
-import {
-    decodeJsonWireText,
-    type JsonWireObject,
-    type JsonWireValue
-} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -23,7 +18,18 @@ import {
     resolve
 } from 'node:path';
 import { promisify } from 'node:util';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import {
+    decodeJsonWireText,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+
 import { validateApiV1StateWriteEnvironment } from '../../../../../apps/api-v1/scripts/perf/validate-api-v1-state-write-environment.mjs';
 
 const execFileAsync = promisify(execFile);
