@@ -1,6 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
-import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import {
     describe,
     expect,
@@ -65,15 +63,18 @@ import type {
     ClientSnapshot
 } from '@shared/api/client-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import {
     EntityStatus,
     NEVER_EXPIRE_TS,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { readClientExpiryTestEnqueueData } from './app-client-inbox-expiry-fixtures.ts';
-import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
 import {
     connectCommand,
     disconnectCommand,

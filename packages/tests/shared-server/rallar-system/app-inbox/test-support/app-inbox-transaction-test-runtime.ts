@@ -1,8 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import type { ResourceInboxStatusAndAttempts } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
-import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
-
 import type {
     PSqlParameter,
     PSqlRows,
@@ -31,15 +28,14 @@ import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-cont
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     type ResourceInboxRetryExhaustion,
     type ResourceInboxRetryExhaustionRecovery
 } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
     EntityStatus,
-    isExpiredResourceEntry,
     toKeyAsString,
     type Key,
     type ResourceEntry
@@ -49,6 +45,7 @@ import type { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import { TestResourceInbox } from './app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 
 const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
@@ -212,9 +209,8 @@ class AtomicAppInboxService {
     }
 }
 
-class RegisteredHandlerInbox extends InMemoryQueueBox {
+class RegisteredHandlerInbox extends TestResourceInbox {
     private latestKey: Key | undefined;
-    private readonly materializations = new Map<string, Promise<ResourceEntry>>();
 
     override async enqueue(entry: ResourceEntry): Promise<ResourceEntry | undefined> {
         this.latestKey = entry.key;
@@ -224,42 +220,6 @@ class RegisteredHandlerInbox extends InMemoryQueueBox {
     override async enqueueIfAbsent(entry: ResourceEntry): Promise<ResourceEntry> {
         this.latestKey = entry.key;
         return await super.enqueueIfAbsent(entry);
-    }
-
-    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
-        const entry = await this.getItem(key);
-        return entry === undefined ? undefined : { status: entry.status, attempts: entry.dequeueAudit.attempts };
-    }
-
-    async writeMaterializedIfAbsentOrReplaceExpired(
-        placeholder: ResourceEntry,
-        materialize: () => Promise<ResourceEntry>
-    ): Promise<ResourceEntry> {
-        const key = toKeyAsString(placeholder.key);
-        const active = this.materializations.get(key);
-        if (active !== undefined) {
-            return await active;
-        }
-        const pending = this.materializeEntry(placeholder, materialize);
-        this.materializations.set(key, pending);
-        try {
-            return await pending;
-        }
-        finally {
-            this.materializations.delete(key);
-        }
-    }
-
-    private async materializeEntry(
-        placeholder: ResourceEntry,
-        materialize: () => Promise<ResourceEntry>
-    ): Promise<ResourceEntry> {
-        const existing = await this.getItem(placeholder.key);
-        if (existing !== undefined && !isExpiredResourceEntry(existing)) {
-            return existing;
-        }
-        const materialized = await materialize();
-        return await this.enqueueIfAbsent({ ...placeholder, resource: materialized.resource });
     }
 
     async readLatest(): Promise<ResourceEntry | undefined> {
@@ -293,6 +253,7 @@ class RegisteredHandlerResults {
 
 interface RegisteredHandlerOptions {
     readonly failResultWriteAfter?: number;
+    readonly now?: () => Temporal.Instant;
     readonly timing?: RallarTimingSink;
     readonly topicId?: string;
 }
@@ -300,9 +261,10 @@ interface RegisteredHandlerOptions {
 export function createRegisteredHandlerHarness(
     options: RegisteredHandlerOptions = {}
 ): RegisteredHandlerHarness {
-    const queue = new RegisteredHandlerInbox();
+    const now = options.now ?? Temporal.Now.instant;
+    const queue = new RegisteredHandlerInbox(new Map(), now);
     const results = new RegisteredHandlerResults(options.failResultWriteAfter);
-    const reader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { nowEpochMs: () => Number(now().epochMilliseconds) });
     const service = new AtomicAppInboxService(
         {
             inboxQueueReader: reader,

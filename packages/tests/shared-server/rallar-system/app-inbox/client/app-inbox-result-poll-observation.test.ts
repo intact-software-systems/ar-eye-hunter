@@ -1,4 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import type { ResourceInboxStatusAndAttempts } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';

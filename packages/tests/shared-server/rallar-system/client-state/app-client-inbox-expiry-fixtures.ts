@@ -1,81 +1,13 @@
-import type { ResourceInboxStatusAndAttempts } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
-    isExpiredResourceEntry,
     NOT_COMPLETED_RETRYABLE_STATUSES,
-    toKeyAsString,
-    type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import type { TestResourceInbox } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 
-export class ClientExpiryTestResourceInbox extends InMemoryQueueBox {
-    private readonly materializations = new Map<string, Promise<ResourceEntry>>();
-
-    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
-        const entry = await this.getItem(key);
-        return entry === undefined ? undefined : { status: entry.status, attempts: entry.dequeueAudit.attempts };
-    }
-
-    async writeMaterializedIfAbsentOrReplaceExpired(
-        placeholder: ResourceEntry,
-        materialize: () => Promise<ResourceEntry>
-    ): Promise<ResourceEntry> {
-        const key = toKeyAsString(placeholder.key);
-        const active = this.materializations.get(key);
-        if (active !== undefined) {
-            return await active;
-        }
-        const pending = this.materializeEntry(placeholder, materialize);
-        this.materializations.set(key, pending);
-        try {
-            return await pending;
-        }
-        finally {
-            this.materializations.delete(key);
-        }
-    }
-
-    private async materializeEntry(
-        placeholder: ResourceEntry,
-        materialize: () => Promise<ResourceEntry>
-    ): Promise<ResourceEntry> {
-        const existing = await this.getItem(placeholder.key);
-        if (existing !== undefined && !isExpiredResourceEntry(existing)) {
-            return existing;
-        }
-        const materialized = await materialize();
-        return await this.enqueueIfAbsent({ ...placeholder, resource: materialized.resource });
-    }
-}
-
-export class ClientExpiryTestResourceInboxResults {
-    private readonly data = new Map<string, ResourceEntry>();
-
-    async replace(entry: ResourceEntry): Promise<ResourceEntry> {
-        this.data.set(toKeyAsString(entry.key), entry);
-        return entry;
-    }
-
-    async writeIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry> {
-        const key = toKeyAsString(entry.key);
-        const existing = this.data.get(key);
-        if (existing !== undefined && !isExpiredResourceEntry(existing)) {
-            return existing;
-        }
-        this.data.set(key, entry);
-        return entry;
-    }
-
-    async findByKey(key: Key): Promise<ResourceEntry | undefined> {
-        const entry = this.data.get(toKeyAsString(key));
-        return entry === undefined || isExpiredResourceEntry(entry) ? undefined : entry;
-    }
-}
-
-export async function readClientExpiryTestEntries(queue: ClientExpiryTestResourceInbox): Promise<ResourceEntry[]> {
+export async function readClientExpiryTestEntries(queue: TestResourceInbox): Promise<ResourceEntry[]> {
     const entries = await Promise.all((await queue.getAllKeys()).map((key) => queue.getItem(key)));
     return entries.filter((entry): entry is ResourceEntry => entry !== undefined);
 }

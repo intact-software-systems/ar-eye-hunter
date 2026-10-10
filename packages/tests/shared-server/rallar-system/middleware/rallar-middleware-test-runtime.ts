@@ -16,8 +16,8 @@ import { createTestClientStateRepository, createTestGroupStateRepository } from 
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
-import { TestResourceInbox, TestResourceInboxResults } from '../group-state/inbox/group-state-inbox-resource-fixtures.ts';
 
 const TEST_SERVICE_ID = 'rallar-middleware-test';
 

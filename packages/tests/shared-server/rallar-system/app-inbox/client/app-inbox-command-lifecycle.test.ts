@@ -1,12 +1,17 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { ResourceInboxStatusAndAttempts } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import {
     AppInboxType,
     type AppInboxEnqueueInput,
     type AppInboxMessageContext
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '@shared-server/rallar-system/app-inbox/app-inbox-persistence-ports.ts';
 import { encodeAppInboxCommand } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
@@ -15,19 +20,16 @@ import type { AppInboxClientRuntime } from '@shared-server/rallar-system/app-inb
 import { createAppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-runtime.ts';
-import type { GroupMemberUpsertAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import { ClientStateEventCollisionError } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
-import { GroupStateEventCollisionError } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
-
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
-
-import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import type { GroupMemberUpsertAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     decodeJsonWireValue,
     type JsonWireObject,
     type JsonWireValue
 } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { ClientStateEventCollisionError } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
+import { GroupStateEventCollisionError } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -37,9 +39,6 @@ import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resou
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
     EntityStatus,
-    isExpiredResourceEntry,
-    toKeyAsString,
-    type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
@@ -47,11 +46,8 @@ import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { OnQueuedMessageCallback } from '@shared/services/queue-message-callbacks.ts';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
+
+import { TestResourceInbox, TestResourceInboxResults } from '../test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../test-support/app-inbox-test-database.ts';
 
 const SCOPE: StateScope = {
@@ -839,52 +835,6 @@ class MaterializedTestAppInboxService extends TestAppInboxRuntime {
     }
 }
 
-class TestResourceInbox extends InMemoryQueueBox {
-    private readonly materializations = new Map<string, Promise<ResourceEntry>>();
-    private readonly observeNow: () => Temporal.Instant;
-
-    constructor(now: () => Temporal.Instant = Temporal.Now.instant) {
-        super(new Map(), now);
-        this.observeNow = now;
-    }
-
-    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
-        const entry = await this.getItem(key);
-        return entry === undefined ? undefined : { status: entry.status, attempts: entry.dequeueAudit.attempts };
-    }
-
-    async writeMaterializedIfAbsentOrReplaceExpired(
-        placeholder: ResourceEntry,
-        materialize: () => Promise<ResourceEntry>
-    ): Promise<ResourceEntry> {
-        const key = toKeyAsString(placeholder.key);
-        const active = this.materializations.get(key);
-        if (active) {
-            return await active;
-        }
-        const pending = this.materializeEntry(placeholder, materialize);
-        this.materializations.set(key, pending);
-        try {
-            return await pending;
-        }
-        finally {
-            this.materializations.delete(key);
-        }
-    }
-
-    private async materializeEntry(
-        placeholder: ResourceEntry,
-        materialize: () => Promise<ResourceEntry>
-    ): Promise<ResourceEntry> {
-        const existing = await this.getItem(placeholder.key);
-        if (existing !== undefined && !isExpiredResourceEntry(existing, this.observeNow())) {
-            return existing;
-        }
-        const materialized = await materialize();
-        return await this.enqueueIfAbsent({ ...placeholder, resource: materialized.resource });
-    }
-}
-
 class CapturingInboxQueueReader extends InboxQueueReader {
     private callback: OnQueuedMessageCallback | undefined;
 
@@ -901,36 +851,6 @@ class CapturingInboxQueueReader extends InboxQueueReader {
             throw new Error('Expected AppInbox handler registration');
         }
         await this.callback.onMessage(message, attempt.entry, attempt.telemetry);
-    }
-}
-
-class TestResourceInboxResults {
-    private readonly data = new Map<string, ResourceEntry>();
-    private readonly observeNow: () => Temporal.Instant;
-
-    constructor(now: () => Temporal.Instant = Temporal.Now.instant) {
-        this.observeNow = now;
-    }
-
-    async replace(entry: ResourceEntry): Promise<ResourceEntry> {
-        this.data.set(toKeyAsString(entry.key), entry);
-        return entry;
-    }
-
-    async writeIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry> {
-        const key = toKeyAsString(entry.key);
-        const existing = this.data.get(key);
-        if (existing !== undefined && !isExpiredResourceEntry(existing, this.observeNow())) {
-            return existing;
-        }
-
-        this.data.set(key, entry);
-        return entry;
-    }
-
-    async findByKey(key: Key): Promise<ResourceEntry | undefined> {
-        const entry = this.data.get(toKeyAsString(key));
-        return entry === undefined || isExpiredResourceEntry(entry, this.observeNow()) ? undefined : entry;
     }
 }
 
