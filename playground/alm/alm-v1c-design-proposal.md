@@ -699,7 +699,11 @@ full review supports behavior/artifacts, and independent scoped review closes
 both required standards findings with no new breakage. Task25 completes at round
 1/5. Required good-test guidance was read late in the full review; that history
 remains disclosed and strict preflight ordering is not claimed. These local
-results do not replace current c32 CI or prove native acceptance.
+results do not relabel earlier c32 CI or prove native acceptance. Published
+`74b37a6` has 22 terminal automatic checks, with 21 success and one optional RTC
+observation-integrity skip. The Unit and Branch Release Gate pass; workflow
+`38045682856` binds success to exact 74b. Those gates do not replace the failed
+captured native run or ordinary 15/30/50 acceptance.
 
 Fresh frozen return-path review proves all 19 timed-out shots have exact
 director-generated ACK admission at controller-12. All 27 successes without a
@@ -712,13 +716,62 @@ rejected combination; controller-12 shot1 is the terminal sender and has
 outbound committed/inbound not-handled. The reviewed survey retains these two
 Minor wording corrections for final triage. Neither common relay participation
 nor asynchronous timing establishes AppInbox lane pressure, starvation or a
-weighted-fairness benefit. The next bounded source slice will retain the exact
+weighted-fairness benefit. Reviewed source `41f4ceb1` retains that
 incoming-to-regenerated-control association at existing commit and handoff owners
-through guarded diagnostics, after the current source gate closes. It will read
-already-owned facts and distinguish candidates, commit returns, conflicts,
-terminal sender bypass and actual handoff without extra database or policy work.
-It is a diagnostic prerequisite; no behavior repair or native rerun is selected
-yet.
+through explicitly enabled guarded diagnostics. It distinguishes candidates,
+commit returns, conflicts, terminal sender bypass and actual handoff without
+extra database or policy work. Four affected optional diagnostic guards preserve
+mandatory effects, clocks and errors; a returned native send remains distinct
+from a later surrounding callback failure. The 34 focused tests,
+three package types and 1,514-file test types pass at their recorded revisions.
+Earlier 426/35 affected tests retain their pre-naming source binding and original
+localStorage warning.
+
+Both measured shapes failed the former strict artifact bounds. Headless and
+facade Brotli bytes are 320,231/251,252; the original candidate needed at least
+744/373 bytes of reduction under those bounds. Claim projection consolidation
+saved only 36/4 compressed bytes and the private naming repair saved zero. A
+bounded audit found no supported repair for both artifacts, not a mathematical
+minimum. Full candidate review found zero Critical, two Important former-bound
+failures and three Minor findings concerning helper names, documentation and a
+retained localStorage warning.
+
+The user authorized increasing the limits. Revision `92f16047` changes the
+canonical headless bound to 314 KiB and only the facade to 247 KiB; all other
+entries, build/compression settings, strict comparisons and native budgets stay
+intact. The actual strict pair passes all six tests and reaches all seven facade
+entries. Artifact bytes remain unchanged, leaving 1,305/1,676 bytes to the new
+strict boundaries. This accepts diagnostic artifact cost, not compression or
+native performance improvement. Direct 34 and maintained 1,514-file test types
+pass; prior broader checks retain their actual earlier source bindings.
+
+Fresh scoped review closes the authorized bounds, helper names and original
+documentary claims, with no new Critical/Important breakage. It identifies one
+more contradiction within the already-touched contract. Reviewed
+revision `f1cd88c8` qualifies that claim and related local event-presence promises,
+using the existing `effectId` without manufacturing an event or field. Reviewed
+comment revisions `93f54f22` and `a793872f` state optional settlement publication
+and the admission field's local identity. The complete affected-comment pass
+selects only one remaining runtime comment; final revision `41f4ceb1` states
+that its admission observation is optional and preserves every other byte.
+Focused format/diff and committed legacy checks pass. Its actual strict pair
+passes six tests; all eight raw/Brotli pairs equal the preceding revision, with
+fresh emitted-input, source and committed bindings. Final independent scoped
+review closes the comment finding with no new breakage, completing the source
+gate at final round 5/5. Full review and ordered scoped fixes cover all twelve
+affected files without a standards or retained-legacy exception. Root publishes
+this reviewed source with the coherent design/plan; automatic CI and native
+acceptance remain separate. Prior failures and report versions remain preserved.
+The warning trace passes six tests with the warning, locating it in unchanged browser session/RTC adapter
+code. It remains explicit final-triage evidence, rather than pristine output.
+
+One unchanged captured 15-agent hosted observation is the conditional next slice
+after source approval and publication. It must verify the new associations in
+actual recorder output and join them to positive sender controls; silence stays
+inconclusive. Ordinary uninstrumented 15/30/50 acceptance remains required. This
+diagnostic prerequisite proves neither a historical timeout cause nor native
+fairness benefit. Original failed measurements and pass-with-warning evidence
+remain preserved.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
