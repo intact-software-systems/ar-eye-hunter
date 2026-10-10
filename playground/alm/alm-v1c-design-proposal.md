@@ -621,13 +621,39 @@ formats, transactions, retries and the ten-second recipe predicate remain fixed.
 Current-source automatic CI is a separate gate; historical causality and native
 ACK behavior remain unverified.
 
-The next bounded survey follows actual pending admission/work/dequeue and
-publication/direct-send return through trusted sender ingress/read/decision/
-commit. It maps existing owned records and exact joins before selecting the
-smallest missing evidence capability and its real producer-to-recorder RED.
-Source paths do not prove native execution, and absent records do not earn a
-behavior repair. Existing effects, reads, results, clocks, exception/retry order,
-default-disabled composition and private capture ownership must be preserved.
+The bounded return-contract survey and fresh evidence review are closed with
+no findings. Actual pending replay, foreign dequeue, local native socket return,
+registered publisher/direct outcome and cluster-wrapper retry disposition are
+separate owned facts; current capture omits their exact receipt work/return
+records. Existing sender confirmation retains candidate/CAS results but can be
+absent after earlier exceptions. Static paths and absent records cannot establish
+historical execution or a delivery repair.
+
+Published baseline `73e4908fb27b2fe5f0b3f71f0e73749eb6069e97` passes all 22 automatic
+checks: 21 success and one optional RTC skip. The existing lifecycle recipe passes
+36/36, including forming hydration at 52 ms under its unchanged 10,000 ms limit.
+Historical CI causality and native scale acceptance remain separate and unproved.
+
+Reviewed source `a66cf88d3e12c8986106bc6b12a4336546d3565d` retains actual server
+pending/dequeue work, native invocation/return and publisher/direct outcomes
+through existing private timing/capture. The real producer-to-child-recorder RED
+preceded implementation; actual competing CAS and held/released claims prove
+pending handoff and later real transport. Additional native-boundary and real
+release-clock REDs protect truthful outcomes and mandatory lifecycle ordering.
+The corrected injected-clock fixture still fails against the original handler.
+The affected suite passed 505 tests before the final narrow native argument-order
+correction; final covering tests passed 65, final capture 15 and registry checks
+51. Maintained types enforce 1,512 test files with zero debt/errors. Fresh full source/support
+review approved the capability and all six exact bounded standards dispositions
+with no findings, completing the source task at round 0/5.
+
+Existing client confirmation stays intact; pre-exception ingress is unknown.
+Observation snapshots are immutable and published after mandatory batch effects;
+closed safe fields exclude arbitrary payload, key contents, credentials and error
+prose. After fresh approval and coherent publication, one new-source captured
+15-agent hosted observation joins actual returns to existing sender records.
+Every native predicate/resource/budget remains fixed; fresh evidence review earns
+any further capability or repair before ordinary uninstrumented 15/30/50 proof.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
