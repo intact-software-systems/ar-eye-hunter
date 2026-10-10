@@ -655,6 +655,71 @@ prose. After fresh approval and coherent publication, one new-source captured
 Every native predicate/resource/budget remains fixed; fresh evidence review earns
 any further capability or repair before ordinary uninstrumented 15/30/50 proof.
 
+The new-source captured hosted run `38036892199` at published c32 fails native
+acceptance. All 84 shots reach the director; 65 observers succeed and 19 time out.
+All 15 recipe finals fail, with complete seven-reading sampler and cleanup
+cohorts. Only four completion arrivals occur; no end send or final storage
+executes, and all 73 predicates remain unevaluated. The exact director complete
+receipt joins retrying dequeue, actual native return, sender commit and public
+acknowledgement/readback. All 39 complete sender confirmations join successful
+observers. Failed shots have director arrivals but no retained complete server
+receipt; neither absence nor two domain-unauthorized returns selects a cause.
+Partial capture, callback/release and physical-session/clock limits remain. All
+23 originals are hash-bound; fresh evidence review approves the substantive
+measurement with two recorded Minor concerns and no blocking finding. A successful
+return chain and different observed counts cannot establish isolated fairness,
+CPU/SQL gain or replace complete acceptance.
+
+Current c32 CI separately fails two strict bundle budgets and two WS assertions
+coupled to exact internal spy arity. Matched baseline/current measurement proves
+846/742 additional whole Brotli bytes; the diagnostic projection survives both
+browser artifacts. The selected correction installs concrete optional receipt
+evidence through the existing WS-server construction boundary so browser lanes
+do not value-import it. One canonical contract and the mandatory post-release
+boundary remain; exact shape and safe savings need direct tests and fresh source
+review. Independent native bytes and persisted completion replace obsolete
+call-shape coupling. The existing limits, capability semantics, lifecycle
+ordering and native predicates remain fixed.
+
+The reviewed correction passes 20 direct native/store/lifecycle
+controls and all six unchanged bundle tests. Its optional receipt projection and
+batch-publication resource are absent from both emitted browser input sets.
+The headless artifact is 319,173 Brotli bytes against the strict 319,488-byte
+bound; the facade is 250,851 bytes against 250,880, leaving 29 bytes of headroom.
+The resource owns guarded creation and inert diagnostic discard, while the
+handler owns allocation timing, absence/failure interpretation and post-release
+publication. Constructor failure loses optional diagnostics while mandatory
+native/store/release behavior continues. A healthy resource still publishes
+native observations after release when per-claim evidence construction fails.
+The base correction passed 524 tests across 55 files, three package type checks
+and API Deno. These results retain their base-source binding. The final import
+and erasable fixture-contract repair rechecks all 20 direct controls, maintained
+test types and strict bundle gates; actual artifacts are byte-identical. Fresh
+full review supports behavior/artifacts, and independent scoped review closes
+both required standards findings with no new breakage. Task25 completes at round
+1/5. Required good-test guidance was read late in the full review; that history
+remains disclosed and strict preflight ordering is not claimed. These local
+results do not replace current c32 CI or prove native acceptance.
+
+Fresh frozen return-path review proves all 19 timed-out shots have exact
+director-generated ACK admission at controller-12. All 27 successes without a
+complete WS receipt have same-ID RTC ingress and committed sender peer ACKs.
+The first missing association is received ACK to regenerated upward control,
+logical recipient and actual commit result; it does not prove failed generation
+or loss. Only three failed cases retain unlinked same-subject upward claims.
+Among the 27 successful controls, 26 have the relay's inbound committed/outbound
+rejected combination; controller-12 shot1 is the terminal sender and has
+outbound committed/inbound not-handled. The reviewed survey retains these two
+Minor wording corrections for final triage. Neither common relay participation
+nor asynchronous timing establishes AppInbox lane pressure, starvation or a
+weighted-fairness benefit. The next bounded source slice will retain the exact
+incoming-to-regenerated-control association at existing commit and handoff owners
+through guarded diagnostics, after the current source gate closes. It will read
+already-owned facts and distinguish candidates, commit returns, conflicts,
+terminal sender bypass and actual handoff without extra database or policy work.
+It is a diagnostic prerequisite; no behavior repair or native rerun is selected
+yet.
+
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
 WebSocket connect, so that result does not establish this operation's cost or
