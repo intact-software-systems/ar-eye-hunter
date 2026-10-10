@@ -552,10 +552,32 @@ actual identities, frozen sets, clocks/revisions, typed count outcome and
 existing enqueue result without another authorization/query/write or policy
 engine. Preserve immutable capture and guarded publication after existing
 effects, default-off behavior, error/exit/line/signal/reap limits and closed
-safe fields. No wire/persisted/admin API or dependency change is required.
+safe fields. The socket authority carries its existing peer/scope disposition
+to the final service observation, rather than resolving authorization again.
+The relay owner retains its actual publication result; the existing subscriber
+carries the notice publisher identity through the current service call.
+A private receipt observation type and API adapter preserve exact arrays without
+broadening generic scalar timing contracts. Default API composition constructs
+the optional observer only when existing timing logs are enabled, so the disabled
+path avoids diagnostic copying and clocks. Real-owner tests must cover this gate,
+relay provenance and failed publication, and actual producer-to-recorder survival.
+The receipt feature needs its durable entry-to-result navigation map as its
+module count grows. Any reviewed checker disposition remains exact to its
+JSON boundary or capped coherent owner, with no standards or threshold waiver.
+No wire/persisted/admin API or dependency change is required.
 Logger and collector loss remain possible; partial capture and absent rows
-remain unknown rather than proving absent ACKs. The source capability needs
-real-owner and actual recorder RED/GREEN before one captured native observation;
+remain unknown rather than proving absent ACKs.
+
+The source capability is now implemented and independently reviewed. Actual
+owner-to-recorder RED/GREEN covers socket/count/relay/outbox facts, whole-path
+callback order, immutable sets, real disabled composition and safe retention.
+Final direct checks passed 38 tests, API composition seven, and maintained
+types 1,511 files. The affected 506-test suite and app build preceded the last
+private decoder refactor; direct/parser checks and black-box types cover that
+change. Full source/support review approved the capability; a misleading
+subscriber comment was corrected and passed scoped re-review with runtime
+bytes unchanged. No source behavior repair or native fairness gain follows.
+The next measurement is one captured hosted observation on the reviewed source;
 all native predicates remain fixed and capture costs remain unisolated.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
