@@ -135,9 +135,10 @@ the sink — independent of any connection, so it observes admission work for
 every session the page opens. The event's `data` is the event itself:
 
 - `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
-  `commit-phases`, `effect-drain`, `readiness-probe`, or `control-admission`
+  `commit-phases`, `effect-drain`, `readiness-probe`, `control-admission`,
+  `receipt-confirmation`, or `congestion`
 - `durationMs`: how long that phase took, on every kind but `commit-phases`
-  and `control-admission`: `commit-phases` splits its own into the two halves
+  `control-admission`, `receipt-confirmation` and `congestion`: `commit-phases` splits its own into the two halves
   below, and `control-admission` is a verdict, not a phase. On
   `readiness-probe` it is not a phase of a commit at all but what that owner's
   storage read cost
@@ -255,6 +256,38 @@ every session the page opens. The event's `data` is the event itself:
   `not-handled`/`control`, joined by `msgId`; a committed receipt is also
   the acknowledgement settlement on the send's handle (`messages.receipts`
   reads the logical recipients)
+- `receipt-confirmation` is a separate closed observation for each actual
+  receipt admission attempt, including rejected, conflicted and expired
+  attempts. The existing `control-admission` bytes and phase-last field order
+  are unchanged. It carries the receipt control's `msgId`, `typeId` and
+  `controlSenderId`, the decoded `targetMsgId` and `originPeerId`, exact
+  `expectedRecipientPeerIds` and `confirmedRecipientPeerIds`, `snapshotVersion`,
+  `phase` and `observedAtEpochMs`. The server's `snapshotVersion` is an audience
+  revision, separate from `senderVersion`, the already-read local CAS version.
+  `admissionAtMs` is the existing local computation clock capture; it is not
+  the receipt producer's observation clock. `attempt` is one-based within the
+  existing bounded three-attempt retry loop.
+  `pendingBefore` is the already-read receipt snapshot, `candidateAfter` is
+  the computed write snapshot, and `candidateExpiresAtMs` is its retention
+  deadline. The candidate is not independently read persisted-after state.
+  Both snapshots carry only `msgId`, `mode`, expected/acked peer lists,
+  `timeoutMs`, `maxAttempts`, `attempts` and `deadlineAtMs`.
+  `commitOutcome` is the actual `committed`, `conflict` or `expired` return,
+  or `not-attempted` on validation rejection. `settlement` is an independent
+  snapshot of the exact once-computed logical acknowledgement fact passed to
+  the existing emitter on commit, before carrier/lane/time stamping. It
+  includes the expected, confirmed and unconfirmed recipients, confirmed and
+  unconfirmed hops, mode, subject `msgId` and actual `complete` flag.
+  Missing pending, candidate, expiry, sender version or settlement is explicitly
+  `null`, preserved in serialized recordings. A noncommitted attempt has no
+  settlement; a `complete` phase may still carry incomplete logical
+  confirmation. Lists and records are copied and frozen before publication;
+  no application payload, credentials or arbitrary error prose is retained.
+  The existing guarded sink tolerates absence/failure without changing the
+  receipt result, store writes, retry/deadline policy or settlement effects.
+  The native browser diagnostic port records these fields on the same outbound
+  topic. These facts do not establish appointed-leader authority, live registry
+  or epoch observation, wait notification, or native delivery acceptance.
 
 Together they separate a page that reads storage more often because it is less
 blocked from one that reads it more often because more wakes reach more owners:

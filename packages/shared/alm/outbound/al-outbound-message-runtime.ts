@@ -43,6 +43,7 @@ import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admissi
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
+import type { ALOutboundReceiptConfirmationDiagnostic } from './control/write-al-outbound-receipt-confirmation-diagnostic.ts';
 import { admitALOutboundVolatileBudget } from './lane/admit-al-outbound-volatile-budget.ts';
 import {
     AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT,
@@ -300,6 +301,7 @@ export type ALOutboundCommitOrigin = 'send' | 'drain' | 'repair';
 export type ALOutboundCommitBundleOutcome = 'committed' | 'conflict' | 'expired' | 'not-attempted';
 
 export type ALOutboundRuntimeDiagnosticsEvent =
+    | ALOutboundReceiptConfirmationDiagnostic
     | Readonly<{
         kind: 'sender-queue-wait';
         senderId: string;
