@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-export const FULL_STACK_API_SERVER_MODES = [
+const FULL_STACK_API_SERVER_MODES = [
     'postgres',
     'memory'
 ] as const;
