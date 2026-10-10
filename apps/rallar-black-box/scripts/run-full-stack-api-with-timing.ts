@@ -4,6 +4,8 @@ import { constants } from 'node:os';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
+import { toSafeApiTimingRecord } from './to-safe-api-timing-record.ts';
+
 interface SetupTimingSummary {
     readonly sourceCommit: string | null;
     readonly apiEntry: string | null;
@@ -25,41 +27,7 @@ interface SetupTimingSummary {
     observation: 'missing' | 'partial' | 'stream-complete';
 }
 
-interface SafeSetupTimingRecordDto {
-    readonly type: 'rallar.timing';
-    readonly component: string;
-    readonly operation: string;
-    readonly status: 'ok' | 'error';
-    readonly durationMs: number;
-    readonly atEpochMs: number;
-    [field: string]: string | number | Readonly<Record<string, string | number | boolean>>;
-}
-
 const MAX_LINE_BYTES = 65_536;
-const IDENTITY_FIELDS = [
-    'serviceId',
-    'requestId',
-    'applicationId',
-    'workspaceId',
-    'groupId',
-    'principalId',
-    'sessionId'
-];
-const DETAIL_IDENTITIES = ['clientId', 'type', 'topicId', 'contextId', 'resourceId', 'senderId'];
-const DETAIL_NUMBERS = [
-    'attempt',
-    'attempts',
-    'processingAttempts',
-    'reservationAttempt',
-    'queueAgeMs',
-    'dueAgeMs',
-    'nextAttempt',
-    'delayMsecs',
-    'elapsedMsecs',
-    'waitMaxElapsedMsecs'
-];
-const COMPONENTS = ['http', 'app-inbox', 'app-inbox-phase', 'app-inbox-handler', 'group-state-service'];
-
 class FullStackApiTimingCapture {
     private readonly recordsPath: string;
     private readonly summaryPath: string;
@@ -179,7 +147,7 @@ class FullStackApiTimingCapture {
     }
 
     private appendTimingRecord(line: string): void {
-        const record = toSafeTimingRecord(line);
+        const record = toSafeApiTimingRecord(line);
         if (record === undefined) {
             this.summary.rejectedLines += 1;
             return;
@@ -244,106 +212,6 @@ class FullStackApiTimingCapture {
             process.stderr.write(`API timing capture failed: ${failure}\n`);
         }
     }
-}
-
-function toSafeTimingRecord(
-    line: string
-): SafeSetupTimingRecordDto | undefined {
-    let record: unknown;
-    try {
-        record = JSON.parse(line);
-    }
-    catch {
-        return undefined;
-    }
-    if (
-        !isRecord(record) || record.type !== 'rallar.timing' || !isAllowedString(record.component, COMPONENTS) ||
-        !isSafeIdentity(record.operation) || (record.status !== 'ok' && record.status !== 'error') ||
-        !isNonNegativeNumber(record.durationMs) || !isNonNegativeNumber(record.atEpochMs)
-    ) {
-        return undefined;
-    }
-    const safe: SafeSetupTimingRecordDto = {
-        type: 'rallar.timing',
-        component: record.component,
-        operation: record.operation,
-        status: record.status,
-        durationMs: record.durationMs,
-        atEpochMs: record.atEpochMs
-    };
-    for (const field of IDENTITY_FIELDS) {
-        if (isSafeIdentity(record[field])) {
-            safe[field] = record[field];
-        }
-    }
-    if (isAllowedString(record.method, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'])) {
-        safe.method = record.method;
-    }
-    if (typeof record.path === 'string' && /^\/api\/[A-Za-z0-9_./%:-]{1,512}$/.test(record.path)) {
-        safe.path = record.path;
-    }
-    if (isNonNegativeNumber(record.httpStatus) && Number.isInteger(record.httpStatus) && record.httpStatus <= 599) {
-        safe.httpStatus = record.httpStatus;
-    }
-    if (isRecord(record.details)) {
-        safe.details = toSafeTimingDetails(record.details);
-    }
-    return safe;
-}
-
-function toSafeTimingDetails(
-    details: Readonly<Record<string, unknown>>
-): Readonly<Record<string, string | number | boolean>> {
-    const safe: Record<string, string | number | boolean> = {};
-    for (const field of DETAIL_IDENTITIES) {
-        if (isSafeIdentity(details[field])) {
-            safe[field] = details[field];
-        }
-    }
-    for (const field of DETAIL_NUMBERS) {
-        if (isNonNegativeNumber(details[field])) {
-            safe[field] = details[field];
-        }
-    }
-    if (isAllowedString(details.selectedLane, ['NEW', 'RETRY', 'FAIRNESS', 'TIMEOUT', 'FINALIZATION'])) {
-        safe.selectedLane = details.selectedLane;
-    }
-    if (
-        isAllowedString(details.resultStatus, [
-            'NEW',
-            'RETRY',
-            'RESERVED',
-            'COMPLETED',
-            'FAILED',
-            'ABORTED',
-            'NON_RETRYABLE'
-        ])
-    ) {
-        safe.resultStatus = details.resultStatus;
-    }
-    if (isAllowedString(details.classification, ['accepted', 'not-ready', 'retryable', 'non-retryable'])) {
-        safe.classification = details.classification;
-    }
-    if (typeof details.exhaustion === 'boolean') {
-        safe.exhaustion = details.exhaustion;
-    }
-    return safe;
-}
-
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isSafeIdentity(value: unknown): value is string {
-    return typeof value === 'string' && /^[A-Za-z0-9_.:%|/@-]{1,512}$/.test(value);
-}
-
-function isAllowedString(value: unknown, allowed: readonly string[]): value is string {
-    return typeof value === 'string' && allowed.includes(value);
-}
-
-function isNonNegativeNumber(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
 async function startFullStackApiWithTiming(): Promise<void> {

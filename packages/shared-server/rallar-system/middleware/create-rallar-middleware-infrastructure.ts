@@ -42,26 +42,11 @@ export function createRallarMiddlewareInfrastructure(
             findClientSnapshotByRef: options.findClientSnapshotByRef,
             now: options.now
         });
-    const wsQBoxServerService = createDefaultWsQueueBoxServerService({
+    const wsQBoxServerService = createMiddlewareWsQueueBoxServer({
+        options,
         queueEngine,
-        outbox: options.outbox ?? options.inbox,
-        socket: webSocketServer,
-        name: options.wsRuntimeName ?? 'default-qbox-server',
-        targetResolver,
-        readProducerProvenance: options.readWsOutboxProducerProvenance,
-        readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
-        inboundStores: options.inboundStores,
-        outboundStores: options.outboundStores,
-        dequeueResilience: options.resilience.outbox ?? options.resilience.inbox,
-        deliveryDiagnostics: options.wsDeliveryDiagnostics,
-        outboundDiagnostics: options.wsOutboundDiagnostics,
-        outboundSettlements: options.wsOutboundSettlements,
-        inboundDiagnostics: options.wsInboundDiagnostics,
-        validateInboundMessage: validateMiddlewareALIngress,
-        publishRelayedAck: options.relayedAckNotices
-            ? createRelayedAckPublisher(options.relayedAckNotices)
-            : undefined,
-        forwardsRoomScopedMessages: false
+        webSocketServer,
+        targetResolver
     });
     const queuePubSubBridgeReadiness = options.queuePubSubBridge
         ? installQueueBoxPubSubBridge({
@@ -80,7 +65,7 @@ export function createRallarMiddlewareInfrastructure(
         options.relayedAckNotices
             ? installRelayedAckNoticeSubscriber({
                 ...options.relayedAckNotices,
-                acceptRelayedAck: (message) => wsQBoxServerService.acceptRelayedAck(message)
+                acceptRelayedAck: (message, publisherId) => wsQBoxServerService.acceptRelayedAck(message, publisherId)
             })
             : Promise.resolve()
     ]).then(() => undefined);
@@ -98,6 +83,40 @@ export function createRallarMiddlewareInfrastructure(
         liveWsNoticeSubscriberReadiness,
         wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
     };
+}
+
+interface CreateMiddlewareWsQueueBoxServerInput {
+    readonly options: CreateRallarMiddlewareOptions;
+    readonly queueEngine: InboxOutboxEngine;
+    readonly webSocketServer: JsonWebSocketServer;
+    readonly targetResolver: WsServerTargetResolver;
+}
+
+function createMiddlewareWsQueueBoxServer(
+    { options, queueEngine, webSocketServer, targetResolver }: CreateMiddlewareWsQueueBoxServerInput
+): RallarMiddlewareInfrastructure['wsQBoxServerService'] {
+    return createDefaultWsQueueBoxServerService({
+        queueEngine,
+        outbox: options.outbox ?? options.inbox,
+        socket: webSocketServer,
+        name: options.wsRuntimeName ?? 'default-qbox-server',
+        targetResolver,
+        readProducerProvenance: options.readWsOutboxProducerProvenance,
+        readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
+        inboundStores: options.inboundStores,
+        outboundStores: options.outboundStores,
+        dequeueResilience: options.resilience.outbox ?? options.resilience.inbox,
+        deliveryDiagnostics: options.wsDeliveryDiagnostics,
+        outboundDiagnostics: options.wsOutboundDiagnostics,
+        outboundSettlements: options.wsOutboundSettlements,
+        inboundDiagnostics: options.wsInboundDiagnostics,
+        receiptObserver: options.wsReceiptObserver,
+        validateInboundMessage: validateMiddlewareALIngress,
+        publishRelayedAck: options.relayedAckNotices
+            ? createRelayedAckPublisher(options.relayedAckNotices)
+            : undefined,
+        forwardsRoomScopedMessages: false
+    });
 }
 
 function installMiddlewareLiveWsNoticeSubscriber(
