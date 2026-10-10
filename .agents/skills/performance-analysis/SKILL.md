@@ -1,6 +1,6 @@
 ---
 name: performance-analysis
-description: Use when reviewing performance, finding bottlenecks, analyzing algorithmic or resource efficiency, profiling representative workloads, investigating memory leaks, or validating an optimization.
+description: Turns a performance question into a measured finding. Use when reviewing bottlenecks, profiling a workload, investigating a leak, or checking an optimization.
 ---
 
 # Performance Analysis Skill
@@ -8,7 +8,8 @@ description: Use when reviewing performance, finding bottlenecks, analyzing algo
 **REQUIRED SUB-SKILL:** Use `rallar-code-writing` when an analysis changes,
 generates, refactors, or reviews TypeScript.
 
-Use this skill when the user asks for performance analysis, optimization, bottleneck hunting, algorithmic complexity review, CPU or memory profiling, memory leak investigation, allocation reduction, query/API call reduction, or runtime validation.
+When the workload is WebRTC, RTC, or data channels, read
+`references/webrtc-performance-focus.md`.
 
 ## Core rule
 
@@ -122,128 +123,8 @@ For each finding, specify:
 
 Prefer existing project tooling. If no tooling exists, propose the minimum useful harness before writing one.
 
-Common tool choices by ecosystem, when applicable:
-
-- Python: `pytest-benchmark`, `cProfile`, `py-spy`, `scalene`, `tracemalloc`, `memory_profiler`.
-- JavaScript/TypeScript/Node: `node --prof`, `node --inspect`, Chrome DevTools, `clinic`, `benchmark`, framework-specific profilers.
-- Go: `go test -bench`, `-benchmem`, `pprof`, `trace`, race detector where concurrency is relevant.
-- Java/Kotlin/JVM: JMH, Java Flight Recorder, async-profiler, heap dumps, GC logs.
-- .NET: BenchmarkDotNet, `dotnet-counters`, `dotnet-trace`, `dotnet-gcdump`.
-- Rust: Criterion, `cargo bench`, `perf`, heaptrack, DHAT/Valgrind where available.
-- C/C++: `perf`, Valgrind/Callgrind, heaptrack, sanitizers, compiler optimization reports.
-- Databases: query plans, query count instrumentation, slow query logs, index usage, representative fixtures.
-
-## Report format: static audit
-
-Use this structure:
-
-```md
-# Performance audit
-
-## Executive summary
-
-- Top 5 risks, ranked by expected impact and confidence.
-
-## Hot path map
-
-- Entry point -> critical flow -> likely expensive modules.
-
-## Findings
-
-| Severity |       Confidence | Category               | Location            | Why costly | Complexity/memory impact | Validation | Suggested fix |
-| -------- | ---------------: | ---------------------- | ------------------- | ---------- | ------------------------ | ---------- | ------------- |
-| High     | Strong suspicion | Algorithmic complexity | `path/file.ext:123` | ...        | ...                      | ...        | ...           |
-
-## False-positive risks
-
-- Findings that may be harmless depending on workload.
-
-## Measurement plan
-
-- Benchmarks, profilers, fixtures, and instrumentation needed next.
-
-## Do first
-
-1. Highest-impact next action.
-2. Second action.
-3. Third action.
-```
-
-## Report format: runtime validation
-
-Use this structure:
-
-````md
-# Runtime performance validation
-
-## Environment
-
-- Branch/commit:
-- Hardware/container notes:
-- Runtime versions:
-- Config:
-- Input sizes:
-
-## Commands run
-
-```sh
-# exact commands
-```
-````
-
-## Results
-
-| Hypothesis | Result | Evidence | Confirmed/refuted/inconclusive | Notes |
-| ---------- | ------ | -------- | ------------------------------ | ----- |
-
-## CPU profile interpretation
-
-- Hot functions, call paths, and likely causes.
-
-## Memory profile interpretation
-
-- Allocation sites, retained memory, peak heap/RSS, GC pressure.
-
-## Leak findings
-
-- Evidence for or against leak-like growth over repeated/long-running workloads.
-
-## Recommendations
-
-| Rank | Fix | Expected impact | Confidence | Risk | Validation |
-| ---: | --- | --------------- | ---------- | ---- | ---------- |
-
-## Next step
-
-- One small, safe optimization to attempt first.
-
-````
-## Report format: optimization result
-
-Use this structure:
-
-```md
-# Performance optimization result
-
-## Change summary
-- What changed and why.
-
-## Files changed
-- `path/file.ext`
-
-## Correctness validation
-- Tests run and results.
-
-## Performance validation
-| Metric | Before | After | Delta | Notes |
-|---|---:|---:|---:|---|
-
-## Remaining risks
-- Correctness, compatibility, measurement, or workload caveats.
-
-## Follow-up opportunities
-- Additional fixes that should be separate changes.
-````
+When writing the static audit, runtime validation, or optimization result, read
+`references/report-formats.md` and use the format for the completed phase.
 
 ## Done when
 

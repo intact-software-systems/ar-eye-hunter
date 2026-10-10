@@ -1,6 +1,6 @@
 ---
 name: rallar-hetzner-ops
-description: Use when running, debugging, or analyzing Hetzner-hosted Rallar black-box distributed recipes, headless browser agents, GitHub Actions recipe runs, fleet reports, or remote controller artifacts.
+description: Operates Hetzner black-box recipes, headless agents, and their artifacts. Use when running or debugging those recipes, GitHub Actions recipe runs, fleet reports, or remote controller artifacts.
 ---
 
 # Rallar Hetzner Ops

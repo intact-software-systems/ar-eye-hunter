@@ -1,6 +1,6 @@
 ---
 name: organizing-repository-structure
-description: Use when adding, moving, splitting, consolidating, or reviewing repository files or folders; or when size, density, prefix, singleton, depth, ownership, or navigation findings appear.
+description: Judges file and folder ownership from repository facts. Use when adding, moving, splitting, consolidating, or reviewing paths, or when size, density, prefix, singleton, depth, ownership, or navigation findings appear.
 ---
 
 # Organizing Repository Structure

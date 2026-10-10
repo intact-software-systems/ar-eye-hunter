@@ -1,6 +1,6 @@
 ---
 name: adaptive-plan-execution
-description: Use when executing a written or multi-slice repository plan, when implementation changes ownership or structure, or when new evidence invalidates assumptions, expands scope, degrades navigation, or tempts work beyond the current horizon.
+description: Keeps a written or multi-slice plan to the next two slices and adapts it when evidence changes the work. Use when executing a repository plan, or when new evidence changes ownership, scope, navigation, or the current horizon. Pull-request publication belongs to publishing-plan-progress.
 ---
 
 # Adaptive Plan Execution

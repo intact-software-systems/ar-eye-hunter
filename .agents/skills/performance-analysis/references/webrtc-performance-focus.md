@@ -8,6 +8,24 @@ unless a cost is proven from code or validated by measurements.
 Do not put WebRTC-specific detail in `SKILL.md`. Keep this file as the focused
 reference for future WebRTC audits.
 
+## Contents
+
+- [WebRTC-specific hot paths](#1-webrtc-specific-hot-paths-to-inspect)
+- [Resource lifecycle](#2-webrtc-resource-lifecycle-checklist)
+- [PeerConnection cleanup](#3-peerconnection-cleanup-checklist)
+- [MediaStreamTrack cleanup](#4-mediastreamtrack-cleanup-checklist)
+- [DataChannel backpressure](#5-datachannel-backpressure-checklist)
+- [Signaling and negotiation](#6-signaling-and-negotiation-performance-checklist)
+- [ICE candidate queue](#7-ice-candidate-queue-checklist)
+- [Reconnect and renegotiation](#8-reconnect-and-renegotiation-storm-checklist)
+- [Browser and client profiling](#9-browser-and-client-profiling-guidance)
+- [Server, SFU, and room scale](#10-server-sfu-and-room-scalability-guidance)
+- [Metrics to collect](#11-metrics-to-collect)
+- [Repeated connect/disconnect leak test](#12-suggested-repeated-connectdisconnect-leak-test)
+- [Repo WebRTC files](#13-repo-specific-webrtc-files-and-directories)
+- [Repo commands](#14-repo-specific-commands-discoverable-in-this-repo)
+- [Open questions](#15-known-open-questions)
+
 ## 1. WebRTC-Specific Hot Paths To Inspect
 
 - Peer connection lifecycle: create, connect, offer/answer, ICE candidate

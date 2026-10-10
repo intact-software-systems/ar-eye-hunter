@@ -1,6 +1,6 @@
 ---
 name: rallar-realtime
-description: Use when changing Rallar rooms, GroupRef/scoped identity, group/client state, WS/RTC routing, multicast, graph topology, presence, state sync, or reconnect/cold-cache behavior.
+description: Changes room scope, GroupRef identity, WS and RTC routing, topology, presence, and state sync. Use when editing those paths or reconnect and cold-cache behavior.
 ---
 
 # Rallar Realtime

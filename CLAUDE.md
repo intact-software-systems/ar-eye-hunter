@@ -25,7 +25,9 @@ Detailed workflows live in `.agents/skills/**` (a repo-local skill tree, also pa
 | `rallar-ai`                                                      | RallarAI providers, schemas, deterministic helpers.                                                                                   |
 | `rallar-hetzner-ops`                                             | Hetzner distributed recipes, headless agents, fleet artifacts.                                                                        |
 | `performance-analysis`                                           | Profiling and optimization work.                                                                                                      |
-| `publishing-plan-progress`                                       | Executing a written plan from `plans/`.                                                                                               |
+| `adaptive-plan-execution`                                        | Executing a written or multi-slice repository plan, and adapting it when evidence changes ownership, scope, or the current horizon.   |
+| `organizing-repository-structure`                                | Adding, moving, splitting, consolidating, or reviewing repository files and folders.                                                  |
+| `publishing-plan-progress`                                       | Publishing a branch, draft pull request, milestone, or final remote evidence. Plan execution belongs to `adaptive-plan-execution`.    |
 
 ## Runtime split
 
@@ -149,8 +151,8 @@ deleted architecture notes are not current authority.
   `al-contracts/` + `alm/` (AL message shapes, QoS, multicast targeting), `queuebox/`,
   `resilience/` (including `Either`), `crdt/`, `rtc/` + `webrtc/`, `rallar-game/`, `rallar-motion/`.
 - **`packages/shared-web`** — browser side. `browser/rallar.ts` is the canonical browser object;
-  the implementation lives in feature-owned controllers under `browser/rallar-runtime/` composed
-  by `rallar-runtime/composition.ts`. Narrow entry points
+  the implementation lives in feature-owned controllers under `browser/`, composed by
+  `browser/composition/browser-runtime-composition.ts`. Narrow entry points
   (`rallar-core.ts`, `rallar-realtime.ts`, `rallar-data.ts`, `rallar-crdt.ts`,
   `rallar-media-calls.ts`) are preferred for new app code. Controllers must not import the
   aggregate entry point or the composer; dependencies point inward.
@@ -263,10 +265,13 @@ Highest-frequency rules:
 - **api-v1 mutation-path / concurrency changes**: run `test:api-v1:black-box:postgres:medium-scale`.
   Never weaken its constants, operation matrix, or assertions to make a change pass.
 - **Skills, plugin metadata, examples, or root app-path config**: run `npm run test:repo-governance`.
-- A written plan in `plans/` may be marked complete only after the final working tree passes
-  `npm run test:unit`, `npm run test:ci`, and `npm run build` — plus the **Branch Release Gate**
-  workflow on the final feature-branch commit and **Run Hetzner Supported Distributed Manifests** on
-  the resulting default-branch commit. Any change after a passing gate invalidates it.
+- Use `adaptive-plan-execution` for affected validation scope and `rallar-testing` for commands.
+  Require **Branch Release Gate** for affected pull requests. Require **Run Hetzner Supported
+  Distributed Manifests** only when classified distributed risk or acceptance selects it.
+- Use `publishing-plan-progress` for completion: check `npm run pr:delivery -- status` before broad
+  final validation, remove a completed written plan and its current-work index entries in the pull
+  request, and run `npm run pr:delivery -- ready` once at handoff. When GitHub reports the pull
+  request merged, stop; completion creates no post-merge governance work.
 - Always report which commands passed, failed, or were skipped.
 
 ## Git
