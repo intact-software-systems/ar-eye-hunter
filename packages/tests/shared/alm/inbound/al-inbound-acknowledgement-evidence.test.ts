@@ -183,7 +183,7 @@ class AcknowledgementFixture {
         await this.runtime.ready();
     }
 
-    readAssociation(phase: 'ingress' | 'replay' = 'ingress'): BlackBoxRallarEvent | undefined {
+    resolveAssociation(phase: 'ingress' | 'replay' = 'ingress'): BlackBoxRallarEvent | undefined {
         return this.events.find((event) => {
             const data = decodeRecord(event.data);
             return data.kind === 'acknowledgement-association' && data.phase === phase;
@@ -194,7 +194,7 @@ class AcknowledgementFixture {
         return this.events.filter((event) => decodeRecord(event.data).kind === 'acknowledgement-handoff');
     }
 
-    async storedControls(): Promise<readonly ALMessage[]> {
+    async readStoredControls(): Promise<readonly ALMessage[]> {
         const controls: ALMessage[] = [];
         for (const status of [EntityStatus.NEW, EntityStatus.RESERVED, EntityStatus.RETRY]) {
             const page = await this.state.workQueue.readWorkPage({
@@ -407,12 +407,12 @@ it('associates the exact received ACK with independently stored regenerated cont
         senderId: 'origin'
     });
     expect(retained.acks).toMatchObject([{ fromPeerId: 'child', logicalRecipientPeerId: 'leaf', carrier: 'ws' }]);
-    const controls = await fixture.storedControls();
+    const controls = await fixture.readStoredControls();
     expect(controls.map((msg) => msg.id.msgId).sort()).toEqual(['generated-1:0']);
     expect(controls.map(parseALControlMessage)).toEqual(expect.arrayContaining([
         expect.objectContaining({ payload: expect.objectContaining({ logicalRecipientPeerId: 'leaf', toPeerId: 'parent', carrier: 'rtc' }) })
     ]));
-    const association = fixture.readAssociation();
+    const association = fixture.resolveAssociation();
     const captured = toRallarBlackBoxRuntimeDiagnostic({
         topic: 'rallar.browser.alm.inbound_diagnostics',
         severity: 'info',
@@ -457,7 +457,7 @@ it('separates a conflicted candidate from replay IDs and retained work', async (
     });
     expect((await fixture.runtime.admitIncomingMessage(fixture.acknowledgement(), { kind: 'rtc-peer', peerId: 'child' })).right)
         .toEqual({ kind: 'pending-admission' });
-    expect(await fixture.storedControls()).toEqual([]);
+    expect(await fixture.readStoredControls()).toEqual([]);
     const stored = await readInboundTestAcknowledgements({
         backend: fixture.backend,
         namespace: fixture.store.namespace,
@@ -465,7 +465,7 @@ it('separates a conflicted candidate from replay IDs and retained work', async (
         senderId: 'origin'
     });
     expect(stored.acks).toEqual([]);
-    expect(fixture.readAssociation()?.data).toMatchObject({
+    expect(fixture.resolveAssociation()?.data).toMatchObject({
         phase: 'ingress',
         result: 'pending-admission',
         attempts: [{ commit: 'conflict', retention: 'returned', candidate: { generated: [{ controlMsgId: 'generated-1:0' }] } }]
@@ -477,7 +477,7 @@ it('separates a conflicted candidate from replay IDs and retained work', async (
     onTestFinished(() => fixture.engine.stop());
     await expect.poll(() => fixture.sent.length).toBe(1);
     expect(fixture.sent[0]?.id.msgId).toBe('generated-2:0');
-    await expect.poll(() => fixture.readAssociation('replay')?.data)
+    await expect.poll(() => fixture.resolveAssociation('replay')?.data)
         .toMatchObject({
             result: 'completed',
             attempts: [{ commit: 'committed', result: 'committed', candidate: { generated: [{ controlMsgId: 'generated-2:0' }] } }]
@@ -500,7 +500,7 @@ it('reports terminal origin bypass without a candidate, read, commit or generate
     expect(read).not.toHaveBeenCalled();
     expect(commit).not.toHaveBeenCalled();
     expect(await fixture.state.workQueue.getAllKeys()).toEqual([]);
-    expect(fixture.readAssociation()?.data).toMatchObject({
+    expect(fixture.resolveAssociation()?.data).toMatchObject({
         terminalOrigin: true,
         attempts: [],
         result: 'control'
@@ -516,13 +516,13 @@ it('keeps committed facts immutable and preserves the original callback exceptio
     });
     await fixture.seed();
     await expect(fixture.runtime.admitIncomingMessage(fixture.acknowledgement(), { kind: 'trusted-server' })).rejects.toBe(original);
-    const event = fixture.readAssociation();
+    const event = fixture.resolveAssociation();
     expect(event?.data).toMatchObject({ result: 'threw', attempts: [{ commit: 'committed' }] });
     expect(JSON.stringify(event)).not.toContain(original.message);
     const association = event?.data;
     expect(Object.isFrozen(decodeRecord(association).incoming)).toBe(true);
     expect(Object.isFrozen(decodeRecord(association).attempts)).toBe(true);
-    expect(await fixture.storedControls()).toHaveLength(1);
+    expect(await fixture.readStoredControls()).toHaveLength(1);
     const stored = await readInboundTestAcknowledgements({
         backend: fixture.backend,
         namespace: fixture.store.namespace,
@@ -579,11 +579,11 @@ it('withholds handoff publication while the real claim release is still pending'
     fixture.sendGate.resolve();
     await entered.promise;
     expect(fixture.handoffs).toEqual([]);
-    expect(await fixture.storedControls()).toHaveLength(1);
+    expect(await fixture.readStoredControls()).toHaveLength(1);
     finish.resolve();
     await expect.poll(() => fixture.handoffs[0]?.data)
         .toMatchObject({ result: 'completed', handoff: 'batch-returned' });
-    expect(await fixture.storedControls()).toEqual([]);
+    expect(await fixture.readStoredControls()).toEqual([]);
 });
 
 it.each(['commit', 'retention'] as const)('retains the original %s exception and reports no invented write result', async (boundary) => {
@@ -598,11 +598,11 @@ it.each(['commit', 'retention'] as const)('retains the original %s exception and
         vi.spyOn(fixture.state.workQueue, 'enqueueIfAbsent').mockRejectedValueOnce(original);
     }
     await expect(fixture.runtime.admitIncomingMessage(fixture.acknowledgement(), { kind: 'trusted-server' })).rejects.toBe(original);
-    expect(fixture.readAssociation()?.data).toMatchObject({
+    expect(fixture.resolveAssociation()?.data).toMatchObject({
         result: 'threw',
         attempts: [{ result: 'threw', commit: boundary === 'commit' ? 'pending' : 'conflict', retention: boundary === 'retention' ? 'pending' : 'not-called' }]
     });
-    expect(await fixture.storedControls()).toEqual([]);
+    expect(await fixture.readStoredControls()).toEqual([]);
     const stored = await readInboundTestAcknowledgements({
         backend: fixture.backend,
         namespace: fixture.store.namespace,
@@ -628,7 +628,7 @@ it('preserves the original business exception even when every diagnostic sink in
     });
     await fixture.seed();
     await expect(fixture.runtime.admitIncomingMessage(fixture.acknowledgement(), { kind: 'trusted-server' })).rejects.toBe(original);
-    expect(await fixture.storedControls()).toHaveLength(1);
+    expect(await fixture.readStoredControls()).toHaveLength(1);
     const stored = await readInboundTestAcknowledgements({
         backend: fixture.backend,
         namespace: fixture.store.namespace,

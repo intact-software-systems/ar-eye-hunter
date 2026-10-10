@@ -327,9 +327,11 @@ independent of any connection. The event's `data` is the event itself:
   the owner over the IndexedDB pair, `volatile` for the one over the session's
   memory pair (worker id `…/volatile`)
 - `admission-outcome` carries `msgId`, `typeId`, `carrier`, `outcome` and
-  `reason` for every message that reached ingress with a decodable identity —
-  one event per `admitIncomingMessage` call. A value that never decoded has no
-  identity to report and emits nothing
+  `reason` when decodable ingress reaches the diagnostic path after the business
+  call returns and guarded projection/publication succeeds. Disposed ingress, a
+  value that never decodes, or a thrown business path can emit none; disabled or
+  failed diagnostics can also lose this event. Its absence does not establish an
+  admission outcome
 - `carrier` is the carrier the message arrived on, `rtc` or `ws`, read from its
   ingress source: `rtc-peer` is `rtc`, `ws-client` and `trusted-server` are `ws`
 - `outcome` is where the message stopped: `committed` (admitted, or a control
@@ -523,12 +525,12 @@ identity and independently retained storage/native evidence.
 After a submission's `admission-outcome`, the receiver's events say where its
 delivery waited:
 
-| What the receiver's snapshot shows after the submission's `admission-outcome`                        | Meaning                                                                   |
-| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| A `claim-settled` naming the dispatch effect, with `batchStartedAtMs` after the admission            | A round reserved it; the two wait halves are on that event                |
-| The dispatch effect id in an `effect-drain.deferred` or `rotation-alive.latestDeferred`              | Rounds ran and held it back (eligibility), or the port left it unreserved |
-| `claim-settled` events of another effect with a `batchStartedAtMs` after the admission, and no drain | A batch started; no captured drain establishes how it ended   |
-| None of the three, and no `rotation-alive` after the admission                                       | No later round is captured; this alone cannot prove a blocked or stopped rotation                 |
+| What the receiver's snapshot shows after the submission's `admission-outcome`                        | Meaning                                                                           |
+| ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| A `claim-settled` naming the dispatch effect, with `batchStartedAtMs` after the admission            | A round reserved it; the two wait halves are on that event                        |
+| The dispatch effect id in an `effect-drain.deferred` or `rotation-alive.latestDeferred`              | Rounds ran and held it back (eligibility), or the port left it unreserved         |
+| `claim-settled` events of another effect with a `batchStartedAtMs` after the admission, and no drain | A batch started; no captured drain establishes how it ended                       |
+| None of the three, and no `rotation-alive` after the admission                                       | No later round is captured; this alone cannot prove a blocked or stopped rotation |
 
 `commit-phases.transportSettleDurationMs` is **never emitted**. No runtime
 writes that field, on this topic or the outbound one, so no reader may depend on
