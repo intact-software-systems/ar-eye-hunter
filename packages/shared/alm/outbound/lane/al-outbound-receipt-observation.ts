@@ -4,7 +4,11 @@ import type { ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 import { fnv1a64 } from '../../../queuebox/AppQueueIdentity.ts';
 import { toKeyAsString } from '../../../queuebox/ResourceEntry.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
-import type { ALWorkAttemptResult, ALWorkObservationDeferral } from '../../work/al-work-handler.ts';
+import type { ALWorkBatchObservations } from '../../work/al-work-batch-observations.ts';
+import type {
+    ALWorkAttemptResult,
+    ALWorkObservationDeferral
+} from '../../work/al-work-handler.ts';
 import type { ALOutboundEffectSnapshot } from '../admission/al-outbound-admission-store.ts';
 import type { ALOutboundDispatchPhase, ALOutboundMessageRuntime } from '../al-outbound-message-runtime.ts';
 
@@ -37,6 +41,21 @@ export interface ALOutboundReceiptWorkObservation extends ALOutboundReceiptFacts
 export type ALOutboundReceiptWorkObserver = (observation: ALOutboundReceiptWorkObservation) => void;
 
 export namespace ALOutboundReceiptWorkEvidence {
+    /** Already-decoded claim facts; construction reads them without mutation, policy, clocks or I/O. */
+    export interface Claim<TPrepared> {
+        readonly effect: ALOutboundEffectSnapshot<TPrepared>;
+        readonly workerId: string;
+        readonly batchStartedAtMs: number;
+        readonly deferObservation: ALWorkObservationDeferral | undefined;
+    }
+
+    /** Installed only by server composition; the lane constructs once per decoded claim, then publishes after its effects. */
+    export interface Capture<TPrepared> {
+        readonly batchObservations: typeof ALWorkBatchObservations;
+        readonly createEvidence: (claim: Claim<TPrepared>) => ALOutboundReceiptWorkEvidence | undefined;
+        readonly observer: ALOutboundReceiptWorkObserver;
+    }
+
     export type Facts = Omit<
         ALOutboundReceiptWorkObservation,
         | 'stage'
@@ -126,14 +145,9 @@ export class ALOutboundReceiptWorkEvidence {
 }
 
 export function createALOutboundReceiptWorkEvidence<TPrepared>(
-    input: {
-        readonly effect: ALOutboundEffectSnapshot<TPrepared>;
-        readonly workerId: string;
-        readonly batchStartedAtMs: number;
-        deferObservation: ALWorkObservationDeferral | undefined;
-    }
+    claim: ALOutboundReceiptWorkEvidence.Claim<TPrepared>
 ): ALOutboundReceiptWorkEvidence | undefined {
-    const { effect, workerId, batchStartedAtMs } = input;
+    const { effect, workerId, batchStartedAtMs } = claim;
     const kind = effect.payload.kind;
     if (kind !== 'admit-message' && kind !== 'dequeue-message' && kind !== 'send-prepared') {
         return undefined;
@@ -154,7 +168,7 @@ export function createALOutboundReceiptWorkEvidence<TPrepared>(
         batchStartedAtMs,
         leaseUntilMs: effect.leaseUntilMs,
         phase: kind === 'send-prepared' ? effect.payload.phase : undefined
-    }, input.deferObservation);
+    }, claim.deferObservation);
 }
 
 /** Closed diagnostic projection only. It makes no authorization, delivery or admission decision. */

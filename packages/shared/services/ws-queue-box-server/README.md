@@ -41,7 +41,16 @@ A thrown enqueue exposes no enqueue verdict; an actual returned enqueue verdict
 is captured before the settlement consumer and remains observable if settlement
 throws. Sink failures are guarded. Diagnostics have no authority over delivery.
 
-Receipt claims add `receipt-work` from the [AL receipt/work owner](../../alm/outbound/lane/al-outbound-receipt-observation.ts).
+`createOutboundRuntime` installs the [AL receipt/work owner's](../../alm/outbound/lane/al-outbound-receipt-observation.ts)
+optional `Capture` only when `receiptObserver` exists. Its concrete evidence factory
+reads the decoded claim once, and its observer adds this server's identity. It also
+installs the concrete [batch observation resource](../../alm/work/al-work-batch-observations.ts)
+constructor; the handler invokes its guarded `tryCreate` and drains the result at
+the mandatory batch boundary. The
+shared lane holds only a type dependency on that owner; browser composition does
+not install or bundle receipt projection. Per-claim construction failure loses optional work
+evidence without changing the claim or its transport's post-release deferral.
+Receipt claims add `receipt-work` through this capability.
 `receipt-transport` comes from the prepared recipient or cluster receipt owner.
 The [JSON socket owner](../../websocket/json-web-socket-server.ts) updates a private
 caller-owned buffer immediately before and after actual `socket.send`; it invokes
@@ -61,7 +70,10 @@ Work, transport and publication facts are frozen at their actual owners. Their
 sink calls share the current AL work batch's private deferral boundary and run
 after its mandatory release, clocks and end logic. Deferral is not evidence that
 release succeeded. No observer is constructed by disabled composition, and no
-receipt copies, native buffer or diagnostic batch collection are then created.
+receipt copies, native buffer or diagnostic batch collection are then created. If
+an enabled batch resource fails to construct, its canonical inert `discard` deferral suppresses all
+optional work/native/cluster records for that batch while business effects continue.
+This is diagnostic loss, not delayed publication or a negative transport result.
 
 The API default composition gates this observer with existing `timingLogs` and
 [`createApiV1WsReceiptObserver`](../../../../apps/api-v1/src/composition/create-api-v1-ws-receipt-observer.ts).

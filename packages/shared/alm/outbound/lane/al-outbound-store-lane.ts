@@ -56,10 +56,7 @@ import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from '../control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
 import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
-import {
-    createALOutboundReceiptWorkEvidence,
-    type ALOutboundReceiptWorkEvidence
-} from './al-outbound-receipt-observation.ts';
+import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
 import { computeALOutboundCommittedRows, hasWrittenWork } from './compute-al-outbound-committed-rows.ts';
 
@@ -337,7 +334,7 @@ export class ALOutboundStoreLane<TPrepared> {
         batchStartedAtMs: number,
         deferObservation?: ALWorkObservationDeferral
     ): Promise<ALWorkAttemptResult> {
-        const observer = this.input.runtime.receiptWorkObserver;
+        const capture = this.input.runtime.receiptWorkCapture;
         let evidence: ALOutboundReceiptWorkEvidence | undefined;
         let result: ALWorkAttemptResult | undefined;
         try {
@@ -345,18 +342,19 @@ export class ALOutboundStoreLane<TPrepared> {
             if (work === undefined) {
                 return { status: 'completed' };
             }
-            evidence = observer === undefined
-                ? undefined
-                : createALOutboundReceiptWorkEvidence({
+            try {
+                evidence = capture?.createEvidence({
                     effect: work,
                     workerId: this.input.workerId,
                     batchStartedAtMs,
                     deferObservation
                 });
+            }
+            catch { /* Optional evidence construction cannot change the claim's effects or release. */ }
             if (commitsALOutboundWorkOutsideLane(work.payload.kind)) {
                 this.work.claimCommitted();
             }
-            result = await this.runDurableEffect(work, evidence);
+            result = await this.runDurableEffect(work, evidence, deferObservation);
             return result;
         }
         catch (error) {
@@ -368,8 +366,8 @@ export class ALOutboundStoreLane<TPrepared> {
             throw error;
         }
         finally {
-            if (observer !== undefined) {
-                evidence?.publish(observer, result);
+            if (capture !== undefined) {
+                evidence?.publish(capture.observer, result);
             }
         }
     }
@@ -404,7 +402,8 @@ export class ALOutboundStoreLane<TPrepared> {
 
     private async runDurableEffect(
         effect: ALOutboundEffectSnapshot<TPrepared>,
-        evidence: ALOutboundReceiptWorkEvidence | undefined
+        evidence: ALOutboundReceiptWorkEvidence | undefined,
+        deferObservation: ALWorkObservationDeferral | undefined
     ): Promise<ALWorkAttemptResult> {
         // Before anything else: a cancelled or handed-over message's remaining work completes silently, of any kind --
         // no `attempt-started`, no `expired`, no repair. A live attempt already past `attempt-started`
@@ -429,7 +428,7 @@ export class ALOutboundStoreLane<TPrepared> {
                 return await this.repairAdmission.replayControlAdmission(effect.payload);
             case 'send-prepared':
                 evidence?.recordStage('send');
-                return await this.runPreparedSend(effect, effect.payload, evidence?.deferObservation);
+                return await this.runPreparedSend(effect, effect.payload, deferObservation);
             case 'ack-timeout':
                 await this.repairAdmission.retryPendingAck(effect.payload.msgId);
                 return { status: 'completed' };
@@ -558,7 +557,7 @@ export class ALOutboundStoreLane<TPrepared> {
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
             claimSuccessor: undefined,
-            captureClaimObservations: runtime.receiptWorkObserver !== undefined,
+            batchObservations: runtime.receiptWorkCapture?.batchObservations,
             runClaim: (claim, batchStartedAtMs, deferObservation) =>
                 this.runOutboundClaim(claim, batchStartedAtMs, deferObservation),
             diagnostics: (event) => this.recordWorkDiagnostics(event),

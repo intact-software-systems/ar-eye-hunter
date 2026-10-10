@@ -6,6 +6,7 @@ import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALDurableWorkLaneOwnership } from './al-durable-work-ownership.ts';
+import type { ALWorkBatchObservations } from './al-work-batch-observations.ts';
 import { ALWorkEngineMembership } from './al-work-engine-membership.ts';
 import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort, ALWorkRelease } from './al-work-queue-port.ts';
 import {
@@ -40,7 +41,7 @@ export interface ALWorkReadySelection {
 export type ALWorkObservationDeferral = (publish: () => void) => void;
 
 export interface ALWorkHandlerDependencies {
-    readonly captureClaimObservations?: boolean;
+    readonly batchObservations?: typeof ALWorkBatchObservations;
 
     readonly workerId: string;
     readonly port: ALWorkQueuePort;
@@ -336,8 +337,11 @@ export class ALWorkHandler {
         if (this.batch !== undefined) {
             return this.batch;
         }
-        const observations = this.dependencies.captureClaimObservations ? new ALWorkBatchObservations() : undefined;
-        this.batch = this.runSelectedWork(observations?.defer)
+        const observations = this.dependencies.batchObservations?.tryCreate();
+        const deferObservation = this.dependencies.batchObservations === undefined
+            ? undefined
+            : observations?.defer ?? this.dependencies.batchObservations.discard;
+        this.batch = this.runSelectedWork(deferObservation)
             .then((ended) => this.endBatch(ended))
             .catch((error) => this.failBatch(toError(error)))
             .finally(() => {
@@ -605,22 +609,4 @@ function toALWorkFailureOutcome(error: Error): ALWorkOutcome {
     return error instanceof ALAdmissionCorruptionError || error instanceof NonRetryableException
         ? { status: 'non-retryable' }
         : { status: 'retry' };
-}
-
-/** A capture-enabled batch owns these publications only until its mandatory lifecycle ends. */
-class ALWorkBatchObservations {
-    private readonly observations: Array<() => void> = [];
-    readonly defer: ALWorkObservationDeferral = (publish) => {
-        this.observations.push(publish);
-    };
-
-    publish(): void {
-        for (const publish of this.observations) {
-            try {
-                publish();
-            }
-            catch { /* Optional evidence cannot change work lifecycle. */ }
-        }
-        this.observations.length = 0;
-    }
 }
