@@ -283,9 +283,12 @@ initial inspect and final cleanup), so its preparation cost remains visible.
 
 The postflight stage validates before writing, so a descriptor that reaches
 disk is one the pooling protocol accepts. It preserves preflight empty-table
-counts and samples current container identity, restart count, governed resources,
-and process/container overlap. A non-empty preflight database, a reported restart,
-changed governed resources, or overlap present at postflight fails capture.
+counts and samples current container identity, exact native running-session start,
+restart count, governed resources, and process/container overlap. The sidecar
+requires a usable native start identity; historical sidecars without it are rejected.
+A non-empty preflight database, a changed start identity (including a manual restart
+whose restart count is zero), a reported restart, changed governed resources,
+or overlap present at postflight fails capture.
 These boundary samples do not continuously observe transient overlap or resource
 changes that revert before postflight.
 

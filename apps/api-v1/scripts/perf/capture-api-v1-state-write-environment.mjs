@@ -83,7 +83,15 @@ async function readPreflightCapture({ options }) {
         host_architecture: arch()
     };
     validatePreflightIsClean({ record });
-    return { text: `${JSON.stringify({ containerId: container.id, imageProof: image.proof, record }, null, 2)}\n` };
+    return {
+        text: `${
+            JSON.stringify(
+                { containerId: container.id, containerStartedAt: container.startedAt, imageProof: image.proof, record },
+                null,
+                2
+            )
+        }\n`
+    };
 }
 
 async function readPostflightCapture({ options }) {
@@ -91,6 +99,9 @@ async function readPostflightCapture({ options }) {
     const container = await readContainerRecord({ container: options.container });
     if (container.id !== sidecar.containerId) {
         throw new TypeError('container identity changed between preflight and postflight capture');
+    }
+    if (container.startedAt !== sidecar.containerStartedAt) {
+        throw new TypeError('container running session changed between preflight and postflight capture');
     }
     const maintenance = await readScalar({ options, sql: MAINTENANCE_SQL });
     const record = {
@@ -132,6 +143,7 @@ async function readContainerRecord({ container }) {
     }
     return {
         id,
+        startedAt: toNativeRunningSession({ value: inspected.State }),
         imageId,
         manifest: toImageManifestDescriptor({ value: inspected.ImageManifestDescriptor }),
         record: {
@@ -319,7 +331,34 @@ function toCapturedSidecar({ text }) {
         }
         capturedRecord[field] = toNativeText({ value });
     }
-    return { containerId: toNativeText({ value: sidecar.containerId }), record: capturedRecord };
+    return {
+        containerId: toNativeText({ value: sidecar.containerId }),
+        containerStartedAt: toNativeSessionStart({ value: sidecar.containerStartedAt }),
+        record: capturedRecord
+    };
+}
+
+/** @param {{ value: unknown }} input */
+function toNativeRunningSession({ value }) {
+    const state = toNativeObject({ value });
+    if (state.Status !== 'running' || state.Running !== true) {
+        throw new TypeError('native container running session must be active');
+    }
+    return toNativeSessionStart({ value: state.StartedAt });
+}
+
+/** @param {{ value: unknown }} input */
+function toNativeSessionStart({ value }) {
+    const startedAt = toNativeText({ value });
+    const parsed = new Date(startedAt);
+    if (
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(startedAt) ||
+        /^0001-01-01T00:00:00(?:\.0{1,9})?Z$/.test(startedAt) ||
+        !Number.isFinite(parsed.valueOf()) || parsed.toISOString().slice(0, 19) !== startedAt.slice(0, 19)
+    ) {
+        throw new TypeError('native container running session must have a usable UTC start identity');
+    }
+    return startedAt;
 }
 
 /** @param {{ value: unknown }} input */
