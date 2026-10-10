@@ -41,7 +41,6 @@ import type {
 } from './admission/al-outbound-admission-store.ts';
 import type { ALSessionInvalidationAuthority } from './admission/al-session-invalidation-authority.ts';
 import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
-import type { ALOutboundReceiptWorkObserver } from './lane/al-outbound-receipt-observation.ts';
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
@@ -51,6 +50,7 @@ import {
     AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT,
     ALOutboundCanonicalHandoff
 } from './lane/al-outbound-canonical-handoff.ts';
+import type { ALOutboundReceiptWorkEvidence } from './lane/al-outbound-receipt-observation.ts';
 import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
 import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
 
@@ -482,7 +482,7 @@ export namespace ALOutboundMessageRuntime {
 
     export interface Dependencies<TPrepared> extends Resources<TPrepared> {
         /** Absent outside explicitly enabled private server receipt capture. */
-        readonly receiptWorkObserver?: ALOutboundReceiptWorkObserver;
+        readonly receiptWorkCapture?: ALOutboundReceiptWorkEvidence.Capture<TPrepared>;
         /** Which transport this owner drives; every settlement it states is stamped with it. */
         readonly carrier: ALDeliveryCarrier;
         readonly dequeue: DequeueSource;

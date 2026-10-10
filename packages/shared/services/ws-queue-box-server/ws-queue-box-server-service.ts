@@ -25,12 +25,16 @@ import type {
     ALOutboundSettledSendResult
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
-import { toALOutboundReceiptFacts } from '../../alm/outbound/lane/al-outbound-receipt-observation.ts';
 import { reconstructALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '../../alm/outbound/create-default-al-outbound-message-runtime.ts';
+import {
+    createALOutboundReceiptWorkEvidence,
+    toALOutboundReceiptFacts
+} from '../../alm/outbound/lane/al-outbound-receipt-observation.ts';
+import { ALWorkBatchObservations } from '../../alm/work/al-work-batch-observations.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
@@ -347,13 +351,15 @@ export class WsQueueBoxServerService {
                 resilience: dependencies.dequeueResilience
             },
             diagnostics: dependencies.outboundDiagnostics,
-            receiptWorkObserver: this.receiptObserver === undefined
-                ? undefined
-                : (observation) =>
+            receiptWorkCapture: this.receiptObserver === undefined ? undefined : {
+                batchObservations: ALWorkBatchObservations,
+                createEvidence: createALOutboundReceiptWorkEvidence,
+                observer: (observation) =>
                     recordWsQueueBoxServerReceiptObservation(this.receiptObserver, {
                         ...observation,
                         serverPeerId: this.name
-                    }),
+                    })
+            },
             settlements: dependencies.outboundSettlements,
             toOutboxEntry: (message: ALMessage) =>
                 QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE),
