@@ -1,4 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import type { VivaldiNodeData } from '@shared-graph/graph/vivaldi.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { COALESCED_APP_OUTBOX_WORK_FIELD } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
@@ -44,13 +52,6 @@ import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
 import { createTestGroup } from '../../../../../create-test-group.ts';
 import { assembleStateSnapshotMessages } from '../../../../../shared/state-snapshot-test-fixture.ts';
 import { TestWebSocket } from '../../../../../shared/websocket/test-web-socket.ts';
