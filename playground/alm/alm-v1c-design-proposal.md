@@ -577,8 +577,57 @@ private decoder refactor; direct/parser checks and black-box types cover that
 change. Full source/support review approved the capability; a misleading
 subscriber comment was corrected and passed scoped re-review with runtime
 bytes unchanged. No source behavior repair or native fairness gain follows.
-The next measurement is one captured hosted observation on the reviewed source;
-all native predicates remain fixed and capture costs remain unisolated.
+Captured run [38026356058](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/38026356058)
+at clean exact `bb3647ae12796fad98d6a2e9494bea26ae186be0` failed native
+acceptance after 54,317 ms. Full fresh evidence review verified 23 originals and
+14 safe projections. Thirty retained intermediate command links were recovered
+by exact same-actor joins and passed scoped re-review. All 73 declarations remain
+exact and unevaluated. The run queues 81 shots plus start, retains 39 authenticated
+director intents, 25 successful shot observers and 56 timeouts, with thirteen
+failed finals and missing controller-03/13 cleanup. End, full completion and final
+storage remain unproved.
+
+Actual API capture retains 32 authenticated socket decisions, 32 aggregate count
+decisions and 52 outbox results. Nine complete committed sender confirmations
+join successful same-actor observers. Director start counts all fourteen player
+ACKs before its server deadline and returns a pending complete-receipt handoff;
+no complete sender confirmation is retained for that exact generated control.
+Pending does not establish refusal, delivery or sender success; an admitted
+result's durable=true field is not independently verified restart durability.
+The next missing span is pending admission/work/dequeue/delivery/return through
+trusted sender ingress/read/decision/commit. Separate clocks, partial capture,
+logger/collector omissions and absent relay observations constrain interpretation.
+All native predicates stay fixed and capture cost is unisolated. These facts earn
+measurement, not a return-path repair or native fairness/CPU/SQL speedup.
+
+The automatic API black-box gate at source `bb3647ae12796fad98d6a2e9494bea26ae186be0`
+separately timed out on forming removed-topology hydration. Retained server records show an early topology
+publication with zero recipients before WebSocket open, but omit the stored
+row, audience, planner change decision and hydration result. Before correction, the planner
+could grow a removed snapshot's audience while reporting it unchanged; automatic
+coalesced work could then skip that update and hydration consult the old
+audience. This is a baseline condition, with actual CI causality unproven.
+The corrected planner now treats growth of that canonical cleanup audience as
+a change. Actual planner RED preceded its first source edit. The full-path
+fixture initially had expired leases; after live-session correction and an
+authoritative-read guard, restoring the original planner failed real persisted
+audience and hydration assertions. Restoring the correction passed all 60
+focused tests and shared-server types. This later original-source RED/GREEN pair
+is recorded with its actual chronology. Fresh full source review and two scoped
+import-group corrections are closed; the import move passed 17 work-handler
+tests and the final separator changes no non-whitespace bytes. Formation policy,
+historical cleanup recipients, authority, publication/hydration lifecycle,
+formats, transactions, retries and the ten-second recipe predicate remain fixed.
+Current-source automatic CI is a separate gate; historical causality and native
+ACK behavior remain unverified.
+
+The next bounded survey follows actual pending admission/work/dequeue and
+publication/direct-send return through trusted sender ingress/read/decision/
+commit. It maps existing owned records and exact joins before selecting the
+smallest missing evidence capability and its real producer-to-recorder RED.
+Source paths do not prove native execution, and absent records do not earn a
+behavior repair. Existing effects, reads, results, clocks, exception/retry order,
+default-disabled composition and private capture ownership must be preserved.
 
 The unchanged order-balanced PostgreSQL state-write comparison passed, including
 its existing resource and correctness gates. Its mutation mix omits authorized
