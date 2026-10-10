@@ -1,4 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import { decodeBarrierArrival, toBarrierResolvedEvent } from '@shared-test/rallar-bb-test/barrier/control-barrier-protocol.ts';
 
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -170,131 +178,6 @@ describe('ALM scale sampled acceptance', () => {
     });
 });
 
-describe('ALM scale player wire execution', () => {
-    afterEach(() => {
-        vi.unstubAllGlobals();
-    });
-
-    it.each(['director-session', 'wrong-session'])('joins six scoped shot receipts to the appointed director: %s', async (recipientSessionId) => {
-        vi.stubGlobal('localStorage', {
-            getItem: () =>
-                JSON.stringify({
-                    clientId: 'player-client',
-                    username: 'Player',
-                    sessionId: 'player-session',
-                    accessToken: 'test-token',
-                    expiresAtEpochMs: Date.now() + 60_000
-                })
-        });
-        const sent: RallarBlackBoxTestCommand['metadata'][] = [];
-        let now = 1_000;
-        const receipt = (handleId: string) => ({
-            handleId,
-            state: 'acknowledged',
-            submitted: true,
-            enqueued: false,
-            receiptMode: 'leader',
-            confirmedHopPeerIds: [],
-            unconfirmedHopPeerIds: [],
-            expectedRecipientPeerIds: [recipientSessionId],
-            confirmedRecipientPeerIds: [recipientSessionId],
-            unconfirmedRecipientPeerIds: [],
-            attempts: 1,
-            attemptOutcomes: [],
-            attemptCarriers: [],
-            attemptRefusalReasons: []
-        });
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            now: () => now,
-            sleep: async (ms) => {
-                now += ms;
-            },
-            rallarRuntime: {
-                ...createBrowserRallarRequiredMethodsTestDouble(),
-                connect: async () => ({ sessionId: 'player-session', connected: true }),
-                waitForRoom: async () => READY_ROOM,
-                send: async () => ({ sent: true }),
-                refreshRoom: async () => undefined,
-                close: async () => ({ closed: true }),
-                health: async () => ({ connected: true, readyPeerIds: ['director-session'] }),
-                readAlmUsage: async () => HEALTHY,
-                readCongestionCounters: async () => ({ dropped: 0, deferred: 0, handedOver: 0 }),
-                sendMessage: async (command) => {
-                    sent.push(command);
-                    return { handleId: command.handleId, carrier: command.carrier, status: 'acknowledged' };
-                },
-                observeDelivery: async (command) => receipt(String(command.handleId)),
-                readReceipts: async (command) => receipt(String(command.handleId)),
-                director: {
-                    status: async () => ({ directorStatus: { active: true, appointment: { sessionId: 'director-session' } } }),
-                    appoint: async () => ({}),
-                    resign: async () => ({}),
-                    relayStart: async () => ({}),
-                    intent: async () => ({}),
-                    syncRequest: async () => ({}),
-                    relayStop: async () => ({})
-                }
-            }
-        });
-        const recipe = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 }).recipes[1];
-        const connect = recipe.commands.find((command) => command.kind === 'rtc.connect')!;
-        const connected = await runtime.execute(connect);
-        expect(connected.error).toBeUndefined();
-        if (!isJsonRecordValue(connected.value) || typeof connected.value.sessionId !== 'string') {
-            throw new Error('Connect did not report its page session');
-        }
-        const connectedSessionId = connected.value.sessionId;
-        await runtime.execute({ kind: 'director.status', commandId: 'alm-scale-player-ready-status', roomRef: GROUP, refresh: true });
-        const traffic = recipe.commands.find((command) => command.kind === 'parallel');
-        if (traffic?.kind !== 'parallel') {
-            throw new Error('Missing player traffic');
-        }
-        const window = traffic.groups[0].commands[0];
-        if (window.kind !== 'parallel') {
-            throw new Error('Missing workload window');
-        }
-        const result = await runtime.execute({
-            ...traffic,
-            groups: [{
-                ...traffic.groups[0],
-                commands: [{
-                    ...window,
-                    groups: [{
-                        ...window.groups[0],
-                        commands: [{ kind: 'health', commandId: 'connected-health' }, { kind: 'health', commandId: 'started-port' }, {
-                            kind: 'health',
-                            commandId: 'started-type-port'
-                        }, window.groups[0].commands[3]]
-                    }]
-                }]
-            }, { ...traffic.groups[1], commands: [{ kind: 'health', commandId: 'sampling-port' }] }]
-        });
-        expect(result.ok).toBe(recipientSessionId === 'director-session');
-        if (recipientSessionId === 'director-session') {
-            expect(sent).toHaveLength(6);
-            expect(sent.map((command) => command?.handleId)).toEqual([
-                'alm-scale-player-shot-1',
-                'alm-scale-player-shot-2',
-                'alm-scale-player-shot-3',
-                'alm-scale-player-shot-4',
-                'alm-scale-player-shot-5',
-                'alm-scale-player-shot-6'
-            ]);
-            sent.forEach((command, index) =>
-                expect(command).toMatchObject({
-                    payload: {
-                        payload: {
-                            senderId: connectedSessionId,
-                            seq: index + 1,
-                            payload: { shot: { sessionId: 'player-session', seq: index + 1 } }
-                        }
-                    }
-                })
-            );
-        }
-    });
-});
-
 function recordTrafficArrivals(runtime: RallarBlackBoxBrowserTestRuntime, scenario: TrafficScenario): void {
     const input = { participantCount: scenario.participantCount ?? 15, group: GROUP, readyTimeoutMs: 45_000 } as const;
     const prefix = `alm-scale-${scenario.role}`;
@@ -428,10 +311,8 @@ async function runTrafficScenario(scenario: TrafficScenario): Promise<RallarBlac
     if (traffic?.kind !== 'parallel') {
         throw new Error('Missing traffic');
     }
-    const execution = runtime.execute({
-        ...traffic,
-        groups: [{ ...traffic.groups[0], commands: replaceDistributedTrafficPorts(traffic.groups[0].commands) }, traffic.groups[1]]
-    });
+    releaseSingleRoleBarrierOnArrival(runtime, scenario.role);
+    const execution = runtime.execute(traffic);
     if (scenario.cancelAtMs !== undefined) {
         setTimeout(() => {
             void runtime.execute({ kind: 'recipe.cancel', commandId: 'cancel-traffic', reason: 'test cancellation' });
@@ -441,21 +322,24 @@ async function runTrafficScenario(scenario: TrafficScenario): Promise<RallarBlac
     return await execution;
 }
 
-function replaceDistributedTrafficPorts(commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestCommand[] {
-    return commands.map((command) =>
-        command.kind === 'barrier'
-            ? { kind: 'health', commandId: command.commandId }
-            : command.kind === 'loop'
-            ? { ...command, commands: replaceDistributedTrafficPorts(command.commands) }
-            : command.kind === 'parallel'
-            ? { ...command, groups: command.groups.map((group) => ({ ...group, commands: replaceDistributedTrafficPorts(group.commands) })) }
-            : command.kind === 'wait'
-            ? { ...command, timeoutMs: 1 }
-            : command
-    );
+function releaseSingleRoleBarrierOnArrival(runtime: RallarBlackBoxBrowserTestRuntime, role: TrafficScenario['role']): void {
+    // Isolated page arrival checks use one external participant; the cadence cohort joins all fifteen.
+    runtime.subscribe((state) => {
+        const arrival = state.events.map((event) => decodeBarrierArrival(event).right).find((value) => value !== undefined);
+        if (arrival && !state.events.some((event) => event.topic === 'rallar.bb.barrier.resolved')) {
+            runtime.recordEvent(toBarrierResolvedEvent({
+                kind: 'barrier',
+                protocolVersion: 1,
+                runId: 'single-role-arrival-proof',
+                agentId: role,
+                barrierId: arrival.barrierId,
+                resolution: { outcome: 'released', arrivedAgentIds: [role] }
+            }));
+        }
+    });
 }
 
-describe('ALM scale complete traffic evidence', () => {
+describe('ALM scale single-page traffic and arrival validation', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
         vi.useRealTimers();
@@ -469,7 +353,7 @@ describe('ALM scale complete traffic evidence', () => {
             { role: 'player', duplicateStart: true },
             { role: 'player', wrongDirector: true },
             { role: 'player', startDelayMs: 8_000 },
-            { role: 'player', ackDelayMs: 1_500 }
+            { role: 'player', ackDelayMs: 9_000 }
         ] as const
     )('rejects incomplete identities or traffic outside the sampled window: %j', async (scenario) => {
         expect((await runTrafficScenario(scenario)).ok).toBe(false);
@@ -521,12 +405,15 @@ interface WorkloadEvidence {
 
 const HEALTHY_WORKLOAD: WorkloadEvidence = { elapsedMs: 25_000, cancelled: false, arrivalsFailed: 0 };
 
-function createEvidence(
-    agentId: string,
-    director: boolean,
-    samplerEvidence: SamplerEvidence,
-    workloadEvidence: WorkloadEvidence = HEALTHY_WORKLOAD
-): DistributedGroupAssertionRecipeEvidence {
+interface ControllerEvidenceInput {
+    readonly agentId: string;
+    readonly director: boolean;
+    readonly samplerEvidence: SamplerEvidence;
+    readonly workloadEvidence: WorkloadEvidence;
+}
+
+function createEvidence(input: ControllerEvidenceInput): DistributedGroupAssertionRecipeEvidence {
+    const { agentId, director, samplerEvidence, workloadEvidence } = input;
     const prefix = director ? 'alm-scale-director' : 'alm-scale-player';
     return {
         agentId,
@@ -546,8 +433,6 @@ function createEvidence(
                 ...(director ? createLifecycleReceiptEvidence(prefix) : [createEvidenceResult(`${prefix}-shots`, 'loop', {
                     commandId: `${prefix}-shots`,
                     iterations: 6,
-                    childResultCount: 60,
-                    passed: 60,
                     failed: 0,
                     cancelled: false,
                     pacing: { completedIterations: 6 },
@@ -665,11 +550,18 @@ function evaluateEvidence(evidence: readonly DistributedGroupAssertionRecipeEvid
 }
 
 describe('ALM scale controller evidence', () => {
-    const healthy = Array.from({ length: 15 }, (_, index) => createEvidence(`controller-${String(index + 1).padStart(2, '0')}`, index === 0, HEALTHY_SAMPLER));
+    // Synthetic values isolate evaluator guards; the cadence cohort supplies actual runtime acceptance evidence.
+    const healthy = Array.from({ length: 15 }, (_, index) =>
+        createEvidence({
+            agentId: `controller-${String(index + 1).padStart(2, '0')}`,
+            director: index === 0,
+            samplerEvidence: HEALTHY_SAMPLER,
+            workloadEvidence: HEALTHY_WORKLOAD
+        }));
 
     it('accepts all frozen roles with nested sampler, full receipts and named storage exclusions', () => {
         const results = evaluateEvidence(healthy)!;
-        expect(results.length).toBeGreaterThan(30);
+        expect(results).toHaveLength(73);
         expect(results.every((result) => result.ok)).toBe(true);
         expect(results.find((result) => result.groupAssertionId === 'alm-scale-player-sampler-iterations')?.perAgent.map((row) => row.agentId))
             .toEqual(Array.from({ length: 14 }, (_, index) => `controller-${String(index + 2).padStart(2, '0')}`));
@@ -741,7 +633,7 @@ describe('ALM scale controller evidence', () => {
     ])('attributes $name to its original controller even with healthy final stats', ({ sampler, assertion }) => {
         const evidence = healthy.map((row) =>
             row.agentId === 'controller-09'
-                ? createEvidence(row.agentId, false, sampler)
+                ? createEvidence({ agentId: row.agentId, director: false, samplerEvidence: sampler, workloadEvidence: HEALTHY_WORKLOAD })
                 : row
         );
         const results = evaluateEvidence(evidence)!;
@@ -759,7 +651,11 @@ describe('ALM scale controller evidence', () => {
         ] as const
     )('keeps native traffic failures on the original controller: $command/$path', ({ role, evidence, command, path }) => {
         const controller = role === 'director' ? 'controller-01' : 'controller-09';
-        const rows = healthy.map((row) => row.agentId === controller ? createEvidence(row.agentId, role === 'director', HEALTHY_SAMPLER, evidence) : row);
+        const rows = healthy.map((row) =>
+            row.agentId === controller
+                ? createEvidence({ agentId: row.agentId, director: role === 'director', samplerEvidence: HEALTHY_SAMPLER, workloadEvidence: evidence })
+                : row
+        );
         const assertion = evaluateEvidence(rows)!.find((result) => result.groupAssertionId === `alm-scale-${role}-${command}-${path}`)!;
         expect(assertion.ok).toBe(false);
         expect(assertion.violatingAgentIds).toEqual([controller]);

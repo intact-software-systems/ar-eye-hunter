@@ -7,10 +7,11 @@ const ENDED_AT_EPOCH_MS = STARTED_AT_EPOCH_MS + 60_000;
 
 export function createAlmScalePayload(
     input: AlmScaleRecipeInput,
-    kind: 'shot' | 'started' | 'ended'
+    kind: 'shot' | 'started' | 'ended',
+    sequence: number | string = '{loop.iteration}'
 ): RallarBlackBoxTestJsonValue {
     const intent = kind === 'shot';
-    const payload = intent ? createShotPayload() : createLifecyclePayload(input, kind);
+    const payload = intent ? createShotPayload(sequence) : createLifecyclePayload(input, kind);
     return {
         protocol: 'rallar.director.relay.v1',
         topicId: 'room.ar-eye-hunter.director',
@@ -23,7 +24,7 @@ export function createAlmScalePayload(
             kind: intent ? 'intent' : 'event',
             roomId: input.group.groupId,
             senderId: '{auth.sessionId}',
-            seq: intent ? '{loop.iteration}' : kind === 'started' ? 1 : 2,
+            seq: intent ? sequence : kind === 'started' ? 1 : 2,
             sentAtEpochMs: kind === 'ended' ? ENDED_AT_EPOCH_MS : STARTED_AT_EPOCH_MS,
             directorEpoch: 1,
             payload
@@ -31,7 +32,7 @@ export function createAlmScalePayload(
     };
 }
 
-function createShotPayload(): RallarBlackBoxTestJsonValue {
+function createShotPayload(sequence: number | string): RallarBlackBoxTestJsonValue {
     return {
         protocol: 'ar-eye-hunter.v1',
         kind: 'player-shot-intent',
@@ -44,7 +45,7 @@ function createShotPayload(): RallarBlackBoxTestJsonValue {
             weaponKind: 'pulse-rifle',
             charged: false,
             overdrive: false,
-            seq: '{loop.iteration}',
+            seq: sequence,
             sentAtEpochMs: STARTED_AT_EPOCH_MS
         }
     };

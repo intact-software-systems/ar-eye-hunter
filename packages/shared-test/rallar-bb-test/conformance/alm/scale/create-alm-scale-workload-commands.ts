@@ -10,6 +10,7 @@ import type { AlmScaleRecipeInput } from './create-alm-scale-recipes.ts';
 interface AlmScaleSendInput {
     readonly prefix: string;
     readonly handleId: string;
+    readonly sequence: number | undefined;
     readonly kind: 'shot' | 'started' | 'ended';
 }
 
@@ -42,7 +43,7 @@ export function createAlmScaleWorkloadCommands(
         : [
             { ...createReceivedCommand(prefix, 'event', 1), commandId: `${prefix}-received-start` },
             ...createAlmScaleLifecycleArrival(input, 'started'),
-            createShotLoop(input),
+            createShotWorkload(input),
             complete,
             createReceivedCommand(prefix, 'event', 2),
             ...createAlmScaleLifecycleArrival(input, 'ended')
@@ -59,7 +60,12 @@ function createLifecycleSendCommands(
     const handleId = `${prefix}-${event}`;
     const resultId = `${prefix}-traffic:g1:workload:c1:${prefix}-window:g1:commands:c${commandOffset + 3}:${receiptId}`;
     return [
-        createSendCommand(input, { prefix, handleId, kind: event === 'start' ? 'started' : 'ended' }),
+        createSendCommand(input, {
+            prefix,
+            handleId,
+            kind: event === 'start' ? 'started' : 'ended',
+            sequence: undefined
+        }),
         {
             kind: 'messages.observe',
             commandId: `${prefix}-${event}-acknowledged`,
@@ -78,31 +84,65 @@ function createLifecycleSendCommands(
     ];
 }
 
-function createShotLoop(input: AlmScaleRecipeInput): RallarBlackBoxTestCommand {
+function createShotWorkload(input: AlmScaleRecipeInput): RallarBlackBoxTestCommand {
+    const prefix = 'alm-scale-player';
+    return {
+        kind: 'parallel',
+        commandId: `${prefix}-shot-workload`,
+        maxConcurrency: 1,
+        groups: [{
+            groupId: 'shots',
+            commands: [{
+                kind: 'parallel',
+                commandId: `${prefix}-scheduled-shots`,
+                maxConcurrency: 6,
+                groups: Array.from({ length: 6 }, (_, index) => ({
+                    groupId: `shot-${index + 1}`,
+                    commands: createShotBranch(input, index + 1)
+                }))
+            }, createShotVerificationLoop()]
+        }]
+    };
+}
+
+function createShotBranch(input: AlmScaleRecipeInput, sequence: number): readonly RallarBlackBoxTestCommand[] {
+    const prefix = 'alm-scale-player';
+    const handleId = `${prefix}-shot-${sequence}`;
+    return [
+        ...(sequence === 1 ? [] : [{
+            kind: 'wait' as const,
+            commandId: `${handleId}-offset`,
+            match: { kind: 'diagnostic' as const, topic: 'rallar.black-box.alm.scale.shot-offset' },
+            absent: true as const,
+            timeoutMs: (sequence - 1) * 5_000
+        }]),
+        createSendCommand(input, { prefix, handleId, kind: 'shot', sequence }),
+        {
+            kind: 'messages.observe',
+            commandId: `${handleId}-acknowledged`,
+            connection: prefix,
+            handleId,
+            state: ['acknowledged'],
+            timeoutMs: 30_000
+        }
+    ];
+}
+
+function createShotVerificationLoop(): RallarBlackBoxTestCommand {
     const prefix = 'alm-scale-player';
     const resultId =
-        `${prefix}-traffic:g1:workload:c1:${prefix}-window:g1:commands:c4:${prefix}-shots:i{loop.iteration}:c3:${prefix}-shot-receipt`;
-    const handleId = `${prefix}-shot-{loop.iteration}`;
+        `${prefix}-traffic:g1:workload:c1:${prefix}-window:g1:commands:c4:${prefix}-shot-workload:g1:shots:c2:${prefix}-shots:i{loop.iteration}:c1:${prefix}-shot-receipt`;
     return {
         kind: 'loop',
         commandId: `${prefix}-shots`,
         count: 6,
-        intervalMs: 5_000,
+        intervalMs: 0,
         commands: [
-            createSendCommand(input, { prefix, handleId, kind: 'shot' }),
-            {
-                kind: 'messages.observe',
-                commandId: `${prefix}-shot-acknowledged`,
-                connection: prefix,
-                handleId,
-                state: ['acknowledged'],
-                timeoutMs: 30_000
-            },
             {
                 kind: 'messages.receipts',
                 commandId: `${prefix}-shot-receipt`,
                 connection: prefix,
-                handleId,
+                handleId: `${prefix}-shot-{loop.iteration}`,
                 timeoutMs: 5_000
             },
             ...createReceiptAssertions({ prefix: `${prefix}-shot`, resultId, count: 1, mode: 'leader' }),
@@ -130,14 +170,14 @@ function createLeaderIdentityChecks(prefix: string, resultId: string): readonly 
 function createSendCommand(input: AlmScaleRecipeInput, send: AlmScaleSendInput): RallarBlackBoxTestMessagesSendCommand {
     return {
         kind: 'messages.send',
-        commandId: `${send.prefix}-${send.kind}-send`,
+        commandId: `${send.prefix}-${send.kind}${send.sequence === undefined ? '' : `-${send.sequence}`}-send`,
         connection: send.prefix,
         handleId: send.handleId,
         carrier: 'rtc-with-ws-fallback',
         roomRef: { ...input.group },
         topicId: 'room.ar-eye-hunter.director',
         typeId: `room.ar-eye-hunter.director.${send.kind === 'shot' ? 'intent' : 'event'}.v1`,
-        payload: createAlmScalePayload(input, send.kind),
+        payload: createAlmScalePayload(input, send.kind, send.sequence),
         reliability: 'at-least-once',
         durability: 'volatile',
         ack: send.kind === 'shot' ? 'group-leader' : 'all-logical-recipients',
