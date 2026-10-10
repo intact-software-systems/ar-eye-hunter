@@ -1,6 +1,33 @@
-import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
+import {
+    existsSync,
+    lstatSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    readlinkSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
+
+interface RallarSkillPluginMetadata {
+    readonly skills: string;
+    readonly keywords: readonly string[];
+    readonly interface: {
+        readonly defaultPrompt: readonly string[];
+        readonly longDescription: string;
+    };
+}
+
+interface SkillFrontmatter {
+    readonly name: string;
+    readonly description: string;
+}
 
 const repoRoot = process.cwd();
 const skillsRoot = path.join(repoRoot, '.agents/skills');
@@ -21,17 +48,14 @@ const expectedSkills = [
 
 describe('Rallar skill plugin and publication integrity', () => {
     it('uses one directly discoverable skill tree for the plugin', () => {
-        const plugin = readJson('.codex-plugin/plugin.json') as {
-            skills?: string;
-            interface?: { defaultPrompt?: readonly string[]; };
-        };
+        const plugin = decodeRallarSkillPluginMetadata(JSON.parse(readRepo('.codex-plugin/plugin.json')));
         const skillDirectories = readdirSync(skillsRoot, { withFileTypes: true })
             .filter((entry) => entry.isDirectory())
             .map((entry) => entry.name)
             .sort();
 
         expect(plugin.skills).toBe('./.agents/skills/');
-        expect(plugin.interface?.defaultPrompt?.length).toBeLessThanOrEqual(3);
+        expect(plugin.interface.defaultPrompt.length).toBeLessThanOrEqual(3);
         expect(skillDirectories).toEqual([...expectedSkills].sort());
         expect(existsSync(path.join(repoRoot, 'skills'))).toBe(false);
     });
@@ -41,7 +65,7 @@ describe('Rallar skill plugin and publication integrity', () => {
         const linkNames = readdirSync(claudeSkillsRoot).sort();
 
         expect(linkNames).toEqual([...expectedSkills].sort());
-        expect(readCopiedSkillMarkdown(path.join(repoRoot, '.claude'))).toEqual([]);
+        expect(readCopiedClaudeSkillMarkdown(repoRoot)).toEqual([]);
         for (const skillName of expectedSkills) {
             const linkPath = path.join(claudeSkillsRoot, skillName);
             expect(lstatSync(linkPath).isSymbolicLink(), skillName).toBe(true);
@@ -50,10 +74,59 @@ describe('Rallar skill plugin and publication integrity', () => {
         }
     });
 
+    it('ignores sibling worktree skills while detecting copies in the Claude discovery tree', () => {
+        const fixtureRoot = mkdtempSync(path.join(tmpdir(), 'rallar-skill-publication-'));
+        try {
+            const canonicalSkill = path.join(fixtureRoot, '.agents/skills/canonical');
+            const claudeSkills = path.join(fixtureRoot, '.claude/skills');
+            const worktreeSkill = path.join(
+                fixtureRoot,
+                '.claude/worktrees/task/.agents/skills/canonical'
+            );
+            mkdirSync(canonicalSkill, { recursive: true });
+            mkdirSync(claudeSkills, { recursive: true });
+            mkdirSync(worktreeSkill, { recursive: true });
+            writeFileSync(path.join(canonicalSkill, 'SKILL.md'), '# Canonical skill\n');
+            writeFileSync(path.join(worktreeSkill, 'SKILL.md'), '# Worktree canonical skill\n');
+            symlinkSync('../../.agents/skills/canonical', path.join(claudeSkills, 'canonical'), 'dir');
+
+            expect(readCopiedClaudeSkillMarkdown(fixtureRoot)).toEqual([]);
+
+            const copiedSkill = path.join(claudeSkills, 'copied');
+            const copiedMarkdown = path.join(copiedSkill, 'SKILL.md');
+            mkdirSync(copiedSkill);
+            writeFileSync(copiedMarkdown, '# Copied skill\n');
+
+            expect(readCopiedClaudeSkillMarkdown(fixtureRoot)).toEqual([copiedMarkdown]);
+        }
+        finally {
+            rmSync(fixtureRoot, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        null,
+        { skills: './.agents/skills/', keywords: [] },
+        {
+            skills: './.agents/skills/',
+            keywords: [1],
+            interface: { defaultPrompt: [], longDescription: 'Skill guidance' }
+        },
+        {
+            skills: './.agents/skills/',
+            keywords: [],
+            interface: { defaultPrompt: [1], longDescription: 'Skill guidance' }
+        }
+    ])('rejects malformed published plugin metadata (%#)', (pluginMetadata) => {
+        expect(() => decodeRallarSkillPluginMetadata(pluginMetadata)).toThrow(
+            'Invalid Rallar skill plugin metadata'
+        );
+    });
+
     it('keeps skill frontmatter and local references valid', () => {
         for (const skillName of expectedSkills) {
             const skillPath = path.join(skillsRoot, skillName, 'SKILL.md');
-            const source = readAbsolute(skillPath);
+            const source = readFileSync(skillPath, 'utf8');
             const frontmatter = readFrontmatter(source, skillPath);
 
             expect(frontmatter.name, skillPath).toBe(skillName);
@@ -79,10 +152,7 @@ describe('Rallar skill plugin and publication integrity', () => {
         const progressSkill = readRepo('.agents/skills/publishing-plan-progress/SKILL.md');
         const normalizedAgents = normalizeWhitespace(agents);
         const normalizedProgressSkill = normalizeWhitespace(progressSkill);
-        const plugin = readJson('.codex-plugin/plugin.json') as {
-            keywords?: readonly string[];
-            interface?: { defaultPrompt?: readonly string[]; longDescription?: string; };
-        };
+        const plugin = decodeRallarSkillPluginMetadata(JSON.parse(readRepo('.codex-plugin/plugin.json')));
 
         expectAll(agents, ['adaptive-plan-execution', 'publishing-plan-progress', 'publication']);
         expect(normalizedAgents).toContain(
@@ -136,9 +206,9 @@ describe('Rallar skill plugin and publication integrity', () => {
                 'draft-pull-requests'
             ])
         );
-        expect(plugin.interface?.longDescription).toContain('observable plan progress');
-        expect(plugin.interface?.defaultPrompt).toHaveLength(3);
-        expect(plugin.interface?.defaultPrompt).toContain(
+        expect(plugin.interface.longDescription).toContain('observable plan progress');
+        expect(plugin.interface.defaultPrompt).toHaveLength(3);
+        expect(plugin.interface.defaultPrompt).toContain(
             'Execute a long-running Rallar implementation plan with observable GitHub checkpoints.'
         );
     });
@@ -227,33 +297,28 @@ describe('Rallar skill plugin and publication integrity', () => {
     });
 });
 
-function readCopiedSkillMarkdown(directory: string): readonly string[] {
+function readCopiedClaudeSkillMarkdown(repositoryRoot: string): readonly string[] {
     const copied: string[] = [];
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-        const child = path.join(directory, entry.name);
-        if (entry.isSymbolicLink()) {
-            continue;
-        }
-        if (entry.isDirectory()) {
-            copied.push(...readCopiedSkillMarkdown(child));
-        }
-        else if (entry.name === 'SKILL.md') {
-            copied.push(child);
+    const directories = [path.join(repositoryRoot, '.claude/skills')];
+    for (const directory of directories) {
+        for (const entry of readdirSync(directory, { withFileTypes: true })) {
+            const child = path.join(directory, entry.name);
+            if (entry.isSymbolicLink()) {
+                continue;
+            }
+            if (entry.isDirectory()) {
+                directories.push(child);
+            }
+            else if (entry.name === 'SKILL.md') {
+                copied.push(child);
+            }
         }
     }
     return copied;
 }
 
 function readRepo(filePath: string): string {
-    return readAbsolute(path.join(repoRoot, filePath));
-}
-
-function readAbsolute(filePath: string): string {
-    return readFileSync(filePath, 'utf8');
-}
-
-function readJson(filePath: string): unknown {
-    return JSON.parse(readRepo(filePath));
+    return readFileSync(path.join(repoRoot, filePath), 'utf8');
 }
 
 function expectAll(haystack: string, needles: readonly string[]): void {
@@ -276,10 +341,41 @@ function normalizeWhitespace(value: string): string {
 function readFrontmatter(
     source: string,
     filePath: string
-): Readonly<{ name: string; description: string; }> {
+): SkillFrontmatter {
     const block = source.match(/^---\n([\s\S]*?)\n---(?:\n|$)/)?.[1];
     expect(block, filePath).toBeDefined();
     const name = block?.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? '';
     const description = block?.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? '';
     return { name, description };
+}
+
+function decodeRallarSkillPluginMetadata(pluginMetadata: unknown): RallarSkillPluginMetadata {
+    if (
+        typeof pluginMetadata !== 'object' || pluginMetadata === null ||
+        !('skills' in pluginMetadata) || typeof pluginMetadata.skills !== 'string' ||
+        !('keywords' in pluginMetadata) || !Array.isArray(pluginMetadata.keywords) ||
+        !pluginMetadata.keywords.every((keyword) => typeof keyword === 'string') ||
+        !('interface' in pluginMetadata) || typeof pluginMetadata.interface !== 'object' ||
+        pluginMetadata.interface === null
+    ) {
+        throw new Error('Invalid Rallar skill plugin metadata');
+    }
+
+    const pluginInterface = pluginMetadata.interface;
+    if (
+        !('defaultPrompt' in pluginInterface) || !Array.isArray(pluginInterface.defaultPrompt) ||
+        !pluginInterface.defaultPrompt.every((prompt) => typeof prompt === 'string') ||
+        !('longDescription' in pluginInterface) || typeof pluginInterface.longDescription !== 'string'
+    ) {
+        throw new Error('Invalid Rallar skill plugin metadata');
+    }
+
+    return {
+        skills: pluginMetadata.skills,
+        keywords: pluginMetadata.keywords,
+        interface: {
+            defaultPrompt: pluginInterface.defaultPrompt,
+            longDescription: pluginInterface.longDescription
+        }
+    };
 }
