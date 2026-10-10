@@ -159,6 +159,152 @@ export function resolveCallTargets(call, project) {
     };
 }
 
+// Execution bindings carry only callable values and constructed owners. Passing
+// either value binds a callee parameter; its body is reached only by invocation.
+export function resolveExecutionTargets(call, project, bindings = new Map()) {
+    const callExpression = call.getExpression();
+    const indirect = Node.isPropertyAccessExpression(callExpression) &&
+        ['apply', 'call'].includes(callExpression.getName()) &&
+        callExpression.getExpression().getType().getCallSignatures().length > 0;
+    const expression = executionValue(indirect ? callExpression.getExpression() : callExpression, bindings);
+    const targets = Node.isNewExpression(call) && Node.isClassExpression(expression)
+        ? { bodies: expression.getConstructors(), unresolved: false }
+        : Node.isNewExpression(call)
+        ? {
+            bodies: resolvedDeclarations(expression).flatMap((declaration) =>
+                Node.isClassDeclaration(declaration) || Node.isClassExpression(declaration)
+                    ? declaration.getConstructors()
+                    : []
+            ),
+            unresolved: false
+        }
+        : expression !== call.getExpression()
+        ? { bodies: resolveCallableBodies(expression, project), unresolved: true }
+        : resolveCallTargets(call, project);
+    const invocations = targets.bodies.map((node) => {
+        const values = new Map(bindings);
+        const arguments_ = indirect && callExpression.getName() === 'call'
+            ? call.getArguments().slice(1)
+            : indirect && Node.isArrayLiteralExpression(call.getArguments()[1])
+            ? call.getArguments()[1].getElements()
+            : call.getArguments();
+        bindExecutionParameters({ callable: node, arguments_, bindings, values });
+        if (Node.isConstructorDeclaration(node)) {
+            bindConstructedOwner({ receiver: call, owner: node.getParent(), bindings, values });
+        }
+        if (Node.isMethodDeclaration(node)) {
+            const access = call.getExpression();
+            if (Node.isPropertyAccessExpression(access)) {
+                bindConstructedOwner({ receiver: access.getExpression(), owner: node.getParent(), bindings, values });
+            }
+        }
+        return { node, bindings: values };
+    });
+    return { invocations, unresolved: targets.unresolved && invocations.length === 0 };
+}
+
+/**
+ * @typedef {object} BindExecutionParametersInput
+ * @property {import('ts-morph').FunctionDeclaration | import('ts-morph').ConstructorDeclaration | import('ts-morph').MethodDeclaration | import('ts-morph').ArrowFunction | import('ts-morph').FunctionExpression} callable
+ * @property {readonly import('ts-morph').Node[]} arguments_
+ * @property {Map<import('ts-morph').Node, import('ts-morph').Node>} bindings
+ * @property {Map<import('ts-morph').Node, import('ts-morph').Node>} values
+ */
+
+/** @param {BindExecutionParametersInput} input */
+function bindExecutionParameters(input) {
+    const { callable, arguments_, bindings, values } = input;
+    callable.getParameters().forEach((parameter, index) => {
+        const argument = arguments_[index];
+        if (!argument) {
+            return;
+        }
+        const value = executionValue(argument, bindings);
+        if (parameter.getType().getCallSignatures().length > 0 || Node.isNewExpression(value)) {
+            values.set(parameter, value);
+        }
+    });
+}
+
+/**
+ * @typedef {object} BindConstructedOwnerInput
+ * @property {import('ts-morph').Node} receiver
+ * @property {import('ts-morph').ClassDeclaration | import('ts-morph').ClassExpression} owner
+ * @property {Map<import('ts-morph').Node, import('ts-morph').Node>} bindings
+ * @property {Map<import('ts-morph').Node, import('ts-morph').Node>} values
+ */
+
+/** @param {BindConstructedOwnerInput} input */
+function bindConstructedOwner(input) {
+    const { receiver, owner, bindings, values } = input;
+    const origin = receiver.getKind() === SyntaxKind.ThisKeyword
+        ? bindings.get(owner)
+        : executionValue(receiver, bindings);
+    if (
+        !origin || !Node.isNewExpression(origin) || !(Node.isClassDeclaration(owner) || Node.isClassExpression(owner))
+    ) {
+        return;
+    }
+    values.set(owner, origin);
+    for (const constructor of owner.getConstructors()) {
+        const constructorValues = new Map(bindings);
+        bindExecutionParameters({
+            callable: constructor,
+            arguments_: origin.getArguments(),
+            bindings,
+            values: constructorValues
+        });
+        for (const parameter of constructor.getParameters()) {
+            if (parameter.isParameterProperty() && constructorValues.has(parameter)) {
+                values.set(parameter, constructorValues.get(parameter));
+            }
+        }
+        for (const assignment of constructor.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
+            const left = assignment.getLeft();
+            if (
+                assignment.getOperatorToken().getKind() !== SyntaxKind.EqualsToken ||
+                !Node.isPropertyAccessExpression(left) ||
+                left.getExpression().getKind() !== SyntaxKind.ThisKeyword
+            ) {
+                continue;
+            }
+            for (const field of resolvedDeclarations(left.getNameNode())) {
+                values.set(field, executionValue(assignment.getRight(), constructorValues));
+            }
+        }
+    }
+}
+
+function executionValue(expression, bindings, visited = new Set()) {
+    const value = unwrapValueExpression(expression);
+    const declarations = Node.isPropertyAccessExpression(value)
+        ? resolvedDeclarations(value.getNameNode())
+        : resolvedDeclarations(value);
+    for (const declaration of declarations) {
+        if (visited.has(declaration)) {
+            continue;
+        }
+        visited.add(declaration);
+        const bound = bindings.get(declaration);
+        const initializer = declarationInitializer(declaration);
+        if (bound || initializer) {
+            return executionValue(bound ?? initializer, bindings, visited);
+        }
+    }
+    return value;
+}
+
+export function resolveExecutionCallbacks(callback, project, bindings) {
+    return resolveCallableBodies(executionValue(callback, bindings), project)
+        .map((node) => ({ node, bindings }));
+}
+
+export function executionBindingIdentity(bindings) {
+    return [...bindings.entries()].map(([declaration, value]) =>
+        `${declaration.getSourceFile().getFilePath()}:${declaration.getStart()}=${value.getSourceFile().getFilePath()}:${value.getStart()}`
+    ).sort().join('|');
+}
+
 export function resolveCallableBodies(node, project, visitedSymbols = new Set()) {
     if (!node) {
         return [];
@@ -310,6 +456,7 @@ function isTransparentExpression(node) {
 
 export function isFunctionDeclaration(node) {
     return Node.isFunctionDeclaration(node) ||
+        Node.isConstructorDeclaration(node) ||
         Node.isMethodDeclaration(node) ||
         Node.isArrowFunction(node) ||
         Node.isFunctionExpression(node);

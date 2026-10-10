@@ -16,7 +16,6 @@ import {
     isSpecializedTransactionImplementation,
     isTransactionParameter,
     isTransactionWriteDeclaration,
-    isUnresolvedCallableParameterInvocation,
     isUpgradeCallbackAssignment,
     transactionBoundary,
     transactionExecutedCallbackArguments
@@ -24,6 +23,7 @@ import {
 import {
     assignedOutputDeclarations,
     declarationInitializer,
+    executionBindingIdentity,
     expressionIdentifiers,
     functionBody,
     identifierDependsOnDeclarations,
@@ -33,6 +33,8 @@ import {
     resolveCallableBodies,
     resolveCallTargets,
     resolvedDeclarations,
+    resolveExecutionCallbacks,
+    resolveExecutionTargets,
     sourcePath,
     unwrapValueExpression
 } from './typescript-provenance.mjs';
@@ -176,7 +178,8 @@ function analyzeBody(input) {
             body.getStart(),
             callable.start,
             callable.end,
-            boundaryLabel(boundary)
+            boundaryLabel(boundary),
+            executionBindingIdentity(callable.bindings)
         ].join(':');
         if (visited.has(identity)) {
             continue;
@@ -191,25 +194,26 @@ function analyzeBody(input) {
             findings,
             boundary,
             project,
-            callables
+            callables,
+            bindings: callable.bindings
         });
     }
 }
 
 function analyzeCallableBody(input) {
-    const { root, body, start, end, findings, boundary, project, callables } = input;
-    analyzeExecutionNode({ root, node: body, start, end, findings, boundary, project, callables });
+    const { root, body, start, end, findings, boundary, project, callables, bindings } = input;
+    analyzeExecutionNode({ root, node: body, start, end, findings, boundary, project, callables, bindings });
     body.forEachDescendant((node, traversal) => {
         if (isFunctionDeclaration(node)) {
             traversal.skip();
             return;
         }
-        analyzeExecutionNode({ root, node, start, end, findings, boundary, project, callables });
+        analyzeExecutionNode({ root, node, start, end, findings, boundary, project, callables, bindings });
     });
 }
 
 function analyzeExecutionNode(input) {
-    const { root, node, start, end, findings, boundary, project, callables } = input;
+    const { root, node, start, end, findings, boundary, project, callables, bindings } = input;
     if (node.getStart() < start || node.getStart() >= end) {
         return;
     }
@@ -223,6 +227,9 @@ function analyzeExecutionNode(input) {
                 operation,
                 boundary
             });
+        }
+        for (const invocation of resolveExecutionTargets(node, project, bindings).invocations) {
+            callables.push(analysisRoot(invocation));
         }
         return;
     }
@@ -240,15 +247,15 @@ function analyzeExecutionNode(input) {
         return;
     }
 
-    analyzeCall({ root, call: node, findings, boundary, project, callables });
+    analyzeCall({ root, call: node, findings, boundary, project, callables, bindings });
 }
 
 function analyzeCall(input) {
-    const { root, call, findings, boundary, project, callables } = input;
+    const { root, call, findings, boundary, project, callables, bindings } = input;
     const operation = callOperation(call);
     reportProhibitedCall({ root, call, findings, boundary, project, operation });
-    followCallTarget({ call, findings, boundary, project, callables, operation });
-    followTransactionCallbacks({ call, findings, boundary, project, callables });
+    followCallTarget({ call, findings, boundary, project, callables, operation, bindings });
+    followTransactionCallbacks({ call, findings, boundary, project, callables, bindings });
     for (const callback of indexedDbRequestListenerCallbacks(call, project)) {
         callables.push(analysisRoot({ node: callback }));
     }
@@ -332,23 +339,13 @@ function isAllowedSqlParameterNormalization(expression, root) {
 }
 
 function followCallTarget(input) {
-    const { call, findings, boundary, project, callables, operation } = input;
+    const { call, findings, boundary, project, callables, operation, bindings } = input;
     if (isReviewedCallableParameterInvocation(call)) {
         return;
     }
-    if (isUnresolvedCallableParameterInvocation(call)) {
-        addFinding({
-            findings,
-            node: call,
-            rule: 'transaction.unresolved-provenance',
-            operation,
-            boundary
-        });
-        return;
-    }
-    const targets = resolveCallTargets(call, project);
-    for (const callable of targets.bodies) {
-        callables.push(analysisRoot({ node: callable }));
+    const targets = resolveExecutionTargets(call, project, bindings);
+    for (const invocation of targets.invocations) {
+        callables.push(analysisRoot(invocation));
     }
     if (targets.unresolved && !isDirectTransactionOperation(call)) {
         addFinding({
@@ -362,9 +359,9 @@ function followCallTarget(input) {
 }
 
 function followTransactionCallbacks(input) {
-    const { call, findings, boundary, project, callables } = input;
-    for (const callback of transactionExecutedCallbackArguments(call)) {
-        const callbackBodies = resolveCallableBodies(callback, project);
+    const { call, findings, boundary, project, callables, bindings } = input;
+    for (const callback of transactionExecutedCallbackArguments(call, project)) {
+        const callbackBodies = resolveExecutionCallbacks(callback, project, bindings);
         if (callbackBodies.length === 0) {
             addFinding({
                 findings,
@@ -376,7 +373,7 @@ function followTransactionCallbacks(input) {
             continue;
         }
         for (const callbackBody of callbackBodies) {
-            callables.push(analysisRoot({ node: callbackBody }));
+            callables.push(analysisRoot(callbackBody));
         }
     }
 }
@@ -863,8 +860,8 @@ function isWithinPersistedValuePosition(node) {
 }
 
 function analysisRoot(input) {
-    const { node, start = node.getStart(), boundary = node, end = node.getEnd() } = input;
-    return { node, start, end, boundary };
+    const { node, start = node.getStart(), boundary = node, end = node.getEnd(), bindings = new Map() } = input;
+    return { node, start, end, boundary, bindings };
 }
 
 function precomputableOperation(call, operation) {

@@ -1,4 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { decodeJsonWireText, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import assert from 'node:assert/strict';
 import {
     describe,
     expect,
@@ -242,7 +245,7 @@ describe('direct resource outbox writes', () => {
         const [entry] = computeClientStateSyncEntries(computed, 'server-1');
 
         expect(entry.typeId).toBe(EnqueuedType.WS_OUTBOX);
-        const message = JSON.parse(entry.resource);
+        const message = decodePersistedALMessage(entry.resource);
         expect(message).toMatchObject({
             id: {
                 msgId: expect.stringContaining('client-command-1'),
@@ -299,17 +302,19 @@ describe('direct resource outbox writes', () => {
         ).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
         expect(database.rows.size).toBe(entries.length);
 
+        const firstEntry = entries[0];
+        assert.ok(firstEntry);
         await expect(
             runInPSqlTransaction(database.sql, async (transaction) => {
                 await createPSqlResourceInboxRepository(transaction, () => new Date(CREATED_AT_EPOCH_MS)).entries.writeIfAbsentOrMatch({
-                    ...entries[0]!,
+                    ...firstEntry,
                     resource: JSON.stringify({ corrupt: true })
                 });
             })
         ).rejects.toMatchObject({
             code: 'resource-inbox-invariant-corruption'
         });
-        expect(database.rows.get(toRowKey(entries[0]!))?.ri_resource).toBe(entries[0]!.resource);
+        expect(database.rows.get(toRowKey(firstEntry))?.ri_resource).toBe(firstEntry.resource);
     });
 
     it('computes deterministic logical websocket work without a live local route', () => {
@@ -336,7 +341,10 @@ describe('direct resource outbox writes', () => {
             first.every((entry) => entry.audit.expiryTs.equals(Temporal.Instant.fromEpochMilliseconds(EXPIRE_AT_EPOCH_MS)))
         ).toBe(true);
 
-        const messages = first.map((entry) => JSON.parse(entry.resource));
+        const messages = first.map((entry) => decodePersistedALMessage(entry.resource));
+        for (const message of messages) {
+            expect(decodeJsonWireText(message.payload.resource, 'Group sync test payload')).toMatchObject({ revision: 'group=4;presence=3' });
+        }
         expect([...new Set(messages.map((message) => message.payload.typeId))]).toEqual([
             'group-state.snapshot',
             'group-directory.snapshot'
@@ -348,7 +356,6 @@ describe('direct resource outbox writes', () => {
                     message.targets.scope === 'room' &&
                     message.targets.groupRef.applicationId === 'app-1' &&
                     message.ordering === undefined &&
-                    JSON.parse(message.payload.resource).revision === 'group=4;presence=3' &&
                     message.constraints.expiresAtMs === EXPIRE_AT_EPOCH_MS
             )
         ).toBe(true);
@@ -377,8 +384,8 @@ describe('direct resource outbox writes', () => {
 
         expect(first).toEqual(replay);
         expect(first.typeId).toBe(EnqueuedType.APP_OUTBOX);
-        const message = JSON.parse(first.resource);
-        const envelope = JSON.parse(message.payload.resource);
+        const message = decodePersistedALMessage(first.resource);
+        const envelope = decodeJsonWireText(message.payload.resource, 'Outbox test envelope');
         expect(envelope).toMatchObject({
             senderId: expect.any(String),
             data: {
@@ -402,7 +409,7 @@ describe('direct resource outbox writes', () => {
         const computed = createComputedRtcTopologyOutbox();
 
         const entry = computeRtcTopologyOutboxInsert(computed).entry;
-        const message = JSON.parse(entry.resource);
+        const message = decodePersistedALMessage(entry.resource);
 
         expect(message.id.msgId).toContain(':rtc-topology-recompute:group-revision:group=4;presence=3');
         expect(message.route).toEqual(entry.key);
@@ -498,7 +505,7 @@ describe('direct resource outbox writes', () => {
         expect(deliveryOutcomes).toEqual([
             {
                 status: 'no-current-recipient',
-                messageId: JSON.parse(entry.resource).id.msgId
+                messageId: decodePersistedALMessage(entry.resource).id.msgId
             }
         ]);
     });
@@ -514,7 +521,7 @@ describe('direct resource outbox writes', () => {
         await expect(
             runInPSqlTransaction(
                 database.sql,
-                async (transaction) => await writeCoalescedAppOutboxWork(transaction, computed, () => new Date(CREATED_AT_EPOCH_MS))
+                async (transaction) => await writeCoalescedAppOutboxWork(transaction, computed)
             )
         ).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
         expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(first.resource);
@@ -534,14 +541,14 @@ describe('direct resource outbox writes', () => {
         });
         await runInPSqlTransaction(
             database.sql,
-            async (transaction) => await writeCoalescedAppOutboxWork(transaction, nextWork, () => new Date(CREATED_AT_EPOCH_MS))
+            async (transaction) => await writeCoalescedAppOutboxWork(transaction, nextWork)
         );
         expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(next.resource);
 
         database.reserve(next);
         await runInPSqlTransaction(
             database.sql,
-            async (transaction) => await writeCoalescedAppOutboxWork(transaction, thirdWork, () => new Date(CREATED_AT_EPOCH_MS))
+            async (transaction) => await writeCoalescedAppOutboxWork(transaction, thirdWork)
         );
 
         expect(database.rows.get(toRowKey(next))?.ri_resource).toBe(next.resource);
@@ -1067,9 +1074,19 @@ function withoutZone(value: string): string {
 }
 
 function readCoalescedGeneration(resource: string): number {
-    const message = JSON.parse(resource);
-    const envelope = JSON.parse(message.payload.resource);
-    return envelope.data.__rallarCoalescedWork.generation;
+    const message = decodePersistedALMessage(resource);
+    const envelope = decodeJsonWireText(message.payload.resource, 'Coalesced SQL guard envelope');
+    const metadata = isJsonWireObject(envelope) && isJsonWireObject(envelope.data)
+        ? envelope.data.__rallarCoalescedWork
+        : undefined;
+    if (!isJsonWireObject(metadata) || typeof metadata.generation !== 'number') {
+        throw new TypeError('Coalesced SQL guard requires a generation');
+    }
+    return metadata.generation;
+}
+
+function isJsonWireObject(value: JsonWireValue | undefined): value is JsonWireObject {
+    return value !== undefined && value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function toRowKey(value: ResourceEntry | ResourceInboxRow): string {

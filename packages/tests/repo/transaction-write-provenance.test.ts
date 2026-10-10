@@ -1,9 +1,83 @@
-import { Project } from 'ts-morph';
+import { runInNewContext } from 'node:vm';
+import { Project, ts } from 'ts-morph';
 import { describe, expect, it } from 'vitest';
 import { analyzeTransactionWrites } from '../../../scripts/transaction-write-check/analyze-transaction-writes.mjs';
 import { analyzeFixture } from './transaction-write-check-fixture.ts';
 
 describe('transaction write provenance', () => {
+    it.each([
+        { usage: 'void clock;', invoked: false },
+        { usage: 'clock.call(undefined);', invoked: true },
+        { usage: 'clock.apply(undefined, []);', invoked: true },
+        { usage: '[1].map(clock);', invoked: true },
+        { usage: 'new ImmediateWriter(clock);', invoked: true },
+        { usage: 'clock();', invoked: true },
+        { usage: 'invoke(clock);', invoked: true },
+        { usage: 'writer.readTime();', invoked: true }
+    ])('follows reached clock execution for $usage', async ({ usage, invoked }) => {
+        const source = `
+            interface PSqlSql {
+                begin<T>(work: (transaction: PSqlSql) => Promise<T>): Promise<T>;
+                query(value: string): Promise<void>;
+            }
+            declare const database: PSqlSql;
+            declare function recordClockCall(): void;
+            class Writer {
+                private readonly clock: () => Date;
+                constructor(clock: () => Date) { this.clock = clock; }
+                async persist(transaction: PSqlSql, value: string): Promise<void> {
+                    await transaction.query(value);
+                }
+                readTime(): Date { return this.clock(); }
+            }
+            class ImmediateWriter {
+                private readonly clock: () => Date;
+                constructor(clock: () => Date) {
+                    this.clock = clock;
+                    this.clock();
+                }
+            }
+            function invoke(clock: () => Date): Date { return clock(); }
+            async function apply(transaction: PSqlSql, value: string, clock: () => Date): Promise<void> {
+                const writer = new Writer(clock);
+                await writer.persist(transaction, value);
+                ${usage}
+            }
+            async function execute(): Promise<void> {
+                await database.begin(async transaction => {
+                    await apply(transaction, 'prepared', () => {
+                        recordClockCall();
+                        return new Date(Date.now());
+                    });
+                });
+            }
+            execute();
+        `;
+        let clockCalls = 0;
+        const persisted: string[] = [];
+        const transaction = {
+            query: async (value: string) => {
+                persisted.push(value);
+            }
+        };
+        const runtimeSource = ts.transpileModule(source, {
+            compilerOptions: { target: ts.ScriptTarget.ES2022 }
+        }).outputText;
+        await runInNewContext(runtimeSource, {
+            database: { begin: async (work: (sql: typeof transaction) => Promise<void>) => await work(transaction) },
+            recordClockCall: () => {
+                clockCalls += 1;
+            }
+        });
+        expect(persisted).toEqual(['prepared']);
+        expect(clockCalls).toBe(invoked ? 1 : 0);
+
+        const prohibited = analyzeFixture(source)
+            .filter((finding) => finding.rule === 'transaction.precomputable-work')
+            .map((finding) => finding.operation);
+        expect(prohibited).toEqual(invoked ? ['Date', 'Date.now'] : []);
+    });
+
     it('follows imported transaction callback aliases', () => {
         const project = new Project({ useInMemoryFileSystem: true });
         project.createSourceFile(
