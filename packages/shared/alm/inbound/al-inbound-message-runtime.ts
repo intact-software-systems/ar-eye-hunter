@@ -266,7 +266,7 @@ export class ALInboundMessageRuntime {
         return retained;
     }
 
-    /** A value that never decoded has no identity to record; every identity that does gets one event. */
+    /** A value that never decoded has no identity to record; this observation is optional. */
     private recordAdmissionOutcome(
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source,
