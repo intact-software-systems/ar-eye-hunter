@@ -40,10 +40,12 @@ export class ResourceInboxInvariantCorruptionError extends Error {
 export class PSqlResourceInboxEntryRepository {
     private readonly sql: PSqlSql;
     private readonly reader: PSqlResourceInboxEntryReader;
+    private readonly now: () => Date;
 
-    constructor(sql: PSqlSql) {
+    constructor(sql: PSqlSql, now: () => Date = () => new Date()) {
         this.sql = sql;
-        this.reader = new PSqlResourceInboxEntryReader(sql);
+        this.now = now;
+        this.reader = new PSqlResourceInboxEntryReader(sql, now);
     }
 
     async write(entry: ResourceEntry): Promise<ResourceEntry> {
@@ -263,7 +265,7 @@ export class PSqlResourceInboxEntryRepository {
         materialize: () => Promise<ResourceEntry>
     ): Promise<ResourceEntry> {
         return await this.sql.begin(async (transactionSql) => {
-            const transaction = new PSqlResourceInboxEntryRepository(transactionSql);
+            const transaction = new PSqlResourceInboxEntryRepository(transactionSql, this.now);
             const reserved = await transaction.tryWriteIfAbsentOrReplaceExpired(placeholder);
             if (!reserved) {
                 const existing = await transaction.findAnyByKey(placeholder.key);

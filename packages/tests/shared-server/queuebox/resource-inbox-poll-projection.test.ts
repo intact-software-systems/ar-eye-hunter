@@ -1,17 +1,25 @@
 import { PGlite } from '@electric-sql/pglite';
 import { readFile } from 'node:fs/promises';
 import postgres from 'postgres';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+    afterAll,
+    beforeAll,
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { ResourceInboxRowCorruptionError } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { normalizeAppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import type { Key } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 
 import { API_V1_IN_MEMORY_SCHEMA_URL } from '../../../../apps/api-v1/src/db/in-memory-schema-bootstrap.ts';
 import { createPGliteSqlClient } from '../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
@@ -37,6 +45,38 @@ afterAll(async () => await storage?.close());
 beforeEach(async () => await sql`delete from resource_inbox`);
 
 describe('resource inbox poll projection', () => {
+    it('selects unexpired entries using the injected reader clock and excludes equality', async () => {
+        await writeRow(key, 'NEW', 0n);
+        const expiry = new Date('2060-01-01T12:00:00.000Z');
+        await sql`update resource_inbox set expire_ts = ${expiry}`;
+        let now = new Date(expiry.valueOf() - 1);
+        const entries = new PSqlResourceInboxEntryRepository(sql, () => now);
+        expect(await entries.findByKey(key)).toMatchObject({ key });
+        expect(await entries.findAllByTopicAndResourceId(key.topicId, key.resourceId)).toMatchObject([{ key }]);
+        expect(await entries.findAllKeys()).toEqual([key]);
+        expect([...(await entries.findByTopicId(key.topicId)).values()]).toMatchObject([{ key }]);
+        expect([...(await entries.findByTypeId('APP_INBOX')).values()]).toMatchObject([{ key }]);
+        expect(await entries.isAnyWithStatuses(new Set([EntityStatus.NEW]))).toBe(true);
+        expect(await entries.readStatusAndAttempts(key)).toEqual({ status: 'NEW', attempts: 0 });
+        now = expiry;
+        expect(await entries.findByKey(key)).toBeNull();
+        expect(await entries.findAllByTopicAndResourceId(key.topicId, key.resourceId)).toEqual([]);
+        expect(await entries.findAllKeys()).toEqual([]);
+        expect(await entries.findByTopicId(key.topicId)).toEqual(new Map());
+        expect(await entries.findByTypeId('APP_INBOX')).toEqual(new Map());
+        expect(await entries.isAnyWithStatuses(new Set([EntityStatus.NEW]))).toBe(false);
+        expect(await entries.readStatusAndAttempts(key)).toBeUndefined();
+        expect(await entries.findAnyByKey(key)).toMatchObject({ key });
+    });
+
+    it('preserves the injected expiry clock through aggregate transactions', async () => {
+        await writeRow(key, 'COMPLETED', 1n);
+        await sql`update resource_inbox set expire_ts = ${new Date('2060-01-01T12:00:00.000Z')}`;
+        const resources = createPSqlResourceInboxRepository(sql, () => new Date('2060-01-01T12:00:00.000Z'));
+        expect(await resources.entries.readStatusAndAttempts(key)).toBeUndefined();
+        expect(await resources.transaction(async (transaction) => await transaction.entries.readStatusAndAttempts(key))).toBeUndefined();
+    });
+
     it('reads only status and attempts in one bounded exact-key SQL statement', async () => {
         const capture = createResourceInboxQueryCapture();
         const entries = new PSqlResourceInboxEntryRepository(capture.sql);

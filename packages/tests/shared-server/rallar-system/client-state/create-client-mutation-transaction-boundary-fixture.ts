@@ -1,6 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
-import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 
 import {
     AppInboxType,
@@ -18,7 +16,9 @@ import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-sy
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import {
     EntityStatus,
     NEVER_EXPIRE_TS,
@@ -26,9 +26,9 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { createAutoAuthorizingClientStateService } from './app-client-inbox-mutation-test-harness.ts';
-import { TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
 
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
