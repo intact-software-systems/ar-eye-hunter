@@ -1,10 +1,12 @@
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { EntityStatus, Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import {
     rowsToMap,
     toDomain,
-    type ResourceInboxRow
+    toResourceInboxStatusAndAttempts,
+    type ResourceInboxRow,
+    type ResourceInboxStatusAndAttempts
 } from './resource-inbox-row-codec.ts';
 
 const MAX_ROWS_TO_RETURN = 50;
@@ -118,23 +120,18 @@ export class PSqlResourceInboxEntryReader {
         return rows.length > 0;
     }
 
-    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
-        if (statuses.length === 0) {
-            return false;
-        }
-
+    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
         const now = new Date();
-        const rows = await this.sql<{ one: number; }[]>`
-            select 1 as one
+        const rows = await this.sql<Pick<ResourceInboxRow, 'ri_status' | 'ri_attempts'>[]>`
+            select ri_status, ri_attempts
             from resource_inbox
-            where ri_status in ${this.sql(statuses)}
-              and ri_topic_id = ${key.topicId}
+            where ri_topic_id = ${key.topicId}
               and ri_resource_id = ${key.resourceId}
               and fk_ext_bank_id = ${key.contextId}
               and expire_ts > ${now}
             limit 1
         `;
 
-        return rows.length > 0;
+        return rows.length === 0 ? undefined : toResourceInboxStatusAndAttempts(rows[0]);
     }
 }

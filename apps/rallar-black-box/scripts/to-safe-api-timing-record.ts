@@ -120,6 +120,21 @@ function toSafeTimingDetails(
             safe[field] = details[field];
         }
     }
+    if (
+        isAllowedApiTimingString(details.queueObservation, [
+            'missing',
+            'NEW',
+            'RESERVED',
+            'RETRY',
+            'COMPLETED',
+            'FAILED',
+            'NON_RETRYABLE',
+            'other-status',
+            'read-failure'
+        ])
+    ) {
+        safe.queueObservation = details.queueObservation;
+    }
     if (isAllowedApiTimingString(details.selectedLane, ['NEW', 'RETRY', 'FAIRNESS', 'TIMEOUT', 'FINALIZATION'])) {
         safe.selectedLane = details.selectedLane;
     }

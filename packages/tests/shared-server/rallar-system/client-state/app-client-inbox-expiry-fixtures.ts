@@ -1,7 +1,7 @@
+import type { ResourceInboxStatusAndAttempts } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
-    EntityStatus,
     isExpiredResourceEntry,
     NOT_COMPLETED_RETRYABLE_STATUSES,
     toKeyAsString,
@@ -14,9 +14,9 @@ import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fak
 export class ClientExpiryTestResourceInbox extends InMemoryQueueBox {
     private readonly materializations = new Map<string, Promise<ResourceEntry>>();
 
-    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
+    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
         const entry = await this.getItem(key);
-        return entry !== undefined && statuses.includes(entry.status);
+        return entry === undefined ? undefined : { status: entry.status, attempts: entry.dequeueAudit.attempts };
     }
 
     async writeMaterializedIfAbsentOrReplaceExpired(

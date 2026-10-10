@@ -4,7 +4,6 @@ import {
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
-import { Either } from '@shared/resilience/Either.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryReader } from './p-sql-resource-inbox-entry-reader.ts';
@@ -17,9 +16,10 @@ import {
     type ResourceInboxEntryInsertValues
 } from './resource-inbox-entry-insert-values.ts';
 import {
-    ResourceInboxRow,
     toDomain,
-    toPgTimestamp
+    toPgTimestamp,
+    type ResourceInboxRow,
+    type ResourceInboxStatusAndAttempts
 } from './resource-inbox-row-codec.ts';
 import { writeResourceInboxEntryIfAbsentOrExpired } from './write-resource-inbox-entry-if-absent-or-expired.ts';
 import { writeResourceInboxEntryIfAbsentOrMatch } from './write-resource-inbox-entry-if-absent-or-match.ts';
@@ -108,9 +108,12 @@ export class PSqlResourceInboxEntryRepository {
         next: ResourceEntry,
         expectedGeneration: number
     ): Promise<ResourceEntry | null> {
-        const validation = validateResourceInboxPendingReplacement(expected, next, expectedGeneration);
-        if (validation.left !== undefined) {
-            throw new ResourceInboxInvariantCorruptionError(next.key, validation.left);
+        const issues = validateResourceInboxPendingReplacement(expected, next, expectedGeneration);
+        if (issues.length > 0) {
+            throw new ResourceInboxInvariantCorruptionError(
+                next.key,
+                `Resource inbox pending replacement is invalid: ${issues.join('; ')}`
+            );
         }
 
         const rows = await this.sql<ResourceInboxRow[]>`
@@ -328,8 +331,8 @@ export class PSqlResourceInboxEntryRepository {
         return await this.reader.isAnyWithStatuses(statuses);
     }
 
-    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
-        return await this.reader.isEntryWithStatus(key, statuses);
+    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
+        return await this.reader.readStatusAndAttempts(key);
     }
 
     async upsert(entry: ResourceEntry): Promise<ResourceEntry> {
@@ -442,7 +445,7 @@ function validateResourceInboxPendingReplacement(
     expected: ResourceEntry,
     next: ResourceEntry,
     expectedGeneration: number
-): Either<string, ResourceEntry> {
+): readonly string[] {
     const issues: string[] = [];
     if (expected.key.topicId !== next.key.topicId) {
         issues.push('Topic identity differs');
@@ -468,7 +471,5 @@ function validateResourceInboxPendingReplacement(
     if (!Number.isSafeInteger(expectedGeneration) || expectedGeneration < 1) {
         issues.push('Observed generation must be a positive safe integer');
     }
-    return issues.length > 0
-        ? Either.ofLeft(`Resource inbox pending replacement is invalid: ${issues.join('; ')}`)
-        : Either.ofRight(next);
+    return issues;
 }

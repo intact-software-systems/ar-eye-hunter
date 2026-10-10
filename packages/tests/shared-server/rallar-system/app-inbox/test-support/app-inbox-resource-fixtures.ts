@@ -1,9 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
 
+import type { ResourceInboxStatusAndAttempts } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
-    EntityStatus,
     isExpiredResourceEntry,
     toKeyAsString,
     type Key,
@@ -53,9 +54,9 @@ export class TestResourceInbox extends InMemoryQueueBox {
         }
     }
 
-    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
+    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
         const entry = await this.getItem(key);
-        return entry !== undefined && statuses.includes(entry.status);
+        return entry === undefined ? undefined : { status: entry.status, attempts: entry.dequeueAudit.attempts };
     }
 
     override async enqueueIfAbsent(entry: ResourceEntry): Promise<ResourceEntry> {

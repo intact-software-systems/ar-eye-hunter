@@ -1,9 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
 import {
     EntityStatus,
-    Key,
     NEVER_EXPIRE_TS,
-    ResourceEntry
+    type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 
 /**
@@ -22,6 +21,11 @@ import {
  * - dequeueAudit.startTs/endTs/nextTs <-> start_ts/end_ts/next_ts
  * - dequeueAudit.attempts            <-> ri_attempts
  */
+export interface ResourceInboxStatusAndAttempts {
+    readonly status: ResourceEntry['status'];
+    readonly attempts: ResourceEntry['dequeueAudit']['attempts'];
+}
+
 export interface ResourceInboxRow {
     ri_row_id: bigint;
     ri_resource_id: string;
@@ -54,6 +58,8 @@ export interface ResourceInboxResultsRow {
     expire_ts: string;
 }
 
+const RESOURCE_INBOX_STATUSES = new Set<string>(Object.values(EntityStatus));
+
 export class ResourceInboxRowCorruptionError extends Error {
     readonly code = 'resource-inbox-row-corruption';
 
@@ -63,80 +69,81 @@ export class ResourceInboxRowCorruptionError extends Error {
     }
 }
 
-export function keyToString(k: Key): string {
-    return `${k.contextId}::${k.topicId}::${k.resourceId}`;
-}
-
 export function rowsToMap(
     rows: ResourceInboxRow[]
 ): Map<string, ResourceEntry> {
-    const m = new Map<string, ResourceEntry>();
-    for (const r of rows) {
-        const e = toDomain(r);
-        m.set(keyToString(e.key), e);
+    const entries = new Map<string, ResourceEntry>();
+    for (const row of rows) {
+        const entry = toDomain(row);
+        entries.set(`${entry.key.contextId}::${entry.key.topicId}::${entry.key.resourceId}`, entry);
     }
-    return m;
+    return entries;
 }
 
-export function toDomain(r: ResourceInboxRow): ResourceEntry {
-    const status = decodeEntityStatus(r.ri_status);
-    const attempts = decodeResourceInboxAttempts(r.ri_attempts);
+export function toResourceInboxStatusAndAttempts(
+    row: Pick<ResourceInboxRow, 'ri_status' | 'ri_attempts'>
+): ResourceInboxStatusAndAttempts {
+    return { status: decodeEntityStatus(row.ri_status), attempts: decodeResourceInboxAttempts(row.ri_attempts) };
+}
+
+export function toDomain(row: ResourceInboxRow): ResourceEntry {
+    const { status, attempts } = toResourceInboxStatusAndAttempts(row);
 
     return {
         key: {
-            topicId: r.ri_topic_id,
-            resourceId: r.ri_resource_id,
-            contextId: r.fk_ext_bank_id
+            topicId: row.ri_topic_id,
+            resourceId: row.ri_resource_id,
+            contextId: row.fk_ext_bank_id
         },
-        resource: r.ri_resource,
-        typeId: r.ri_type_id,
+        resource: row.ri_resource,
+        typeId: row.ri_type_id,
         audit: {
             // date is not stored separately in the table; keep it derived from created_ts
             date: Temporal.PlainTime.from(
-                parseTemporalPlainDateTime(r.created_ts)
+                parseTemporalPlainDateTime(row.created_ts)
                     .toPlainTime()
                     .toString()
             ),
-            createdBy: r.created_by,
-            createdTs: parseTemporalPlainDateTime(r.created_ts),
-            expiryTs: r.expire_ts
-                ? toInstant(r.expire_ts)
+            createdBy: row.created_by,
+            createdTs: parseTemporalPlainDateTime(row.created_ts),
+            expiryTs: row.expire_ts
+                ? toInstant(row.expire_ts)
                 : NEVER_EXPIRE_TS
         },
         status,
         dequeueAudit: {
-            startTs: r.start_ts ? toInstant(r.start_ts) : undefined,
-            endTs: r.end_ts ? toInstant(r.end_ts) : undefined,
-            nextTs: r.next_ts ? toInstant(r.next_ts) : undefined,
+            startTs: row.start_ts ? toInstant(row.start_ts) : undefined,
+            endTs: row.end_ts ? toInstant(row.end_ts) : undefined,
+            nextTs: row.next_ts ? toInstant(row.next_ts) : undefined,
             attempts
         },
         db: {
-            id: r.ri_row_id.toString()
+            id: row.ri_row_id.toString()
         }
     };
 }
 
-export function toResultsDomain(r: ResourceInboxResultsRow): ResourceEntry {
+export function toResultsDomain(row: ResourceInboxResultsRow): ResourceEntry {
     return {
         key: {
-            topicId: r.ris_topic_id,
-            resourceId: r.ris_resource_id,
-            contextId: r.fk_ext_bank_id
+            topicId: row.ris_topic_id,
+            resourceId: row.ris_resource_id,
+            contextId: row.fk_ext_bank_id
         },
-        resource: r.ris_resource,
-        typeId: r.ris_type_id,
+        resource: row.ris_resource,
+        typeId: row.ris_type_id,
         audit: {
-            date: parseTemporalPlainDateTime(r.created_ts).toPlainTime(),
-            createdBy: r.created_by,
-            createdTs: parseTemporalPlainDateTime(r.created_ts),
-            expiryTs: toInstant(r.expire_ts)
+            date: parseTemporalPlainDateTime(row.created_ts).toPlainTime(),
+            createdBy: row.created_by,
+            createdTs: parseTemporalPlainDateTime(row.created_ts),
+            expiryTs: toInstant(row.expire_ts)
         },
-        status: decodeEntityStatus(r.ris_status),
+        status: decodeEntityStatus(row.ris_status),
         dequeueAudit: {
             attempts: 0
         },
         db: {
-            id: r.ris_row_id.toString()
+            id: row.ris_row_id.toString()
         }
     };
 }
@@ -148,41 +155,39 @@ export function toSystemDate(entry: ResourceEntry): string {
 }
 
 export function toPgTimestamp(
-    t: Temporal.PlainDateTime | Temporal.Instant
+    timestamp: Temporal.PlainDateTime | Temporal.Instant
 ): string {
     // postgres.js serializes a zone-less string as process-local time. The
     // domain PlainDateTime is a UTC wall clock, so make that zone explicit.
-    return 'epochMilliseconds' in t ? t.toString() : `${t.toString()}Z`;
+    return 'epochMilliseconds' in timestamp ? timestamp.toString() : `${timestamp.toString()}Z`;
 }
 
-export function parseTemporalPlainDateTime(ts: string | Date): Temporal.PlainDateTime {
-    if (ts instanceof Date) {
+export function parseTemporalPlainDateTime(timestamp: string | Date): Temporal.PlainDateTime {
+    if (timestamp instanceof Date) {
         return Temporal.PlainDateTime.from({
-            year: ts.getFullYear(),
-            month: ts.getMonth() + 1,
-            day: ts.getDate(),
-            hour: ts.getHours(),
-            minute: ts.getMinutes(),
-            second: ts.getSeconds(),
-            millisecond: ts.getMilliseconds()
+            year: timestamp.getFullYear(),
+            month: timestamp.getMonth() + 1,
+            day: timestamp.getDate(),
+            hour: timestamp.getHours(),
+            minute: timestamp.getMinutes(),
+            second: timestamp.getSeconds(),
+            millisecond: timestamp.getMilliseconds()
         });
     }
-    return Temporal.PlainDateTime.from(ts.replace(' ', 'T'));
+    return Temporal.PlainDateTime.from(timestamp.replace(' ', 'T'));
 }
 
-export function toInstant(ts: string | Date): Temporal.Instant {
-    if (ts instanceof Date) {
-        return parseTemporalPlainDateTime(ts).toZonedDateTime('UTC').toInstant();
+export function toInstant(timestamp: string | Date): Temporal.Instant {
+    if (timestamp instanceof Date) {
+        return parseTemporalPlainDateTime(timestamp).toZonedDateTime('UTC').toInstant();
     }
-    const normalized = ts.replace(' ', 'T');
+    const normalized = timestamp.replace(' ', 'T');
     return Temporal.Instant.from(
         /[zZ]$|[+-]\d{2}(?::?\d{2})?$/u.test(normalized)
             ? normalized
             : `${normalized}Z`
     );
 }
-
-const RESOURCE_INBOX_STATUSES = new Set<string>(Object.values(EntityStatus));
 
 export function isValidResourceInboxLifecycle(row: ResourceInboxRow): boolean {
     const attempts = row.ri_attempts === null ? NaN : Number(row.ri_attempts);
