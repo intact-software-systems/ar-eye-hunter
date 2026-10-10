@@ -3,7 +3,7 @@ import type { VivaldiNodeData } from '@shared-graph/graph/vivaldi.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { COALESCED_APP_OUTBOX_WORK_FIELD } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import {
     decodeJsonWireValue,
     type JsonWireObject,
@@ -12,13 +12,11 @@ import {
 import { toRtcRttMutationReceiptId, toRtcRttTopologyOutboxId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { RtcRttRefinementGate } from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-gate.ts';
 import { RtcRttRefinementService } from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-service.ts';
-import {
-    computeRtcTopologyOutboxInsert,
-    type RtcTopologyGroupRevisionWork,
-    type RtcTopologyRttRefreshWork
-} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { RtcTopologyReconnectHydrator } from '@shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydrator.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import { readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
@@ -41,22 +39,26 @@ import {
     InMemoryQueueBox,
     type ALMessage
 } from '@shared/mod.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import {
+    afterEach,
     describe,
     expect,
     it,
     vi
 } from 'vitest';
 import { createTestGroup } from '../../../../../create-test-group.ts';
+import { assembleStateSnapshotMessages } from '../../../../../shared/state-snapshot-test-fixture.ts';
+import { TestWebSocket } from '../../../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestDatabase } from '../../../app-inbox/test-support/app-inbox-test-database.ts';
-
-interface StoredRtcTopologyEnvelope {
-    readonly resourceId: string;
-    readonly data: RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork;
-}
+import { GroupBarrierRepository } from '../../../group-state/group-state-concurrency-test-runtime.ts';
+import { groupRef, SCOPE } from '../../../group-state/mutation/group-mutation-test-runtime.ts';
+import { createService, summaryReservationRead } from '../../../group-state/presence/group-presence-test-runtime.ts';
 
 interface EnqueueAndReserveRttInput {
     readonly queue: InMemoryQueueBox;
@@ -65,7 +67,148 @@ interface EnqueueAndReserveRttInput {
     readonly version: number;
 }
 
+interface ComputeLatestPresenceTopologyWorkInput {
+    readonly worker: GroupPresenceSummaryWork;
+    readonly repository: ReturnType<typeof createTestGroupStateRepository>;
+    readonly ref: GroupRef;
+    readonly nowEpochMs: number;
+}
+
+afterEach(() => {
+    vi.unstubAllGlobals();
+});
+
 describe('RTC topology APP_OUTBOX work', () => {
+    it('refreshes a persisted forming removal audience through automatic presence work and reconnect hydration', async () => {
+        const nowEpochMs = Date.now();
+        const runtime = new GroupBarrierRepository();
+        const groupService = createService(runtime, nowEpochMs);
+        const ref = groupRef('forming-removal-audience');
+        const groupRepository = createTestGroupStateRepository(runtime);
+        const queue = new InMemoryQueueBox();
+        const outboxQueueReader = new OutboxQueueReader(queue);
+        const summaryWorker = new GroupPresenceSummaryWork({
+            outboxQueueReader,
+            recomputeDebounceMs: 0,
+            runtimeRepository: runtime,
+            now: () => nowEpochMs,
+            serviceId: 'summary-worker'
+        });
+        const snapshots = new RtcTopologySnapshotRepository(runtime);
+        const readGroup = async (groupRef: GroupRef) => await groupRepository.readSnapshot(groupRef);
+        const planning = createGroupTopologyRuntimeOwners({
+            findGroupSnapshotByRef: readGroup,
+            readCurrentGroupSnapshot: readGroup,
+            readRttMeasurements: () => [],
+            topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
+            topologySnapshotRepository: snapshots
+        }).planning;
+        const handler = createRtcTopologyWorkHandler({
+            outboxQueueReader,
+            database: createAppInboxTestDatabase(queue, { replace: async (entry) => entry }, {
+                runtimeRepository: runtime
+            }),
+            topologyPlanning: planning,
+            executionRepository: new RtcTopologyExecutionRepository(runtime)
+        });
+        const lifecyclePolicy = { ...createDefaultGroupLifecyclePolicy(), formation: 'phased' as const };
+        await groupService.createGroup(SCOPE, {
+            groupId: ref.groupId,
+            displayName: ref.groupId,
+            kind: 'room',
+            joinMode: 'open',
+            createdByPrincipalId: 'alice',
+            lifecyclePolicy,
+            requestId: 'create-forming-removal-audience'
+        });
+
+        const initial = await computeLatestPresenceTopologyWork({
+            worker: summaryWorker,
+            repository: groupRepository,
+            ref,
+            nowEpochMs
+        });
+        expect(initial.work.operation).toBe('insert');
+        await queue.enqueueIfAbsent(initial.work.entryWrite.entry);
+        const initialEntry = await reserveOnlyTopologyWork(queue);
+        await handler.onMessage(decodePersistedALMessage(initialEntry.resource), initialEntry);
+        expect(await snapshots.findSnapshot(ref)).toMatchObject({ state: 'removed', activeSessionIds: [] });
+
+        await groupService.upsertMember(SCOPE, ref.groupId, 'bob', {
+            status: 'active',
+            actorPrincipalId: 'alice',
+            requestId: 'join-bob'
+        });
+        await groupService.connectPresenceSession(SCOPE, ref.groupId, 'session-alice', {
+            principalId: 'alice',
+            generationId: 'presence-alice',
+            actorPrincipalId: 'alice',
+            expiresAtEpochMs: nowEpochMs + 60_000,
+            requestId: 'connect-alice'
+        });
+        await groupService.connectPresenceSession(SCOPE, ref.groupId, 'session-bob', {
+            principalId: 'bob',
+            generationId: 'presence-bob',
+            actorPrincipalId: 'bob',
+            expiresAtEpochMs: nowEpochMs + 60_000,
+            requestId: 'connect-bob'
+        });
+        const next = await computeLatestPresenceTopologyWork({
+            worker: summaryWorker,
+            repository: groupRepository,
+            ref,
+            nowEpochMs
+        });
+        expect(next.summaryOutcome).toBe('write');
+        expect((await readGroup(ref))?.activeSessions.map((session) => session.sessionId)).toEqual([
+            'session-alice',
+            'session-bob'
+        ]);
+        expect(next.work.operation).toBe('replace-finished');
+        if (!next.work.expectedEntry) {
+            throw new Error('Expected the finished automatic work row');
+        }
+        expect(await queue.replaceIfObserved(next.work.expectedEntry, next.work.entryWrite.entry)).not.toBeNull();
+        const nextEntry = await reserveOnlyTopologyWork(queue);
+        await handler.onMessage(decodePersistedALMessage(nextEntry.resource), nextEntry);
+
+        const persisted = await snapshots.findSnapshot(ref);
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        const socket = new JsonWebSocketServer();
+        const native = new TestWebSocket('ws://forming-removal-audience');
+        const connection = new ConnectionContext({
+            id: 'session-alice',
+            socket: native,
+            generationId: 'socket-alice',
+            generationStartedAtEpochMs: nowEpochMs
+        });
+        socket.addConnection(connection);
+        native.open();
+        const hydrator = new RtcTopologyReconnectHydrator({
+            socket,
+            topologies: snapshots,
+            acceptedTopologies: new RtcTopologySnapshotRepository(runtime, RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE),
+            groups: { readSnapshot: readGroup },
+            readIdentity: () => ({ principalId: 'alice' }),
+            nowEpochMs: () => nowEpochMs,
+            batchWindowMs: 25
+        });
+        await hydrator.hydrateOpenConnections(new AbortController().signal);
+        const assembled = assembleStateSnapshotMessages(
+            native.sent.map(decodePersistedALMessage),
+            SCOPE,
+            nowEpochMs
+        );
+        expect.soft(persisted).toMatchObject({
+            state: 'removed',
+            activeSessionIds: ['session-alice', 'session-bob'],
+            nextHopsBySessionId: { 'session-alice': [], 'session-bob': [] }
+        });
+        expect.soft(assembled.map((message) => ({
+            topicId: message.envelope.route.topicId,
+            snapshot: JSON.parse(message.resource)
+        }))).toEqual([{ topicId: 'overlay.topology', snapshot: persisted }]);
+    });
     it('rejects group-revision coalescing metadata on RTT work', () => {
         const group = createGroupSnapshotWithCausalRevision(7, 6);
         const measurement = rtt('session-a', 'session-b', 1);
@@ -709,23 +852,58 @@ describe('RTC topology APP_OUTBOX work', () => {
     });
 });
 
+async function computeLatestPresenceTopologyWork({
+    worker,
+    repository,
+    ref,
+    nowEpochMs
+}: ComputeLatestPresenceTopologyWorkInput) {
+    const event = (await repository.listEvents(ref)).at(-1);
+    if (!event) {
+        throw new Error('Expected a group event for automatic presence-summary work');
+    }
+    const command: GroupPresenceSummaryWorkData = {
+        effectKind: 'group-presence-summary',
+        aggregateRef: ref,
+        commandId: event.eventId,
+        createdAtEpochMs: event.occurredAtEpochMs,
+        expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
+        acceptedCausalRevision: event.causalRevision,
+        event
+    };
+    const read = await worker.read(command, summaryReservationRead(command.commandId), nowEpochMs);
+    const computed = worker.compute(command, read);
+    expect(worker.validate(command, read, computed)).toEqual([]);
+    if (computed.topologyReplan.decision !== 'enqueue') {
+        throw new Error('Expected automatic coalesced topology work');
+    }
+    const summary = computed.summary;
+    if (summary.outcome === 'write') {
+        const written = summary.operation === 'insert'
+            ? await repository.insertPresenceSummary(summary.summary)
+            : await repository.updatePresenceSummary(summary.summary, summary.expectedRevision);
+        expect(written.status).toBe('applied');
+    }
+    return { work: computed.topologyReplan.work, summaryOutcome: summary.outcome };
+}
+
+async function reserveOnlyTopologyWork(queue: InMemoryQueueBox) {
+    const reserved = await queue.reserveEntries({
+        typeIds: OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+        statusIds: new Set([EntityStatus.NEW]),
+        reservationInput: 1
+    });
+    const entry = [...reserved.values()][0];
+    if (!entry) {
+        throw new Error('Expected reserved automatic RTC topology work');
+    }
+    return entry;
+}
+
 async function entriesIn(queue: InMemoryQueueBox) {
     return await Promise.all((await queue.getAllKeys()).map((key) => queue.getItem(key))).then(
         (entries) => entries.filter((entry) => entry !== undefined)
     );
-}
-
-function readWork(entry: {
-    resource: string;
-}): RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork {
-    const message = decodePersistedALMessage(entry.resource);
-    return readRtcTopologyWorkEnvelope(message, message.payload.typeId).data;
-}
-
-function readEnvelope(entry: { resource: string; }): StoredRtcTopologyEnvelope {
-    const message = decodePersistedALMessage(entry.resource);
-    const envelope = readRtcTopologyWorkEnvelope(message, message.payload.typeId);
-    return { resourceId: envelope.resourceId, data: envelope.data };
 }
 
 function readStoredALMessage(entry: { resource: string; }): ALMessage {

@@ -277,6 +277,55 @@ describe('GroupTopologyPlanningService', () => {
         expect(Object.values(requirePlannedTopology(result).snapshot.nextHopsBySessionId).flat()).toEqual([]);
     });
 
+    it('reports a changed removed topology when forming sessions join its cleanup audience', () => {
+        const forming = groupWithSessionsIn('forming');
+        const beforePresence = {
+            ...forming,
+            activeSessions: [],
+            onlineMemberCount: 0
+        };
+        const first = requirePlannedTopology(computeGroupTopologyFromAuthority(
+            planningAuthority(beforePresence),
+            undefined,
+            { intent: 'membership-delta', origin: 'automatic' }
+        ));
+        expect(first.snapshot).toMatchObject({ state: 'removed', activeSessionIds: [] });
+
+        const afterPresence = requirePlannedTopology(computeGroupTopologyFromAuthority(
+            planningAuthority(forming),
+            first.snapshot,
+            { intent: 'membership-delta', origin: 'automatic' }
+        ));
+        expect(afterPresence.changed).toBe(true);
+        expect(afterPresence.snapshot).toMatchObject({
+            state: 'removed',
+            activeSessionIds: ['session-a', 'session-b'],
+            nextHopsBySessionId: { 'session-a': [], 'session-b': [] }
+        });
+    });
+
+    it('keeps a removed topology unchanged when its cleanup audience is already complete', () => {
+        const forming = groupWithSessionsIn('forming');
+        const first = requirePlannedTopology(computeGroupTopologyFromAuthority(
+            planningAuthority(forming),
+            undefined,
+            { intent: 'membership-delta', origin: 'automatic' }
+        ));
+        const noCurrentSessions = {
+            ...forming,
+            activeSessions: [],
+            onlineMemberCount: 0
+        };
+        const unchanged = requirePlannedTopology(computeGroupTopologyFromAuthority(
+            planningAuthority(noCurrentSessions),
+            first.snapshot,
+            { intent: 'membership-delta', origin: 'automatic' }
+        ));
+
+        expect(unchanged.changed).toBe(false);
+        expect(unchanged.snapshot.activeSessionIds).toEqual(['session-a', 'session-b']);
+    });
+
     it('drops a previously planned topology when the group returns to FORMING', () => {
         const active = groupWithSessionsIn('active');
         const planned = requirePlannedTopology(computeGroupTopologyFromAuthority(
