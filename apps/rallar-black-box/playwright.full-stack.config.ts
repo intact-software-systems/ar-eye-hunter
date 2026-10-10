@@ -13,6 +13,13 @@ import {
     readFullStackControlBaseUrl
 } from './playwright-full-stack-control-server.ts';
 
+import {
+    createDefaultFullStackRtcProductionDependencies,
+    createFullStackRtcPreviewServer,
+    prepareFullStackRtcProduction,
+    readFullStackRtcProductionSeal
+} from './playwright-full-stack-spa-server.ts';
+
 const fullStackEnabled = process.env.RALLAR_BLACK_BOX_FULL_STACK === '1' ||
     process.env.RALLAR_BLACK_BOX_FULL_STACK === 'true';
 const fullStackApiBaseUrl = readFullStackApiBaseUrl();
@@ -46,6 +53,39 @@ const admittedRtcAttempt = fullStackEnabled
     })
     : null;
 
+const productionConfiguration = {
+    buildRoot: process.env.RALLAR_BLACK_BOX_RTC_BUILD_ROOT ?? '',
+    apiBaseUrl: fullStackApiBaseUrl,
+    spaBaseUrl: fullStackSpaBaseUrl,
+    environment: process.env
+};
+const preparedProduction = admittedRtcAttempt?.locator.environmentId === 'E3-memory'
+    ? process.env.RALLAR_BLACK_BOX_RTC_BUILD_SEALED === '1'
+        ? await readFullStackRtcProductionSeal(admittedRtcAttempt, productionConfiguration)
+        : await prepareFullStackRtcProduction(
+            admittedRtcAttempt,
+            productionConfiguration,
+            createDefaultFullStackRtcProductionDependencies(admittedRtcAttempt.repoRoot)
+        )
+    : null;
+if (preparedProduction?.left) {
+    throw new Error(preparedProduction.left.message);
+}
+if (preparedProduction?.right) {
+    process.env.RALLAR_BLACK_BOX_RTC_BUILD_SEALED = '1';
+}
+const spaWebServer = preparedProduction?.right
+    ? createFullStackRtcPreviewServer(preparedProduction.right)
+    : {
+        command: `cd ../.. && npm --workspace rallar-black-box run dev -- --port ${
+            portFromBaseUrl(fullStackSpaBaseUrl)
+        } --force`,
+        env: { VITE_RALLAR_API_BASE_URL: fullStackApiBaseUrl },
+        url: fullStackSpaBaseUrl,
+        reuseExistingServer,
+        timeout: 60_000
+    };
+
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     ...(fullStackEnabled
         ? [
@@ -73,17 +113,7 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                 : [])
         ]
         : []),
-    {
-        command: `cd ../.. && npm --workspace rallar-black-box run dev -- --port ${
-            portFromBaseUrl(fullStackSpaBaseUrl)
-        } --force`,
-        env: {
-            VITE_RALLAR_API_BASE_URL: fullStackApiBaseUrl
-        },
-        url: fullStackSpaBaseUrl,
-        reuseExistingServer,
-        timeout: 60_000
-    },
+    spaWebServer,
     createFullStackControlWebServer({
         baseUrl: fullStackControlBaseUrl,
         reuseExistingServer

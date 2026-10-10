@@ -231,6 +231,12 @@ describe('RTC baseline Deno runtime observation binding', () => {
                     source
                 }
             ]);
+            expect(
+                stored.observation.resolvedConfiguration.filter((entry: { field: string; }) => entry.field === 'appServingMode').map((
+                    entry: { value: string; }
+                ) => entry.value)
+            )
+                .toEqual(['production', 'production', 'production']);
             expect(stored.observation.allowlistedEnvironment.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE).toBe(environmentMode);
         }
         finally {
@@ -259,6 +265,12 @@ describe('RTC baseline Deno runtime observation binding', () => {
                     value: 'off',
                     source: 'cli'
                 })));
+            expect(
+                stored.observation.resolvedConfiguration.filter((entry: { field: string; }) => entry.field === 'appServingMode').map((
+                    entry: { value: string; }
+                ) => entry.value)
+            )
+                .toEqual(['production', 'production', 'production']);
             expect(stored.observation.allowlistedEnvironment.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE).toBe(ambient);
             expect(stored.observation.configurationInputs.some((entry: { name: string; }) => entry.name === 'RALLAR_BLACK_BOX_RTC_CAPTURE_MODE')).toBe(false);
         }
@@ -291,6 +303,12 @@ describe('RTC baseline Deno runtime observation binding', () => {
                 ) => entry.value)
             )
                 .toEqual(['off', 'off', 'off']);
+            expect(
+                stored.observation.resolvedConfiguration.filter((entry: { field: string; }) => entry.field === 'appServingMode').map((
+                    entry: { value: string; }
+                ) => entry.value)
+            )
+                .toEqual(['production', 'production', 'production']);
             expect(stored.observation.allowlistedEnvironment.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE).toBe('native');
             const accepted = await runtime.recordExternalAttempt({
                 baselineId: createLiveRtcBaselineCaptureRequestFixture().baselineId,
@@ -401,6 +419,36 @@ describe('RTC baseline Deno runtime observation binding', () => {
         }
         finally {
             await rm(rootPath, { force: true, recursive: true });
+        }
+    });
+
+    it('rejects live reconciliation of historical absent-mode E3 initialization without changing stored identity', async () => {
+        const { adapters, rootPath } = await createRtcBaselineRuntimeAdaptersFixture();
+        adapters.environment.readAllowlisted = () => ({
+            RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
+            RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
+            RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
+        });
+        const runtime = createRtcBaselineDenoRuntime(adapters);
+        const request = createLiveRtcBaselineCaptureRequestFixture();
+        try {
+            expect(await runtime.initializeBaseline(request)).toMatchObject({ ok: true });
+            const path = join(rootPath, 'tmp/perf/rtc-baseline', request.baselineId, 'environment.json');
+            const stored = JSON.parse(await readFile(path, 'utf8'));
+            stored.observation.resolvedConfiguration = stored.observation.resolvedConfiguration.filter((entry: { field: string; }) =>
+                !['appServingMode', 'viteMode', 'nodeEnvironment', 'buildTarget'].includes(entry.field)
+            );
+            const bytes = JSON.stringify(stored);
+            await writeFile(path, bytes);
+            const result = await runtime.finalize({ baselineId: request.baselineId });
+            expect(result).toMatchObject({
+                ok: false,
+                issues: expect.arrayContaining([expect.objectContaining({ code: 'reconciliation-mismatch', path: '$.resolvedConfiguration' })])
+            });
+            expect(await readFile(path, 'utf8')).toBe(bytes);
+        }
+        finally {
+            await rm(rootPath, { recursive: true, force: true });
         }
     });
 

@@ -5,6 +5,9 @@ const repoRoot = path.resolve(import.meta.dirname, '../../../..');
 const packageRoot = path.join(repoRoot, 'packages/shared-rtc-bench');
 const benchmarkPackageName = '@ar-eye-hunter/shared-rtc-bench';
 const finiteIceFixturePolicyPath = path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts');
+const productionFixturePaths = ['full-stack-rtc-production-proof.ts', 'full-stack-rtc-build-tool-provenance.ts'].map((name) =>
+    path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/rtc-production', name)
+);
 const performanceScriptRoots = ['scripts/platform/perf', 'apps/api-v1/scripts/perf'] as const;
 const approvedRepositoryImportPrefixes = ['@shared/', '@shared-web/', '@shared-server/'] as const;
 const approvedExternalImports = new Set([
@@ -56,7 +59,7 @@ function isPackageLocalImport(file: string, specifier: string): boolean {
 }
 
 function isApprovedImport(file: string, specifier: string): boolean {
-    if (specifier.startsWith('.') && path.resolve(path.dirname(file), specifier) === finiteIceFixturePolicyPath) {
+    if (specifier.startsWith('.') && [finiteIceFixturePolicyPath, ...productionFixturePaths].includes(path.resolve(path.dirname(file), specifier))) {
         return true;
     }
     if (isPackageLocalImport(file, specifier)) {
@@ -137,6 +140,18 @@ describe('shared RTC benchmark package boundaries', () => {
         expect(isApprovedImport(catalogFile, '../../../shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts')).toBe(true);
         expect(isApprovedImport(catalogFile, '../../../shared-test/black-box-runner/rallar-in-memory-runtime.ts')).toBe(false);
         expect(importSpecifiers(fs.readFileSync(finiteIceFixturePolicyPath, 'utf8'))).toEqual([]);
+    });
+
+    it('admits the exact portable production proof/provenance owners while keeping other runner imports closed', () => {
+        const consumer = path.join(packageRoot, 'baseline/observation/validate-rtc-b06-production-serving-proof.ts');
+        for (const fixture of productionFixturePaths) {
+            expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), fixture))).toBe(true);
+            expect(importSpecifiers(fs.readFileSync(fixture, 'utf8'))).toEqual([]);
+        }
+        expect(isApprovedImport(consumer, '../../../shared-test/black-box-runner/fixtures/rtc-production/read-full-stack-rtc-build-tool-inputs.ts')).toBe(
+            false
+        );
+        expect(isApprovedImport(consumer, '../../../shared-test/black-box-runner/rallar-in-memory-runtime.ts')).toBe(false);
     });
 
     it('scans performance script roots that exist', () => {

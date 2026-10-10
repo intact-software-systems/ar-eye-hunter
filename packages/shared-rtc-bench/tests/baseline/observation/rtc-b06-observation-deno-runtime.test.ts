@@ -1,10 +1,13 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
     describe,
     expect,
-    it
+    it,
+    onTestFinished
 } from 'vitest';
 
 import {
@@ -33,6 +36,219 @@ function attempt(caseId: 'default' | 'all-scenarios' | 'retention-100') {
 }
 
 describe('governed RTC-B06 producer evidence', () => {
+    it.each(['private-root', 'intermediate-parent'] as const)('refuses a %s symlink before private allocation or child launch', async (location) => {
+        const repositoryRoot = await mkdtemp(join(tmpdir(), 'rtc-allocation-repo-'));
+        const external = await mkdtemp(join(tmpdir(), 'rtc-allocation-external-'));
+        onTestFinished(async () => {
+            await rm(repositoryRoot, { recursive: true, force: true });
+            await rm(external, { recursive: true, force: true });
+        });
+        await writeFile(join(external, 'sentinel.txt'), 'outside stays untouched');
+        const privateRoot = join(repositoryRoot, 'tmp/perf/rtc-b06-private-build');
+        const link = location === 'private-root' ? privateRoot : join(privateRoot, baselineId, 'default');
+        await mkdir(join(link, '..'), { recursive: true });
+        await symlink(external, link);
+        const events: string[] = [];
+        let launched = false;
+        const runtime = {
+            ...filesystemProducerRuntime(events),
+            command: async () => {
+                launched = true;
+                return { code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() };
+            }
+        };
+        await expect(
+            runRtcB06LiveProducer(runtime, { writeStdout: async () => {}, writeStderr: async () => {} }, {
+                repositoryRoot,
+                baselineId,
+                attempt: attempt('default')
+            })
+        ).rejects.toThrow();
+        expect(launched).toBe(false);
+        expect(events.filter((event) => event.includes('/retained-2') && event.includes('rtc-b06-private-build'))).toEqual([]);
+        expect(await readdir(external)).toEqual(['sentinel.txt']);
+        expect(await readFile(join(external, 'sentinel.txt'), 'utf8')).toBe('outside stays untouched');
+    });
+
+    it.each([0, 9])('creates and cleans a confined fresh real build leaf after injected child exit %s', async (code) => {
+        const repositoryRoot = await mkdtemp(join(tmpdir(), 'rtc-allocation-repo-'));
+        onTestFinished(() => rm(repositoryRoot, { recursive: true, force: true }));
+        const buildRoot = join(repositoryRoot, 'tmp/perf/rtc-b06-private-build', baselineId, 'default/retained-2');
+        const events: string[] = [];
+        const runtime = {
+            ...filesystemProducerRuntime(events),
+            command: async () => {
+                expect(JSON.parse(await readFile(join(buildRoot, 'owner.json'), 'utf8'))).toEqual({ baselineId, attempt: attempt('default') });
+                expect(await readdir(join(buildRoot, 'output'))).toEqual([]);
+                events.push('child-exited');
+                return { code, stdout: new Uint8Array(), stderr: new Uint8Array() };
+            }
+        };
+        expect(
+            await runRtcB06LiveProducer(runtime, { writeStdout: async () => {}, writeStderr: async () => {} }, {
+                repositoryRoot,
+                baselineId,
+                attempt: attempt('default')
+            })
+        ).toEqual({ exitStatus: code });
+        expect(events.at(-1)).toBe(`remove:${buildRoot}`);
+        expect(events.indexOf('child-exited')).toBeLessThan(events.indexOf(`remove:${buildRoot}`));
+        await expect(lstat(buildRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('preserves an occupied real unowned leaf without writing ownership or launching/removing it', async () => {
+        const repositoryRoot = await mkdtemp(join(tmpdir(), 'rtc-allocation-repo-'));
+        onTestFinished(() => rm(repositoryRoot, { recursive: true, force: true }));
+        const buildRoot = join(repositoryRoot, 'tmp/perf/rtc-b06-private-build', baselineId, 'default/retained-2');
+        await mkdir(buildRoot, { recursive: true });
+        await writeFile(join(buildRoot, 'sentinel.txt'), 'unowned stays untouched');
+        const events: string[] = [];
+        let launched = false;
+        const runtime = {
+            ...filesystemProducerRuntime(events),
+            command: async () => {
+                launched = true;
+                return { code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() };
+            }
+        };
+        await expect(
+            runRtcB06LiveProducer(runtime, { writeStdout: async () => {}, writeStderr: async () => {} }, {
+                repositoryRoot,
+                baselineId,
+                attempt: attempt('default')
+            })
+        ).rejects.toThrow();
+        expect(launched).toBe(false);
+        expect(events.filter((event) => event.startsWith('remove:') || event.startsWith('write:'))).toEqual([]);
+        expect(await readdir(buildRoot)).toEqual(['sentinel.txt']);
+        expect(await readFile(join(buildRoot, 'sentinel.txt'), 'utf8')).toBe('unowned stays untouched');
+    });
+
+    it.each(['ancestor', 'leaf', 'leaf-directory'] as const)('refuses cleanup through a replaced %s after the injected child exits', async (replacement) => {
+        const repositoryRoot = await mkdtemp(join(tmpdir(), 'rtc-allocation-repo-'));
+        const external = await mkdtemp(join(tmpdir(), 'rtc-allocation-external-'));
+        onTestFinished(async () => {
+            await rm(repositoryRoot, { recursive: true, force: true });
+            await rm(external, { recursive: true, force: true });
+        });
+        await writeFile(join(external, 'sentinel.txt'), 'outside stays untouched');
+        const privateRoot = join(repositoryRoot, 'tmp/perf/rtc-b06-private-build');
+        const buildRoot = join(privateRoot, baselineId, 'default/retained-2');
+        const replaced = replacement === 'ancestor' ? privateRoot : buildRoot;
+        const events: string[] = [];
+        const runtime = {
+            ...filesystemProducerRuntime(events),
+            command: async () => {
+                await rename(replaced, `${replaced}-original`);
+                if (replacement === 'leaf-directory') {
+                    await mkdir(replaced);
+                    await writeFile(join(replaced, 'sentinel.txt'), 'unowned replacement');
+                }
+                else {
+                    await symlink(external, replaced);
+                }
+                return { code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() };
+            }
+        };
+        await expect(
+            runRtcB06LiveProducer(runtime, { writeStdout: async () => {}, writeStderr: async () => {} }, {
+                repositoryRoot,
+                baselineId,
+                attempt: attempt('default')
+            })
+        ).rejects.toThrow(replacement === 'leaf-directory' ? 'ownership changed' : 'not confined');
+        expect(events.filter((event) => event.startsWith('remove:'))).toEqual([]);
+        if (replacement === 'leaf-directory') {
+            expect(await readFile(join(replaced, 'sentinel.txt'), 'utf8')).toBe('unowned replacement');
+        }
+        expect(await readdir(external)).toEqual(['sentinel.txt']);
+        expect(await readFile(join(external, 'sentinel.txt'), 'utf8')).toBe('outside stays untouched');
+    });
+
+    it('allocates an exclusive private build before the original environment-resolving child', async () => {
+        const allocated: string[] = [];
+        let arguments_: readonly string[] = [];
+        await runRtcB06LiveProducer(
+            {
+                ...producerRuntime(),
+                mkdir: async (path, options) => {
+                    if (!options.recursive) {
+                        allocated.push(path);
+                    }
+                },
+                command: async (_executable, args) => {
+                    arguments_ = args;
+                    return { code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() };
+                }
+            },
+            { writeStdout: async () => {}, writeStderr: async () => {} },
+            {
+                repositoryRoot: '/repository',
+                baselineId,
+                attempt: attempt('default')
+            }
+        );
+        const buildRoot = `/repository/tmp/perf/rtc-b06-private-build/${baselineId}/default/retained-2`;
+        expect(allocated).toContain(buildRoot);
+        expect(arguments_).toContain(`RALLAR_BLACK_BOX_RTC_BUILD_ROOT=${buildRoot}`);
+        expect(arguments_).toContain('NODE_ENV=production');
+        expect(arguments_).toContain('npm_config_loglevel=silent');
+    });
+
+    it.each([0, 9])('removes only the owned private build after the original child exits with %s', async (code) => {
+        const events: string[] = [];
+        const result = await runRtcB06LiveProducer(
+            {
+                ...producerRuntime(),
+                command: async () => {
+                    events.push('child-exited');
+                    return { code, stdout: new Uint8Array(), stderr: new Uint8Array() };
+                },
+                remove: async (path, options) => {
+                    events.push(path);
+                    expect(options.recursive).toBe(true);
+                }
+            },
+            { writeStdout: async () => {}, writeStderr: async () => {} },
+            {
+                repositoryRoot: '/repository',
+                baselineId,
+                attempt: attempt('default')
+            }
+        );
+        expect(result.exitStatus).toBe(code);
+        expect(events).toEqual(['child-exited', `/repository/tmp/perf/rtc-b06-private-build/${baselineId}/default/retained-2`]);
+    });
+
+    it('cannot launch or remove an occupied private build root', async () => {
+        let launched = false;
+        const removed: string[] = [];
+        const runtime = {
+            ...producerRuntime(),
+            mkdir: async (path: string) => {
+                if (path.endsWith('/default/retained-2') && path.includes('/rtc-b06-private-build/')) {
+                    throw new Error('occupied');
+                }
+            },
+            command: async () => {
+                launched = true;
+                return { code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() };
+            },
+            remove: async (path: string) => {
+                removed.push(path);
+            }
+        };
+        await expect(
+            runRtcB06LiveProducer(runtime, { writeStdout: async () => {}, writeStderr: async () => {} }, {
+                repositoryRoot: '/repository',
+                baselineId,
+                attempt: attempt('default')
+            })
+        ).rejects.toThrow('occupied');
+        expect(launched).toBe(false);
+        expect(removed).toEqual([]);
+    });
+
     it('retains an explicit launch failure log when the producer cannot start', async () => {
         const files = new Map<string, Uint8Array>();
         const runtime = {
@@ -52,7 +268,7 @@ describe('governed RTC-B06 producer evidence', () => {
             })
         )
             .resolves.toEqual({ exitStatus: 1 });
-        expect([...files.values()].map((bytes) => new TextDecoder().decode(bytes))).toEqual(['', 'spawn failed']);
+        expect([...files].filter(([path]) => path.endsWith('.log')).map(([, bytes]) => new TextDecoder().decode(bytes))).toEqual(['', 'spawn failed']);
     });
 
     it.each([0, 9])('isolates recorder storage and preserves raw attempt output on exit %s', async (code) => {
@@ -79,10 +295,13 @@ describe('governed RTC-B06 producer evidence', () => {
             rtcCaptureMode: 'native'
         });
         expect(result).toEqual({ exitStatus: code });
-        expect([...files].map(([path, bytes]) => [path.split('/').at(-1), new TextDecoder().decode(bytes)])).toEqual([['stdout.log', 'raw stdout'], [
-            'stderr.log',
-            'raw stderr'
-        ]]);
+        expect([...files].filter(([path]) => path.endsWith('.log')).map(([path, bytes]) => [path.split('/').at(-1), new TextDecoder().decode(bytes)])).toEqual([
+            ['stdout.log', 'raw stdout'],
+            [
+                'stderr.log',
+                'raw stderr'
+            ]
+        ]);
         expect(arguments_).toContain('--retries=0');
         expect(arguments_.some((arg) => arg.startsWith('--output=/repository/tmp/perf/rtc-b06-producer/'))).toBe(true);
         const storage = arguments_.find((arg) => arg.startsWith('RALLAR_BLACK_BOX_STORAGE_DIR='))?.split('=')[1];
@@ -183,6 +402,20 @@ describe('RTC-B06 observation Deno runtime', () => {
             throw new Error(JSON.stringify(result.issues));
         }
         expect(result.ok).toBe(true);
+        expect(result.value.resolvedConfiguration.filter((entry) => entry.field === 'appServingMode').map((entry) => entry.value))
+            .toEqual(['production', 'production', 'production']);
+        for (
+            const path of [
+                'package.json',
+                'package-lock.json',
+                'apps/rallar-black-box/package.json',
+                'apps/rallar-black-box/vite.config.ts',
+                'node_modules/vite/package.json'
+            ]
+        ) {
+            expect(result.value.sourceHashes.some((entry) => entry.path === path)).toBe(true);
+        }
+
         expect(
             result.value.resolvedConfiguration.filter((entry) => entry.field.startsWith('iceRateLimit')).map((
                 entry
@@ -344,7 +577,14 @@ function producerRuntime(): RtcBaselineDenoPort {
         hostname: () => 'test',
         randomUuid: () => 'test',
         kill: () => {},
-        lstat: async () => ({ isFile: true, isDirectory: false, isSymlink: false, dev: 1, ino: 1, size: 1 }),
+        lstat: async (path) => ({
+            isFile: !path.startsWith('/repository'),
+            isDirectory: path.startsWith('/repository'),
+            isSymlink: false,
+            dev: 1,
+            ino: 1,
+            size: 1
+        }),
         open: async () => {
             throw new Error('No files may be opened by producer command construction');
         },
@@ -358,5 +598,44 @@ function producerRuntime(): RtcBaselineDenoPort {
         performanceNow: () => 0,
         systemMemoryInfo: () => ({ total: 1 }),
         availableParallelism: () => 1
+    };
+}
+
+function filesystemProducerRuntime(events: string[]): RtcBaselineDenoPort {
+    class NotFound extends Error {}
+    return {
+        ...producerRuntime(),
+        errors: { NotFound },
+        lstat: async (path) => {
+            try {
+                const info = await lstat(path);
+                return {
+                    isFile: info.isFile(),
+                    isDirectory: info.isDirectory(),
+                    isSymlink: info.isSymbolicLink(),
+                    dev: info.dev,
+                    ino: info.ino,
+                    size: info.size
+                };
+            }
+            catch (error) {
+                if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+                    throw new NotFound();
+                }
+                throw error;
+            }
+        },
+        mkdir: async (path, options) => {
+            events.push(`mkdir:${path}`);
+            await mkdir(path, options);
+        },
+        writeFile: async (path, bytes, options) => {
+            events.push(`write:${path}`);
+            await writeFile(path, bytes, { flag: options.createNew ? 'wx' : 'w' });
+        },
+        remove: async (path, options) => {
+            events.push(`remove:${path}`);
+            await rm(path, options);
+        }
     };
 }

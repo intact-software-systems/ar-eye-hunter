@@ -5,7 +5,6 @@ import {
     rm,
     writeFile
 } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import {
     afterEach,
@@ -27,11 +26,8 @@ import {
     readFullStackSpaBaseUrl
 } from '../../../apps/rallar-black-box/playwright-full-stack-api-server.ts';
 import { loadLiveRtcPerformanceAttempt } from '../../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
-import { runOwnedTestProcess } from '../hetzner/owned-test-process.ts';
 
-const CONFIG_LOADER_PROCESS_TIMEOUT_MS = 20_000;
 const CONFIG_LOADER_TEST_TIMEOUT_MS = 30_000;
-const playwrightCli = createRequire(import.meta.url).resolve('@playwright/test/cli');
 
 const predeclaredEnvironmentObservation = {
     git: { headCommit: 'a'.repeat(40), headTree: 'b'.repeat(40), ref: 'codex/unit-fixture', clean: true },
@@ -303,9 +299,9 @@ describe('rallar-black-box full-stack API server mode', () => {
         expect(controlFactory).not.toHaveBeenCalled();
     });
 
-    it('constructs the standalone retention101 child only after canonical predeclared attempt admission', {
+    it('rejects historical E3 admission without production binding before configuring any server', {
         timeout: CONFIG_LOADER_TEST_TIMEOUT_MS
-    }, async (testContext) => {
+    }, async () => {
         const environment = {
             ...await createPredeclaredSelection('retention-100'),
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
@@ -323,32 +319,14 @@ describe('rallar-black-box full-stack API server mode', () => {
             vi.stubEnv(name, value);
         }
         vi.resetModules();
-        const configuration = (await import('../../../apps/rallar-black-box/playwright.full-stack.config.ts')).default;
-        expect(configuration.webServer).toEqual(expect.arrayContaining([expect.objectContaining({
-            command: expect.stringContaining('RALLAR_ICE_RATE_LIMIT_REQUESTS=101'),
-            reuseExistingServer: false
-        })]));
-        // --list invokes Playwright's supported config loader without starting services.
-        const listed = await runOwnedTestProcess(testContext, {
-            executable: process.execPath,
-            args: [
-                playwrightCli,
-                'test',
-                '--config',
-                'apps/rallar-black-box/playwright.full-stack.config.ts',
-                '--list',
-                '--project=chromium'
-            ],
-            options: {
-                cwd: process.cwd(),
-                env: { ...process.env },
-                timeout: CONFIG_LOADER_PROCESS_TIMEOUT_MS,
-                killSignal: 'SIGKILL'
-            }
-        });
-        expect(listed.stdout).toMatch(
-            /\[chromium\].*returns RTC state and post-GC heap to baseline after 100 reconnect cycles/
+        const apiFactory = vi.spyOn(await import('../../../apps/rallar-black-box/playwright-full-stack-api-server.ts'), 'createFullStackApiV1WebServer');
+        const controlFactory = vi.spyOn(
+            await import('../../../apps/rallar-black-box/playwright-full-stack-control-server.ts'),
+            'createFullStackControlWebServer'
         );
+        await expect(import('../../../apps/rallar-black-box/playwright.full-stack.config.ts')).rejects.toThrow(/Production/);
+        expect(apiFactory).not.toHaveBeenCalled();
+        expect(controlFactory).not.toHaveBeenCalled();
     });
 
     it('allows CI configs to disable existing web server reuse', () => {

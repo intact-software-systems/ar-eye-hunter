@@ -1,4 +1,5 @@
 import { FULL_STACK_RTC_ICE_FIXTURE_POLICIES } from '../../../shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts';
+import { FULL_STACK_RTC_PRODUCTION_POLICY } from '../../../shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-production-proof.ts';
 
 import type {
     RtcBaselineCaseKeyDto,
@@ -391,11 +392,32 @@ const fullStackMemorySourcePaths = [
     'packages/shared/resilience/Resilience.ts',
     'packages/shared/cache/LoanedValue.ts',
     'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-deno-runtime.ts',
+    'apps/rallar-black-box/playwright-full-stack-spa-server.ts',
+    'apps/rallar-black-box/scripts/rtc-production-preview.ts',
+    'apps/rallar-black-box/rtc-production-serving-proof.ts',
+    'packages/shared-rtc-bench/baseline/observation/validate-rtc-b06-production-serving-proof.ts',
+    'packages/shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-production-proof.ts',
+    'packages/shared-test/black-box-runner/fixtures/rtc-production/read-full-stack-rtc-build-tool-inputs.ts',
+    'packages/shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-build-tool-provenance.ts',
+    'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-adapters.ts',
     'packages/shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts',
     'packages/shared-test/black-box-runner/fixtures/read-full-stack-rtc-ice-fixture-requests.ts'
 ];
 
 const fullStackMemoryConfigPaths = [
+    'package.json',
+    'package-lock.json',
+    'apps/rallar-black-box/package.json',
+    'apps/rallar-black-box/vite.config.ts',
+    'node_modules/typescript/package.json',
+    'node_modules/typescript/lib/tsc.js',
+    'node_modules/rolldown/package.json',
+    'node_modules/rolldown/dist/index.mjs',
+    'node_modules/vite/package.json',
+    'node_modules/vite/dist/node/cli.js',
+    'node_modules/vite/dist/node/chunks/node.js',
+    'apps/rallar-black-box/node_modules/@vitejs/plugin-react/package.json',
+    'apps/rallar-black-box/node_modules/@vitejs/plugin-react/dist/index.js',
     'apps/rallar-black-box/playwright.full-stack.config.ts',
     'apps/rallar-black-box/playwright-full-stack-api-server.ts',
     'apps/api-v1/resources/configuration/defaults-config.json',
@@ -433,6 +455,17 @@ function toRtcBaselineFullStackConfiguration(
     const postgres = database === 'postgres';
     return [
         ...toRtcBaselineFullStackWorkloadConfiguration(input),
+        ...(postgres
+            ? []
+            : Object.entries(FULL_STACK_RTC_PRODUCTION_POLICY).map(([field, value]) =>
+                toRtcBaselineConfigurationDescriptor({
+                    caseKey,
+                    field,
+                    flag: `--rtc-${field.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`,
+                    scalarKind: 'string',
+                    defaultValue: value
+                })
+            )),
         toRtcBaselineConfigurationDescriptor({
             caseKey,
             field: 'databaseProvider',

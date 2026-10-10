@@ -1,3 +1,6 @@
+import { readDefaultFullStackRtcServedBuild } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
+import { loadLiveRtcPerformanceAttempt } from './live-rtc-performance-evidence.ts';
+
 import { toError } from '@shared/resilience/to-error.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
@@ -31,6 +34,16 @@ export const rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode | undefined = p
     },
     (parsed) => parsed.mode
 );
+
+const productionAttempt = await loadLiveRtcPerformanceAttempt({ repoRoot: process.cwd(), environment: process.env });
+const productionBuild = productionAttempt?.locator.environmentId === 'E3-memory'
+    ? await readDefaultFullStackRtcServedBuild(productionAttempt, {
+        buildRoot: process.env.RALLAR_BLACK_BOX_RTC_BUILD_ROOT ?? '',
+        apiBaseUrl: apiBaseUrl ?? '',
+        spaBaseUrl: SPA_BASE_URL,
+        environment: process.env
+    })
+    : undefined;
 
 export const fullStackEnabled = booleanEnv('RALLAR_BLACK_BOX_FULL_STACK');
 export const liveMatrixEnabled = booleanEnv('RALLAR_BLACK_BOX_LIVE_RTC_MATRIX');
@@ -183,6 +196,7 @@ export type LiveRtcAgentTrio = readonly [
 
 export function liveRtcAgentConfig(): Parameters<typeof openLiveRtcBrowserAgent>[1]['config'] {
     return {
+        productionBuild,
         spaBaseUrl: SPA_BASE_URL,
         controlWsUrl: CONTROL_WS_URL,
         apiBaseUrl: readLiveRtcAgentApiUrls(apiBaseUrl).A,
