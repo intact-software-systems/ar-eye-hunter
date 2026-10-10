@@ -26,7 +26,11 @@ import {
     createLimitedALWorkLeaseRecovery,
     type ALWorkLeaseRecovery
 } from '../../work/al-work-lease-recovery.ts';
-import { createALWorkQueuePort, type ALWorkClaim, type ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
+import {
+    createALWorkQueuePort,
+    type ALWorkClaim,
+    type ALWorkQueuePort
+} from '../../work/al-work-queue-port.ts';
 import { AL_WORK_UNDESCRIBED_COMMIT, type ALWorkCommittedRows } from '../../work/al-work-readiness-memory.ts';
 import type {
     ALOutboundDurableEffect,

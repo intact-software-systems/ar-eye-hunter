@@ -1,5 +1,9 @@
 import { AL_WS_SERVER_CAPABILITIES, toALCarrierQosInputProvider } from '../../al-contracts/al-carrier-capabilities.ts';
-import { isRoomScopedALMessage, readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
+import {
+    isRoomScopedALMessage,
+    readALTargetGroupRef,
+    type ALMessage
+} from '../../al-contracts/al-contract.ts';
 import {
     decodeALMessageValue,
     decodePersistedALMessage,

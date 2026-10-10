@@ -1,4 +1,8 @@
-import { expect, it, onTestFinished } from 'vitest';
+import {
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
 
 import { newALReceiptControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';

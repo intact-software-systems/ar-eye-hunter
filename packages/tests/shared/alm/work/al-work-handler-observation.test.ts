@@ -1,8 +1,18 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { ALWorkBatchObservations } from '@shared/alm/work/al-work-batch-observations.ts';
-import { ALWorkHandler, type ALWorkAttemptResult, type ALWorkObservationDeferral } from '@shared/alm/work/al-work-handler.ts';
+import {
+    ALWorkHandler,
+    type ALWorkAttemptResult,
+    type ALWorkObservationDeferral
+} from '@shared/alm/work/al-work-handler.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { describe, expect, it } from 'vitest';
+
 import { fakePort, toTestALWorkReadySelection } from './al-work-test-entries.ts';
 
 interface ObservationCase {
@@ -13,7 +23,13 @@ interface ObservationCase {
     readonly constructorThrows?: boolean;
 }
 
-function observedHandler(input: ObservationCase) {
+interface ObservedHandlerFixture {
+    readonly handler: ALWorkHandler;
+    readonly order: readonly string[];
+    readonly engine: InboxOutboxEngine;
+}
+
+function observedHandler(input: ObservationCase): ObservedHandlerFixture {
     const order: string[] = [];
     let nowMs = 1000;
     let deferSink: ALWorkObservationDeferral | undefined;
