@@ -221,10 +221,10 @@ every session the page opens. The event's `data` is the event itself:
   `reason`, and for a receipt `phase` (below): one event for every inbound
   ACK, NACK, repair or receipt control the outbound owner decides, recorded
   when it decides it. Every carrier discards
-  that verdict: the inbound topic's `admission-outcome` for the same control
-  reads `not-handled`/`control` whatever the outbound owner answered, so this
-  event is the only record of it. `msgId` is the control's own id, the join key
-  to that `admission-outcome`, and `targetMsgId` is the sent message it
+  that verdict: when captured, the inbound topic's `admission-outcome` for the
+  same control reads `not-handled`/`control` whatever the outbound owner answered,
+  so it does not report that outbound verdict. `msgId` is the control's own id,
+  the join key when both events are present, and `targetMsgId` is the sent message it
   answers. `outcome` is `committed`, `pending-control` (a conflict retained as
   `admit-control` work, which the outbound drain replays), `rejected`, or
   `not-handled` (the control's repair authority failed, or a NACK the origin
@@ -234,9 +234,9 @@ every session the page opens. The event's `data` is the event itself:
   rejection's reasons, or `none` for every other outcome — for an ACK whose
   receipt is gone it reads `AL acknowledgement sender has no pending outbound
   obligation`. A control's replay reports nothing here; its commit is visible
-  as the acknowledgement settlement on the send's handle. It is one event per
-  control frame the page receives, the same cadence as `admission-outcome`,
-  and rides the page's batched diagnostics like every other kind
+  as the acknowledgement settlement on the send's handle. The event describes
+  a received control decision and rides the page's batched diagnostics. Its
+  presence does not guarantee a matching `admission-outcome`
 - A WS server receipt (`al.control.receipt.v1`) is decided by the origin's
   receipt admission, not control admission, and states the same
   `control-admission` event: `msgId` is the receipt control's own id,
@@ -251,8 +251,8 @@ every session the page opens. The event's `data` is the event itself:
   only for that reason. Because it comes last, a wait that matches `typeId`,
   `targetMsgId` and `outcome` in their emitted order still matches a receipt,
   and one that appends `"reason":"none","phase":"complete"` matches only the
-  committed terminal receipt. Its arrival is also the inbound topic's
-  `admission-outcome` with that `typeId`, carrier `ws` and
+  committed terminal receipt. When its arrival also produces a captured inbound
+  `admission-outcome`, that event carries the same `typeId`, carrier `ws` and
   `not-handled`/`control`, joined by `msgId`; a committed receipt is also
   the acknowledgement settlement on the send's handle (`messages.receipts`
   reads the logical recipients)
@@ -310,7 +310,9 @@ to a phase instead of a single opaque send latency.
 `rallar.browser.alm.inbound_diagnostics` carries one AL inbound runtime
 diagnostics event per emission, recorded the moment the inbound runtime calls
 the sink — the receiving half of the outbound topic above, and, like it,
-independent of any connection. The event's `data` is the event itself:
+independent of any connection. The following cadences describe eligible
+observations; events are captured only when optional diagnostic projection and
+publication succeed. The event's `data` is the event itself:
 
 - `kind`: `admission-outcome`, `effect-drain`, `claim-settled` or
   `rotation-alive`, plus explicitly enabled `acknowledgement-association` and
@@ -355,8 +357,8 @@ independent of any connection. The event's `data` is the event itself:
   the room roster`, or `membership-fenced: Room sender has no live session in a
   roster beyond its stamp`, and its hop NACKs it `membership-fenced`
 - a raw control a recipe submits through `messages.control` is decided by its
-  addressee's ingress like any control, so its addressee states this event
-  under the recipe's authored `msgId`: a retired `al.control.ack.v1` reads
+  addressee's ingress like any control. When this event is captured, it carries
+  the recipe's authored `msgId`: a retired `al.control.ack.v1` reads
   carrier `rtc`, `rejected`/`unsupported`. The `messages.control` result is the
   submitting page's own carrier verdict (`admitted` when that carrier took the
   frame), never the addressee's
@@ -393,11 +395,11 @@ independent of any connection. The event's `data` is the event itself:
   `batchStartedAtMs`. It is not the start `durationMs` and `queueWaitMs` are
   measured from: those run from the batch's own earlier start. `claimedEffectIds`
   is the batch's run order: the effect id of every claim the batch ran, in the
-  order it ran them, recorded by the inbound owner as it starts each claim. Every
-  id in it also appears as a `claim-settled.effectId`, unless that claim threw
-  before it settled; a claim whose row could not be decoded has no id and appears
-  in neither. `deferred` lists the due rows the batch's page saw and did not
-  run, as `{ effectId, dueAtMs }`, oldest first — held back by their eligibility
+  order it ran them, recorded by the inbound owner as it starts each claim. An
+  id can be joined to `claim-settled.effectId` when that claim returns a reportable
+  outcome and guarded diagnostic projection/publication succeeds. A claim whose
+  row could not be decoded has no id and appears in neither. `deferred` lists the
+  due rows the batch's page saw and did not run, as `{ effectId, dueAtMs }`, oldest first — held back by their eligibility
   read, or cleared by it and left unreserved by the port. A row a live lease
   holds is not due, so a batch's own rows never read as deferred. `promoted`
   counts the buffered releases the batch ran because the same track's previous
@@ -405,10 +407,11 @@ independent of any connection. The event's `data` is the event itself:
   `claimedCount` and named in `claimedEffectIds`, and none is listed in
   `deferred`
 - `claim-settled` carries `msgId`, `typeId`, `payloadKind`, `durationMs`,
-  `attempts`, `outcome` and `queueWaitMs`: one event for each claim a drain ran,
-  so a delivery can be followed from its own `admission-outcome` to the claim
-  that ran it, and one slow claim can be told from a batch of many. `payloadKind`
-  is which effect the row held — `admit-message`, `admit-control`,
+  `attempts`, `outcome` and `queueWaitMs` for a claim that returns a reportable
+  outcome, when guarded diagnostic projection/publication succeeds. When both
+  events are present, a delivery can be followed from its `admission-outcome` to
+  the claim that ran it; a captured claim can distinguish one slow operation from
+  a batch of many. `payloadKind` is which effect the row held — `admit-message`, `admit-control`,
   `dispatch-local`, `forward-message`, `send-control` or `release-buffered`.
   `outcome` is what the claim returned: `completed`, `retry`, `not-ready` or
   `non-retryable`. `attempts` is how many processing attempts the row has spent,
@@ -453,8 +456,10 @@ independent of any connection. The event's `data` is the event itself:
   rather than a message, so both are `null`
 - `claim-settled` reports nothing when the claim throws, or its work row could
   not be decoded at all: the generic work handler classifies those, and the
-  `effect-drain` beside them still counts them. So `claimedCount` is a ceiling on
-  the `claim-settled` events of one drain, never a guarantee of the count
+  batch still counts them in any captured `effect-drain`. Disabled or failed
+  diagnostics can also omit a `claim-settled` for a returning claim. Thus
+  `claimedCount` is a ceiling on the `claim-settled` events of one drain, never a
+  guarantee of the count, and silence establishes no claim outcome
 - `rotation-alive` carries `workerId`, `emptyRoundCount`, `durationMs` and
   `longestRoundMs`: one event per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` rounds
   that claimed and rejected nothing, with the wall time those rounds spanned and
