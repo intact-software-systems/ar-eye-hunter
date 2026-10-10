@@ -424,11 +424,17 @@ describe('state-write environment capture native image provenance', () => {
         try {
             await readCaptureStage({ fixture, stage: 'preflight' });
             await writeNativeFacts({ fixture, facts: { ...fixture.facts, sqlText: fixture.facts.sqlText.replaceAll('_rows=0', '_rows=42') } });
-            await readCaptureStage({ fixture, stage: 'postflight' });
-            const text = await readFile(fixture.postflight, 'utf8');
-            expect(text).toContain('preflight_app_data_store_rows=0\n');
-            expect(text).toContain('preflight_resource_inbox_rows=0\n');
-            expect(validateApiV1StateWriteEnvironment(text)).toEqual([]);
+            if (arch() === 'arm64') {
+                await readCaptureStage({ fixture, stage: 'postflight' });
+                const text = await readFile(fixture.postflight, 'utf8');
+                expect(text).toContain('preflight_app_data_store_rows=0\n');
+                expect(text).toContain('preflight_resource_inbox_rows=0\n');
+                expect(validateApiV1StateWriteEnvironment(text)).toEqual([]);
+            }
+            else {
+                await expect(readCaptureStage({ fixture, stage: 'postflight' })).rejects.toThrow(/image and host architectures must match/);
+                await expect(access(fixture.postflight)).rejects.toThrow();
+            }
         }
         finally {
             await rm(fixture.directory, { recursive: true, force: true });
