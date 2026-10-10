@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import assert from 'node:assert/strict';
 
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
@@ -8,7 +9,12 @@ import {
     computeResourceInboxObservedReplacement,
     ResourceInboxInvariantCorruptionError
 } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    computeResourceInboxCoalescedReplacement,
+    writeResourceInboxCoalescedReplacement
+} from '@shared-server/queuebox/postgres/resource-inbox-coalesced-replacement.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import {
     computeCoalescedAppOutboxWork,
     writeCoalescedAppOutboxWork
@@ -22,7 +28,7 @@ import { computeRtcTopologyInputFingerprintWrite } from '@shared-server/rallar-s
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { computeResourceInboxRelease } from '@shared/queuebox/compute-resource-inbox-release.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -369,16 +375,18 @@ Deno.test(
             await inbox.entries.write(batchSecond);
             const firstReservation = await inbox.reservations.startProcessingEntity(batchFirst);
             const secondReservation = await inbox.reservations.startProcessingEntity(batchSecond);
-            assert.ok(firstReservation.right);
-            assert.ok(secondReservation.right);
+            const firstReserved = firstReservation.right;
+            const secondReserved = secondReservation.right;
+            assert.ok(firstReserved);
+            assert.ok(secondReserved);
             const queueBox = new PSqlQueueBox(inbox);
             await assert.rejects(
                 () =>
-                    queueBox.releaseEntries([{ entry: firstReservation.right!, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }, {
+                    queueBox.releaseEntries([{ entry: firstReserved, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }, {
                         entry: {
-                            ...secondReservation.right!,
+                            ...secondReserved,
                             dequeueAudit: {
-                                ...secondReservation.right!.dequeueAudit,
+                                ...secondReserved.dequeueAudit,
                                 attempts: 0
                             }
                         },
@@ -411,7 +419,7 @@ Deno.test(
                 })
             );
             assert.equal(replacedResult.status, EntityStatus.FAILED);
-            assert.deepEqual(JSON.parse(replacedResult.resource), { text: 'result-updated' });
+            assert.deepEqual(decodeJsonWireText(replacedResult.resource, 'Resource inbox result test'), { text: 'result-updated' });
 
             await results.replace(
                 createResourceEntry('result-expired', {
@@ -434,7 +442,7 @@ Deno.test(
             const repository = createPSqlResourceInboxRepository(sql, () => new Date());
             const queue = new PSqlQueueBox(repository);
             const firstWrite = createInitialCoalescedTopologyWork('transactional-overlay');
-            await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, firstWrite, () => new Date()));
+            await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, firstWrite));
             const first = firstWrite.entryWrite.entry;
             const second = advanceCoalescedGeneration(first, 2);
             const successor = createResourceEntry('transactional-successor', {
@@ -445,7 +453,7 @@ Deno.test(
             });
 
             const statusFirstWrite = createInitialCoalescedTopologyWork('transactional-status-fence');
-            await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, statusFirstWrite, () => new Date()));
+            await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, statusFirstWrite));
             const statusFirst = statusFirstWrite.entryWrite.entry;
             await sql`
       update resource_inbox
@@ -454,13 +462,12 @@ Deno.test(
         and ri_resource_id = ${statusFirst.key.resourceId}
         and fk_ext_bank_id = ${statusFirst.key.contextId}
     `;
-            const statusMismatch = await sql.begin(async (transaction) =>
-                await createPSqlResourceInboxRepository(transaction, () => new Date()).entries.replacePendingIfMatch(
-                    statusFirst,
-                    advanceCoalescedGeneration(statusFirst, 2),
-                    1
-                )
+            const statusReplacement = computeResourceInboxCoalescedReplacement(
+                statusFirst,
+                computeAppOutboxInsert(advanceCoalescedGeneration(statusFirst, 2)),
+                1
             );
+            const statusMismatch = await sql.begin(async (transaction) => await writeResourceInboxCoalescedReplacement(transaction, statusReplacement));
             assert.equal(statusMismatch, null);
             assert.equal(
                 (await repository.entries.findAnyByKey(statusFirst.key))?.status,
@@ -468,7 +475,7 @@ Deno.test(
             );
 
             const updatedWrite = computeCoalescedAppOutboxWork(first, second, successor);
-            await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, updatedWrite, () => new Date()));
+            await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, updatedWrite));
             assert.equal((await repository.entries.findByKey(first.key))?.resource, second.resource);
 
             const reserved = await queue.reserveEntries({
@@ -481,7 +488,7 @@ Deno.test(
             assert.ok(observedReserved);
             const third = advanceCoalescedGeneration(second, 3);
             const blockedWrite = computeCoalescedAppOutboxWork(observedReserved, third, successor);
-            await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, blockedWrite, () => new Date()));
+            await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, blockedWrite));
 
             assert.equal((await repository.entries.findAnyByKey(first.key))?.resource, second.resource);
             assert.equal((await repository.entries.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
@@ -489,7 +496,7 @@ Deno.test(
 
             await assert.rejects(
                 async () => {
-                    await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, blockedWrite, () => new Date()));
+                    await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, blockedWrite));
                 },
                 (error) =>
                     error instanceof ResourceInboxInvariantCorruptionError &&
@@ -506,7 +513,7 @@ Deno.test(
             );
             await assert.rejects(
                 async () => {
-                    await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, conflictingSuccessorWrite, () => new Date()));
+                    await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, conflictingSuccessorWrite));
                 },
                 (error) =>
                     error instanceof ResourceInboxInvariantCorruptionError &&
@@ -521,7 +528,7 @@ Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in plac
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(repository);
         const firstWrite = createInitialCoalescedTopologyWork('revive-overlay');
-        await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, firstWrite, () => new Date()));
+        await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, firstWrite));
         const first = firstWrite.entryWrite.entry;
         const reserved = await queue.reserveEntries({
             typeIds: new Set([first.typeId]),
@@ -539,23 +546,24 @@ Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in plac
             )
         );
         const finished = await repository.entries.findAnyByKey(first.key);
-        assert.equal(finished?.status, EntityStatus.COMPLETED);
+        assert.ok(finished);
+        assert.equal(finished.status, EntityStatus.COMPLETED);
 
-        const revivedEntry = advanceCoalescedGeneration({ ...first, resource: finished!.resource }, 2);
+        const revivedEntry = advanceCoalescedGeneration({ ...first, resource: finished.resource }, 2);
         const successor = createResourceEntry('revive-successor', {
             topicId: first.key.topicId,
             contextId: first.key.contextId,
             typeId: first.typeId,
             payload: { generation: 2, kind: 'successor' }
         });
-        const revivedWrite = computeCoalescedAppOutboxWork(finished!, revivedEntry, successor);
-        await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, revivedWrite, () => new Date()));
+        const revivedWrite = computeCoalescedAppOutboxWork(finished, revivedEntry, successor);
+        await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, revivedWrite));
         const stored = await repository.entries.findByKey(first.key);
         assert.equal(stored?.status, EntityStatus.NEW);
         assert.equal(stored?.resource, revivedEntry.resource);
         assert.equal(stored?.dequeueAudit.attempts, 0);
 
-        await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, revivedWrite, () => new Date()));
+        await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, revivedWrite));
         assert.equal((await repository.entries.findByKey(first.key))?.resource, revivedEntry.resource);
         assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
     });
@@ -615,7 +623,7 @@ Deno.test(
                 currentSnapshot = snapshot;
                 const previousEntry = (await queue.getItem(coalescedKey)) ?? null;
                 const computed = toCoalescedComputed(snapshot, previousEntry);
-                await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, computed, () => new Date()));
+                await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, computed));
                 await sql`
         update resource_inbox
         set ri_status = 'RESERVED', ri_attempts = ri_attempts + 1,
@@ -626,7 +634,7 @@ Deno.test(
       `;
                 const reserved = await resourceInbox.entries.findAnyByKey(coalescedKey);
                 assert.ok(reserved);
-                await handler.onMessage(JSON.parse(reserved.resource) as ALMessage, reserved);
+                await handler.onMessage(decodePersistedALMessage(reserved.resource), reserved);
                 return reserved.key;
             };
 

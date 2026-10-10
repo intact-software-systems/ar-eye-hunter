@@ -510,7 +510,7 @@ describe('transaction write boundaries', () => {
             `interface PSqlSql {}
              export class PSqlResourceInboxEntryRepository {
                  constructor(transaction: PSqlSql) { void transaction; }
-                 async replacePendingIfMatch(computed: object): Promise<void> {
+                 async replace(computed: object): Promise<void> {
                      JSON.stringify(computed);
                  }
                  async unreviewedReplace(computed: object): Promise<void> {
@@ -525,7 +525,7 @@ describe('transaction write boundaries', () => {
              interface PSqlSql {}
              export async function write(transaction: PSqlSql, computed: object): Promise<void> {
                  const repository = new PSqlResourceInboxEntryRepository(transaction);
-                 await repository.replacePendingIfMatch(computed);
+                 await repository.replace(computed);
                  await repository.unreviewedReplace(computed);
              }`
         );

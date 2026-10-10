@@ -204,12 +204,12 @@ Deno.test(
                 version: 1
             };
             assert.equal(await rttRepository.putMeasurementIfNewer(storedRtt), true);
-            let plannedRtts: readonly typeof storedRtt[] = [];
+            let plannedRtts: Parameters<RallarRtcTopologyService['planGroupTopologyAt']>[1] = [];
             class RecordingTopologyService extends RallarRtcTopologyService {
                 override planGroupTopologyAt(
                     ...args: Parameters<RallarRtcTopologyService['planGroupTopologyAt']>
                 ): ReturnType<RallarRtcTopologyService['planGroupTopologyAt']> {
-                    plannedRtts = args[1] as readonly typeof storedRtt[];
+                    plannedRtts = args[1];
                     return super.planGroupTopologyAt(...args);
                 }
             }
@@ -367,7 +367,7 @@ Deno.test(
                 origin: 'automatic',
                 previousEntry: null
             });
-            await sql.begin((transaction) => writeCoalescedAppOutboxWork(transaction, topologyWork, () => new Date(nowEpochMs)));
+            await sql.begin((transaction) => writeCoalescedAppOutboxWork(transaction, topologyWork));
 
             await outboxReader.dequeueOutbox(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,

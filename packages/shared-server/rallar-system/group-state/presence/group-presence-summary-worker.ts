@@ -178,8 +178,7 @@ export class GroupPresenceSummaryWork {
         if (computed.topologyReplan.decision === 'enqueue') {
             await writeCoalescedAppOutboxWork(
                 transaction,
-                computed.topologyReplan.work,
-                () => new Date(this.now())
+                computed.topologyReplan.work
             );
         }
     }
