@@ -11,9 +11,9 @@ import path from 'node:path';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '..');
 const projectPath = 'packages/tests/tsconfig.json';
-const testRoots = ['packages/tests', 'tests/unit'];
 const debtPath = 'packages/tests/typecheck-debt.json';
 const updateCommand = 'npm run typecheck:tests -- --update';
+const fileDiagnosticPattern = /^(.+?)\(\d+,\d+\): error TS\d+:/mu;
 // The Deno apps are not npm workspaces, so `npm ci` never creates their node_modules and CI never
 // sees this cache. A machine that has run the Deno tasks resolves a second copy of shared npm
 // packages from it, and the resulting duplicate-identity errors are reported against enforced test
@@ -47,16 +47,25 @@ function readCurrentErrorCounts() {
         console.log(`FAIL: could not run tsc: ${result.error.message}`);
         process.exit(1);
     }
-    return toErrorCounts(`${result.stdout}${result.stderr}`);
+    const compilerOutput = `${result.stdout}${result.stderr}`;
+    const hasProjectError = compilerOutput.split('\n').some((line) => /^error TS\d+:/u.test(line));
+    if (
+        result.status === null || hasProjectError ||
+        (result.status !== 0 && !fileDiagnosticPattern.test(compilerOutput))
+    ) {
+        console.log(`FAIL: tsc could not check ${projectPath}:`);
+        console.log(compilerOutput.trim() || `tsc exited with status ${result.status}, signal ${result.signal}`);
+        process.exit(1);
+    }
+    return toErrorCounts(compilerOutput);
 }
 
 // Third-party declaration errors are excluded: their paths carry machine-specific Deno cache
 // segments, and skipLibCheck is forbidden by packages/tests/repo/typescript-7-boundaries.test.ts.
 function toErrorCounts(compilerOutput) {
-    const diagnosticPattern = /^(.+?)\(\d+,\d+\): error TS\d+:/u;
     const counts = {};
     for (const line of compilerOutput.split('\n')) {
-        const match = diagnosticPattern.exec(line);
+        const match = fileDiagnosticPattern.exec(line);
         if (match === null) {
             continue;
         }
@@ -128,9 +137,9 @@ function validateAgainstDebt(currentErrorCounts, debtErrorCounts) {
 }
 
 function reportComparison(comparison) {
-    const enforcedCount = countEnforcedFiles(comparison.debtErrorCounts);
+    const candidateCount = readProjectTestFiles('packages/tests').length;
     console.log(
-        `check-tests-typecheck: ${enforcedCount} test files enforced, ` +
+        `check-tests-typecheck: ${candidateCount} filesystem test candidates inventoried, ` +
             `${Object.keys(comparison.debtErrorCounts).length} files carrying known debt ` +
             `(${computeTotalErrors(comparison.debtErrorCounts)} errors).`
     );
@@ -145,12 +154,6 @@ function reportComparison(comparison) {
         return;
     }
     console.log('PASS: no new type errors in the maintained test project');
-}
-
-function countEnforcedFiles(debtErrorCounts) {
-    return testRoots.flatMap(readProjectTestFiles).filter(
-        (file) => debtErrorCounts[file] === undefined
-    ).length;
 }
 
 function readProjectTestFiles(directory) {

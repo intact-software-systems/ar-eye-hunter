@@ -650,10 +650,9 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'toError'
     }),
-    // These exact JSON readers reject malformed input at the external boundary.
-    // The live reader recursively produces only RtcBaselineJson; the typecheck
-    // fixture reader returns only a validated string array. No unknown values
-    // propagate into their callers or domain decisions.
+    // These exact JSON readers reject malformed input at the external boundary
+    // and recursively produce only RtcBaselineJson. No unknown values propagate
+    // into their callers or domain decisions.
     Object.freeze({
         path: 'tests/playwright/rallar-black-box/live-rtc-evidence-json.ts',
         rule: 'boundary.unknown',
@@ -663,11 +662,6 @@ export const reviewedDispositions = Object.freeze([
         path: 'tests/playwright/rallar-black-box/live-rtc-evidence-json.ts',
         rule: 'boundary.unknown',
         symbol: 'normalizeJsonValue'
-    }),
-    Object.freeze({
-        path: 'packages/tests/repo/tests-typecheck-external-unit.test.ts',
-        rule: 'boundary.unknown',
-        symbol: 'readTestProjectIncludes'
     }),
     // Raw filesystem compiler options stay local to rejection checks: baseUrl
     // and ignoreDeprecations use key presence, skipLibCheck compares true, and
