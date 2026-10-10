@@ -778,7 +778,8 @@ that batch spent its time — selection, claim, run and release, which do not su
 duration, for the reasons the contract document states — and how long the earliest row it
 claimed had been due (`queueWaitMs`); one `claim-settled` for each claim that ran to an
 outcome, with that claim's own duration, attempts, outcome and wait — a row that cannot be
-decoded and a claim that throws are counted by the drain and named by no event; and
+decoded and a claim that throws are counted by the drain but emit no `claim-settled` event.
+Enabled ACK association or handoff evidence can separately record a thrown claim. The owner relays
 `rotation-alive` once per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` empty rounds, carrying
 `longestRoundMs` so one crawling scan is not averaged away by the rest. Each `claim-settled`
 also carries `effectId` (the claimed row's own key), `subjectMsgId` (the message the effect
