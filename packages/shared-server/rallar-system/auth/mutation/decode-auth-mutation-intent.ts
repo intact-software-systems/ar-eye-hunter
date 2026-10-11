@@ -1,4 +1,8 @@
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../protocol/json-wire-identity.ts';
 import { decodePersistedAuthSession } from '../persistence/persisted-auth-session.ts';
 import type { AuthMutationIntent } from './auth-mutation-contracts.ts';
 
@@ -15,7 +19,7 @@ export function decodeAuthMutationIntent(input: AuthMutationIntentCandidate): Au
     requireString(intent.requestId, 'Auth mutation requestId');
     assertNoPlaintextAuthFields(intent);
     validateAuthMutationIntent(intent);
-    return structuredClone(intent) as AuthMutationIntent;
+    return structuredClone(intent) as AuthMutationIntent & JsonWireObject;
 }
 
 function validateAuthMutationIntent(intent: JsonWireObject): void {
@@ -25,19 +29,7 @@ function validateAuthMutationIntent(intent: JsonWireObject): void {
             validatePreparedRegistration(intent.registration);
             return;
         case 'issue-session':
-            requireExactKeys(intent, [
-                'version',
-                'kind',
-                'requestId',
-                'authority',
-                'clientId',
-                'username',
-                'ttlMs'
-            ]);
-            validateSessionAuthority(intent.authority);
-            requireString(intent.clientId, 'Auth session clientId');
-            requireString(intent.username, 'Auth session username');
-            requirePositiveInteger(intent.ttlMs, 'Auth session ttlMs');
+            validateIssueAuthSessionIntent(intent);
             return;
         case 'logout-session':
             requireExactKeys(intent, ['version', 'kind', 'requestId', 'expected']);
@@ -60,17 +52,7 @@ function validateAuthMutationIntent(intent: JsonWireObject): void {
             requireString(intent.expectedSessionId, 'Auth websocket expected sessionId');
             return;
         case 'issue-agent-tickets':
-            requireExactKeys(intent, [
-                'version',
-                'kind',
-                'requestId',
-                'authority',
-                'ticketTtlMs',
-                'agentIds'
-            ]);
-            decodePersistedAuthSession(intent.authority);
-            requirePositiveInteger(intent.ticketTtlMs, 'Auth agent ticket ttlMs');
-            validateAgentIds(intent.agentIds);
+            validateIssueAuthAgentTicketsIntent(intent);
             return;
         case 'consume-agent-ticket':
             requireExactKeys(intent, ['version', 'kind', 'requestId', 'ticketDigest']);
@@ -79,6 +61,36 @@ function validateAuthMutationIntent(intent: JsonWireObject): void {
         default:
             throw new TypeError('Auth mutation intent kind is invalid');
     }
+}
+
+function validateIssueAuthSessionIntent(intent: JsonWireObject): void {
+    requireExactKeys(intent, [
+        'version',
+        'kind',
+        'requestId',
+        'authority',
+        'clientId',
+        'username',
+        'ttlMs'
+    ]);
+    validateSessionAuthority(intent.authority);
+    requireString(intent.clientId, 'Auth session clientId');
+    requireString(intent.username, 'Auth session username');
+    requirePositiveInteger(intent.ttlMs, 'Auth session ttlMs');
+}
+
+function validateIssueAuthAgentTicketsIntent(intent: JsonWireObject): void {
+    requireExactKeys(intent, [
+        'version',
+        'kind',
+        'requestId',
+        'authority',
+        'ticketTtlMs',
+        'agentIds'
+    ]);
+    decodePersistedAuthSession(intent.authority);
+    requirePositiveInteger(intent.ticketTtlMs, 'Auth agent ticket ttlMs');
+    validateAgentIds(intent.agentIds);
 }
 
 function validatePreparedRegistration(input: JsonWireValue): void {
