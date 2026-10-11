@@ -15,6 +15,7 @@ import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkp
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
 import {
     createInitialALDeliveryLifecycle,
+    isALDeliveryTerminal,
     isALDeliveryTerminalState,
     type ALDeliveryCarrier,
     type ALDeliveryCarrierFallback,
@@ -24,7 +25,10 @@ import {
     type ALDeliveryRelayRejection,
     type ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
+import {
+    computeALDeliveryDeadline,
+    computeALDeliveryLifecycle
+} from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 
 type MessagesPortKind =
     | 'messages.send'
@@ -81,6 +85,7 @@ export interface PortMessage {
      * message stayed held; undefined for every send admitted and delivered.
      */
     failure: ALDeliveryFailure | undefined;
+    reason: string | undefined;
     /** The trusted server's refusal of a send from a sender no longer in the group; undefined otherwise. */
     relayRejection: ALDeliveryRelayRejection | undefined;
     carrierFallback: ALDeliveryCarrierFallback | undefined;
@@ -141,7 +146,7 @@ const HANDED_OVER_WS_OUTCOMES: Readonly<Record<string, HandedOverOutcome>> = {
 type PortHold =
     | Readonly<{ kind: 'type'; typeId: string; }>
     | Readonly<{ kind: 'message'; msgId: string; }>
-    | Readonly<{ kind: 'control'; }>;
+    | Readonly<{ kind: 'control'; controlType: string | undefined; carrier: 'rtc' | 'ws'; }>;
 
 const HELD_ORIGINAL_MARKERS = ['delivery-reload', 'durable-takeover', 'checkpoint-recovery', 'flush-on-hide'];
 
@@ -194,6 +199,7 @@ export class AlmReloadPorts {
     private holdNextSleep = false;
     private readonly replacesDocument: boolean;
     private readonly participants: readonly AlmReloadParticipant[];
+    private readonly receiverBarrierFaults = new Map<string, readonly RallarBlackBoxTestFaultInjectCommand[]>();
 
     constructor(replacesDocument: boolean, participants: readonly AlmReloadParticipant[]) {
         this.participants = [...participants];
@@ -201,6 +207,20 @@ export class AlmReloadPorts {
         this.receiver = this.createRuntime('receiver');
         this.recipientB = this.createRuntime('recipient-b');
         this.sender = this.createRuntime('sender');
+    }
+
+    /** Sequential control replay still arms the recipient's actual faults before its paired sender is released. */
+    prepareReceiverBarriers(commands: readonly RallarBlackBoxTestCommand[]): void {
+        let faults: RallarBlackBoxTestFaultInjectCommand[] = [];
+        for (const command of commands) {
+            if (command.kind === 'fault.inject') {
+                faults.push(command);
+            }
+            else if (command.kind === 'barrier') {
+                this.receiverBarrierFaults.set(command.barrierId, faults);
+                faults = [];
+            }
+        }
     }
 
     beginAbsence(): Promise<void> {
@@ -258,7 +278,7 @@ export class AlmReloadPorts {
     private executePort(
         role: PortRole,
         command: RallarBlackBoxTestCommand
-    ): RallarBlackBoxTestCommandOutcome | undefined {
+    ): RallarBlackBoxTestCommandOutcome | Promise<RallarBlackBoxTestCommandOutcome> | undefined {
         this.settleCheckpoints();
         const document = { origin: 'https://fixture.test', timeOrigin: role === 'sender' ? this.senderDocument : 50 };
         const participant = this.participants.find((participant) => participant.role === role);
@@ -289,12 +309,7 @@ export class AlmReloadPorts {
             case 'close':
                 return { status: 'ok', value: { status: 'closed' } };
             case 'barrier':
-                // The replay dispatches paired segments one at a time, so the barrier is a controlled fact here;
-                // control-recipe-barrier.test.ts proves its control path.
-                return {
-                    status: 'ok',
-                    value: { barrierId: command.barrierId, outcome: 'released', arrivedAgentIds: [role] }
-                };
+                return this.releaseBarrier(role, command.barrierId);
             case 'assert':
             case 'wait':
             case 'loop':
@@ -302,6 +317,17 @@ export class AlmReloadPorts {
             default:
                 throw new Error(`Unexpected external fixture port: ${command.kind}`);
         }
+    }
+
+    private async releaseBarrier(role: PortRole, barrierId: string): Promise<RallarBlackBoxTestCommandOutcome> {
+        if (role === 'sender') {
+            for (const fault of this.receiverBarrierFaults.get(barrierId) ?? []) {
+                const result = await this.receiver.execute(fault);
+                assert(result.ok, `recipient preparation failed at ${fault.commandId}`);
+            }
+        }
+        // Control-recipe-barrier.test.ts proves the real control barrier; this owner supplies paired external facts.
+        return { status: 'ok', value: { barrierId, outcome: 'released', arrivedAgentIds: [role] } };
     }
 
     private executeMessagesPort(
@@ -324,16 +350,28 @@ export class AlmReloadPorts {
 
     private observe(command: PortCommand<'messages.observe'>): RallarBlackBoxTestCommandOutcome {
         const message = this.handles.get(command.handleId);
-        if (message && command.state.length === 1 && command.state[0] === 'expired') {
-            message.state = 'expired';
+        if (message === undefined) {
+            return { status: 'ok', value: toPortDeliveryObservation(command.handleId, message) };
         }
-        return { status: 'ok', value: toPortDeliveryObservation(command.handleId, message) };
+        let lifecycle = this.readDeliveryLifecycle(message);
+        if (!isALDeliveryTerminal(lifecycle) && !command.state.includes(lifecycle.state)) {
+            assert(command.timeoutMs !== undefined, 'an external observation has an authored timeout');
+            const budgetMs = Math.min(command.timeoutMs, Math.max(0, (command.deadlineEpochMs ?? Infinity) - this.now));
+            this.now += Math.min(budgetMs, Math.max(0, (lifecycle.expiresAtMs ?? Infinity) - this.now));
+            this.settleCheckpoints();
+            lifecycle = this.readDeliveryLifecycle(message);
+        }
+        return {
+            status: isALDeliveryTerminal(lifecycle) || command.state.includes(lifecycle.state) ? 'ok' : 'failed',
+            value: toPortDeliveryObservation(command.handleId, message)
+        };
     }
 
     private cancel(command: PortCommand<'messages.cancel'>): RallarBlackBoxTestCommandOutcome {
         const message = this.handles.get(command.handleId);
         assert(message);
-        if (!message.submitted && message.state !== 'rejected') {
+        const lifecycle = this.readDeliveryLifecycle(message);
+        if (!message.submitted && !isALDeliveryTerminal(lifecycle)) {
             message.state = 'cancelled';
         }
         return {
@@ -345,6 +383,7 @@ export class AlmReloadPorts {
     private readReceipts(command: PortCommand<'messages.receipts'>): RallarBlackBoxTestCommandOutcome {
         const message = this.handles.get(command.handleId);
         assert(message);
+        this.readDeliveryLifecycle(message);
         const value = toPortDeliveryObservation(command.handleId, message);
         this.advanceHeldFallback(message);
         return { status: 'ok', value };
@@ -434,25 +473,28 @@ export class AlmReloadPorts {
         if (role !== 'sender') {
             return;
         }
-        const held = this.messages.filter(isHeldOriginal);
-        const durable = held.filter((message) => message.checkpoint === undefined);
-        const checkpointed = held.filter((message) => message.checkpoint === 'saved');
+        for (const message of this.messages) {
+            this.readDeliveryLifecycle(message);
+        }
+        const retained = this.messages.filter(isStoredOriginal);
+        const durable = retained.filter((message) => message.checkpoint === undefined);
+        const checkpointed = retained.filter((message) => message.checkpoint === 'saved');
         const overRtc = (message: PortMessage) => message.command.carrier === 'rtc';
         const stores = [
-            { storeId: `browser-session-inbound:${sessionId}/ws`, claimed: 0 },
-            { storeId: `browser-session-inbound:${sessionId}/rtc`, claimed: 0 },
+            { storeId: `browser-session-inbound:${sessionId}/ws`, rows: [] },
+            { storeId: `browser-session-inbound:${sessionId}/rtc`, rows: [] },
             {
                 storeId: `browser-ws-client:${sessionId}`,
-                claimed: durable.filter((message) => !overRtc(message)).length
+                rows: durable.filter((message) => !overRtc(message))
             },
-            { storeId: `browser-rtc-overlay:${sessionId}`, claimed: durable.filter(overRtc).length },
+            { storeId: `browser-rtc-overlay:${sessionId}`, rows: durable.filter(overRtc) },
             {
                 storeId: `browser-ws-client-checkpoint:${sessionId}`,
-                claimed: checkpointed.filter((message) => !overRtc(message)).length
+                rows: checkpointed.filter((message) => !overRtc(message))
             },
-            { storeId: `browser-rtc-overlay-checkpoint:${sessionId}`, claimed: checkpointed.filter(overRtc).length }
+            { storeId: `browser-rtc-overlay-checkpoint:${sessionId}`, rows: checkpointed.filter(overRtc) }
         ];
-        for (const { storeId, claimed } of stores) {
+        for (const { storeId, rows } of stores) {
             this.sender.recordEvent({
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.storage',
@@ -460,7 +502,11 @@ export class AlmReloadPorts {
                     data: {
                         kind: 'recovery',
                         storeId,
-                        outcome: { kind: 'restored', claimed, expired: 0 }
+                        outcome: {
+                            kind: 'restored',
+                            claimed: rows.filter(isHeldOriginal).length,
+                            expired: rows.filter((message) => message.state === 'expired').length
+                        }
                     }
                 }
             });
@@ -562,7 +608,7 @@ export class AlmReloadPorts {
             this.holds.delete(command.faultId);
         }
         else {
-            this.holds.set(command.faultId, this.toPortHold(command.match));
+            this.holds.set(command.faultId, this.toPortHold(command));
         }
         for (const message of this.messages) {
             if (message.state === 'accepted') {
@@ -665,6 +711,7 @@ export class AlmReloadPorts {
                 ? { kind: 'storage-unavailable', cause }
                 : undefined,
             carrierFallback: undefined,
+            reason: undefined,
             durabilityDowngrade: downgraded ? { requested: requestedDurability, cause } : undefined
         };
         return {
@@ -780,6 +827,9 @@ export class AlmReloadPorts {
             .filter((candidate) => candidate.command.orderingKey === orderingKey && candidate.buffered)
             .sort((left, right) => (left.command.seq ?? 0) - (right.command.seq ?? 0));
         for (const successor of successors) {
+            if (isALDeliveryTerminal(this.readDeliveryLifecycle(successor))) {
+                continue;
+            }
             if (this.findHeldPredecessor(successor) !== undefined) {
                 return;
             }
@@ -1098,7 +1148,8 @@ export class AlmReloadPorts {
      * The browser adapter resolves a `match.msgId` token against the recipe's result cache before it arms the fault;
      * this port reads the same identity from the send the token names.
      */
-    private toPortHold(match: RallarBlackBoxTestFaultInjectCommand['match']): PortHold {
+    private toPortHold(command: RallarBlackBoxTestFaultInjectCommand): PortHold {
+        const { match } = command;
         if ('msgId' in match && typeof match.msgId === 'string') {
             const sendCommandId = HOLD_MSG_ID_REFERENCE.exec(match.msgId)?.[1];
             const sent = this.messages.find((message) => message.command.commandId === sendCommandId);
@@ -1107,27 +1158,48 @@ export class AlmReloadPorts {
         }
         return 'typeId' in match && typeof match.typeId === 'string'
             ? { kind: 'type', typeId: match.typeId }
-            : { kind: 'control' };
+            : {
+                kind: 'control',
+                controlType: 'controlType' in match ? match.controlType : undefined,
+                carrier: command.carrier === 'ws' ? 'ws' : 'rtc'
+            };
     }
 
     private deliver(message: PortMessage): void {
+        if (isALDeliveryTerminal(this.readDeliveryLifecycle(message))) {
+            return;
+        }
         // S3a: a send that names no ack is receipted by default; only an explicit `none` ends at transport acceptance.
         const receipted = message.command.ack !== 'none';
         message.submitted = true;
         message.state = 'transport-accepted';
         this.recordReceiverMessage(message);
-        this.completeReceipt(
-            message,
-            this.participants.filter((participant) => message.deliveredRecipientRoles.includes(participant.role))
-                .map((participant) => participant.sessionId)
+        const ackHeld = [...this.holds.values()].some((hold) =>
+            hold.kind === 'control' && hold.controlType === 'ack' && hold.carrier === message.activeCarrier
         );
-        if (message.activeCarrier === 'rtc') {
-            this.admitReceiverAck(message);
-        }
-        else if (receipted) {
-            this.admitServerReceipts(message);
+        if (!ackHeld) {
+            this.completeReceipt(
+                message,
+                this.participants.filter((participant) => message.deliveredRecipientRoles.includes(participant.role))
+                    .map((participant) => participant.sessionId)
+            );
+            if (message.activeCarrier === 'rtc') {
+                this.admitReceiverAck(message);
+            }
+            else if (receipted) {
+                this.admitServerReceipts(message);
+            }
         }
         this.releaseBuffered(message);
+    }
+
+    /** Reads and retains the canonical deadline transition before any observer or delivery owner acts. */
+    private readDeliveryLifecycle(message: PortMessage): ALDeliveryLifecycle {
+        const lifecycle = computeALDeliveryDeadline(toPortDeliveryLifecycle(message), this.now);
+        message.state = lifecycle.state;
+        message.failure = lifecycle.evidence.failure;
+        message.reason = lifecycle.evidence.reason;
+        return lifecycle;
     }
 
     private completeReceipt(message: PortMessage, acknowledgedPeerIds: readonly string[]): void {
@@ -1203,7 +1275,7 @@ function toPortDeliveryObservation(
         carrierFallback: message?.carrierFallback,
         durabilityDowngrade: message?.durabilityDowngrade,
         failure: message?.failure,
-        reason: undefined,
+        reason: message?.reason,
         backpressured: false,
         enqueued: message !== undefined && (message.command.durability ?? 'volatile') !== 'volatile' &&
             message.durabilityDowngrade === undefined && message.state !== 'failed'
@@ -1212,6 +1284,11 @@ function toPortDeliveryObservation(
 
 /** A durable original a page held when it ended, a reloaded document's or an ended owner page's, that its page saved. */
 function isHeldOriginal(message: PortMessage): boolean {
+    return isStoredOriginal(message) && !isALDeliveryTerminal(toPortDeliveryLifecycle(message));
+}
+
+/** The saved row inventory remains available to report expired retirement as well as live claims. */
+function isStoredOriginal(message: PortMessage): boolean {
     const marker = isJsonRecordValue(message.command.payload) ? message.command.payload.marker : undefined;
     return HELD_ORIGINAL_MARKERS.includes(String(marker)) && !message.submitted && message.checkpoint !== 'lost';
 }
@@ -1302,19 +1379,7 @@ function computePortAcknowledgement(
 ): ALDeliveryLifecycle {
     const mode = receiptEvidence.receiptMode;
     assert(mode !== undefined);
-    const previous = createInitialALDeliveryLifecycle({
-        msgId: message.msgId,
-        typeId: message.command.typeId,
-        ackMode: message.command.ack ?? 'receiver',
-        receiptAlgo: mode,
-        expiresAtMs: message.command.ttlMs === undefined ? undefined : message.admittedAtMs + message.command.ttlMs,
-        submittedAtMs: message.admittedAtMs
-    });
-    return computeALDeliveryLifecycle({
-        ...previous,
-        state: message.state,
-        evidence: { ...previous.evidence, ...message.receiptEvidence, carrierFallback: message.carrierFallback }
-    }, {
+    return computeALDeliveryLifecycle(toPortDeliveryLifecycle(message), {
         kind: 'acknowledgement',
         msgId: message.msgId,
         carrier: message.activeCarrier,
@@ -1327,4 +1392,30 @@ function computePortAcknowledgement(
         unconfirmedRecipientPeerIds: receiptEvidence.unconfirmedRecipientPeerIds,
         complete: receiptEvidence.unconfirmedRecipientPeerIds.length === 0
     });
+}
+
+/** Translate retained fixture facts once for acknowledgement, deadline and terminal policy. */
+function toPortDeliveryLifecycle(message: PortMessage): ALDeliveryLifecycle {
+    const previous = createInitialALDeliveryLifecycle({
+        msgId: message.msgId,
+        typeId: message.command.typeId,
+        ackMode: message.command.ack ?? 'receiver',
+        receiptAlgo: message.command.ack === 'none' ? 'none' : message.receiptEvidence.receiptMode ?? 'receiver',
+        expiresAtMs: message.command.ttlMs === undefined ? undefined : message.admittedAtMs + message.command.ttlMs,
+        submittedAtMs: message.admittedAtMs
+    });
+    return {
+        ...previous,
+        state: message.state,
+        evidence: {
+            ...previous.evidence,
+            ...message.receiptEvidence,
+            admittedAtMs: message.admittedAtMs,
+            carrierFallback: message.carrierFallback,
+            durabilityDowngrade: message.durabilityDowngrade,
+            relayRejection: message.relayRejection,
+            failure: message.failure,
+            reason: message.reason
+        }
+    };
 }

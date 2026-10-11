@@ -1,5 +1,9 @@
 import { existsSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { RTC_BASELINE_WORKLOAD_CATALOG } from '../../../baseline/catalog/rtc-baseline-workload-catalog.ts';
 import { createRtcBaselineWorkerCommand } from '../../../baseline/contracts/rtc-baseline-validation.ts';

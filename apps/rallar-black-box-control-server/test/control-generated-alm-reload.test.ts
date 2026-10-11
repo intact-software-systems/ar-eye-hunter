@@ -39,6 +39,9 @@ for (const replacesDocument of [true, false]) {
     Deno.test(`unmodified combined ALM runs every checkpoint and trailing scenario through restored runtime evidence (fresh document=${replacesDocument})`, async () => {
         const manifest = createAlmConformance2AgentEntry().manifest;
         const ports = new AlmReloadPorts(replacesDocument, createFixtureParticipants(false));
+        const receiverRecipe = manifest.recipes.find((entry) => entry.role === 'receiver')?.recipe;
+        assert(receiverRecipe);
+        ports.prepareReceiverBarriers(receiverRecipe.commands);
         const input = toControlServiceInput({ now: () => ports.now, runtimeRetentionBounds: { commands: 1, results: 1 } });
         let service = createRallarBlackBoxControlService(input);
         const runId = manifest.controlRunId;
@@ -572,6 +575,185 @@ Deno.test('cancelled held fallback retains its terminal evidence through repeate
         assertEquals(receipt.value.confirmedRecipientPeerIds, []);
     }
 });
+
+Deno.test('requesting expiry preserves a future-TTL acknowledged terminal message', async () => {
+    const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
+    assert(
+        (await ports.sender.execute({
+            kind: 'messages.send',
+            commandId: 'terminal-send',
+            handleId: 'terminal',
+            carrier: 'ws',
+            typeId: 'fixture.terminal',
+            payload: {},
+            ack: 'receiver',
+            ttlMs: 60_000
+        })).ok
+    );
+    const observed = await ports.sender.execute({
+        kind: 'messages.observe',
+        commandId: 'terminal-observe',
+        handleId: 'terminal',
+        state: ['expired'],
+        timeoutMs: 1
+    });
+    assert(observed.ok && isJsonRecordValue(observed.value));
+    assertEquals(observed.value.state, 'acknowledged');
+    assertEquals(observed.value.confirmedRecipientPeerIds, ['receiver-stored-session']);
+    assertEquals(ports.now, 1_000);
+});
+
+Deno.test('an expiry wait times out on a live future deadline and later observes elapsed admission time', async () => {
+    const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
+    assert(
+        (await ports.sender.execute({
+            kind: 'fault.inject',
+            commandId: 'live-hold',
+            faultId: 'live-hold',
+            carrier: 'rtc',
+            match: { typeId: 'fixture.live' },
+            action: 'drop',
+            remaining: 'until-cleared'
+        })).ok
+    );
+    assert(
+        (await ports.sender.execute({
+            kind: 'messages.send',
+            commandId: 'live-send',
+            handleId: 'live',
+            carrier: 'rtc',
+            typeId: 'fixture.live',
+            payload: {},
+            ack: 'receiver',
+            ttlMs: 60_000
+        })).ok
+    );
+    const premature = await ports.sender.execute({
+        kind: 'messages.observe',
+        commandId: 'live-premature',
+        handleId: 'live',
+        state: ['expired'],
+        timeoutMs: 1
+    });
+    assertEquals(premature.ok, false);
+    assertEquals(ports.messages[0].state, 'accepted');
+    assertEquals(ports.now, 1_001);
+    assert(
+        (await ports.sender.execute({ kind: 'wait', commandId: 'live-clock', match: { topic: 'unexpected-clock-event' }, absent: true, timeoutMs: 59_999 })).ok
+    );
+    const elapsed = await ports.sender.execute({
+        kind: 'messages.receipts',
+        commandId: 'live-elapsed',
+        handleId: 'live'
+    });
+    assert(elapsed.ok && isJsonRecordValue(elapsed.value));
+    assertEquals(elapsed.value.state, 'expired');
+    assertEquals(elapsed.value.failure, { kind: 'expired' });
+    assertEquals(elapsed.value.submitted, false);
+});
+
+Deno.test('an observation waits only to the actual held message deadline', async () => {
+    const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
+    assert(
+        (await ports.sender.execute({
+            kind: 'fault.inject',
+            commandId: 'expiry-hold',
+            faultId: 'expiry-hold',
+            carrier: 'rtc',
+            match: { typeId: 'fixture.expiry' },
+            action: 'drop',
+            remaining: 'until-cleared'
+        })).ok
+    );
+    assert(
+        (await ports.sender.execute({
+            kind: 'messages.send',
+            commandId: 'expiry-send',
+            handleId: 'expiry',
+            carrier: 'rtc',
+            typeId: 'fixture.expiry',
+            payload: {},
+            ack: 'receiver',
+            ttlMs: 50
+        })).ok
+    );
+    const observed = await ports.sender.execute({
+        kind: 'messages.observe',
+        commandId: 'expiry-observe',
+        handleId: 'expiry',
+        state: ['expired'],
+        timeoutMs: 100
+    });
+    assert(observed.ok && isJsonRecordValue(observed.value));
+    assertEquals(observed.value.state, 'expired');
+    assertEquals(observed.value.failure, { kind: 'expired' });
+    assertEquals(observed.durationMs, 50);
+    assertEquals(ports.now, 1_050);
+});
+
+for (const retirement of ['cancelled', 'deadline'] as const) {
+    Deno.test(`a ${retirement} persistent held original is neither claimed nor redelivered after replacement and reconnect`, async () => {
+        const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
+        assert(
+            (await ports.sender.execute({
+                kind: 'fault.inject',
+                commandId: 'retired-hold',
+                faultId: 'retired-hold',
+                carrier: 'rtc',
+                match: { typeId: 'fixture.retired' },
+                action: 'drop',
+                remaining: 'until-cleared'
+            })).ok
+        );
+        assert(
+            (await ports.sender.execute({
+                kind: 'messages.send',
+                commandId: 'retired-send',
+                handleId: 'retired',
+                carrier: 'rtc',
+                typeId: 'fixture.retired',
+                payload: { marker: 'delivery-reload' },
+                ack: 'receiver',
+                durability: 'local-outbox',
+                ttlMs: 50
+            })).ok
+        );
+        if (retirement === 'cancelled') {
+            assert((await ports.sender.execute({ kind: 'messages.cancel', commandId: 'retired-cancel', handleId: 'retired' })).ok);
+        }
+        assert(
+            (await ports.sender.execute({ kind: 'wait', commandId: 'retired-clock', match: { topic: 'unexpected-clock-event' }, absent: true, timeoutMs: 50 }))
+                .ok
+        );
+        ports.replaceSenderDocument();
+        assert((await ports.sender.execute({ kind: 'rtc.connect', commandId: 'retired-connect' })).ok);
+        const [message] = ports.messages;
+        assertEquals(message.state, retirement === 'cancelled' ? 'cancelled' : 'expired');
+        assertEquals(message.submitted, false);
+        assertEquals(message.deliveredRecipientRoles, []);
+        const recoveries = ports.sender.state().events.filter((event) => event.topic === 'rallar.browser.alm.storage');
+        assertEquals(recoveries.length, 6);
+        for (const event of recoveries) {
+            assert(isJsonRecordValue(event.payload) && isJsonRecordValue(event.payload.data));
+            assert(isJsonRecordValue(event.payload.data.outcome));
+            assertEquals(event.payload.data.outcome.claimed, 0);
+            assertEquals(
+                event.payload.data.outcome.expired,
+                retirement === 'deadline' && event.payload.data.storeId === 'browser-rtc-overlay:sender-stored-session' ? 1 : 0
+            );
+        }
+        const received = await ports.receiver.execute({
+            kind: 'messages.received',
+            commandId: 'retired-received',
+            typeId: 'fixture.retired',
+            count: 1,
+            absent: true,
+            windowMs: 1
+        });
+        assert(received.ok && isJsonRecordValue(received.value));
+        assertEquals(received.value.count, 0);
+    });
+}
 
 function createFixtureParticipants(recipientB: boolean): readonly AlmReloadParticipant[] {
     const participants: readonly AlmReloadParticipant[] = [

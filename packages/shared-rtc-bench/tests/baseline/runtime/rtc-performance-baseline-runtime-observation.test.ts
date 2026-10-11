@@ -1,10 +1,24 @@
-import { mkdir, mkdtemp, open, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+    mkdir,
+    mkdtemp,
+    open,
+    readdir,
+    readFile,
+    rm,
+    stat,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { RtcBaselineCaptureRequestDto } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
 import { createRtcBaselineRuntimeObservationInput } from '../../../baseline/runtime/create-rtc-baseline-runtime-observation-input.ts';
+import type { RtcBaselineCaptureAdmission } from '../../../baseline/runtime/rtc-baseline-capture-admission.ts';
 import type { DenoRtcBaselineAdapters } from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
 import { createRtcBaselineDenoRuntime } from '../../../baseline/runtime/rtc-baseline-deno-runtime.ts';
 import { createRtcBaselineDenoObservation } from '../../../baseline/runtime/rtc-baseline-runtime-observation.ts';
@@ -63,7 +77,7 @@ function createRtcBaselineTemporaryWriterLockFixture(rootPath: string): Pick<Den
                 file = await open(toTemporaryPath(path), 'wx+');
             }
             catch (error) {
-                if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+                if (!(error instanceof Error) || !('code' in error) || error.code !== 'EEXIST') {
                     throw error;
                 }
                 created = false;
@@ -331,12 +345,12 @@ describe('RTC baseline Deno runtime observation binding', () => {
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
         });
-        const admission = { mode: 'off' as 'off' | 'native', source: 'environment' as const };
+        const admission = { mode: 'off', source: 'environment' } satisfies RtcBaselineCaptureAdmission;
         const runtime = createRtcBaselineDenoRuntime(adapters, admission);
         try {
             expect(await runtime.initializeBaseline(createLiveRtcBaselineCaptureRequestFixture())).toMatchObject({ ok: true });
             ambient = 'native';
-            admission.mode = 'native';
+            Object.assign(admission, { mode: 'native' });
             const nextId = '20260817-956a057c9ab5-e3-memory';
             expect(await runtime.initializeBaseline({ ...createLiveRtcBaselineCaptureRequestFixture(), baselineId: nextId })).toMatchObject({ ok: true });
             const stored = JSON.parse(await readFile(join(rootPath, 'tmp/perf/rtc-baseline', nextId, 'environment.json'), 'utf8'));

@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { createRtcBaselineEvidenceAcceptance } from '../../../baseline/acceptance/rtc-baseline-evidence-acceptance.ts';
 import type { RtcBaselineAcceptedArtifact } from '../../../baseline/acceptance/rtc-baseline-failure-accounting.ts';

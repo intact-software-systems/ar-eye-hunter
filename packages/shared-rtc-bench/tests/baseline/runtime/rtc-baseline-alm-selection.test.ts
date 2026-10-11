@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { RtcBaselineCaptureRequestDto, RtcBaselineRuntimeObservationDto } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
 import { createRtcBaselineRuntimeObservationInput } from '../../../baseline/runtime/create-rtc-baseline-runtime-observation-input.ts';
