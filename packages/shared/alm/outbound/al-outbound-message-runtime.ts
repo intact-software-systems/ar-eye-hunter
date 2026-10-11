@@ -609,12 +609,20 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return durable;
     }
 
-    dispose(): void {
+    /** Aborts transports and every lane synchronously, then joins their owned work and releases. */
+    async dispose(): Promise<void> {
         this.disposed = true;
-        this.durable.dispose();
-        this.volatile?.dispose();
-        this.checkpoint?.dispose();
         this.sendControls.dispose();
+        const disposed = await Promise.allSettled([
+            this.durable.dispose(),
+            this.volatile?.dispose(),
+            this.checkpoint?.dispose()
+        ]);
+        for (const outcome of disposed) {
+            if (outcome.status === 'rejected') {
+                throw outcome.reason;
+            }
+        }
     }
 
     /** Starts the checkpoint now, as a hidden or frozen page may run nothing later; never awaited. */

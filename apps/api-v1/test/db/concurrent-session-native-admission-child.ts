@@ -120,25 +120,30 @@ Deno.test('real tickets and native upgrades admit fifteen current same-user sess
             console.log('Native admission cleanup: authoritative disconnects completed');
         }
         finally {
-            rallar.runtime.wsQBoxServerService.dispose();
             try {
-                await listener?.shutdown();
-                console.log('Native admission cleanup: listener stopped');
+                await rallar.runtime.wsQBoxServerService.dispose();
+                console.log('Native admission cleanup: ALM work and retained releases stopped');
             }
             finally {
-                const stoppingBackground = rallar.runtime.backgroundTasks.stop();
                 try {
-                    await Promise.race([backgroundProducersStopped.promise, stoppingBackground]);
-                    rallar.runtime.qboxEngine.stop();
-                    console.log('Native admission cleanup: workers stopped after background producers');
-                    await rallar.runtime.qboxEngine.executeOnce();
-                    console.log('Native admission cleanup: engine pass finished');
+                    await listener?.shutdown();
+                    console.log('Native admission cleanup: listener stopped');
                 }
                 finally {
-                    queueEngineStopped.resolve();
-                    await stoppingBackground;
+                    const stoppingBackground = rallar.runtime.backgroundTasks.stop();
+                    try {
+                        await Promise.race([backgroundProducersStopped.promise, stoppingBackground]);
+                        rallar.runtime.qboxEngine.stop();
+                        console.log('Native admission cleanup: workers stopped after background producers');
+                        await rallar.runtime.qboxEngine.executeOnce();
+                        console.log('Native admission cleanup: engine pass finished');
+                    }
+                    finally {
+                        queueEngineStopped.resolve();
+                        await stoppingBackground;
+                    }
+                    console.log('Native admission cleanup: background tasks and database stopped');
                 }
-                console.log('Native admission cleanup: background tasks and database stopped');
             }
         }
     }

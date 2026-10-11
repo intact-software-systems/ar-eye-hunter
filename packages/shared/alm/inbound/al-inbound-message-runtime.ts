@@ -223,10 +223,15 @@ export class ALInboundMessageRuntime {
         return durable;
     }
 
-    dispose(): void {
+    /** Every lane cancels before any join, so producers cannot keep another lane alive. */
+    async dispose(): Promise<void> {
         this.disposed = true;
-        this.durable.dispose();
-        this.volatile?.dispose();
+        const disposed = await Promise.allSettled([this.durable.dispose(), this.volatile?.dispose()]);
+        for (const outcome of disposed) {
+            if (outcome.status === 'rejected') {
+                throw outcome.reason;
+            }
+        }
     }
 
     async admitIncomingMessage(
