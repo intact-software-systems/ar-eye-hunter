@@ -136,6 +136,9 @@ export function toStateWriteTimingAssociation(
     if (!operation || !matchesPhysicalDetails(event, operation.expectation)) {
         return undefined;
     }
+    if (event.component === 'app-inbox' && observingStack !== operation.originatingStack) {
+        return undefined;
+    }
     if (
         event.component === 'app-inbox-handler' && event.operation !== 'queue-retry' &&
         event.operation !== operation.expectation.topicId
