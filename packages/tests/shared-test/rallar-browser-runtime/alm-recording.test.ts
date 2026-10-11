@@ -19,7 +19,12 @@ import {
 import { decodeBlackBoxRallarConnectionConfig } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts';
 import type { RallarDiagnosticsPortsInput } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 
-import { events, facade, loadRuntime, resetFacade } from './browser-rallar-runtime-test-harness.ts';
+import {
+    events,
+    facade,
+    loadRuntime,
+    resetFacade
+} from './browser-rallar-runtime-test-harness.ts';
 import { CrdtDocumentTestDouble } from './crdt-document-test-double.ts';
 
 const CONNECTION = {
@@ -80,7 +85,9 @@ it.each([
 
 it.each([undefined, true, false])('applies ALM recording %s while preserving observations and configuration evidence', async (almDiagnostics) => {
     const runtime = await loadRuntime();
-    onTestFinished(() => runtime.close());
+    onTestFinished(async () => {
+        await runtime.close();
+    });
     await runtime.connect({ ...CONNECTION, rallar: { ...CONNECTION.rallar, almDiagnostics } });
     publishAlmEvents(requirePorts());
 
@@ -102,7 +109,9 @@ it.each([undefined, true, false])('applies ALM recording %s while preserving obs
 
 it('keeps prior callbacks and recorded history independent of later connection settings', async () => {
     const runtime = await loadRuntime();
-    onTestFinished(() => runtime.close());
+    onTestFinished(async () => {
+        await runtime.close();
+    });
     await runtime.connect({ ...CONNECTION, rallar: { ...CONNECTION.rallar, almDiagnostics: true } });
     const recording = requirePorts();
     publishAlmEvents(recording);
@@ -126,7 +135,9 @@ it('keeps prior callbacks and recorded history independent of later connection s
 
 it('keeps storage, transport and submission faults effective with recording Off', async () => {
     const runtime = await loadRuntime();
-    onTestFinished(() => runtime.close());
+    onTestFinished(async () => {
+        await runtime.close();
+    });
     await runtime.connect({ ...CONNECTION, rallar: { ...CONNECTION.rallar, almDiagnostics: false } });
     const ports = requirePorts();
     await runtime.injectFault({ faultId: 'storage', carrier: 'storage', match: { owner: 'al-admission', kind: 'write' }, action: 'quota', remaining: 1 });
@@ -149,17 +160,21 @@ it('keeps storage, transport and submission faults effective with recording Off'
 
 it.each([undefined, 'off', 'native'] as const)('keeps RTC host and operation selection independent of ALM Off; host=%s', async (captureMode) => {
     const runtime = await loadRuntime();
-    onTestFinished(() => runtime.close());
+    onTestFinished(async () => {
+        await runtime.close();
+    });
     await runtime.connect({
         ...CONNECTION,
         rallar: { ...CONNECTION.rallar, almDiagnostics: false, rtc: { captureMode } }
     });
     const ports = requirePorts();
     ports.signalingDiagnostics?.({
-        kind: 'offer-created',
+        kind: 'service-signal-route',
+        disposition: 'accepted-peer-result',
+        result: undefined,
         localSessionId: 'session-1',
         peerSessionId: 'peer-1',
-        signalType: 'offer',
+        signalType: 'Offer',
         offerId: 'offer-1',
         atEpochMs: 1
     });
@@ -174,7 +189,9 @@ it.each([undefined, 'off', 'native'] as const)('keeps RTC host and operation sel
 
 it('preserves unscoped default clearing with ALM Off', async () => {
     const runtime = await loadRuntime();
-    onTestFinished(() => runtime.close());
+    onTestFinished(async () => {
+        await runtime.close();
+    });
     await runtime.connect({
         connection: 'unscoped',
         rallar: { apiBaseUrl: 'https://api.example.test', username: 'alice', password: 'secret', almDiagnostics: false }
@@ -188,8 +205,10 @@ it('preserves unscoped default clearing with ALM Off', async () => {
 
 it('applies live CRDT configuration through the same recording owner', async () => {
     const runtime = await loadRuntime();
-    onTestFinished(() => runtime.close());
-    facade.behavior.crdtOpen.mockResolvedValue(new CrdtDocumentTestDouble({ documentId: 'doc-1', initialValue: {} }));
+    onTestFinished(async () => {
+        await runtime.close();
+    });
+    facade.behavior.crdtOpen.mockResolvedValue(new CrdtDocumentTestDouble({ documentId: 'doc-1', initialValue: { title: 'recording' } }));
     await runtime.crdt.open({
         name: 'recording',
         transport: 'ws',
@@ -207,7 +226,7 @@ it('applies live CRDT configuration through the same recording owner', async () 
     }));
 });
 
-it('applies differently configured queued connections instead of sharing an incompatible recording attempt', async () => {
+it('rejects differently configured queued reuse and preserves the active recording ports', async () => {
     const firstConnect = Promise.withResolvers<void>();
     facade.behavior.connect.mockReturnValueOnce(firstConnect.promise);
     const runtime = await loadRuntime();
@@ -220,16 +239,14 @@ it('applies differently configured queued connections instead of sharing an inco
     const silent = requirePorts();
     const second = runtime.connect({ ...CONNECTION, rallar: { ...CONNECTION.rallar, almDiagnostics: true } });
     firstConnect.resolve();
-    await Promise.all([first, second]);
+    const rejected = expect(second).rejects.toThrow(/close.*reinitializ/i);
+    await first;
+    await rejected;
     publishAlmEvents(silent);
     expect(almTopics()).toEqual([]);
     publishAlmEvents(requirePorts());
-    expect(almTopics()).toEqual([
-        'rallar.browser.alm.outbound_diagnostics',
-        'rallar.browser.alm.inbound_diagnostics',
-        'rallar.browser.alm.storage',
-        'rallar.browser.alm.storage_reset'
-    ]);
+    expect(almTopics()).toEqual([]);
+    expect(facade.records.defaultWrites).toHaveLength(1);
 });
 
 it('keeps warnings, health and failed sends visible with ALM recording Off', async () => {
@@ -275,7 +292,9 @@ it('preserves recording for existing callers that omit the factory selection', (
 
 it('retains delivery results, retry outcomes and receipts with ALM recording Off', async () => {
     const runtime = await loadRuntime();
-    onTestFinished(() => runtime.close());
+    onTestFinished(async () => {
+        await runtime.close();
+    });
     await runtime.connect({ ...CONNECTION, rallar: { ...CONNECTION.rallar, almDiagnostics: false } });
     const sent = await runtime.sendMessage({
         connection: 'alm-recording',

@@ -1,3 +1,4 @@
+import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { AuthSession, LoginResponse } from '@shared/api/api-config.ts';
 import type {
     BlackBoxRallarCloseDiagnostics,
@@ -16,6 +17,12 @@ export namespace BlackBoxRallarConnectionState {
         BlackBoxRallarCloseDiagnostics
     >;
 
+    export interface Configuration {
+        readonly defaults: RallarDefaults | undefined;
+        readonly config: BlackBoxRallarConnectionConfig;
+        readonly almDiagnostics: boolean;
+    }
+
     /** Each unsubscribe is present only when the connection transport installed that subscription. */
     export interface Value {
         readonly config: BlackBoxRallarConnectionConfig;
@@ -31,6 +38,15 @@ export namespace BlackBoxRallarConnectionState {
 
 export class BlackBoxRallarConnectionState {
     #value: BlackBoxRallarConnectionState.Value | undefined;
+    #configuration: BlackBoxRallarConnectionState.Configuration | undefined;
+
+    configuration(): BlackBoxRallarConnectionState.Configuration | undefined {
+        return this.#configuration;
+    }
+
+    recordConfiguration(configuration: BlackBoxRallarConnectionState.Configuration): void {
+        this.#configuration = configuration;
+    }
 
     get(): BlackBoxRallarConnectionState.Value | undefined {
         return this.#value;
@@ -38,5 +54,8 @@ export class BlackBoxRallarConnectionState {
 
     set(value: BlackBoxRallarConnectionState.Value | undefined): void {
         this.#value = value;
+        if (value === undefined) {
+            this.#configuration = undefined;
+        }
     }
 }

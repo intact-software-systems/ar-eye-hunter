@@ -18,7 +18,11 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomLayout } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
-import type { ALDurabilityAlgo, ALOwnershipAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import type {
+    ALDurabilityAlgo,
+    ALOwnershipAlgo,
+    ALQosPolicyRequest
+} from '@shared/al-contracts/al-policy.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryAttemptOutcome,

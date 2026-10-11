@@ -159,14 +159,14 @@ function createBrowserSessionMessaging(
     delivery: typeof browserDeliveryComposition
 ): Pick<BrowserFacadeCompositions, 'session' | 'stateEvents' | 'messaging'> {
     const { nowMs, deliveries, sessionDeliveries } = delivery;
-    const recovery = createBrowserResyncRecoveryComposition({ connectionRuntime: foundation.connectionRuntime, nowMs });
+    const recovery = createBrowserResyncRecoveryComposition({ nowMs });
     const session = createBrowserSessionCoreComposition({
         foundation,
         state,
         sessionDeliveries,
         qosProvider: undefined,
         readVolatileSessionLimits: undefined,
-        onResyncRequired: (resync) => recovery.resyncRecovery.onResyncRequired(resync)
+        onResyncRequired: (resync, storage) => recovery.resyncRecovery.onResyncRequired(resync, storage)
     });
     const sessionPort = session.session;
     const stateEvents = createBrowserStateEventComposition({

@@ -2,11 +2,17 @@ import type { RallarCrdtTransportStrategy } from '@shared/crdt/mod.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type { BlackBoxRallarConnectionConfig } from '../black-box-rallar-operation-contracts.ts';
-import { blackBoxRallarConnectionOperationKeyOf, blackBoxRallarScopeOf } from '../black-box-rallar-operation-policy.ts';
+import {
+    blackBoxRallarConnectionOperationKeyOf,
+    blackBoxRallarScopeOf
+} from '../black-box-rallar-operation-policy.ts';
 import type { BlackBoxBrowserRallarRuntimeDependency } from '../browser-rallar-runtime-composition.ts';
 import type { BlackBoxRallarLifecycleOperationContext } from '../lifecycle-controller.ts';
 import type { BlackBoxRallarAuthentication } from './black-box-rallar-authentication.ts';
-import { toBlackBoxRallarSessionDiagnostic, toConnectedTargetRejection } from './black-box-rallar-connection-policy.ts';
+import {
+    toBlackBoxRallarSessionDiagnostic,
+    toConnectedTargetRejection
+} from './black-box-rallar-connection-policy.ts';
 import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
 import type { BlackBoxRallarVolatileLimits } from './black-box-rallar-volatile-limits.ts';
 import { configureBlackBoxRallarConnection } from './configure-black-box-rallar-connection.ts';
@@ -64,6 +70,7 @@ export class BlackBoxRallarCrdtLiveConnection {
             rallar,
             diagnostics,
             volatileLimits: this.#input.volatileLimits,
+            connectionState: this.#input.connectionState,
             config
         });
         diagnostics.emitDiagnostic(config, 'rallar.browser.crdt.configure_completed', configured);

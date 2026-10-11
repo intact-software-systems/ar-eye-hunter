@@ -423,7 +423,6 @@ function createBlackBoxBrowserTransportComposition(
         stateRuntime: foundation.stateRuntime
     });
     const recovery = createBrowserResyncRecoveryComposition({
-        connectionRuntime: foundation.connectionRuntime,
         nowMs: browserDeliveryComposition.nowMs
     });
     const session = createBrowserSessionCoreComposition({
@@ -432,7 +431,7 @@ function createBlackBoxBrowserTransportComposition(
         foundation,
         state,
         sessionDeliveries: browserDeliveryComposition.sessionDeliveries,
-        onResyncRequired: (resync) => recovery.resyncRecovery.onResyncRequired(resync)
+        onResyncRequired: (resync, storage) => recovery.resyncRecovery.onResyncRequired(resync, storage)
     });
     const stateEvents = createBrowserStateEventComposition({
         connectionRuntime: foundation.connectionRuntime,

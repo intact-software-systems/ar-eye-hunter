@@ -193,6 +193,7 @@ export class BlackBoxRallarConnectOperation {
             rallar: this.#input.rallar,
             diagnostics,
             volatileLimits: this.#input.volatileLimits,
+            connectionState: this.#input.connectionState,
             config
         });
         diagnostics.emitConnectPhaseCompleted(config, attempt.phase, configured);

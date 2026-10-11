@@ -362,7 +362,7 @@ function createProductControllers(
             facade: rallar,
             now: input.clock.now,
             delay: input.delay,
-            currentConnectionConfig: () => connectionState.get()?.config,
+            currentConnectionConfig: () => connectionState.get()?.config ?? connectionState.configuration()?.config,
             ensureLiveConnection: new BlackBoxRallarCrdtLiveConnection(foundation).ensure,
             scopeDiagnostics: blackBoxRallarScopeDiagnosticsOf,
             emit: diagnostics.emit,
