@@ -37,6 +37,7 @@ export interface StateWriteDiagnosticAssociationIndex {
 }
 
 const OPERATIONS: Readonly<Record<string, readonly string[]>> = {
+    'app-inbox': ['enqueueAndWaitForResult'],
     'app-inbox-phase': ['transaction'],
     'app-inbox-handler': [
         'queue-retry',
@@ -118,7 +119,8 @@ export function toStateWriteTimingAssociation(
     }
     if (event.requestId === undefined) {
         if (
-            event.component === 'app-inbox-phase' || event.component === 'app-inbox-handler' ||
+            event.component === 'app-inbox' || event.component === 'app-inbox-phase' ||
+            event.component === 'app-inbox-handler' ||
             event.component === 'client-state-service'
         ) {
             return undefined;
