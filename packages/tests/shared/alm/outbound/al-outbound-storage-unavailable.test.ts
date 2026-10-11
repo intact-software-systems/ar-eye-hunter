@@ -136,7 +136,7 @@ describe('outbound storage unavailability', () => {
         );
         expect(observer.getCounts().byOwner['al-work']).toBe(0);
         await vi.waitFor(() => expect(events.map(toHealthStatus)).toEqual(['failing']));
-        runtime.dispose();
+        await runtime.dispose();
     });
 
     // The caller tells this from a foreign control: inside a claim it retries, inline it answers not handled.
@@ -166,7 +166,12 @@ describe('outbound storage unavailability', () => {
     });
 });
 
-function createObservedStores(): Readonly<{ stores: OutboundTestStores; events: ALStorageEvent[]; }> {
+interface ObservedOutboundStores {
+    readonly stores: OutboundTestStores;
+    readonly events: ALStorageEvent[];
+}
+
+function createObservedStores(): ObservedOutboundStores {
     const events: ALStorageEvent[] = [];
     const stores: OutboundTestStores = {
         ...createDefaultOutboundTestStores(),

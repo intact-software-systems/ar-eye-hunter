@@ -1,6 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
@@ -39,11 +39,13 @@ import {
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 
 describe('ALOutboundMessageRuntime', () => {
-    afterEach(() => {
-        vi.useRealTimers();
-        vi.unstubAllGlobals();
-        vi.restoreAllMocks();
-    });
+    beforeEach(() =>
+        onTestFinished(() => {
+            vi.useRealTimers();
+            vi.unstubAllGlobals();
+            vi.restoreAllMocks();
+        })
+    );
 
     it('replays a deferred send using its supplied store, clock, and queue engine', async () => {
         vi.useFakeTimers();
@@ -150,7 +152,6 @@ describe('ALOutboundMessageRuntime', () => {
         expect(result.verdict).toEqual({ kind: 'unroutable', reason: 'no-route', detail: 'No route for outbound enqueue' });
         expect(result.reason).toBe('No route for outbound enqueue');
         expect(result.entries).toEqual([]);
-        runtime.dispose();
     });
 
     it('persists an outbox entry when enqueue has no prepared transport route', async () => {
@@ -177,7 +178,6 @@ describe('ALOutboundMessageRuntime', () => {
         expect(result.entries).toHaveLength(1);
         expect(sent).toEqual([]);
         expect(await reserveOutbox(outbox)).toHaveLength(1);
-        runtime.dispose();
     });
 
     it('returns accepted with a retained canonical fact for immediate prepared dispatch', async () => {
@@ -207,7 +207,6 @@ describe('ALOutboundMessageRuntime', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
         expect(await reserveOutbox(outbox)).toHaveLength(0);
-        runtime.dispose();
     });
 
     it('stops invalidating the sender revision when acknowledgement ownership expires', async () => {
@@ -291,7 +290,6 @@ describe('ALOutboundMessageRuntime', () => {
             intent: 'enqueue'
         });
         expect(afterLateAck.clientRecord).toEqual(beforeLateAck.clientRecord);
-        runtime.dispose();
     });
 
     it('retries a not-ready transport after the requested delay across restart', async () => {
@@ -320,7 +318,7 @@ describe('ALOutboundMessageRuntime', () => {
         await vi.advanceTimersByTimeAsync(0);
 
         expect(result.verdict).toEqual({ kind: 'admitted', durable: false, queuedAttempts: 1 });
-        runtime.dispose();
+        await runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({
             stores,
             sendPreparedMessage: async (prepared) => {
@@ -338,7 +336,6 @@ describe('ALOutboundMessageRuntime', () => {
         await vi.advanceTimersByTimeAsync(500);
         expect(sent).toEqual([msg.id.msgId]);
         expect(await peekOutboundWorkReadyAt(stores.workQueue, admissionStore.namespace)).toBeUndefined();
-        restarted.dispose();
     });
 
     it('does not replay a no-targets send after restart', async () => {
@@ -366,7 +363,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         expect(result.verdict).toEqual({ kind: 'admitted', durable: false, queuedAttempts: 1 });
         expect(await peekOutboundWorkReadyAt(stores.workQueue, admissionStore.namespace)).toBeUndefined();
-        runtime.dispose();
+        await runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({
             stores,
             sendPreparedMessage: async () => {
@@ -379,7 +376,6 @@ describe('ALOutboundMessageRuntime', () => {
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(30_000);
         expect(sent).toEqual([]);
-        restarted.dispose();
     });
 
     it('uses browser Web Locks around outbound commits when available', async () => {
@@ -412,7 +408,6 @@ describe('ALOutboundMessageRuntime', () => {
             { mode: 'exclusive' },
             expect.any(Function)
         );
-        runtime.dispose();
     });
 
     it('releases browser Web Locks before draining committed send effects', async () => {
@@ -462,7 +457,6 @@ describe('ALOutboundMessageRuntime', () => {
         await waitUntil(() => events.includes('send-end'));
 
         expect(events).toEqual(['lock-enter', 'lock-exit', 'send-start', 'send-end']);
-        runtime.dispose();
     });
 
     it('waits for effects committed while another drain is running', async () => {
@@ -510,7 +504,6 @@ describe('ALOutboundMessageRuntime', () => {
         secondGate.resolve();
         await first;
         expect(started).toEqual(['msg-drain-first', 'msg-drain-second']);
-        runtime.dispose();
     });
 
     it('emits diagnostics for sender queue, browser lock, and effect drains', async () => {
@@ -564,7 +557,6 @@ describe('ALOutboundMessageRuntime', () => {
                 completedCount: 1
             })
         );
-        runtime.dispose();
     });
 
     it('returns an outbox entry when enqueue is persistent', async () => {
@@ -593,7 +585,6 @@ describe('ALOutboundMessageRuntime', () => {
                 msgId: msg.id.msgId
             }
         });
-        runtime.dispose();
     });
 
     it('returns duplicate with the existing outbox entry when a persistent message is enqueued twice', async () => {
@@ -618,7 +609,6 @@ describe('ALOutboundMessageRuntime', () => {
         expect(second.entry?.key).toEqual(first.entry?.key);
         expect(second.entries).toHaveLength(1);
         expect(await reserveOutbox(outbox)).toHaveLength(1);
-        runtime.dispose();
     });
 
     it('returns superseded with no entries when an older superseded message is enqueued', async () => {
@@ -670,7 +660,6 @@ describe('ALOutboundMessageRuntime', () => {
                 msgId: newer.id.msgId
             }
         });
-        runtime.dispose();
     });
 
     it('triggers repair dispatches after acknowledgement timeouts', async () => {
@@ -734,8 +723,6 @@ describe('ALOutboundMessageRuntime', () => {
 
         await vi.advanceTimersByTimeAsync(102);
         expect(sent).toHaveLength(2);
-
-        runtime.dispose();
     });
 
     it('retries a `receiver` receipt toward the logical recipients it has not counted', async () => {
@@ -782,7 +769,6 @@ describe('ALOutboundMessageRuntime', () => {
         await vi.advanceTimersByTimeAsync(102);
 
         expect(retried).toEqual([['r2']]);
-        runtime.dispose();
     });
 
     it('hands a retry the audience the message was admitted to, so the planner never widens it (D24, D43)', async () => {
@@ -810,7 +796,6 @@ describe('ALOutboundMessageRuntime', () => {
         await vi.advanceTimersByTimeAsync(102);
 
         expect(audiences).toEqual([['r1']]);
-        runtime.dispose();
     });
 
     it('stops pending acknowledgement timers when disposed', async () => {
@@ -846,10 +831,11 @@ describe('ALOutboundMessageRuntime', () => {
         });
 
         await enqueueOutboundOrThrow(runtime, createOutboundMessage('msg-dispose'));
-        runtime.dispose();
+        const disposing = runtime.dispose();
 
         await vi.advanceTimersByTimeAsync(200);
         expect(sent).toHaveLength(1);
+        await disposing;
     });
 
     it('retransmits cached missing ordered messages when a gap nack arrives', async () => {
@@ -969,7 +955,6 @@ describe('ALOutboundMessageRuntime', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        runtime.dispose();
     });
 
     it('admits a durable prepared attempt for a not-yet-in-sync retry without reopening the canonical fact', async () => {
@@ -1035,7 +1020,6 @@ describe('ALOutboundMessageRuntime', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
         expect(await reserveOutbox(outbox)).toEqual([]);
-        runtime.dispose();
     });
 
     it('coalesces duplicate not-yet-in-sync nacks while a retry is pending', async () => {
@@ -1096,7 +1080,6 @@ describe('ALOutboundMessageRuntime', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        runtime.dispose();
     });
 
     it('counts retransmission rounds rather than duplicate not-yet-in-sync nack deliveries', async () => {
@@ -1156,7 +1139,6 @@ describe('ALOutboundMessageRuntime', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        runtime.dispose();
     });
 
     it('retains immutable message rows while supersedence skips the older physical attempt', async () => {
@@ -1363,7 +1345,6 @@ describe('ALOutboundMessageRuntime', () => {
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        runtime.dispose();
     });
 
     it('does not resend successful prepared messages when a later prepared send fails', async () => {
@@ -1398,7 +1379,6 @@ describe('ALOutboundMessageRuntime', () => {
 
         await vi.advanceTimersByTimeAsync(50);
         expect(sent).toEqual(['peer-1', 'peer-2']);
-        runtime.dispose();
     });
 
     it('dispatches durable prepared repair work while retaining one completed canonical payload', async () => {

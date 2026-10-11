@@ -1,5 +1,5 @@
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
@@ -47,11 +47,13 @@ interface ClientIngressFixture {
 }
 
 describe('WS client typed ingress and transport effects', () => {
-    afterEach(() => {
-        vi.useRealTimers();
-        vi.restoreAllMocks();
-        vi.unstubAllGlobals();
-        TestWebSocket.instances.length = 0;
+    beforeEach(() => {
+        onTestFinished(() => {
+            vi.useRealTimers();
+            vi.restoreAllMocks();
+            vi.unstubAllGlobals();
+            TestWebSocket.instances.length = 0;
+        });
     });
 
     it('rejects malformed and oversized input before admission and still delivers valid traffic', async () => {
@@ -81,7 +83,7 @@ describe('WS client typed ingress and transport effects', () => {
         const keys = await fixture.admission.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
         expect(await fixture.admission.workQueue.getItem(keys[0])).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
-        fixture.service.close();
+        await fixture.service.close();
 
         const engine = new InboxOutboxEngine();
         engine.start();
@@ -93,9 +95,12 @@ describe('WS client typed ingress and transport effects', () => {
             inboundStores: { admissionStore: fixture.admissionStore, workQueue: fixture.admission.workQueue },
             queueEngine: ownership === 'shared' ? engine : undefined
         });
-        onTestFinished(() => {
-            replay.close();
-            engine.stop();
+        onTestFinished(async () => {
+            const outcomes = await Promise.allSettled([replay.close(), engine.stop()]);
+            const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
         const delivered: string[] = [];
         replay.onInboxMessageDo('unrelated.v1', {
@@ -186,13 +191,49 @@ describe('WS client typed ingress and transport effects', () => {
 
     it('does not admit input after the client is closed', async () => {
         const fixture = await createClientIngressFixture();
-        fixture.service.close();
+        const closing = fixture.service.close();
 
         const accepted = await fixture.service.acceptIncomingMessage(createIncomingMessage());
 
         expect(accepted.right?.kind).toBe('disposed');
+        await closing;
         expect(fixture.admission.data.size).toBe(0);
         expect(fixture.delivered).toEqual([]);
+    });
+
+    it('close joins its actual default outbound owner scheduled readiness read', async () => {
+        const fixture = await createClientIngressFixture();
+        vi.useFakeTimers();
+        await fixture.service.enqueueOutboxAllIfAbsent([]);
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const readPages = fixture.outboundStores.workQueue.readWorkPages.bind(fixture.outboundStores.workQueue);
+        let readFinished = false;
+        vi.spyOn(fixture.outboundStores.workQueue, 'readWorkPages').mockImplementation(async (queries) => {
+            entered.resolve();
+            await release.promise;
+            const pages = await readPages(queries);
+            readFinished = true;
+            return pages;
+        });
+        await vi.advanceTimersByTimeAsync(0);
+        await entered.promise;
+        let closed = false;
+        const closing = fixture.service.close().then(() => {
+            closed = true;
+        });
+        try {
+            expect(fixture.socket.readyState).not.toBe(WebSocket.OPEN);
+            await vi.advanceTimersByTimeAsync(0);
+            expect(readFinished).toBe(false);
+            expect(closed, 'Client close completed before its default owner storage read').toBe(false);
+        }
+        finally {
+            release.resolve();
+            await closing;
+        }
+        expect(readFinished).toBe(true);
+        expect(closed).toBe(true);
     });
 
     it('returns close completion only after its running inbound consumer settles', async () => {
@@ -244,9 +285,10 @@ describe('WS client typed ingress and transport effects', () => {
         const receiving = fixture.service.acceptIncomingMessage(createIncomingMessage());
         await started.promise;
 
-        fixture.service.close();
+        const closing = fixture.service.close();
         resume.resolve();
         await receiving;
+        await closing;
         await waitForOwnedQueueWork(fixture.admission.workQueue);
 
         expect(fixture.delivered).toEqual([]);

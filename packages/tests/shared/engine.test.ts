@@ -1,23 +1,29 @@
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
-afterEach(() => {
-    vi.useRealTimers();
-});
+beforeEach(() =>
+    onTestFinished(() => {
+        vi.useRealTimers();
+    })
+);
 
 describe('engine', () => {
     it('joins an excluded runnable through computation and resource release when stopped', async () => {
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const entered = Promise.withResolvers<void>();
         const computation = Promise.withResolvers<void>();
+        onTestFinished(() => computation.resolve());
         const releasing = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
+        onTestFinished(() => release.resolve());
         let available = true;
         let stopped = false;
         engine.includeTask('owned', {
@@ -62,6 +68,7 @@ describe('engine', () => {
 
     it('tells every wake listener that an external writer announced work, until it is excluded', async () => {
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const announced: string[] = [];
         engine.includeWakeListener('owner', () => announced.push('owner'));
 
@@ -76,11 +83,12 @@ describe('engine', () => {
         engine.wakeAfterExternalWrite();
 
         expect(announced).toEqual(['owner']);
-        engine.stop();
+        await engine.stop();
     });
 
     it('keeps one throwing wake listener from stealing the wake from the others', () => {
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const announced: string[] = [];
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
         engine.includeWakeListener('first', () => announced.push('first'));
@@ -103,6 +111,7 @@ describe('engine', () => {
     it('wakes for a registered task deadline before idle backoff elapses', async () => {
         vi.useFakeTimers();
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const dueAt = Date.now() + 20;
         const ranAt: number[] = [];
         engine.includeTask('receipt', {
@@ -121,16 +130,19 @@ describe('engine', () => {
         expect(ranAt).toEqual([]);
         await vi.advanceTimersByTimeAsync(1);
         expect(ranAt).toEqual([dueAt]);
-        engine.stop();
+        await engine.stop();
     });
 
     it('shares an active pass between scheduled and manual execution without duplicating work', async () => {
         vi.useFakeTimers();
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const observed = Promise.withResolvers<void>();
         const available = Promise.withResolvers<boolean>();
+        onTestFinished(() => available.resolve(false));
         const submitted = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
+        onTestFinished(() => release.resolve());
         let checks = 0;
         let runs = 0;
         engine.includeTask('send', {
@@ -155,9 +167,10 @@ describe('engine', () => {
         available.resolve(true);
         await manual;
         await submitted.promise;
-        engine.stop();
+        const stopping = engine.stop();
         release.resolve();
         await vi.runAllTimersAsync();
+        await stopping;
         expect(checks).toBe(1);
         expect(runs).toBe(1);
     });
@@ -165,8 +178,10 @@ describe('engine', () => {
     it.each(['remove', 'replace', 'stop'] as const)('does not submit an old task after %s while readiness is pending', async (change) => {
         vi.useFakeTimers();
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const observed = Promise.withResolvers<void>();
         const available = Promise.withResolvers<boolean>();
+        onTestFinished(() => available.resolve(false));
         let oldRuns = 0;
         let newRuns = 0;
         let remaining = 1;
@@ -182,13 +197,14 @@ describe('engine', () => {
             },
             ongoingTasks: []
         });
+        let stopping: Promise<void> | undefined;
         const pending = engine.executeOnce();
         await observed.promise;
         if (change === 'remove') {
             engine.excludeTask('send');
         }
         else if (change === 'stop') {
-            engine.stop();
+            stopping = engine.stop();
         }
         else {
             engine.includeTask('send', {
@@ -204,6 +220,7 @@ describe('engine', () => {
         }
         available.resolve(true);
         await pending;
+        await stopping;
         if (change !== 'stop') {
             await engine.executeOnce();
         }
@@ -213,8 +230,10 @@ describe('engine', () => {
 
     it('fences a removed task whose executor has not invoked its runnable yet', async () => {
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const scheduled = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
+        onTestFinished(() => release.resolve());
         const completed = Promise.withResolvers<void>();
         let runs = 0;
         engine.includeTask('send', {
@@ -243,6 +262,7 @@ describe('engine', () => {
 
     it('owns task state under its registration id without changing the supplied task', async () => {
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         let runs = 0;
         const ongoingTasks = Object.freeze([]);
         const task = Object.freeze({
@@ -266,205 +286,188 @@ describe('engine', () => {
 
     it('executes a task once when work is available', async () => {
         vi.useFakeTimers();
-        try {
-            const engine = new InboxOutboxEngine();
-            let remainingWork = 1;
-            let runCount = 0;
+        const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
+        let remainingWork = 1;
+        let runCount = 0;
 
-            engine.includeTask(
-                'test-task',
-                {
-                    name: 'test-task',
-                    maxConcurrency: () => 1,
-                    isWork: () => remainingWork > 0,
-                    runnable: async () => {
-                        runCount += 1;
-                        remainingWork -= 1;
-                    },
-                    ongoingTasks: []
-                }
-            );
+        engine.includeTask(
+            'test-task',
+            {
+                name: 'test-task',
+                maxConcurrency: () => 1,
+                isWork: () => remainingWork > 0,
+                runnable: async () => {
+                    runCount += 1;
+                    remainingWork -= 1;
+                },
+                ongoingTasks: []
+            }
+        );
 
-            const firstRunPromise = engine.executeOnce();
-            await vi.runAllTimersAsync();
-            const firstRun = await firstRunPromise;
+        const firstRunPromise = engine.executeOnce();
+        await vi.runAllTimersAsync();
+        const firstRun = await firstRunPromise;
 
-            const secondRunPromise = engine.executeOnce();
-            await vi.runAllTimersAsync();
-            const secondRun = await secondRunPromise;
+        const secondRunPromise = engine.executeOnce();
+        await vi.runAllTimersAsync();
+        const secondRun = await secondRunPromise;
 
-            expect(firstRun).toBe(true);
-            expect(secondRun).toBe(false);
-            expect(runCount).toBe(1);
-        }
-        finally {
-            vi.useRealTimers();
-        }
+        expect(firstRun).toBe(true);
+        expect(secondRun).toBe(false);
+        expect(runCount).toBe(1);
     });
 
     it('does not treat idle executions as circuit breaker failures', async () => {
         vi.useFakeTimers();
-        try {
-            const engine = new InboxOutboxEngine();
-            let remainingWork = 0;
-            let runCount = 0;
+        const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
+        let remainingWork = 0;
+        let runCount = 0;
 
-            engine.includeTask(
-                'test-task',
-                {
-                    name: 'test-task',
-                    maxConcurrency: () => 1,
-                    isWork: () => remainingWork > 0,
-                    runnable: async () => {
-                        runCount += 1;
-                        remainingWork -= 1;
-                    },
-                    ongoingTasks: []
-                }
-            );
-
-            for (let i = 0; i < 20; i++) {
-                expect(await executeOnceWithTimers(engine)).toBe(false);
+        engine.includeTask(
+            'test-task',
+            {
+                name: 'test-task',
+                maxConcurrency: () => 1,
+                isWork: () => remainingWork > 0,
+                runnable: async () => {
+                    runCount += 1;
+                    remainingWork -= 1;
+                },
+                ongoingTasks: []
             }
+        );
 
-            remainingWork = 1;
+        for (let i = 0; i < 20; i++) {
+            expect(await executeOnceWithTimers(engine)).toBe(false);
+        }
 
-            expect(await executeOnceWithTimers(engine)).toBe(true);
-            expect(runCount).toBe(1);
-        }
-        finally {
-            vi.useRealTimers();
-        }
+        remainingWork = 1;
+
+        expect(await executeOnceWithTimers(engine)).toBe(true);
+        expect(runCount).toBe(1);
     });
 
     it('preserves in-flight task state between executions', async () => {
         vi.useFakeTimers();
-        try {
-            const engine = new InboxOutboxEngine();
-            const taskGate = Promise.withResolvers<void>();
-            let remainingWork = 2;
-            let runCount = 0;
+        const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
+        const taskGate = Promise.withResolvers<void>();
+        onTestFinished(() => taskGate.resolve());
+        let remainingWork = 2;
+        let runCount = 0;
 
-            engine.includeTask(
-                'test-task',
-                {
-                    name: 'test-task',
-                    maxConcurrency: () => 1,
-                    isWork: () => remainingWork > 0,
-                    runnable: async () => {
-                        runCount += 1;
-                        remainingWork -= 1;
-                        await taskGate.promise;
-                    },
-                    ongoingTasks: []
-                }
-            );
+        engine.includeTask(
+            'test-task',
+            {
+                name: 'test-task',
+                maxConcurrency: () => 1,
+                isWork: () => remainingWork > 0,
+                runnable: async () => {
+                    runCount += 1;
+                    remainingWork -= 1;
+                    await taskGate.promise;
+                },
+                ongoingTasks: []
+            }
+        );
 
-            expect(await executeOnceWithTimers(engine)).toBe(true);
-            expect(runCount).toBe(1);
-            expect(remainingWork).toBe(1);
+        expect(await executeOnceWithTimers(engine)).toBe(true);
+        expect(runCount).toBe(1);
+        expect(remainingWork).toBe(1);
 
-            expect(await executeOnceWithTimers(engine)).toBe(false);
-            expect(runCount).toBe(1);
-            expect(remainingWork).toBe(1);
+        expect(await executeOnceWithTimers(engine)).toBe(false);
+        expect(runCount).toBe(1);
+        expect(remainingWork).toBe(1);
 
-            taskGate.resolve();
-            await vi.runAllTimersAsync();
+        taskGate.resolve();
+        await vi.runAllTimersAsync();
 
-            expect(await executeOnceWithTimers(engine)).toBe(true);
-            expect(runCount).toBe(2);
-            expect(remainingWork).toBe(0);
-        }
-        finally {
-            vi.useRealTimers();
-        }
+        expect(await executeOnceWithTimers(engine)).toBe(true);
+        expect(runCount).toBe(2);
+        expect(remainingWork).toBe(0);
     });
 
     it('does not reschedule after stop during an active execution', async () => {
         vi.useFakeTimers();
-        try {
-            const engine = new InboxOutboxEngine();
-            const isWorkGate = Promise.withResolvers<boolean>();
-            const isWorkStarted = Promise.withResolvers<void>();
-            let isWorkCalls = 0;
+        const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
+        const isWorkGate = Promise.withResolvers<boolean>();
+        onTestFinished(() => isWorkGate.resolve(false));
+        const isWorkStarted = Promise.withResolvers<void>();
+        let isWorkCalls = 0;
 
-            engine.includeTask(
-                'test-task',
-                {
-                    name: 'test-task',
-                    maxConcurrency: () => 1,
-                    isWork: async () => {
-                        isWorkCalls += 1;
-                        isWorkStarted.resolve();
-                        return await isWorkGate.promise;
-                    },
-                    runnable: async () => undefined,
-                    ongoingTasks: []
-                }
-            );
+        engine.includeTask(
+            'test-task',
+            {
+                name: 'test-task',
+                maxConcurrency: () => 1,
+                isWork: async () => {
+                    isWorkCalls += 1;
+                    isWorkStarted.resolve();
+                    return await isWorkGate.promise;
+                },
+                runnable: async () => undefined,
+                ongoingTasks: []
+            }
+        );
 
-            engine.start();
-            await vi.advanceTimersByTimeAsync(0);
-            await isWorkStarted.promise;
+        engine.start();
+        await vi.advanceTimersByTimeAsync(0);
+        await isWorkStarted.promise;
 
-            engine.stop();
-            isWorkGate.resolve(false);
-            await vi.runAllTimersAsync();
+        const stopping = engine.stop();
+        isWorkGate.resolve(false);
+        await vi.runAllTimersAsync();
+        await stopping;
 
-            const callsAfterStoppedRun = isWorkCalls;
-            await vi.advanceTimersByTimeAsync(60_000);
+        const callsAfterStoppedRun = isWorkCalls;
+        await vi.advanceTimersByTimeAsync(60_000);
 
-            expect(isWorkCalls).toBe(callsAfterStoppedRun);
-        }
-        finally {
-            vi.useRealTimers();
-        }
+        expect(isWorkCalls).toBe(callsAfterStoppedRun);
     });
 
     it('wakes an idle scheduled engine when work is enqueued', async () => {
         vi.useFakeTimers();
-        try {
-            const engine = new InboxOutboxEngine();
-            let remainingWork = 0;
-            let isWorkCalls = 0;
-            let runCount = 0;
+        const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
+        let remainingWork = 0;
+        let isWorkCalls = 0;
+        let runCount = 0;
 
-            engine.includeTask(
-                'test-task',
-                {
-                    name: 'test-task',
-                    maxConcurrency: () => 1,
-                    isWork: () => {
-                        isWorkCalls += 1;
-                        return remainingWork > 0;
-                    },
-                    runnable: async () => {
-                        runCount += 1;
-                        remainingWork -= 1;
-                    },
-                    ongoingTasks: []
-                }
-            );
+        engine.includeTask(
+            'test-task',
+            {
+                name: 'test-task',
+                maxConcurrency: () => 1,
+                isWork: () => {
+                    isWorkCalls += 1;
+                    return remainingWork > 0;
+                },
+                runnable: async () => {
+                    runCount += 1;
+                    remainingWork -= 1;
+                },
+                ongoingTasks: []
+            }
+        );
 
-            engine.start();
-            await vi.advanceTimersByTimeAsync(0);
-            await vi.advanceTimersByTimeAsync(10);
+        engine.start();
+        await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(10);
 
-            const idleChecks = isWorkCalls;
-            remainingWork = 1;
-            engine.wake();
+        const idleChecks = isWorkCalls;
+        remainingWork = 1;
+        engine.wake();
 
-            await vi.advanceTimersByTimeAsync(0);
-            await vi.advanceTimersByTimeAsync(10);
+        await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(10);
 
-            expect(isWorkCalls).toBeGreaterThan(idleChecks);
-            expect(runCount).toBe(1);
+        expect(isWorkCalls).toBeGreaterThan(idleChecks);
+        expect(runCount).toBe(1);
 
-            engine.stop();
-        }
-        finally {
-            vi.useRealTimers();
-        }
+        await engine.stop();
     });
 });
 

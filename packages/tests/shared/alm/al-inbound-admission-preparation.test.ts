@@ -91,7 +91,7 @@ describe('inbound admission preparation boundary', () => {
             }
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -337,7 +337,7 @@ describe('inbound admission preparation boundary', () => {
             expect(await stores.workQueue.getAllKeys()).toEqual([]);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -390,7 +390,7 @@ describe('inbound admission preparation boundary', () => {
                 .toBe(8 * 130_000);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -484,7 +484,7 @@ describe('inbound admission preparation boundary', () => {
             expect(controls).not.toEqual(candidates[0]!.durableEffects);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -518,7 +518,7 @@ describe('inbound admission preparation boundary', () => {
                 .toEqual([firstAck, firstAck]);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 

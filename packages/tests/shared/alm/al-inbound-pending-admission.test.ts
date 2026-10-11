@@ -306,7 +306,7 @@ it('replays a retained conflict in a batch the handler runs after the one alread
     });
     onTestFinished(() => {
         dispatching.resolve();
-        runtime.dispose();
+        return runtime.dispose();
     });
     await runtime.ready();
     // The first message's own commit starts a batch and holds it inside the delivery it claimed.
@@ -370,9 +370,10 @@ async function retainConflictedAdmission(stores: ALInboundRuntimeStores): Promis
         return result;
     });
     const enqueue = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
+    let disposing: Promise<void> | undefined;
     const retained = vi.spyOn(stores.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
         const stored = await enqueue(entry);
-        runtime.dispose(); // Simulate disposal after durable retention, before the first claim.
+        disposing = runtime.dispose(); // Simulate disposal after durable retention, before the first claim.
         return stored;
     });
     const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {}, {
@@ -380,6 +381,7 @@ async function retainConflictedAdmission(stores: ALInboundRuntimeStores): Promis
         qos: { ack: { algo: 'hop' } }
     });
     const result = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
+    await disposing;
     expect(result.right).toEqual({ kind: 'pending-admission' });
     expect(delivered).toEqual([]);
     expect(controls).toEqual([]);

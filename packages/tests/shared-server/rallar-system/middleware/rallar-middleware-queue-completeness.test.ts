@@ -12,8 +12,8 @@ import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resourc
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
@@ -32,7 +32,9 @@ import {
 import {
     computeOutboundTestAdmission,
     createOutboundMessage,
-    holdOutboundClaims
+    createOutboundRuntimeWithWorkTask,
+    holdOutboundClaims,
+    runOutboundWorkTask
 } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 
 const RECIPIENT_SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
@@ -40,7 +42,6 @@ const RECIPIENT_SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 describe('Rallar middleware queue registration completeness', () => {
     it('activates the actual WS worker only after pending admission commits and never on duplicate replay', async () => {
         const engine = new InboxOutboxEngine();
-        const includeTask = vi.spyOn(engine, 'includeTask');
         onTestFinished(() => {
             vi.restoreAllMocks();
         });
@@ -56,7 +57,7 @@ describe('Rallar middleware queue registration completeness', () => {
             return await commit(bundle);
         });
         const claims = holdOutboundClaims(stores);
-        const input = createQueueTaskInput(stores, engine);
+        const input = createOutboundRuntimeWithWorkTask(() => createQueueTaskInput(stores, engine));
         const published: string[] = [];
         input.wsQBoxServerService.onOutboxClusterPublishDo(async (msg) => {
             published.push(msg.id.msgId);
@@ -64,10 +65,6 @@ describe('Rallar middleware queue registration completeness', () => {
         createRallarMiddlewareQueueRegistration(engine).registerExactTasks(input);
         // The runtime's own work handler is the only registered owner now; it claims admit-message
         // rows and, once committed, the WS_OUTBOX rows those commits create, in separate batch passes.
-        const admission = includeTask.mock.calls.find(([name]) => name.startsWith('al-outbound:'))?.[1];
-        if (!admission) {
-            throw new Error('Expected the registered owner');
-        }
         const message = newALUnicastMessage('self', { topicId: 'chat', resourceId: 'pending', contextId: 'direct' }, 'remote-peer', 'chat.message', {}, {
             ttlMs: 60_000,
             qos: { durability: { algo: 'local-outbox' } }
@@ -75,7 +72,7 @@ describe('Rallar middleware queue registration completeness', () => {
         const result = await input.wsQBoxServerService.enqueueOutboxIfAbsent(message, { admittedAudience: undefined, recipientScope: RECIPIENT_SCOPE });
         expect(result.verdict).toEqual({ kind: 'pending' });
         expect((await stores.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.COMPLETED);
-        await admission.runnable();
+        await runOutboundWorkTask(input);
         expect(published).toEqual([]);
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
         const rows = await Promise.all((await stores.workQueue.getAllKeys()).map((key) => stores.workQueue.getItem(key)));
@@ -83,18 +80,18 @@ describe('Rallar middleware queue registration completeness', () => {
         if (!pending) {
             throw new Error('Expected pending owner');
         }
-        await claims.release();
-        await admission.runnable();
+        await claims.release(input);
+        await runOutboundWorkTask(input);
         expect((await stores.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.NEW);
-        await admission.runnable();
+        await runOutboundWorkTask(input);
         expect(published).toEqual([message.id.msgId]);
         // Restore the original pending observation to model lost completion after the admission commit.
         await stores.workQueue.enqueue(pending);
-        await admission.runnable();
+        await runOutboundWorkTask(input);
         expect((await input.wsQBoxServerService.enqueueOutboxIfAbsent(message, { admittedAudience: undefined, recipientScope: RECIPIENT_SCOPE })).verdict)
             .toEqual({ kind: 'duplicate' });
         expect((await stores.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.COMPLETED);
-        await admission.runnable();
+        await runOutboundWorkTask(input);
         expect(published).toEqual([message.id.msgId]);
     });
     it('retains canonical payload and identity through the registered WS work advertisement', async () => {
@@ -201,10 +198,14 @@ describe('Rallar middleware queue registration completeness', () => {
     });
 });
 
+interface QueueTaskFixtureInput extends RegisterRallarMiddlewareQueueTasksInput {
+    readonly wsQBoxServerService: WsQueueBoxServerService;
+}
+
 function createQueueTaskInput(
     outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>,
     queueEngine?: InboxOutboxEngine
-): RegisterRallarMiddlewareQueueTasksInput & { readonly wsQBoxServerService: WsQueueBoxServerService; } {
+): QueueTaskFixtureInput {
     const queue = new InMemoryQueueBox();
     const resilience = createResilience();
     const wsQBoxServerService = createDefaultWsQueueBoxServerService({
@@ -215,7 +216,13 @@ function createQueueTaskInput(
         outboundStores,
         queueEngine
     });
-    onTestFinished(() => wsQBoxServerService.dispose());
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([wsQBoxServerService.dispose(), queueEngine?.stop()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
+    });
     return {
         wsQBoxServerService,
         inboxQueueReader: new InboxQueueReader(queue),

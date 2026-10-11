@@ -169,10 +169,18 @@ function createMessage(mode: 'unicast' | 'broadcast'): ALMessage {
         });
 }
 
+interface DequeueAuthorityFixture {
+    readonly socket: JsonWebSocketServer;
+    readonly native: TestWebSocket;
+    readonly engine: InboxOutboxEngine;
+    readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+    readonly service: WsQueueBoxServerService;
+}
+
 function createFixture(
     readProducerProvenance?: WsQueueBoxServerService.Input['readProducerProvenance'],
     stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage })
-) {
+): DequeueAuthorityFixture {
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://peer');
     native.open();
@@ -189,9 +197,12 @@ function createFixture(
         readProducerProvenance
     };
     const service = createDefaultWsQueueBoxServerService(input);
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { socket, native, engine, stores, service };
 }

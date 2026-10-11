@@ -58,6 +58,7 @@ import {
 } from '@shared/alm/work/al-work-queue-port.ts';
 import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -128,15 +129,20 @@ export function captureOutboundWorkRunnable(engine: InboxOutboxEngine): () => Pr
  * The outbound work task each fixture-built runtime registered, so a test can run one batch of that
  * runtime's own work directly. The runtime owns no drain method: the engine task is the only entry.
  */
-const outboundWorkBatches = new WeakMap<object, () => Promise<void>>();
+interface OutboundTestWorkOwner {
+    readonly engines: ReadonlySet<InboxOutboxEngine>;
+    runBatch(): Promise<void>;
+}
+
+const outboundWorkBatches = new WeakMap<object, OutboundTestWorkOwner>();
 
 /** Runs one batch of this runtime's registered work task, the way an engine tick would. */
 export async function runOutboundWorkTask(runtime: object): Promise<void> {
-    const runBatch = outboundWorkBatches.get(runtime);
-    if (runBatch === undefined) {
+    const owner = outboundWorkBatches.get(runtime);
+    if (owner === undefined) {
         throw new Error('Expected a fixture-built outbound runtime with a registered work task');
     }
-    await runBatch();
+    await owner.runBatch();
 }
 
 /** Admits a message and runs the one batch its owner owes for the work the admission committed. */
@@ -209,10 +215,11 @@ export function createOutboundTestRuntimeFor<TPrepared>(
  * keeps the runtime's own engine ownership intact, which supplying an engine would not; a test that
  * constructs its runtime directly wraps that construction in this.
  */
-export function createOutboundRuntimeWithWorkTask<TPrepared>(
-    create: () => ALOutboundMessageRuntime<TPrepared>
-): ALOutboundMessageRuntime<TPrepared> {
+export function createOutboundRuntimeWithWorkTask<TOwner extends object>(
+    create: () => TOwner
+): TOwner {
     const runnables: (() => void | Promise<void>)[] = [];
+    const engines = new Set<InboxOutboxEngine>();
     const includeTask = InboxOutboxEngine.prototype.includeTask;
     const spy = vi.spyOn(InboxOutboxEngine.prototype, 'includeTask').mockImplementation(function (
         this: InboxOutboxEngine,
@@ -221,10 +228,11 @@ export function createOutboundRuntimeWithWorkTask<TPrepared>(
     ) {
         if (id.startsWith('al-outbound:')) {
             runnables.push(task.runnable);
+            engines.add(this);
         }
         return includeTask.call(this, id, task);
     });
-    let runtime: ALOutboundMessageRuntime<TPrepared>;
+    let runtime: TOwner;
     try {
         runtime = create();
     }
@@ -235,9 +243,12 @@ export function createOutboundRuntimeWithWorkTask<TPrepared>(
         throw new Error('Expected the outbound runtime to register its own work task');
     }
     // Every lane in registration order: the durable lane first, then the volatile one.
-    outboundWorkBatches.set(runtime, async () => {
-        for (const runnable of runnables) {
-            await runnable();
+    outboundWorkBatches.set(runtime, {
+        engines,
+        runBatch: async () => {
+            for (const runnable of runnables) {
+                await runnable();
+            }
         }
     });
     return runtime;
@@ -344,35 +355,34 @@ export function createDefaultOutboundTestStores(outbox?: InMemoryQueueBox): Outb
     };
 }
 
-const HELD_CLAIM_QUIET_ATTEMPT_LIMIT = 50;
-
-/**
- * Holds every claim the queue can offer, so a runtime commits work it never drains. The spy is the
- * queue's own reservation, which is the only place a claim can be denied.
- */
+/** Holds claims until the supplied real fixture owners have completed all work they started. */
 export function holdOutboundClaims<TPrepared>(
     stores: ALOutboundRuntimeStores<TPrepared>
-): { release(): Promise<void>; } {
+): { release(runtime: object, ...additionalRuntimes: readonly object[]): Promise<void>; } {
     const reserved = vi.spyOn(stores.workQueue, 'reserveEntries').mockResolvedValue(new Map());
     const recovered = vi.spyOn(stores.workQueue, 'reserveTimeoutEntries').mockResolvedValue(new Map());
     return {
-        /**
-         * Restores real claims only once no held batch is still asking for work: a batch that
-         * claimed after the restore would strand its rows in a reservation nobody releases.
-         */
-        release: async () => {
-            let observed = -1;
-            for (
-                let attempt = 0;
-                attempt < HELD_CLAIM_QUIET_ATTEMPT_LIMIT && observed !== reserved.mock.calls.length;
-                attempt += 1
-            ) {
-                observed = reserved.mock.calls.length;
-                await new Promise((resolve) => setTimeout(resolve, 0));
-            }
-            expect(reserved.mock.calls.length).toBe(observed);
+        release: async (runtime, ...additionalRuntimes) => {
+            const runtimes = [runtime, ...additionalRuntimes];
+            const owners = runtimes.map((runtime) => {
+                const owner = outboundWorkBatches.get(runtime);
+                if (owner === undefined) {
+                    throw new Error('Expected a fixture-built outbound runtime with owned work');
+                }
+                return owner;
+            });
+            const engines = new Set(owners.flatMap((owner) => [...owner.engines]));
+            // Stop scheduling immediately, but keep denial until directly committed work also settles.
+            const outcomes = await Promise.allSettled([
+                ...[...engines].map((engine) => engine.stop()),
+                ...owners.map((owner) => owner.runBatch())
+            ]);
             reserved.mockRestore();
             recovered.mockRestore();
+            const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw toError(failure.reason);
+            }
         }
     };
 }

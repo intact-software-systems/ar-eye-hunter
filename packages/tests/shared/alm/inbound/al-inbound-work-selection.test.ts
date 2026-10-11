@@ -286,7 +286,7 @@ describe('ALInboundWorkSelector phase measurement', () => {
             }
             finally {
                 releaseHeld?.();
-                handler.dispose();
+                await handler.dispose();
             }
         }
     );
@@ -554,6 +554,14 @@ function createSelectorFixture(): SelectorFixture {
     };
 }
 
+interface CostBoundaryFixture {
+    readonly namespace: string;
+    readonly port: ALWorkQueuePort;
+    readonly nowMs: () => number;
+    readonly advance: (durationMs: number) => void;
+    readonly selector: ALInboundWorkSelector;
+}
+
 /** The selector under a clock only its own two measured calls move, so each phase has one source. */
 function createTimedSelectorFixture(): SelectorFixture {
     const namespace = 'inbound-selection-phases';
@@ -593,7 +601,7 @@ function createTimedSelectorFixture(): SelectorFixture {
 }
 
 /** Logical phase costs at real selector and queue-port seams; these are not IndexedDB timings. */
-function createCostBoundaryFixture() {
+function createCostBoundaryFixture(): CostBoundaryFixture {
     const namespace = 'cost-boundary';
     let currentMs = NOW_MS;
     const nowMs = () => currentMs;

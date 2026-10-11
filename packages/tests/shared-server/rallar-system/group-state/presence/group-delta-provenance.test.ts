@@ -197,9 +197,12 @@ function createGroupDeltaReceiver(producer: GroupDeltaProducerFixture): GroupDel
         readProducerProvenance: (message, entry) => reader.readProducerProvenance(message, entry),
         readAuthenticatedConnectionScope: () => ({ scope: authentication.scope, expiresAtEpochMs: producer.now + 60_000 })
     });
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { reader, socket, native, stores, engine, authentication };
 }

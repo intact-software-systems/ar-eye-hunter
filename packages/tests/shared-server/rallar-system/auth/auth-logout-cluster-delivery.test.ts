@@ -277,12 +277,13 @@ async function createCluster(repository: FakeRuntimeStateRepository, sessionId: 
         await installQueueBoxPubSubBridge({ wsQBoxServerService: service, bridge, channel: 'events', publisherId: 'A' });
         await installQueueBoxPubSubBridge({ wsQBoxServerService: remoteService, bridge: remoteBridge, channel: 'events', publisherId: 'B' });
     }
-    onTestFinished(() => {
-        service.dispose();
-        remoteService.dispose();
-        engine.stop();
-        remoteEngine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), remoteService.dispose(), engine.stop(), remoteEngine.stop()]);
         vi.restoreAllMocks();
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { stores, reader, engine, bridge, remoteBridge, remoteSocket, target, outsider };
 }

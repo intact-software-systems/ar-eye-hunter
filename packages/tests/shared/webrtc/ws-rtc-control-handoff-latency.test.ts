@@ -187,9 +187,14 @@ class RtcControlHandoffFixture {
             rtcDeliveredAtMs: undefined
         };
         await observeRtcControlTraffic(connected.service, observations);
-        onTestFinished(() => {
-            connected.service.close();
-            queueEngine.stop();
+        onTestFinished(async () => {
+            releaseFirstBatch.resolve();
+            locks.release();
+            const outcomes = await Promise.allSettled([connected.service.close(), queueEngine.stop()]);
+            const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
         return new RtcControlHandoffFixture({
             locks,

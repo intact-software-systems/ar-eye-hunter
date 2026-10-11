@@ -1,6 +1,6 @@
 import '../../setup-browser-indexeddb.ts';
 
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import {
     newALBroadcastMessage,
@@ -44,8 +44,7 @@ import {
     GLOBAL_CHECKPOINT_TIMERS,
     TEST_CHECKPOINT_SETTINGS
 } from '../alm/checkpoint/al-checkpoint-test-support.ts';
-import { holdOutboundClaims } from '../alm/outbound-runtime-test-fixture.ts';
-import { settleCommittedOutboundBatch } from '../wait-for-al-outbound-work.ts';
+import { createOutboundRuntimeWithWorkTask, holdOutboundClaims, runOutboundWorkTask } from '../alm/outbound-runtime-test-fixture.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
@@ -89,10 +88,12 @@ interface CheckpointedOwnHopRetryFixture {
 }
 
 describe('WS client retry of its own hop after an acknowledgement timeout', () => {
-    afterEach(() => {
-        vi.useRealTimers();
-        TestWebSocket.instances.length = 0;
-    });
+    beforeEach(() =>
+        onTestFinished(() => {
+            vi.useRealTimers();
+            TestWebSocket.instances.length = 0;
+        })
+    );
 
     it('resends a receiver command addressed to the server, which names its room, with the same msgId', async () => {
         vi.useFakeTimers();
@@ -119,7 +120,7 @@ describe('WS client retry of its own hop after an acknowledgement timeout', () =
 
         await enqueueAndSettle(fixture.service, roomSend);
         await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS * 4);
-        await settleCommittedOutboundBatch();
+        await runOutboundWorkTask(fixture.service);
 
         expect(fixture.sentFrames).toHaveLength(1);
         expect(await fixture.outboundStores.admissionStore.readReceiptState({ originPeerId: 'self', msgId: roomSend.id.msgId }))
@@ -135,7 +136,7 @@ describe('WS client retry of its own hop after an acknowledgement timeout', () =
 
         const admitted = await fixture.service.acceptIncomingMessage(serverNotYetInSyncNack(roomSend));
         await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS);
-        await settleCommittedOutboundBatch();
+        await runOutboundWorkTask(fixture.service);
 
         expect(admitted.right).toEqual({ kind: 'control', handled: false });
         expect(fixture.controlAdmissions).toEqual([{ targetMsgId: roomSend.id.msgId, outcome: 'not-handled' }]);
@@ -193,8 +194,8 @@ describe('WS client retry of its own hop after an acknowledgement timeout', () =
         const held = holdOutboundClaims(reloaded.checkpointStores);
         reloaded.checkpointStores.checkpoint.flush();
         await vi.waitFor(() => expect(reloaded.observer.getCounts().byKind.write).toBeGreaterThanOrEqual(1));
-        reloaded.service.close();
-        await held.release();
+        await reloaded.service.close();
+        await held.release(reloaded.service);
 
         const restored = createCheckpointedOwnHopRetryFixture(dbName);
 
@@ -213,18 +214,20 @@ function createOwnHopRetryFixture(): OwnHopRetryFixture {
     socket.ws = native;
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage });
     const controlAdmissions: ControlAdmissionObservation[] = [];
-    const service = createDefaultWsQueueBoxClientService({
-        outbox: new InMemoryQueueBox(new Map()),
-        socket,
-        sessionId: 'self',
-        serverPeerId: SERVER_PEER_ID,
-        outboundStores,
-        outboundDiagnostics: (event) => {
-            if (event.kind === 'control-admission') {
-                controlAdmissions.push({ targetMsgId: event.targetMsgId, outcome: event.outcome });
+    const service = createOutboundRuntimeWithWorkTask(() =>
+        createDefaultWsQueueBoxClientService({
+            outbox: new InMemoryQueueBox(new Map()),
+            socket,
+            sessionId: 'self',
+            serverPeerId: SERVER_PEER_ID,
+            outboundStores,
+            outboundDiagnostics: (event) => {
+                if (event.kind === 'control-admission') {
+                    controlAdmissions.push({ targetMsgId: event.targetMsgId, outcome: event.outcome });
+                }
             }
-        }
-    }).enableDefaultCallbacks();
+        }).enableDefaultCallbacks()
+    );
     onTestFinished(() => service.close());
     return { service, sentFrames: native.sent, outboundStores, controlAdmissions };
 }
@@ -252,18 +255,23 @@ function createCheckpointedOwnHopRetryFixture(dbName: string): CheckpointedOwnHo
     // A browser hands its WS client a started engine, whose first pass opens the lane's stores and restores the checkpoint.
     const queueEngine = new InboxOutboxEngine();
     queueEngine.start();
-    const service = createDefaultWsQueueBoxClientService({
-        queueEngine,
-        outbox: new InMemoryQueueBox(new Map()),
-        socket,
-        sessionId: 'self',
-        serverPeerId: SERVER_PEER_ID,
-        outboundCheckpointStores: checkpointStores,
-        durableWorkOwnership: ownership
-    }).enableDefaultCallbacks();
-    onTestFinished(() => {
-        service.close();
-        queueEngine.stop();
+    const service = createOutboundRuntimeWithWorkTask(() =>
+        createDefaultWsQueueBoxClientService({
+            queueEngine,
+            outbox: new InMemoryQueueBox(new Map()),
+            socket,
+            sessionId: 'self',
+            serverPeerId: SERVER_PEER_ID,
+            outboundCheckpointStores: checkpointStores,
+            durableWorkOwnership: ownership
+        }).enableDefaultCallbacks()
+    );
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.close(), queueEngine.stop()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { service, sentFrames: native.sent, checkpointStores, observer, storage };
 }
@@ -272,7 +280,7 @@ function createCheckpointedOwnHopRetryFixture(dbName: string): CheckpointedOwnHo
 async function enqueueAndSettle(service: WsQueueBoxClientService, msg: ALMessage): Promise<void> {
     const result = await service.enqueueOutboxIfAbsent(msg);
     expect(result.verdict).toMatchObject({ kind: 'admitted' });
-    await settleCommittedOutboundBatch();
+    await runOutboundWorkTask(service);
 }
 
 /** The shape the browser gives a command channel send addressed to the server (`sendWs` with a `peerId`). */

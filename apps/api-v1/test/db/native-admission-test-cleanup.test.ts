@@ -227,7 +227,16 @@ Deno.test('native database close failure remains observable beside progress fail
     assert.equal(backgroundFailure.cause.errors[1].message, 'Native admission cleanup failed: database close');
 });
 
-function createNativeAdmissionCleanupFixture(failures: ReadonlyMap<string, Error>, primaryFailure: Error | undefined) {
+interface NativeAdmissionCleanupFixture {
+    readonly cleanup: NativeAdmissionTestCleanup;
+    readonly calls: string[];
+    readonly secondaryFailures: AggregateError[];
+}
+
+function createNativeAdmissionCleanupFixture(
+    failures: ReadonlyMap<string, Error>,
+    primaryFailure: Error | undefined
+): NativeAdmissionCleanupFixture {
     const calls: string[] = [];
     const secondaryFailures: AggregateError[] = [];
     const backgroundProducersStopped = Promise.withResolvers<void>();

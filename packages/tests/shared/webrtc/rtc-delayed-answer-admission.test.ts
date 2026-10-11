@@ -66,12 +66,15 @@ it('settles an answer delayed by admission conflict without applying it to a rep
             await releaseBlocker.promise;
         }
     });
-    onTestFinished(() => {
+    onTestFinished(async () => {
         releaseBlocker.resolve();
         connectionService.removePeerIfPresent('sender');
-        queueBoxClient.close();
-        queueEngine.stop();
+        const cleanup = await Promise.allSettled([queueBoxClient.close(), queueEngine.stop()]);
         nativeRuntime.dispose();
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     queueEngine.start();
     const connecting = connectionService.connectSignaler();

@@ -85,9 +85,12 @@ async function createReplayFixture(): Promise<ReplayFixture> {
         queueEngine: engine,
         readAuthenticatedConnectionScope: () => proof
     });
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     const bridge = new RecordingBridge();
     await installQueueBoxPubSubBridge({

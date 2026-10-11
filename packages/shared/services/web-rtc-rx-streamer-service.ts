@@ -288,17 +288,46 @@ export class WebRtcRxStreamerService {
     }
 
     stopAllHeartbeats(): void {
+        let failure: Error | undefined;
         for (const heartbeat of this.heartbeatByPeerId.values()) {
-            heartbeat.stop();
+            try {
+                heartbeat.stop();
+            }
+            catch (caught) {
+                failure ??= toError(caught);
+            }
         }
         this.heartbeatByPeerId.clear();
+        if (failure) {
+            throw failure;
+        }
     }
 
-    dispose(): void {
+    async dispose(): Promise<void> {
         this.disposed = true;
-        this.dependencies.roomAuthorityRefresh?.dispose();
-        this.inboundRuntime.dispose();
-        this.stopAllHeartbeats();
+        let failure: Error | undefined;
+        try {
+            this.dependencies.roomAuthorityRefresh?.dispose();
+        }
+        catch (caught) {
+            failure = toError(caught);
+        }
+        const disposingInbound = this.inboundRuntime.dispose();
+        try {
+            this.stopAllHeartbeats();
+        }
+        catch (caught) {
+            failure ??= toError(caught);
+        }
+        try {
+            await disposingInbound;
+        }
+        catch (caught) {
+            failure ??= toError(caught);
+        }
+        if (failure) {
+            throw failure;
+        }
     }
 
     setRttReportingPeerIds(peerIds: readonly PeerId[]): void {

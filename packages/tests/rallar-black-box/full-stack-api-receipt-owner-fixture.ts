@@ -64,7 +64,12 @@ function subject(): ALMessage {
     };
 }
 
-async function createSocket() {
+interface ReceiptOwnerSocket {
+    readonly socket: JsonWebSocketServer;
+    readonly origin: SimulatedWebSocket;
+}
+
+async function createSocket(): Promise<ReceiptOwnerSocket> {
     const socket = new JsonWebSocketServer();
     const origin = new SimulatedWebSocket('ws://origin');
     const recipient = new SimulatedWebSocket('ws://recipient');
@@ -94,11 +99,24 @@ export async function writePendingReceiptOwnerEvidence(
     Date.now = () => clock.nowMs;
     try {
         const fixture = new ReceiptOwnerFixture(await createSocket(), clock, sink);
+        let bodyFailed = false;
         try {
             await fixture.run(evidencePath, scenario);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw caught;
+        }
         finally {
-            fixture.dispose();
+            await fixture.dispose().catch((caught) => {
+                if (!bodyFailed) {
+                    throw caught;
+                }
+                try {
+                    console.error('Receipt owner cleanup failed after body failure:', caught);
+                }
+                catch { /* Diagnostic failure cannot replace the original body error. */ }
+            });
         }
     }
     finally {
@@ -229,9 +247,12 @@ class ReceiptOwnerFixture {
         await writeFile(evidencePath, JSON.stringify(this.effects));
     }
 
-    dispose(): void {
-        this.service.dispose();
-        this.engine.stop();
+    async dispose(): Promise<void> {
+        const outcomes = await Promise.allSettled([this.service.dispose(), this.engine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     }
 
     private holdClaims(): void {

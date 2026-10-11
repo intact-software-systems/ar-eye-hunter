@@ -165,7 +165,7 @@ describe('browser RTC runtime composition', () => {
             }
             finally {
                 try {
-                    queueBox.close();
+                    await queueBox.close();
                 }
                 finally {
                     nativeRuntime.dispose();

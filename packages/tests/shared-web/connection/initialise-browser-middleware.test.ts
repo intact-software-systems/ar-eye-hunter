@@ -22,14 +22,18 @@ import {
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { createBrowserRtcCapture } from '@shared-web/browser/rtc/create-browser-rtc-capture.ts';
 import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
+import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import * as stateSnapshots from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import * as websocketFactory from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import * as wsClientFactory from '@shared/services/ws-queue-box-client-service.ts';
+import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
@@ -283,3 +287,188 @@ describe('the outbound diagnostics sink a connect hands its middleware', () => {
         expect(ws.outboundDiagnostics).toBe(middleware.outboundDiagnostics);
     });
 });
+
+describe('failed browser startup owns acquired transport completion', () => {
+    it('preserves the real WS connection Error when the startup reporting sink throws and joins acquired engine work', async () => {
+        const failure = new Error('initial WS connection');
+        const sinkFailure = new Error('startup reporting sink');
+        const gate = Promise.withResolvers<void>();
+        const entered = Promise.withResolvers<void>();
+        let readFinished = false;
+        let acquiredEngine: InboxOutboxEngine | undefined;
+        let completed = false;
+        onTestFinished(async () => {
+            gate.resolve();
+            if (acquiredEngine) {
+                await acquiredEngine.stop();
+            }
+            vi.restoreAllMocks();
+        });
+        vi.spyOn(console, 'error').mockImplementation(() => {
+            throw sinkFailure;
+        });
+        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({ apiBaseUrl: 'http://test', wsBaseUrl: 'ws://test', endpoints: { createWs: '/ws' } });
+        const original = wsClientFactory.createDefaultWsQueueBoxClientService;
+        vi.spyOn(wsClientFactory, 'createDefaultWsQueueBoxClientService').mockImplementation((input) => {
+            if (!input.queueEngine) {
+                throw new Error('Browser startup must supply its owned queue engine');
+            }
+            acquiredEngine = input.queueEngine;
+            input.queueEngine.includeTask('initial-connect-readiness', {
+                name: 'initial-connect-readiness',
+                maxConcurrency: () => 1,
+                ongoingTasks: [],
+                runnable: () => {},
+                isWork: async () => {
+                    entered.resolve();
+                    await gate.promise;
+                    readFinished = true;
+                    return false;
+                }
+            });
+            void input.queueEngine.executeOnce();
+            return original(input);
+        });
+        vi.spyOn(JsonWebSocketClient.prototype, 'connect').mockImplementation(async () => {
+            await entered.promise;
+            throw failure;
+        });
+        const outcome = initialiseMiddleware(SESSION, 'rtc', OPTIONS).catch((error) => {
+            completed = true;
+            return error;
+        });
+        await entered.promise;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        try {
+            expect(completed).toBe(false);
+            expect(readFinished).toBe(false);
+        }
+        finally {
+            gate.resolve();
+        }
+        expect(await outcome).toBe(failure);
+        expect(readFinished).toBe(true);
+    });
+
+    it.each((['rtc-request', 'state', 'heartbeat'] as const).flatMap((boundary) => ['records', 'throws'].map((reporting) => ({ boundary, reporting }))))(
+        'joins acquired WS and engine work after $boundary fails and cleanup reporting $reporting',
+        async ({ boundary, reporting }) => {
+            const failure = new Error(`startup-${boundary}`);
+            const reported = vi.spyOn(console, 'error').mockImplementation(() => {
+                if (reporting === 'throws') {
+                    throw new Error('reporting failed');
+                }
+            });
+            const cleanupFailure = new Error('secondary socket cleanup failure');
+            const gate = Promise.withResolvers<void>();
+            const entered = Promise.withResolvers<void>();
+            const failed = Promise.withResolvers<void>();
+            let completed = false;
+            let readFinished = false;
+            let acquired: { engine: InboxOutboxEngine; close: () => Promise<void>; } | undefined;
+            onTestFinished(async () => {
+                gate.resolve();
+                if (acquired) {
+                    await Promise.allSettled([acquired.close(), acquired.engine.stop()]);
+                }
+                vi.restoreAllMocks();
+            });
+            configureFailedStartup(boundary, failure, failed.resolve);
+            const socketClosed = vi.fn();
+            vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockImplementation(async (input) => {
+                const service = createDefaultWsQueueBoxClientService({
+                    sessionId: input.clientData.sessionId,
+                    serverPeerId: input.serverPeerId,
+                    socket: input.socket,
+                    queueEngine: input.qboxEngine,
+                    outbox: new InMemoryQueueBox(),
+                    inboundStores: input.inboundStores
+                });
+                vi.spyOn(input.socket, 'close').mockImplementation(() => {
+                    socketClosed();
+                    throw cleanupFailure;
+                });
+                acquired = { engine: input.qboxEngine, close: () => service.close() };
+                input.qboxEngine.includeTask('startup-readiness', {
+                    name: 'startup-readiness',
+                    maxConcurrency: () => 1,
+                    ongoingTasks: [],
+                    runnable: () => {},
+                    isWork: async () => {
+                        entered.resolve();
+                        await gate.promise;
+                        readFinished = true;
+                        return false;
+                    }
+                });
+                void input.qboxEngine.executeOnce();
+                await entered.promise;
+                return service;
+            });
+            const initialization = initialiseMiddleware(SESSION, 'rtc', OPTIONS);
+            const rejection = initialization.catch((error) => {
+                completed = true;
+                return error;
+            });
+            await failed.promise;
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            try {
+                expect(readFinished).toBe(false);
+                expect(completed, 'Startup failure escaped before acquired engine completion').toBe(false);
+                expect(socketClosed).toHaveBeenCalledOnce();
+            }
+            finally {
+                gate.resolve();
+            }
+            expect(await rejection).toBe(failure);
+            expect(reported).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    errors: [expect.objectContaining({ errors: [cleanupFailure] })]
+                })
+            );
+            expect(readFinished).toBe(true);
+        }
+    );
+});
+
+function configureFailedStartup(
+    boundary: 'rtc-request' | 'state' | 'heartbeat',
+    failure: Error,
+    failed: () => void
+): void {
+    const reject = async () => {
+        failed();
+        throw failure;
+    };
+    vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({ apiBaseUrl: 'http://test', wsBaseUrl: 'ws://test', endpoints: { createWs: '/ws' } });
+    const ice = vi.spyOn(connectionHttp, 'readIceCandidates');
+    if (boundary === 'rtc-request') {
+        ice.mockImplementation(reject);
+        return;
+    }
+    ice.mockResolvedValue({ iceServers: [], expiresAtEpochMs: 1000 });
+    const service = createConnectionService();
+    const capture = createBrowserRtcCapture({
+        configuration: OPTIONS.rtcCaptureConfiguration,
+        connectionId: { status: 'observed', value: 'startup' },
+        record: () => {},
+        nowEpochMs: () => 1
+    });
+    onTestFinished(() => service.disposeNativeObservations());
+    const middleware =
+        createDefaultApiMiddlewareTestDouble({ middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } } }).middleware;
+    vi.spyOn(rtcEngine, 'initialiseRtcConnectionService').mockResolvedValue({ webRtcConnectionService: service, rtcCaptureReceipt: capture.receipt });
+    vi.spyOn(rtcEngine, 'initialiseRtcOverlayMulticastManager').mockReturnValue(middleware.webRtcOverlayMulticastManager);
+    vi.spyOn(rtcEngine, 'initialiseRtcRxStreamer').mockReturnValue(middleware.rtcRxStreamer);
+    vi.spyOn(WebRtcGroupManager.prototype, 'startReconcileWakes').mockImplementation(() => {});
+    vi.spyOn(browserStateCacheLifecycle, 'initialise').mockImplementation(() => {});
+    const refresh = vi.spyOn(stateSnapshots, 'refreshStateSnapshots');
+    if (boundary === 'state') {
+        refresh.mockImplementation(reject);
+        return;
+    }
+    refresh.mockResolvedValue({ clients: [], groups: [] });
+    vi.spyOn(browserStateCacheLifecycle, 'hydrate').mockResolvedValue();
+    vi.spyOn(heartbeat, 'initHeartbeat').mockImplementation(reject);
+}

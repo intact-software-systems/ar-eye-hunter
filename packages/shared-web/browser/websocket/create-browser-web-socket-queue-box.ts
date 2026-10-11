@@ -3,6 +3,7 @@ import {
     createBrowserALVolatileOutboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { reportBrowserStartupCleanupFailure } from '@shared-web/browser/connection/close-browser-transport-resources.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -23,6 +24,7 @@ import type { ClientInfo } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import WsQueueBoxClientService, {
     createDefaultWsQueueBoxClientService,
@@ -68,7 +70,14 @@ export async function createBrowserWebSocketQueueBox(
     input: CreateBrowserWebSocketQueueBox.Input
 ): Promise<WsQueueBoxClientService> {
     const wsQueueBox = createBrowserWebSocketQueueBoxService(input);
-    await connectInitialSocket(wsQueueBox.socket, input);
+    try {
+        await connectInitialSocket(wsQueueBox.socket, input);
+    }
+    catch (caught) {
+        await wsQueueBox.close(1000, 'initial-connect-failed')
+            .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+        throw caught;
+    }
     wsQueueBox
         .enableReconnect()
         .enableDefaultCallbacks();

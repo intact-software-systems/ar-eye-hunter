@@ -26,6 +26,8 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import '../../../setup-browser-indexeddb.ts';
 
+import type { ALCheckpointOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALStorageHealthStatus } from '@shared/alm/storage/al-storage-event.ts';
 import {
     createTakeableDurableWorkOwnership,
     GLOBAL_CHECKPOINT_TIMERS,
@@ -33,6 +35,7 @@ import {
 } from '../checkpoint/al-checkpoint-test-support.ts';
 import {
     createOutboundMessage,
+    createOutboundRuntimeWithWorkTask,
     createVolatileOutboundTestStores,
     holdOutboundClaims,
     OUTBOUND_LEASE_RECOVERY_BOUND_MS
@@ -76,8 +79,8 @@ describe('the checkpoint lane of an outbound runtime', () => {
         await reloaded.runtime.enqueueIfAbsent(createOutboundMessage('checkpoint-unsent'));
         reloaded.runtime.flushCheckpoint();
         await vi.waitFor(() => expect(reloaded.observer.getCounts().byKind.write).toBe(1));
-        reloaded.runtime.dispose();
-        await held.release();
+        await reloaded.runtime.dispose();
+        await held.release(reloaded.runtime);
 
         const restored = createCheckpointTestRuntime({ dbName, owned: true });
         await restored.runtime.ready();
@@ -98,8 +101,8 @@ describe('the checkpoint lane of an outbound runtime', () => {
         await closing.runtime.enqueueIfAbsent(createOutboundMessage('checkpoint-left'));
         closing.runtime.flushCheckpoint();
         await vi.waitFor(() => expect(session.checkpointObserver.getCounts().byKind.write).toBe(1));
-        closing.runtime.dispose();
-        await held.release();
+        await closing.runtime.dispose();
+        await held.release(closing.runtime);
 
         waiting.ownership.take();
 
@@ -119,12 +122,13 @@ describe('the checkpoint lane of an outbound runtime', () => {
         const clock = { nowMs: Date.now() };
         const abandonedSend = Promise.withResolvers<ALOutboundSettledSendResult>();
         const reloaded = createCheckpointTestRuntime({ dbName, owned: true, clock, abandonedSend: abandonedSend.promise });
+        let disposing: Promise<void> | undefined;
         try {
             await reloaded.runtime.enqueueIfAbsent(createOutboundMessage('checkpoint-reserved'));
             await vi.waitFor(() => expect(reloaded.attempted).toEqual(['checkpoint-reserved']));
             reloaded.runtime.flushCheckpoint();
             await vi.waitFor(() => expect(reloaded.observer.getCounts().byKind.write).toBe(1));
-            reloaded.runtime.dispose();
+            disposing = reloaded.runtime.dispose();
             clock.nowMs += OUTBOUND_LEASE_RECOVERY_BOUND_MS;
 
             const restored = createCheckpointTestRuntime({ dbName, owned: true, clock });
@@ -134,7 +138,7 @@ describe('the checkpoint lane of an outbound runtime', () => {
         }
         finally {
             abandonedSend.resolve({ status: 'cancelled', submissionAttempted: false });
-            await reloaded.runtime.dispose();
+            await (disposing ?? reloaded.runtime.dispose());
         }
     });
 
@@ -182,7 +186,18 @@ interface CheckpointTestRuntimeInput {
     readonly withoutCheckpointLane?: boolean;
 }
 
-function createCheckpointTestRuntime(input: CheckpointTestRuntimeInput) {
+interface CheckpointRuntimeFixture {
+    readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
+    readonly checkpointStores: ALCheckpointOutboundRuntimeStores<OutboundTestPayload>;
+    readonly observer: CountingIndexedDbOperationObserver;
+    readonly storage: ALStorageEvent[];
+    readonly settlements: ALDeliverySettlement[];
+    readonly sent: string[];
+    readonly attempted: string[];
+    readonly readStatuses: () => ALStorageHealthStatus[];
+}
+
+function createCheckpointTestRuntime(input: CheckpointTestRuntimeInput): CheckpointRuntimeFixture {
     const settlements: ALDeliverySettlement[] = [];
     const sent: string[] = [];
     const attempted: string[] = [];
@@ -190,33 +205,35 @@ function createCheckpointTestRuntime(input: CheckpointTestRuntimeInput) {
     const observer = createCheckpointTestObserver(input.fault);
     const ownership = createTakeableDurableWorkOwnership(input.owned);
     const { checkpointStores, storage } = createCheckpointTestStores(input, ownership, observer);
-    const runtime: ALOutboundMessageRuntime<OutboundTestPayload> = createDefaultALOutboundMessageRuntime({
-        decodePreparedMessage: decodeOutboundTestPayload,
-        queueEngine: new InboxOutboxEngine(),
-        outbox: new InMemoryQueueBox(new Map()),
-        volatileStores: createVolatileOutboundTestStores(),
-        checkpointStores: input.withoutCheckpointLane === true ? undefined : checkpointStores,
-        durableWorkOwnership: ownership,
-        nowMs,
-        carrier: 'ws',
-        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
-        readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-        planOutgoingMessage: (msg) => ({
-            msg,
-            dropReasonCode: undefined,
-            lane: 'checkpoint',
-            preparedMessages: [{ peer: 'receiver' }]
-        }),
-        sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
-            attempted.push(lifecycle.canonicalMessage.route.resourceId);
-            if (input.abandonedSend !== undefined) {
-                return await input.abandonedSend;
-            }
-            sent.push(lifecycle.canonicalMessage.route.resourceId);
-            return { status: 'sent', submissionAttempted: true };
-        },
-        settlements: (event) => settlements.push(event)
-    });
+    const runtime = createOutboundRuntimeWithWorkTask(() =>
+        createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
+            decodePreparedMessage: decodeOutboundTestPayload,
+            queueEngine: new InboxOutboxEngine(),
+            outbox: new InMemoryQueueBox(new Map()),
+            volatileStores: createVolatileOutboundTestStores(),
+            checkpointStores: input.withoutCheckpointLane === true ? undefined : checkpointStores,
+            durableWorkOwnership: ownership,
+            nowMs,
+            carrier: 'ws',
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'checkpoint',
+                preparedMessages: [{ peer: 'receiver' }]
+            }),
+            sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
+                attempted.push(lifecycle.canonicalMessage.route.resourceId);
+                if (input.abandonedSend !== undefined) {
+                    return await input.abandonedSend;
+                }
+                sent.push(lifecycle.canonicalMessage.route.resourceId);
+                return { status: 'sent', submissionAttempted: true };
+            },
+            settlements: (event) => settlements.push(event)
+        })
+    );
     onTestFinished(() => runtime.dispose());
     return {
         runtime,
@@ -242,12 +259,17 @@ function createCheckpointTestObserver(fault: IndexedDbOperationObserver | undefi
     };
 }
 
+interface CheckpointStoreFixture {
+    readonly checkpointStores: ALCheckpointOutboundRuntimeStores<OutboundTestPayload>;
+    readonly storage: ALStorageEvent[];
+}
+
 /** The checkpoint pair under the runtime's ownership, and the storage events its store states. */
 function createCheckpointTestStores(
     input: CheckpointTestRuntimeInput,
     ownership: ALDurableWorkOwnership,
     observer: CountingIndexedDbOperationObserver
-) {
+): CheckpointStoreFixture {
     const storage: ALStorageEvent[] = [];
     const checkpointStores = createCheckpointALOutboundRuntimeStores<OutboundTestPayload>({
         dbName: input.dbName,

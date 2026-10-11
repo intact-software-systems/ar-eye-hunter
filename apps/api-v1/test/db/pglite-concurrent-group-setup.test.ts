@@ -11,8 +11,8 @@ import type { GroupStateInboxService } from '@shared-server/rallar-system/group-
 import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -94,8 +94,7 @@ Deno.test('PGlite ordinary group setup completes for one director and fourteen c
             );
         }
         finally {
-            setup.engine.stop();
-            await setup.engine.executeOnce();
+            await setup.engine.stop();
         }
     });
 });

@@ -263,8 +263,8 @@ describe('canonical outbound payload storage', () => {
         const message = createOutboundMessage('crossing-deadline', { ttlMs: 10 });
         const candidate = operation === 'commit' ? await computeOutboundTestAdmission(store, message) : undefined;
         const admission = await runtime.enqueueIfAbsent(message);
-        runtime.dispose();
-        await claims.release();
+        await runtime.dispose();
+        await claims.release(runtime);
         const crossedKey = crossedAt === 'payload' ? admission.entry!.key : toALOutboundIdentityKey(admission.entry!.key);
         const getItem = backend.workQueue.getItem.bind(backend.workQueue);
         vi.spyOn(backend.workQueue, 'getItem').mockImplementation(async (key) => {

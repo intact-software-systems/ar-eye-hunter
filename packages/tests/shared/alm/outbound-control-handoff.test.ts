@@ -25,6 +25,7 @@ import { RetryableConflictError } from '@shared/resilience/TryWith.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     claimOutboundTestWork,
     createOutboundMessage,
@@ -96,7 +97,8 @@ it('converges two runtime handoffs on one pending owner and one eventual transpo
     const first = createControlRuntime(firstStores, undefined, () => transportCount += 1);
     const second = createControlRuntime(secondStores, undefined, () => transportCount += 1);
     // The commits' own batches claim nothing, so the counts below are the hand-off's alone.
-    const heldClaims = [holdOutboundClaims(firstStores), holdOutboundClaims(secondStores)];
+    const firstHeldClaims = holdOutboundClaims(firstStores);
+    const secondHeldClaims = holdOutboundClaims(secondStores);
 
     const results = await Promise.all([
         first.enqueueIfAbsent(message),
@@ -109,7 +111,7 @@ it('converges two runtime handoffs on one pending owner and one eventual transpo
     expect(retained.filter((entry) => entry.typeId === 'AL_OUTBOUND_IDENTITY')).toHaveLength(1);
     expect(retained.filter((entry) => entry.key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
     expect(browserLocks.requestCount()).toBe(0);
-    await Promise.all(heldClaims.map((held) => held.release()));
+    await Promise.all([firstHeldClaims.release(first), secondHeldClaims.release(second)]);
 
     for (let pass = 0; pass < 3; pass += 1) {
         await runOutboundWorkTask(first);
@@ -146,7 +148,7 @@ it.each(
     const heldClaims = holdOutboundClaims(stores);
 
     expect((await runtime.enqueueIfAbsent(message)).verdict.kind).toBe('pending');
-    await heldClaims.release();
+    await heldClaims.release(runtime);
     if (state !== 'NEW') {
         const [claim] = await claimOutboundTestWork(stores, 1);
         expect(claim).toBeDefined();
@@ -315,7 +317,7 @@ function createControlRuntime(
         throw new Error('Unexpected outbound transport');
     },
     queueEngine = new InboxOutboxEngine()
-) {
+): ALOutboundMessageRuntime<OutboundTestPayload> {
     return createOutboundTestRuntimeFor({
         stores,
         queueEngine,

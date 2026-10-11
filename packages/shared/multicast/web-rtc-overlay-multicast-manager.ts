@@ -121,6 +121,9 @@ import {
     toRtcTargetedRepairCopy
 } from './web-rtc-overlay-missing-recipient-repair.ts';
 
+/** Which plan of the session's own message this is; only a new admission's plan reads backpressure (D184). */
+type RtcOutgoingPlanStage = 'admission' | 'dequeue' | 'replan' | 'hand-over';
+
 export namespace WebRtcOverlayMulticastManager {
     export interface Channel {
         readHealth(): Pick<RtcDataChannelHealth, 'readyState' | 'bufferedAmount' | 'flowControl'>;
@@ -153,9 +156,6 @@ export namespace WebRtcOverlayMulticastManager {
         readonly faultPort: TransportFaultPort;
     }
 }
-
-/** Which plan of the session's own message this is; only a new admission's plan reads backpressure (D184). */
-type RtcOutgoingPlanStage = 'admission' | 'dequeue' | 'replan' | 'hand-over';
 
 export class WebRtcOverlayMulticastManager {
     public static readonly ENQUEUE_TYPE = EnqueuedType.RTC_OUTBOX;
@@ -243,10 +243,11 @@ export class WebRtcOverlayMulticastManager {
         return multicaster;
     }
 
-    dispose(): void {
+    async dispose(): Promise<void> {
         this.disposed = true;
-        this.outboundRuntime.dispose();
+        const disposingOutbound = this.outboundRuntime.dispose();
         this.multicasterByOverlayId.clear();
+        await disposingOutbound;
     }
 
     cancel(msgId: string): ALOutboundCancelOutcome {

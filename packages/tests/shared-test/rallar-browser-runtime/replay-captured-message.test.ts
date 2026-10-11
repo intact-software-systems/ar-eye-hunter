@@ -55,9 +55,12 @@ function createSessionOutbounds(): SessionOutbounds {
     const rtc = createUnsubmittingOutbound(stores.rtc, 'rtc');
     const ws = createUnsubmittingOutbound(stores.ws, 'ws');
     onTestFinished(async () => {
-        rtc.dispose();
-        ws.dispose();
+        const cleanup = await Promise.allSettled([rtc.dispose(), ws.dispose()]);
         await deleteBrowserALRuntimeEntriesForSession(sessionId, { currentScope: defaultStateScope(), storage: diagnosticsPorts.storage });
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     const wake = vi.fn();
     const replayed: ALMessage[] = [];

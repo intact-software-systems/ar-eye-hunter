@@ -32,6 +32,7 @@ import {
     createInboundTestRuntime,
     INBOUND_TEST_SOURCE
 } from '../inbound-runtime-test-fixture.ts';
+import type { InboundTestRuntime } from '../inbound-runtime-test-fixture.ts';
 import { createOutboundMessage } from '../outbound-runtime-test-fixture.ts';
 import { createOutboundTestSession, createSessionOutboundTestRuntime } from '../session-outbound-test-runtime.ts';
 import {
@@ -84,7 +85,7 @@ describe('ALWorkHandler under a session ownership', () => {
     it('takes nothing over once disposed', async () => {
         const fixture = createOwnedHandler(createTestDurableWorkOwnership(false));
 
-        fixture.handler.dispose();
+        await fixture.handler.dispose();
         fixture.ownership.take();
         await fixture.ownership.owned.whenIdle();
         await fixture.engine.executeOnce();
@@ -132,7 +133,7 @@ describe('two outbound runtimes of one session store', () => {
         const session = createOutboundTestSession();
         const previous = createSessionOutboundTestRuntime(session, createTestDurableWorkOwnership(true));
         await previous.runtime.ready();
-        previous.runtime.dispose();
+        await previous.runtime.dispose();
         const other = createSessionOutboundTestRuntime(session, createTestDurableWorkOwnership(false));
         await other.runtime.enqueueIfAbsent(createOutboundMessage('durable-1'));
 
@@ -249,7 +250,12 @@ function createOwnedHandler<TOwnership extends ALDurableWorkOwnership>(ownership
     };
 }
 
-function createInboundSessionRuntime(namespace: string, ownership: TestDurableWorkOwnership) {
+interface InboundSessionFixture {
+    readonly fixture: InboundTestRuntime;
+    readonly ownership: TestDurableWorkOwnership;
+}
+
+function createInboundSessionRuntime(namespace: string, ownership: TestDurableWorkOwnership): InboundSessionFixture {
     const fixture = createInboundTestRuntime({
         stores: createDefaultIndexedDbALInboundRuntimeStores({ dbName: namespace, namespace }),
         carrier: 'ws',

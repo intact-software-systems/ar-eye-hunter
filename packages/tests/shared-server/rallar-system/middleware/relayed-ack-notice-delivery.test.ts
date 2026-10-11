@@ -71,9 +71,11 @@ describe('middleware relayed ACK notices', () => {
     });
 });
 
-function createMemoryTransport(): RelayedAckNoticeTransport & {
+interface MemoryRelayedAckNoticeTransport extends RelayedAckNoticeTransport {
     readonly published: RelayedAckNotice[];
-} {
+}
+
+function createMemoryTransport(): MemoryRelayedAckNoticeTransport {
     const published: RelayedAckNotice[] = [];
     const subscribers: Array<(notice: RelayedAckNotice) => Promise<void> | void> = [];
     return {
@@ -147,9 +149,12 @@ async function createMiddlewareInstance(input: MiddlewareInstanceInput): Promise
                 }
                 : { authorized: true }
     });
-    onTestFinished(() => {
-        runtime.wsQBoxServerService.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([runtime.wsQBoxServerService.dispose(), engine.stop()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     await runtime.liveWsNoticeSubscriberReadiness;
     return { service: runtime.wsQBoxServerService, sockets };

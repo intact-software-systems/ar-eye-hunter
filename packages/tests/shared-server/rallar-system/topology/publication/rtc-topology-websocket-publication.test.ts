@@ -43,7 +43,7 @@ import {
 } from 'vitest';
 import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
-import { settleCommittedOutboundBatch } from '../../../../shared/wait-for-al-outbound-work.ts';
+import { createOutboundRuntimeWithWorkTask, runOutboundWorkTask } from '../../../../shared/alm/outbound-runtime-test-fixture.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createRtcTopologyReplayFixture } from '../replay/consumer/rtc-topology-replay-fixture.ts';
 
@@ -307,12 +307,14 @@ describe('RTC topology websocket publication', () => {
         const appOutbox = new InMemoryQueueBox(new Map());
         const runtimeRepository = new FakeRuntimeStateRepository();
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
-        const service = createDefaultWsQueueBoxServerService({
-            readAuthenticatedConnectionScope: () => undefined,
-            outbox: wsOutbox,
-            socket: server,
-            name: 'server-1'
-        });
+        const service = createOutboundRuntimeWithWorkTask(() =>
+            createDefaultWsQueueBoxServerService({
+                readAuthenticatedConnectionScope: () => undefined,
+                outbox: wsOutbox,
+                socket: server,
+                name: 'server-1'
+            })
+        );
         onTestFinished(() => service.dispose());
         installTestTopologyOutbox(service, {
             topologyPlanning: createTopologyOwners().planning,
@@ -332,7 +334,7 @@ describe('RTC topology websocket publication', () => {
         );
 
         await service.enqueueOutboxIfAbsent(message);
-        await settleCommittedOutboundBatch();
+        await runOutboundWorkTask(service);
 
         const resilience = createResilience();
         expect(
@@ -435,7 +437,9 @@ function countSentTopologyMessages(sockets: ReadonlyMap<string, FakeSocket>): nu
         .filter((sent) => sent.payload.typeId === AppTopics.overlayTopology).length;
 }
 
-function createTopologyExecutionDependencies(runtimeRepository: FakeRuntimeStateRepository) {
+function createTopologyExecutionDependencies(
+    runtimeRepository: FakeRuntimeStateRepository
+): Pick<InstallTopologyAppOutboxOptions, 'database' | 'formationAutomation' | 'executionRepository'> {
     return {
         database: createUnusedDatabase(),
         formationAutomation: {

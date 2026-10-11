@@ -56,6 +56,7 @@ export function createDefaultApiMiddlewareTestDouble(
                 ...middlewareOverrides.webRtcGroupManager
             }),
             webRtcOverlayMulticastManager: toServiceTestDouble<RallarBrowserMiddleware['webRtcOverlayMulticastManager']>({
+                dispose: vi.fn<NonNullable<RallarBrowserMiddleware['webRtcOverlayMulticastManager']>['dispose']>(() => Promise.resolve()),
                 ...middlewareOverrides.webRtcOverlayMulticastManager
             }),
             heartbeat: createHeartbeatDouble(
@@ -212,7 +213,7 @@ function createRtcRxStreamerDouble(
         setMediaPolicy: vi.fn(),
         stopLocalMedia: vi.fn(),
         stopAllHeartbeats: vi.fn(),
-        dispose: vi.fn(),
+        dispose: vi.fn<RallarBrowserMiddleware['rtcRxStreamer']['dispose']>(() => Promise.resolve()),
         ...override
     });
 

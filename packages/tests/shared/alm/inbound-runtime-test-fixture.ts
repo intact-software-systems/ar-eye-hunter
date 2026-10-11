@@ -29,7 +29,7 @@ import {
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
-import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import type { ALInboundRuntimeDiagnosticsEvent, ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier } from '@shared/alm/inbound/al-inbound-source-validation.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import {
@@ -161,6 +161,8 @@ export interface CreateInboundTestRuntimeInput {
     readonly durableWorkOwnership?: ALDurableWorkOwnership;
     /** Absent composes the runtime as the server does: no recovery owner is told of a resynchronization. */
     readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
+    /** Absent preserves uncaptured diagnostics; a measurement may observe the actual batch publication boundary. */
+    readonly acknowledgementCapture?: ALInboundRuntimeDiagnosticsSink['acknowledgementCapture'];
 }
 
 /** The runtime never owns its engine here: a test drives every round it runs beyond a commit's own. */
@@ -200,7 +202,11 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
             }
         },
         onResyncRequired: input.onResyncRequired,
-        diagnostics: (event) => diagnostics.push(event),
+        diagnostics: Object.assign((event: ALInboundRuntimeDiagnosticsEvent) => {
+            diagnostics.push(event);
+        }, {
+            acknowledgementCapture: input.acknowledgementCapture
+        }),
         effectWorkerId: input.effectWorkerId
     });
     onTestFinished(() => runtime.dispose());

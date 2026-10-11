@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
@@ -84,11 +84,13 @@ interface ReceiptLoop {
 }
 
 describe('cross-carrier all-recipient receipts', () => {
-    afterEach(() => {
-        vi.useRealTimers();
-        vi.restoreAllMocks();
-        vi.unstubAllGlobals();
-        SimulatedWebSocket.instances.length = 0;
+    beforeEach(() => {
+        onTestFinished(() => {
+            vi.useRealTimers();
+            vi.restoreAllMocks();
+            vi.unstubAllGlobals();
+            SimulatedWebSocket.instances.length = 0;
+        });
     });
 
     it('acknowledges the origin only after both real WS duplicate ACKs reach the server', async () => {
@@ -253,9 +255,12 @@ async function createReceiptLoopServer(): Promise<ReceiptLoopServer> {
                 : { authorized: true }
     });
     engine.start();
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([service.dispose(), engine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { service, sockets };
 }
@@ -285,9 +290,12 @@ async function createReceiptLoopPeer(
     });
     ws.enableDefaultCallbacks();
     engine.start();
-    onTestFinished(() => {
-        ws.close();
-        engine.stop();
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([ws.close(), engine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { ws, socket: native, engine, inboundStores, settlements };
 }

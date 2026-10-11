@@ -1,6 +1,12 @@
+import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
@@ -39,7 +45,11 @@ interface MediaPeerFixture {
 }
 
 describe('WebRtcRxStreamerService media lifecycle', () => {
-    afterEach(() => vi.restoreAllMocks());
+    beforeEach(() =>
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        })
+    );
 
     it('hydrates new peers with cached media settings and publishes remote streams', async () => {
         const fixture = createMediaFixture();
@@ -93,7 +103,13 @@ describe('WebRtcRxStreamerService media lifecycle', () => {
     });
 });
 
-function createMediaFixture(): MediaFixture {
+interface MediaFixtureInput {
+    readonly queueEngine?: InboxOutboxEngine;
+    readonly inboundStores?: ALInboundRuntimeStores;
+    readonly roomAuthorityRefresh?: WebRtcRxStreamerService.RoomAuthorityRefresh;
+}
+
+function createMediaFixture(input: MediaFixtureInput = {}): MediaFixture {
     const multicast = new WebRtcOverlayMulticastManager({
         connectionService: {
             input: { sessionId: 'self' },
@@ -114,10 +130,13 @@ function createMediaFixture(): MediaFixture {
         faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
-    const service = createDefaultWebRtcRxStreamerService({ multicast, sessionId: 'self' });
-    onTestFinished(() => {
-        service.dispose();
-        multicast.dispose();
+    const service = createDefaultWebRtcRxStreamerService({ multicast, sessionId: 'self', ...input });
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), multicast.dispose()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     service.setRttReportingPeerIds([]);
     return { service, ...createMediaPeerFixture() };
@@ -156,3 +175,100 @@ function createMediaPeerFixture(): MediaPeerFixture {
         stoppedMediaKinds
     };
 }
+
+describe('RTC receiver owned inbound completion', () => {
+    it.each(['clean', 'authority-failure', 'release-failure'] as const)('joins direct commit-started release and attempts cleanup for %s', async (ending) => {
+        const engine = new InboxOutboxEngine();
+        const resources = createDefaultALInboundRuntimeResources({
+            queueEngine: engine,
+            selfPeerId: 'self',
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        });
+        const entered = Promise.withResolvers<void>();
+        const allowRelease = Promise.withResolvers<void>();
+        const failure = new ALAdmissionCorruptionError('receiver-release', new Error('owned cleanup failed'));
+        let releaseFinished = false;
+        const releaseEntries = resources.workQueue.releaseEntries.bind(resources.workQueue);
+        const release = vi.spyOn(resources.workQueue, 'releaseEntries').mockImplementation(async (entries) => {
+            if (entries.length > 0) {
+                entered.resolve();
+                await allowRelease.promise;
+            }
+            if (ending === 'release-failure' && entries.length > 0) {
+                throw failure;
+            }
+            const result = await releaseEntries(entries);
+            if (entries.length > 0) {
+                releaseFinished = true;
+            }
+            return result;
+        });
+        const authority = vi.fn(() => {
+            if (ending === 'authority-failure') {
+                throw failure;
+            }
+        });
+        const fixture = createMediaFixture({
+            queueEngine: engine,
+            inboundStores: resources,
+            roomAuthorityRefresh: { afterInboundAdmission: async () => false, dispose: authority }
+        });
+        const registration = vi.spyOn(fixture.peer.channel, 'onRtcMessageDo');
+        const diagnostics = vi.spyOn(console, 'error').mockImplementation(() => {});
+        onTestFinished(async () => {
+            allowRelease.resolve();
+            authority.mockImplementation(() => {});
+            await Promise.allSettled([Promise.resolve().then(() => fixture.service.dispose()), engine.stop()]);
+            release.mockRestore();
+            registration.mockRestore();
+            diagnostics.mockRestore();
+        });
+        fixture.service.onInboxMessageDo('received', { onMessage: async () => {} });
+        fixture.service.setRttReportingPeerIds([]);
+        fixture.service.addPeer(fixture.peer);
+        const receive = registration.mock.calls.at(-1)?.[1];
+        if (!receive) {
+            throw new Error('Real receiver must register its peer admission callback');
+        }
+        await receive.onMessage(
+            newALUnicastMessage('peer-1', { topicId: 'test', resourceId: 'owned', contextId: 'inbound' }, 'self', 'received', {}, { ttlMs: 30_000 }),
+            new MessageEvent('message')
+        );
+        await entered.promise;
+        let completed = false;
+        let startedDisposal: Promise<void>;
+        try {
+            startedDisposal = Promise.resolve(fixture.service.dispose());
+        }
+        catch (caught) {
+            startedDisposal = Promise.reject(caught);
+        }
+        expect(authority).toHaveBeenCalledOnce();
+        const disposal = startedDisposal.then(
+            () => {
+                completed = true;
+                return undefined;
+            },
+            (error) => {
+                completed = true;
+                return error;
+            }
+        );
+        const keysBeforeDisposedAdmission = await resources.workQueue.getAllKeys();
+        await receive.onMessage(
+            newALUnicastMessage('peer-1', { topicId: 'test', resourceId: 'after-dispose', contextId: 'inbound' }, 'self', 'received', {}, { ttlMs: 30_000 }),
+            new MessageEvent('message')
+        );
+        expect(await resources.workQueue.getAllKeys()).toEqual(keysBeforeDisposedAdmission);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        try {
+            expect(authority).toHaveBeenCalledOnce();
+            expect(releaseFinished).toBe(false);
+            expect(completed, 'RTC receiver disposal escaped its direct commit-started release').toBe(false);
+        }
+        finally {
+            allowRelease.resolve();
+        }
+        expect(await disposal).toBe(ending === 'clean' ? undefined : failure);
+    });
+});
