@@ -650,6 +650,33 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'toError'
     }),
+    // These exact generic JSON boundaries guard arrays, objects and primitives
+    // before recursive projection. Only comparison, serialization or its opaque
+    // representation leaves; no unknown input becomes trusted domain state.
+    // Persisted ordering preserves ALM fingerprint bytes and non-JSON conversion.
+    // The overflow cap covers its current magnitude; detailed findings have no
+    // numeric magnitude. Every future touched use still needs whole-owner review.
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonEquals'
+    }),
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'stableJsonStringify'
+    }),
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toStableJson'
+    }),
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toOrderedJson',
+        maximumMagnitude: 3
+    }),
     // These exact JSON readers reject malformed input at the external boundary
     // and recursively produce only RtcBaselineJson. No unknown values propagate
     // into their callers or domain decisions.

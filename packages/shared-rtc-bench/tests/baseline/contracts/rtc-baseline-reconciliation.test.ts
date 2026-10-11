@@ -9,15 +9,33 @@ import { validateRtcBaselineReconciliation } from '../../../baseline/contracts/r
 describe('RTC baseline semantic JSON reconciliation', () => {
     it('accepts reordered nested object keys without changing values', () => {
         expect(validateRtcBaselineReconciliation(
-            { workerCommand: { redactedArgv: { executable: 'deno', arguments: ['run', 'worker.ts'] }, projection: {} } },
-            { workerCommand: { projection: {}, redactedArgv: { arguments: ['run', 'worker.ts'], executable: 'deno' } } }
+            {
+                workerCommand: {
+                    redactedArgv: { executable: 'deno', arguments: ['run', 'worker.ts'] },
+                    projection: { ['\u00e9']: 'first', ['e\u0301']: 'second' }
+                }
+            },
+            {
+                workerCommand: {
+                    projection: { ['e\u0301']: 'second', ['\u00e9']: 'first' },
+                    redactedArgv: { arguments: ['run', 'worker.ts'], executable: 'deno' }
+                }
+            }
+        )).toEqual([]);
+    });
+
+    it('accepts reversed collation-equivalent keys in the observed environment', () => {
+        expect(validateRtcBaselineReconciliation(
+            { allowlistedEnvironment: { ['\u00e9']: 'first', ['e\u0301']: 'second' } },
+            { allowlistedEnvironment: { ['e\u0301']: 'second', ['\u00e9']: 'first' } }
         )).toEqual([]);
     });
 
     it.each([
         ['addition', { existing: '1', added: '2' }],
         ['removal', {}],
-        ['changed value', { existing: '2' }]
+        ['changed value', { existing: '2' }],
+        ['distinct Unicode key', { ['e\u0301']: '1' }]
     ])('rejects environment map %s', (_change, current) => {
         expect(validateRtcBaselineReconciliation(
             { allowlistedEnvironment: { existing: '1' } },
