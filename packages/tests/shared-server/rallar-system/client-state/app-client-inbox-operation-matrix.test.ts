@@ -21,6 +21,7 @@ import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import {
     CLIENT_STATE_TEST_SCOPE as SCOPE,
@@ -28,7 +29,6 @@ import {
     processAppInbox,
     requireRightSnapshot
 } from './app-client-inbox-mutation-test-harness.ts';
-import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 
 describe('AppClientInbox operation matrix', () => {

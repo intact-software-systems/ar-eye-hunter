@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+
 import type { ALAdmissionBackendEntry } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import type {
@@ -44,13 +45,13 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     constructor(
         sql: PSqlSql,
         namespace: string,
-        nowMs: () => number = Date.now
+        nowMs: () => number
     ) {
         this.sql = sql;
         this.nowMs = nowMs;
         this.repository = new PSqlRuntimeStateRepository(sql);
         this.workQueue = new PSqlQueueBox(
-            createPSqlResourceInboxRepository(sql),
+            createPSqlResourceInboxRepository(sql, () => new Date(this.nowMs())),
             () => Temporal.Instant.fromEpochMilliseconds(this.nowMs())
         );
         this.namespace = namespace;
@@ -110,7 +111,7 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
             await this.sql.begin(async (sql) => {
                 requireLivePersistenceWrite(executionExpiresAtMs, this.nowMs());
                 const transaction = createTransactionBoundPSqlRuntimeStateRepository(sql);
-                const work = new PSqlResourceInboxEntryRepository(sql);
+                const work = new PSqlResourceInboxEntryRepository(sql, () => new Date(this.nowMs()));
                 await collector.writeMutations(transaction, mutations);
                 for (const write of workWrites) {
                     const committed = write.kind === 'insert'

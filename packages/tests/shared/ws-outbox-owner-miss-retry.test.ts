@@ -5,8 +5,7 @@ import {
     expect,
     it,
     onTestFinished,
-    vi,
-    type MockInstance
+    vi
 } from 'vitest';
 
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
@@ -34,8 +33,7 @@ import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import {
     ConnectionContext,
-    JsonWebSocketServer,
-    type EncodedJsonWebSocketMessage
+    JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
 
 import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
@@ -46,8 +44,7 @@ const RECIPIENT_SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
 interface WsOutboxTestSocket {
     readonly socket: JsonWebSocketServer;
-    readonly sendEncoded: MockInstance<JsonWebSocketServer['sendEncoded']>;
-    readonly encodedSends: Array<[string, EncodedJsonWebSocketMessage]>;
+    readonly connections: ReadonlyMap<string, TestWebSocket>;
 }
 
 interface CreateWsOutboxServiceInput {
@@ -77,12 +74,13 @@ describe('durable WS outbox owner misses', () => {
         const outboundStores = createSharedOutboundStores(outbox);
         const ownerSocket = createSocket();
         const misses: WsOutboxDeliveryOutcome[] = [];
+        const nonOwnerSocket = createSocket();
         const nonOwnerEngine = new InboxOutboxEngine();
         const nonOwner = createDefaultWsQueueBoxServerService({
             readAuthenticatedConnectionScope: () => undefined,
             outbox,
             outboundStores,
-            socket: createSocket().socket,
+            socket: nonOwnerSocket.socket,
             name: 'server-without-target',
             targetResolver: { resolvePeerRecipients: () => [] },
             outboundDeliveryOutcome: (outcome) => misses.push(outcome),
@@ -118,11 +116,14 @@ describe('durable WS outbox owner misses', () => {
             })
         )).toBe(true);
 
+        expect([...nonOwnerSocket.connections.values()].flatMap((connection) => connection.sent)).toEqual([]);
+        expect([...ownerSocket.connections.values()].flatMap((connection) => connection.sent)).toEqual([]);
+
         vi.advanceTimersByTime(1);
         await drainEngine(ownerEngine);
         await expect.poll(async () => (await readEntry(outbox, entry.key)).status).not.toBe(EntityStatus.RESERVED);
         expect((await readEntry(outbox, entry.key)).status).toBe(EntityStatus.COMPLETED);
-        expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
+        expectNativeUnicast(ownerSocket, 'durable-reply-1');
     });
 
     it('redrives a durable send after a shared admission claim conflict', async () => {
@@ -164,13 +165,12 @@ describe('durable WS outbox owner misses', () => {
             queueEngine: engine
         });
         onTestFinished(() => owner.dispose());
-        await enqueueDurableOutboxEntry(owner, createUnicastMessage());
+        const entry = await enqueueDurableOutboxEntry(owner, createUnicastMessage());
 
         await drainEngine(engine);
-        await vi.waitFor(() => {
-            expect(claimCalls).toBeGreaterThanOrEqual(3);
-            expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
-        });
+        await expect.poll(async () => (await readEntry(outbox, entry.key)).status).toBe(EntityStatus.COMPLETED);
+        expect(claimCalls).toBeGreaterThanOrEqual(3);
+        expectNativeUnicast(ownerSocket, 'durable-reply-1');
     });
 
     it('publishes a wrong-claimant outbox key so the socket owner delivers it', async () => {
@@ -211,7 +211,7 @@ describe('durable WS outbox owner misses', () => {
         await drainEngine(nonOwnerEngine);
         await expect.poll(async () => (await readEntry(outbox, admittedEntry.key)).status).not.toBe(EntityStatus.RESERVED);
         expect((await readEntry(outbox, admittedEntry.key)).status).toBe(EntityStatus.COMPLETED);
-        expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
+        expectNativeUnicast(ownerSocket, 'durable-reply-1');
     });
 
     it('delivers a distributed broadcast on the claimant and every remote process', async () => {
@@ -262,8 +262,8 @@ describe('durable WS outbox owner misses', () => {
         await drainEngine(claimantEngine);
         await expect.poll(async () => (await readEntry(outbox, admittedEntry.key)).status).not.toBe(EntityStatus.RESERVED);
 
-        expect(claimantSocket.sendEncoded).toHaveBeenCalledWith('local-session', expect.anything());
-        expect(remoteSocket.sendEncoded).toHaveBeenCalledWith('remote-session', expect.anything());
+        expect(claimantSocket.connections.get('local-session')?.sent).toHaveLength(1);
+        expect(remoteSocket.connections.get('remote-session')?.sent).toHaveLength(1);
         expect(timing).toEqual(expect.arrayContaining([
             expect.objectContaining({ operation: 'outbox-cluster-publish' }),
             expect.objectContaining({ operation: 'outbox-key-loaded' }),
@@ -320,7 +320,7 @@ describe('durable WS outbox owner misses', () => {
         await expect.poll(async () => (await outbox.getItem(beforeReadinessKey))?.status)
             .not.toBe(EntityStatus.RESERVED);
 
-        expect(remoteSocket.encodedSends).toEqual([]);
+        expect([...remoteSocket.connections.values()].flatMap((connection) => connection.sent)).toEqual([]);
 
         bus.releaseSecondSubscription();
         await remoteReadiness;
@@ -333,11 +333,7 @@ describe('durable WS outbox owner misses', () => {
         await expect.poll(async () => (await outbox.getItem(afterReadinessKey))?.status)
             .not.toBe(EntityStatus.RESERVED);
 
-        expect(remoteSocket.encodedSends).toHaveLength(1);
-        expect(remoteSocket.sendEncoded).toHaveBeenCalledWith(
-            'writer-session',
-            expect.objectContaining({ text: expect.stringContaining('published-after-readiness') })
-        );
+        expectNativeUnicast(remoteSocket, 'published-after-readiness', 'reply-after-readiness');
     });
 
     it('rejects an unproven direct row before retryable recipient routing', async () => {
@@ -417,7 +413,7 @@ describe('durable WS outbox owner misses', () => {
                 resolveRecipients: () => []
             });
             const remoteSocket = createSocket();
-            remoteSocket.sendEncoded.mockImplementationOnce(() => {
+            vi.spyOn(remoteSocket.connections.get('writer-session')!, 'send').mockImplementationOnce(() => {
                 throw new Error('simulated remote socket failure');
             });
             const { service: remote } = createService({
@@ -484,7 +480,7 @@ describe('durable WS outbox owner misses', () => {
                 resource: original.resource,
                 dequeueAudit: { attempts: 2 }
             });
-            expect(remoteSocket.sendEncoded).toHaveBeenCalledTimes(2);
+            expectNativeUnicast(remoteSocket, 'durable-reply-1');
         }
     );
 });
@@ -506,20 +502,27 @@ function createUnicastMessage(
 
 function createSocket(): WsOutboxTestSocket {
     const socket = new JsonWebSocketServer();
+    const connections = new Map<string, TestWebSocket>();
     for (const id of ['writer-session', 'local-session', 'remote-session']) {
         const connection = new TestWebSocket(`ws://${id}.invalid`);
         connection.open();
         socket.addConnection(new ConnectionContext({ id, socket: connection }));
+        connections.set(id, connection);
     }
-    const encodedSends: Array<[string, EncodedJsonWebSocketMessage]> = [];
-    const send = socket.sendEncoded.bind(socket);
-    const sendEncoded = vi.spyOn(socket, 'sendEncoded').mockImplementation(
-        (connectionId: string, encoded: EncodedJsonWebSocketMessage) => {
-            send(connectionId, encoded);
-            encodedSends.push([connectionId, encoded]);
-        }
-    );
-    return { socket, sendEncoded, encodedSends };
+    return { socket, connections };
+}
+
+function expectNativeUnicast(socket: WsOutboxTestSocket, msgId: string, resourceId = 'reply-1'): void {
+    expect(socket.connections.get('writer-session')?.sent.map((text) => JSON.parse(text))).toEqual([
+        expect.objectContaining({
+            id: expect.objectContaining({ v: 3, msgId, senderId: 'server-worker' }),
+            route: { topicId: 'app.crdt', resourceId, contextId: 'rallar-server' },
+            targets: { mode: 'unicast', toPeerId: 'writer-session' },
+            payload: { typeId: 'rallar.crdt.append-response.v1', contentType: 'application/json', resource: '{}' }
+        })
+    ]);
+    expect(socket.connections.get('local-session')?.sent).toEqual([]);
+    expect(socket.connections.get('remote-session')?.sent).toEqual([]);
 }
 
 function createService(input: CreateWsOutboxServiceInput): WsOutboxServiceFixture {

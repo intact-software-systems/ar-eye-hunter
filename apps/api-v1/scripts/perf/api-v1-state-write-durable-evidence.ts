@@ -1,4 +1,5 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { StateWriteBenchmarkCommand } from './state-write/state-write-workload.ts';
 
 import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -53,21 +54,6 @@ import {
     toStateWriteBenchmarkGroupContextId,
     type StateWriteAppInboxExpectation
 } from './state-write/api-v1-state-write-app-inbox-evidence.ts';
-
-export interface StateWriteBenchmarkCommand {
-    readonly commandId: string;
-    readonly kind:
-        | 'profile-instance'
-        | 'membership'
-        | 'presence-connect'
-        | 'presence-heartbeat'
-        | 'presence-disconnect'
-        | 'config'
-        | 'topology-source';
-    readonly latencyMs: number;
-    readonly stackIndex: number;
-    readonly status: 'accepted' | 'exhausted';
-}
 
 export interface StateWriteDurableEvidence {
     readonly appInbox: readonly AppInboxAttemptEvidence[];

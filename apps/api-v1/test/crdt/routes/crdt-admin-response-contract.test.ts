@@ -157,7 +157,7 @@ async function createCrdtAdminRouteHarness(
     sql: PGliteSql
 ): Promise<CrdtAdminRouteHarness> {
     const now = Date.now() + 12 * 60 * 60 * 1_000;
-    const resourceInbox = createPSqlResourceInboxRepository(sql);
+    const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(now));
     const results = new ResourceInboxResultsRepository(sql);
     const queue = new PSqlQueueBox(resourceInbox);
     const inbox = new InboxQueueReader(queue);
@@ -628,7 +628,7 @@ async function verifyEraseResponseAndAuditDelivery(
     assert.equal(decodeJsonWireObject(result.auditEvent, 'erase audit event').kind, 'erase');
     assert.equal(decodeJsonWireObject(result.metadata, 'erase metadata').lifecycle, 'destroyed');
     assert.equal(harness.audit.length, 0);
-    assert.equal(await readAuditCount(harness.sql, 'ri_status = \'NEW\''), 1);
+    assert.equal(await readAuditCount(harness.sql, 'NEW'), 1);
     await waitForPGliteQueueRow(harness.sql, 'APP_OUTBOX', 'NEW');
     await harness.outbox.dequeueOutbox(
         OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
@@ -636,21 +636,16 @@ async function verifyEraseResponseAndAuditDelivery(
     );
     assert.equal(harness.readAuditAttempts(), 2);
     assert.equal(harness.audit.length, 1);
-    assert.equal(await readAuditCount(harness.sql, 'ri_status = \'COMPLETED\''), 1);
+    assert.equal(await readAuditCount(harness.sql, 'COMPLETED'), 1);
 }
 
 async function readAuditCount(
     sql: PGliteSql,
-    statusPredicate: 'ri_status = \'NEW\'' | 'ri_status = \'COMPLETED\''
+    statusPredicate: 'NEW' | 'COMPLETED'
 ): Promise<number> {
-    const rows = statusPredicate === 'ri_status = \'NEW\''
-        ? await sql<SqlCountRow[]>`
-      select count(*) as count from resource_inbox
-      where ri_type_id = 'APP_OUTBOX' and ri_status = 'NEW'
-    `
-        : await sql<SqlCountRow[]>`
-      select count(*) as count from resource_inbox
-      where ri_type_id = 'APP_OUTBOX' and ri_status = 'COMPLETED'
+    const rows = await sql<SqlCountRow[]>`
+        select count(*) as count from resource_inbox
+        where ri_type_id = 'APP_OUTBOX' and ri_status = ${statusPredicate}
     `;
     return Number(rows[0]?.count);
 }

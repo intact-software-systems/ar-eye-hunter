@@ -3,24 +3,24 @@ import assert from 'node:assert/strict';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
+import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
-import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
-
-import { GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-
-import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import {
-    assertPGliteQueuedTypes as assertQueuedTypes,
-    assertPGliteQueueRetriedAndCompleted as assertQueueRetriedAndCompleted,
-    createPGliteAppInboxWsCloseHarness as createHarness,
-    pauseNextPGliteLifecycleRead as pauseNextLifecycleRead
+    assertPGliteQueuedTypes,
+    assertPGliteQueueRetriedAndCompleted,
+    createPGliteAppInboxWsCloseHarness,
+    pauseNextPGliteLifecycleRead,
+    type PGliteAppInboxWsCloseHarness
 } from './pglite-app-inbox-ws-close-test-harness.ts';
 import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
 
@@ -28,7 +28,7 @@ const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'defaul
 
 Deno.test('PGlite client connect conflicts when close commits after lifecycle read', async () => {
     await withPGliteSql(async (sql) => {
-        const harness = await createHarness(sql);
+        const harness = await createPGliteAppInboxWsCloseHarness(sql);
         const generationId = 'pglite-client-interleaved';
         const connectedAtEpochMs = Date.now() - 1_000;
         const connectInput = {
@@ -36,7 +36,7 @@ Deno.test('PGlite client connect conflicts when close commits after lifecycle re
             generationId,
             input: { ...SCOPE, connectedAtEpochMs, expiresAtEpochMs: FUTURE_MS }
         } as const;
-        const pause = pauseNextLifecycleRead(harness.clientState);
+        const pause = pauseNextPGliteLifecycleRead(harness.clientState);
         const connectEntry = await harness.client.enqueueAuthorisedWsClientConnect(connectInput);
         const staleConnect = processNext(harness.reader);
         await pause.reached;
@@ -57,7 +57,7 @@ Deno.test('PGlite client connect conflicts when close commits after lifecycle re
             }))?.activeSessions ?? [],
             []
         );
-        await assertQueueRetriedAndCompleted(sql, connectEntry.key);
+        await assertPGliteQueueRetriedAndCompleted(sql, connectEntry.key);
         assert.deepEqual(
             (await harness.clients.readSnapshot({
                 ...SCOPE,
@@ -70,13 +70,13 @@ Deno.test('PGlite client connect conflicts when close commits after lifecycle re
 
 Deno.test('PGlite group connect conflicts when cleanup commits after lifecycle read', async () => {
     await withPGliteSql(async (sql) => {
-        const harness = await createHarness(sql);
+        const harness = await createPGliteAppInboxWsCloseHarness(sql);
         const groupId = 'pglite-group-interleaved';
         await createRoom(harness, groupId, sql);
         const wsGenerationId = 'pglite-group-ws-interleaved';
         const wsStartedAtEpochMs = Date.now() - 900;
         const presenceGenerationId = crypto.randomUUID();
-        const pause = pauseNextLifecycleRead(harness.groupState);
+        const pause = pauseNextPGliteLifecycleRead(harness.groupState);
         const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
             type: AppInboxType.GROUP_PRESENCE_CONNECT,
             resourceId: `presence-${presenceGenerationId}`,
@@ -120,7 +120,7 @@ Deno.test('PGlite group connect conflicts when cleanup commits after lifecycle r
                 ?.activeSessions ?? [],
             []
         );
-        await assertQueueRetriedAndCompleted(sql, connectKey);
+        await assertPGliteQueueRetriedAndCompleted(sql, connectKey);
         assert.ok((await pending).right);
         assert.deepEqual(
             (await harness.groups.readSnapshot({ ...SCOPE, groupId }))
@@ -132,11 +132,12 @@ Deno.test('PGlite group connect conflicts when cleanup commits after lifecycle r
 
 Deno.test('PGlite group presence completion can precede its causal summary revision', async () => {
     await withPGliteSql(async (sql) => {
-        const harness = await createHarness(sql);
+        const harness = await createPGliteAppInboxWsCloseHarness(sql);
         const groupId = 'pglite-delayed-presence-summary';
         const groupRef = { ...SCOPE, groupId };
         const outboxReader = new OutboxQueueReader(new PSqlQueueBox(harness.resourceInbox));
         const summaryWork = new GroupPresenceSummaryWork({
+            now: Date.now,
             outboxQueueReader: outboxReader,
             recomputeDebounceMs: 0,
             runtimeRepository: harness.runtime,
@@ -185,7 +186,7 @@ Deno.test('PGlite group presence completion can precede its causal summary revis
         const [queuedSummary] = await sql<{ count: string | number; }[]>`
       select count(*) as count from resource_inbox
       where ri_type_id = 'APP_OUTBOX'
-        and ri_topic_id = ${APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC}
+        and ri_topic_id = ${GROUP_PRESENCE_SUMMARY_TOPIC}
         and ri_status = 'NEW'
     `;
         assert.equal(Number(queuedSummary?.count ?? 0), 1);
@@ -208,7 +209,7 @@ Deno.test('PGlite group presence completion can precede its causal summary revis
 
 Deno.test('PGlite client close tombstone suppresses a delayed AppInbox connect row', async () => {
     await withPGliteSql(async (sql) => {
-        const harness = await createHarness(sql);
+        const harness = await createPGliteAppInboxWsCloseHarness(sql);
         const generationId = 'pglite-client-close-first';
         const connectedAtEpochMs = Date.now() - 1_000;
         const connectInput = {
@@ -234,7 +235,7 @@ Deno.test('PGlite client close tombstone suppresses a delayed AppInbox connect r
         });
         assert.equal(snapshot?.isOnline ?? false, false);
         assert.deepEqual(snapshot?.activeSessions ?? [], []);
-        await assertQueuedTypes(sql, [
+        await assertPGliteQueuedTypes(sql, [
             AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
             AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT
         ]);
@@ -243,7 +244,7 @@ Deno.test('PGlite client close tombstone suppresses a delayed AppInbox connect r
 
 Deno.test('PGlite group cleanup tombstone suppresses a delayed presence connect row', async () => {
     await withPGliteSql(async (sql) => {
-        const harness = await createHarness(sql);
+        const harness = await createPGliteAppInboxWsCloseHarness(sql);
         const groupId = 'pglite-cleanup-first';
         await createRoom(harness, groupId, sql);
         const wsGenerationId = 'pglite-ws-generation-close-first';
@@ -292,7 +293,7 @@ Deno.test('PGlite group cleanup tombstone suppresses a delayed presence connect 
 
         const snapshot = await harness.groups.readSnapshot({ ...SCOPE, groupId });
         assert.deepEqual(snapshot?.activeSessions ?? [], []);
-        await assertQueuedTypes(sql, [
+        await assertPGliteQueuedTypes(sql, [
             AppInboxType.GROUP_PRESENCE_CONNECT,
             AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP
         ]);
@@ -301,7 +302,7 @@ Deno.test('PGlite group cleanup tombstone suppresses a delayed presence connect 
 
 Deno.test('PGlite lost-close group guard has bounded physical expiry before cleanup', async () => {
     await withPGliteSql(async (sql) => {
-        const harness = await createHarness(sql);
+        const harness = await createPGliteAppInboxWsCloseHarness(sql);
         const groupId = 'pglite-independent-presence';
         await createRoom(harness, groupId, sql);
         const wsStartedAtEpochMs = Date.now() - 500;
@@ -372,7 +373,7 @@ Deno.test('PGlite lost-close group guard has bounded physical expiry before clea
 });
 
 async function createRoom(
-    harness: Awaited<ReturnType<typeof createHarness>>,
+    harness: PGliteAppInboxWsCloseHarness,
     groupId: string,
     sql: PGliteSql
 ): Promise<void> {
@@ -408,13 +409,7 @@ async function processNextOutbox(reader: OutboxQueueReader): Promise<void> {
     await reader.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
 }
 
-interface QueueKey {
-    readonly topicId: string;
-    readonly resourceId: string;
-    readonly contextId: string;
-}
-
-async function waitForTypeKey(sql: PGliteSql, type: AppInboxType): Promise<QueueKey> {
+async function waitForTypeKey(sql: PGliteSql, type: AppInboxType): Promise<Key> {
     for (let attempt = 0; attempt < 100; attempt += 1) {
         const [row] = await sql<{
             topic_id: string;
@@ -441,7 +436,7 @@ async function waitForTypeKey(sql: PGliteSql, type: AppInboxType): Promise<Queue
     throw new Error(`Timed out waiting for ${type}`);
 }
 
-async function delay(sql: PGliteSql, key: QueueKey): Promise<void> {
+async function delay(sql: PGliteSql, key: Key): Promise<void> {
     await sql`
     update resource_inbox
     set ri_status = 'RETRY', next_ts = timestamp '9999-01-01 00:00:00',
@@ -451,7 +446,7 @@ async function delay(sql: PGliteSql, key: QueueKey): Promise<void> {
   `;
 }
 
-async function release(sql: PGliteSql, key: QueueKey): Promise<void> {
+async function release(sql: PGliteSql, key: Key): Promise<void> {
     await sql`
     update resource_inbox
     set ri_status = 'NEW', next_ts = null, start_ts = null, end_ts = null

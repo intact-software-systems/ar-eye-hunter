@@ -15,11 +15,13 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { createAppInboxTestResilience } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
+import {
+    createAppInboxTestResilience,
+    TestResourceInbox,
+    TestResourceInboxResults
+} from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import {
-    ClientExpiryTestResourceInbox,
-    ClientExpiryTestResourceInboxResults,
     createClientExpiryTestIssuedAuthority,
     listActiveClientExpiryTestEntries,
     readClientExpiryTestEnqueueData,
@@ -38,9 +40,9 @@ interface SeedClientExpirySessionInput {
 it(
     'processes expired client sessions through the inbox and publishes written mutations',
     async () => {
-        const queue = new ClientExpiryTestResourceInbox();
+        const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
-        const results = new ClientExpiryTestResourceInboxResults();
+        const results = new TestResourceInboxResults();
         const runtimeRepository = new FakeRuntimeStateRepository();
         const expiresAtEpochMs = Date.now() - 1_000;
         const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
@@ -80,9 +82,9 @@ it(
 );
 
 it('keeps at most one active waiting client expiry entry across timestamps', async () => {
-    const queue = new ClientExpiryTestResourceInbox();
+    const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
-    const results = new ClientExpiryTestResourceInboxResults();
+    const results = new TestResourceInboxResults();
     const expiryCandidateReads: ClientExpiredSessionPageInput[] = [];
     const readExpiredSessionPage = async (input: ClientExpiredSessionPageInput) => {
         expiryCandidateReads.push(input);
@@ -121,9 +123,9 @@ it('keeps at most one active waiting client expiry entry across timestamps', asy
 });
 
 it('durably enqueues each client expiry reconciliation tick', async () => {
-    const queue = new ClientExpiryTestResourceInbox();
+    const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
-    const results = new ClientExpiryTestResourceInboxResults();
+    const results = new TestResourceInboxResults();
     const expiryCandidateReads: ClientExpiredSessionPageInput[] = [];
     const readExpiredSessionPage = async (input: ClientExpiredSessionPageInput) => {
         expiryCandidateReads.push(input);
@@ -324,7 +326,7 @@ async function seedClientExpirySession(
 }
 
 async function processClientInbox<R>(
-    queue: ClientExpiryTestResourceInbox,
+    queue: TestResourceInbox,
     reader: InboxQueueReader,
     run: () => Promise<R>
 ): Promise<R> {
@@ -343,7 +345,7 @@ async function dequeueClientInbox(reader: InboxQueueReader): Promise<void> {
 }
 
 async function waitForQueueEntryCount(
-    queue: ClientExpiryTestResourceInbox,
+    queue: TestResourceInbox,
     count: number
 ): Promise<void> {
     await vi.waitFor(async () => {

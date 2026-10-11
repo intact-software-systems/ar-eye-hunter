@@ -3,6 +3,17 @@ name: Run GitHub Free Distributed Recipe
 on:
   workflow_dispatch:
     inputs:
+      execution_mode:
+        description: Run GitHub browsers against Hetzner control or the frozen all-local ALM observation
+        type: choice
+        default: hetzner-control
+        options:
+          - hetzner-control
+          - all-local
+      capture_setup_timing:
+        description: Retain safe existing API setup timing for the all-local diagnostic only
+        type: boolean
+        default: false
       rollout_control_plane:
         description: Deploy and restart the Hetzner API/control services before the run
         type: boolean
@@ -107,6 +118,7 @@ concurrency:
 
 jobs:
   plan:
+    if: ${{ inputs.execution_mode == 'hetzner-control' }}
     name: Plan GitHub Free headless matrix
     runs-on: ubuntu-latest
     outputs:
@@ -261,6 +273,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
   prepare-hetzner:
+    if: ${{ inputs.execution_mode == 'hetzner-control' }}
     name: Prepare Hetzner control plane
     needs: plan
     uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml
@@ -291,6 +304,7 @@ jobs:
     secrets: inherit
 
   github-agents:
+    if: ${{ inputs.execution_mode == 'hetzner-control' }}
     name: GitHub headless agents
     needs: [plan, prepare-hetzner]
     runs-on: ubuntu-latest
@@ -400,6 +414,7 @@ jobs:
           RALLAR_AGENT_TAGS: github-actions,free-tier,external-agent
 
   operator:
+    if: ${{ inputs.execution_mode == 'hetzner-control' }}
     name: Run Hetzner operator
     needs: [plan, prepare-hetzner]
     uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml
@@ -428,3 +443,91 @@ jobs:
       terminal_timeout_seconds: ${{ inputs.terminal_timeout_seconds }}
       stop_after_run: false
     secrets: inherit
+
+  all-local:
+    name: Observe all-local 15-agent ALM manifest
+    if: ${{ inputs.execution_mode == 'all-local' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Validate frozen local inputs
+        shell: bash
+        env:
+          MANIFEST_PATH: ${{ inputs.manifest_path }}
+          TARGET_AGENT_COUNT: ${{ inputs.target_agent_count }}
+          BROWSER_ENGINE: ${{ inputs.browser_engine }}
+          REGISTER_BEFORE_LOGIN: '${{ inputs.register_before_login }}'
+        run: |
+          set -euo pipefail
+          if [[ "$MANIFEST_PATH" != 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json' || "$TARGET_AGENT_COUNT" != '15' || "$BROWSER_ENGINE" != 'chromium' || "$REGISTER_BEFORE_LOGIN" != 'true' ]]; then
+            echo 'All-local requires the frozen 15-agent ALM manifest, Chromium and registration.' >&2
+            exit 1
+          fi
+
+      - name: Setup local toolchains
+        uses: ./.github/actions/release-gate-setup
+        with:
+          deno: 'true'
+          playwright: 'true'
+
+      - name: Record runner provenance
+        shell: bash
+        env:
+          RALLAR_BLACK_BOX_STORAGE_DIR: ${{ github.workspace }}/tmp/alm-v1c/all-local-recorder
+        run: |
+          node <<'NODE'
+          const { copyFileSync, mkdirSync, readFileSync, statfsSync, writeFileSync } = require('node:fs');
+          const { spawnSync } = require('node:child_process');
+          const { createHash } = require('node:crypto');
+          const os = require('node:os');
+          const path = require('node:path');
+          const directory = process.env.RALLAR_BLACK_BOX_STORAGE_DIR;
+          const manifest = 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json';
+          mkdirSync(directory, { recursive: true });
+          copyFileSync(manifest, path.join(directory, 'source-manifest.json'));
+          const disk = statfsSync(directory);
+          const provenance = {
+            sourceCommit: spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(),
+            worktreeDirty: spawnSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).stdout.length > 0,
+            manifestSha256: createHash('sha256').update(readFileSync(manifest)).digest('hex'),
+            cpuCount: os.cpus().length, availableParallelism: os.availableParallelism(), memoryBytes: os.totalmem(),
+            diskBytes: disk.blocks * disk.bsize, diskAvailableBytes: disk.bavail * disk.bsize,
+            os: { platform: os.platform(), release: os.release(), version: os.version() }, node: process.version,
+            deno: spawnSync('deno', ['--version'], { encoding: 'utf8' }).stdout.trim(),
+            chromium: spawnSync(require('playwright').chromium.executablePath(), ['--version'], { encoding: 'utf8' }).stdout.trim()
+          };
+          writeFileSync(path.join(directory, 'runner-provenance.json'), JSON.stringify(provenance, null, 2));
+          NODE
+
+      - name: Observe frozen 15-agent manifest
+        run: npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts --retries=0
+        env:
+          CI: '1'
+          INPUT_RTC_CAPTURE_MODE: ${{ inputs.rtc_capture_mode }}
+          RALLAR_BLACK_BOX_FULL_STACK: '1'
+          RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '1'
+          RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING: '${{ inputs.capture_setup_timing }}'
+          RALLAR_BLACK_BOX_API_MODE: memory
+          RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '16'
+          RALLAR_BLACK_BOX_STORAGE_DIR: ${{ github.workspace }}/tmp/alm-v1c/all-local-recorder
+          RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS: unbounded
+          RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS: unbounded
+          RALLAR_BLACK_BOX_MANIFEST_PATH: ${{ inputs.manifest_path }}
+          RALLAR_BLACK_BOX_EXPECTED_AGENT_COUNT: ${{ inputs.target_agent_count }}
+          VITE_RALLAR_API_BASE_URL: http://127.0.0.1:8080
+          VITE_RALLAR_SPA_BASE_URL: http://127.0.0.1:5176
+          RALLAR_BLACK_BOX_CONTROL_BASE_URL: http://127.0.0.1:5180
+
+      - name: Retain local observation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: all-local-alm-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tmp/alm-v1c/all-local-recorder
+          if-no-files-found: warn
+          retention-days: 14

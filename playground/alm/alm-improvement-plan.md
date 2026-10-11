@@ -1471,7 +1471,11 @@ file is deleted with the close). V1b-i is delivered (#650 as `84472ce`, from
 file is deleted with the close). V1b-ii is delivered (#651 as `53a9267`, from
 [alm-v1b-ii-design-proposal.md](alm-v1b-ii-design-proposal.md), decisions D189–D193 with their "As applied" notes; its plan
 file is deleted with the close). V1c (15/30/50-agent manifests sending the match payload shapes with ALM metrics
-asserted against the declared budgets) is next; its design is not written. V1d follows. Recover the current owner, entry, dataflow, failure boundary, and tests from the repository
+asserted against the declared budgets) is next; its workload, complete-workload deadline and native
+acceptance evidence are defined in [alm-v1c-design-proposal.md](alm-v1c-design-proposal.md). V1d follows as a
+60-minute retention and memory-growth proof, including delivered-marker history; its workload and budgets
+remain outcome-shaped until V1c evidence earns the design. Recover the current owner, entry, dataflow, failure
+boundary, and tests from the repository
 before editing; this roadmap is not a navigation map. When a release completes, move the next two
 slices into the concrete horizon here and leave the rest outcome-shaped. Do not add pull request
 status prose to this document.

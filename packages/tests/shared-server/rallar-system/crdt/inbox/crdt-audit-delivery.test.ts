@@ -1,17 +1,22 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import { registerCrdtAuditDelivery } from '@shared-server/rallar-system/crdt/inbox/register-crdt-audit-delivery.ts';
 import { CRDT_AUDIT_APP_OUTBOX_TYPE } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
 import type { CrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
-import { newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALRoute,
+    newALUntargetedMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import type { RallarCrdtAuditEvent, RallarCrdtAuditSink } from '@shared/crdt/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -30,9 +35,7 @@ const EVENT: RallarCrdtAuditEvent = {
 
 describe('CRDT audit delivery', () => {
     it('registers no audit callback when construction omits the complete delivery pair', () => {
-        const inbox = createInbox({ auditDelivery: undefined });
-
-        expect(inbox).toBeInstanceOf(AppCrdtInboxService);
+        expect(() => createInbox({ auditDelivery: undefined })).not.toThrow();
     });
 
     it('registers the audit callback only from a complete immutable delivery pair', () => {
@@ -103,7 +106,7 @@ function createInbox(input: CreateInboxInput): AppCrdtInboxService {
     return new AppCrdtInboxService(
         {
             inboxQueueReader: new InboxQueueReader(new InMemoryQueueBox()),
-            resourceInboxRepository: createPSqlResourceInboxRepository(database).entries,
+            resourceInboxRepository: createPSqlResourceInboxRepository(database, () => new Date()).entries,
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(database),
             database,
             mutationReader: createMutationService(),

@@ -5,29 +5,6 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
-    // Agent whole-owner review: these guarded readiness boundaries consume raw
-    // HTTP JSON, validate every field used, and return void/readiness only. Raw
-    // JSON never supplies fixture policy or a command. Independent review pending.
-    Object.freeze({
-        path: 'apps/rallar-black-box/playwright-full-stack-api-server.ts',
-        rule: 'boundary.unknown',
-        symbol: 'assertFullStackApiConfigEvidence'
-    }),
-    Object.freeze({
-        path: 'apps/rallar-black-box/playwright-full-stack-api-server.ts',
-        rule: 'boundary.unknown',
-        symbol: 'assertFullStackControlHealthEvidence'
-    }),
-    Object.freeze({
-        path: 'apps/rallar-black-box/playwright-full-stack-api-server.ts',
-        rule: 'boundary.unknown',
-        symbol: 'isRecord'
-    }),
-    Object.freeze({
-        path: 'apps/rallar-black-box/playwright-full-stack-api-server.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
     // Agent review: malformed JSON fixtures feed only the guarded readiness
     // admission above; the callback never interprets or trusts the raw value.
     Object.freeze({
@@ -1276,6 +1253,166 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/tests/shared/alm/outbound-control-handoff.test.ts',
         rule: 'boundary.unknown',
         symbol: undefined
+    }),
+    // One private receipt sanitizer owns all seven closed record variants. Its
+    // explicit scalar allowlists reject unsafe declared values before producing
+    // safe JSON; splitting the validation would hide that single capture boundary.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 59
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeReceiptReturn'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeClosedReceiptFields'
+    }),
+    // The decoded claim's receipt projection narrows JSON bytes to a frozen,
+    // closed fact contract. Raw identities become compact locators; no unknown
+    // or application payload escapes into work policy or the observation DTO.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/lane/al-outbound-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toALOutboundReceiptFacts'
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/lane/al-outbound-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isReceiptFacts'
+    }),
+    // Selection, execution, release and readiness are one batch lifecycle. Its
+    // private capture-enabled buffer drains only after that mandatory lifecycle;
+    // the outbound README traces each real owner without a generic event layer.
+    Object.freeze({
+        path: 'packages/shared/alm/work/al-work-handler.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 52
+    }),
+    // Private receipt capture decodes raw stdout JSON into a closed safe JSON
+    // projection. These exact decoder/field-retention symbols validate each raw
+    // value before retaining it; no unknown reaches authority or count policy.
+    // The socket ACK projection likewise checks only the private closed shape,
+    // never authorization or receipt-count policy. Re-review touched symbols.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-timing-record.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeApiTimingRecord'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-timing-record.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeTimingContext'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-timing-record.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeTimingDetails'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeApiWsReceiptObservation'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeSocketDecision'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeAckCount'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeAckRelay'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeReceiptOutbox'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeAck'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeAckIdentity'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeAggregate'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeReceipt'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeOutboxVerdict'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'retainSafeIdentity'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'retainSafeNumber'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'retainSafeRejection'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isApiTimingRecord'
+    }),
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toWsQueueBoxServerReceiptAckFacts'
+    }),
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isClosedAck'
+    }),
+    // Receipt aggregation is one bounded frozen-audience/count/deadline
+    // lifecycle. The private count decision and immutable enqueue projection
+    // remain beside its effects; the README exposes both callback timelines.
+    // This exact warning-tier cap is a cohesion review, not a hard-tier exception.
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 62
+    }),
+    // This one WS feature has direct authority, delivery, relay, receipt and
+    // scope owners. Its README maps construction and five runtime probes; no
+    // pass-through folder improves the owner-to-result route at this density.
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server',
+        rule: 'layout.directory-density',
+        symbol: 'ws-queue-box-server',
+        maximumMagnitude: 21
     }),
     // Native wire input stays within this positive finite grammar: discriminants,
     // allowed keys, complete nested readouts and scalar bounds are validated before

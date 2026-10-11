@@ -1,19 +1,24 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import {
+    mkdtemp,
+    rm,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-
-import { describe, expect, it } from 'vitest';
-
 import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+
 import {
     cleanupTopologyApplicationRows,
     createPostgresSql,
@@ -36,7 +41,7 @@ describe('Postgres topology APP_OUTBOX concurrency', () => {
             const groupRef = { applicationId, workspaceId: 'concurrency', groupId: 'room' };
             const groupSnapshot = topologyGroupSnapshot(groupRef);
             const sql = await createPostgresSql(databaseUrl);
-            const resources = createPSqlResourceInboxRepository(sql);
+            const resources = createPSqlResourceInboxRepository(sql, () => new Date());
             const runtime = new PSqlRuntimeStateRepository(sql);
             const tmpDirPath = await mkdtemp(path.join(tmpdir(), 'rallar-topology-outbox-race-'));
             const releaseFilePath = path.join(tmpDirPath, 'release');

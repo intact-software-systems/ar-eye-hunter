@@ -135,9 +135,10 @@ the sink — independent of any connection, so it observes admission work for
 every session the page opens. The event's `data` is the event itself:
 
 - `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
-  `commit-phases`, `effect-drain`, `readiness-probe`, or `control-admission`
-- `durationMs`: how long that phase took, on every kind but `commit-phases`
-  and `control-admission`: `commit-phases` splits its own into the two halves
+  `commit-phases`, `effect-drain`, `readiness-probe`, `control-admission`,
+  `receipt-confirmation`, or `congestion`
+- `durationMs`: how long that phase took, on every kind but `commit-phases`,
+  `control-admission`, `receipt-confirmation` and `congestion`: `commit-phases` splits its own into the two halves
   below, and `control-admission` is a verdict, not a phase. On
   `readiness-probe` it is not a phase of a commit at all but what that owner's
   storage read cost
@@ -220,10 +221,10 @@ every session the page opens. The event's `data` is the event itself:
   `reason`, and for a receipt `phase` (below): one event for every inbound
   ACK, NACK, repair or receipt control the outbound owner decides, recorded
   when it decides it. Every carrier discards
-  that verdict: the inbound topic's `admission-outcome` for the same control
-  reads `not-handled`/`control` whatever the outbound owner answered, so this
-  event is the only record of it. `msgId` is the control's own id, the join key
-  to that `admission-outcome`, and `targetMsgId` is the sent message it
+  that verdict: when captured, the inbound topic's `admission-outcome` for the
+  same control reads `not-handled`/`control` whatever the outbound owner answered,
+  so it does not report that outbound verdict. `msgId` is the control's own id,
+  the join key when both events are present, and `targetMsgId` is the sent message it
   answers. `outcome` is `committed`, `pending-control` (a conflict retained as
   `admit-control` work, which the outbound drain replays), `rejected`, or
   `not-handled` (the control's repair authority failed, or a NACK the origin
@@ -233,9 +234,9 @@ every session the page opens. The event's `data` is the event itself:
   rejection's reasons, or `none` for every other outcome — for an ACK whose
   receipt is gone it reads `AL acknowledgement sender has no pending outbound
   obligation`. A control's replay reports nothing here; its commit is visible
-  as the acknowledgement settlement on the send's handle. It is one event per
-  control frame the page receives, the same cadence as `admission-outcome`,
-  and rides the page's batched diagnostics like every other kind
+  as the acknowledgement settlement on the send's handle. The event describes
+  a received control decision and rides the page's batched diagnostics. Its
+  presence does not guarantee a matching `admission-outcome`
 - A WS server receipt (`al.control.receipt.v1`) is decided by the origin's
   receipt admission, not control admission, and states the same
   `control-admission` event: `msgId` is the receipt control's own id,
@@ -250,11 +251,50 @@ every session the page opens. The event's `data` is the event itself:
   only for that reason. Because it comes last, a wait that matches `typeId`,
   `targetMsgId` and `outcome` in their emitted order still matches a receipt,
   and one that appends `"reason":"none","phase":"complete"` matches only the
-  committed terminal receipt. Its arrival is also the inbound topic's
-  `admission-outcome` with that `typeId`, carrier `ws` and
+  committed terminal receipt. When its arrival also produces a captured inbound
+  `admission-outcome`, that event carries the same `typeId`, carrier `ws` and
   `not-handled`/`control`, joined by `msgId`; a committed receipt is also
   the acknowledgement settlement on the send's handle (`messages.receipts`
   reads the logical recipients)
+- `receipt-confirmation` is a separate closed observation for each receipt
+  admission attempt that reaches a validation decision or actual commit
+  return, including rejected, conflicted and expired attempts. Read/commit
+  exceptions remain with the existing storage-failure owner and produce no
+  new confirmation observation or invented commit disposition. The existing
+  `control-admission` bytes and phase-last field order
+  are unchanged. It carries the receipt control's `msgId`, `typeId` and
+  `controlSenderId`, the decoded `targetMsgId` and `originPeerId`, exact
+  `expectedRecipientPeerIds` and `confirmedRecipientPeerIds`, `snapshotVersion`,
+  `phase` and `observedAtEpochMs`. The server's `snapshotVersion` is an audience
+  revision, separate from `senderVersion`, the already-read local CAS version.
+  `admissionAtMs` is the existing local computation clock capture; it is not
+  the receipt producer's observation clock. `attempt` is one-based within the
+  existing bounded three-attempt retry loop.
+  `pendingBefore` is the already-read receipt snapshot, `candidateAfter` is
+  the computed write snapshot, and `candidateExpiresAtMs` is its retention
+  deadline. The candidate is not independently read persisted-after state.
+  Both snapshots carry only `msgId`, `mode`, expected/acked peer lists,
+  `timeoutMs`, `maxAttempts`, `attempts` and `deadlineAtMs`.
+  `commitOutcome` is the actual `committed`, `conflict` or `expired` return,
+  or `not-attempted` on validation rejection. `settlement` is an independent
+  snapshot of the exact once-computed logical acknowledgement fact passed to
+  the existing emitter on commit, before carrier/lane/time stamping. It
+  includes the expected, confirmed and unconfirmed recipients, confirmed and
+  unconfirmed hops, mode, subject `msgId` and actual `complete` flag.
+  Missing pending, candidate, expiry, sender version or settlement is explicitly
+  `null`, preserved in serialized recordings. A noncommitted attempt has no
+  settlement; a `complete` phase may still carry incomplete logical
+  confirmation. Lists and records are copied and frozen before any mutable
+  settlement consumer runs; external diagnostic publication follows the
+  existing settlement emission so an observational lifecycle read cannot
+  preempt that acknowledgement. Rejected or noncommitted attempts have no
+  settlement emission to precede publication.
+  No application payload, credentials or arbitrary error prose is retained.
+  The existing guarded sink tolerates absence/failure without changing the
+  receipt result, store writes, retry/deadline policy or settlement effects.
+  The native browser diagnostic port records these fields on the same outbound
+  topic. These facts do not establish appointed-leader authority, live registry
+  or epoch observation, wait notification, or native delivery acceptance.
 
 Together they separate a page that reads storage more often because it is less
 blocked from one that reads it more often because more wakes reach more owners:
@@ -270,10 +310,13 @@ to a phase instead of a single opaque send latency.
 `rallar.browser.alm.inbound_diagnostics` carries one AL inbound runtime
 diagnostics event per emission, recorded the moment the inbound runtime calls
 the sink — the receiving half of the outbound topic above, and, like it,
-independent of any connection. The event's `data` is the event itself:
+independent of any connection. The following cadences describe eligible
+observations; events are captured only when optional diagnostic projection and
+publication succeed. The event's `data` is the event itself:
 
 - `kind`: `admission-outcome`, `effect-drain`, `claim-settled` or
-  `rotation-alive`. There is no `readiness-probe` on this topic: the inbound
+  `rotation-alive`, plus explicitly enabled `acknowledgement-association` and
+  `acknowledgement-handoff`. There is no `readiness-probe` on this topic: the inbound
   rotation probes storage on every engine round by construction, and relaying
   one event per round doubled the page's measured per-operation cost in the
   conformance lane (8.2 → 20.9 ms/op) and delayed RTC signaling until the cell
@@ -286,14 +329,16 @@ independent of any connection. The event's `data` is the event itself:
   the owner over the IndexedDB pair, `volatile` for the one over the session's
   memory pair (worker id `…/volatile`)
 - `admission-outcome` carries `msgId`, `typeId`, `carrier`, `outcome` and
-  `reason` for every message that reached ingress with a decodable identity —
-  one event per `admitIncomingMessage` call. A value that never decoded has no
-  identity to report and emits nothing
+  `reason` when decodable ingress reaches the diagnostic path after the business
+  call returns and guarded projection/publication succeeds. Disposed ingress, a
+  value that never decodes, or a thrown business path can emit none; disabled or
+  failed diagnostics can also lose this event. Its absence does not establish an
+  admission outcome
 - `carrier` is the carrier the message arrived on, `rtc` or `ws`, read from its
   ingress source: `rtc-peer` is `rtc`, `ws-client` and `trusted-server` are `ws`
 - `outcome` is where the message stopped: `committed` (admitted, or a control
-  the runtime handled — the only ending that leaves durable work behind),
-  `pending` (held for an asynchronous authority recheck), `unauthorized`
+  the runtime handled), `pending` (retained for an asynchronous authority
+  recheck or conditional control replay), `unauthorized`
   (ingress authority or the plan refused it), `rejected` (decode, validation,
   expiry, or a plan drop that is not an authority refusal), or `not-handled`
   (duplicate, resync-required, disposed, an unhandled control, or a control
@@ -312,8 +357,8 @@ independent of any connection. The event's `data` is the event itself:
   the room roster`, or `membership-fenced: Room sender has no live session in a
   roster beyond its stamp`, and its hop NACKs it `membership-fenced`
 - a raw control a recipe submits through `messages.control` is decided by its
-  addressee's ingress like any control, so its addressee states this event
-  under the recipe's authored `msgId`: a retired `al.control.ack.v1` reads
+  addressee's ingress like any control. When this event is captured, it carries
+  the recipe's authored `msgId`: a retired `al.control.ack.v1` reads
   carrier `rtc`, `rejected`/`unsupported`. The `messages.control` result is the
   submitting page's own carrier verdict (`admitted` when that carrier took the
   frame), never the addressee's
@@ -350,11 +395,11 @@ independent of any connection. The event's `data` is the event itself:
   `batchStartedAtMs`. It is not the start `durationMs` and `queueWaitMs` are
   measured from: those run from the batch's own earlier start. `claimedEffectIds`
   is the batch's run order: the effect id of every claim the batch ran, in the
-  order it ran them, recorded by the inbound owner as it starts each claim. Every
-  id in it also appears as a `claim-settled.effectId`, unless that claim threw
-  before it settled; a claim whose row could not be decoded has no id and appears
-  in neither. `deferred` lists the due rows the batch's page saw and did not
-  run, as `{ effectId, dueAtMs }`, oldest first — held back by their eligibility
+  order it ran them, recorded by the inbound owner as it starts each claim. An
+  id can be joined to `claim-settled.effectId` when that claim returns a reportable
+  outcome and guarded diagnostic projection/publication succeeds. A claim whose
+  row could not be decoded has no id and appears in neither. `deferred` lists the
+  due rows the batch's page saw and did not run, as `{ effectId, dueAtMs }`, oldest first — held back by their eligibility
   read, or cleared by it and left unreserved by the port. A row a live lease
   holds is not due, so a batch's own rows never read as deferred. `promoted`
   counts the buffered releases the batch ran because the same track's previous
@@ -362,10 +407,11 @@ independent of any connection. The event's `data` is the event itself:
   `claimedCount` and named in `claimedEffectIds`, and none is listed in
   `deferred`
 - `claim-settled` carries `msgId`, `typeId`, `payloadKind`, `durationMs`,
-  `attempts`, `outcome` and `queueWaitMs`: one event for each claim a drain ran,
-  so a delivery can be followed from its own `admission-outcome` to the claim
-  that ran it, and one slow claim can be told from a batch of many. `payloadKind`
-  is which effect the row held — `admit-message`, `admit-control`,
+  `attempts`, `outcome` and `queueWaitMs` for a claim that returns a reportable
+  outcome, when guarded diagnostic projection/publication succeeds. When both
+  events are present, a delivery can be followed from its `admission-outcome` to
+  the claim that ran it; a captured claim can distinguish one slow operation from
+  a batch of many. `payloadKind` is which effect the row held — `admit-message`, `admit-control`,
   `dispatch-local`, `forward-message`, `send-control` or `release-buffered`.
   `outcome` is what the claim returned: `completed`, `retry`, `not-ready` or
   `non-retryable`. `attempts` is how many processing attempts the row has spent,
@@ -408,10 +454,12 @@ independent of any connection. The event's `data` is the event itself:
   `forward-message`) keeps a reference, which carries the id and not the type, so
   `typeId` is `null`; a `release-buffered` effect names a track and a sequence
   rather than a message, so both are `null`
-- a claim reports nothing when it throws, and when its work row could not be
-  decoded at all: the generic work handler classifies those, and the
-  `effect-drain` beside them still counts them. So `claimedCount` is a ceiling on
-  the `claim-settled` events of one drain, never a guarantee of the count
+- `claim-settled` reports nothing when the claim throws, or its work row could
+  not be decoded at all: the generic work handler classifies those, and the
+  batch still counts them in any captured `effect-drain`. Disabled or failed
+  diagnostics can also omit a `claim-settled` for a returning claim. Thus
+  `claimedCount` is a ceiling on the `claim-settled` events of one drain, never a
+  guarantee of the count, and silence establishes no claim outcome
 - `rotation-alive` carries `workerId`, `emptyRoundCount`, `durationMs` and
   `longestRoundMs`: one event per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` rounds
   that claimed and rejected nothing, with the wall time those rounds spanned and
@@ -425,25 +473,69 @@ independent of any connection. The event's `data` is the event itself:
   rows the latest such round did not run, oldest first. A round that finds a due
   row it cannot run is exactly the idle round that must relay nothing, so the
   witness rides on this event, which already stands for its rounds, rather than
-  on one of its own
+  on one of its own.
 
-The kinds together discriminate a delivery that never arrives. An
-`unauthorized` outcome is the drop that otherwise leaves no trace at all: it
-writes nothing, sends no NACK and returns no error. A `committed` outcome that
-no `effect-drain` ever follows is the other shape — the row exists and no
-consumer is registered for its `typeId`, so the rotation never selects it, and
-the `rotation-alive` events beside it are what say the rotation was running
-while that happened.
+ACK association capture is explicitly installed by the black-box browser diagnostic
+producer on the existing callable sink. Plain callbacks, including the ordinary
+browser no-op, keep capture disabled. The two added events carry closed immutable
+facts without application payloads, raw work keys or arbitrary exception text:
+
+- `acknowledgement-association` carries `incoming`, `attempts`, `terminalOrigin`,
+  `phase` (`ingress` or `replay`) and the actual outer `result`. Each identity names
+  `controlMsgId`, `controlSenderId`, `subjectMsgId`, `originPeerId`,
+  `logicalRecipientPeerId`, `fromPeerId`, `toPeerId`, actual `carrier`, `status`
+  and the ACK producer's `producerObservedAtEpochMs`.
+- Each lane attempt records the computed candidate separately from `commit`
+  (`not-called`, `pending`, `committed`, `conflict`, `expired`), `retention`
+  (`not-called`, `pending`, `returned`) and admission `result`. A candidate names
+  the already-read owner peer/source kind/carrier, pending parent, validated
+  status, exact generated identities and the existing admission `computedAtMs`.
+  `pending` plus a thrown result means the mandatory call did not return; it is
+  not success. A conditional commit return is not independent persisted readback.
+- A terminal sender bypasses inbound relay storage and reaches its outbound
+  control owner. It may legitimately have `admission-outcome: not-handled` with
+  `terminalOrigin: true`, no attempts and no generated controls. Neither that
+  verdict nor a subject-only match proves a missing relay or missing receipt.
+- `acknowledgement-handoff` identifies the exact generated `control`, lane,
+  `batchStartedAtMs`, `claimStartedAtMs`, `claimAttempt`, outer claim `result`, and
+  actual `handoff` state: `not-called`, or `batch`, `single`, or `fallback` with
+  `-pending`/`-returned`. Fallback means the grouped call threw and this claim
+  invoked its own single-message send. A returned call proves handoff, not
+  physical network receipt. `-pending` with outer `result: threw` records a call
+  that did not return; `-returned` with outer `result: threw` preserves the actual
+  handoff return when the enclosing callback failed afterward, including at its
+  existing duration-clock read. A replay likewise keeps committed attempt facts
+  even if its outer callback result is `threw`. Join generated identities to this control identity,
+  including origin, logical recipient and carrier, rather than subject alone.
+
+Snapshots copy only facts already owned by admission or the claimed send. They add
+no store read, policy calculation, ID or clock read. Ingress publication follows
+its mandatory admission/wake/outbound callback or the original error unwind.
+Replay and handoff publication waits for the existing handler's mandatory
+release/end/failure/clear/pending-commit lifecycle. An event does not independently
+assert release success. Snapshot/construction/publication loss suppresses optional
+evidence; failed enabled batch allocation discards it rather than publishing early.
+An unsettled handoff has no completion record yet. There is no guarantee of
+pre-exception completeness. Producer, admission, claim and publication timestamps
+remain in their separate clock domains.
+
+The diagnostic stream supplies positive observations, not a proof from silence.
+An `unauthorized` outcome records an ingress refusal. A committed outcome without
+a later drain does not independently prove persisted work or identify an absent
+consumer: work, capture, teardown and publication must be checked separately.
+A missing association or handoff record cannot prove that no work was generated
+or sent. Existing claim and rotation events remain useful alongside exact ACK
+identity and independently retained storage/native evidence.
 
 After a submission's `admission-outcome`, the receiver's events say where its
 delivery waited:
 
-| What the receiver's snapshot shows after the submission's `admission-outcome`                        | Meaning                                                                   |
-| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| A `claim-settled` naming the dispatch effect, with `batchStartedAtMs` after the admission            | A round reserved it; the two wait halves are on that event                |
-| The dispatch effect id in an `effect-drain.deferred` or `rotation-alive.latestDeferred`              | Rounds ran and held it back (eligibility), or the port left it unreserved |
-| `claim-settled` events of another effect with a `batchStartedAtMs` after the admission, and no drain | A batch started and was still running at teardown (the in-flight batch)   |
-| None of the three, and no `rotation-alive` after the admission                                       | No round ran at all — the rotation was blocked or stopped                 |
+| What the receiver's snapshot shows after the submission's `admission-outcome`                        | Meaning                                                                           |
+| ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| A `claim-settled` naming the dispatch effect, with `batchStartedAtMs` after the admission            | A round reserved it; the two wait halves are on that event                        |
+| The dispatch effect id in an `effect-drain.deferred` or `rotation-alive.latestDeferred`              | Rounds ran and held it back (eligibility), or the port left it unreserved         |
+| `claim-settled` events of another effect with a `batchStartedAtMs` after the admission, and no drain | A batch started; no captured drain establishes how it ended                       |
+| None of the three, and no `rotation-alive` after the admission                                       | No later round is captured; this alone cannot prove a blocked or stopped rotation |
 
 `commit-phases.transportSettleDurationMs` is **never emitted**. No runtime
 writes that field, on this topic or the outbound one, so no reader may depend on
@@ -619,6 +711,37 @@ are the sync points of a paired `agent.reload`.
   `browser-ws-client-checkpoint` otherwise) `restored` with `claimed` above 0;
   `flush-on-hide` reads the same on the successor page after the lane fired the
   owner page's `freeze` event and crashed it.
+
+## Private API server receipt capture
+
+The gated API timing stream carries `wsReceipt` separately from browser diagnostics.
+The [WS server owner map](../../../shared/services/ws-queue-box-server/README.md#private-receipt-evidence)
+names the producers and the [safe capture projection](../../../../apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts)
+owns the retained closed fields. Existing socket-decision, ack-count, ack-relay and
+receipt-outbox records remain intact. Three additional variants join a generated
+receipt's control id, subject/origin, phase and exact audience snapshot:
+
+- `receipt-work`: worker id, compact effect/work locators, actual effect kind,
+  reservation attempts and audit/batch/lease stamps, actual callback return or
+  `threw`, known stage and already-owned authority/admission/decision-clock facts.
+  The effect locator also locates a send's attempt id. No raw effect/key is retained.
+- `receipt-transport`: recipient or cluster-receipt selection, actual native call
+  state, publisher call state and wrapper result. Native `returned` proves only
+  submission. A native call may have happened before an enclosing throw; a generic
+  failure settlement's `submissionAttempted: false` cannot prove otherwise.
+- `receipt-publication`: actual publish/direct call states, returned direct status
+  (`sent-live`, `no-recipients`, `expired`, `partial-failure`, `failed`) and counts,
+  plus publisher return/throw. A returned publication can coexist with wrapper
+  `not-ready`; a returned direct failure can precede a publisher throw.
+
+Facts are frozen before mutable consumers and sink calls wait for the real work
+batch's mandatory release/end logic. Callback evidence never asserts release
+success or retained-claim settlement. Omitted optional facts are unavailable at
+that owner. Clocks remain producer-local. Unsafe supplied new fields reject the
+whole new record; arbitrary payload/error prose is excluded. The existing 64 KiB
+line bound, mode 0600 files, EOF/partial/loss summaries and unverified durable
+request-completion meaning remain unchanged. This capture neither proves a prior
+run used it nor confirms client ingress, delivery repair or a performance gain.
 
 ## Compatibility
 

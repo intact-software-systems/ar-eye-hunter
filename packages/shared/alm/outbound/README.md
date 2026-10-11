@@ -66,6 +66,47 @@ expiry, retry, and exhausted-attempt recovery. A queued native send retains its 
 transport settlement; it does not block available peers or complete merely because the carrier
 accepted local queue ownership.
 
+## Private server receipt work evidence
+
+[`ALOutboundReceiptWorkEvidence`](./lane/al-outbound-receipt-observation.ts) owns the
+closed receipt/work snapshot for a decoded claim. WS-server construction installs
+its optional `Capture` capability: the concrete `createALOutboundReceiptWorkEvidence`
+function, the [batch observation resource](../work/al-work-batch-observations.ts) constructor
+and the server observer. Browser composition installs none of these and the lane
+imports only the evidence type, so receipt projection is outside browser bundles.
+The factory reads readonly decoded facts, without policy, clocks, storage or sink calls;
+the lane guards construction failure and still carries the batch deferral to transport.
+The evidence captures the immutable receipt, worker, effect kind, attempt count and existing audit/batch/lease stamps;
+message effects add the authority, actual admission return and known failure stage.
+`effectLocator` hashes the exact effect/attempt id; `workLocator` hashes the exact
+work key. They are compact diagnostic joins, not authority: raw identities may
+contain session, trace or prepared-message data and are never published.
+
+Capture-enabled [`ALWorkHandler`](../work/al-work-handler.ts) batches supply a
+private observation deferral capability from that resource. The handler calls the installed class's `tryCreate` and owns when to call `publish`;
+the resource guards its own construction and owns the callback array,
+ordered reentrant drain and per-sink guards. Their references to the canonical
+deferral/resource types are erased, so their two-way type dependency is not a runtime cycle.
+The lane carries the deferral on the existing send
+lifecycle to the WS recipient/cluster owner and registered publisher. Each producer
+freezes its own facts before deferring the sink call. The handler drains that bounded
+batch after release, timing, readiness/end and pending-commit scheduling, also on
+failure; no new clock or storage read is made. Disabled batches create no capture
+buffer. If an enabled batch resource fails to construct, the handler supplies the
+resource's inert `discard` deferral: work/native/cluster diagnostic records are lost, never published
+early or treated as negative delivery facts. Per-claim evidence construction
+failure with a healthy batch still permits native diagnostics after release.
+The installed canonical static methods are the verified capability; `tryCreate`
+constructs the selected subclass through `new this()`. Arbitrary static overrides
+are outside these guarantees.
+A `callbackOutcome` is the callback's actual return or `threw`, never a
+release-success receipt. A retained callback can settle and release later, outside
+that batch; this server receipt transport currently returns settled results only.
+
+The [WS server map](../../services/ws-queue-box-server/README.md#private-receipt-evidence)
+owns the native, publisher and wrapper distinctions. Missing or lost evidence proves
+no negative delivery fact, and producer clocks are not synchronized across processes.
+
 ## Construction and registration
 
 WS client, WS server, and RTC multicast composition supply a completed admission

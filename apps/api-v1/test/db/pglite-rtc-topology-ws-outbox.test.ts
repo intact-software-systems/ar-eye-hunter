@@ -121,7 +121,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
             typeId: EnqueuedType.APP_OUTBOX,
             key: { ...logicalWorkEntry.key, resourceId: 'work-stale-reservation' }
         };
-        await createPSqlResourceInboxRepository(sql).entries.write(workEntry);
+        await createPSqlResourceInboxRepository(sql, () => new Date()).entries.write(workEntry);
         await sql`
       update resource_inbox
       set ri_status = 'RESERVED', ri_attempts = 1,
@@ -130,7 +130,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
         and ri_resource_id = ${workEntry.key.resourceId}
         and fk_ext_bank_id = ${workEntry.key.contextId}
     `;
-        const reserved = await createPSqlResourceInboxRepository(sql).entries.findAnyByKey(workEntry.key);
+        const reserved = await createPSqlResourceInboxRepository(sql, () => new Date()).entries.findAnyByKey(workEntry.key);
         assert.ok(reserved);
         assert.equal(reserved.status, EntityStatus.RESERVED);
         assert.equal(reserved.dequeueAudit.attempts, 1);
@@ -162,7 +162,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
             stalePublication
         );
         assert.equal(
-            (await createPSqlResourceInboxRepository(sql).entries.findAnyByKey(workEntry.key))?.status,
+            (await createPSqlResourceInboxRepository(sql, () => new Date()).entries.findAnyByKey(workEntry.key))?.status,
             EntityStatus.COMPLETED
         );
         const wsRows = await sql<CountRow[]>`
@@ -171,7 +171,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
     `;
         assert.equal(Number(wsRows[0]?.count), outboxWrites.length);
         const reader = new WsOutboxProvenanceReader({ repository: runtime, nowMs: Date.now });
-        const page = await createPSqlResourceInboxRepository(sql).entries.findAnyByKey(outboxWrites[0].entry.key);
+        const page = await createPSqlResourceInboxRepository(sql, () => new Date()).entries.findAnyByKey(outboxWrites[0].entry.key);
         assert.ok(page);
         assert.deepEqual(await reader.readProducerProvenance(decodePersistedALMessage(page.resource), page), {
             admittedAudience: ['session-1'],
@@ -254,7 +254,7 @@ for (const collision of ['none', 'last-page', 'last-proof', 'reservation'] as co
             const proofs = await sql<CountRow[]>`select count(*)::text as count from runtime_state_store where store_namespace = 'ws-outbox-provenance'`;
             assert.equal(Number(proofs[0].count), collision === 'last-proof' ? 1 : collision === 'none' ? outboxWrites.length : 0);
             assert.equal(
-                (await createPSqlResourceInboxRepository(sql).entries.findAnyByKey(reservation.key))?.status,
+                (await createPSqlResourceInboxRepository(sql, () => new Date()).entries.findAnyByKey(reservation.key))?.status,
                 collision === 'none' ? EntityStatus.COMPLETED : EntityStatus.RESERVED
             );
             assert.deepEqual(await executions.findPublicationForWork(candidate.groupRef, candidate.workId), collision === 'none' ? candidate : undefined);
@@ -275,7 +275,7 @@ for (const collision of ['none', 'last-page', 'last-proof', 'reservation'] as co
 
 async function writeReservedWork(sql: PSqlSql, page: ResourceEntry): Promise<ResourceEntry> {
     const work = { ...page, typeId: EnqueuedType.APP_OUTBOX, key: { ...page.key, resourceId: 'topology-work-reservation' } };
-    const repository = createPSqlResourceInboxRepository(sql);
+    const repository = createPSqlResourceInboxRepository(sql, () => new Date());
     await repository.entries.write(work);
     await sql`update resource_inbox set ri_status = 'RESERVED', ri_attempts = 1, start_ts = now() at time zone 'UTC'
         where ri_topic_id = ${work.key.topicId} and ri_resource_id = ${work.key.resourceId} and fk_ext_bank_id = ${work.key.contextId}`;

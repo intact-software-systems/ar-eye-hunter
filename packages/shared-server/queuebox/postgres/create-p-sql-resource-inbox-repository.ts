@@ -15,11 +15,12 @@ export interface PSqlResourceInboxRepository {
 }
 
 export function createPSqlResourceInboxRepository(
-    sql: PSqlSql
+    sql: PSqlSql,
+    now: () => Date
 ): PSqlResourceInboxRepository {
     return {
-        entries: new PSqlResourceInboxEntryRepository(sql),
-        reservations: new PSqlResourceInboxReservationRepository(sql),
+        entries: new PSqlResourceInboxEntryRepository(sql, now),
+        reservations: new PSqlResourceInboxReservationRepository(sql, now),
         finalization: new PSqlResourceInboxFinalizationRepository(sql),
         maintenance: new PSqlResourceInboxMaintenance(sql),
         transaction: async <T>(
@@ -28,7 +29,7 @@ export function createPSqlResourceInboxRepository(
             await sql.begin(
                 async (transactionSql) =>
                     await work(
-                        createPSqlResourceInboxRepository(transactionSql)
+                        createPSqlResourceInboxRepository(transactionSql, now)
                     )
             )
     };

@@ -1,4 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { decodeJsonWireText, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import assert from 'node:assert/strict';
 import {
     describe,
     expect,
@@ -13,10 +16,8 @@ import type {
     PSqlSql
 } from '@shared-server/postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import type { ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { computeAppOutboxInsert, writeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import {
     writeCoalescedAppOutboxWork,
@@ -45,8 +46,7 @@ import {
     EnqueuedType,
     InMemoryQueueBox
 } from '@shared/mod.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import type { WsOutboxDeliveryOutcome } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -245,7 +245,7 @@ describe('direct resource outbox writes', () => {
         const [entry] = computeClientStateSyncEntries(computed, 'server-1');
 
         expect(entry.typeId).toBe(EnqueuedType.WS_OUTBOX);
-        const message = JSON.parse(entry.resource);
+        const message = decodePersistedALMessage(entry.resource);
         expect(message).toMatchObject({
             id: {
                 msgId: expect.stringContaining('client-command-1'),
@@ -302,17 +302,19 @@ describe('direct resource outbox writes', () => {
         ).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
         expect(database.rows.size).toBe(entries.length);
 
+        const firstEntry = entries[0];
+        assert.ok(firstEntry);
         await expect(
             runInPSqlTransaction(database.sql, async (transaction) => {
-                await createPSqlResourceInboxRepository(transaction).entries.writeIfAbsentOrMatch({
-                    ...entries[0]!,
+                await createPSqlResourceInboxRepository(transaction, () => new Date(CREATED_AT_EPOCH_MS)).entries.writeIfAbsentOrMatch({
+                    ...firstEntry,
                     resource: JSON.stringify({ corrupt: true })
                 });
             })
         ).rejects.toMatchObject({
             code: 'resource-inbox-invariant-corruption'
         });
-        expect(database.rows.get(toRowKey(entries[0]!))?.ri_resource).toBe(entries[0]!.resource);
+        expect(database.rows.get(toRowKey(firstEntry))?.ri_resource).toBe(firstEntry.resource);
     });
 
     it('computes deterministic logical websocket work without a live local route', () => {
@@ -339,22 +341,26 @@ describe('direct resource outbox writes', () => {
             first.every((entry) => entry.audit.expiryTs.equals(Temporal.Instant.fromEpochMilliseconds(EXPIRE_AT_EPOCH_MS)))
         ).toBe(true);
 
-        const messages = first.map((entry) => JSON.parse(entry.resource));
+        const messages = first.map((entry) => decodePersistedALMessage(entry.resource));
+        for (const message of messages) {
+            expect(decodeJsonWireText(message.payload.resource, 'Group sync test payload')).toMatchObject({ revision: 'group=4;presence=3' });
+        }
         expect([...new Set(messages.map((message) => message.payload.typeId))]).toEqual([
             'group-state.snapshot',
             'group-directory.snapshot'
         ]);
-        expect(
-            messages.every(
-                (message) =>
-                    message.targets.mode === 'broadcast' &&
-                    message.targets.scope === 'room' &&
-                    message.targets.groupRef.applicationId === 'app-1' &&
-                    message.ordering === undefined &&
-                    JSON.parse(message.payload.resource).revision === 'group=4;presence=3' &&
-                    message.constraints.expiresAtMs === EXPIRE_AT_EPOCH_MS
-            )
-        ).toBe(true);
+        for (const message of messages) {
+            const targets = message.targets;
+            if (
+                targets === undefined || targets.mode !== 'broadcast' || targets.scope !== 'room' ||
+                targets.groupRef === undefined || message.constraints === undefined
+            ) {
+                throw new TypeError('Group sync message requires room broadcast targets and constraints');
+            }
+            expect(targets.groupRef.applicationId).toBe('app-1');
+            expect(message.ordering).toBeUndefined();
+            expect(message.constraints.expiresAtMs).toBe(EXPIRE_AT_EPOCH_MS);
+        }
     });
 
     it('computes immutable APP_OUTBOX topology work from accepted causal data', async () => {
@@ -380,8 +386,8 @@ describe('direct resource outbox writes', () => {
 
         expect(first).toEqual(replay);
         expect(first.typeId).toBe(EnqueuedType.APP_OUTBOX);
-        const message = JSON.parse(first.resource);
-        const envelope = JSON.parse(message.payload.resource);
+        const message = decodePersistedALMessage(first.resource);
+        const envelope = decodeJsonWireText(message.payload.resource, 'Outbox test envelope');
         expect(envelope).toMatchObject({
             senderId: expect.any(String),
             data: {
@@ -405,7 +411,7 @@ describe('direct resource outbox writes', () => {
         const computed = createComputedRtcTopologyOutbox();
 
         const entry = computeRtcTopologyOutboxInsert(computed).entry;
-        const message = JSON.parse(entry.resource);
+        const message = decodePersistedALMessage(entry.resource);
 
         expect(message.id.msgId).toContain(':rtc-topology-recompute:group-revision:group=4;presence=3');
         expect(message.route).toEqual(entry.key);
@@ -501,7 +507,7 @@ describe('direct resource outbox writes', () => {
         expect(deliveryOutcomes).toEqual([
             {
                 status: 'no-current-recipient',
-                messageId: JSON.parse(entry.resource).id.msgId
+                messageId: decodePersistedALMessage(entry.resource).id.msgId
             }
         ]);
     });
@@ -533,7 +539,7 @@ describe('direct resource outbox writes', () => {
         const third = thirdWork.entryWrite.entry;
         const successor = thirdWork.successorWrite.entry;
         await runInPSqlTransaction(database.sql, async (transaction) => {
-            await createPSqlResourceInboxRepository(transaction).entries.writeIfAbsentOrMatch(first);
+            await createPSqlResourceInboxRepository(transaction, () => new Date(CREATED_AT_EPOCH_MS)).entries.writeIfAbsentOrMatch(first);
         });
         await runInPSqlTransaction(
             database.sql,
@@ -855,34 +861,16 @@ function assertUntrustedGroupStateSync(computed: object): void {
     Reflect.apply(computeGroupStateSyncEntries, undefined, [computed, 'server-1']);
 }
 
-interface TestResourceInboxRow {
-    ri_row_id: bigint;
-    ri_resource_id: string;
-    ri_topic_id: string;
-    ri_resource: string;
-    ri_type_id: string;
-    ri_status: string;
-    fk_ext_bank_id: string;
-    system_date: string;
-    created_by: string;
-    created_ts: string;
-    expire_ts: string;
-    start_ts: string | null;
-    end_ts: string | null;
-    next_ts: string | null;
-    ri_attempts: bigint;
-}
-
 interface ResourceInboxTestDatabase {
     readonly sql: PSqlSql;
-    readonly rows: Map<string, TestResourceInboxRow>;
+    readonly rows: Map<string, ResourceInboxRow>;
     readonly beginCalls: number;
     readonly nestedBeginCalls: number;
     reserve(entry: ResourceEntry): void;
 }
 
 function createResourceInboxDatabase(): ResourceInboxTestDatabase {
-    let rows = new Map<string, TestResourceInboxRow>();
+    let rows = new Map<string, ResourceInboxRow>();
     let beginCalls = 0;
     let nestedBeginCalls = 0;
     function rootSql(values: readonly PSqlParameter[]): object;
@@ -935,7 +923,7 @@ function createResourceInboxDatabase(): ResourceInboxTestDatabase {
 }
 
 function createResourceInboxTransaction(
-    rows: Map<string, TestResourceInboxRow>,
+    rows: Map<string, ResourceInboxRow>,
     onNestedBegin: () => void
 ): PSqlSql {
     function transaction(values: readonly PSqlParameter[]): object;
@@ -967,7 +955,7 @@ function createResourceInboxTransaction(
 }
 
 function executeResourceInboxQuery(
-    rows: Map<string, TestResourceInboxRow>,
+    rows: Map<string, ResourceInboxRow>,
     query: string,
     values: readonly PSqlParameter[]
 ): PSqlRows {
@@ -984,7 +972,7 @@ function executeResourceInboxQuery(
 }
 
 function insertResourceInboxTestRow(
-    rows: Map<string, TestResourceInboxRow>,
+    rows: Map<string, ResourceInboxRow>,
     values: readonly PSqlParameter[]
 ): PSqlRows {
     const row = toTestRow(values, BigInt(rows.size + 1));
@@ -997,7 +985,7 @@ function insertResourceInboxTestRow(
 }
 
 function readResourceInboxTestRow(
-    rows: Map<string, TestResourceInboxRow>,
+    rows: Map<string, ResourceInboxRow>,
     values: readonly PSqlParameter[]
 ): PSqlRows {
     const topicId = readStringParameter(values[0], 'topic id');
@@ -1008,7 +996,7 @@ function readResourceInboxTestRow(
 }
 
 function updateResourceInboxTestRow(
-    rows: Map<string, TestResourceInboxRow>,
+    rows: Map<string, ResourceInboxRow>,
     values: readonly PSqlParameter[]
 ): PSqlRows {
     const resource = readStringParameter(values[0], 'resource');
@@ -1039,7 +1027,7 @@ function updateResourceInboxTestRow(
     return [{ ...row }];
 }
 
-function toTestRow(values: readonly PSqlParameter[], rowId: bigint): TestResourceInboxRow {
+function toTestRow(values: readonly PSqlParameter[], rowId: bigint): ResourceInboxRow {
     return {
         ri_row_id: rowId,
         ri_resource_id: readStringParameter(values[0], 'resource id'),
@@ -1088,12 +1076,22 @@ function withoutZone(value: string): string {
 }
 
 function readCoalescedGeneration(resource: string): number {
-    const message = JSON.parse(resource);
-    const envelope = JSON.parse(message.payload.resource);
-    return envelope.data.__rallarCoalescedWork.generation;
+    const message = decodePersistedALMessage(resource);
+    const envelope = decodeJsonWireText(message.payload.resource, 'Coalesced SQL guard envelope');
+    const metadata = isJsonWireObject(envelope) && isJsonWireObject(envelope.data)
+        ? envelope.data.__rallarCoalescedWork
+        : undefined;
+    if (!isJsonWireObject(metadata) || typeof metadata.generation !== 'number') {
+        throw new TypeError('Coalesced SQL guard requires a generation');
+    }
+    return metadata.generation;
 }
 
-function toRowKey(value: ResourceEntry | TestResourceInboxRow): string {
+function isJsonWireObject(value: JsonWireValue | undefined): value is JsonWireObject {
+    return value !== undefined && value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function toRowKey(value: ResourceEntry | ResourceInboxRow): string {
     if ('key' in value) {
         return `${value.key.contextId}::${value.key.topicId}::${value.key.resourceId}`;
     }

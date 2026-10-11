@@ -1,9 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
 
+import type { ResourceInboxStatusAndAttempts } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
-    EntityStatus,
     isExpiredResourceEntry,
     toKeyAsString,
     type Key,
@@ -18,6 +18,37 @@ export class TestResourceInbox extends InMemoryQueueBox {
     private readonly materializations = new Map<string, Promise<ResourceEntry>>();
     private readonly entryEvents = new EventTarget();
     private nextMaterializationGate: Promise<void> | undefined;
+    private readonly observeNow: () => Temporal.Instant;
+
+    constructor(
+        entries: Map<Key, ResourceEntry> = new Map(),
+        now: () => Temporal.Instant = Temporal.Now.instant
+    ) {
+        super(entries, now);
+        this.observeNow = now;
+    }
+
+    override async getItem(key: Key): Promise<ResourceEntry | undefined> {
+        const entry = this.peek(toKeyAsString(key));
+        if (entry !== undefined && isExpiredResourceEntry(entry, this.observeNow())) {
+            await this.removeItem(key);
+            return undefined;
+        }
+        return entry;
+    }
+
+    override async deleteExpired(): Promise<number> {
+        const now = this.observeNow();
+        let removed = 0;
+        for (const key of this.peekKeys()) {
+            const entry = this.peek(key);
+            if (entry !== undefined && isExpiredResourceEntry(entry, now)) {
+                await this.removeItem(entry.key);
+                removed += 1;
+            }
+        }
+        return removed;
+    }
 
     delayNextMaterializationUntil(gate: Promise<void>): void {
         this.nextMaterializationGate = gate;
@@ -53,9 +84,9 @@ export class TestResourceInbox extends InMemoryQueueBox {
         }
     }
 
-    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
+    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
         const entry = await this.getItem(key);
-        return entry !== undefined && statuses.includes(entry.status);
+        return entry === undefined ? undefined : { status: entry.status, attempts: entry.dequeueAudit.attempts };
     }
 
     override async enqueueIfAbsent(entry: ResourceEntry): Promise<ResourceEntry> {
@@ -70,7 +101,6 @@ export class TestResourceInbox extends InMemoryQueueBox {
     ): Promise<readonly ResourceEntry[]> {
         return (await this.readEntries()).filter(
             (entry) =>
-                !isExpiredResourceEntry(entry) &&
                 entry.key.topicId === topicId &&
                 entry.key.resourceId === resourceId
         );
@@ -108,7 +138,7 @@ export class TestResourceInbox extends InMemoryQueueBox {
         materialize: () => Promise<ResourceEntry>
     ): Promise<ResourceEntry> {
         const existing = await this.getItem(placeholder.key);
-        if (existing !== undefined && !isExpiredResourceEntry(existing)) {
+        if (existing !== undefined) {
             return existing;
         }
         const gate = this.nextMaterializationGate;
@@ -124,6 +154,11 @@ export class TestResourceInbox extends InMemoryQueueBox {
 
 export class TestResourceInboxResults {
     private readonly data = new Map<string, ResourceEntry>();
+    private readonly now: () => Temporal.Instant;
+
+    constructor(now: () => Temporal.Instant = Temporal.Now.instant) {
+        this.now = now;
+    }
 
     async replace(entry: ResourceEntry): Promise<ResourceEntry> {
         this.data.set(toKeyAsString(entry.key), entry);
@@ -132,7 +167,17 @@ export class TestResourceInboxResults {
 
     async findByKey(key: Key): Promise<ResourceEntry | undefined> {
         const entry = this.data.get(toKeyAsString(key));
-        return entry === undefined || isExpiredResourceEntry(entry) ? undefined : entry;
+        return entry === undefined || isExpiredResourceEntry(entry, this.now()) ? undefined : entry;
+    }
+
+    async writeIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry> {
+        const key = toKeyAsString(entry.key);
+        const existing = this.data.get(key);
+        if (existing !== undefined && !isExpiredResourceEntry(existing, this.now())) {
+            return existing;
+        }
+        this.data.set(key, entry);
+        return entry;
     }
 
     allEntries(): ResourceEntry[] {

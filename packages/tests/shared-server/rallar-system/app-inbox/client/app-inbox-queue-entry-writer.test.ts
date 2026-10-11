@@ -6,15 +6,13 @@ import {
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     EntityStatus,
-    isExpiredResourceEntry,
-    toKeyAsString,
-    type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+
+import { TestResourceInbox } from '../test-support/app-inbox-resource-fixtures.ts';
 
 const COMMAND = {
     type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
@@ -24,49 +22,9 @@ const COMMAND = {
     data: { requestId: 'durable-command-1', principalId: 'principal' }
 } as const;
 
-class DurableEnqueueQueue extends InMemoryQueueBox {
-    private readonly materializations = new Map<string, Promise<ResourceEntry>>();
-
-    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
-        const entry = await this.getItem(key);
-        return entry !== undefined && statuses.includes(entry.status);
-    }
-
-    async writeMaterializedIfAbsentOrReplaceExpired(
-        placeholder: ResourceEntry,
-        materialize: () => Promise<ResourceEntry>
-    ): Promise<ResourceEntry> {
-        const key = toKeyAsString(placeholder.key);
-        const active = this.materializations.get(key);
-        if (active !== undefined) {
-            return await active;
-        }
-        const pending = this.materializeEntry(placeholder, materialize);
-        this.materializations.set(key, pending);
-        try {
-            return await pending;
-        }
-        finally {
-            this.materializations.delete(key);
-        }
-    }
-
-    private async materializeEntry(
-        placeholder: ResourceEntry,
-        materialize: () => Promise<ResourceEntry>
-    ): Promise<ResourceEntry> {
-        const existing = await this.getItem(placeholder.key);
-        if (existing !== undefined && !isExpiredResourceEntry(existing)) {
-            return existing;
-        }
-        const materialized = await materialize();
-        return await this.enqueueIfAbsent({ ...placeholder, resource: materialized.resource });
-    }
-}
-
 describe('AppInbox durable enqueue', () => {
     it('returns the exact persisted row without waiting for command completion', async () => {
-        const queue = new DurableEnqueueQueue(new Map());
+        const queue = new TestResourceInbox(new Map());
         const service = createService(queue);
 
         const entry = await service.enqueue(COMMAND);
@@ -93,7 +51,7 @@ describe('AppInbox durable enqueue', () => {
     });
 
     it('wakes the owning queue after durable enqueue and idempotent reuse', async () => {
-        const queue = new DurableEnqueueQueue(new Map());
+        const queue = new TestResourceInbox(new Map());
         let wakeSignals = 0;
         const service = createService(queue, () => {
             wakeSignals += 1;
@@ -107,7 +65,7 @@ describe('AppInbox durable enqueue', () => {
     });
 
     it('replaces terminal work and wakes only when the durable row changes', async () => {
-        const queue = new DurableEnqueueQueue(new Map());
+        const queue = new TestResourceInbox(new Map());
         let wakeSignals = 0;
         const service = createService(queue, () => {
             wakeSignals += 1;
@@ -164,7 +122,7 @@ describe('AppInbox durable enqueue', () => {
 });
 
 function createService(
-    queue: DurableEnqueueQueue,
+    queue: TestResourceInbox,
     wakeQueue?: () => void
 ): AppInboxQueueEntryWriter {
     return new AppInboxQueueEntryWriter(
@@ -180,7 +138,7 @@ function createService(
     );
 }
 
-class LosingTerminalReplacementQueue extends DurableEnqueueQueue {
+class LosingTerminalReplacementQueue extends TestResourceInbox {
     static readonly WINNER_RESOURCE = JSON.stringify({ winner: true });
 
     override async replaceIfObserved(
@@ -195,7 +153,7 @@ class LosingTerminalReplacementQueue extends DurableEnqueueQueue {
     }
 }
 
-class FailingQueueBox extends DurableEnqueueQueue {
+class FailingQueueBox extends TestResourceInbox {
     private readonly failure: Error;
 
     constructor(failure: Error) {

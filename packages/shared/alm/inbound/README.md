@@ -778,7 +778,8 @@ that batch spent its time — selection, claim, run and release, which do not su
 duration, for the reasons the contract document states — and how long the earliest row it
 claimed had been due (`queueWaitMs`); one `claim-settled` for each claim that ran to an
 outcome, with that claim's own duration, attempts, outcome and wait — a row that cannot be
-decoded and a claim that throws are counted by the drain and named by no event; and
+decoded and a claim that throws are counted by the drain but emit no `claim-settled` event.
+Enabled ACK association or handoff evidence can separately record a thrown claim. The owner relays
 `rotation-alive` once per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` empty rounds, carrying
 `longestRoundMs` so one crawling scan is not averaged away by the rest. Each `claim-settled`
 also carries `effectId` (the claimed row's own key), `subjectMsgId` (the message the effect
@@ -795,6 +796,31 @@ round that ran claims lists them in its `effect-drain.deferred`, and empty round
 into the next `rotation-alive` (`deferredRoundCount`, `latestDeferred`). No
 `readiness-probe` reaches the inbound topic. The field-by-field contract is in
 [`runtime-diagnostic-contract.md`](../../../shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md).
+
+Explicit ACK capture is owned by
+[`ALInboundAcknowledgementEvidence`](./control/al-inbound-acknowledgement-evidence.ts).
+The black-box browser diagnostic installer supplies its class and the existing
+`ALWorkBatchObservations` resource through the callable sink's optional
+`acknowledgementCapture`. Runtime/lane/admission reference that owner only as a
+type; ordinary sinks create no new ACK evidence. The association retains exact
+received and generated control identities, logical recipient, prior owner/source,
+pending parent, candidate validity, actual conditional commit and retention results.
+A conflict's candidate IDs remain distinguishable from a replay's newly generated
+IDs. Terminal sender ACKs bypass inbound storage without inventing upward work.
+
+Capture copies closed owned facts before mutable consumers, with guarded snapshots.
+The evidence owner selects and snapshots claim context in `tryCreateClaim`;
+`publishClaim` selects replay or handoff from that snapshot. The lane retains
+mandatory work and clocks. A returned handoff remains returned if the enclosing
+claim later throws, for example at its existing duration-clock read.
+Ingress publishes after its mandatory lane wake and outbound callback, including
+original exception unwind. Replay and actual `sendControlInRound` outcomes use the
+handler's existing deferral and publish after mandatory release/end/failure/clear/
+pending-commit work. Failed optional batch construction discards publications.
+There are no additional store reads, generated IDs or clock reads. Commit return
+is not independent persisted readback; handoff is not native receipt; absent events
+are not proof of absent work. The detailed field meanings and clock limitations
+are in the diagnostic contract linked above.
 
 [`decodeALInboundWorkEntry`](./al-inbound-work-entry.ts) checks the stored variant,
 namespace, full identity, queue slot, and deadline. Malformed claimed work becomes

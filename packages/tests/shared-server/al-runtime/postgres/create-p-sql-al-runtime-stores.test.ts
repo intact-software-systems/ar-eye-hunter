@@ -1,4 +1,8 @@
-import { expect, it, vi } from 'vitest';
+import {
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { createPSqlALInboundRuntimeStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -15,6 +19,7 @@ it('constructs the WS server\'s shared inbound store without an ordering-track c
     const sql = {} as PSqlSql;
 
     createPSqlALInboundRuntimeStores({
+        nowMs: Date.now,
         repository: new PSqlRuntimeStateRepository(sql),
         namespace: 'server-ws-qbox:uncapped',
         orderingTrackTtlMs: 60_000,

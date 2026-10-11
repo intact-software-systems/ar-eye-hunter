@@ -1,8 +1,14 @@
-import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
-import { fileURLToPath } from 'node:url';
-import { loadLiveRtcPerformanceAttempt } from '../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
 import {
-    createFullStackApiV1WebServer,
+    defineConfig,
+    devices,
+    type PlaywrightTestConfig
+} from '@playwright/test';
+import { fileURLToPath } from 'node:url';
+
+import { loadLiveRtcPerformanceAttempt } from '../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
+
+import {
+    createDefaultFullStackApiV1WebServer,
     portFromBaseUrl,
     readFullStackApiBaseUrl,
     readFullStackApiServerMode,
@@ -12,7 +18,6 @@ import {
     createFullStackControlWebServer,
     readFullStackControlBaseUrl
 } from './playwright-full-stack-control-server.ts';
-
 import {
     createDefaultFullStackRtcProductionDependencies,
     createFullStackRtcPreviewServer,
@@ -24,6 +29,7 @@ const fullStackEnabled = process.env.RALLAR_BLACK_BOX_FULL_STACK === '1' ||
     process.env.RALLAR_BLACK_BOX_FULL_STACK === 'true';
 const fullStackApiBaseUrl = readFullStackApiBaseUrl();
 const fullStackSpaBaseUrl = readFullStackSpaBaseUrl();
+const headlessSpaEnabled = process.env.RALLAR_BLACK_BOX_FULL_STACK_HEADLESS === '1';
 const fullStackControlBaseUrl = readFullStackControlBaseUrl();
 const fullStackApiServerMode = fullStackEnabled
     ? readFullStackApiServerMode()
@@ -35,6 +41,14 @@ const requireFreshPostgresApi = [
 ].includes(
     process.env.RALLAR_BLACK_BOX_REQUIRE_FRESH_POSTGRES_API?.trim().toLowerCase() ?? ''
 );
+const captureSetupTiming = process.env.RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING === 'true';
+if (
+    captureSetupTiming && (!fullStackEnabled || !headlessSpaEnabled || fullStackApiServerMode !== 'memory' ||
+        !process.env.RALLAR_BLACK_BOX_STORAGE_DIR)
+) {
+    throw new Error('Setup timing capture requires the all-local memory/headless lifecycle and recorder directory.');
+}
+const timingCaptureDirectory = captureSetupTiming ? process.env.RALLAR_BLACK_BOX_STORAGE_DIR : undefined;
 const liveRtcClusterEnabled = process.env.RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER === '1';
 const clusterApiBaseUrls = [
     process.env.VITE_RALLAR_API_BASE_URL_B,
@@ -77,11 +91,11 @@ if (preparedProduction?.right) {
 const spaWebServer = preparedProduction?.right
     ? createFullStackRtcPreviewServer(preparedProduction.right)
     : {
-        command: `cd ../.. && npm --workspace rallar-black-box run dev -- --port ${
-            portFromBaseUrl(fullStackSpaBaseUrl)
-        } --force`,
+        command: `cd ../.. && npm --workspace ${
+            headlessSpaEnabled ? 'rallar-black-box-headless' : 'rallar-black-box'
+        } run dev -- --port ${portFromBaseUrl(fullStackSpaBaseUrl)} --force`,
         env: { VITE_RALLAR_API_BASE_URL: fullStackApiBaseUrl },
-        url: fullStackSpaBaseUrl,
+        url: headlessSpaEnabled ? `${fullStackSpaBaseUrl}/headless/` : fullStackSpaBaseUrl,
         reuseExistingServer,
         timeout: 60_000
     };
@@ -89,18 +103,19 @@ const spaWebServer = preparedProduction?.right
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     ...(fullStackEnabled
         ? [
-            createFullStackApiV1WebServer({
+            createDefaultFullStackApiV1WebServer({
                 mode: fullStackApiServerMode,
                 apiBaseUrl: fullStackApiBaseUrl,
                 spaBaseUrl: fullStackSpaBaseUrl,
                 reuseExistingServer,
                 requireFreshPostgres: requireFreshPostgresApi,
+                timingCaptureDirectory,
                 admittedRtcCaseId: admittedRtcAttempt?.locator.caseId ?? null,
                 environment: process.env
             }),
             ...(liveRtcClusterEnabled
                 ? clusterApiBaseUrls.map((apiBaseUrl) =>
-                    createFullStackApiV1WebServer({
+                    createDefaultFullStackApiV1WebServer({
                         mode: 'postgres',
                         apiBaseUrl,
                         spaBaseUrl: fullStackSpaBaseUrl,

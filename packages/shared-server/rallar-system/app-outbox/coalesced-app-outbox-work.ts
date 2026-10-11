@@ -10,8 +10,11 @@ import {
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { replaceFinishedResourceEntryIfMatch } from '../../queuebox/postgres/resource-inbox-finished-replacement.ts';
+import {
+    computeResourceInboxCoalescedReplacement,
+    writeResourceInboxCoalescedReplacement,
+    type ResourceInboxCoalescedReplacement
+} from '../../queuebox/postgres/resource-inbox-coalesced-replacement.ts';
 import {
     computeAppOutboxInsert,
     writeAppOutboxInsert,
@@ -37,9 +40,17 @@ export type ComputedCoalescedAppOutboxWork =
         successorWrite: AppOutboxInsert;
     }>
     | Readonly<{
-        operation: 'replace-finished' | 'replace-pending' | 'write-successor';
+        operation: 'write-successor';
         expectedEntry: ResourceEntry;
         expectedGeneration: number;
+        entryWrite: AppOutboxInsert;
+        successorWrite: AppOutboxInsert;
+    }>
+    | Readonly<{
+        operation: 'replace-finished' | 'replace-pending';
+        expectedEntry: ResourceEntry;
+        expectedGeneration: number;
+        replacement: ResourceInboxCoalescedReplacement;
         entryWrite: AppOutboxInsert;
         successorWrite: AppOutboxInsert;
     }>;
@@ -61,19 +72,26 @@ export function computeCoalescedAppOutboxWork(
         entryWrite: computeAppOutboxInsert(entry),
         successorWrite: computeAppOutboxInsert(successorEntry)
     };
-    return expectedEntry === null
-        ? {
-            operation: 'insert',
-            expectedEntry,
-            expectedGeneration: null,
-            ...writes
-        }
-        : {
-            operation: toCoalescedWriteOperation(expectedEntry),
-            expectedEntry,
-            expectedGeneration: previousGeneration,
-            ...writes
-        };
+    if (expectedEntry === null) {
+        return { operation: 'insert', expectedEntry: null, expectedGeneration: null, ...writes };
+    }
+    const observation = {
+        ...expectedEntry,
+        key: { ...expectedEntry.key },
+        audit: { ...expectedEntry.audit },
+        dequeueAudit: { ...expectedEntry.dequeueAudit }
+    };
+    const operation = toCoalescedWriteOperation(observation);
+    if (operation === 'write-successor') {
+        return { operation, expectedEntry: observation, expectedGeneration: previousGeneration, ...writes };
+    }
+    return {
+        operation,
+        expectedEntry: observation,
+        expectedGeneration: previousGeneration,
+        replacement: computeResourceInboxCoalescedReplacement(observation, writes.entryWrite, previousGeneration),
+        ...writes
+    };
 }
 
 export async function writeCoalescedAppOutboxWork(
@@ -85,35 +103,13 @@ export async function writeCoalescedAppOutboxWork(
         return;
     }
 
-    const expected = computed.expectedEntry;
     if (computed.operation === 'write-successor') {
-        await writeCoalescedSuccessor(transaction, computed);
+        await writeAppOutboxInsert(transaction, computed.successorWrite);
         return;
     }
-
-    const expectedGeneration = computed.expectedGeneration;
-    if (computed.operation === 'replace-finished') {
-        const replaced = await replaceFinishedResourceEntryIfMatch(transaction, {
-            expected,
-            next: computed.entryWrite.entry,
-            expectedGeneration
-        });
-        if (replaced !== null) {
-            return;
-        }
-        await writeCoalescedSuccessor(transaction, computed);
-        return;
+    if (await writeResourceInboxCoalescedReplacement(transaction, computed.replacement) === null) {
+        await writeAppOutboxInsert(transaction, computed.successorWrite);
     }
-
-    const replaced = await new PSqlResourceInboxEntryRepository(transaction).replacePendingIfMatch(
-        expected,
-        computed.entryWrite.entry,
-        expectedGeneration
-    );
-    if (replaced !== null) {
-        return;
-    }
-    await writeCoalescedSuccessor(transaction, computed);
 }
 
 function toCoalescedWriteOperation(
@@ -133,13 +129,6 @@ function toCoalescedGeneration(entry: ResourceEntry): number {
         throw new TypeError('Resource entry is not canonical coalesced APP_OUTBOX work');
     }
     return envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation;
-}
-
-async function writeCoalescedSuccessor(
-    transaction: PSqlSql,
-    computed: Exclude<ComputedCoalescedAppOutboxWork, { operation: 'insert'; }>
-): Promise<void> {
-    await writeAppOutboxInsert(transaction, computed.successorWrite);
 }
 
 function isSameKey(left: Key, right: Key): boolean {

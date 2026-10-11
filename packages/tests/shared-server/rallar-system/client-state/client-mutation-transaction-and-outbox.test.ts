@@ -14,6 +14,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import {
     createAutoAuthorizingClientStateService,
@@ -22,7 +23,6 @@ import {
     processAuthenticatedClientMutation,
     readEntries
 } from './app-client-inbox-mutation-test-harness.ts';
-import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
 import { createRollbackHarness, processRollbackMutation } from './client-mutation-rollback-test-harness.ts';
 import { createClientMutationTransactionBoundaryFixture } from './create-client-mutation-transaction-boundary-fixture.ts';
 

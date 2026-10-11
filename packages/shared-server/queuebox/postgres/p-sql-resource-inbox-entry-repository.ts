@@ -4,7 +4,6 @@ import {
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
-import { Either } from '@shared/resilience/Either.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryReader } from './p-sql-resource-inbox-entry-reader.ts';
@@ -17,9 +16,9 @@ import {
     type ResourceInboxEntryInsertValues
 } from './resource-inbox-entry-insert-values.ts';
 import {
-    ResourceInboxRow,
     toDomain,
-    toPgTimestamp
+    type ResourceInboxRow,
+    type ResourceInboxStatusAndAttempts
 } from './resource-inbox-row-codec.ts';
 import { writeResourceInboxEntryIfAbsentOrExpired } from './write-resource-inbox-entry-if-absent-or-expired.ts';
 import { writeResourceInboxEntryIfAbsentOrMatch } from './write-resource-inbox-entry-if-absent-or-match.ts';
@@ -40,10 +39,12 @@ export class ResourceInboxInvariantCorruptionError extends Error {
 export class PSqlResourceInboxEntryRepository {
     private readonly sql: PSqlSql;
     private readonly reader: PSqlResourceInboxEntryReader;
+    private readonly now: () => Date;
 
-    constructor(sql: PSqlSql) {
+    constructor(sql: PSqlSql, now: () => Date) {
         this.sql = sql;
-        this.reader = new PSqlResourceInboxEntryReader(sql);
+        this.now = now;
+        this.reader = new PSqlResourceInboxEntryReader(sql, now);
     }
 
     async write(entry: ResourceEntry): Promise<ResourceEntry> {
@@ -101,58 +102,6 @@ export class PSqlResourceInboxEntryRepository {
             );
         }
         return result.outcome;
-    }
-
-    async replacePendingIfMatch(
-        expected: ResourceEntry,
-        next: ResourceEntry,
-        expectedGeneration: number
-    ): Promise<ResourceEntry | null> {
-        const validation = validateResourceInboxPendingReplacement(expected, next, expectedGeneration);
-        if (validation.left !== undefined) {
-            throw new ResourceInboxInvariantCorruptionError(next.key, validation.left);
-        }
-
-        const rows = await this.sql<ResourceInboxRow[]>`
-            update resource_inbox
-            set ri_resource = ${next.resource},
-                ri_status = ${next.status},
-                next_ts = ${next.dequeueAudit.nextTs ? toPgTimestamp(next.dequeueAudit.nextTs) : null}
-            where ri_topic_id = ${expected.key.topicId}
-              and ri_resource_id = ${expected.key.resourceId}
-              and fk_ext_bank_id = ${expected.key.contextId}
-              and ri_type_id = ${expected.typeId}
-              and ri_status = ${expected.status}
-              and ri_resource = ${expected.resource}
-              and (((ri_resource::jsonb #>> '{payload,resource}')::jsonb
-                    #>> '{data,__rallarCoalescedWork,generation}')::bigint) =
-                  ${expectedGeneration}
-              and ri_attempts = ${expected.dequeueAudit.attempts}
-            returning *
-        `;
-
-        if (rows.length === 0) {
-            return null;
-        }
-        if (rows.length !== 1) {
-            throw new ResourceInboxInvariantCorruptionError(
-                next.key,
-                'Resource inbox pending replacement returned an unexpected row count'
-            );
-        }
-
-        const updated = toDomain(rows[0]);
-        if (
-            updated.resource !== next.resource ||
-            updated.status !== next.status ||
-            updated.typeId !== next.typeId
-        ) {
-            throw new ResourceInboxInvariantCorruptionError(
-                next.key,
-                'Resource inbox pending replacement returned different content'
-            );
-        }
-        return updated;
     }
 
     async replaceIfObserved(
@@ -260,7 +209,7 @@ export class PSqlResourceInboxEntryRepository {
         materialize: () => Promise<ResourceEntry>
     ): Promise<ResourceEntry> {
         return await this.sql.begin(async (transactionSql) => {
-            const transaction = new PSqlResourceInboxEntryRepository(transactionSql);
+            const transaction = new PSqlResourceInboxEntryRepository(transactionSql, this.now);
             const reserved = await transaction.tryWriteIfAbsentOrReplaceExpired(placeholder);
             if (!reserved) {
                 const existing = await transaction.findAnyByKey(placeholder.key);
@@ -328,8 +277,8 @@ export class PSqlResourceInboxEntryRepository {
         return await this.reader.isAnyWithStatuses(statuses);
     }
 
-    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
-        return await this.reader.isEntryWithStatus(key, statuses);
+    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
+        return await this.reader.readStatusAndAttempts(key);
     }
 
     async upsert(entry: ResourceEntry): Promise<ResourceEntry> {
@@ -436,39 +385,4 @@ function toExpectedRowId(expected: ResourceEntry): bigint {
         );
     }
     return BigInt(rowId);
-}
-
-function validateResourceInboxPendingReplacement(
-    expected: ResourceEntry,
-    next: ResourceEntry,
-    expectedGeneration: number
-): Either<string, ResourceEntry> {
-    const issues: string[] = [];
-    if (expected.key.topicId !== next.key.topicId) {
-        issues.push('Topic identity differs');
-    }
-    if (expected.key.resourceId !== next.key.resourceId) {
-        issues.push('Resource identity differs');
-    }
-    if (expected.key.contextId !== next.key.contextId) {
-        issues.push('Context identity differs');
-    }
-    if (expected.typeId !== next.typeId) {
-        issues.push('Entry type differs');
-    }
-    if (expected.status !== EntityStatus.NEW && expected.status !== EntityStatus.RETRY) {
-        issues.push('Observed entry must be NEW or RETRY');
-    }
-    if (next.status !== EntityStatus.NEW && next.status !== EntityStatus.RETRY) {
-        issues.push('Replacement entry must be NEW or RETRY');
-    }
-    if (next.dequeueAudit.attempts !== expected.dequeueAudit.attempts) {
-        issues.push('Attempt count differs');
-    }
-    if (!Number.isSafeInteger(expectedGeneration) || expectedGeneration < 1) {
-        issues.push('Observed generation must be a positive safe integer');
-    }
-    return issues.length > 0
-        ? Either.ofLeft(`Resource inbox pending replacement is invalid: ${issues.join('; ')}`)
-        : Either.ofRight(next);
 }

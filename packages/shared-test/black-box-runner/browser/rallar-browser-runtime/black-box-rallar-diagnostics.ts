@@ -1,4 +1,7 @@
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
+import { ALWorkBatchObservations } from '@shared/alm/work/al-work-batch-observations.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type {
@@ -95,6 +98,18 @@ export class BlackBoxRallarRuntimeDiagnostics {
         });
     };
 
+    emitSignalingDiagnostic(event: Parameters<NonNullable<RallarDiagnosticsPorts['signalingDiagnostics']>>[0]): void {
+        const native = toRtcNativeObservationProjection(event);
+        if (native.recognized && !native.event) {
+            return;
+        }
+        this.emit({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.rtc.signaling_diagnostics',
+            data: native.event ?? { ...event }
+        });
+    }
+
     private context(config: BlackBoxRallarConnectionConfig): RuntimeEventContext {
         return {
             connection: config.connection,
@@ -128,23 +143,18 @@ export function createBlackBoxRallarDiagnosticsPorts(
                 data: { ...event }
             });
         },
-        inboundDiagnostics: (event) =>
+        inboundDiagnostics: Object.assign((event: ALInboundRuntimeDiagnosticsEvent) =>
             diagnostics.emit({
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.inbound_diagnostics',
                 data: { ...event }
-            }),
-        signalingDiagnostics: (event) => {
-            const native = toRtcNativeObservationProjection(event);
-            if (native.recognized && !native.event) {
-                return;
+            }), {
+            acknowledgementCapture: {
+                evidence: ALInboundAcknowledgementEvidence,
+                batchObservations: ALWorkBatchObservations
             }
-            diagnostics.emit({
-                kind: 'diagnostic',
-                topic: 'rallar.browser.rtc.signaling_diagnostics',
-                data: native.event ?? { ...event }
-            });
-        },
+        }),
+        signalingDiagnostics: (event) => diagnostics.emitSignalingDiagnostic(event),
         storage: (event) => {
             effects.orderingTracks.observe(event);
             if (event.kind === 'reset') {

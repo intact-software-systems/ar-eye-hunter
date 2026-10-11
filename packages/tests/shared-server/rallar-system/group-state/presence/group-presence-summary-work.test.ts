@@ -1,14 +1,25 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { computeGroupPresenceSummaryEntry, type GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import { describe, expect, it, vi } from 'vitest';
+
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 type ReservedSummary = Readonly<{
@@ -20,8 +31,6 @@ type InvalidSummaryScenario = Readonly<{
     name: string;
     mutate(canonical: ReservedSummary): ReservedSummary;
 }>;
-
-const BASE_EPOCH_MS = Date.now();
 
 const INVALID_SUMMARY_SCENARIOS: readonly InvalidSummaryScenario[] = [
     routeScenario('wrong persisted topic', (route) => ({
@@ -133,6 +142,7 @@ const INVALID_SUMMARY_SCENARIOS: readonly InvalidSummaryScenario[] = [
 describe('GroupPresenceSummaryWork canonical persisted command', () => {
     it('does not read an outbox winner after a strict insert collision', async () => {
         const worker = new GroupPresenceSummaryWork({
+            now: Date.now,
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
             runtimeRepository: new FakeRuntimeStateRepository(),

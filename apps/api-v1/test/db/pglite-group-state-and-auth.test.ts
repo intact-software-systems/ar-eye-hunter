@@ -1,4 +1,3 @@
-import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -15,6 +14,7 @@ import type { ClientMutationComputedAppliedWrite } from '@shared-server/rallar-s
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
+import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
@@ -30,6 +30,7 @@ import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSumm
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+
 import { assertGroupPresenceSummaryAppToWsLifecycle } from '../../../../packages/tests/shared-server/rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { readPGliteAppInboxFailure, waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
@@ -205,12 +206,13 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = createPSqlResourceInboxRepository(sql);
+            const nowEpochMs = Date.parse('2026-07-22T00:00:00.000Z');
+            const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const queue = new PSqlQueueBox(resourceInbox);
             const inboxReader = new InboxQueueReader(queue);
             const outboxReader = new OutboxQueueReader(queue);
-            const nowEpochMs = Date.parse('2026-07-22T00:00:00.000Z');
+
             const authority = {
                 clientId: 'alice',
                 sessionId: 'alice-session',
@@ -428,11 +430,12 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = createPSqlResourceInboxRepository(sql);
+            const nowEpochMs = Date.parse('2026-07-22T00:00:00.000Z');
+            const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const queue = new PSqlQueueBox(resourceInbox);
             const inboxReader = new InboxQueueReader(queue);
-            const nowEpochMs = Date.parse('2026-07-22T00:00:00.000Z');
+
             const authority = {
                 clientId: 'alice',
                 sessionId: 'alice-session',
@@ -531,7 +534,7 @@ Deno.test(
             const summaryBefore = await groups.findPresenceSummaryEntry(ref);
             const work = new GroupPresenceSummaryWork({
                 outboxQueueReader: new OutboxQueueReader(
-                    new PSqlQueueBox(createPSqlResourceInboxRepository(sql))
+                    new PSqlQueueBox(resourceInbox)
                 ),
                 recomputeDebounceMs: 0,
                 runtimeRepository: runtime,
@@ -737,7 +740,7 @@ Deno.test(
                 1
             );
             assert.equal((await events.listClientEvents({ ...scope, principalId: 'alice' })).length, 1);
-            const outbox = createPSqlResourceInboxRepository(sql);
+            const outbox = createPSqlResourceInboxRepository(sql, () => new Date());
             for (const write of committed.outboxWrites) {
                 assert.equal((await outbox.entries.findByKey(write.entry.key))?.typeId, 'WS_OUTBOX');
             }

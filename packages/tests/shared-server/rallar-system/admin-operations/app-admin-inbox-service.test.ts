@@ -23,6 +23,7 @@ import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/ap
 import { AppInboxIdempotencyConflictError } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { AppInboxResultRepository } from '@shared-server/rallar-system/app-inbox/app-inbox-persistence-ports.ts';
+import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
@@ -35,6 +36,8 @@ import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { createAppInboxTestDatabase, type AppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import {
@@ -335,7 +338,11 @@ describe('AppAdminInboxService initial prune command', () => {
             });
 
             await waitForQueueEntry(harness.queue);
-            await dequeueInitialCommand(harness);
+            const engine = harness.createQueueEngine();
+            await expect.poll(async () => {
+                await engine.executeOnce();
+                return harness.database.outboxEntries.size;
+            }).toBe(2);
             await Promise.all([first, second]);
 
             const commands = await listCommands(harness.queue, request.requestId);
@@ -373,7 +380,11 @@ describe('AppAdminInboxService initial prune command', () => {
         });
 
         await waitForQueueEntry(harness.queue);
-        await dequeueInitialCommand(harness);
+        const engine = harness.createQueueEngine();
+        await expect.poll(async () => {
+            await engine.executeOnce();
+            return harness.database.outboxEntries.size;
+        }).toBe(2);
         await Promise.all([first, second]);
 
         const commands = await listCommands(harness.queue, requestId);
@@ -911,21 +922,21 @@ function requireFirstCategoryResult(result: AdminPruneEnqueueResult): AdminPrune
     return first;
 }
 
-interface AdminInboxWorkCounts {
-    readonly now: number;
-    readonly expiry: number;
-    readonly authority: number;
-    readonly count: number;
-    readonly transaction: number;
-    readonly wake: number;
-}
-
 interface AdminInboxLookupRecorder {
     recordOutboxWinnerLookup(): void;
     recordDurableResultLookup(): void;
 }
 
 namespace AdminInboxHarness {
+    export interface WorkCounts {
+        readonly now: number;
+        readonly expiry: number;
+        readonly authority: number;
+        readonly count: number;
+        readonly transaction: number;
+        readonly wake: number;
+    }
+
     export interface Options {
         readonly allowCurrentAuthority?: boolean;
         readonly conflictFirstTransaction?: boolean;
@@ -985,6 +996,18 @@ class AdminInboxHarness {
             }
         });
         this.service = this.createService(resultRepository);
+    }
+
+    createQueueEngine(): InboxOutboxEngine {
+        const engine = new InboxOutboxEngine();
+        registerApplicationQueueReaderTasks({
+            engine,
+            inboxQueueReader: this.reader,
+            outboxQueueReader: new OutboxQueueReader(this.queue),
+            appInboxResilience: createResilience(),
+            appOutboxResilience: createResilience()
+        });
+        return engine;
     }
 
     private createService(resultRepository: AppInboxResultRepository): AppAdminInboxService {
@@ -1081,7 +1104,7 @@ class AdminInboxHarness {
         return this.transactions;
     }
 
-    readWorkCounts(): AdminInboxWorkCounts {
+    readWorkCounts(): AdminInboxHarness.WorkCounts {
         return {
             now: this.nowReads,
             expiry: this.retryExpiryInputValues.length,

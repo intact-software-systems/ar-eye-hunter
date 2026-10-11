@@ -1,5 +1,3 @@
-import type { Sql } from 'postgres';
-
 import type { ProductionOutboxExpectation } from './api-v1-state-write-outbox-expectations.ts';
 import {
     validateExpectedProductionOutboxRecord,
@@ -7,6 +5,10 @@ import {
     type ProductionOutboxRow
 } from './api-v1-state-write-outbox-resource-codec.ts';
 import { mapWithConcurrency } from './map-with-concurrency.ts';
+
+export interface ProductionOutboxSql {
+    (strings: TemplateStringsArray, ...values: readonly string[]): PromiseLike<readonly ProductionOutboxRow[]>;
+}
 
 export interface ProductionOutboxRepository {
     find(
@@ -39,10 +41,10 @@ export async function readReferencedProductionOutboxRecords(
     return records.flatMap((entry) => (entry ? [entry.record] : []));
 }
 
-export function createProductionOutboxRepository(sql: Sql): ProductionOutboxRepository {
+export function createProductionOutboxRepository(sql: ProductionOutboxSql): ProductionOutboxRepository {
     return {
         find: async (expectation) => {
-            const rows = await sql<readonly ProductionOutboxRow[]>`
+            const rows = await sql`
         select ri_resource_id, ri_topic_id, fk_ext_bank_id, ri_type_id, ri_resource
         from resource_inbox
         where ri_resource_id = ${expectation.physicalKey.resourceId}

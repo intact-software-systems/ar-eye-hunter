@@ -1,5 +1,3 @@
-import '../../setup-browser-indexeddb.ts';
-
 import {
     describe,
     expect,
@@ -25,10 +23,11 @@ import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-en
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
-import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import '../../setup-browser-indexeddb.ts';
 import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 
 describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supersedence in %s', (storage) => {
@@ -209,7 +208,7 @@ async function createStore(storage: 'memory' | 'indexeddb' | 'pglite') {
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         })
-        : new PSqlAdmissionWorkBackend((await createPSqlAdmissionTestStorage()).sql, namespace);
+        : new PSqlAdmissionWorkBackend((await createPSqlAdmissionTestStorage()).sql, namespace, Date.now);
     return {
         admissionStore: createALInboundAdmissionStore({
             nowMs: Date.now,

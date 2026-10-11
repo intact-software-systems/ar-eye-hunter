@@ -50,6 +50,11 @@ export class ConnectionContext {
 }
 
 export namespace JsonWebSocketServer {
+    /** Private caller-owned capture buffer; the native boundary never invokes a diagnostic sink. */
+    export interface SendEvidence {
+        nativeCall: 'not-called' | 'invoked' | 'returned';
+    }
+
     export interface CreateConnectionInput {
         readonly id: string;
         readonly socket: WebSocket;
@@ -255,13 +260,27 @@ export class JsonWebSocketServer {
         };
     }
 
-    sendEncoded(connectionId: string, encoded: EncodedJsonWebSocketMessage): void {
+    sendEncoded(
+        connectionId: string,
+        encoded: EncodedJsonWebSocketMessage,
+        evidence?: JsonWebSocketServer.SendEvidence
+    ): void {
         const ctx = this.connections.get(connectionId);
         if (!ctx || !ctx.isOpen) {
             throw new Error(`JsonWebSocketServer: cannot send; connection not open: ${connectionId}`);
         }
 
-        ctx.socket.send(encoded.text);
+        // Preserve receiver, method and argument evaluation before stating actual invocation.
+        const socket = ctx.socket;
+        const send = socket.send;
+        const text = encoded.text;
+        if (evidence !== undefined) {
+            evidence.nativeCall = 'invoked';
+        }
+        send.call(socket, text);
+        if (evidence !== undefined) {
+            evidence.nativeCall = 'returned';
+        }
     }
 
     trySendEncoded(connectionId: string, encoded: EncodedJsonWebSocketMessage): boolean {

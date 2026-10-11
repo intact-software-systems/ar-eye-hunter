@@ -86,6 +86,14 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
+      "id": "alm-frozen-full-stack-observation-input",
+      "domain": "Frozen ALM full-stack observation workload",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "The opt-in full-stack observation executes the unchanged reusable 15-agent ALM manifest and requires canonical native acceptance for that exact workload, rather than accepting a substituted or weakened recipe.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts#observes the unchanged 15-agent ALM manifest with complete native evidence",
+      "coverageRelation": "The source bytes are the actual workload input: the test asserts their independently fixed SHA256 before launching agents, passes the same manifest path to the canonical operator, then checks the exported native manifest equals the canonical effective input with only the authorized finite RUN capture selection applied and requires 15 distinct participants with all 73 group assertions passed. A changed fixture must fail the digest assertion even if its easier workload would otherwise pass."
+    },
+    {
       "id": "agent-reload-result-precedes-page-reload",
       "domain": "Black-box agent reload ordering",
       "owner": "Shared Test maintainers",
@@ -4012,6 +4020,17 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-108bf4e4b3f9ad57",
+      "path": "tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts",
+      "kind": "production-source-read",
+      "contract": "alm-frozen-full-stack-observation-input",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "Reads the reusable manifest that the observation actually executes and retains as native provenance. The literal digest rejects workload substitution before worker startup; exact equality of the canonical exported manifest and the decoded workload with its authorized finite RUN capture selection ties native acceptance to those frozen bytes while allowing the offered capture override. Unrelated workload, participant, assertion and deadline changes remain rejected. This read is executable recipe input, not inspection of implementation topology.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts#observes the unchanged 15-agent ALM manifest with complete native evidence"
+    },
     {
       "id": "test-structure-coupling-0ce4af5c7c62c033",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",

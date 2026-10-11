@@ -16,6 +16,7 @@ import {
     type ALMessageDropReasonCode,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
+import { resolveALOwnedChildPeerIds } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -154,7 +155,7 @@ export namespace WebRtcOverlayMulticastManager {
 }
 
 /** Which plan of the session's own message this is; only a new admission's plan reads backpressure (D184). */
-type RtcOutgoingPlanStage = 'admission' | 'dequeue' | 'replan';
+type RtcOutgoingPlanStage = 'admission' | 'dequeue' | 'replan' | 'hand-over';
 
 export class WebRtcOverlayMulticastManager {
     public static readonly ENQUEUE_TYPE = EnqueuedType.RTC_OUTBOX;
@@ -269,6 +270,16 @@ export class WebRtcOverlayMulticastManager {
         const availability = !this.disposed && isRtcCarrierGapHandedOver(msg, carrierGap)
             ? this.readCarrierAvailability(msg)
             : undefined;
+        if (availability?.kind === 'available' && this.hasUnavailableOriginRoute(msg, availability)) {
+            const plan = this.planOutgoingMessage(msg, 'hand-over');
+            if (plan.dropReasonCode === 'no-route') {
+                return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
+                    kind: 'unroutable',
+                    reason: 'no-route',
+                    detail: plan.dropReason ?? 'RTC accepted route is unavailable'
+                });
+            }
+        }
         if (availability?.kind !== 'unavailable') {
             return await this.enqueueIfAbsent(msg);
         }
@@ -495,6 +506,24 @@ export class WebRtcOverlayMulticastManager {
         });
     }
 
+    private hasUnavailableOriginRoute(msg: ALMessage, availability: RtcOutboundCarrierAvailability): boolean {
+        if (
+            msg.id.senderId !== this.connectionService.input.sessionId ||
+            availability.kind !== 'available' || availability.admission.kind !== 'authorized' || !availability.context
+        ) {
+            return false;
+        }
+        const frozen = toRtcOriginFrozenMessage(msg, availability.context, this.connectionService.input.sessionId);
+        const ownedChildPeerIds = resolveALOwnedChildPeerIds(frozen, {
+            nowMs: availability.context.nowMs,
+            selfPeerId: this.connectionService.input.sessionId,
+            groupMemberPeerIds: availability.admission.memberPeerIds,
+            overlayNeighborPeerIds: availability.admission.forwardingPeerIds
+        });
+        const readyPeerIds = this.connectionService.readyPeerIdsForLane();
+        return ownedChildPeerIds.length > 0 && ownedChildPeerIds.every((peerId) => !readyPeerIds.includes(peerId));
+    }
+
     private readGroupSnapshotByRef(ref: GroupRef): GroupSnapshot | undefined {
         return readRtcGroupSnapshotByRef(this.groupCache, ref);
     }
@@ -628,6 +657,12 @@ export class WebRtcOverlayMulticastManager {
             this.qosProvider
         );
         const plan = multicaster.createOriginatingPlan(msg, context, qos);
+        if (
+            stage === 'hand-over' && !plan.handlingPlan.dropReason &&
+            this.hasUnavailableOriginRoute(msg, this.readCarrierAvailability(msg))
+        ) {
+            return this.toNoRouteDispatchPlan(msg, 'without a ready accepted RTC edge');
+        }
         return this.planOutboundDispatch(
             msg,
             stage === 'admission' && this.decideBackpressure(msg, plan)

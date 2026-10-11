@@ -44,13 +44,13 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 import { createTestGroup } from '../../../create-test-group.ts';
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase, type AppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import {
     createAutoAuthorizingClientStateService,
     processAppInbox,
     requireRightSnapshot
 } from './app-client-inbox-mutation-test-harness.ts';
-import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 

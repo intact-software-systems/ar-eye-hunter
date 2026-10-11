@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import assert from 'node:assert/strict';
+
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
@@ -12,13 +14,13 @@ import { createAdminPruneAggregate, toAdminPruneAggregateEntry } from '@shared-s
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { ResourceInboxLostReservationError } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import assert from 'node:assert/strict';
+
 import { readPGliteDatabaseEpochMs, withUtcPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 Deno.test('PSQL queue release accepts the exact admin page completed in its deletion transaction', async () => {
     await withUtcPGliteSql(async (sql) => {
         const now = await readPGliteDatabaseEpochMs(sql);
-        const repository = createPSqlResourceInboxRepository(sql);
+        const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(repository);
         const entry = toAdminPruneOutbox({
             kind: 'page',
@@ -107,7 +109,7 @@ Deno.test('PSQL queue release accepts the exact admin page completed in its dele
 Deno.test('admin prune conflicts and preserves runtime state replaced after the page read', async () => {
     await withUtcPGliteSql(async (sql) => {
         const now = await readPGliteDatabaseEpochMs(sql);
-        const queueRepository = createPSqlResourceInboxRepository(sql);
+        const queueRepository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(queueRepository);
         const entry = toAdminPruneOutbox({
             kind: 'page',

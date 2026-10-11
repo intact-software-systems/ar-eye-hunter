@@ -7,8 +7,21 @@ import {
     vi
 } from 'vitest';
 
+import { toRallarBlackBoxRuntimeDiagnostic } from '@shared-test/rallar-bb-test/diagnostics.ts';
+import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
+import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import {
+    createReceiptTrackingFixture,
+    receiptMessage,
+    roomMessage
+} from '../../shared/services/receipt-tracking-test-fixture.ts';
+import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import {
     events,
     facade,
@@ -22,7 +35,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
+    TestWebSocket.instances.length = 0;
 });
 
 it('emits auth restore failure diagnostics when no session or credentials exist', async () => {
@@ -319,6 +335,74 @@ it('records an AL outbound admission diagnostics event into the agent event log'
     ]));
 });
 
+it.each([
+    { confirmed: ['b'], unconfirmed: ['c'], complete: false },
+    { confirmed: ['b', 'c'], unconfirmed: [], complete: true }
+])('records actual receipt confirmation facts for $confirmed into the agent event log', async ({ confirmed, unconfirmed, complete }) => {
+    const runtime = await loadRuntime();
+    await runtime.connect({
+        connection: 'diagnostics',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+    });
+    const diagnosticsSink = facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.outboundDiagnostics;
+    expect(diagnosticsSink).toBeDefined();
+    const fixture = await createReceiptTrackingFixture({
+        serverPeerId: 'server',
+        diagnosticsSink,
+        settlementSink: (settlement) => {
+            if (settlement.kind === 'acknowledgement' && settlement.confirmedRecipientPeerIds.length > 0) {
+                Reflect.set(settlement.expectedRecipientPeerIds, '0', 'mutated-expected');
+                Reflect.set(settlement.confirmedRecipientPeerIds, '0', 'mutated-confirmed');
+                Reflect.set(settlement.unconfirmedRecipientPeerIds, '0', 'mutated-unconfirmed');
+                Reflect.set(settlement.confirmedHopPeerIds, '0', 'mutated-confirmed-hop');
+                Reflect.set(settlement.unconfirmedHopPeerIds, '0', 'mutated-unconfirmed-hop');
+            }
+        }
+    });
+    await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+    await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+    await fixture.service.acceptIncomingMessage(receiptMessage('complete', confirmed));
+    await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b'], { msgId: 'unsent-message', expectedRecipientPeerIds: ['b', 'c'] }));
+
+    const recorded = JSON.parse(JSON.stringify(events.filter((event) => event.topic === 'rallar.browser.alm.outbound_diagnostics').map((event) => event.data)));
+    expect(recorded).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+            kind: 'receipt-confirmation',
+            msgId: 'receipt-complete',
+            typeId: 'al.control.receipt.v1',
+            targetMsgId: 'room-message-1',
+            originPeerId: 'self',
+            controlSenderId: 'server',
+            snapshotVersion: 7,
+            phase: 'complete',
+            expectedRecipientPeerIds: ['b', 'c'],
+            confirmedRecipientPeerIds: confirmed,
+            pendingBefore: expect.objectContaining({ expectedPeerIds: ['b', 'c'], ackedPeerIds: [] }),
+            candidateAfter: expect.objectContaining({ expectedPeerIds: ['b', 'c'], ackedPeerIds: confirmed }),
+            attempt: 1,
+            commitOutcome: 'committed',
+            settlement: expect.objectContaining({
+                expectedRecipientPeerIds: ['b', 'c'],
+                confirmedRecipientPeerIds: confirmed,
+                unconfirmedRecipientPeerIds: unconfirmed,
+                complete
+            })
+        }),
+        expect.objectContaining({
+            kind: 'receipt-confirmation',
+            targetMsgId: 'unsent-message',
+            pendingBefore: null,
+            candidateAfter: null,
+            senderVersion: expect.any(Number),
+            candidateExpiresAtMs: null,
+            settlement: null,
+            commitOutcome: 'not-attempted'
+        })
+    ]));
+    expect(JSON.stringify(recorded)).not.toContain('secret');
+    await runtime.close();
+});
+
 it('records an AL inbound admission diagnostics event into the agent event log', async () => {
     const runtime = await loadRuntime();
     await runtime.connect({
@@ -468,6 +552,67 @@ it('records synchronous connection producer diagnostics once across reconnect', 
     await runtime.connect(connect);
     expect(events.filter((event) => event.topic === 'rallar.browser.alm.outbound_diagnostics')).toHaveLength(2);
     expect(events.filter((event) => event.topic === 'rallar.browser.alm.storage_reset')).toHaveLength(2);
+});
+
+it('captures a real terminal ACK through the installed inbound capability and normalized agent event', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect({
+        connection: 'diagnostics',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+    });
+    onTestFinished(async () => {
+        await runtime.close();
+    });
+    const diagnostics = facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.inboundDiagnostics;
+    expect(diagnostics?.acknowledgementCapture).toBeDefined();
+    const accepted: string[] = [];
+    const inbound = createDefaultALInboundMessageRuntime({
+        selfPeerId: 'origin',
+        carrier: 'ws',
+        diagnostics,
+        queueEngine: new InboxOutboxEngine(),
+        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        planIncomingMessage: (msg, _source, observations) => planALMessageHandling(msg, { ...observations, selfPeerId: 'origin' }),
+        dispatchInboxEntry: async () => {},
+        sendControlMessages: async () => {
+            throw new Error('terminal ACK must not relay');
+        },
+        onControlMessage: async (msg) => {
+            accepted.push(msg.id.msgId);
+        }
+    });
+    onTestFinished(() => inbound.dispose());
+    const ack = newALAckControlMessage({ v: 3, msgId: 'received-upward-17', senderId: 'relay', ts: 12 }, {
+        ackedMsgId: 'shot-4',
+        originPeerId: 'origin',
+        logicalRecipientPeerId: 'director',
+        fromPeerId: 'relay',
+        toPeerId: 'origin',
+        carrier: 'rtc',
+        status: 'delivered',
+        observedAtEpochMs: 11
+    });
+    expect((await inbound.admitIncomingMessage(ack, { kind: 'trusted-server' })).right).toEqual({ kind: 'control', handled: false });
+    expect(accepted).toEqual(['received-upward-17']);
+    const event = events.find((event) => decodeRecord(event.data).kind === 'acknowledgement-association');
+    const normalized = toRallarBlackBoxRuntimeDiagnostic({ topic: event!.topic!, severity: 'info', source: 'browser-rallar', payload: event });
+    expect(JSON.parse(JSON.stringify(normalized)).data).toMatchObject({
+        kind: 'acknowledgement-association',
+        phase: 'ingress',
+        terminalOrigin: true,
+        attempts: [],
+        result: 'control',
+        incoming: {
+            controlMsgId: 'received-upward-17',
+            subjectMsgId: 'shot-4',
+            originPeerId: 'origin',
+            logicalRecipientPeerId: 'director',
+            fromPeerId: 'relay',
+            toPeerId: 'origin',
+            carrier: 'ws'
+        }
+    });
+    expect(JSON.stringify(normalized)).not.toContain('secret');
 });
 
 it('preserves sanitized native signaling and live ordering usage through the same connection diagnostics ports', async () => {

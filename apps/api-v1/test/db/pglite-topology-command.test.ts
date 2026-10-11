@@ -1,17 +1,13 @@
-import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
-import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
 import assert from 'node:assert/strict';
 
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { writeCoalescedAppOutboxWork } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
@@ -25,6 +21,7 @@ import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/t
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
 import type { GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -207,12 +204,12 @@ Deno.test(
                 version: 1
             };
             assert.equal(await rttRepository.putMeasurementIfNewer(storedRtt), true);
-            let plannedRtts: readonly typeof storedRtt[] = [];
+            let plannedRtts: Parameters<RallarRtcTopologyService['planGroupTopologyAt']>[1] = [];
             class RecordingTopologyService extends RallarRtcTopologyService {
                 override planGroupTopologyAt(
                     ...args: Parameters<RallarRtcTopologyService['planGroupTopologyAt']>
                 ): ReturnType<RallarRtcTopologyService['planGroupTopologyAt']> {
-                    plannedRtts = args[1] as readonly typeof storedRtt[];
+                    plannedRtts = args[1];
                     return super.planGroupTopologyAt(...args);
                 }
             }
@@ -327,7 +324,7 @@ Deno.test(
                 }
                 return authority;
             };
-            const resourceInbox = createPSqlResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             let retryReleaseCount = 0;
             class RetryObservedQueueBox extends PSqlQueueBox {
                 override async releaseEntries(
@@ -403,7 +400,7 @@ Deno.test('PGlite topology worker rolls back an exact orphan WS outbox collision
             sql,
             'pglite-topology-ws-replay'
         );
-        await createPSqlResourceInboxRepository(sql).entries.write(fixture.publicationEntry);
+        await createPSqlResourceInboxRepository(sql, () => new Date()).entries.write(fixture.publicationEntry);
 
         await assert.rejects(
             () => fixture.handler.onMessage(fixture.message, fixture.reserved),

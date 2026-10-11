@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
     mkdir,
@@ -69,6 +69,97 @@ afterEach(() => {
 });
 
 describe('rallar-black-box full-stack API server mode', () => {
+    it('preserves the ordinary exhaustive consumer with no diagnostic capture', () => {
+        const result = spawnSync(process.execPath, [
+            '--import',
+            'tsx',
+            '--input-type=module',
+            '--eval',
+            `import config from './apps/rallar-black-box/playwright.exhaustive.config.ts';
+             process.stdout.write(JSON.stringify(config.webServer));`
+        ], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                CI: '1',
+                RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING: 'true',
+                VITE_RALLAR_API_BASE_URL: 'http://localhost:8080',
+                RALLAR_LOGIN_USER_RATE_LIMIT: '123'
+            }
+        });
+        expect(result.status).toBe(0);
+        const api = JSON.parse(result.stdout)[0];
+        expect(api.command).toContain('RALLAR_LOGIN_USER_RATE_LIMIT=123 CORS_ORIGINS=');
+        expect(api.command).toContain('deno run --env-file=apps/api-v1/.env.local');
+        expect(api.command).not.toContain('run-full-stack-api-with-timing');
+        expect(api).toMatchObject({ url: 'http://localhost:8080/api/config', reuseExistingServer: false, timeout: 90_000 });
+        expect(api).not.toHaveProperty('gracefulShutdown');
+    });
+
+    it.each([
+        { RALLAR_BLACK_BOX_FULL_STACK: '0' },
+        { RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '0' },
+        { RALLAR_BLACK_BOX_API_MODE: 'postgres' },
+        { RALLAR_BLACK_BOX_STORAGE_DIR: '' },
+        { RALLAR_BLACK_BOX_STORAGE_DIR: 'relative/recorder' }
+    ])('rejects capture outside the local lifecycle %s', (override) => {
+        const result = spawnSync(process.execPath, [
+            '--import',
+            'tsx',
+            '--input-type=module',
+            '--eval',
+            'import \'./apps/rallar-black-box/playwright.full-stack.config.ts\';'
+        ], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                RALLAR_BLACK_BOX_FULL_STACK: '1',
+                RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '1',
+                RALLAR_BLACK_BOX_API_MODE: 'memory',
+                RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING: 'true',
+                RALLAR_BLACK_BOX_STORAGE_DIR: '/tmp/recorder',
+                RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER: '0',
+                ...override
+            }
+        });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('Setup timing capture requires');
+    });
+
+    it.each([
+        { headless: '1', workspace: 'rallar-black-box-headless', readiness: '/headless/' },
+        { headless: '', workspace: 'rallar-black-box', readiness: '' }
+    ])('selects $workspace at the configured SPA port with fresh CI ownership', ({ headless, workspace, readiness }) => {
+        const result = spawnSync(process.execPath, [
+            '--import',
+            'tsx',
+            '--input-type=module',
+            '--eval',
+            `import config from './apps/rallar-black-box/playwright.full-stack.config.ts';
+             process.stdout.write(JSON.stringify(config.webServer));`
+        ], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                CI: '1',
+                RALLAR_BLACK_BOX_FULL_STACK: '1',
+                RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: headless,
+                RALLAR_BLACK_BOX_API_MODE: 'memory',
+                VITE_RALLAR_SPA_BASE_URL: 'http://127.0.0.1:5376',
+                RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER: '0'
+            }
+        });
+        expect(result.status).toBe(0);
+        const servers = JSON.parse(result.stdout);
+        expect(servers).toHaveLength(3);
+        expect(servers[1]).toMatchObject({
+            command: `cd ../.. && npm --workspace ${workspace} run dev -- --port 5376 --force`,
+            url: `http://127.0.0.1:5376${readiness}`,
+            reuseExistingServer: false
+        });
+        expect(servers.every((server: { reuseExistingServer: boolean; }) => !server.reuseExistingServer)).toBe(true);
+    });
+
     it('defaults to the existing Postgres-backed full-stack API server mode', () => {
         expect(readFullStackApiServerMode({})).toBe('postgres');
         expect(readFullStackApiBaseUrl({})).toBe('http://localhost:8080');
