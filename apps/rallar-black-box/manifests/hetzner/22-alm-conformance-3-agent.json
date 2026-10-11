@@ -190,6 +190,7 @@
             },
             "transport": "messages.rtc",
             "rallar": {
+              "almDiagnostics": true,
               "typeId": "alm.conformance.rtc.aggregated-receipt",
               "topicId": "room.alm-conformance",
               "messageSelector": {
@@ -1757,6 +1758,7 @@
             },
             "transport": "messages.rtc",
             "rallar": {
+              "almDiagnostics": true,
               "typeId": "alm.conformance.rtc.aggregated-receipt",
               "topicId": "room.alm-conformance",
               "messageSelector": {
@@ -2266,6 +2268,7 @@
             },
             "transport": "messages.rtc",
             "rallar": {
+              "almDiagnostics": true,
               "typeId": "alm.conformance.rtc.aggregated-receipt",
               "topicId": "room.alm-conformance",
               "messageSelector": {
@@ -2454,6 +2457,7 @@
             },
             "transport": "messages.rtc",
             "rallar": {
+              "almDiagnostics": true,
               "typeId": "alm.conformance.ws.frozen-audience-membership",
               "topicId": "room.alm-conformance",
               "messageSelector": {
@@ -2706,6 +2710,7 @@
             },
             "transport": "messages.rtc",
             "rallar": {
+              "almDiagnostics": true,
               "typeId": "alm.conformance.rtc.frozen-audience-membership",
               "topicId": "room.alm-conformance",
               "messageSelector": {
@@ -2958,6 +2963,7 @@
             },
             "transport": "messages.rtc",
             "rallar": {
+              "almDiagnostics": true,
               "typeId": "alm.conformance.rtc-with-ws-fallback.frozen-audience-membership",
               "topicId": "room.alm-conformance",
               "messageSelector": {

@@ -65,6 +65,11 @@ const ALM_CONFORMANCE_EXTENDED_AGENT_COUNTS = [15, 30, 50] as const;
 /** Long enough for the slowest role to finish the windows of the previous scenario while the others wait (D62). */
 export const ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS = 60_000;
 
+interface AlmConformanceExtendedEntryInput {
+    readonly filePath: string;
+    readonly participantCount: number;
+}
+
 interface HetznerWithheldAlmScenario {
     readonly scenarioKey: string;
     readonly carriers: readonly AlmConformanceCarrier[];
@@ -280,8 +285,15 @@ function toAlmConformanceCombinedCommands(
     scenarios: readonly AlmConformanceScenario[],
     role: AlmConformanceRole
 ): RallarBlackBoxTestRecipe['commands'] {
-    const rtc = toRoleRecipe(scenarios.find((scenario) => scenario.sender.metadata?.carrier === 'rtc')!, role);
-    const rtcConnect = rtc.commands.find((command) => command.kind === 'rtc.connect')!;
+    const rtcScenario = scenarios.find((scenario) => scenario.sender.metadata?.carrier === 'rtc');
+    if (rtcScenario === undefined) {
+        throw new Error('Combined ALM recipes require an RTC scenario.');
+    }
+    const rtc = toRoleRecipe(rtcScenario, role);
+    const rtcConnect = rtc.commands.find((command) => command.kind === 'rtc.connect');
+    if (rtcConnect === undefined) {
+        throw new Error(`Generated ALM recipe ${rtc.recipeId} has no rtc.connect prologue.`);
+    }
     const messageTypeIds = computeCombinedAlmMessageTypeIds(scenarios, role);
     const toConnect = (command: RallarBlackBoxTestRtcConnectCommand) =>
         toCombinedAlmConnect(command, rtcConnect.readiness, messageTypeIds);
@@ -396,16 +408,17 @@ function toAlmConformanceScenarioIds(
 }
 
 export function createAlmConformanceExtendedEntries(): readonly HetznerDistributedManifestEntry[] {
-    return ALM_CONFORMANCE_EXTENDED_AGENT_COUNTS.map((participantCount, index) =>
-        createAlmConformanceExtendedEntry({
-            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[18 + index]!,
-            participantCount
-        })
-    );
+    return ALM_CONFORMANCE_EXTENDED_AGENT_COUNTS.map((participantCount, index) => {
+        const filePath = HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[18 + index];
+        if (filePath === undefined) {
+            throw new Error(`Missing ${participantCount}-agent ALM manifest catalog path.`);
+        }
+        return createAlmConformanceExtendedEntry({ filePath, participantCount });
+    });
 }
 
 function createAlmConformanceExtendedEntry(
-    input: Readonly<{ filePath: string; participantCount: number; }>
+    input: AlmConformanceExtendedEntryInput
 ): HetznerDistributedManifestEntry {
     const [sender, receiver] = createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes(
         toAlmConformanceExtendedRecipeOptions(input.participantCount)
@@ -460,7 +473,7 @@ function toAlmConformanceExtendedProfiles(participantCount: number): readonly st
 
 function toAlmConformanceExtendedMetadata(
     participantCount: number
-): ReturnType<typeof toMulticastManifestMetadata> {
+): RallarBlackBoxTestRecord {
     return toMulticastManifestMetadata({
         topologyProfile: 'tree',
         treeMeshMinSize: participantCount + 1,
@@ -482,7 +495,11 @@ function toRecipeWithStorageCounters(
     return {
         ...recipe,
         commands: [
-            ...recipe.commands,
+            ...recipe.commands.map((command) =>
+                command.kind === 'rtc.connect'
+                    ? { ...command, rallar: { ...command.rallar, almDiagnostics: true } }
+                    : command
+            ),
             {
                 kind: 'storage.counters',
                 commandId: `alm-storage-counters-${role}`,

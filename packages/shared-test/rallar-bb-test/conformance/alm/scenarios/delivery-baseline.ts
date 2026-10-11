@@ -3,11 +3,12 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import {
     toAdmissionCommands,
-    toReceiptsCommand,
+    toObserveCommand,
     toSendCommand,
     toStorageCountersCommand
 } from '../alm-conformance-message-commands.ts';
-import { toReceivedCommand } from '../alm-conformance-receiver-commands.ts';
+import { toReceiptReadCommands } from '../alm-conformance-receipt-commands.ts';
+import { toPayloadWait, toSingleArrivalReceiverCommands } from '../alm-conformance-receiver-commands.ts';
 import {
     SMOKE_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -22,7 +23,8 @@ export const deliveryBaseline: AlmConformanceScenarioDefinition = {
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: toDeliveryBaselineSenderCommands,
-    toRecipientCommands: toDeliveryBaselineReceiverCommands
+    toRecipientCommands: toDeliveryBaselineReceiverCommands,
+    toReceiptRoles: () => ({ confirmed: ['receiver'], unconfirmed: [] })
 };
 
 function toDeliveryBaselineSenderCommands(
@@ -33,10 +35,15 @@ function toDeliveryBaselineSenderCommands(
             ...sender,
             index: 1,
             payload: { marker: sender.scenarioId },
-            delivery: {}
+            delivery: { ack: 'all-logical-recipients' }
         }),
         ...toAdmissionCommands({ ...sender, index: 1 }),
-        toReceiptsCommand({ ...sender, index: 1 }),
+        toObserveCommand({ ...sender, index: 1, state: 'acknowledged' }),
+        ...toReceiptReadCommands(sender, {
+            roles: { confirmed: ['receiver'], unconfirmed: [] },
+            ending: 'acknowledged',
+            mode: 'receiver'
+        }),
         toStorageCountersCommand(sender, 'storage-counters', false)
     ];
 }
@@ -44,10 +51,13 @@ function toDeliveryBaselineSenderCommands(
 function toDeliveryBaselineReceiverCommands(
     receiver: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
-    return [toReceivedCommand({
-        ...receiver,
-        index: 1,
-        count: 1,
-        absent: false
-    })];
+    return [
+        ...toSingleArrivalReceiverCommands(receiver),
+        toPayloadWait({
+            step: receiver,
+            name: 'received-payload',
+            payload: { marker: receiver.scenarioId },
+            absent: false
+        })
+    ];
 }
