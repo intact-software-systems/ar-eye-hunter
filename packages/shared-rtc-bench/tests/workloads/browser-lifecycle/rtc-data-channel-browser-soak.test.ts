@@ -1,5 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -121,7 +128,7 @@ const initializedRuntimeObservation: RtcBaselineRuntimeObservationDto = {
     allowlistedEnvironment: {}
 };
 
-function sampleId(phase: 'warmup' | 'retained', outerOrdinal: number) {
+function toSampleId(phase: 'warmup' | 'retained', outerOrdinal: number) {
     return [
         'rtc-b05-browser-data-channel-lifecycle-iterations-25',
         phase,
@@ -130,7 +137,7 @@ function sampleId(phase: 'warmup' | 'retained', outerOrdinal: number) {
     ].join('-');
 }
 
-function outerAttempt(phase: 'warmup' | 'retained', outerOrdinal: number) {
+function createOuterAttempt(phase: 'warmup' | 'retained', outerOrdinal: number) {
     return {
         workloadId: 'RTC-B05' as const,
         caseId,
@@ -138,11 +145,11 @@ function outerAttempt(phase: 'warmup' | 'retained', outerOrdinal: number) {
         environmentId: 'E2-browser' as const,
         intendedPhase: phase,
         outerOrdinal,
-        sampleIds: [sampleId(phase, outerOrdinal)]
+        sampleIds: [toSampleId(phase, outerOrdinal)]
     };
 }
 
-function manifest(
+function createManifest(
     baselineId: string,
     retainedSampleMultiplier: 1 | 2
 ): RtcBaselineCaptureManifestDto {
@@ -164,15 +171,15 @@ function manifest(
         workloadIds: ['RTC-B05'],
         cases: [{ workloadId: 'RTC-B05', caseId, inputKey }],
         outerAttempts: [
-            outerAttempt('warmup', 1),
-            ...Array.from({ length: retainedAttemptCount }, (_, index) => outerAttempt('retained', index + 1))
+            createOuterAttempt('warmup', 1),
+            ...Array.from({ length: retainedAttemptCount }, (_, index) => createOuterAttempt('retained', index + 1))
         ],
         expectedCohorts: [],
         repeatLink
     };
 }
 
-function environment(captureManifest: RtcBaselineCaptureManifestDto): RtcBaselineEnvironmentDto {
+function createEnvironment(captureManifest: RtcBaselineCaptureManifestDto): RtcBaselineEnvironmentDto {
     const observation = initializedRuntimeObservation;
     return {
         schema: 'rallar.rtc-baseline.environment.v1',
@@ -192,7 +199,7 @@ function environment(captureManifest: RtcBaselineCaptureManifestDto): RtcBaselin
     };
 }
 
-function rawRelativePath(phase: 'warmup' | 'retained', outerOrdinal: number) {
+function toRawRelativePath(phase: 'warmup' | 'retained', outerOrdinal: number) {
     return [
         'artifacts/staging/rtc-b05-browser-data-channel-lifecycle-iterations-25',
         phase,
@@ -209,7 +216,7 @@ function writeInitializedBaseline(
     writeFileSync(join(baselinePath, 'manifest.json'), `${JSON.stringify(captureManifest)}\n`);
     writeFileSync(
         join(baselinePath, 'environment.json'),
-        `${JSON.stringify(environment(captureManifest))}\n`
+        `${JSON.stringify(createEnvironment(captureManifest))}\n`
     );
     return baselinePath;
 }
@@ -221,8 +228,8 @@ interface BrowserSoakRawArguments {
     rawResultRelativePath?: string;
 }
 
-function rawArguments(input: BrowserSoakRawArguments) {
-    const { baselineId, phase, outerOrdinal, rawResultRelativePath = rawRelativePath(input.phase, input.outerOrdinal) } = input;
+function toRawArguments(input: BrowserSoakRawArguments) {
+    const { baselineId, phase, outerOrdinal, rawResultRelativePath = toRawRelativePath(input.phase, input.outerOrdinal) } = input;
     return [
         '--capture=raw-evidence',
         `--baseline-id=${baselineId}`,
@@ -234,7 +241,7 @@ function rawArguments(input: BrowserSoakRawArguments) {
     ];
 }
 
-function completedSoak(iterationCount: number, iterationIdPrefix: string) {
+function createCompletedSoak(iterationCount: number, iterationIdPrefix: string) {
     const results = Array.from({ length: iterationCount }, (_, index) => ({
         index: index + 1,
         iterationId: `${iterationIdPrefix}-iteration-${String(index + 1).padStart(3, '0')}`,
@@ -347,8 +354,42 @@ class FakePeerConnection {
     }
 }
 
-function semanticBrowser() {
+class FakeCdpSession {
+    readonly heapReads: (number | null)[] = [];
+    private readonly heapValues: readonly (number | null)[];
+    private readonly failedGcOrdinal: number | null;
+    private collectionOrdinal = 0;
+    private heapValue: number | null = null;
+
+    constructor(heapValues: readonly (number | null)[], failedGcOrdinal: number | null) {
+        this.heapValues = heapValues;
+        this.failedGcOrdinal = failedGcOrdinal;
+    }
+
+    async send(command: string): Promise<object> {
+        if (command === 'HeapProfiler.collectGarbage') {
+            this.collectionOrdinal += 1;
+            await Promise.resolve();
+            if (this.collectionOrdinal === this.failedGcOrdinal) {
+                throw new Error('forced GC rejected');
+            }
+            this.heapValue = this.heapValues[this.collectionOrdinal - 1] ?? null;
+        }
+        if (command === 'Performance.getMetrics') {
+            this.heapReads.push(this.heapValue);
+            return {
+                metrics: this.heapValue === null
+                    ? []
+                    : [{ name: 'JSHeapUsedSize', value: this.heapValue }]
+            };
+        }
+        return {};
+    }
+}
+
+function createSemanticBrowser() {
     const close = vi.fn(async () => undefined);
+    const cdpSession = new FakeCdpSession([1000, 1000], null);
     const evaluate = vi.fn(async (operation: BrowserSoakOperation, argument?: BrowserSoakEvaluationInput) => {
         if (typeof operation !== 'function') {
             throw new Error('Expected a browser operation');
@@ -357,12 +398,7 @@ function semanticBrowser() {
     });
     const page: FakePage = {
         context: () => ({
-            newCDPSession: async () => ({
-                send: async (command: string) =>
-                    command === 'Performance.getMetrics'
-                        ? { metrics: [{ name: 'JSHeapUsedSize', value: 1000 }] }
-                        : {}
-            })
+            newCDPSession: async () => cdpSession
         }),
         setContent: async () => undefined,
         evaluate
@@ -374,12 +410,13 @@ function semanticBrowser() {
     };
 }
 
-function fakeBrowser(
-    soakFactory: (iterationCount: number, iterationIdPrefix: string) => object = completedSoak,
-    heapValues: readonly (number | null)[] = [1000, 1000]
+function createFakeBrowser(
+    soakFactory: (iterationCount: number, iterationIdPrefix: string) => object = createCompletedSoak,
+    heapValues: readonly (number | null)[] = [1000, 1000],
+    failedGcOrdinal: number | null = null
 ) {
     const close = vi.fn(async () => undefined);
-    let heapReadIndex = 0;
+    const cdpSession = new FakeCdpSession(heapValues, failedGcOrdinal);
     const evaluate = vi.fn(
         async (
             _operation: BrowserSoakOperation,
@@ -388,17 +425,7 @@ function fakeBrowser(
     );
     const page: FakePage = {
         context: () => ({
-            newCDPSession: async () => ({
-                send: async (command: string) => {
-                    if (command !== 'Performance.getMetrics') {
-                        return {};
-                    }
-                    const heapValue = heapValues[heapReadIndex++] ?? null;
-                    return {
-                        metrics: heapValue === null ? [] : [{ name: 'JSHeapUsedSize', value: heapValue }]
-                    };
-                }
-            })
+            newCDPSession: async () => cdpSession
         }),
         setContent: async () => undefined,
         evaluate
@@ -407,7 +434,7 @@ function fakeBrowser(
         newPage: async () => page,
         close
     };
-    return { browser, close, evaluate };
+    return { browser, close, evaluate, cdpSession };
 }
 
 function readJson(path: string): RtcBaselineJson {
@@ -422,7 +449,7 @@ function readExternalAttempt(path: string): RtcBaselineExternalAttemptDto & RtcB
     return value as RtcBaselineExternalAttemptDto & RtcBaselineJson;
 }
 
-function rtcB05IterationIds(rawEvidence: RtcBaselineJson): readonly string[] {
+function toRtcB05IterationIds(rawEvidence: RtcBaselineJson): readonly string[] {
     if (
         typeof rawEvidence !== 'object' ||
         rawEvidence === null ||
@@ -447,7 +474,7 @@ function rtcB05IterationIds(rawEvidence: RtcBaselineJson): readonly string[] {
     });
 }
 
-function rtcB05JsonObject(value: RtcBaselineJson, description: string) {
+function toRtcB05JsonObject(value: RtcBaselineJson, description: string) {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         throw new Error(`Expected object-shaped RTC-B05 ${description}`);
     }
@@ -486,7 +513,7 @@ function assertAcceptedAttemptIdentity(input: {
     outerOrdinal: number;
     relativePath: string;
 }) {
-    const expectedSampleId = sampleId(input.phase, input.outerOrdinal);
+    const expectedSampleId = toSampleId(input.phase, input.outerOrdinal);
     expect(input.staged).toMatchObject({
         schema: 'rallar.rtc-baseline.external-attempt.v1',
         locator: {
@@ -530,7 +557,7 @@ function assertAcceptedMeasurement(input: {
             outerOrdinal: input.outerOrdinal
         }
     });
-    const iterationIds = rtcB05IterationIds(sample.rawEvidence);
+    const iterationIds = toRtcB05IterationIds(sample.rawEvidence);
     expect(iterationIds).toHaveLength(25);
     expect(new Set(iterationIds).size).toBe(25);
     expect(
@@ -545,11 +572,11 @@ function assertAcceptedMeasurement(input: {
         { metric: 'firstCloseDurationMs', unit: 'ms', value: 0.5 },
         { metric: 'steadyCloseMedianDurationMs', unit: 'ms', value: 13 }
     ]);
-    expect(sample.runtimeObservation).toEqual(environment(input.captureManifest).observation);
+    expect(sample.runtimeObservation).toEqual(createEnvironment(input.captureManifest).observation);
 }
 
-function failedSoak(iterationCount: number, iterationIdPrefix: string) {
-    const soak = completedSoak(iterationCount, iterationIdPrefix);
+function createFailedSoak(iterationCount: number, iterationIdPrefix: string) {
+    const soak = createCompletedSoak(iterationCount, iterationIdPrefix);
     return {
         ...soak,
         closedCount: 24,
@@ -572,21 +599,21 @@ function expectCausalArtifacts(written: readonly RtcBaselineAcceptedArtifact[]) 
         expect.objectContaining({
             artifactKind: 'failure',
             identity: expect.objectContaining({
-                sampleId: sampleId('retained', 2),
+                sampleId: toSampleId('retained', 2),
                 outerOrdinal: 2
             })
         }),
         expect.objectContaining({
             artifactKind: 'not-run',
-            identity: expect.objectContaining({ sampleId: sampleId('retained', 3) })
+            identity: expect.objectContaining({ sampleId: toSampleId('retained', 3) })
         }),
         expect.objectContaining({
             artifactKind: 'not-run',
-            identity: expect.objectContaining({ sampleId: sampleId('retained', 4) })
+            identity: expect.objectContaining({ sampleId: toSampleId('retained', 4) })
         }),
         expect.objectContaining({
             artifactKind: 'not-run',
-            identity: expect.objectContaining({ sampleId: sampleId('retained', 5) })
+            identity: expect.objectContaining({ sampleId: toSampleId('retained', 5) })
         })
     ]);
 }
@@ -646,7 +673,7 @@ it('preserves the diagnostic CLI while measuring only through an injected browse
     const directory = mkdtempSync(join(tmpdir(), 'rtc-b05-diagnostic-'));
     const outputPath = join(directory, 'diagnostic.json');
     writeFileSync(outputPath, 'old diagnostic\n');
-    const launched = semanticBrowser();
+    const launched = createSemanticBrowser();
     const hadPeerConnection = Reflect.has(globalThis, 'RTCPeerConnection');
     const priorPeerConnection = Reflect.get(globalThis, 'RTCPeerConnection');
     Reflect.set(globalThis, 'RTCPeerConnection', FakePeerConnection);
@@ -688,16 +715,16 @@ it.each(acceptedRawScenarios)(
     'stages one create-new accepted raw file for every immutable $baselineId process identity',
     async ({ baselineId, multiplier, attempts }) => {
         const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-raw-'));
-        const captureManifest = manifest(baselineId, multiplier);
+        const captureManifest = createManifest(baselineId, multiplier);
         const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
         const manifestBefore = readFileSync(join(baselinePath, 'manifest.json'), 'utf8');
 
         try {
             for (const { phase, outerOrdinal } of attempts) {
-                const launched = fakeBrowser();
-                const relativePath = rawRelativePath(phase, outerOrdinal);
+                const launched = createFakeBrowser();
+                const relativePath = toRawRelativePath(phase, outerOrdinal);
                 await browserSoak.runRtcDataChannelBrowserSoakCli(
-                    rawArguments({ baselineId: baselineId, phase: phase, outerOrdinal: outerOrdinal }),
+                    toRawArguments({ baselineId: baselineId, phase: phase, outerOrdinal: outerOrdinal }),
                     {
                         baselineRootPath: rootPath,
                         launchBrowser: async () => launched.browser,
@@ -722,10 +749,10 @@ it.each(acceptedRawScenarios)(
             expect(readFileSync(join(baselinePath, 'manifest.json'), 'utf8')).toBe(manifestBefore);
             expect(captureManifest.outerAttempts).toHaveLength(attempts.length);
             const lastAttempt = attempts.at(-1)!;
-            const launchBrowser = vi.fn(async () => fakeBrowser().browser);
+            const launchBrowser = vi.fn(async () => createFakeBrowser().browser);
             await expect(
                 browserSoak.runRtcDataChannelBrowserSoakCli(
-                    rawArguments({ baselineId: baselineId, phase: lastAttempt.phase, outerOrdinal: lastAttempt.outerOrdinal }),
+                    toRawArguments({ baselineId: baselineId, phase: lastAttempt.phase, outerOrdinal: lastAttempt.outerOrdinal }),
                     { baselineRootPath: rootPath, launchBrowser }
                 )
             ).rejects.toThrow('already exists');
@@ -739,18 +766,18 @@ it.each(acceptedRawScenarios)(
 
 it('rejects bounds, overrides, path escapes, and changed accepted matrices before launch', async () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-invalid-'));
-    const captureManifest = manifest(primaryBaselineId, 1);
+    const captureManifest = createManifest(primaryBaselineId, 1);
     const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
-    const launched = fakeBrowser();
+    const launched = createFakeBrowser();
     const launchBrowser = vi.fn(async () => launched.browser);
 
     try {
         const invalidArguments = [
-            [...rawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1 }), '--iterations=25'],
-            rawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 0 }),
-            rawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1000 }),
-            rawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1, rawResultRelativePath: '../outside.json' }),
-            rawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1, rawResultRelativePath: 'artifacts/staging/other.json' })
+            [...toRawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1 }), '--iterations=25'],
+            toRawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 0 }),
+            toRawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1000 }),
+            toRawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1, rawResultRelativePath: '../outside.json' }),
+            toRawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1, rawResultRelativePath: 'artifacts/staging/other.json' })
         ];
         for (const argumentsList of invalidArguments) {
             await expect(
@@ -767,7 +794,7 @@ it('rejects bounds, overrides, path escapes, and changed accepted matrices befor
         };
         writeFileSync(join(baselinePath, 'manifest.json'), `${JSON.stringify(changedManifest)}\n`);
         await expect(
-            browserSoak.runRtcDataChannelBrowserSoakCli(rawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1 }), {
+            browserSoak.runRtcDataChannelBrowserSoakCli(toRawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 1 }), {
                 baselineRootPath: rootPath,
                 launchBrowser
             })
@@ -783,10 +810,10 @@ it('rejects bounds, overrides, path escapes, and changed accepted matrices befor
 
 it('rejects changed initialized B05 controller identity before browser launch', async () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-environment-'));
-    const captureManifest = manifest(primaryBaselineId, 1);
+    const captureManifest = createManifest(primaryBaselineId, 1);
     const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
-    const initializedEnvironment = environment(captureManifest);
-    const launchBrowser = vi.fn(async () => fakeBrowser().browser);
+    const initializedEnvironment = createEnvironment(captureManifest);
+    const launchBrowser = vi.fn(async () => createFakeBrowser().browser);
     if (initializedEnvironment.observation === null) {
         throw new Error('Expected an initialized B05 runtime observation');
     }
@@ -803,7 +830,7 @@ it('rejects changed initialized B05 controller identity before browser launch', 
 
     try {
         await expect(
-            browserSoak.runRtcDataChannelBrowserSoakCli(rawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }), {
+            browserSoak.runRtcDataChannelBrowserSoakCli(toRawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }), {
                 baselineRootPath: rootPath,
                 launchBrowser
             })
@@ -815,16 +842,276 @@ it('rejects changed initialized B05 controller identity before browser launch', 
     }
 });
 
+it('reports every independent raw-command admission issue before launch', async () => {
+    const launchBrowser = vi.fn(async () => createFakeBrowser().browser);
+    const result = browserSoak.runRtcDataChannelBrowserSoakCli([
+        '--capture=raw-evidence',
+        '--iterations=25',
+        '--baseline-id=invalid',
+        '--intended-phase=invalid',
+        '--outer-ordinal=0',
+        '--out=unused.json'
+    ], { launchBrowser });
+
+    for (
+        const message of [
+            'RTC-B05:',
+            'option --iterations cannot override',
+            'baseline ID does not match',
+            'option --case-id is required',
+            'option --input-key is required',
+            'option --intended-phase must be warmup or retained',
+            'option --outer-ordinal must be an integer from 1 through 999'
+        ]
+    ) {
+        await expect(result).rejects.toThrow(message);
+    }
+    expect(launchBrowser).not.toHaveBeenCalled();
+});
+
+it('reports independent manifest identity, workload, repeat, and matrix issues together', async () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-manifest-issues-'));
+    const captureManifest = createManifest(primaryBaselineId, 1);
+    const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
+    const launchBrowser = vi.fn(async () => createFakeBrowser().browser);
+    writeFileSync(
+        join(baselinePath, 'manifest.json'),
+        JSON.stringify({
+            ...captureManifest,
+            request: {
+                ...captureManifest.request,
+                environmentId: 'E1-local',
+                workloadIds: [],
+                retainedSampleMultiplier: 2,
+                repeatLink: { primaryBaselineId, primarySummarySha256: 'c'.repeat(64) }
+            },
+            outerAttempts: captureManifest.outerAttempts.slice(0, -1)
+        })
+    );
+
+    try {
+        const result = browserSoak.runRtcDataChannelBrowserSoakCli(
+            toRawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 5 }),
+            { baselineRootPath: rootPath, launchBrowser }
+        );
+        for (
+            const message of [
+                'manifest identity does not match',
+                'manifest changes the immutable RTC-B05 workload',
+                'manifest retained-sample multiplier does not match',
+                'primary manifest must not contain a repeat link',
+                'manifest repeat link differs from its request',
+                'manifest outer process identities differ',
+                'manifest does not predeclare'
+            ]
+        ) {
+            await expect(result).rejects.toThrow(message);
+        }
+        expect(launchBrowser).not.toHaveBeenCalled();
+    }
+    finally {
+        rmSync(rootPath, { recursive: true, force: true });
+    }
+});
+
+it('reports environment identity and runtime provenance issues together', async () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-environment-issues-'));
+    const captureManifest = createManifest(primaryBaselineId, 1);
+    const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
+    const launchBrowser = vi.fn(async () => createFakeBrowser().browser);
+    writeFileSync(
+        join(baselinePath, 'environment.json'),
+        JSON.stringify({
+            ...createEnvironment(captureManifest),
+            environmentId: 'E1-local',
+            observation: { ...initializedRuntimeObservation, controllerInputs: [] }
+        })
+    );
+
+    try {
+        const result = browserSoak.runRtcDataChannelBrowserSoakCli(
+            toRawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+            { baselineRootPath: rootPath, launchBrowser }
+        );
+        await expect(result).rejects.toThrow('environment identity does not match');
+        await expect(result).rejects.toThrow('runtime-observation-mismatch');
+        expect(launchBrowser).not.toHaveBeenCalled();
+    }
+    finally {
+        rmSync(rootPath, { recursive: true, force: true });
+    }
+});
+
+it.each([
+    { digestName: 'array', digest: ['c'.repeat(64)] },
+    { digestName: 'nested array', digest: [['c'.repeat(64)]] },
+    { digestName: 'throwing JSON object', digest: { toString: null } }
+].flatMap((digestCase) => [false, true].map((independentIssue) => ({ ...digestCase, independentIssue }))))(
+    'refuses repeat-summary $digestName with independent identity issue=$independentIssue before launch',
+    async ({ digest, independentIssue }) => {
+        const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-repeat-digest-'));
+        const captureManifest = createManifest(repeatBaselineId, 2);
+        const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
+        const launchBrowser = vi.fn(async () => createFakeBrowser().browser);
+        const repeatLink = { primaryBaselineId, primarySummarySha256: digest };
+        writeFileSync(
+            join(baselinePath, 'manifest.json'),
+            JSON.stringify({
+                ...captureManifest,
+                request: {
+                    ...captureManifest.request,
+                    environmentId: independentIssue ? 'E1-local' : 'E2-browser',
+                    repeatLink
+                },
+                repeatLink
+            })
+        );
+        writeFileSync(
+            join(baselinePath, 'environment.json'),
+            JSON.stringify({
+                ...createEnvironment(captureManifest),
+                repeatLink
+            })
+        );
+
+        try {
+            const result = browserSoak.runRtcDataChannelBrowserSoakCli(
+                toRawArguments({ baselineId: repeatBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+                { baselineRootPath: rootPath, launchBrowser }
+            );
+            await expect(result).rejects.toThrow('RTC-B05:');
+            await expect(result).rejects.toThrow('repeat manifest must link to the exact primary summary');
+            if (independentIssue) {
+                await expect(result).rejects.toThrow('manifest identity does not match');
+            }
+            expect(launchBrowser).not.toHaveBeenCalled();
+            expect(existsSync(join(baselinePath, toRawRelativePath('warmup', 1)))).toBe(false);
+        }
+        finally {
+            rmSync(rootPath, { recursive: true, force: true });
+        }
+    }
+);
+
+it.each([
+    { digestName: 'array', digest: ['a'.repeat(64)] },
+    { digestName: 'nested array', digest: [['a'.repeat(64)]] },
+    { digestName: 'throwing JSON object', digest: { toString: null } }
+].flatMap((digestCase) => [
+    { ...digestCase, sourceHashIndex: 0, independentIssue: false },
+    { ...digestCase, sourceHashIndex: 0, independentIssue: true },
+    { ...digestCase, sourceHashIndex: 1, independentIssue: false },
+    { ...digestCase, sourceHashIndex: 1, independentIssue: true }
+]))(
+    'refuses runtime-source[$sourceHashIndex] $digestName with independent identity issue=$independentIssue before launch',
+    async ({ digest, sourceHashIndex, independentIssue }) => {
+        const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-source-digest-'));
+        const captureManifest = createManifest(primaryBaselineId, 1);
+        const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
+        const environment = createEnvironment(captureManifest);
+        const launchBrowser = vi.fn(async () => createFakeBrowser().browser);
+        writeFileSync(
+            join(baselinePath, 'environment.json'),
+            JSON.stringify({
+                ...environment,
+                environmentId: independentIssue ? 'E1-local' : 'E2-browser',
+                observation: {
+                    ...environment.observation,
+                    sourceHashes: initializedRuntimeObservation.sourceHashes.map((entry, index) =>
+                        index === sourceHashIndex ? { ...entry, sha256: digest } : entry
+                    )
+                }
+            })
+        );
+
+        try {
+            const result = browserSoak.runRtcDataChannelBrowserSoakCli(
+                toRawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+                { baselineRootPath: rootPath, launchBrowser }
+            );
+            await expect(result).rejects.toThrow('RTC-B05:');
+            await expect(result).rejects.toThrow(
+                'environment changes the accepted RTC-B05 configuration or provenance: invalid-runtime-observation'
+            );
+            if (independentIssue) {
+                await expect(result).rejects.toThrow('environment identity does not match');
+            }
+            expect(launchBrowser).not.toHaveBeenCalled();
+            expect(existsSync(join(baselinePath, toRawRelativePath('warmup', 1)))).toBe(false);
+        }
+        finally {
+            rmSync(rootPath, { recursive: true, force: true });
+        }
+    }
+);
+
+it.each([
+    { artifactName: 'manifest', value: null, message: 'manifest identity does not match' },
+    { artifactName: 'manifest', value: { request: null }, message: 'manifest identity does not match' },
+    { artifactName: 'environment', value: null, message: 'environment identity does not match' },
+    {
+        artifactName: 'environment',
+        value: {
+            ...createEnvironment(createManifest(primaryBaselineId, 1)),
+            observation: { ...initializedRuntimeObservation, sourceHashes: [null] }
+        },
+        message: 'environment changes the accepted RTC-B05 configuration or provenance'
+    }
+])('refuses malformed $artifactName structure with a contextual CLI error', async ({ artifactName, value, message }) => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-malformed-'));
+    const baselinePath = writeInitializedBaseline(rootPath, createManifest(primaryBaselineId, 1));
+    const launchBrowser = vi.fn(async () => createFakeBrowser().browser);
+    writeFileSync(join(baselinePath, `${artifactName}.json`), JSON.stringify(value));
+
+    try {
+        await expect(browserSoak.runRtcDataChannelBrowserSoakCli(
+            toRawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+            { baselineRootPath: rootPath, launchBrowser }
+        )).rejects.toThrow(`RTC-B05: ${message}`);
+        expect(launchBrowser).not.toHaveBeenCalled();
+    }
+    finally {
+        rmSync(rootPath, { recursive: true, force: true });
+    }
+});
+
+it.each(['missing', 'invalid-json'])('preserves the normalized cause when the manifest is $0', async (failure) => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-read-failure-'));
+    const baselinePath = writeInitializedBaseline(rootPath, createManifest(primaryBaselineId, 1));
+    const manifestPath = join(baselinePath, 'manifest.json');
+    const launchBrowser = vi.fn(async () => createFakeBrowser().browser);
+    if (failure === 'missing') {
+        rmSync(manifestPath);
+    }
+    else {
+        writeFileSync(manifestPath, '{');
+    }
+
+    try {
+        await expect(browserSoak.runRtcDataChannelBrowserSoakCli(
+            toRawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+            { baselineRootPath: rootPath, launchBrowser }
+        )).rejects.toMatchObject({
+            message: expect.stringContaining('RTC-B05: manifest could not be read as JSON:'),
+            cause: expect.any(Error)
+        });
+        expect(launchBrowser).not.toHaveBeenCalled();
+    }
+    finally {
+        rmSync(rootPath, { recursive: true, force: true });
+    }
+});
+
 it('rejects a staged payload whose locator differs from the bridge command', async () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-payload-'));
-    const captureManifest = manifest(primaryBaselineId, 1);
+    const captureManifest = createManifest(primaryBaselineId, 1);
     const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
-    const relativePath = rawRelativePath('warmup', 1);
+    const relativePath = toRawRelativePath('warmup', 1);
 
     try {
         await browserSoak.runRtcDataChannelBrowserSoakCli(
-            rawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
-            { baselineRootPath: rootPath, launchBrowser: async () => fakeBrowser().browser }
+            toRawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+            { baselineRootPath: rootPath, launchBrowser: async () => createFakeBrowser().browser }
         );
         const staged = readExternalAttempt(join(baselinePath, relativePath));
         staged.locator.outerOrdinal = 2;
@@ -857,14 +1144,14 @@ it('rejects a staged payload whose locator differs from the bridge command', asy
 
 it('recomputes B05 lifecycle invariants after the bridge reads staged evidence', async () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-bridge-validation-'));
-    const captureManifest = manifest(primaryBaselineId, 1);
+    const captureManifest = createManifest(primaryBaselineId, 1);
     const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
-    const relativePath = rawRelativePath('warmup', 1);
+    const relativePath = toRawRelativePath('warmup', 1);
 
     try {
         await browserSoak.runRtcDataChannelBrowserSoakCli(
-            rawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
-            { baselineRootPath: rootPath, launchBrowser: async () => fakeBrowser().browser }
+            toRawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+            { baselineRootPath: rootPath, launchBrowser: async () => createFakeBrowser().browser }
         );
         const staged = readExternalAttempt(join(baselinePath, relativePath));
         const rawEvidence = staged.samples[0].rawEvidence;
@@ -905,23 +1192,23 @@ it('recomputes B05 lifecycle invariants after the bridge reads staged evidence',
 
 it('binds staged raw baseline identity to the trusted record-browser baseline', async () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-baseline-binding-'));
-    const captureManifest = manifest(primaryBaselineId, 1);
+    const captureManifest = createManifest(primaryBaselineId, 1);
     const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
-    const relativePath = rawRelativePath('warmup', 1);
+    const relativePath = toRawRelativePath('warmup', 1);
 
     try {
         await browserSoak.runRtcDataChannelBrowserSoakCli(
-            rawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
-            { baselineRootPath: rootPath, launchBrowser: async () => fakeBrowser().browser }
+            toRawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+            { baselineRootPath: rootPath, launchBrowser: async () => createFakeBrowser().browser }
         );
         const staged = readExternalAttempt(join(baselinePath, relativePath));
         const sample = staged.samples[0];
-        const rawEvidence = rtcB05JsonObject(sample.rawEvidence, 'raw evidence');
-        const rawIdentity = rtcB05JsonObject(rawEvidence.identity, 'raw identity');
-        const producerCommand = rtcB05JsonObject(rawEvidence.producerCommand, 'producer command');
+        const rawEvidence = toRtcB05JsonObject(sample.rawEvidence, 'raw evidence');
+        const rawIdentity = toRtcB05JsonObject(rawEvidence.identity, 'raw identity');
+        const producerCommand = toRtcB05JsonObject(rawEvidence.producerCommand, 'producer command');
         const changedBaselineId = '20260815-ffffffffffff-e2-browser';
         rawIdentity.baselineId = changedBaselineId;
-        producerCommand.arguments = [scriptPath, ...rawArguments({ baselineId: changedBaselineId, phase: 'warmup', outerOrdinal: 1 })];
+        producerCommand.arguments = [scriptPath, ...toRawArguments({ baselineId: changedBaselineId, phase: 'warmup', outerOrdinal: 1 })];
         if (sample.runtimeObservation === null) {
             throw new Error('Expected initialized RTC-B05 runtime observation');
         }
@@ -957,14 +1244,14 @@ it('binds staged raw baseline identity to the trusted record-browser baseline', 
 
 it('projects lifecycle failures and the bridge preserves the exact causal remainder', async () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-failure-'));
-    const captureManifest = manifest(primaryBaselineId, 1);
+    const captureManifest = createManifest(primaryBaselineId, 1);
     const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
-    const launched = fakeBrowser(failedSoak);
-    const relativePath = rawRelativePath('retained', 2);
+    const launched = createFakeBrowser(createFailedSoak);
+    const relativePath = toRawRelativePath('retained', 2);
 
     try {
         await browserSoak.runRtcDataChannelBrowserSoakCli(
-            rawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 2 }),
+            toRawArguments({ baselineId: primaryBaselineId, phase: 'retained', outerOrdinal: 2 }),
             {
                 baselineRootPath: rootPath,
                 launchBrowser: async () => launched.browser,
@@ -1015,16 +1302,110 @@ it('projects lifecycle failures and the bridge preserves the exact causal remain
     }
 });
 
+it.each([
+    { boundary: 'before the initial heap read', failedGcOrdinal: 1, heapReads: [], completedSoakCount: 0 },
+    { boundary: 'after the completed soak', failedGcOrdinal: 2, heapReads: [1000], completedSoakCount: 1 }
+])('rejects capture when forced GC fails $boundary', async ({ failedGcOrdinal, heapReads, completedSoakCount }) => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-required-gc-'));
+    const baselinePath = writeInitializedBaseline(rootPath, createManifest(primaryBaselineId, 1));
+    const completedSoaks: object[] = [];
+    const launched = createFakeBrowser(
+        (iterationCount, iterationIdPrefix) => {
+            const soak = createCompletedSoak(iterationCount, iterationIdPrefix);
+            completedSoaks.push(soak);
+            return soak;
+        },
+        [1000, 1250],
+        failedGcOrdinal
+    );
+    const relativePath = toRawRelativePath('warmup', 1);
+
+    try {
+        await expect(
+            browserSoak.runRtcDataChannelBrowserSoakCli(
+                toRawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+                {
+                    baselineRootPath: rootPath,
+                    launchBrowser: async () => launched.browser
+                }
+            )
+        ).rejects.toThrow('forced GC rejected');
+        expect(launched.cdpSession.heapReads).toEqual(heapReads);
+        expect(completedSoaks).toHaveLength(completedSoakCount);
+        if (completedSoakCount === 1) {
+            expect(completedSoaks[0]).toMatchObject({
+                iterations: 25,
+                openedCount: 25,
+                closedCount: 25,
+                messageReceivedCount: 25,
+                localErrorCount: 0,
+                remoteErrorCount: 0
+            });
+        }
+        expect(launched.close).toHaveBeenCalledOnce();
+        expect(existsSync(join(baselinePath, relativePath))).toBe(false);
+    }
+    finally {
+        rmSync(rootPath, { recursive: true, force: true });
+    }
+});
+
+it.each([
+    {
+        exposure: 'available',
+        heapValues: [1000, 1250],
+        heap: { beforeBytes: 1000, afterBytes: 1250, deltaBytes: 250 },
+        metrics: [
+            { metric: 'heapBeforeBytes', unit: 'bytes', value: 1000 },
+            { metric: 'heapAfterBytes', unit: 'bytes', value: 1250 },
+            { metric: 'heapDeltaBytes', unit: 'bytes', value: 250 }
+        ]
+    },
+    {
+        exposure: 'unavailable',
+        heapValues: [null, null],
+        heap: { beforeBytes: null, afterBytes: null, deltaBytes: null },
+        metrics: []
+    }
+])('preserves $exposure heap evidence after successful forced GC', async ({ heapValues, heap, metrics }) => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-collected-heap-'));
+    const baselinePath = writeInitializedBaseline(rootPath, createManifest(primaryBaselineId, 1));
+    const launched = createFakeBrowser(createCompletedSoak, heapValues);
+    const relativePath = toRawRelativePath('warmup', 1);
+
+    try {
+        const result = await browserSoak.runRtcDataChannelBrowserSoakCli(
+            toRawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+            {
+                baselineRootPath: rootPath,
+                launchBrowser: async () => launched.browser
+            }
+        );
+        const staged = readExternalAttempt(join(baselinePath, relativePath));
+        expect(result.output).toEqual(staged);
+        expect(staged.sampleOutcomes).toEqual([
+            expect.objectContaining({ outcome: 'passed', issues: [] })
+        ]);
+        expect(staged.samples[0].rawEvidence).toMatchObject({ heap });
+        expect(staged.samples[0].metrics.filter(({ metric }) => metric.startsWith('heap'))).toEqual(metrics);
+        expect(launched.cdpSession.heapReads).toEqual(heapValues);
+        expect(launched.close).toHaveBeenCalledOnce();
+    }
+    finally {
+        rmSync(rootPath, { recursive: true, force: true });
+    }
+});
+
 it('fails raw evidence when Chromium exposes only one forced-GC heap value', async () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-heap-'));
-    const captureManifest = manifest(primaryBaselineId, 1);
+    const captureManifest = createManifest(primaryBaselineId, 1);
     const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
-    const launched = fakeBrowser(completedSoak, [1000, null]);
-    const relativePath = rawRelativePath('warmup', 1);
+    const launched = createFakeBrowser(createCompletedSoak, [1000, null]);
+    const relativePath = toRawRelativePath('warmup', 1);
 
     try {
         await browserSoak.runRtcDataChannelBrowserSoakCli(
-            rawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+            toRawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
             {
                 baselineRootPath: rootPath,
                 launchBrowser: async () => launched.browser
@@ -1067,15 +1448,15 @@ it('fails raw evidence when Chromium exposes only one forced-GC heap value', asy
 
 it('closes the browser and leaves no raw file when native execution throws', async () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-cleanup-'));
-    const captureManifest = manifest(primaryBaselineId, 1);
+    const captureManifest = createManifest(primaryBaselineId, 1);
     const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
-    const launched = fakeBrowser();
+    const launched = createFakeBrowser();
     launched.evaluate.mockRejectedValueOnce(new Error('page failed'));
-    const relativePath = rawRelativePath('warmup', 1);
+    const relativePath = toRawRelativePath('warmup', 1);
 
     try {
         await expect(
-            browserSoak.runRtcDataChannelBrowserSoakCli(rawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }), {
+            browserSoak.runRtcDataChannelBrowserSoakCli(toRawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }), {
                 baselineRootPath: rootPath,
                 launchBrowser: async () => launched.browser
             })
