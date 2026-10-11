@@ -13,14 +13,10 @@ on:
           - baseline
           - diagnostic
       rtc_capture_mode:
-        description: Select RTC diagnostics capture
+        description: RTC diagnostics capture mode (off, signaling, native)
         required: true
         default: signaling
-        type: choice
-        options:
-          - 'off'
-          - signaling
-          - native
+        type: string
 
 permissions:
   contents: read
