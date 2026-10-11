@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { stopNativeAdmissionTestRuntime, type NativeAdmissionTestCleanup } from './native-admission-test-cleanup.ts';
+import { closeNativeAdmissionTestDatabase, stopNativeAdmissionTestRuntime, type NativeAdmissionTestCleanup } from './native-admission-test-cleanup.ts';
 
 Deno.test('native cleanup retains the body failure while attempting and reporting every failing owned stage', async () => {
     const primaryFailure = new Error('room assertion failed');
@@ -128,12 +128,124 @@ Deno.test('native cleanup releases the database barrier and awaits shutdown afte
     assert.deepEqual(fixture.calls.slice(-3), ['engine-pass', 'engine-barrier-released', 'background']);
 });
 
+Deno.test('native database close survives both progress failures and remains awaited by runtime shutdown', async () => {
+    const primaryFailure = new Error('room assertion failed');
+    const progressFailure = new Error('progress output failed');
+    const fixture = createNativeAdmissionCleanupFixture(new Map(), primaryFailure);
+    const databaseFinished = Promise.withResolvers<void>();
+    const markers: string[] = [];
+    let closeStarted = false;
+    let closeCompleted = false;
+    let cleanupCompleted = false;
+    const cleanup = stopNativeAdmissionTestRuntime({
+        ...fixture.cleanup,
+        backgroundTasks: {
+            stop: async () => {
+                await fixture.cleanup.backgroundTasks.stop();
+                await closeNativeAdmissionTestDatabase({
+                    close: async () => {
+                        closeStarted = true;
+                        await databaseFinished.promise;
+                        closeCompleted = true;
+                    }
+                }, (message) => {
+                    markers.push(message);
+                    throw progressFailure;
+                });
+            }
+        }
+    }).finally(() => {
+        cleanupCompleted = true;
+    });
+    const rejection = assert.rejects(cleanup, (error) => error === primaryFailure);
+    try {
+        await fixture.cleanup.queueEngineStopped.promise;
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.equal(closeStarted, true, 'Throwing start progress must not skip actual database close');
+        assert.equal(closeCompleted, false);
+        assert.equal(cleanupCompleted, false, 'Runtime shutdown must await delayed database close');
+    }
+    finally {
+        databaseFinished.resolve();
+        await rejection;
+    }
+    assert.equal(closeCompleted, true);
+    assert.deepEqual(markers, [
+        'Native admission cleanup: database close started',
+        'Native admission cleanup: database close finished'
+    ]);
+    assert.equal(fixture.secondaryFailures.length, 1);
+    const backgroundFailure = fixture.secondaryFailures[0].errors[0];
+    assert.equal(backgroundFailure.message, 'Native admission cleanup failed: background tasks and database');
+    assert.ok(backgroundFailure.cause instanceof AggregateError);
+    assert.equal(backgroundFailure.cause.errors.length, 2);
+    assert.ok(backgroundFailure.cause.errors[0] instanceof Error);
+    assert.ok(backgroundFailure.cause.errors[1] instanceof Error);
+    assert.equal(backgroundFailure.cause.errors[0].cause, progressFailure);
+    assert.equal(backgroundFailure.cause.errors[1].cause, progressFailure);
+});
+
+Deno.test('native database close failure remains observable beside progress failure and body primary', async () => {
+    const primaryFailure = new Error('room assertion failed');
+    const closeFailure = new Error('database close failed');
+    const progressFailure = new Error('progress output failed');
+    const fixture = createNativeAdmissionCleanupFixture(new Map(), primaryFailure);
+    let closeAttempted = false;
+    await assert.rejects(
+        stopNativeAdmissionTestRuntime({
+            ...fixture.cleanup,
+            backgroundTasks: {
+                stop: async () => {
+                    await fixture.cleanup.backgroundTasks.stop();
+                    await closeNativeAdmissionTestDatabase({
+                        close: () => {
+                            closeAttempted = true;
+                            return Promise.reject(closeFailure);
+                        }
+                    }, () => {
+                        throw progressFailure;
+                    });
+                }
+            }
+        }),
+        (error) => error === primaryFailure
+    );
+    assert.equal(closeAttempted, true, 'Progress failure must not hide a simultaneous real close failure');
+    const backgroundFailure = fixture.secondaryFailures[0].errors[0];
+    assert.ok(backgroundFailure.cause instanceof AggregateError);
+    assert.equal(backgroundFailure.cause.errors.length, 2);
+    assert.ok(backgroundFailure.cause.errors[0] instanceof Error);
+    assert.ok(backgroundFailure.cause.errors[1] instanceof Error);
+    assert.equal(backgroundFailure.cause.errors[0].cause, progressFailure);
+    assert.equal(backgroundFailure.cause.errors[1].cause, closeFailure);
+    assert.equal(backgroundFailure.cause.errors[0].message, 'Native admission cleanup failed: progress reporting');
+    assert.equal(backgroundFailure.cause.errors[1].message, 'Native admission cleanup failed: database close');
+});
+
 function createNativeAdmissionCleanupFixture(failures: ReadonlyMap<string, Error>, primaryFailure: Error | undefined) {
     const calls: string[] = [];
     const secondaryFailures: AggregateError[] = [];
     const backgroundProducersStopped = Promise.withResolvers<void>();
     const queueEngineStopped = Promise.withResolvers<void>();
     const cleanup: NativeAdmissionTestCleanup = {
+        ...createNativeAdmissionSessionCleanupFixture(calls, failures),
+        ...createNativeAdmissionTransportCleanupFixture(calls, failures),
+        ...createNativeAdmissionQueueCleanupFixture({ calls, failures, backgroundProducersStopped, queueEngineStopped }),
+        backgroundProducersStopped: backgroundProducersStopped.promise,
+        queueEngineStopped,
+        primaryFailure,
+        reportProgress: () => {},
+        reportSecondaryFailures: (failure) => secondaryFailures.push(failure)
+    };
+    return { cleanup, calls, secondaryFailures };
+}
+
+function createNativeAdmissionSessionCleanupFixture(
+    calls: string[],
+    failures: ReadonlyMap<string, Error>
+): Pick<NativeAdmissionTestCleanup, 'socketClosures' | 'waitForSessionDisconnects'> {
+    return {
         socketClosures: [
             Promise.resolve().then(() => {
                 calls.push('socket');
@@ -150,7 +262,15 @@ function createNativeAdmissionCleanupFixture(failures: ReadonlyMap<string, Error
                 return Promise.reject(failure);
             }
             return Promise.resolve();
-        },
+        }
+    };
+}
+
+function createNativeAdmissionTransportCleanupFixture(
+    calls: string[],
+    failures: ReadonlyMap<string, Error>
+): Pick<NativeAdmissionTestCleanup, 'webSocketLifecycle' | 'listener'> {
+    return {
         webSocketLifecycle: {
             dispose: () => {
                 calls.push('websocket');
@@ -170,7 +290,22 @@ function createNativeAdmissionCleanupFixture(failures: ReadonlyMap<string, Error
                 }
                 return Promise.resolve();
             }
-        },
+        }
+    };
+}
+
+interface NativeAdmissionQueueCleanupFixture {
+    readonly calls: string[];
+    readonly failures: ReadonlyMap<string, Error>;
+    readonly backgroundProducersStopped: PromiseWithResolvers<void>;
+    readonly queueEngineStopped: PromiseWithResolvers<void>;
+}
+
+function createNativeAdmissionQueueCleanupFixture(
+    fixture: NativeAdmissionQueueCleanupFixture
+): Pick<NativeAdmissionTestCleanup, 'backgroundTasks' | 'engine'> {
+    const { calls, failures, backgroundProducersStopped, queueEngineStopped } = fixture;
+    return {
         backgroundTasks: {
             stop: async () => {
                 calls.push('background-start');
@@ -200,12 +335,6 @@ function createNativeAdmissionCleanupFixture(failures: ReadonlyMap<string, Error
                 }
                 return Promise.resolve(false);
             }
-        },
-        backgroundProducersStopped: backgroundProducersStopped.promise,
-        queueEngineStopped,
-        primaryFailure,
-        reportProgress: () => {},
-        reportSecondaryFailures: (failure) => secondaryFailures.push(failure)
+        }
     };
-    return { cleanup, calls, secondaryFailures };
 }
