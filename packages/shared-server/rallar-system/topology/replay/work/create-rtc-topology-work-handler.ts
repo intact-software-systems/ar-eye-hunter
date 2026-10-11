@@ -7,6 +7,7 @@ import type { OnMessageCallback } from '@shared/services/queue-message-callbacks
 
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { AppOutboxType } from '../../../app-outbox/app-outbox-type.ts';
 import type { RtcRttRefinementService } from '../../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
 import type { RtcTopologyMutationComputed, RtcTopologyMutationRead } from '../../mutation/rtc-topology-mutations.ts';
@@ -30,8 +31,7 @@ import {
     computeRtcTopologyWork,
     validateRtcTopologyWork,
     type ComputeRtcTopologyWorkInput,
-    type RtcTopologyWorkFacts,
-    type RtcTopologyWorkRead
+    type RtcTopologyWorkFacts
 } from './compute-rtc-topology-work.ts';
 import type { GroupFormationAutomationPort } from './create-group-connect-trigger-work-handler.ts';
 import {
@@ -151,21 +151,20 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         await deferredCriterionPetitioner?.request(workEnvelope.data, mutationRead);
         return;
     }
-    const computationInput: ComputeRtcTopologyWorkInput = {
-        facts,
-        read: await readRtcTopologyWork(attempt),
-        publicationExpireAtTimestamp: workEnvelope.data.publish
-            ? options.executionRepository.publicationExpireAtTimestamp()
-            : null,
+    const computationInput = await readRtcTopologyWorkComputationInput({
+        ...attempt,
         entry,
-        reservationFinish,
-        formationAutomationEnabled: options.formationAutomation !== undefined,
-        serviceId: options.serviceId,
-        publisherStreamId: options.topologyDelivery?.publisherStreamId
-    };
+        reservationFinish
+    });
     const computeStartedAtMs = options.topologyPlanning.readDurationNowMs();
-    const computed = await computeRtcTopologyWork(computationInput);
-    const issues = await validateRtcTopologyWork(computationInput, computed);
+    const computation = await computeRtcTopologyWork(computationInput);
+    const computed = computation.fold(
+        () => {
+            throw new RuntimeStateWriteConflictError();
+        },
+        (prepared) => prepared
+    );
+    const issues = await validateRtcTopologyWork(computationInput, computation);
     if (issues[0] !== undefined) {
         throw issues[0].cause;
     }
@@ -175,6 +174,47 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         computedWrite: computed.write,
         computeDurationMs: options.topologyPlanning.readDurationNowMs() - computeStartedAtMs
     });
+}
+
+interface ReadRtcTopologyWorkComputationInput extends RtcTopologyWorkAttemptInput {
+    readonly entry: ResourceEntry;
+    readonly reservationFinish: ResourceInboxReservationFinish;
+}
+
+async function readRtcTopologyWorkComputationInput(
+    input: ReadRtcTopologyWorkComputationInput
+): Promise<ComputeRtcTopologyWorkInput> {
+    const { options, facts, mutationRead, entry, reservationFinish } = input;
+    const { workEnvelope } = facts;
+    const work = workEnvelope.data;
+    const membershipDeltaWork = work.kind === 'group-revision';
+    const [authority, promotionRead, storedInputFingerprint] = await Promise.all([
+        options.topologyPlanning.readTopologyPlanningAuthority({
+            groupRef: work.groupSnapshot.group,
+            requestOptions: fromCanonicalGroupTopologyConfigPatch(work.requestOptions),
+            knownGroup: work.groupSnapshot,
+            snapshotSelection: membershipDeltaWork ? 'preserve-known-revision' : 'prefer-current'
+        }),
+        readTopologyPromotion({
+            publication: options.topologyPublication,
+            groupRef: work.groupSnapshot.group
+        }),
+        options.executionRepository.readTopologyInputFingerprint(
+            work.groupSnapshot.group
+        )
+    ]);
+    return {
+        facts,
+        read: { mutation: mutationRead, authority, promotion: promotionRead, storedInputFingerprint },
+        publicationExpireAtTimestamp: facts.workEnvelope.data.publish
+            ? options.executionRepository.publicationExpireAtTimestamp()
+            : null,
+        entry,
+        reservationFinish,
+        formationAutomationEnabled: options.formationAutomation !== undefined,
+        serviceId: options.serviceId,
+        publisherStreamId: options.topologyDelivery?.publisherStreamId
+    };
 }
 
 interface WriteSkippedRttRefinementInput {
@@ -287,36 +327,6 @@ function claimRttRefinementSkip(
         decision: 'skipped-rtt-refinement',
         work,
         group: work.groupSnapshot
-    };
-}
-
-async function readRtcTopologyWork(
-    input: RtcTopologyWorkAttemptInput
-): Promise<RtcTopologyWorkRead> {
-    const { options, facts, mutationRead } = input;
-    const { workEnvelope } = facts;
-    const work = workEnvelope.data;
-    const membershipDeltaWork = work.kind === 'group-revision';
-    const [authority, promotionRead, storedInputFingerprint] = await Promise.all([
-        options.topologyPlanning.readTopologyPlanningAuthority({
-            groupRef: work.groupSnapshot.group,
-            requestOptions: fromCanonicalGroupTopologyConfigPatch(work.requestOptions),
-            knownGroup: work.groupSnapshot,
-            snapshotSelection: membershipDeltaWork ? 'preserve-known-revision' : 'prefer-current'
-        }),
-        readTopologyPromotion({
-            publication: options.topologyPublication,
-            groupRef: work.groupSnapshot.group
-        }),
-        options.executionRepository.readTopologyInputFingerprint(
-            work.groupSnapshot.group
-        )
-    ]);
-    return {
-        mutation: mutationRead,
-        authority,
-        promotion: promotionRead,
-        storedInputFingerprint
     };
 }
 
