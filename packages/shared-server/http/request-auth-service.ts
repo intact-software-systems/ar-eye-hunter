@@ -108,7 +108,13 @@ export async function requireWsAuthSession(
         expectedSessionId: input.sessionId
     });
     if (consumed.left !== undefined || consumed.right === undefined) {
-        throw unauthorized('Invalid or expired websocket auth ticket');
+        throw new RequestAuthFailure({
+            kind: 'authentication',
+            code: 'authentication-required',
+            status: 401,
+            message: 'Unauthorized: Invalid or expired websocket auth ticket',
+            details: { requestId: facts.requestId, sessionId: input.sessionId }
+        });
     }
     return consumed.right;
 }

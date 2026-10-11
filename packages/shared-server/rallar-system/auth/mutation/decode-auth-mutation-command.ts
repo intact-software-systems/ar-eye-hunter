@@ -1,4 +1,8 @@
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../protocol/json-wire-identity.ts';
 import { decodePersistedAuthSession } from '../persistence/persisted-auth-session.ts';
 import {
     decodePersistedAgentSessionTicket,
@@ -6,7 +10,6 @@ import {
 } from '../persistence/persisted-auth-ticket.ts';
 import { decodePersistedAuthUser } from '../persistence/persisted-auth-user.ts';
 import { requireIssueSessionLifecycle } from '../sessions/require-issue-session-lifecycle.ts';
-
 import type { AuthMutationCommand } from './auth-mutation-contracts.ts';
 
 export function decodeAuthMutationCommand(input: unknown): AuthMutationCommand {
@@ -21,7 +24,7 @@ export function decodeAuthMutationCommand(input: unknown): AuthMutationCommand {
     requireTimestamp(command.capturedAtEpochMs, 'Auth mutation capturedAtEpochMs');
     validateAuthMutationCommand(command);
     assertNoPlaintextAuthFields(command);
-    return structuredClone(command) as AuthMutationCommand;
+    return structuredClone(command) as AuthMutationCommand & JsonWireObject;
 }
 
 function validateAuthMutationCommand(command: JsonWireObject): void {
