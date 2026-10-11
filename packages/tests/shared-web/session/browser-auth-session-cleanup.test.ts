@@ -257,6 +257,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         });
         mocks.qboxEngine.stop.mockImplementation(() => {
             cleanupState.queueStopped = true;
+            return Promise.resolve();
         });
         mocks.webSocketQueueBox.close.mockImplementation((code, reason) => {
             if (code === undefined || reason === undefined) {
@@ -264,6 +265,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
             }
             webSocketClose = { code, reason };
             mocks.webSocket.close(code, reason);
+            return Promise.resolve();
         });
         mocks.initialiseMiddleware.mockReturnValueOnce(deferred.promise);
         const facade = createRallarFacade();
@@ -371,6 +373,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
             }
             webSocketClose = { code, reason };
             mocks.webSocket.close(code, reason);
+            return Promise.resolve();
         });
         const facade = createRallarFacade();
 
@@ -450,6 +453,7 @@ function recordDisconnectAndPurgeSteps(purgeFailure?: Error): string[] {
     const steps: string[] = [];
     mocks.webSocketQueueBox.close.mockImplementation(() => {
         steps.push('disconnect');
+        return Promise.resolve();
     });
     mocks.deleteBrowserALRuntimeEntriesForSession.mockImplementation(async (sessionId, options) => {
         steps.push(`purge:${sessionId} in ${options.currentScope.applicationId}:${options.currentScope.workspaceId}`);

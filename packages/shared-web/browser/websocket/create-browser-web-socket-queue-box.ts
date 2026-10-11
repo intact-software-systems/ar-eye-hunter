@@ -23,7 +23,7 @@ import type { ClientInfo } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
-import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import WsQueueBoxClientService, {
     createDefaultWsQueueBoxClientService,
     DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS

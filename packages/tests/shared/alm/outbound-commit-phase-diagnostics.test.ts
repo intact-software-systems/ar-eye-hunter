@@ -9,7 +9,7 @@ import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-da
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import '../../setup-browser-indexeddb.ts';
 import {
     computeOutboundTestAdmission,

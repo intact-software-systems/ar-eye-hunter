@@ -22,7 +22,7 @@ import {
     vi
 } from 'vitest';
 
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import { waitForSettledOutboundWork } from '../../wait-for-al-outbound-work.ts';
 import {

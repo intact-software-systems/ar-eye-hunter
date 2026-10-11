@@ -4,7 +4,7 @@ import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import type { ALWorkClaim, ALWorkOutcome } from '@shared/alm/work/al-work-queue-port.ts';
 import { AL_WORK_UNDESCRIBED_COMMIT, type ALWorkCommittedRows } from '@shared/alm/work/al-work-readiness-memory.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { describe, expect, it, vi } from 'vitest';
 import {
     collectProbe,

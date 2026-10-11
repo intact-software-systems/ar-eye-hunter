@@ -41,7 +41,7 @@ import type {
     ResourceInboxReservationRequest
 } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY } from '@shared/services/web-rtc-connection-service.ts';
 import {

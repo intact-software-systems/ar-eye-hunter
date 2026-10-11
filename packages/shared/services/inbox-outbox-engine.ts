@@ -45,12 +45,17 @@ export class InboxOutboxEngine {
     private successiveIdleExecutions = 0;
     private scheduledAtMs: number | undefined;
 
+    private readonly tasksInFlight = new Set<Promise<void>>();
+
     private readonly tasks = new Map<string, ComputeAsyncTask.LoopsTaskDto>();
     private readonly readyAtByTask = new Map<string, number>();
     private readonly wakeListeners = new Map<string, () => void>();
 
     includeTask(id: string, task: ComputeAsyncTask.LoopsTaskDto): InboxOutboxEngine {
         this.readyAtByTask.delete(id);
+        for (const ongoing of task.ongoingTasks) {
+            this.retainTaskCompletion(ongoing.promise);
+        }
         this.tasks.set(id, { ...task, name: id, ongoingTasks: [...task.ongoingTasks] });
         return this;
     }
@@ -104,7 +109,7 @@ export class InboxOutboxEngine {
         this.wake();
     }
 
-    stop(): void {
+    async stop(): Promise<void> {
         this.generation += 1;
         this.running = false;
         this.wakeAfterExecution = false;
@@ -113,6 +118,16 @@ export class InboxOutboxEngine {
         }
         this.timer = NOT_SET;
         this.scheduledAtMs = undefined;
+
+        const started = [...this.tasksInFlight];
+        await this.execution;
+        const outcomes = await Promise.allSettled([...new Set([...started, ...this.tasksInFlight])]);
+        const failures = outcomes.filter((outcome) => outcome.status === 'rejected').map((outcome) =>
+            toError(outcome.reason)
+        );
+        if (failures.length > 0) {
+            throw new AggregateError(failures, 'Queue engine owned work failed during shutdown');
+        }
     }
 
     /**
@@ -256,6 +271,10 @@ export class InboxOutboxEngine {
     private toTaskPass(task: ComputeAsyncTask.LoopsTaskDto, generation: number): ComputeAsyncTask.LoopsTaskDto {
         return {
             ...task,
+            executor: (runnable) =>
+                this.retainTaskCompletion(
+                    task.executor === undefined ? Promise.resolve().then(runnable) : task.executor(runnable)
+                ),
             maxConcurrency: async () => this.isCurrentTask(task, generation) ? await task.maxConcurrency() : 0,
             isWork: async () => {
                 if (!this.isCurrentTask(task, generation)) {
@@ -270,6 +289,15 @@ export class InboxOutboxEngine {
                 }
             }
         };
+    }
+
+    private retainTaskCompletion(completion: Promise<void>): Promise<void> {
+        this.tasksInFlight.add(completion);
+        void completion.then(
+            () => this.tasksInFlight.delete(completion),
+            () => this.tasksInFlight.delete(completion)
+        );
+        return completion;
     }
 
     private isCurrentTask(task: ComputeAsyncTask.LoopsTaskDto, generation: number): boolean {

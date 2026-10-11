@@ -236,6 +236,7 @@ describe('Rallar RTC recovery', () => {
         });
         mocks.webSocketQueueBox.close.mockImplementation((code, reason) => {
             mocks.webSocketClient.close(code, reason);
+            return Promise.resolve();
         });
         mocks.webSocketClient.onWebsocketCallbacksDo.mockReturnValue(
             mocks.webSocketClient

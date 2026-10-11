@@ -29,7 +29,7 @@ import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { toError } from '../resilience/to-error.ts';
 import type { QRtcClientCallbacks } from '../webrtc/qrtc-client-callbacks.ts';
 import type { QRtcMediaPolicy } from '../webrtc/qrtc-peer-connection.ts';
-import type { InboxOutboxEngine } from './InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from './inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from './queue-box-utilities.ts';
 import type { OnMessageCallback } from './queue-message-callbacks.ts';
 import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';

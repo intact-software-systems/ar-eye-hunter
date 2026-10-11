@@ -69,7 +69,7 @@ import {
 } from '../transport-faults/transport-fault-port.ts';
 import type { JsonWebSocketClient } from '../websocket/json-web-socket-client.ts';
 import { WsClientReconnect } from '../websocket/ws-client-reconnect.ts';
-import type { InboxOutboxEngine } from './InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from './inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from './queue-box-utilities.ts';
 import type {
     OnInboxMessageCallback,
@@ -419,12 +419,25 @@ export class WsQueueBoxClientService {
         return this;
     }
 
-    close(code?: number, reason?: string): void {
+    async close(code?: number, reason?: string): Promise<void> {
         this.closed = true;
         this.disableReconnect();
-        this.outboundRuntime.dispose();
-        this.inboundRuntime.dispose();
-        this.socket.close(code, reason);
+        const disposals = [this.outboundRuntime.dispose(), this.inboundRuntime.dispose()];
+        const failures: Error[] = [];
+        try {
+            this.socket.close(code, reason);
+        }
+        catch (error) {
+            failures.push(error instanceof Error ? error : new Error(String(error)));
+        }
+        for (const outcome of await Promise.allSettled(disposals)) {
+            if (outcome.status === 'rejected') {
+                failures.push(outcome.reason instanceof Error ? outcome.reason : new Error(String(outcome.reason)));
+            }
+        }
+        if (failures.length > 0) {
+            throw new AggregateError(failures, 'WS client shutdown failed');
+        }
     }
 
     enableDefaultCallbacks(): WsQueueBoxClientService {

@@ -13,12 +13,13 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'toAuthErrorResponse'
     }),
-    // Ticket HTTP JSON is untrusted until object, property and string checks
-    // admit the ticket. Only that checked string leaves this network boundary.
+    // The native scenarios now share this ticket HTTP owner. JSON is untrusted
+    // until object, non-null, property and string checks admit the ticket;
+    // only that checked string leaves the manually reviewed network boundary.
     Object.freeze({
-        path: 'apps/api-v1/test/db/concurrent-session-native-admission-child.ts',
+        path: 'apps/api-v1/test/db/native-session-test-fixture.ts',
         rule: 'boundary.unknown',
-        symbol: 'readWebSocketTicket'
+        symbol: 'issueNativeWebSocketTicket'
     }),
     // Caught cleanup rejections are immediately narrowed to Error or normalized
     // through String. Only a stage-labelled Error with that cause leaves this owner.

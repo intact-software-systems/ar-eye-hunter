@@ -1,4 +1,4 @@
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     afterEach,
     describe,
@@ -12,6 +12,54 @@ afterEach(() => {
 });
 
 describe('engine', () => {
+    it('joins an excluded runnable through computation and resource release when stopped', async () => {
+        const engine = new InboxOutboxEngine();
+        const entered = Promise.withResolvers<void>();
+        const computation = Promise.withResolvers<void>();
+        const releasing = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let available = true;
+        let stopped = false;
+        engine.includeTask('owned', {
+            name: 'owned',
+            maxConcurrency: () => 1,
+            isWork: () => available,
+            runnable: async () => {
+                available = false;
+                entered.resolve();
+                try {
+                    await computation.promise;
+                }
+                finally {
+                    releasing.resolve();
+                    await release.promise;
+                }
+            },
+            ongoingTasks: []
+        });
+        await engine.executeOnce();
+        await entered.promise;
+        engine.excludeTask('owned');
+        const stopping = Promise.resolve(engine.stop()).then(() => {
+            stopped = true;
+        });
+        try {
+            await Promise.resolve();
+            expect(stopped, 'stop completed before owned computation').toBe(false);
+            computation.resolve();
+            await releasing.promise;
+            expect(stopped, 'stop completed before resource release').toBe(false);
+            release.resolve();
+            await stopping;
+            expect(stopped).toBe(true);
+        }
+        finally {
+            computation.resolve();
+            release.resolve();
+            await stopping;
+        }
+    });
+
     it('tells every wake listener that an external writer announced work, until it is excluded', async () => {
         const engine = new InboxOutboxEngine();
         const announced: string[] = [];

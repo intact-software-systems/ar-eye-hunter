@@ -6,7 +6,7 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';

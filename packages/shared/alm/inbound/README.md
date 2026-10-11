@@ -28,7 +28,7 @@ uses, with `maxConcurrency` fixed at one task. The inbound half of that worker i
 [`createALInboundWorkSelector`](./read-al-inbound-work-selection.ts): it owns the rotating
 new/retry/reserved page scan that answers the handler's readiness probe and turns one observed
 page into claims. The worker registers
-with [`InboxOutboxEngine`](../../services/InboxOutboxEngine.ts); registration does
+with [`InboxOutboxEngine`](../../services/inbox-outbox-engine.ts); registration does
 not invoke admission or delivery. Storage readiness precedes the first work scan.
 Disposal prevents further local work and unregisters the task. A runtime-owned
 engine stops; a supplied shared engine remains available to its other tasks.

@@ -16,7 +16,7 @@ import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALCheckpointPort } from '../checkpoint/al-checkpoint.ts';
 import type {

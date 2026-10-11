@@ -32,7 +32,7 @@ import { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outb
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     describe,
     expect,

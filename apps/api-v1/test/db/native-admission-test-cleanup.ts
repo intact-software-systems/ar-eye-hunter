@@ -7,12 +7,39 @@ export interface NativeAdmissionTestCleanup {
     readonly webSocketLifecycle: Pick<ApiV1Runtime['wsQBoxServerService'], 'dispose'>;
     readonly listener: Pick<Deno.HttpServer<Deno.NetAddr>, 'shutdown'> | undefined;
     readonly backgroundTasks: Pick<ApiV1Runtime['backgroundTasks'], 'stop'>;
-    readonly engine: Pick<ApiV1Runtime['qboxEngine'], 'stop' | 'executeOnce'>;
+    readonly engine: Pick<ApiV1Runtime['qboxEngine'], 'stop'>;
     readonly backgroundProducersStopped: Promise<void>;
     readonly queueEngineStopped: PromiseWithResolvers<void>;
     readonly primaryFailure: Error | undefined;
     readonly reportProgress: (message: string) => void;
     readonly reportSecondaryFailures: (failure: AggregateError) => void;
+}
+
+export interface NativeReceiptScenarioCleanup {
+    readonly releaseDeliveryRegistry: () => void;
+    readonly stopPeers: readonly (() => Promise<void>)[];
+    readonly stopRuntime: (peerStops: readonly Promise<void>[], primaryFailure: Error | undefined) => Promise<void>;
+    readonly primaryFailure: Error | undefined;
+    readonly reportSecondaryFailures: (failure: AggregateError) => void;
+}
+
+export async function stopNativeReceiptScenario(cleanup: NativeReceiptScenarioCleanup): Promise<void> {
+    const failures: Error[] = [];
+    try {
+        cleanup.releaseDeliveryRegistry();
+    }
+    catch (error) {
+        failures.push(toNativeAdmissionCleanupFailure('delivery registry', error));
+    }
+    const peerStops = cleanup.stopPeers.map(async (stop) => await stop());
+    await Promise.allSettled(peerStops);
+    try {
+        await cleanup.stopRuntime(peerStops, undefined);
+    }
+    catch (error) {
+        failures.push(toNativeAdmissionCleanupFailure('receipt runtime', error));
+    }
+    finishNativeAdmissionCleanup(cleanup, failures);
 }
 
 export async function stopNativeAdmissionTestRuntime(cleanup: NativeAdmissionTestCleanup): Promise<void> {
@@ -23,19 +50,7 @@ export async function stopNativeAdmissionTestRuntime(cleanup: NativeAdmissionTes
 }
 
 async function stopNativeAdmissionConnections(cleanup: NativeAdmissionTestCleanup, failures: Error[]): Promise<void> {
-    const socketClosures = await Promise.allSettled(cleanup.socketClosures);
-    for (const [index, closure] of socketClosures.entries()) {
-        if (closure.status === 'rejected') {
-            failures.push(toNativeAdmissionCleanupFailure(`socket ${index}`, closure.reason));
-        }
-    }
-    if (socketClosures.every((closure) => closure.status === 'fulfilled')) {
-        writeNativeAdmissionCleanupProgress(
-            cleanup.reportProgress,
-            failures,
-            'Native admission cleanup: sockets closed'
-        );
-    }
+    await stopNativeAdmissionSockets(cleanup, failures);
 
     try {
         await cleanup.waitForSessionDisconnects();
@@ -71,6 +86,22 @@ async function stopNativeAdmissionConnections(cleanup: NativeAdmissionTestCleanu
     }
     catch (error) {
         failures.push(toNativeAdmissionCleanupFailure('listener', error));
+    }
+}
+
+async function stopNativeAdmissionSockets(cleanup: NativeAdmissionTestCleanup, failures: Error[]): Promise<void> {
+    const socketClosures = await Promise.allSettled(cleanup.socketClosures);
+    for (const [index, closure] of socketClosures.entries()) {
+        if (closure.status === 'rejected') {
+            failures.push(toNativeAdmissionCleanupFailure(`socket ${index}`, closure.reason));
+        }
+    }
+    if (socketClosures.every((closure) => closure.status === 'fulfilled')) {
+        writeNativeAdmissionCleanupProgress(
+            cleanup.reportProgress,
+            failures,
+            'Native admission cleanup: sockets closed'
+        );
     }
 }
 
@@ -115,7 +146,7 @@ async function finishNativeAdmissionQueueEngine(
     stoppingBackground: Promise<void>
 ): Promise<void> {
     try {
-        cleanup.engine.stop();
+        await cleanup.engine.stop();
         writeNativeAdmissionCleanupProgress(
             cleanup.reportProgress,
             failures,
@@ -125,24 +156,16 @@ async function finishNativeAdmissionQueueEngine(
     catch (error) {
         failures.push(toNativeAdmissionCleanupFailure('engine stop', error));
     }
-    try {
-        await cleanup.engine.executeOnce();
-        writeNativeAdmissionCleanupProgress(
-            cleanup.reportProgress,
-            failures,
-            'Native admission cleanup: engine pass finished'
-        );
-    }
-    catch (error) {
-        failures.push(toNativeAdmissionCleanupFailure('final engine pass', error));
-    }
     finally {
         cleanup.queueEngineStopped.resolve();
         await stoppingBackground;
     }
 }
 
-function finishNativeAdmissionCleanup(cleanup: NativeAdmissionTestCleanup, failures: Error[]): void {
+function finishNativeAdmissionCleanup(
+    cleanup: Pick<NativeAdmissionTestCleanup, 'primaryFailure' | 'reportSecondaryFailures'>,
+    failures: Error[]
+): void {
     if (cleanup.primaryFailure) {
         try {
             if (failures.length > 0) {

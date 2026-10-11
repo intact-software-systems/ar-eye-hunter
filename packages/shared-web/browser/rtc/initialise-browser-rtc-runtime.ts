@@ -41,7 +41,7 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
     DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY,

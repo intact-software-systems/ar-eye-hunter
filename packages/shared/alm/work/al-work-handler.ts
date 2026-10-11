@@ -1,7 +1,7 @@
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { toKeyAsString } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
-import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, type InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, type InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';

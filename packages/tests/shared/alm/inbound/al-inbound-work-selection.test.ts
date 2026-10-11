@@ -39,7 +39,7 @@ import {
     type ResourceEntry,
     type ResourceEntryKeyString
 } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import type { ALInboundDurableEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { createInboundTestDispatch, readInboundTestDispatchEffect } from '../create-inbound-test-dispatch.ts';

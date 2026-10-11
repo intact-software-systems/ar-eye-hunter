@@ -35,7 +35,7 @@ import {
     toCircuitBreaker
 } from '@shared/resilience/circuit-breaker.ts';
 import { RateLimiter, toRateLimiter } from '@shared/resilience/Resilience.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
