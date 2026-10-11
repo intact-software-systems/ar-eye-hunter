@@ -2,7 +2,6 @@ import {
     resolveRequiredRtcCaptureFailure,
     toBrowserRtcCaptureIntent
 } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
-import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
@@ -62,7 +61,6 @@ export namespace BlackBoxRallarConnectOperation {
     export interface Input {
         readonly rallar: BlackBoxBrowserRallarRuntimeDependency;
         readonly diagnostics: BlackBoxRallarRuntimeDiagnostics;
-        readonly diagnosticsPorts: RallarDiagnosticsPorts;
         readonly lifecycle: BlackBoxRallarConnectionState.Lifecycle;
         readonly connectionState: BlackBoxRallarConnectionState;
         readonly authentication: BlackBoxRallarAuthentication;
@@ -191,13 +189,13 @@ export class BlackBoxRallarConnectOperation {
             ...blackBoxRallarScopeDiagnosticsOf(config)
         });
         this.#input.authentication.requireCredentialsForAuthenticationIdentityChange(config);
-        const defaults = configureBlackBoxRallarConnection({
+        const configured = configureBlackBoxRallarConnection({
             rallar: this.#input.rallar,
-            diagnosticsPorts: this.#input.diagnosticsPorts,
+            diagnostics,
             volatileLimits: this.#input.volatileLimits,
             config
         });
-        diagnostics.emitConnectPhaseCompleted(config, attempt.phase, { defaults });
+        diagnostics.emitConnectPhaseCompleted(config, attempt.phase, configured);
     }
 
     async #openConnection(attempt: ConnectionAttempt): Promise<void> {

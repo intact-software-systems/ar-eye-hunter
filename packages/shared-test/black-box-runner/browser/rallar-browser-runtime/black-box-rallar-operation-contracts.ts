@@ -122,6 +122,8 @@ export interface BlackBoxRallarConfig extends Pick<RallarOperationOptions, 'rtcC
     readonly logoutOnClose?: boolean;
     /** Harness-only: lowers the volatile bound of the session this connect initialises. */
     readonly almVolatileLimits?: ALVolatileSessionLimits;
+    /** Harness recording only; omission records ALM events. */
+    readonly almDiagnostics?: boolean;
     /**
      * Harness-only: `record` declares a recovery owner on the typed channel this connect subscribes, one that
      * records each invocation as a diagnostic. Absent, the channel declares none, as a product channel by default.

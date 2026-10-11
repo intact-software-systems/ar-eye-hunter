@@ -1,4 +1,3 @@
-import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarCrdtTransportStrategy } from '@shared/crdt/mod.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
@@ -16,7 +15,6 @@ export namespace BlackBoxRallarCrdtLiveConnection {
     export interface Input {
         readonly rallar: BlackBoxBrowserRallarRuntimeDependency;
         readonly diagnostics: BlackBoxRallarRuntimeDiagnostics;
-        readonly diagnosticsPorts: RallarDiagnosticsPorts;
         readonly lifecycle: BlackBoxRallarConnectionState.Lifecycle;
         readonly connectionState: BlackBoxRallarConnectionState;
         readonly authentication: BlackBoxRallarAuthentication;
@@ -62,13 +60,13 @@ export class BlackBoxRallarCrdtLiveConnection {
             throw queuedRejection;
         }
         diagnostics.emitDiagnostic(config, 'rallar.browser.crdt.configure_started', { transportStrategy });
-        const defaults = configureBlackBoxRallarConnection({
+        const configured = configureBlackBoxRallarConnection({
             rallar,
-            diagnosticsPorts: this.#input.diagnosticsPorts,
+            diagnostics,
             volatileLimits: this.#input.volatileLimits,
             config
         });
-        diagnostics.emitDiagnostic(config, 'rallar.browser.crdt.configure_completed', { defaults });
+        diagnostics.emitDiagnostic(config, 'rallar.browser.crdt.configure_completed', configured);
         if (rallar.isConnected()) {
             await rallar.connect({
                 rtcCaptureMode: config.rallar.rtcCaptureMode,

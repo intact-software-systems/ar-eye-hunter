@@ -38,6 +38,7 @@ export function decodeBlackBoxRallarConfigFields(value: unknown): Partial<BlackB
     const rtc = record.rtc === undefined ? undefined : configRecord(record.rtc);
     const scope = record.scope === undefined ? undefined : configRecord(record.scope);
     return {
+        almDiagnostics: optionalBoolean(record.almDiagnostics),
         rtcCaptureMode: captureMode,
         rtc: rtc === undefined ? undefined : { captureMode: decodeRtcCaptureMode(rtc.captureMode) },
         rtcCaptureContext: record.rtcCaptureContext === undefined
@@ -59,30 +60,39 @@ export function decodeBlackBoxRallarConfigFields(value: unknown): Partial<BlackB
         laneId: optionalString(record.laneId),
         openTimeoutMs: optionalNumber(record.openTimeoutMs),
         timeoutMs: optionalNumber(record.timeoutMs),
-        peerIds: stringList(record.peerIds),
-        nextHopPeerIds: stringList(record.nextHopPeerIds),
-        typeId: optionalString(record.typeId),
-        topicId: optionalString(record.topicId),
-        contextId: optionalString(record.contextId),
-        resourceId: optionalString(record.resourceId),
-        messageSelector: messageSelector(record.messageSelector),
-        messageTypeIds: stringList(record.messageTypeIds),
-        ttlHops: optionalNumber(record.ttlHops),
-        ttlMs: optionalNumber(record.ttlMs),
-        reliability: optionalChoice(record.reliability, ['best-effort', 'at-least-once']),
-        ack: optionalChoice(record.ack, ['none', 'receiver', 'all-logical-recipients', 'group-leader']),
-        ownership: optionalChoice(record.ownership, ['shared', 'exclusive']),
-        minSnapshotVersion: optionalNumber(record.minSnapshotVersion),
-        seq: optionalNumber(record.seq),
-        orderingKey: optionalString(record.orderingKey),
-        overlayId: optionalString(record.overlayId),
-        fanoutLimit: optionalNumber(record.fanoutLimit),
+        ...decodeBlackBoxRallarMessageConfigFields(value),
         dataChannelLanes: dataChannelLanes(record.dataChannelLanes),
         expectedSessionId: optionalString(record.expectedSessionId),
         leaveRoomOnClose: optionalBoolean(record.leaveRoomOnClose),
         logoutOnClose: optionalBoolean(record.logoutOnClose),
         almVolatileLimits: decodeAlmVolatileLimits(record.almVolatileLimits),
         recoveryOwner: optionalChoice(record.recoveryOwner, ['record'])
+    };
+}
+
+function decodeBlackBoxRallarMessageConfigFields(value: unknown): Partial<BlackBoxRallarConfig> {
+    if (!isBlackBoxCommandRecord(value)) {
+        throw new TypeError('Rallar connection configuration must be an object.');
+    }
+    return {
+        peerIds: stringList(value.peerIds),
+        nextHopPeerIds: stringList(value.nextHopPeerIds),
+        typeId: optionalString(value.typeId),
+        topicId: optionalString(value.topicId),
+        contextId: optionalString(value.contextId),
+        resourceId: optionalString(value.resourceId),
+        messageSelector: messageSelector(value.messageSelector),
+        messageTypeIds: stringList(value.messageTypeIds),
+        ttlHops: optionalNumber(value.ttlHops),
+        ttlMs: optionalNumber(value.ttlMs),
+        reliability: optionalChoice(value.reliability, ['best-effort', 'at-least-once']),
+        ack: optionalChoice(value.ack, ['none', 'receiver', 'all-logical-recipients', 'group-leader']),
+        ownership: optionalChoice(value.ownership, ['shared', 'exclusive']),
+        minSnapshotVersion: optionalNumber(value.minSnapshotVersion),
+        seq: optionalNumber(value.seq),
+        orderingKey: optionalString(value.orderingKey),
+        overlayId: optionalString(value.overlayId),
+        fanoutLimit: optionalNumber(value.fanoutLimit)
     };
 }
 

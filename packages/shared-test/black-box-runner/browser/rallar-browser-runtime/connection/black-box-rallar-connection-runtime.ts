@@ -1,4 +1,3 @@
-import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
@@ -10,7 +9,6 @@ import { BlackBoxRallarCrdtController } from '../black-box-rallar-crdt-controlle
 import {
     BlackBoxRallarRuntimeDiagnostics,
     createBlackBoxRallarConsoleDiagnostics,
-    createBlackBoxRallarDiagnosticsPorts,
     type BlackBoxRallarConsoleDiagnostics
 } from '../black-box-rallar-diagnostics.ts';
 import type {
@@ -104,7 +102,6 @@ export namespace BlackBoxRallarConnectionRuntime {
     export interface Foundation {
         readonly rallar: BlackBoxBrowserRallarRuntimeDependency;
         readonly diagnostics: BlackBoxRallarRuntimeDiagnostics;
-        readonly diagnosticsPorts: RallarDiagnosticsPorts;
         readonly health: BlackBoxRallarHealthReader;
         readonly lifecycle: BlackBoxRallarConnectionState.Lifecycle;
         readonly connectionState: BlackBoxRallarConnectionState;
@@ -330,7 +327,6 @@ function createConnectionFoundation(
     return {
         rallar,
         diagnostics,
-        diagnosticsPorts: createBlackBoxRallarDiagnosticsPorts(diagnostics, rallar.diagnostics),
         health: new BlackBoxRallarHealthReader({ rallar, diagnostics, readDocument: input.readDocument }),
         lifecycle,
         connectionState,

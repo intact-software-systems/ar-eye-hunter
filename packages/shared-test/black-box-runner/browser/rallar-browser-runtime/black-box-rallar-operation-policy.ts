@@ -1,4 +1,5 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
+
 import type {
     BlackBoxRallarConfig,
     BlackBoxRallarConnectionConfig,
@@ -27,6 +28,28 @@ export interface BlackBoxRallarConnectionTarget {
     readonly roomRef?: BlackBoxRallarRoomRef;
 }
 
+export interface BlackBoxRallarLifecyclePolicyState {
+    readonly status: 'idle' | 'authenticating' | 'authenticated' | 'connecting' | 'connected' | 'closing' | 'faulted';
+    readonly activeTarget?: BlackBoxRallarConnectionTarget;
+}
+
+export interface BlackBoxRallarLifecycleRequest {
+    readonly kind: 'authenticate' | 'connect';
+    readonly target: BlackBoxRallarConnectionTarget;
+}
+
+export type BlackBoxRallarLifecycleDecision =
+    | Readonly<{ kind: 'allow'; }>
+    | Readonly<{ kind: 'reuse'; }>
+    | Readonly<{ kind: 'reject'; reason: string; }>;
+
+export interface BlackBoxRallarScopeDiagnostics {
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+    readonly scope?: ResolvedBlackBoxRallarScope;
+    readonly roomRef?: GroupRef;
+}
+
 interface BlackBoxRallarConnectionPolicyInput {
     readonly roomId?: string;
     readonly roomRef?: BlackBoxRallarRoomRef;
@@ -35,23 +58,13 @@ interface BlackBoxRallarConnectionPolicyInput {
 
 export const DEFAULT_WORKSPACE_ID = 'default';
 
-function normalizedRoomRef(roomRef: BlackBoxRallarRoomRef | undefined): GroupRef | undefined {
-    return roomRef
-        ? {
-            applicationId: roomRef.applicationId,
-            workspaceId: roomRef.workspaceId ?? DEFAULT_WORKSPACE_ID,
-            groupId: roomRef.groupId
-        }
-        : undefined;
-}
-
 export function blackBoxRallarRoomRefOf(
     config: BlackBoxRallarConnectionPolicyInput,
     input?: BlackBoxRallarSendInput
 ): GroupRef | undefined {
     const explicit = input?.roomRef ?? config.rallar.roomRef ?? config.roomRef;
     if (explicit?.applicationId && explicit.groupId) {
-        return normalizedRoomRef(explicit);
+        return toNormalizedRoomRef(explicit);
     }
 
     const roomId = input?.roomId ?? config.roomId;
@@ -78,62 +91,6 @@ export function blackBoxRallarRoomRefOf(
         groupId: String(roomId)
     };
 }
-
-function normalizedMessageSelector(
-    selector: BlackBoxRallarConnectionConfig['rallar']['messageSelector']
-): BlackBoxRallarConfig['messageSelector'] {
-    return typeof selector === 'string'
-        ? selector
-        : selector
-        ? {
-            topicId: selector.topicId,
-            typeId: selector.typeId
-        }
-        : undefined;
-}
-
-function normalizedDataChannelLanes(
-    lanes: BlackBoxRallarConnectionConfig['rallar']['dataChannelLanes']
-): BlackBoxRallarConfig['dataChannelLanes'] {
-    return lanes?.map((lane) => ({
-        id: lane.id,
-        label: lane.label,
-        binaryType: lane.binaryType,
-        init: lane.init
-            ? {
-                id: lane.init.id,
-                maxPacketLifeTime: lane.init.maxPacketLifeTime,
-                maxRetransmits: lane.init.maxRetransmits,
-                negotiated: lane.init.negotiated,
-                ordered: lane.init.ordered,
-                protocol: lane.init.protocol
-            }
-            : undefined,
-        flowControl: lane.flowControl
-            ? {
-                highWatermarkBytes: lane.flowControl.highWatermarkBytes,
-                lowWatermarkBytes: lane.flowControl.lowWatermarkBytes,
-                overflow: lane.flowControl.overflow,
-                maxQueueItems: lane.flowControl.maxQueueItems
-            }
-            : undefined
-    }));
-}
-
-export interface BlackBoxRallarLifecyclePolicyState {
-    readonly status: 'idle' | 'authenticating' | 'authenticated' | 'connecting' | 'connected' | 'closing' | 'faulted';
-    readonly activeTarget?: BlackBoxRallarConnectionTarget;
-}
-
-export interface BlackBoxRallarLifecycleRequest {
-    readonly kind: 'authenticate' | 'connect';
-    readonly target: BlackBoxRallarConnectionTarget;
-}
-
-export type BlackBoxRallarLifecycleDecision =
-    | Readonly<{ kind: 'allow'; }>
-    | Readonly<{ kind: 'reuse'; }>
-    | Readonly<{ kind: 'reject'; reason: string; }>;
 
 export function normalizeBlackBoxRallarApiBaseUrl(value: string): string {
     return value.trim().replace(/\/+$/, '');
@@ -174,8 +131,8 @@ export function blackBoxRallarConnectionTargetOf(
 export function blackBoxRallarConnectionOperationKeyOf(
     config: BlackBoxRallarConnectionConfig
 ): string {
-    const rallar = config.rallar;
     return JSON.stringify({
+        almDiagnostics: config.rallar.almDiagnostics,
         rtcCaptureMode: config.rallar.rtcCaptureMode,
         rtcCaptureContext: {
             run: config.rallar.rtcCaptureContext?.run,
@@ -186,49 +143,8 @@ export function blackBoxRallarConnectionOperationKeyOf(
         peerId: config.peerId,
         remotePeerId: config.remotePeerId,
         roomId: config.roomId,
-        roomRef: normalizedRoomRef(config.roomRef),
-        rallar: {
-            apiBaseUrl: normalizeBlackBoxRallarApiBaseUrl(rallar.apiBaseUrl),
-            applicationId: rallar.applicationId,
-            workspaceId: rallar.workspaceId,
-            scope: rallar.scope
-                ? {
-                    applicationId: rallar.scope.applicationId,
-                    workspaceId: rallar.scope.workspaceId
-                }
-                : undefined,
-            roomRef: normalizedRoomRef(rallar.roomRef),
-            username: rallar.username,
-            password: rallar.password,
-            displayName: rallar.displayName,
-            register: rallar.register,
-            transport: rallar.transport,
-            laneId: rallar.laneId,
-            openTimeoutMs: rallar.openTimeoutMs,
-            timeoutMs: rallar.timeoutMs,
-            peerIds: rallar.peerIds,
-            nextHopPeerIds: rallar.nextHopPeerIds,
-            typeId: rallar.typeId,
-            topicId: rallar.topicId,
-            contextId: rallar.contextId,
-            resourceId: rallar.resourceId,
-            messageSelector: normalizedMessageSelector(rallar.messageSelector),
-            messageTypeIds: rallar.messageTypeIds,
-            ttlHops: rallar.ttlHops,
-            ttlMs: rallar.ttlMs,
-            reliability: rallar.reliability,
-            ack: rallar.ack,
-            ownership: rallar.ownership,
-            minSnapshotVersion: rallar.minSnapshotVersion,
-            seq: rallar.seq,
-            orderingKey: rallar.orderingKey,
-            overlayId: rallar.overlayId,
-            fanoutLimit: rallar.fanoutLimit,
-            dataChannelLanes: normalizedDataChannelLanes(rallar.dataChannelLanes),
-            expectedSessionId: rallar.expectedSessionId,
-            leaveRoomOnClose: rallar.leaveRoomOnClose,
-            logoutOnClose: rallar.logoutOnClose
-        }
+        roomRef: toNormalizedRoomRef(config.roomRef),
+        rallar: toBlackBoxRallarConnectionOperationConfig(config.rallar)
     });
 }
 
@@ -287,13 +203,6 @@ export function decideBlackBoxRallarLifecycleRequest(
     return { kind: 'allow' };
 }
 
-export interface BlackBoxRallarScopeDiagnostics {
-    readonly applicationId?: string;
-    readonly workspaceId?: string;
-    readonly scope?: ResolvedBlackBoxRallarScope;
-    readonly roomRef?: GroupRef;
-}
-
 export function blackBoxRallarScopeOf(
     config: BlackBoxRallarConnectionPolicyInput,
     input?: BlackBoxRallarSendInput
@@ -336,4 +245,100 @@ export function blackBoxRallarScopeDiagnosticsOf(
         ...(scope ? { scope } : {}),
         ...(roomRef ? { roomRef } : {})
     };
+}
+
+function toBlackBoxRallarConnectionOperationConfig(rallar: BlackBoxRallarConfig): BlackBoxRallarConfig {
+    return {
+        apiBaseUrl: normalizeBlackBoxRallarApiBaseUrl(rallar.apiBaseUrl),
+        applicationId: rallar.applicationId,
+        workspaceId: rallar.workspaceId,
+        scope: rallar.scope
+            ? {
+                applicationId: rallar.scope.applicationId,
+                workspaceId: rallar.scope.workspaceId
+            }
+            : undefined,
+        roomRef: toNormalizedRoomRef(rallar.roomRef),
+        username: rallar.username,
+        password: rallar.password,
+        displayName: rallar.displayName,
+        register: rallar.register,
+        transport: rallar.transport,
+        laneId: rallar.laneId,
+        openTimeoutMs: rallar.openTimeoutMs,
+        timeoutMs: rallar.timeoutMs,
+        peerIds: rallar.peerIds,
+        nextHopPeerIds: rallar.nextHopPeerIds,
+        typeId: rallar.typeId,
+        topicId: rallar.topicId,
+        contextId: rallar.contextId,
+        resourceId: rallar.resourceId,
+        messageSelector: toNormalizedMessageSelector(rallar.messageSelector),
+        messageTypeIds: rallar.messageTypeIds,
+        ttlHops: rallar.ttlHops,
+        ttlMs: rallar.ttlMs,
+        reliability: rallar.reliability,
+        ack: rallar.ack,
+        ownership: rallar.ownership,
+        minSnapshotVersion: rallar.minSnapshotVersion,
+        seq: rallar.seq,
+        orderingKey: rallar.orderingKey,
+        overlayId: rallar.overlayId,
+        fanoutLimit: rallar.fanoutLimit,
+        dataChannelLanes: toNormalizedDataChannelLanes(rallar.dataChannelLanes),
+        expectedSessionId: rallar.expectedSessionId,
+        leaveRoomOnClose: rallar.leaveRoomOnClose,
+        logoutOnClose: rallar.logoutOnClose
+    };
+}
+
+function toNormalizedRoomRef(roomRef: BlackBoxRallarRoomRef | undefined): GroupRef | undefined {
+    return roomRef
+        ? {
+            applicationId: roomRef.applicationId,
+            workspaceId: roomRef.workspaceId ?? DEFAULT_WORKSPACE_ID,
+            groupId: roomRef.groupId
+        }
+        : undefined;
+}
+
+function toNormalizedMessageSelector(
+    selector: BlackBoxRallarConnectionConfig['rallar']['messageSelector']
+): BlackBoxRallarConfig['messageSelector'] {
+    return typeof selector === 'string'
+        ? selector
+        : selector
+        ? {
+            topicId: selector.topicId,
+            typeId: selector.typeId
+        }
+        : undefined;
+}
+
+function toNormalizedDataChannelLanes(
+    lanes: BlackBoxRallarConnectionConfig['rallar']['dataChannelLanes']
+): BlackBoxRallarConfig['dataChannelLanes'] {
+    return lanes?.map((lane) => ({
+        id: lane.id,
+        label: lane.label,
+        binaryType: lane.binaryType,
+        init: lane.init
+            ? {
+                id: lane.init.id,
+                maxPacketLifeTime: lane.init.maxPacketLifeTime,
+                maxRetransmits: lane.init.maxRetransmits,
+                negotiated: lane.init.negotiated,
+                ordered: lane.init.ordered,
+                protocol: lane.init.protocol
+            }
+            : undefined,
+        flowControl: lane.flowControl
+            ? {
+                highWatermarkBytes: lane.flowControl.highWatermarkBytes,
+                lowWatermarkBytes: lane.flowControl.lowWatermarkBytes,
+                overflow: lane.flowControl.overflow,
+                maxQueueItems: lane.flowControl.maxQueueItems
+            }
+            : undefined
+    }));
 }
