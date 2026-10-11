@@ -14,6 +14,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
+import { toScenarioTypeId } from '../alm-conformance-step-identities.ts';
 
 export const deliveryBaseline: AlmConformanceScenarioDefinition = {
     scenarioId: 'delivery-baseline',
@@ -51,13 +52,18 @@ function toDeliveryBaselineSenderCommands(
 function toDeliveryBaselineReceiverCommands(
     receiver: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
+    const payloadWait = toPayloadWait({
+        step: receiver,
+        name: 'received-payload',
+        payload: { marker: receiver.scenarioId },
+        absent: false
+    });
     return [
         ...toSingleArrivalReceiverCommands(receiver),
-        toPayloadWait({
-            step: receiver,
-            name: 'received-payload',
-            payload: { marker: receiver.scenarioId },
-            absent: false
-        })
+        {
+            ...payloadWait,
+            // A combined recipe retains earlier carriers; identity and payload must match one event.
+            match: { ...payloadWait.match, payloadFields: { 'data.typeId': toScenarioTypeId(receiver) } }
+        }
     ];
 }

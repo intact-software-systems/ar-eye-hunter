@@ -16,6 +16,7 @@ import * as AlmRecipes from '@shared-test/rallar-bb-test/conformance/alm/create-
 import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { snapshotExecutableRecipe } from '@shared-test/rallar-bb-test/recipe/snapshot-executable-recipe.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { toMergedRuntimeConfig } from '@shared-test/rallar-bb-test/runtime/to-merged-runtime-config.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
@@ -221,6 +222,46 @@ describe('ALM delivery diagnostic selection', () => {
                     expect(connect.kind === 'rtc.connect' && connect.rallar?.almDiagnostics, entry.filePath).toBe(true);
                 }
             }
+        }
+    });
+
+    it.each([
+        { carrier: 'rtc', marker: 'wrong', status: 'failed' },
+        { carrier: 'rtc', marker: 'delivery-baseline', status: 'ok' },
+        { carrier: 'rtc-with-ws-fallback', marker: 'wrong', status: 'failed' },
+        { carrier: 'rtc-with-ws-fallback', marker: 'delivery-baseline', status: 'ok' }
+    ])('requires the current $carrier payload with retained earlier WS history: $marker', async ({ carrier, marker, status }) => {
+        vi.useFakeTimers();
+        const manifest = createHetznerDistributedManifestCatalog().find((entry) => entry.filePath.endsWith('/18-alm-conformance-2-agent.json'))?.manifest;
+        const receiver = manifest?.recipes.find((selection) => selection.role === 'receiver')?.recipe;
+        const payloadWait = receiver?.commands.find((command) => command.commandId === `alm-${carrier}-delivery-baseline-receiver-received-payload`);
+        if (payloadWait?.kind !== 'wait') {
+            throw new Error('Expected generated current-carrier baseline payload wait.');
+        }
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'rallar.browser.ws.message',
+            connection: 'almConformanceReceiver',
+            payload: { data: { typeId: 'alm.conformance.ws.delivery-baseline', payload: { marker: 'delivery-baseline' } } }
+        });
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'rallar.browser.rtc.message',
+            connection: 'almConformanceReceiver',
+            payload: { data: { typeId: `alm.conformance.${carrier}.delivery-baseline`, payload: { marker } } }
+        });
+        const execution = runtime.execute(payloadWait);
+        await vi.runAllTimersAsync();
+        const result = await execution;
+        expect(result.status).toBe(status);
+        if (status === 'failed') {
+            expect(result.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_TIMEOUT');
+        }
+        else {
+            expect(result.value).toMatchObject({
+                event: { payload: { data: { typeId: `alm.conformance.${carrier}.delivery-baseline`, payload: { marker: 'delivery-baseline' } } } }
+            });
         }
     });
 

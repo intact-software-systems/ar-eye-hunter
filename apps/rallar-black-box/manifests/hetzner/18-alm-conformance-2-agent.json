@@ -8107,6 +8107,9 @@
               "payloadPath": "data.payload",
               "equals": {
                 "marker": "delivery-baseline"
+              },
+              "payloadFields": {
+                "data.typeId": "alm.conformance.ws.delivery-baseline"
               }
             },
             "timeoutMs": 27000
@@ -8568,6 +8571,9 @@
               "payloadPath": "data.payload",
               "equals": {
                 "marker": "delivery-baseline"
+              },
+              "payloadFields": {
+                "data.typeId": "alm.conformance.rtc.delivery-baseline"
               }
             },
             "timeoutMs": 27000
@@ -9059,6 +9065,9 @@
               "payloadPath": "data.payload",
               "equals": {
                 "marker": "delivery-baseline"
+              },
+              "payloadFields": {
+                "data.typeId": "alm.conformance.rtc-with-ws-fallback.delivery-baseline"
               }
             },
             "timeoutMs": 27000
