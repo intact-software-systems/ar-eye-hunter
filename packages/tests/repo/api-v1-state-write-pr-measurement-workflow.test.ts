@@ -361,7 +361,7 @@ function evaluateMeasurementPolicy(workflow: MeasurementWorkflow, github: JsonRe
 }
 
 function decodeMeasurementPolicyMode(value: unknown): MeasurementPolicy['mode'] {
-    if (value !== 'comparison' && value !== 'diagnostic') {
+    if (typeof value !== 'string' || value !== 'comparison' && value !== 'diagnostic') {
         throw new Error('Invalid measurement mode at the workflow policy boundary');
     }
     return value;
