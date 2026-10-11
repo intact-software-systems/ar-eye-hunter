@@ -686,7 +686,7 @@ describe('Hetzner workflow contracts and effects', () => {
         const prerequisites = steps.slice(0, materializationIndex);
         const setupIndex = prerequisites.findIndex((step) => step.uses?.startsWith('actions/setup-node@') && step.if === undefined);
         expect(setupIndex).toBeGreaterThanOrEqual(0);
-        const installIndex = prerequisites.findIndex((step) => step.name === 'Install dependencies');
+        const installIndex = prerequisites.findIndex((step) => step.run?.includes('npm'));
         expect(installIndex).toBeGreaterThan(setupIndex);
         const install = prerequisites[installIndex];
         expect(install.if).toBeUndefined();
