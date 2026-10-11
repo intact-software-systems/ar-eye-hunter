@@ -1,4 +1,5 @@
-import { normalize } from 'node:path';
+import { isAbsolute, normalize, relative, resolve, sep } from 'node:path';
+import process from 'node:process';
 
 import {
     COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE,
@@ -53,8 +54,8 @@ export function parseBenchmarkOptions(args: readonly string[]): StateWriteBenchm
     if (diagnosticsDirectory !== undefined && diagnosticsDirectory.trim().length === 0) {
         throw new Error('Diagnostic directory must be nonempty');
     }
-    const regressionReasons = readRegressionReasonOptions(values);
-    return {
+    const regressionReasons = parseRegressionReasonOptions(values);
+    const options: StateWriteBenchmarkOptions = {
         backend: values.get('backend') || 'postgres',
         warmup: parseIntegerOption({
             name: 'warmup',
@@ -83,15 +84,41 @@ export function parseBenchmarkOptions(args: readonly string[]): StateWriteBenchm
             : { kind: 'enabled', directory: diagnosticsDirectory },
         ...regressionReasons
     };
+    const issues = validateStateWriteOutputDestinations(options, process.cwd());
+    if (issues.length > 0) {
+        throw new Error(issues.join('; '));
+    }
+    return options;
 }
 
-function readRegressionReasonOptions(
+export function validateStateWriteOutputDestinations(
+    options: Pick<StateWriteBenchmarkOptions, 'out' | 'diagnostics'>,
+    currentDirectory: string
+): readonly string[] {
+    if (options.diagnostics.kind === 'disabled') {
+        return [];
+    }
+    const directory = resolve(currentDirectory, options.diagnostics.directory);
+    const destination = resolve(currentDirectory, options.out);
+    const fromDirectory = relative(directory, destination);
+    const fromDestination = relative(destination, directory);
+    const outside = (path: string): boolean => path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path);
+    if (!outside(fromDirectory) || !outside(fromDestination)) {
+        return ['Canonical output and diagnostic directory must be disjoint'];
+    }
+    return [];
+}
+
+function parseRegressionReasonOptions(
     values: ReadonlyMap<string | undefined, string>
 ): Pick<StateWriteBenchmarkOptions, 'regressionReasonsFile' | 'regressionReasonProfile'> {
     const regressionReasonsFile = values.get('regression-reasons-file');
     const regressionReasonProfile = values.get('regression-reason-profile');
     if (regressionReasonsFile !== undefined) {
-        assertPerfInputPath(regressionReasonsFile);
+        const issues = validatePerfInputPath(regressionReasonsFile);
+        if (issues.length > 0) {
+            throw new Error(issues.join('; '));
+        }
     }
     if (
         regressionReasonProfile !== undefined &&
@@ -125,9 +152,10 @@ function parseIntegerOption(input: ParseIntegerOptionInput): number {
     return value;
 }
 
-function assertPerfInputPath(path: string): void {
+function validatePerfInputPath(path: string): readonly string[] {
     const normalized = normalize(path).replaceAll('\\', '/');
     if (normalized !== path || !normalized.startsWith('tmp/perf/') || normalized.includes('/../')) {
-        throw new Error(`Regression-reason input must remain under tmp/perf/: ${path}`);
+        return [`Regression-reason input must remain under tmp/perf/: ${path}`];
     }
+    return [];
 }

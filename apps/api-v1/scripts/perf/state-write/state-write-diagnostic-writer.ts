@@ -1,6 +1,11 @@
+import { Either } from '@shared/resilience/Either.ts';
 import type * as files from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import type { StateWriteDiagnosticConfiguration } from './api-v1-state-write-benchmark-options.ts';
+import { basename, dirname, isAbsolute, join } from 'node:path';
+import process from 'node:process';
+import {
+    validateStateWriteOutputDestinations,
+    type StateWriteDiagnosticConfiguration
+} from './api-v1-state-write-benchmark-options.ts';
 import { computeStateWriteDiagnosticPhase } from './state-write-diagnostic-projection.ts';
 import type { StateWriteDiagnosticBudget, StateWriteDiagnosticPhase } from './state-write-diagnostic-projection.ts';
 
@@ -8,6 +13,8 @@ export interface StateWriteDiagnosticFilePort {
     readonly mkdir: typeof files.mkdir;
     readonly open: typeof files.open;
     readonly rename: typeof files.rename;
+    readonly realpath: typeof files.realpath;
+    readonly lstat: typeof files.lstat;
 }
 
 export interface StateWriteDiagnosticStatus {
@@ -39,9 +46,13 @@ export class StateWriteDiagnosticWriter {
         this.files = files;
     }
 
-    async start(): Promise<void> {
+    async start(canonicalDestination: string): Promise<void> {
         if (this.configuration.kind === 'disabled' || this.reserved || this.stage !== 'none') {
             return;
+        }
+        const issues = await this.readCanonicalDestinationIssues(canonicalDestination);
+        if (issues.length > 0) {
+            throw new Error(issues.join('; '));
         }
         try {
             await this.files.mkdir(dirname(this.configuration.directory), { recursive: true });
@@ -50,6 +61,58 @@ export class StateWriteDiagnosticWriter {
         }
         catch {
             this.stage = 'reservation';
+        }
+    }
+
+    async readCanonicalDestinationIssues(destination: string): Promise<readonly string[]> {
+        const currentDirectory = process.cwd();
+        const issues = validateStateWriteOutputDestinations(
+            { out: destination, diagnostics: this.configuration },
+            currentDirectory
+        );
+        if (issues.length > 0 || this.configuration.kind === 'disabled') {
+            return issues;
+        }
+        const [out, directory] = await Promise.all([
+            this.readCanonicalPath(destination),
+            this.readCanonicalPath(this.configuration.directory)
+        ]);
+        if (out.left || directory.left) {
+            return ['Unable to resolve benchmark output destinations'];
+        }
+        return validateStateWriteOutputDestinations({
+            out: out.right!,
+            diagnostics: { kind: 'enabled', directory: directory.right! }
+        }, currentDirectory);
+    }
+
+    private async readCanonicalPath(path: string): Promise<Either<Error, string>> {
+        let ancestor = isAbsolute(path) ? path : `${process.cwd()}/${path}`;
+        const suffix: string[] = [];
+        while (true) {
+            try {
+                return Either.ofRight(join(await this.files.realpath(ancestor), ...suffix));
+            }
+            catch (error) {
+                if (
+                    !(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT' ||
+                    dirname(ancestor) === ancestor
+                ) {
+                    return Either.ofLeft(new Error('Unable to resolve benchmark output destinations'));
+                }
+                let missing = false;
+                try {
+                    await this.files.lstat(ancestor);
+                }
+                catch (statError) {
+                    missing = statError instanceof Error && 'code' in statError && statError.code === 'ENOENT';
+                }
+                if (!missing) {
+                    return Either.ofLeft(new Error('Unable to resolve benchmark output destinations'));
+                }
+                suffix.unshift(basename(ancestor));
+                ancestor = dirname(ancestor);
+            }
         }
     }
 

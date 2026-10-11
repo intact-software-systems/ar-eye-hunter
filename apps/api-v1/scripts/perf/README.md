@@ -222,6 +222,17 @@ The default is disabled. The enabled writer reserves a new private directory;
 existing directories and files are never reused. Canonical v6 output, collection,
 workload, comparator and thresholds remain unchanged.
 
+The canonical `--out` file and diagnostic directory must be disjoint: neither
+may equal or contain the other. Options reject normalized lexical overlaps.
+Before reserving the directory and again before canonical publication, the writer
+resolves existing filesystem ancestors, including symlink aliases, and applies
+the same policy. An unresolved existing path (including a dangling symlink) is
+rejected without writing canonical output. A rejected publication preserves phase
+and partial evidence and finalizes diagnostics as incomplete. Use sibling paths,
+for example `--out=tmp/perf/run.json --diagnostics-dir=tmp/perf/run-timeline`.
+These checks cover existing path identities; they do not lock parent directories
+against concurrent external filesystem changes.
+
 Each warmup or measured phase writes `phase-<ordinal>.ndjson` after its duration,
 CPU and PostgreSQL counters have been captured. Fixed ceilings are 100,000 retained
 timing plus release records per phase, 33,554,432 serialized bytes per phase and
