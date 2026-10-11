@@ -52,27 +52,28 @@ describe('hosted state-write admission', { timeout: 20000 }, () => {
     it('defaults manual runs and the supported same-repository label to comparison and isolates unrelated labels and modes', () => {
         const workflow = readWorkflow();
         expect(workflow.inputs.mode).toMatchObject({ required: false, type: 'choice', default: 'comparison', options: ['comparison', 'diagnostic'] });
-        expect(decodeMeasurementCondition(workflow.admission, { event_name: 'workflow_dispatch', event: {} }, { mode: 'diagnostic' })).toBe(true);
+        const admit = new Function('github', 'inputs', `return (${workflow.admission});`);
+        expect(decodeMeasurementCondition(admit({ event_name: 'workflow_dispatch', event: {} }, { mode: 'diagnostic' }))).toBe(true);
         expect(
-            decodeMeasurementCondition(workflow.admission, {
+            decodeMeasurementCondition(admit({
                 event_name: 'pull_request',
                 repository: 'owner/repo',
                 event: { label: { name: 'measure-state-write' }, pull_request: { head: { repo: { full_name: 'owner/repo' } } } }
-            }, {})
+            }, {}))
         ).toBe(true);
         expect(
-            decodeMeasurementCondition(workflow.admission, {
+            decodeMeasurementCondition(admit({
                 event_name: 'pull_request',
                 repository: 'owner/repo',
                 event: { label: { name: 'unrelated' }, pull_request: { head: { repo: { full_name: 'owner/repo' } } } }
-            }, {})
+            }, {}))
         ).toBe(false);
         expect(
-            decodeMeasurementCondition(workflow.admission, {
+            decodeMeasurementCondition(admit({
                 event_name: 'pull_request',
                 repository: 'owner/repo',
                 event: { label: { name: 'measure-state-write' }, pull_request: { head: { repo: { full_name: 'fork/repo' } } } }
-            }, {})
+            }, {}))
         ).toBe(false);
         expect(workflow.steps.find((step) => step.uses.startsWith('actions/checkout@'))?.settings['persist-credentials']).toBe(false);
     });
@@ -342,45 +343,38 @@ describe('selected hosted measurement lifecycle', { timeout: 20000 }, () => {
 
 function evaluateMeasurementPolicy(workflow: MeasurementWorkflow, github: JsonRecord, inputs: Readonly<Record<string, string>>): MeasurementPolicy {
     const modeExpression = workflow.environment.MEASUREMENT_MODE.replace(/^\$\{\{\s*|\s*\}\}$/g, '');
-    const mode = decodeMeasurementPolicyMode(modeExpression, github, inputs);
+    const mode = decodeMeasurementPolicyMode(new Function('github', 'inputs', `return (${modeExpression});`)(github, inputs));
     const group = workflow.concurrency.group;
     if (typeof group !== 'string') {
         throw new Error('Invalid measurement policy result');
     }
     const concurrency = group.replace(
         /\$\{\{\s*(.*?)\s*\}\}/g,
-        (_match, expression: string) => decodeMeasurementConcurrencyPart(expression, github, inputs)
+        (_match, expression: string) => decodeMeasurementConcurrencyPart(new Function('github', 'inputs', `return (${expression});`)(github, inputs))
     );
     const steps = workflow.steps.filter((step) =>
         step.run !== '' &&
-        (step.condition === '' || decodeMeasurementCondition(step.condition, github, inputs, mode))
+        (step.condition === '' ||
+            decodeMeasurementCondition(new Function('github', 'inputs', 'env', `return (${step.condition});`)(github, inputs, { MEASUREMENT_MODE: mode })))
     );
     return { mode, concurrency, steps };
 }
 
-function decodeMeasurementPolicyMode(expression: string, github: JsonRecord, inputs: Readonly<Record<string, string>>): MeasurementPolicy['mode'] {
-    const value: unknown = new Function('github', 'inputs', `return (${expression});`)(github, inputs);
+function decodeMeasurementPolicyMode(value: unknown): MeasurementPolicy['mode'] {
     if (value !== 'comparison' && value !== 'diagnostic') {
         throw new Error('Invalid measurement mode at the workflow policy boundary');
     }
     return value;
 }
 
-function decodeMeasurementConcurrencyPart(expression: string, github: JsonRecord, inputs: Readonly<Record<string, string>>): string {
-    const value: unknown = new Function('github', 'inputs', `return (${expression});`)(github, inputs);
+function decodeMeasurementConcurrencyPart(value: unknown): string {
     if (typeof value !== 'string' && !(typeof value === 'number' && Number.isFinite(value))) {
         throw new Error('Invalid concurrency identity at the workflow policy boundary');
     }
     return String(value);
 }
 
-function decodeMeasurementCondition(
-    expression: string,
-    github: JsonRecord,
-    inputs: Readonly<Record<string, string>>,
-    mode: MeasurementPolicy['mode'] = 'comparison'
-): boolean {
-    const value: unknown = new Function('github', 'inputs', 'env', `return (${expression});`)(github, inputs, { MEASUREMENT_MODE: mode });
+function decodeMeasurementCondition(value: unknown): boolean {
     if (typeof value !== 'boolean') {
         throw new Error('Invalid condition at the workflow policy boundary');
     }
