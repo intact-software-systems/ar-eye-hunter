@@ -8,6 +8,8 @@ import {
     vi
 } from 'vitest';
 
+import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
+import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/browser-delivery-composition.ts';
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
@@ -15,7 +17,6 @@ import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/brows
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import {
-    isRoomScopedALMessage,
     newALMulticastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
@@ -43,7 +44,8 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
-import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
+import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -96,8 +98,8 @@ const LEADER_EXPECTATION: ReceiptLoopExpectation = {
 };
 
 interface ReceiptLoopServer {
-    readonly service: WsQueueBoxServerService;
     readonly sockets: Readonly<Record<'a' | 'b' | 'c', SimulatedWebSocket>>;
+    readonly receiptObservations: readonly WsQueueBoxServerReceiptObservation[];
 }
 
 interface ReceiptLoopOrigin {
@@ -149,7 +151,7 @@ describe('cross-carrier receipts', () => {
 
             if (expectation.mode === 'receiver') {
                 const firstAck = readSubmittedAck(loop.receivers.b, 'b');
-                expect((await loop.server.service.acceptIncomingMessage(firstAck, 'b')).right?.kind).toBe('control');
+                await returnAckToServer(loop, 'b', firstAck);
                 await vi.advanceTimersByTimeAsync(100);
             }
             const finalAck = readSubmittedAck(loop.receivers.c, 'c');
@@ -192,8 +194,26 @@ describe('cross-carrier receipts', () => {
                 }
             });
 
-            expect((await loop.server.service.acceptIncomingMessage(finalAck, 'c')).right?.kind).toBe('control');
+            await returnAckToServer(loop, 'c', finalAck);
             await vi.advanceTimersByTimeAsync(100);
+            expect(loop.server.receiptObservations).toContainEqual(expect.objectContaining({
+                kind: 'ack-count',
+                controlMsgId: finalAck.id.msgId,
+                ack: expect.objectContaining({
+                    ackedMsgId: loop.origin.handle.msgId,
+                    originPeerId: 'a',
+                    fromPeerId: 'c',
+                    toPeerId: 'a',
+                    logicalRecipientPeerId: 'c',
+                    carrier: 'ws',
+                    status: 'delivered'
+                }),
+                after: expect.objectContaining({
+                    expectedRecipientPeerIds: expectation.expectedRecipientPeerIds,
+                    confirmedRecipientPeerIds: expectation.expectedRecipientPeerIds
+                }),
+                outcome: 'complete'
+            }));
             await returnReceiptToOrigin(loop, 'complete');
 
             expect(await completed).toMatchObject({
@@ -231,7 +251,7 @@ describe('cross-carrier receipts', () => {
         await deliverRtcThenWs(loop);
         const firstAck = readSubmittedAck(loop.receivers.b, 'b');
         readSubmittedAck(loop.receivers.c, 'c');
-        expect((await loop.server.service.acceptIncomingMessage(firstAck, 'b')).right?.kind).toBe('control');
+        await returnAckToServer(loop, 'b', firstAck);
         await vi.advanceTimersByTimeAsync(100);
 
         expect(readServerReceipts(loop.server).map((receipt) => receipt.phase)).toEqual(['admitted']);
@@ -257,7 +277,7 @@ describe('cross-carrier receipts', () => {
         loop.submission.holdFinalAck = true;
         await deliverRtcThenWs(loop);
         const firstAck = readSubmittedAck(loop.receivers.b, 'b');
-        expect((await loop.server.service.acceptIncomingMessage(firstAck, 'b')).right?.kind).toBe('control');
+        await returnAckToServer(loop, 'b', firstAck);
         await vi.advanceTimersByTimeAsync(100);
 
         const held = loop.submission.heldFinalAcks[0]!;
@@ -287,7 +307,7 @@ describe('cross-carrier receipts', () => {
         await vi.advanceTimersByTimeAsync(100);
         const released = readSubmittedAck(loop.receivers.c, 'c');
         expect(released.id.msgId).toBe(held.id.msgId);
-        expect((await loop.server.service.acceptIncomingMessage(released, 'c')).right?.kind).toBe('control');
+        await returnAckToServer(loop, 'c', released);
         await vi.advanceTimersByTimeAsync(100);
         await returnReceiptToOrigin(loop, 'complete');
 
@@ -301,12 +321,12 @@ async function createReceiptLoop(expectation: ReceiptLoopExpectation): Promise<R
     vi.stubGlobal('WebSocket', SimulatedWebSocket);
     vi.spyOn(Temporal.Now, 'instant').mockImplementation(() => Temporal.Instant.fromEpochMilliseconds(Date.now()));
     const submission: ReceiptLoop['submission'] = { holdFinalAck: false, heldFinalAcks: [] };
-    const server = await createReceiptLoopServer();
+    const room = createOriginSnapshot(['a', 'b', 'c'], 4);
+    const snapshot = expectation.mode === 'leader' ? toOriginDirectedSnapshot(room, 'c') : room;
+    const server = await createReceiptLoopServer(snapshot);
     const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, ...BROWSER_DELIVERY_RETENTION, cancel: () => {} });
     registerReceiptLoopCleanup([() => registry.releaseAll()]);
     const ws = await createReceiptLoopPeer('a', (settlement) => registry.record(settlement), () => undefined);
-    const room = createOriginSnapshot(['a', 'b', 'c'], 4);
-    const snapshot = expectation.mode === 'leader' ? toOriginDirectedSnapshot(room, 'c') : room;
     const rtc = createRtcOriginOverlayFixture({
         snapshot,
         nextHopPeerIds: ['b', 'c'],
@@ -324,7 +344,7 @@ async function createReceiptLoop(expectation: ReceiptLoopExpectation): Promise<R
     return { expectation, server, origin, receivers: { b, c }, submission };
 }
 
-async function createReceiptLoopServer(): Promise<ReceiptLoopServer> {
+async function createReceiptLoopServer(snapshot: GroupSnapshot): Promise<ReceiptLoopServer> {
     const socket = new JsonWebSocketServer();
     const sockets = { a: new SimulatedWebSocket('ws://server/a'), b: new SimulatedWebSocket('ws://server/b'), c: new SimulatedWebSocket('ws://server/c') };
     for (const [peerId, native] of Object.entries(sockets)) {
@@ -332,14 +352,17 @@ async function createReceiptLoopServer(): Promise<ReceiptLoopServer> {
         socket.addConnection(new ConnectionContext({ id: peerId, socket: native }));
     }
     const engine = new InboxOutboxEngine();
+    const receiptObservations: WsQueueBoxServerReceiptObservation[] = [];
     const service = createDefaultWsQueueBoxServerService({
         outbox: new InMemoryQueueBox(),
         socket,
         name: 'server',
         queueEngine: engine,
         inboundStores: createReceiptLoopInboundStores('server'),
-        forwardsRoomScopedMessages: true,
+        forwardsRoomScopedMessages: false,
+        receiptObserver: (observation) => receiptObservations.push(observation),
         targetResolver: {
+            resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
             resolveGroupRecipients: () => ['a', 'b', 'c'].map((peerId) => ({ peerId, connectionId: peerId }))
         },
@@ -348,16 +371,20 @@ async function createReceiptLoopServer(): Promise<ReceiptLoopServer> {
                 ? { scope: { applicationId: 'app', workspaceId: 'workspace' }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined
     });
-    service.authorizeInboundMessagesWith({
-        sendNacks: true,
-        authorize: async (message) =>
-            isRoomScopedALMessage(message)
-                ? { authorized: true, roomAudience: { recipientPeerIds: ['a', 'b', 'c'], snapshotVersion: 4 } }
-                : { authorized: true }
-    });
+    new RallarServerWsRouter(service, {
+        authorizeRoomMessage: createGroupRoomWsAuthorizer({
+            readGroupSnapshot: (ref) => {
+                expect(ref).toEqual(ORIGIN_ROOM);
+                return snapshot;
+            },
+            readPreActivationAppData: () => 'allowed',
+            nowEpochMs: Date.now
+        }),
+        nowEpochMs: Date.now
+    }).install();
     engine.start();
     registerReceiptLoopCleanup([() => service.dispose(), () => engine.stop()]);
-    return { service, sockets };
+    return { sockets, receiptObservations };
 }
 
 async function createReceiptLoopPeer(
@@ -473,12 +500,19 @@ function createReceiptLoopOrigin(
     sessionDeliveries.beginSession(middleware.session);
     feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const dispatch = new BrowserRallarMessageDispatch({ deliveries: owners.registry, sessionDeliveries, nowMs: Date.now });
-    const message = newALMulticastMessage('a', { topicId: 'chat', resourceId: 'start', contextId: 'room' }, ORIGIN_ROOM, 'chat.message.v1', { start: true }, {
-        ack: expectation.mode === 'leader' ? 'group-leader' : 'all-logical-recipients',
-        reliability: 'at-least-once',
-        ttlMs: 30_000,
-        qos: { durability: { algo: 'volatile' } }
-    });
+    const message = newALMulticastMessage(
+        'a',
+        { topicId: 'room.ar-eye-hunter.director', resourceId: 'start', contextId: 'room' },
+        ORIGIN_ROOM,
+        'chat.message.v1',
+        { start: true },
+        {
+            ack: expectation.mode === 'leader' ? 'group-leader' : 'all-logical-recipients',
+            reliability: 'at-least-once',
+            ttlMs: 30_000,
+            qos: { durability: { algo: 'volatile' } }
+        }
+    );
     expect(message.constraints?.expiresAtMs).toBe(Date.now() + 30_000);
     const delivery: BrowserRallarMessageDispatch.Delivery = {
         requestedConfiguration: undefined,
@@ -553,15 +587,25 @@ async function exhaustRtcAndAdmitWsFallback(loop: ReceiptLoop): Promise<void> {
         kind: 'receipt-exhausted',
         msgId: loop.origin.handle.msgId
     }));
-    const submittedMessages = loop.origin.ws.socket.sent.map(decodePersistedALMessage)
-        .filter((message) => message.id.msgId === loop.origin.handle.msgId);
-    expect(submittedMessages).toHaveLength(1);
-    const submitted = submittedMessages[0]!;
+    const submittedFrames = loop.origin.ws.socket.sent
+        .filter((frame) => decodePersistedALMessage(frame).id.msgId === loop.origin.handle.msgId);
+    expect(submittedFrames).toHaveLength(1);
+    const submittedFrame = submittedFrames[0]!;
+    const submitted = decodePersistedALMessage(submittedFrame);
     expect(submitted).toEqual(decodePersistedALMessage(JSON.stringify(loop.origin.rtcAdmissions[0])));
     expect(submitted.constraints?.expiresAtMs).toBe(loop.origin.delivery.message.constraints?.expiresAtMs);
     expect(await loop.origin.rtc.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: submitted.id.msgId })).toBeUndefined();
-    expect((await loop.server.service.acceptIncomingMessage(submitted, 'a')).right?.kind).toBe('admitted');
+    await loop.server.sockets.a.receive(submittedFrame);
     await vi.advanceTimersByTimeAsync(100);
+    expect(
+        loop.server.sockets.a.sent.map(decodePersistedALMessage)
+            .filter((message) => message.id.msgId === submitted.id.msgId)
+    ).toEqual([]);
+    for (const peerId of ['b', 'c'] as const) {
+        const businessIds = loop.server.sockets[peerId].sent.map(decodePersistedALMessage)
+            .filter((message) => message.id.msgId === submitted.id.msgId).map((message) => message.id.msgId);
+        expect(businessIds).toEqual(loop.expectation.expectedRecipientPeerIds.includes(peerId) ? [submitted.id.msgId] : []);
+    }
     await returnReceiptToOrigin(loop, 'admitted');
     expect(loop.origin.handle.lifecycle()).toMatchObject({
         state: 'transport-accepted',
@@ -601,6 +645,22 @@ function readSubmittedAck(receiver: ReceiptLoopReceiver, peerId: 'b' | 'c'): ALM
         status: 'delivered'
     });
     return message;
+}
+
+async function returnAckToServer(loop: ReceiptLoop, peerId: 'b' | 'c', ack: ALMessage): Promise<void> {
+    const frame = loop.receivers[peerId].socket.sent
+        .find((frame) => decodePersistedALMessage(frame).id.msgId === ack.id.msgId)!;
+    expect(frame).toBeDefined();
+    await loop.server.sockets[peerId].receive(frame);
+    expect(loop.server.receiptObservations).toContainEqual(expect.objectContaining({
+        kind: 'socket-decision',
+        controlMsgId: ack.id.msgId,
+        connectionId: peerId,
+        fromPeerId: peerId,
+        authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+        scopeDisposition: 'authorized',
+        outcome: 'control'
+    }));
 }
 
 function readServerReceipts(server: ReceiptLoopServer): readonly ALReceiptPayload[] {
