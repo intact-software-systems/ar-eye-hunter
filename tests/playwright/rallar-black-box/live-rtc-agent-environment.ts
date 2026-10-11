@@ -18,6 +18,19 @@ import {
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import type { AgentPrefix } from './live-rtc-delivery-operations.ts';
 
+export interface OpenAgentTrioInput {
+    readonly runId: string;
+    readonly groupId: string;
+    readonly suffix: string;
+    readonly label: string;
+}
+
+export type LiveRtcAgentTrio = readonly [
+    LiveRtcControlClient.Agent,
+    LiveRtcControlClient.Agent,
+    LiveRtcControlClient.Agent
+];
+
 export const SPA_BASE_URL = envValue('VITE_RALLAR_SPA_BASE_URL') ?? 'http://localhost:5176';
 export const CONTROL_BASE_URL = readFullStackControlBaseUrl();
 export const CONTROL_WS_URL = toFullStackControlWebSocketUrl(CONTROL_BASE_URL);
@@ -26,6 +39,8 @@ export const apiBaseUrl = envValue('VITE_RALLAR_API_BASE_URL');
 export const roomSeed = firstEnvValue('VITE_RALLAR_ROOM_ID', 'VITE_RALLAR_GROUP_ID');
 export const applicationId = envValue('VITE_RALLAR_APPLICATION_ID') ?? 'ar-eye-hunter';
 export const workspaceId = envValue('VITE_RALLAR_WORKSPACE_ID') ?? 'default';
+export const almDiagnostics = toAlmDiagnostics(process.env.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS);
+
 export const rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode | undefined = parseRtcCaptureMode(
     process.env.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE
 ).fold(
@@ -106,6 +121,16 @@ export function firstEnvValue(...keys: readonly string[]): string | undefined {
     return undefined;
 }
 
+function toAlmDiagnostics(value: string | undefined): boolean {
+    if (value === undefined || value === 'true') {
+        return true;
+    }
+    if (value === 'false') {
+        return false;
+    }
+    throw new Error('ALM diagnostics environment selection must be true or false.');
+}
+
 export function booleanEnv(key: string): boolean {
     const normalized = envValue(key)?.toLowerCase();
     return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
@@ -180,19 +205,6 @@ export function actorFor(prefix: AgentPrefix, suffix: string): string {
     return firstEnvValue(`VITE_RALLAR_AGENT_${prefix}_ACTOR`, `VITE_RALLAR_${prefix}_ACTOR`) ??
         `agent-${prefix.toLowerCase()}-${suffix}`;
 }
-
-export interface OpenAgentTrioInput {
-    readonly runId: string;
-    readonly groupId: string;
-    readonly suffix: string;
-    readonly label: string;
-}
-
-export type LiveRtcAgentTrio = readonly [
-    LiveRtcControlClient.Agent,
-    LiveRtcControlClient.Agent,
-    LiveRtcControlClient.Agent
-];
 
 export function liveRtcAgentConfig(): Parameters<typeof openLiveRtcBrowserAgent>[1]['config'] {
     return {

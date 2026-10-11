@@ -98,3 +98,26 @@ describe('live RTC process capture selection', () => {
         ).rejects.toThrow(/RTC capture mode/);
     });
 });
+
+describe('live RTC ALM recording selection', () => {
+    beforeEach(() => {
+        vi.resetModules();
+        vi.stubEnv('RALLAR_BLACK_BOX_RTC_CAPTURE_MODE', undefined);
+        vi.stubEnv('RALLAR_BLACK_BOX_ALM_DIAGNOSTICS', undefined);
+        onTestFinished(() => {
+            vi.unstubAllEnvs();
+            vi.resetModules();
+        });
+    });
+    it.each([[undefined, true], ['true', true], ['false', false]] as const)('freezes %s after admission', async (value, expected) => {
+        vi.stubEnv('RALLAR_BLACK_BOX_ALM_DIAGNOSTICS', value);
+        const environment = await import('../../../tests/playwright/rallar-black-box/live-rtc-agent-environment.ts');
+        expect(environment).toHaveProperty('almDiagnostics', expected);
+        vi.stubEnv('RALLAR_BLACK_BOX_ALM_DIAGNOSTICS', 'invalid');
+        expect(environment).toHaveProperty('almDiagnostics', expected);
+    });
+    it.each(['', ' ', ' false ', 'FALSE', '0', '1', 'yes', 'on'])('rejects malformed input %s before browser work', async (value) => {
+        vi.stubEnv('RALLAR_BLACK_BOX_ALM_DIAGNOSTICS', value);
+        await expect(import('../../../tests/playwright/rallar-black-box/live-rtc-agent-environment.ts')).rejects.toThrow(/ALM diagnostics/);
+    });
+});

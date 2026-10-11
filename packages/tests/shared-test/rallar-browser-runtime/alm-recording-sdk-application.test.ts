@@ -6,6 +6,7 @@ import {
 } from 'vitest';
 
 import * as stores from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import * as connectionHttp from '@shared-web/browser/connection/connection-http-api.ts';
 import * as middleware from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import * as rtc from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
@@ -45,6 +46,7 @@ it.each([undefined, true, false])('keeps the actual SDK run-Off receipt independ
                 rtcCaptureContext: { run: 'off' }
             }
         });
+        expect(connected).toHaveProperty('almDiagnostics', almDiagnostics !== false);
         expect(connected.rtcCapture).toMatchObject({
             status: 'observed',
             value: {
@@ -65,6 +67,34 @@ it.each([undefined, true, false])('keeps the actual SDK run-Off receipt independ
     finally {
         await page.close();
     }
+});
+
+it.each([true, false])('projects only the owned SDK application despite foreign and retained phases %s', async (almDiagnostics) => {
+    const { page, targetWindow } = createCaptureApplicationRuntime();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    onTestFinished(async () => {
+        release.resolve();
+        await page.close();
+    });
+    vi.spyOn(connectionHttp, 'readIceCandidates').mockImplementation(async () => {
+        entered.resolve();
+        await release.promise;
+        return { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 };
+    });
+    const foreign = {
+        kind: 'diagnostic' as const,
+        topic: 'rallar.browser.connect.phase_completed',
+        actor: 'foreign',
+        data: { phase: 'rallar-connect', almDiagnostics: !almDiagnostics },
+        atEpochMs: 1
+    };
+    await targetWindow.__blackBoxRallarEmit?.(foreign);
+    const acquisition = page.connect({ connection: 'owned', rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app', almDiagnostics } });
+    await entered.promise;
+    await targetWindow.__blackBoxRallarEmit?.(foreign);
+    release.resolve();
+    expect(await acquisition).toHaveProperty('almDiagnostics', almDiagnostics);
 });
 
 it.each(REPLACED_ALM_PORT_CASES.flatMap((testCase) => [true, false].map((almDiagnostics) => ({ ...testCase, almDiagnostics }))))(
@@ -129,20 +159,29 @@ it.each(REPLACED_ALM_PORT_CASES.flatMap((testCase) => [true, false].map((almDiag
 );
 
 it.each([undefined, true, false])('preserves unscoped acquisition and reuse without certifying ALM intent %s', async (almDiagnostics) => {
-    const { page, facade, events } = createCaptureApplicationRuntime();
+    const { page, facade, targetWindow, events } = createCaptureApplicationRuntime();
     onTestFinished(async () => {
         await page.close();
     });
     const defaults = vi.spyOn(facade, 'setDefaults');
     const config = { connection: 'unscoped', rallar: { apiBaseUrl: 'https://test.invalid', almDiagnostics } };
-    await page.connect(config);
+    const stale = {
+        kind: 'diagnostic' as const,
+        topic: 'rallar.browser.connect.phase_completed',
+        connection: config.connection,
+        data: { phase: 'rallar-connect', almDiagnostics: almDiagnostics !== false },
+        atEpochMs: 1
+    };
+    await targetWindow.__blackBoxRallarEmit?.(stale);
+    const connected = await page.connect(config);
+    expect(connected).not.toHaveProperty('almDiagnostics');
     expect(defaults).toHaveBeenCalledWith(undefined);
     const writes = defaults.mock.calls.length;
     const receipt = facade.rtcCapture();
     await page.connect(config);
     expect(defaults.mock.calls).toHaveLength(writes);
     expect(facade.rtcCapture()).toBe(receipt);
-    expect(events.filter((event) => typeof event.data === 'object' && event.data !== null && 'almDiagnostics' in event.data)).toEqual([]);
+    expect(events.filter((event) => typeof event.data === 'object' && event.data !== null && 'almDiagnostics' in event.data)).toEqual([stale]);
 });
 
 function observeConsumedDiagnosticsPorts(): RallarDiagnosticsPorts[] {

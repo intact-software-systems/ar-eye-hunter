@@ -207,6 +207,8 @@ export interface BlackBoxRallarDocumentFacts {
 }
 
 export interface BlackBoxRallarConnectDiagnostics {
+    /** Absent when this acquisition installed no harness diagnostics ports. */
+    readonly almDiagnostics?: boolean;
     readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     readonly document: BlackBoxRallarDocumentFacts;
     readonly status: 'connected';

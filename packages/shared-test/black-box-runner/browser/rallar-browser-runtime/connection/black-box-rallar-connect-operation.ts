@@ -52,6 +52,7 @@ interface ConnectionAttempt {
     readonly context: BlackBoxRallarLifecycleOperationContext;
     readonly requestedConfiguration: RtcSignalingDiagnostics.CaptureConfiguration | undefined;
     completion: BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion | undefined;
+    almDiagnostics: boolean | undefined;
     phase: string;
     lifecycleSubscriptions: LifecycleSubscriptions | undefined;
     unsubscribeConsoleDiagnostics: (() => void) | undefined;
@@ -120,6 +121,7 @@ export class BlackBoxRallarConnectOperation {
             context,
             requestedConfiguration,
             completion: undefined,
+            almDiagnostics: undefined,
             phase: 'validate-config',
             lifecycleSubscriptions: undefined,
             unsubscribeConsoleDiagnostics: undefined
@@ -162,7 +164,7 @@ export class BlackBoxRallarConnectOperation {
             this.#input.typedChannels.subscribe(config);
         }
         connectionState.set(state);
-        const connected = this.#toConnectDiagnostics(state, attempt.completion?.rtcCapture);
+        const connected = this.#toConnectDiagnostics(state, attempt);
         this.#assertAttemptEligible(attempt);
         diagnostics.emitDiagnostic(config, 'rallar.browser.connect_completed', connected);
         this.#assertAttemptEligible(attempt);
@@ -215,11 +217,11 @@ export class BlackBoxRallarConnectOperation {
             rtcCaptureContext: config.rallar.rtcCaptureContext
         });
         this.#assertRtcAttemptEligible(attempt);
-        const almDiagnostics = this.#input.connectionState.bindConfiguration(attempt.completion);
+        attempt.almDiagnostics = this.#input.connectionState.bindConfiguration(attempt.completion);
         this.#assertAttemptEligible(attempt);
         diagnostics.emitConnectPhaseCompleted(config, attempt.phase, {
             ...health.getStatusDiagnostics(config),
-            ...(almDiagnostics === undefined ? {} : { almDiagnostics })
+            ...(attempt.almDiagnostics === undefined ? {} : { almDiagnostics: attempt.almDiagnostics })
         });
         this.#assertAttemptEligible(attempt);
         if (!config.roomId) {
@@ -373,14 +375,15 @@ export class BlackBoxRallarConnectOperation {
 
     #toConnectDiagnostics(
         state: BlackBoxRallarConnectionState.Value,
-        rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt> | undefined
+        attempt: ConnectionAttempt
     ): BlackBoxRallarConnectDiagnostics {
         const { config, session } = state;
         const { health } = this.#input;
         const transport = resolveBlackBoxRallarTransport(config);
         const typedMessages = isBlackBoxRallarTypedMessagesTransport(transport);
         return {
-            rtcCapture: rtcCapture ?? { status: 'unavailable', reason: 'absent' },
+            ...(attempt.almDiagnostics === undefined ? {} : { almDiagnostics: attempt.almDiagnostics }),
+            rtcCapture: attempt.completion?.rtcCapture ?? { status: 'unavailable', reason: 'absent' },
             status: 'connected',
             document: health.readDocument(),
             connection: config.connection,

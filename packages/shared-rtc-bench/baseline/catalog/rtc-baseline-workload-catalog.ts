@@ -6,12 +6,14 @@ import type {
     RtcBaselineConfigurationFieldDescriptorDto,
     RtcBaselineWorkloadId
 } from '../contracts/rtc-baseline-contracts.ts';
+
 type RtcBaselineSyntheticField = readonly [
     field: string,
     flag: string,
     scalarKind: RtcBaselineConfigurationFieldDescriptorDto['scalarKind'],
     defaultValue: RtcBaselineConfigurationFieldDescriptorDto['defaultValue']
 ];
+
 interface RtcBaselineWorkloadCase {
     caseId: string;
     inputKey: string;
@@ -23,12 +25,6 @@ interface RtcBaselineWorkloadCase {
     retainedOuterAttempts?: number;
     cohortId?: string;
 }
-const syntheticPrefix = [
-    'run',
-    '--config=packages/shared-rtc-bench/deno.json',
-    '--allow-read',
-    '--allow-write'
-];
 
 interface RtcBaselineDescriptorInput {
     caseKey: RtcBaselineCaseKeyDto;
@@ -40,13 +36,6 @@ interface RtcBaselineDescriptorInput {
     unset?: 'reject' | null;
 }
 
-function toRtcBaselineConfigurationDescriptor(
-    input: RtcBaselineDescriptorInput
-): RtcBaselineConfigurationFieldDescriptorDto {
-    const { environment = null, unset = null, ...fields } = input;
-    return { ...fields, allowlistedEnvironmentVariable: environment, environmentUnsetBehavior: unset };
-}
-
 interface RtcBaselineSyntheticCaseInput {
     workloadId: RtcBaselineWorkloadId;
     caseId: string;
@@ -54,6 +43,36 @@ interface RtcBaselineSyntheticCaseInput {
     sourcePath: string;
     fields: readonly RtcBaselineSyntheticField[];
     attempts?: [number, number];
+}
+
+interface RtcBaselineFullStackCaseInput {
+    caseId: string;
+    inputKey: string;
+    database: 'memory' | 'postgres';
+    allScenarios: boolean;
+    retention: boolean;
+}
+
+interface RtcBaselineWorkloadInput {
+    workloadId: RtcBaselineWorkloadId;
+    evidenceClass: 'synthetic-path' | 'native-browser' | 'local-full-stack';
+    warmupOuterAttempts: number;
+    retainedOuterAttempts: number;
+    cases: readonly RtcBaselineWorkloadCase[];
+}
+
+const syntheticPrefix = [
+    'run',
+    '--config=packages/shared-rtc-bench/deno.json',
+    '--allow-read',
+    '--allow-write'
+];
+
+function toRtcBaselineConfigurationDescriptor(
+    input: RtcBaselineDescriptorInput
+): RtcBaselineConfigurationFieldDescriptorDto {
+    const { environment = null, unset = null, ...fields } = input;
+    return { ...fields, allowlistedEnvironmentVariable: environment, environmentUnsetBehavior: unset };
 }
 
 function toRtcBaselineSyntheticCase(input: RtcBaselineSyntheticCaseInput): RtcBaselineWorkloadCase {
@@ -350,14 +369,6 @@ function toRtcBaselineFullStackRuntimeScript(
         : 'test:rallar:full-stack:postgres:live-rtc-3';
 }
 
-interface RtcBaselineFullStackCaseInput {
-    caseId: string;
-    inputKey: string;
-    database: 'memory' | 'postgres';
-    allScenarios: boolean;
-    retention: boolean;
-}
-
 const fullStackSourcePaths = [
     'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts',
     'tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts',
@@ -375,7 +386,45 @@ const fullStackSourcePaths = [
     'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-connect-operation.ts',
     'packages/shared-web/browser/connection/browser-rtc-capture-intent.ts',
     'apps/rallar-black-box-control-server/src/control-artifact-recorder.ts',
-    'apps/rallar-black-box-control-server/src/control-artifacts.ts'
+    'apps/rallar-black-box-control-server/src/control-artifacts.ts',
+    'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-crdt-controller.ts',
+    'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
+    'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts',
+    'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-policy.ts',
+    'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts',
+    'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-connection-runtime.ts',
+    'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-connection-state.ts',
+    'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-crdt-live-connection.ts',
+    'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/connection/configure-black-box-rallar-connection.ts',
+    'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+    'packages/shared-web/browser/composition/browser-communication-composition.ts',
+    'packages/shared-web/browser/composition/browser-session-composition.ts',
+    'packages/shared-web/browser/composition/create-rallar-facade.ts',
+    'packages/shared-web/browser/connection/browser-transport-runtime.ts',
+    'packages/shared-web/browser/messages/browser-resync-recovery.ts',
+    'packages/shared-web/browser/session/rallar-session-controller.ts',
+    'packages/shared-web/browser/session/session-connection-lifecycle.ts',
+    'packages/shared-web/browser/connection/rallar-diagnostics-ports.ts',
+    'packages/shared-web/browser/connection/initialise-browser-middleware.ts',
+    'packages/shared-web/browser/al-runtime/browser-al-runtime-stores.ts',
+    'packages/shared-web/browser/rtc/initialise-browser-rtc-runtime.ts',
+    'packages/shared/services/ws-queue-box-client-service.ts',
+    'packages/shared-test/rallar-bb-test/browser/browser-rallar-command-input.ts',
+    'packages/shared-test/rallar-bb-test/browser/browser-rtc-commands.ts',
+    'packages/shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts',
+    'packages/shared-test/rallar-bb-test/runtime/to-merged-runtime-config.ts',
+    'packages/shared-test/rallar-bb-test/schema.ts',
+    'packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-catalog.ts',
+    'packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-manifest.ts',
+    'packages/shared-rtc-bench/baseline/contracts/rtc-baseline-validation.ts',
+    'packages/shared-rtc-bench/baseline/contracts/rtc-baseline-artifact-decoding.ts',
+    'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-runtime.ts',
+    'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-runner.ts',
+    'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-runtime-observation.ts',
+    'packages/shared-rtc-bench/baseline/runtime/create-rtc-baseline-runtime-observation-input.ts',
+    'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-deno-runtime.ts',
+    'packages/shared-rtc-bench/baseline/observation/read-rtc-b06-alm-selection.ts',
+    'packages/shared-rtc-bench/baseline/acceptance/validate-rtc-b06-capture-evidence.ts'
 ];
 
 const fullStackMemorySourcePaths = [
@@ -391,7 +440,6 @@ const fullStackMemorySourcePaths = [
     'packages/shared-server/http/rate-limit-service.ts',
     'packages/shared/resilience/Resilience.ts',
     'packages/shared/cache/LoanedValue.ts',
-    'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-deno-runtime.ts',
     'apps/rallar-black-box/playwright-full-stack-spa-server.ts',
     'apps/rallar-black-box/rtc-production-artifacts.ts',
     'apps/rallar-black-box/scripts/rtc-production-preview.ts',
@@ -406,6 +454,7 @@ const fullStackMemorySourcePaths = [
 ];
 
 const fullStackMemoryConfigPaths = [
+    '.github/workflows/rtc-b06-performance-observation.yml',
     'package.json',
     'package-lock.json',
     'apps/rallar-black-box/package.json',
@@ -510,6 +559,14 @@ function toRtcBaselineFullStackWorkloadConfiguration(
     return [
         toRtcBaselineConfigurationDescriptor({
             caseKey,
+            field: 'almDiagnostics',
+            flag: '--rtc-alm-diagnostics',
+            scalarKind: 'boolean',
+            defaultValue: true,
+            environment: retention ? 'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS' : null
+        }),
+        toRtcBaselineConfigurationDescriptor({
+            caseKey,
             field: 'rtcCaptureMode',
             flag: '--rtc-capture-mode',
             scalarKind: 'string',
@@ -590,13 +647,6 @@ const b06Cases = [
         retention: true
     })
 ];
-interface RtcBaselineWorkloadInput {
-    workloadId: RtcBaselineWorkloadId;
-    evidenceClass: 'synthetic-path' | 'native-browser' | 'local-full-stack';
-    warmupOuterAttempts: number;
-    retainedOuterAttempts: number;
-    cases: readonly RtcBaselineWorkloadCase[];
-}
 
 export const RTC_BASELINE_WORKLOAD_CATALOG: readonly RtcBaselineWorkloadInput[] = [
     {

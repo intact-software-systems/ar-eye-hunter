@@ -32,6 +32,48 @@ afterEach(() => {
 });
 
 describe('RTC-B06 observation workflow environment', () => {
+    it.each(['true', 'false'])('forwards ALM %s into baseline initialization and the retention worker', (selection) => {
+        const fixtureRoot = createEnvironmentCaptureFixture();
+        const baseline = readWorkflowStep('Capture RTC-B06 governed branch baseline');
+        mkdirSync(`${fixtureRoot}/output`);
+        const baselineResult = spawnSync('bash', ['-euo', 'pipefail', '-c', baseline.run], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                ...selectedCaptureEnvironment(baseline.env, 'signaling', selection),
+                PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'conflicting-ambient',
+                RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
+                RTC_OBSERVATION_OUTPUT: `${fixtureRoot}/output`,
+                RTC_SOURCE_REF: 'codex/alm-selection',
+                GITHUB_RUN_ID: '123456789',
+                GITHUB_RUN_ATTEMPT: '2',
+                GITHUB_SERVER_URL: 'https://github.com',
+                GITHUB_REPOSITORY: 'example/repository'
+            }
+        });
+        expect(baselineResult).toMatchObject({ status: 0, stderr: '' });
+        expect(readEnvironmentRecords(fixtureRoot).map((entry) => entry.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS)).toEqual([selection]);
+        const diagnostic = readWorkflowStep('Exercise RTC-B06 diagnostic cases');
+        mkdirSync(`${fixtureRoot}/diagnostic`);
+        const diagnosticResult = spawnSync('bash', ['-euo', 'pipefail', '-c', diagnostic.run], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                ...selectedCaptureEnvironment(diagnostic.env, 'signaling', selection),
+                PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'conflicting-ambient',
+                RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
+                RTC_DIAGNOSTIC_OUTPUT: `${fixtureRoot}/diagnostic`,
+                RUNNER_TEMP: fixtureRoot
+            }
+        });
+        expect(diagnosticResult).toMatchObject({ status: 0, stderr: '' });
+        expect(readEnvironmentRecords(fixtureRoot).slice(1).map((entry) => entry.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS)).toEqual(['true', 'true', selection]);
+    });
+
     it.each(['off', 'signaling', 'native'])('passes selected %s capture to the publish CLI independently of runner inheritance', (mode) => {
         const fixtureRoot = createEnvironmentCaptureFixture();
         const step = readWorkflowStep('Capture RTC-B06 E3-memory observation');
@@ -201,6 +243,7 @@ describe('RTC-B06 observation workflow environment', () => {
         expect(readEnvironmentRecords(fixtureRoot)).toEqual([
             {
                 DATABASE_URL: null,
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'true',
                 RALLAR_ICE_MODE: null,
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
@@ -215,7 +258,8 @@ describe('RTC-B06 observation workflow environment', () => {
         const fixtureRoot = createEnvironmentCaptureFixture();
         const outputDirectory = path.join(fixtureRoot, 'diagnostic');
         mkdirSync(outputDirectory);
-        const diagnostic = readWorkflowStep('Exercise RTC-B06 diagnostic cases').run;
+        const diagnosticStep = readWorkflowStep('Exercise RTC-B06 diagnostic cases');
+        const diagnostic = diagnosticStep.run;
         const result = spawnSync('bash', ['-e', '-c', diagnostic], {
             cwd: repoRoot,
             encoding: 'utf8',
@@ -223,6 +267,7 @@ describe('RTC-B06 observation workflow environment', () => {
                 ...process.env,
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                 RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
+                ...selectedCaptureEnvironment(diagnosticStep.env, 'signaling'),
                 RTC_B06_FAKE_EXIT_STATUS: '23',
                 RTC_DIAGNOSTIC_OUTPUT: outputDirectory,
                 RUNNER_TEMP: fixtureRoot
@@ -240,6 +285,7 @@ describe('RTC-B06 observation workflow environment', () => {
         expect(records.map(({ RALLAR_BLACK_BOX_STORAGE_DIR, ...environment }) => environment)).toEqual([
             {
                 DATABASE_URL: null,
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'true',
                 RALLAR_ICE_MODE: null,
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: null,
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: null,
@@ -252,6 +298,7 @@ describe('RTC-B06 observation workflow environment', () => {
             },
             {
                 DATABASE_URL: null,
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'true',
                 RALLAR_ICE_MODE: null,
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: null,
@@ -264,6 +311,7 @@ describe('RTC-B06 observation workflow environment', () => {
             },
             {
                 DATABASE_URL: null,
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'true',
                 RALLAR_ICE_MODE: null,
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: null,
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
@@ -302,11 +350,11 @@ function readWorkflowStep(stepName: string): RtcB06WorkflowStep {
     return { run: step.run, env: step.env ?? {} };
 }
 
-function selectedCaptureEnvironment(environment: Readonly<Record<string, string>>, mode: string) {
+function selectedCaptureEnvironment(environment: Readonly<Record<string, string>>, mode: string, almSelection = 'true') {
     return Object.fromEntries(
         Object.entries(environment).map(([name, value]) => [
             name,
-            value === '${{ inputs.rtc_capture_mode }}' ? mode : value
+            value === '${{ inputs.rtc_capture_mode }}' ? mode : value === '${{ inputs.alm_diagnostics }}' ? almSelection : value
         ])
     );
 }
@@ -321,6 +369,7 @@ function createEnvironmentCaptureFixture(): string {
         `#!/usr/bin/env node
 const { appendFileSync } = require('node:fs');
 const names = [
+    'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS',
     'DATABASE_URL',
     'RALLAR_ICE_MODE',
     'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS',

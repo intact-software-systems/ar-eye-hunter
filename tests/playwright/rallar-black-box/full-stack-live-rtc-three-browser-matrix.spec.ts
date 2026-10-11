@@ -6,6 +6,7 @@ import { LiveRtcFormationFailure } from './create-group-formation-lifecycle-driv
 import type { LiveRtcLifecycleFailureInterval } from './live-rtc-agent-diagnostics.ts';
 import {
     agentAuth,
+    almDiagnostics,
     apiBaseUrl,
     applicationId,
     booleanEnv,
@@ -65,6 +66,7 @@ const liveRtcDeliveryOperations = createLiveRtcDeliveryOperations({
     messagesRtcTypeId,
     messagesRtcTopicId,
     rtcCaptureMode,
+    almDiagnostics,
     formation: createLiveRtcFormationOperations()
 });
 
