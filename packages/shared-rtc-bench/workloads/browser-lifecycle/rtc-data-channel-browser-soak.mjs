@@ -1,5 +1,15 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import {
+    existsSync,
+    lstatSync,
+    mkdirSync,
+    readFileSync,
+    writeFileSync
+} from 'node:fs';
+import {
+    dirname,
+    join,
+    resolve
+} from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { chromium } from '@playwright/test';
@@ -298,7 +308,7 @@ async function measureBrowserLifecycle(iterations, iterationIdPrefix, dependenci
         const cdp = await page.context().newCDPSession(page);
         await cdp.send('Performance.enable');
         const readHeapUsed = async () => {
-            await cdp.send('HeapProfiler.collectGarbage').catch(() => undefined);
+            await cdp.send('HeapProfiler.collectGarbage');
             const metrics = await cdp.send('Performance.getMetrics');
             return metrics.metrics?.find((metric) => metric.name === 'JSHeapUsedSize')?.value ?? null;
         };

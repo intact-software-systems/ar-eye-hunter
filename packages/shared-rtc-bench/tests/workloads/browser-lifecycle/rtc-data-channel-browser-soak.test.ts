@@ -1,5 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -347,8 +354,42 @@ class FakePeerConnection {
     }
 }
 
+class FakeCdpSession {
+    readonly heapReads: (number | null)[] = [];
+    private readonly heapValues: readonly (number | null)[];
+    private readonly failedGcOrdinal: number | null;
+    private collectionOrdinal = 0;
+    private heapValue: number | null = null;
+
+    constructor(heapValues: readonly (number | null)[], failedGcOrdinal: number | null) {
+        this.heapValues = heapValues;
+        this.failedGcOrdinal = failedGcOrdinal;
+    }
+
+    async send(command: string): Promise<object> {
+        if (command === 'HeapProfiler.collectGarbage') {
+            this.collectionOrdinal += 1;
+            await Promise.resolve();
+            if (this.collectionOrdinal === this.failedGcOrdinal) {
+                throw new Error('forced GC rejected');
+            }
+            this.heapValue = this.heapValues[this.collectionOrdinal - 1] ?? null;
+        }
+        if (command === 'Performance.getMetrics') {
+            this.heapReads.push(this.heapValue);
+            return {
+                metrics: this.heapValue === null
+                    ? []
+                    : [{ name: 'JSHeapUsedSize', value: this.heapValue }]
+            };
+        }
+        return {};
+    }
+}
+
 function semanticBrowser() {
     const close = vi.fn(async () => undefined);
+    const cdpSession = new FakeCdpSession([1000, 1000], null);
     const evaluate = vi.fn(async (operation: BrowserSoakOperation, argument?: BrowserSoakEvaluationInput) => {
         if (typeof operation !== 'function') {
             throw new Error('Expected a browser operation');
@@ -357,12 +398,7 @@ function semanticBrowser() {
     });
     const page: FakePage = {
         context: () => ({
-            newCDPSession: async () => ({
-                send: async (command: string) =>
-                    command === 'Performance.getMetrics'
-                        ? { metrics: [{ name: 'JSHeapUsedSize', value: 1000 }] }
-                        : {}
-            })
+            newCDPSession: async () => cdpSession
         }),
         setContent: async () => undefined,
         evaluate
@@ -376,10 +412,11 @@ function semanticBrowser() {
 
 function fakeBrowser(
     soakFactory: (iterationCount: number, iterationIdPrefix: string) => object = completedSoak,
-    heapValues: readonly (number | null)[] = [1000, 1000]
+    heapValues: readonly (number | null)[] = [1000, 1000],
+    failedGcOrdinal: number | null = null
 ) {
     const close = vi.fn(async () => undefined);
-    let heapReadIndex = 0;
+    const cdpSession = new FakeCdpSession(heapValues, failedGcOrdinal);
     const evaluate = vi.fn(
         async (
             _operation: BrowserSoakOperation,
@@ -388,17 +425,7 @@ function fakeBrowser(
     );
     const page: FakePage = {
         context: () => ({
-            newCDPSession: async () => ({
-                send: async (command: string) => {
-                    if (command !== 'Performance.getMetrics') {
-                        return {};
-                    }
-                    const heapValue = heapValues[heapReadIndex++] ?? null;
-                    return {
-                        metrics: heapValue === null ? [] : [{ name: 'JSHeapUsedSize', value: heapValue }]
-                    };
-                }
-            })
+            newCDPSession: async () => cdpSession
         }),
         setContent: async () => undefined,
         evaluate
@@ -407,7 +434,7 @@ function fakeBrowser(
         newPage: async () => page,
         close
     };
-    return { browser, close, evaluate };
+    return { browser, close, evaluate, cdpSession };
 }
 
 function readJson(path: string): RtcBaselineJson {
@@ -1009,6 +1036,100 @@ it('projects lifecycle failures and the bridge preserves the exact causal remain
         });
         expect(readStagedJson).not.toHaveBeenCalled();
         expect(written).toHaveLength(4);
+    }
+    finally {
+        rmSync(rootPath, { recursive: true, force: true });
+    }
+});
+
+it.each([
+    { boundary: 'before the initial heap read', failedGcOrdinal: 1, heapReads: [], completedSoakCount: 0 },
+    { boundary: 'after the completed soak', failedGcOrdinal: 2, heapReads: [1000], completedSoakCount: 1 }
+])('rejects capture when forced GC fails $boundary', async ({ failedGcOrdinal, heapReads, completedSoakCount }) => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-required-gc-'));
+    const baselinePath = writeInitializedBaseline(rootPath, manifest(primaryBaselineId, 1));
+    const completedSoaks: object[] = [];
+    const launched = fakeBrowser(
+        (iterationCount, iterationIdPrefix) => {
+            const soak = completedSoak(iterationCount, iterationIdPrefix);
+            completedSoaks.push(soak);
+            return soak;
+        },
+        [1000, 1250],
+        failedGcOrdinal
+    );
+    const relativePath = rawRelativePath('warmup', 1);
+
+    try {
+        await expect(
+            browserSoak.runRtcDataChannelBrowserSoakCli(
+                rawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+                {
+                    baselineRootPath: rootPath,
+                    launchBrowser: async () => launched.browser
+                }
+            )
+        ).rejects.toThrow('forced GC rejected');
+        expect(launched.cdpSession.heapReads).toEqual(heapReads);
+        expect(completedSoaks).toHaveLength(completedSoakCount);
+        if (completedSoakCount === 1) {
+            expect(completedSoaks[0]).toMatchObject({
+                iterations: 25,
+                openedCount: 25,
+                closedCount: 25,
+                messageReceivedCount: 25,
+                localErrorCount: 0,
+                remoteErrorCount: 0
+            });
+        }
+        expect(launched.close).toHaveBeenCalledOnce();
+        expect(existsSync(join(baselinePath, relativePath))).toBe(false);
+    }
+    finally {
+        rmSync(rootPath, { recursive: true, force: true });
+    }
+});
+
+it.each([
+    {
+        exposure: 'available',
+        heapValues: [1000, 1250],
+        heap: { beforeBytes: 1000, afterBytes: 1250, deltaBytes: 250 },
+        metrics: [
+            { metric: 'heapBeforeBytes', unit: 'bytes', value: 1000 },
+            { metric: 'heapAfterBytes', unit: 'bytes', value: 1250 },
+            { metric: 'heapDeltaBytes', unit: 'bytes', value: 250 }
+        ]
+    },
+    {
+        exposure: 'unavailable',
+        heapValues: [null, null],
+        heap: { beforeBytes: null, afterBytes: null, deltaBytes: null },
+        metrics: []
+    }
+])('preserves $exposure heap evidence after successful forced GC', async ({ heapValues, heap, metrics }) => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-collected-heap-'));
+    const baselinePath = writeInitializedBaseline(rootPath, manifest(primaryBaselineId, 1));
+    const launched = fakeBrowser(completedSoak, heapValues);
+    const relativePath = rawRelativePath('warmup', 1);
+
+    try {
+        const result = await browserSoak.runRtcDataChannelBrowserSoakCli(
+            rawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+            {
+                baselineRootPath: rootPath,
+                launchBrowser: async () => launched.browser
+            }
+        );
+        const staged = readExternalAttempt(join(baselinePath, relativePath));
+        expect(result.output).toEqual(staged);
+        expect(staged.sampleOutcomes).toEqual([
+            expect.objectContaining({ outcome: 'passed', issues: [] })
+        ]);
+        expect(staged.samples[0].rawEvidence).toMatchObject({ heap });
+        expect(staged.samples[0].metrics.filter(({ metric }) => metric.startsWith('heap'))).toEqual(metrics);
+        expect(launched.cdpSession.heapReads).toEqual(heapValues);
+        expect(launched.close).toHaveBeenCalledOnce();
     }
     finally {
         rmSync(rootPath, { recursive: true, force: true });
