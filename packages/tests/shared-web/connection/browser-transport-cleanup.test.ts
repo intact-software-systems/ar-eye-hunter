@@ -61,7 +61,9 @@ describe('Browser transport cleanup', () => {
         process.on('unhandledRejection', record);
         const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         const socketFailure = new Error('actual socket close failed');
+        let capturedError: Error | undefined;
         const closing = vi.spyOn(socket, 'close').mockImplementation(() => {
+            capturedError = socketFailure;
             throw socketFailure;
         });
         const engine = new InboxOutboxEngine();
@@ -89,7 +91,7 @@ describe('Browser transport cleanup', () => {
         await transport.init(toInitOptions());
         expect(transport.shutdown()).toBeUndefined();
         expect(transport.isReady()).toBe(false);
-        expect(closing).toHaveBeenCalledOnce();
+        expect(capturedError).toBe(socketFailure);
         await new Promise<void>((resolve) => setImmediate(resolve));
         await new Promise<void>((resolve) => setImmediate(resolve));
         expect(escaped, 'Immediate shutdown leaked the actual close AggregateError').toEqual([]);
