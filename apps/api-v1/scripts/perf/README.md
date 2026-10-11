@@ -396,8 +396,64 @@ The workflow refuses a candidate that changes the comparator or a module it impo
 `perf:api-v1:state-write` and `db:migrate` scripts.
 
 The artifact `state-write-comparison-<run>-<attempt>` keeps the four captures, their environment records,
-the harness overlay patch and `comparison.log`. The job log carries each position's workload summaries,
-including `sql.serializedResultBytes`.
+the harness overlay patch, original acquisition bytes, command streams and `comparison.log`. Each
+benchmark's stdout retains its workload summaries, including `sql.serializedResultBytes`.
+
+## Hosted bounded diagnostic
+
+Manual dispatch accepts `mode=comparison` (the default) or `mode=diagnostic`. The supported PR label
+continues to select comparison. Concurrency includes the selected mode and label, so an unrelated
+label or a diagnostic cannot cancel a comparison.
+
+Diagnostic mode checks out one candidate with persisted checkout credentials disabled. It records
+that immutable commit, tree, clean tracked state, hashes of the workflow, compose fixture, dependency
+inputs and every tracked performance executable, plus toolchain and native runner facts. It checks
+those source inputs again immediately before the benchmark. It does not resolve or synthesize a base,
+apply a harness overlay, pool samples, or invoke the comparative verdict.
+
+On an admitted `ubuntu-24.04` GitHub-hosted runner, it executes exactly once:
+
+```sh
+npm run perf:api-v1:state-write -- \
+  --backend=postgres --warmup=1 --runs=3 --concurrency=10 \
+  --out=tmp/perf/state-write-diagnostic/<run>-<attempt>/artifacts/state-write.json \
+  --diagnostics-dir=tmp/perf/state-write-diagnostic/<run>-<attempt>/diagnostics
+```
+
+The workflow substitutes the actual GitHub run ID and attempt. Fresh `commands/`, `artifacts/`,
+`diagnostics/` and capture-owned `.acquisition` destinations keep producer originals separate.
+All three workloads, twelve phases, 8,400 total commands and 6,300 measured commands are required.
+The unchanged exported `validateStateWriteArtifact` validates canonical v6 correctness. The hosted
+owner also checks every diagnostic phase, the complete receipt, byte accounting and the fixed
+100,000 timing/release records per phase, 33,554,432 bytes per phase and 536,870,912 bytes per run.
+A successful workflow is diagnostic evidence; it does not repair a failed comparison or satisfy
+frozen scale acceptance.
+
+`run-api-v1-state-write-measurement.mjs` owns the provisioning, migration, capture, benchmark,
+postflight, database-log and cleanup lifecycle for both modes. Admission requires at least four CPUs,
+no pre-existing containers and no existing state-write workload. It provisions only the explicit
+pinned compose fixture under `state-write-comparison`, outside measurement timing. Every command
+retains argv, cwd, UTC start/end, actual child PID and terminal outcome. The owner settles that same
+child and its process group before a later capture, log, cleanup or export, including interruption or
+metadata/stream recording failure. Postflight is attempted whenever preflight exists; logs and owned
+project/volume removal are attempted on every provisioned exit. The first failure is retained
+separately from secondary failures. A changed container/project/service/image/context refuses
+cleanup; no unrelated process or local development container is stopped or restored.
+
+The separately named 14-day `state-write-diagnostic-originals-<run>-<attempt>` artifact includes the
+canonical output, diagnostic receipt and phases, command streams, source binding, hashes/inventory,
+and original native inspections, image archive and metadata chain. Raw upload is admitted only after
+the capture-produced original configuration matches image-default environment plus the three literal
+compose database overrides, the fixed compose labels/context, no custom environment or bind/custom
+mount, and one fresh image-declared anonymous database volume. The pinned public image's image-save
+archive excludes container database data and the runner environment. Ephemeral IDs, addresses,
+session facts and public runner paths are expected disclosure. Unexpected configuration refuses raw
+upload without printing its values; `state-write-terminal-<run>-<attempt>` retains safe failure and
+refusal evidence. Failed or incomplete evidence is retained as failed or incomplete.
+
+The existing native image reader and descriptor validator remain authoritative. Linux/GNU-tar
+portability must be established by the actual hosted acquisition; local BSD-tar evidence and fake
+command-port tests do not establish it.
 
 ## Interpreting Results
 
