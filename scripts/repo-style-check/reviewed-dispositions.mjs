@@ -5,6 +5,13 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Ticket HTTP JSON is untrusted until object, property and string checks
+    // admit the ticket. Only that checked string leaves this network boundary.
+    Object.freeze({
+        path: 'apps/api-v1/test/db/concurrent-session-native-admission-child.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readWebSocketTicket'
+    }),
     // Agent review: malformed JSON fixtures feed only the guarded readiness
     // admission above; the callback never interprets or trusts the raw value.
     Object.freeze({
