@@ -6,7 +6,7 @@ import { isRoomScopedALMessage, type ALMessage } from '@shared/al-contracts/al-c
 import { decodeALControlMessage, newALAckControlMessage, type ALAckPayload } from '@shared/al-contracts/al-control.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { WsQueueBoxServerAckRelay } from '@shared/services/ws-queue-box-server/ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerReceiptAggregation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
 import type {

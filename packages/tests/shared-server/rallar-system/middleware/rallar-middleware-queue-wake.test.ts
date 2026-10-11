@@ -10,7 +10,7 @@ import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import {

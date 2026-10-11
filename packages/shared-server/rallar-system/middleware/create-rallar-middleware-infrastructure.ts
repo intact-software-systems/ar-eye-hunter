@@ -4,7 +4,7 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import { isStateSnapshotTopic } from '@shared/api/state-snapshot-page.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';

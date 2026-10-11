@@ -28,7 +28,7 @@ import {
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { CommandTimedOutError } from '@shared/cache/Command.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type WsQueueBoxClientService from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';

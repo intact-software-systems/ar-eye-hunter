@@ -13,7 +13,7 @@ import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-mess
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { WsServerAckRelayPublisher } from '@shared/services/ws-queue-box-server/ws-queue-box-server-ack-relay.ts';
 import {
     createDefaultWsQueueBoxServerService,

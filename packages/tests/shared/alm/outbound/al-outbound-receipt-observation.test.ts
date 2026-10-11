@@ -19,7 +19,7 @@ import {
 import { ALWorkBatchObservations } from '@shared/alm/work/al-work-batch-observations.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { TestWebSocket } from '../../websocket/test-web-socket.ts';

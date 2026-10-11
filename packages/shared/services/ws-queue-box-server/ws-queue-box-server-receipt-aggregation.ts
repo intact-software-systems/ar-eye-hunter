@@ -29,7 +29,7 @@ import type {
 import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/al-outbound-control-admission.ts';
 import { LatestRepository } from '../../cache/LatestRepository.ts';
 import { Either } from '../../resilience/Either.ts';
-import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
 import type { WsServerRoomAudience } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
 import { WsQueueBoxServerReceiptDeadlineIndex } from './ws-queue-box-server-receipt-deadline-index.ts';

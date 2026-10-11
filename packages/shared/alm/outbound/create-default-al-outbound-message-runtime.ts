@@ -3,7 +3,7 @@ import { InMemoryQueueBox } from '../../queuebox/in-memory-queue-box.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { CircuitBreakerPolicy } from '../../resilience/circuit-breaker.ts';
-import { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '../al-runtime-stores.ts';
 import { readALBrowserLocks } from '../storage/al-browser-locks.ts';

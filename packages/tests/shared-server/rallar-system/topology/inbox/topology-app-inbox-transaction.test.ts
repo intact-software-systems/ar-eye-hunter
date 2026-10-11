@@ -38,7 +38,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 

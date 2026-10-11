@@ -35,7 +35,7 @@ import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-de
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -434,23 +434,7 @@ function createProducer(options: { readonly collideOnRequestId?: string; readonl
     const database = createAppInboxTestDatabase(queue, results, {
         runtimeRepository: repository,
         withTransaction: async (write) => {
-            if (state.removeSessionBeforeWrite) {
-                await repository.deleteByKey(
-                    CLIENT_STATE_SESSIONS_NAMESPACE,
-                    clientStateSessionStorageKey({
-                        ...SCOPE,
-                        principalId: 'alice',
-                        clientInstanceId: 'browser',
-                        sessionId: 'alice-session'
-                    })
-                );
-            }
-            if (state.removeMemberBeforeWrite) {
-                await repository.deleteByKey(
-                    MEMBERS_NAMESPACE,
-                    groupStateMemberStorageKey({ ...SCOPE, groupId: 'shared-room', principalId: 'bob' })
-                );
-            }
+            await removeSnapshotAudienceBeforeWrite(repository, state);
             state.inTransaction = true;
             try {
                 return await write();
@@ -493,6 +477,30 @@ function createProducer(options: { readonly collideOnRequestId?: string; readonl
         clientStateService: clientState
     }, { serviceId: 'producer-server' });
     return { repository, database, service, reader, state, clientState, now: Date.now() };
+}
+
+/** Changes durable membership after the accepted observation and before transaction entry. */
+async function removeSnapshotAudienceBeforeWrite(
+    repository: FakeRuntimeStateRepository,
+    state: SnapshotProducerFixture['state']
+): Promise<void> {
+    if (state.removeSessionBeforeWrite) {
+        await repository.deleteByKey(
+            CLIENT_STATE_SESSIONS_NAMESPACE,
+            clientStateSessionStorageKey({
+                ...SCOPE,
+                principalId: 'alice',
+                clientInstanceId: 'browser',
+                sessionId: 'alice-session'
+            })
+        );
+    }
+    if (state.removeMemberBeforeWrite) {
+        await repository.deleteByKey(
+            MEMBERS_NAMESPACE,
+            groupStateMemberStorageKey({ ...SCOPE, groupId: 'shared-room', principalId: 'bob' })
+        );
+    }
 }
 
 function upsertAliceProfile(
@@ -621,9 +629,9 @@ function createForeignReceiver(repository: FakeRuntimeStateRepository, sessionId
         readProducerProvenance: (message, entry) => reader.readProducerProvenance(message, entry),
         readAuthenticatedConnectionScope: () => ({ scope: authentication.scope, expiresAtEpochMs: Date.now() + 60_000 })
     });
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        await service.dispose();
+        await engine.stop();
     });
     return { native, engine, stores, reader, socket, authentication };
 }

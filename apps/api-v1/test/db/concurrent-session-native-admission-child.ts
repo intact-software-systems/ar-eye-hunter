@@ -1,4 +1,3 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import { PSqlResourceInboxEntryReader } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-reader.ts';
@@ -12,55 +11,28 @@ import {
     requireGroupMutationReceipt,
     requireGroupStateWritten
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
-import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeApiMutationFailure } from '@shared/api/mutation/api-mutation-failure.ts';
-import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
-import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
-import { createDefaultRallarServer } from '../../src/composition/create-default-rallar-server.ts';
-import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
-import type { GroupStateRouteCommandInput } from '../../src/group-state/group-state-route-contracts.ts';
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
-import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-configuration-test-fixture.ts';
-import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
-import { closeNativeAdmissionTestDatabase, stopNativeAdmissionTestRuntime } from './native-admission-test-cleanup.ts';
-
-const PRINCIPAL_REF = {
-    applicationId: 'rallar-server',
-    workspaceId: 'default',
-    principalId: 'alice'
-};
-
-interface NativeGroupRequest {
-    readonly baseUrl: string;
-    readonly path: string;
-    readonly method: 'POST' | 'PUT';
-    readonly command: Extract<
-        GroupStateRouteCommandInput,
-        { operation: 'create-group' | 'join-group' | 'connect-group-presence'; }
-    >;
-}
-
-interface NativeGroupRequestResult {
-    readonly command: NativeGroupRequest['command'];
-    readonly status: number;
-    readonly body: JsonWireValue;
-    readonly elapsedMs: number;
-}
-
-interface NativeGroupSessionFlow {
-    readonly baseUrl: string;
-    readonly session: IssuedAuthSession;
-    readonly groupRef: GroupRef;
-    readonly generationId: string;
-    readonly index: number;
-}
+import {
+    closeSocket,
+    createNativeSessionTestFixture,
+    issueNativeWebSocketTicket,
+    issueSameUserSessions,
+    readAdmittedSnapshot,
+    waitForSocketOpen,
+    writeNativeGroupCreate,
+    writeNativeGroupJoin,
+    writeNativeGroupPresence,
+    writeNativeGroupRequest,
+    type NativeGroupRequestResult
+} from './native-session-test-fixture.ts';
 
 interface NativeGroupDurableResultObservation {
     readonly queueEntries: PSqlResourceInboxEntryReader;
@@ -78,57 +50,26 @@ interface NativeGroupSessionAuthorityObservation {
 }
 
 Deno.test('fifteen native same-user sessions complete concurrent room setup through default automatic queues', async () => {
-    const configuration = decodeApiV1Configuration({
-        ...validDecodeApiV1ConfigurationInput(),
-        defaultsSource: defaults
-    });
-    const databaseLifecycle = await createApiV1TestPGliteDatabaseLifecycle();
-    const backgroundProducersStopped = Promise.withResolvers<void>();
-    const queueEngineStopped = Promise.withResolvers<void>();
-    const queueEngineLifecycle = { started: false };
-    const rallar = await createDefaultRallarServer({
-        configuration,
-        databaseLifecycle: {
-            ...databaseLifecycle,
-            close: async () => {
-                backgroundProducersStopped.resolve();
-                if (queueEngineLifecycle.started) {
-                    await queueEngineStopped.promise;
-                }
-                await closeNativeAdmissionTestDatabase(databaseLifecycle, console.log);
-            }
-        }
-    });
+    const fixture = await createNativeSessionTestFixture();
     const sockets: WebSocket[] = [];
-    let listener: Deno.HttpServer<Deno.NetAddr> | undefined;
     let primaryFailure: Error | undefined;
 
     try {
-        await rallar.runtime.readiness;
-        const app = new Hono();
-        rallar.installSystemTopics();
-        rallar.installWebSocketLifecycle();
-        rallar.mountWebSocket(app);
-        rallar.mountRest(app);
-        rallar.start();
-        queueEngineLifecycle.started = true;
-
-        const sessions = await issueSameUserSessions(rallar.runtime, configuration.authentication.sessionTtlMs);
+        const baseUrl = await fixture.start();
+        const sessions = await issueSameUserSessions(fixture.runtime, fixture.sessionTtlMs);
         assert.equal(new Set(sessions.map((session) => session.sessionId)).size, 15);
         assert.ok(sessions.every((session) => session.clientId === 'alice' && session.username === 'alice'));
-        listener = Deno.serve({ hostname: '127.0.0.1', port: 0, onListen: () => {} }, app.fetch);
-        const baseUrl = `http://127.0.0.1:${listener.addr.port}`;
         const groupRef: GroupRef = {
             applicationId: 'rallar-server',
             workspaceId: 'default',
             groupId: `native-room-${crypto.randomUUID()}`
         };
-        assert.equal(await rallar.runtime.groupsRepository.findGroup(groupRef), undefined);
+        assert.equal(await fixture.runtime.groupsRepository.findGroup(groupRef), undefined);
         let firstFlowFailure: Error | undefined;
         const startedAt = performance.now();
         const connections = await Promise.allSettled(
             sessions.map(async (session, index) => {
-                const ticket = await readWebSocketTicket(baseUrl, session, index);
+                const ticket = await issueNativeWebSocketTicket(baseUrl, session, index);
                 const url = new URL(`/api/ws/${session.sessionId}`, baseUrl);
                 url.protocol = 'ws:';
                 url.searchParams.set('ticket', ticket);
@@ -137,15 +78,22 @@ Deno.test('fifteen native same-user sessions complete concurrent room setup thro
                 const socket = new WebSocket(url);
                 sockets.push(socket);
                 await waitForSocketOpen(socket);
-                const connection = rallar.runtime.wsQBoxServerService.socket.connections.get(session.sessionId);
+                const connection = fixture.runtime.wsQBoxServerService.socket.connections.get(session.sessionId);
                 assert.ok(connection?.isOpen, `Session ${index} must have its current server connection`);
-                return await writeNativeGroupSessionFlow({
+                const flow = {
                     baseUrl,
                     session,
                     groupRef,
                     generationId: connection.generationId,
                     index
-                });
+                };
+                const create = await writeNativeGroupCreate(flow);
+                assertNativeGroupHttpResult(create);
+                const join = await writeNativeGroupJoin(flow);
+                assertNativeGroupHttpResult(join);
+                const presence = await writeNativeGroupPresence(flow);
+                assertNativeGroupHttpResult(presence);
+                return [create, join, presence];
             }).map((flow) =>
                 flow.catch((cause) => {
                     firstFlowFailure ??= cause instanceof Error ? cause : new Error(String(cause));
@@ -164,7 +112,7 @@ Deno.test('fifteen native same-user sessions complete concurrent room setup thro
             groupResults.push(...connection.value);
         }
 
-        const snapshot = await readAdmittedSnapshot(rallar.runtime);
+        const snapshot = await readAdmittedSnapshot(fixture.runtime);
         assert.equal(sockets.length, 15);
         assert.ok(sockets.every((socket) => socket.readyState === WebSocket.OPEN));
         assert.equal(snapshot.activeSessionCount, 15);
@@ -174,7 +122,7 @@ Deno.test('fifteen native same-user sessions complete concurrent room setup thro
             snapshot.activeSessions.map((session) => session.sessionId).sort(),
             sessions.map((session) => session.sessionId).sort()
         );
-        const socketServer = rallar.runtime.wsQBoxServerService.socket;
+        const socketServer = fixture.runtime.wsQBoxServerService.socket;
         assert.equal(socketServer.connections.size, 15);
         for (const session of snapshot.activeSessions) {
             const connection = socketServer.connections.get(session.sessionId);
@@ -210,15 +158,15 @@ Deno.test('fifteen native same-user sessions complete concurrent room setup thro
             ).length,
             15
         );
-        const queueEntries = new PSqlResourceInboxEntryReader(databaseLifecycle.database, () => new Date());
-        const queueResults = new ResourceInboxResultsRepository(databaseLifecycle.database);
+        const queueEntries = new PSqlResourceInboxEntryReader(fixture.databaseLifecycle.database, () => new Date());
+        const queueResults = new ResourceInboxResultsRepository(fixture.databaseLifecycle.database);
         for (const result of groupResults) {
             await assertNativeGroupDurableResult({ queueEntries, queueResults, result });
         }
-        await assertNativeGroupSessions(rallar.runtime, groupRef, sessions);
+        await assertNativeGroupSessions(fixture.runtime, groupRef, sessions);
         await assertNativeGroupSessionAuthority({
             baseUrl,
-            runtime: rallar.runtime,
+            runtime: fixture.runtime,
             groupRef,
             sessions,
             queueEntries,
@@ -239,97 +187,9 @@ Deno.test('fifteen native same-user sessions complete concurrent room setup thro
         primaryFailure = error instanceof Error ? error : new Error(String(error));
     }
     finally {
-        await stopNativeAdmissionTestRuntime({
-            socketClosures: sockets.map(closeSocket),
-            waitForSessionDisconnects: () => waitForSessionDisconnects(rallar.runtime),
-            webSocketLifecycle: rallar.runtime.wsQBoxServerService,
-            listener,
-            backgroundTasks: rallar.runtime.backgroundTasks,
-            engine: rallar.runtime.qboxEngine,
-            backgroundProducersStopped: backgroundProducersStopped.promise,
-            queueEngineStopped,
-            primaryFailure,
-            reportProgress: console.log,
-            reportSecondaryFailures: (failure) => console.error('Native admission secondary cleanup failures', failure)
-        });
+        await fixture.stop(sockets.map(closeSocket), primaryFailure);
     }
 });
-
-async function writeNativeGroupSessionFlow(flow: NativeGroupSessionFlow): Promise<readonly NativeGroupRequestResult[]> {
-    const { baseUrl, session, groupRef, generationId, index } = flow;
-    const scope = { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId };
-    const groupPath = `/api/state/apps/${groupRef.applicationId}/workspaces/${groupRef.workspaceId}/groups`;
-    const create = await writeNativeGroupRequest({
-        baseUrl,
-        method: 'POST',
-        path: `${groupPath}/requests/native-room-create-${index}`,
-        command: {
-            operation: 'create-group',
-            authSession: session,
-            scope,
-            request: {
-                requestId: `native-room-create-${index}`,
-                groupId: groupRef.groupId,
-                displayName: groupRef.groupId,
-                kind: 'room',
-                joinMode: 'open',
-                createdByPrincipalId: 'alice'
-            }
-        }
-    });
-    assertNativeGroupHttpResult(create);
-    const join = await writeNativeGroupRequest({
-        baseUrl,
-        method: 'POST',
-        path: `${groupPath}/${groupRef.groupId}/join/requests/native-room-join-request-${index}`,
-        command: {
-            operation: 'join-group',
-            authSession: session,
-            scope,
-            groupId: groupRef.groupId,
-            request: { requestId: `native-room-join-request-${index}` }
-        }
-    });
-    assertNativeGroupHttpResult(join);
-    const presence = await writeNativeGroupRequest({
-        baseUrl,
-        method: 'PUT',
-        path: `${groupPath}/${groupRef.groupId}/sessions/${session.sessionId}/requests/native-room-presence-${index}`,
-        command: {
-            operation: 'connect-group-presence',
-            authSession: session,
-            scope,
-            groupId: groupRef.groupId,
-            sessionId: session.sessionId,
-            request: { requestId: `native-room-presence-${index}`, principalId: 'alice', generationId }
-        }
-    });
-    assertNativeGroupHttpResult(presence);
-    return [create, join, presence];
-}
-
-async function writeNativeGroupRequest(request: NativeGroupRequest): Promise<NativeGroupRequestResult> {
-    const startedAt = performance.now();
-    const { requestId, ...body } = request.command.request;
-    assertApiMutationRequestId(requestId);
-    const response = await fetch(new URL(request.path, request.baseUrl), {
-        method: request.method,
-        headers: {
-            'content-type': 'application/json',
-            authorization: `Bearer ${request.command.authSession.accessToken}`,
-            'x-client-id': request.command.authSession.clientId
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(5_000)
-    }).catch((cause) => {
-        throw new Error(`${requestId} failed inside its 5000 ms HTTP allowance`, { cause });
-    });
-    const decoded = decodeJsonWireValue(await response.json(), `HTTP response for ${requestId}`);
-    const elapsedMs = performance.now() - startedAt;
-    assert.ok(elapsedMs < 5_000, `${requestId} exceeded 5000 ms HTTP allowance`);
-    console.log(JSON.stringify({ requestId, status: response.status, elapsedMs }));
-    return { command: request.command, status: response.status, body: decoded, elapsedMs };
-}
 
 function assertNativeGroupHttpResult(result: NativeGroupRequestResult): void {
     const requestId = result.command.request.requestId;
@@ -474,100 +334,4 @@ async function assertNativeGroupSessionAuthority(observation: NativeGroupSession
         before
     );
     await assertNativeGroupSessions(runtime, groupRef, sessions);
-}
-
-async function issueSameUserSessions(runtime: ApiV1Runtime, ttlMs: number): Promise<readonly IssuedAuthSession[]> {
-    const sessions: IssuedAuthSession[] = [];
-    for (let index = 0; index < 15; index += 1) {
-        const issued = await runtime.appAuthInboxService.issueSession({
-            requestId: `native-admission-session-${index}`,
-            clientId: 'alice',
-            username: 'alice',
-            authority: { kind: 'static-client', clientId: 'alice', normalizedUsername: 'alice' },
-            ttlMs
-        });
-        assert.ok(issued.right, 'Auth AppInbox must issue each valid session');
-        const persisted = await runtime.authSessionRepository.findBySessionId(issued.right.sessionId);
-        assert.ok(persisted, 'The issued session must have durable auth authority');
-        assert.equal(persisted.clientId, 'alice');
-        assert.equal(persisted.username, 'alice');
-        sessions.push({ ...issued.right, issuedAtEpochMs: persisted.issuedAtEpochMs });
-    }
-    return sessions;
-}
-
-async function readWebSocketTicket(baseUrl: string, session: AuthSession, index: number): Promise<string> {
-    const startedAt = performance.now();
-    const response = await fetch(`${baseUrl}/api/auth/ws-ticket/requests/native-admission-ticket-${index}`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${session.accessToken}`, 'x-client-id': session.clientId },
-        signal: AbortSignal.timeout(5_000)
-    });
-    const body: unknown = await response.json();
-    assert.equal(response.status, 200, `Ticket request ${index} must succeed`);
-    assert.ok(performance.now() - startedAt < 5_000, `Ticket request ${index} exceeded 5000 ms`);
-    assert.ok(
-        typeof body === 'object' && body !== null && 'ticket' in body && typeof body.ticket === 'string',
-        'Ticket response must carry a ticket'
-    );
-    return body.ticket;
-}
-
-async function waitForSocketOpen(socket: WebSocket): Promise<void> {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-        await new Promise<void>((resolve, reject) => {
-            const options = { once: true, signal: controller.signal };
-            socket.addEventListener('open', () => resolve(), options);
-            socket.addEventListener('error', () => reject(new Error('Native WebSocket opening failed')), options);
-            socket.addEventListener(
-                'close',
-                () => reject(new Error('Native WebSocket closed before opening')),
-                options
-            );
-            timer = setTimeout(() => reject(new Error('Native WebSocket opening exceeded 45000 ms')), 45_000);
-        });
-    }
-    finally {
-        clearTimeout(timer);
-        controller.abort();
-    }
-}
-
-async function readAdmittedSnapshot(runtime: ApiV1Runtime): Promise<ClientSnapshot> {
-    const deadline = performance.now() + 45_000;
-    do {
-        const snapshot = await runtime.clientStateService.readCurrentSnapshot(PRINCIPAL_REF);
-        if (snapshot?.activeSessions.length === 15) {
-            return snapshot;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 25));
-    }
-    while (performance.now() < deadline);
-    throw new Error('Automatic AppInbox queues did not admit all fifteen sessions within 45000 ms');
-}
-
-async function closeSocket(socket: WebSocket): Promise<void> {
-    if (socket.readyState === WebSocket.CLOSED) {
-        return;
-    }
-    const closed = new Promise<void>((resolve) => {
-        socket.addEventListener('close', () => resolve(), { once: true });
-    });
-    socket.close();
-    await closed;
-}
-
-async function waitForSessionDisconnects(runtime: ApiV1Runtime): Promise<void> {
-    const deadline = performance.now() + 45_000;
-    do {
-        const snapshot = await runtime.clientStateService.readCurrentSnapshot(PRINCIPAL_REF);
-        if (snapshot === undefined || snapshot.activeSessionCount === 0) {
-            return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 25));
-    }
-    while (performance.now() < deadline);
-    throw new Error('Automatic AppInbox queues did not complete owned session disconnects within 45000 ms');
 }

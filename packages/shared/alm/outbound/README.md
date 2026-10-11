@@ -60,7 +60,7 @@ verdict through the lane's settlement sink and writes nothing else: the handle r
 [`ALOutboundMessageEffects`](./al-outbound-message-effects.ts) runs the three message-shaped effects
 — `admit-message`, `dequeue-message`, and `send-prepared`.
 [`ALWorkHandler`](../work/al-work-handler.ts) registers outbound work with the existing
-[`InboxOutboxEngine`](../../services/InboxOutboxEngine.ts) through
+[`InboxOutboxEngine`](../../services/inbox-outbox-engine.ts) through
 [`ALWorkQueuePort`](../work/al-work-queue-port.ts). QueueBox owns durable reservation, release,
 expiry, retry, and exhausted-attempt recovery. A queued native send retains its claimed work until
 transport settlement; it does not block available peers or complete merely because the carrier

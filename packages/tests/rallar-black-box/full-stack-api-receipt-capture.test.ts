@@ -14,7 +14,7 @@ function ownerChild(expectedRecipientPeerIds: readonly string[]): string {
     const source = (file: string) => JSON.stringify(path.resolve(file));
     return `
         import { WsQueueBoxServerReceiptAggregation } from ${source('packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts')};
-        import { InboxOutboxEngine } from ${source('packages/shared/services/InboxOutboxEngine.ts')};
+        import { InboxOutboxEngine } from ${source('packages/shared/services/inbox-outbox-engine.ts')};
         import { newALAckControlMessage } from ${source('packages/shared/al-contracts/al-control.ts')};
         import { createApiV1WsReceiptObserver } from ${source('apps/api-v1/src/composition/create-api-v1-ws-receipt-observer.ts')};
         import { createConsoleRallarTimingSink } from ${source('packages/shared-server/rallar-system/observability/timing.ts')};

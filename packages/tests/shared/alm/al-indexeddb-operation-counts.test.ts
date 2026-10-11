@@ -38,7 +38,7 @@ import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, toResourceEntryWithKey, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import {
     createInboundTestMessage,

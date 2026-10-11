@@ -133,6 +133,7 @@ describe('Rallar auth login, expiry, and registration contract', () => {
             }
             webSocketClose = { code, reason };
             mocks.webSocket.close(code, reason);
+            return Promise.resolve();
         });
         const facade = createRallarFacade();
         const authStates: RallarAuthState[] = [];
@@ -214,6 +215,7 @@ describe('Rallar auth login, expiry, and registration contract', () => {
         });
         mocks.webSocketQueueBox.close.mockImplementation(() => {
             transportClosed = true;
+            return Promise.resolve();
         });
         const facade = createRallarFacade();
 

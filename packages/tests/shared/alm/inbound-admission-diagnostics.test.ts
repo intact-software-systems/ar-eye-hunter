@@ -6,7 +6,7 @@ import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-mes
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS } from '@shared/alm/inbound/lane/al-inbound-store-lane.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import {
     createInboundTestMessage,

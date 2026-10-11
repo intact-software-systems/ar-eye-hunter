@@ -11,7 +11,7 @@ import {
     type ALWorkAttemptResult,
     type ALWorkObservationDeferral
 } from '@shared/alm/work/al-work-handler.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import { fakePort, toTestALWorkReadySelection } from './al-work-test-entries.ts';
 

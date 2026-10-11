@@ -22,7 +22,7 @@ import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { RetryableConflictError } from '@shared/resilience/TryWith.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import '../../setup-browser-indexeddb.ts';
 import {

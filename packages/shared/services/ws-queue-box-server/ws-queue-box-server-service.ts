@@ -46,7 +46,7 @@ import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/reso
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '../../websocket/json-web-socket-server.ts';
-import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { OnWebSocketServerMessageCallback } from '../queue-message-callbacks.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';

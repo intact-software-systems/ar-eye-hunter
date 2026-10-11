@@ -7,7 +7,7 @@ import type { ResourceInboxReservationRequest } from '@shared/queuebox/queue-box
 import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { createQueueMessage, createQueueResilience } from '../../../shared/app-inbox/fair-service-fixture.ts';

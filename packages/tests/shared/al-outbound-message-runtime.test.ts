@@ -25,7 +25,7 @@ import {
     newALUnicastMessage,
     QueueBoxUtilities
 } from '@shared/mod.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import {
     createDefaultOutboundTestRuntime,

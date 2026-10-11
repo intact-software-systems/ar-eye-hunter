@@ -6,7 +6,7 @@ import { encodeLiveWsNotice, type LiveWsNotice, type LiveWsNoticeTransport } fro
 import { newALBroadcastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';

@@ -6,7 +6,7 @@ import {
     createCountingIndexedDbOperationObserver,
     createPassThroughIndexedDbOperationObserver
 } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import {
     createDefaultOutboundTestRuntime,

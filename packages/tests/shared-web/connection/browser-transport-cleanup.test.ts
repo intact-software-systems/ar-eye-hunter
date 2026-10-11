@@ -66,6 +66,7 @@ describe('Browser transport cleanup', () => {
         });
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             effects.push('socket-closed');
+            return Promise.resolve();
         });
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
@@ -81,6 +82,7 @@ describe('Browser transport cleanup', () => {
         const effects: string[] = [];
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             effects.push('transport-closed');
+            return Promise.resolve();
         });
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
@@ -132,6 +134,7 @@ describe('Browser transport cleanup', () => {
         const effects: string[] = [];
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             effects.push('transport-closed');
+            return Promise.resolve();
         });
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
@@ -186,6 +189,7 @@ describe('Browser transport cleanup', () => {
         const effects: string[] = [];
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             effects.push('transport-closed');
+            return Promise.resolve();
         });
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
@@ -299,9 +303,11 @@ describe('Browser transport cleanup', () => {
         const cleanupEffects: string[] = [];
         vi.mocked(middleware.middleware.qboxEngine.stop).mockImplementation(() => {
             cleanupEffects.push('queue-stopped');
+            return Promise.resolve();
         });
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             cleanupEffects.push('websocket-closed');
+            return Promise.resolve();
         });
         let resolveMiddleware: ((middleware: BrowserConnectedMiddleware) => void) | undefined;
         mocks.readSession.mockReturnValue(middleware.session);
@@ -364,6 +370,7 @@ describe('Browser transport cleanup', () => {
         });
         vi.mocked(middleware.middleware.qboxEngine.stop).mockImplementation(() => {
             effects.push('queue');
+            return Promise.resolve();
         });
         vi.mocked(middleware.middleware.webSocketQueueBox.socket.close).mockImplementation(() => {
             effects.push('websocket');
@@ -371,6 +378,7 @@ describe('Browser transport cleanup', () => {
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             effects.push('queuebox');
             middleware.middleware.webSocketQueueBox.socket.close(1000, 'rallar-disconnect');
+            return Promise.resolve();
         });
 
         mocks.readSession.mockReturnValue(middleware.session);
@@ -428,9 +436,11 @@ describe('Browser transport cleanup', () => {
         const cleanupEffects: string[] = [];
         vi.mocked(middleware.middleware.qboxEngine.stop).mockImplementation(() => {
             cleanupEffects.push('queue-stopped');
+            return Promise.resolve();
         });
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             cleanupEffects.push('websocket-closed');
+            return Promise.resolve();
         });
         let resolveMiddleware: ((value: BrowserConnectedMiddleware) => void) | undefined;
         mocks.readSession.mockReturnValue(middleware.session);
@@ -547,6 +557,7 @@ describe('the session\'s durable work claim', () => {
         const middleware = createDefaultApiMiddlewareTestDouble();
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             effects.push('transport-closed');
+            return Promise.resolve();
         });
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
@@ -567,6 +578,7 @@ describe('the session\'s durable work claim', () => {
         const middleware = createDefaultApiMiddlewareTestDouble();
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             effects.push('transport-closed');
+            return Promise.resolve();
         });
         let resolveMiddleware: ((middleware: BrowserConnectedMiddleware) => void) | undefined;
         mocks.readSession.mockReturnValue(middleware.session);

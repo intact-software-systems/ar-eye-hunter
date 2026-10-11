@@ -31,7 +31,7 @@ import {
     type CountingIndexedDbOperationObserver
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     createDefaultWsQueueBoxClientService,
     type WsQueueBoxClientService

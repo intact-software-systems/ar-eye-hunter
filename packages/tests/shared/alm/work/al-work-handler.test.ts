@@ -15,7 +15,7 @@ import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort, ALWorkRelease } from 
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { describe, expect, it, vi } from 'vitest';
 import {
     collectProbe,

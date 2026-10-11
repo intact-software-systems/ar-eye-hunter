@@ -34,7 +34,7 @@ import {
     INBOX_OUTBOX_ENGINE_MAX_IDLE_MS,
     INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO,
     InboxOutboxEngine
-} from '@shared/services/InboxOutboxEngine.ts';
+} from '@shared/services/inbox-outbox-engine.ts';
 
 import type {
     ALOutboundEffectSnapshot,

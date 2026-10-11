@@ -6,7 +6,7 @@ import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import type { ALWorkOutcome, ALWorkRelease } from '@shared/alm/work/al-work-queue-port.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import { newWorkEntry, toTestALWorkReadySelection } from './al-work-test-entries.ts';
 

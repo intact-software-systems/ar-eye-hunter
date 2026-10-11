@@ -25,7 +25,7 @@ import {
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient, type OnWebSocketMessageCallback } from '@shared/websocket/json-web-socket-client.ts';
@@ -195,6 +195,36 @@ describe('WS client typed ingress and transport effects', () => {
         expect(fixture.delivered).toEqual([]);
     });
 
+    it('returns close completion only after its running inbound consumer settles', async () => {
+        const fixture = await createClientIngressFixture();
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        fixture.service.onInboxMessageDo('message.v1', {
+            onMessage: async () => {
+                entered.resolve();
+                await release.promise;
+            }
+        });
+        await fixture.service.acceptIncomingMessage(createIncomingMessage());
+        await entered.promise;
+        let closed = false;
+        const closing = Promise.resolve(fixture.service.close()).then(() => {
+            closed = true;
+        });
+        try {
+            expect(fixture.socket.readyState).not.toBe(WebSocket.OPEN);
+            expect((await fixture.service.acceptIncomingMessage(createIncomingMessage())).right?.kind).toBe('disposed');
+            expect(closed, 'client close completed while its consumer was still running').toBe(false);
+            release.resolve();
+            await closing;
+            expect(closed).toBe(true);
+        }
+        finally {
+            release.resolve();
+            await closing;
+        }
+    });
+
     it('stops later consumers when closed during a handler', async () => {
         const fixture = await createClientIngressFixture();
         const started = Promise.withResolvers<void>();
@@ -334,16 +364,7 @@ describe('WS client typed ingress and transport effects', () => {
 async function createClientIngressFixture(
     beforeMessage: OnWebSocketMessageCallback | undefined = undefined
 ): Promise<ClientIngressFixture> {
-    vi.stubGlobal('WebSocket', TestWebSocket);
-    const client = new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort());
-    if (beforeMessage) {
-        client.onWebSocketMessageDo('earlier-listener', beforeMessage);
-    }
-    const connected = client.connect();
-    await Promise.resolve();
-    const socket = TestWebSocket.instances.at(-1)!;
-    socket.open();
-    await connected;
+    const { client, socket } = await connectClientIngressSocket(beforeMessage);
     const admission = createInMemoryALAdmissionState();
     const outbox = new InMemoryQueueBox(new Map());
     const delivered: ALMessage[] = [];
@@ -384,6 +405,20 @@ async function createClientIngressFixture(
         admission,
         delivered
     };
+}
+
+async function connectClientIngressSocket(beforeMessage: OnWebSocketMessageCallback | undefined) {
+    vi.stubGlobal('WebSocket', TestWebSocket);
+    const client = new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort());
+    if (beforeMessage) {
+        client.onWebSocketMessageDo('earlier-listener', beforeMessage);
+    }
+    const connected = client.connect();
+    await Promise.resolve();
+    const socket = TestWebSocket.instances.at(-1)!;
+    socket.open();
+    await connected;
+    return { client, socket };
 }
 
 async function readControlWorkStatuses(fixture: ClientIngressFixture): Promise<readonly string[]> {

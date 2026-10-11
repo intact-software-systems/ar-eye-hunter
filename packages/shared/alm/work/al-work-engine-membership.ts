@@ -1,6 +1,6 @@
 import type { Unsubscribe } from '../../cache/RepositoryInterfaces.ts';
 import type { LoopsTaskDto } from '../../resilience/ComputeAsyncTask.ts';
-import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import type { ALDurableWorkLaneOwnership } from './al-durable-work-ownership.ts';
 import type { ALWorkCommittedRows } from './al-work-readiness-memory.ts';
 

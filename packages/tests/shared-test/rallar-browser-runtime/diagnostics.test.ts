@@ -13,7 +13,7 @@ import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import {

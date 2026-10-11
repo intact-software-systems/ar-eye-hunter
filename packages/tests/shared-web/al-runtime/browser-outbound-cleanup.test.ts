@@ -52,7 +52,7 @@ import {
     IndexedDbQueueBox
 } from '@shared/queuebox/indexed-db-queue-box.ts';
 import { toKeyAsString, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     afterEach,
     describe,

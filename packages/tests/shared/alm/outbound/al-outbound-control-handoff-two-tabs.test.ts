@@ -15,7 +15,7 @@ import type {
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { AL_OUTBOUND_WORK_LEASE_MS } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import '../../../setup-browser-indexeddb.ts';
 

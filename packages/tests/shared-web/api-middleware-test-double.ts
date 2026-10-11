@@ -107,7 +107,7 @@ function createQboxEngineDouble(
 ): RallarBrowserMiddleware['qboxEngine'] {
     return toServiceTestDouble<RallarBrowserMiddleware['qboxEngine']>({
         wake: vi.fn(),
-        stop: vi.fn(),
+        stop: vi.fn<RallarBrowserMiddleware['qboxEngine']['stop']>(() => Promise.resolve()),
         ...override
     });
 }
@@ -135,7 +135,7 @@ function createWebSocketQueueBoxDouble(
             maxReconnectAttempts: 12,
             reconnectExhausted: false
         })),
-        close: vi.fn(),
+        close: vi.fn<RallarBrowserMiddleware['webSocketQueueBox']['close']>(() => Promise.resolve()),
         onAnyInboxMessageDo: vi.fn(() => queueBox),
         removeAnyInboxMessageCallback: vi.fn(() => true),
         socket: createWebSocketClientDouble(),
