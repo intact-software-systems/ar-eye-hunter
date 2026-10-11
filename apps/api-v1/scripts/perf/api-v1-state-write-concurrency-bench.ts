@@ -10,6 +10,7 @@ import { queryStateWriteDurableEvidence } from './api-v1-state-write-durable-evi
 import { createStateWriteBenchmarkSql } from './create-state-write-benchmark-sql.ts';
 import {
     createStateWriteServiceRuntime,
+    type StateWriteServiceRuntime,
     type StateWriteServiceRuntimeContext
 } from './create-state-write-service-runtime.ts';
 import { parseGroupTopologyRegressionReasons } from './pool-group-topology-state-write-position-balanced-results.mjs';
@@ -46,7 +47,11 @@ import {
     type RunSample,
     type WorkloadEvidence
 } from './state-write/state-write-measurement.ts';
-import type { StateWriteBenchmarkCommand, StateWriteDiagnosticCommand } from './state-write/state-write-workload.ts';
+import type {
+    MutationCommand,
+    StateWriteBenchmarkCommand,
+    StateWriteDiagnosticCommand
+} from './state-write/state-write-workload.ts';
 import {
     createCommands,
     executeMeasuredWorkload,
@@ -203,10 +208,26 @@ interface BenchmarkWorkloadsInput {
     readonly performanceTimeOriginEpochMs: number | undefined;
 }
 
+interface BenchmarkWorkloadScale {
+    readonly clients: number;
+    readonly groups: number;
+    readonly concurrency: number;
+}
+
+interface BenchmarkWorkloadResult {
+    readonly name: (typeof WORKLOADS)[number]['name'];
+    readonly scale: BenchmarkWorkloadScale;
+    readonly mutationMix: readonly (typeof MUTATION_MIX)[number][];
+    readonly warmupRuns: number;
+    readonly measuredRuns: number;
+    readonly samples: readonly RunSample[];
+    readonly summary: ReturnType<typeof summarizeSamples>;
+}
+
 async function runBenchmarkWorkloads(
     { adminSql, serviceSql, runId, options, diagnostics, performanceTimeOriginEpochMs }: BenchmarkWorkloadsInput
-) {
-    const workloads = [];
+): Promise<readonly BenchmarkWorkloadResult[]> {
+    const workloads: BenchmarkWorkloadResult[] = [];
     for (const workload of WORKLOADS) {
         console.log(
             `Running ${workload.name}: warmup=${options.warmup}, measured=${options.runs}`
@@ -377,7 +398,17 @@ async function writePhaseDiagnostic(facts: PhaseDiagnosticFacts): Promise<void> 
     });
 }
 
-async function prepareWorkloadMeasurement(input: BenchmarkPhaseInput) {
+interface WorkloadMeasurement {
+    readonly scope: StateScope;
+    readonly context: StateWriteServiceRuntimeContext;
+    readonly runtimes: readonly StateWriteServiceRuntime[];
+    readonly commands: readonly MutationCommand[];
+    readonly postgresBefore: StateWritePostgresCounters;
+    readonly cpuBefore: ReturnType<typeof process.cpuUsage>;
+    readonly lockSampler: ReturnType<typeof startStateWriteLockWaitSampler>;
+}
+
+async function prepareWorkloadMeasurement(input: BenchmarkPhaseInput): Promise<WorkloadMeasurement> {
     const scope: StateScope = {
         applicationId: `${input.runId}-${input.workload.name}-${input.phaseLabel}`,
         workspaceId: 'state-write-bench'
