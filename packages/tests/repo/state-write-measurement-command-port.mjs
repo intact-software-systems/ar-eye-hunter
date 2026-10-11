@@ -148,7 +148,13 @@ function createPublicNativeContainer(config, defaults) {
 
 function benchmark() {
     writeFileSync(path.join(root, 'benchmark.pid'), String(process.pid));
-    const descendant = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    const inherited = failure === 'inherited-pipe';
+    const program = inherited
+        ? 'const {writeFileSync}=require(\'node:fs\'); setInterval(()=>{},1000); setTimeout(()=>{writeFileSync(process.argv[1],\'fixture lifetime fallback\'); process.exit(29);},6000);'
+        : 'setInterval(() => {}, 1000)';
+    const descendant = spawn(process.execPath, ['-e', program, path.join(root, 'descendant-fallback')], {
+        stdio: inherited ? ['ignore', process.stdout, process.stderr] : 'ignore'
+    });
     descendant.unref();
     writeFileSync(path.join(root, 'descendant.pid'), String(descendant.pid));
     if (failure === 'recording') {
@@ -175,7 +181,7 @@ function benchmark() {
         mkdirSync(directory);
         writeDiagnosticFiles(directory);
     }
-    if (failure === 'benchmark' || failure === 'secondary') {
+    if (failure === 'benchmark' || failure === 'secondary' || inherited) {
         process.exit(19);
     }
 }

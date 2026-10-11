@@ -1,5 +1,5 @@
 import { load } from 'js-yaml';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, type TestContext } from 'vitest';
@@ -24,6 +24,11 @@ interface MeasurementWorkflow {
     readonly concurrency: Readonly<Record<string, string | number | boolean | readonly string[]>>;
     readonly inputs: Readonly<Record<string, Readonly<Record<string, string | number | boolean | readonly string[]>>>>;
     readonly environment: Readonly<Record<string, string>>;
+    readonly steps: readonly WorkflowStep[];
+}
+interface MeasurementPolicy {
+    readonly mode: string;
+    readonly concurrency: string;
     readonly steps: readonly WorkflowStep[];
 }
 interface CommandCall {
@@ -70,9 +75,45 @@ describe('hosted state-write admission', { timeout: 20000 }, () => {
                 event: { label: { name: 'measure-state-write' }, pull_request: { head: { repo: { full_name: 'fork/repo' } } } }
             }, {})
         ).toBe(false);
-        expect(workflow.concurrency.group).toContain('github.event.label.name || inputs.ref');
-        expect(workflow.concurrency.group).toContain('inputs.mode || \'comparison\'');
         expect(workflow.steps.find((step) => step.uses.startsWith('actions/checkout@'))?.settings['persist-credentials']).toBe(false);
+    });
+
+    it('evaluates mode and label isolation and selects the comparison or diagnostic workflow steps', () => {
+        const workflow = readWorkflow();
+        const manual = { workflow: 'measurement', ref: 'refs/heads/topic', event_name: 'workflow_dispatch', event: { label: { name: '' }, pull_request: {} } };
+        const defaults = evaluateMeasurementPolicy(workflow, manual, { ref: 'topic' });
+        const comparison = evaluateMeasurementPolicy(workflow, manual, { ref: 'topic', mode: 'comparison' });
+        const diagnostic = evaluateMeasurementPolicy(workflow, manual, { ref: 'topic', mode: 'diagnostic' });
+        expect(defaults.mode).toBe('comparison');
+        expect(comparison.mode).toBe('comparison');
+        expect(diagnostic.mode).toBe('diagnostic');
+        expect(defaults.concurrency).toBe(comparison.concurrency);
+        expect(diagnostic.concurrency).not.toBe(comparison.concurrency);
+        const supported = evaluateMeasurementPolicy(workflow, {
+            workflow: 'measurement',
+            ref: 'refs/pull/42/merge',
+            event_name: 'pull_request',
+            event: { label: { name: 'measure-state-write' }, pull_request: { number: 42 } }
+        }, {});
+        const unrelated = evaluateMeasurementPolicy(workflow, {
+            workflow: 'measurement',
+            ref: 'refs/pull/42/merge',
+            event_name: 'pull_request',
+            event: { label: { name: 'unrelated' }, pull_request: { number: 42 } }
+        }, {});
+        expect(supported.mode).toBe('comparison');
+        expect(unrelated.concurrency).not.toBe(supported.concurrency);
+        for (const policy of [defaults, comparison, supported]) {
+            expect(policy.steps.some((step) => step.run.includes('resolve-changed-review-range.mjs'))).toBe(true);
+            expect(policy.steps.some((step) => step.run.includes('write-api-v1-state-write-pooled-results.mjs'))).toBe(true);
+        }
+        expect(
+            diagnostic.steps.some((step) =>
+                step.run.includes('resolve-changed-review-range.mjs') || step.run.includes('write-api-v1-state-write-pooled-results.mjs')
+            )
+        ).toBe(false);
+        expect(diagnostic.steps.filter((step) => step.run.includes(owner))).toHaveLength(1);
+        expect(diagnostic.steps.some((step) => step.run.includes('npm ci') && step.run.includes('deno check'))).toBe(true);
     });
 
     it.for(['dependencies', 'comparator', 'scripts'])('refuses comparison %s changes before preparing either measurement source', async (failure, context) => {
@@ -152,6 +193,26 @@ describe('selected hosted measurement lifecycle', { timeout: 20000 }, () => {
         );
         expect(pid).toBeGreaterThan(0);
         expect(() => process.kill(pid, 0)).toThrow();
+    });
+
+    it('settles an exited parent and its continuing descendant with inherited pipes before later native effects', async (context) => {
+        const fixture = createFixture(context, 'diagnostic', 'inherited-pipe');
+        await expect(runShell(context, fixture, lifecycleShell())).rejects.toThrow();
+        expect(readJson(path.join(fixture.output, 'commands/benchmark-0-terminal.json'))).toMatchObject({ exitCode: 19, signal: null });
+        expect(readJson(path.join(fixture.output, 'terminal.json'))).toMatchObject({ primary: { stage: 'benchmark', exitCode: 19, signal: null } });
+        const parent = Number(readFileSync(path.join(fixture.root, 'benchmark.pid'), 'utf8'));
+        const descendant = Number(readFileSync(path.join(fixture.root, 'descendant.pid'), 'utf8'));
+        expect(parent).toBeGreaterThan(0);
+        expect(descendant).toBeGreaterThan(0);
+        expect(() => process.kill(parent, 0)).toThrow();
+        expect(() => process.kill(descendant, 0)).toThrow();
+        expect(existsSync(path.join(fixture.root, 'descendant-fallback'))).toBe(false);
+        const terminalCalls = readCalls(fixture).filter((call) =>
+            call.args.some((arg) => arg.endsWith('/environment.txt')) || call.args[0] === 'logs' || call.args.includes('down')
+        );
+        expect(terminalCalls).toHaveLength(3);
+        expect(terminalCalls.map((call) => call.benchmarkAlive)).toEqual([false, false, false]);
+        expect(terminalCalls.map((call) => call.descendantAlive)).toEqual([false, false, false]);
     });
 
     it.for(['recording', 'interrupt', 'metadata'])('settles the actual child on %s before capture, logs and cleanup', async (failure, context) => {
@@ -267,7 +328,7 @@ describe('selected hosted measurement lifecycle', { timeout: 20000 }, () => {
         ]);
         expect(calls.filter((call) => call.command === 'docker' && call.args.includes('down'))).toHaveLength(4);
         const verdict = readWorkflow().steps.find((step) => step.run.includes('write-api-v1-state-write-pooled-results.mjs'));
-        expect(verdict?.condition).toBe('env.MEASUREMENT_MODE == \'comparison\'');
+        expect(verdict).toBeDefined();
         await runShell(context, fixture, verdict!.run);
         expect(
             readCalls(fixture).filter((call) => call.args.includes('apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs')).map((call) => call.args)
@@ -279,6 +340,24 @@ describe('selected hosted measurement lifecycle', { timeout: 20000 }, () => {
         ]]);
     });
 });
+
+function evaluateMeasurementPolicy(workflow: MeasurementWorkflow, github: JsonRecord, inputs: Readonly<Record<string, string>>): MeasurementPolicy {
+    const modeExpression = workflow.environment.MEASUREMENT_MODE.replace(/^\$\{\{\s*|\s*\}\}$/g, '');
+    const mode: unknown = new Function('github', 'inputs', `return (${modeExpression});`)(github, inputs);
+    const group = workflow.concurrency.group;
+    if (typeof mode !== 'string' || typeof group !== 'string') {
+        throw new Error('Invalid measurement policy result');
+    }
+    const concurrency = group.replace(
+        /\$\{\{\s*(.*?)\s*\}\}/g,
+        (_match, expression: string) => String(new Function('github', 'inputs', `return (${expression});`)(github, inputs))
+    );
+    const steps = workflow.steps.filter((step) =>
+        step.run !== '' &&
+        (step.condition === '' || new Function('github', 'inputs', 'env', `return (${step.condition});`)(github, inputs, { MEASUREMENT_MODE: mode }) === true)
+    );
+    return { mode, concurrency, steps };
+}
 
 function createFixture(context: TestContext, mode: string, failure: string): MeasurementFixture {
     const root = mkdtempSync(path.join(tmpdir(), 'state-write-hosted-'));
