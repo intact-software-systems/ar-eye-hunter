@@ -1,9 +1,12 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../../..');
 const packageRoot = path.join(repoRoot, 'packages/shared-rtc-bench');
 const benchmarkPackageName = '@ar-eye-hunter/shared-rtc-bench';
+const browserSoakProducerPath = path.join(packageRoot, 'workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs');
+const canonicalEitherPath = path.join(repoRoot, 'packages/shared/resilience/Either.ts');
 const finiteIceFixturePolicyPath = path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts');
 const productionFixturePaths = ['full-stack-rtc-production-proof.ts', 'full-stack-rtc-build-tool-provenance.ts'].map((name) =>
     path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/rtc-production', name)
@@ -19,7 +22,7 @@ const approvedExternalImports = new Set([
     'vitest'
 ]);
 
-function filesBelow(root: string): string[] {
+function readFilesBelow(root: string): string[] {
     if (!fs.existsSync(root)) {
         return [];
     }
@@ -29,19 +32,19 @@ function filesBelow(root: string): string[] {
         }
         const entryPath = path.join(root, entry.name);
         if (entry.isDirectory()) {
-            return filesBelow(entryPath);
+            return readFilesBelow(entryPath);
         }
         return entry.isFile() ? [entryPath] : [];
     });
 }
 
-function rtcPerformanceScriptSources(): string[] {
+function readRtcPerformanceScriptSources(): string[] {
     return performanceScriptRoots
-        .flatMap((root) => filesBelow(path.join(repoRoot, root)))
+        .flatMap((root) => readFilesBelow(path.join(repoRoot, root)))
         .filter((file) => /(^|\/)(rtc|webrtc)/.test(path.relative(repoRoot, file)));
 }
 
-function importSpecifiers(source: string): string[] {
+function parseImportSpecifiers(source: string): string[] {
     const fromOrDynamicImports = [...source.matchAll(/(?:from\s+|import\s*\()(['"])([^'"]+)\1/g)];
     const sideEffectImports = [...source.matchAll(/\bimport\s+(['"])([^'"]+)\1/g)];
     return [...fromOrDynamicImports, ...sideEffectImports].map((match) => match[2]);
@@ -59,6 +62,9 @@ function isPackageLocalImport(file: string, specifier: string): boolean {
 }
 
 function isApprovedImport(file: string, specifier: string): boolean {
+    if (file === browserSoakProducerPath && specifier.startsWith('.') && path.resolve(path.dirname(file), specifier) === canonicalEitherPath) {
+        return true;
+    }
     if (specifier.startsWith('.') && [finiteIceFixturePolicyPath, ...productionFixturePaths].includes(path.resolve(path.dirname(file), specifier))) {
         return true;
     }
@@ -78,8 +84,8 @@ function isApprovedImport(file: string, specifier: string): boolean {
     return approvedExternalImports.has(specifier);
 }
 
-function unapprovedImports(file: string): string[] {
-    return importSpecifiers(fs.readFileSync(file, 'utf8'))
+function readUnapprovedImports(file: string): string[] {
+    return parseImportSpecifiers(fs.readFileSync(file, 'utf8'))
         .filter((specifier) => !isApprovedImport(file, specifier))
         .map((specifier) => `${path.relative(repoRoot, file)} -> ${specifier}`);
 }
@@ -88,8 +94,8 @@ function isBenchmarkPackageSpecifier(specifier: string): boolean {
     return specifier === benchmarkPackageName || specifier.startsWith(`${benchmarkPackageName}/`);
 }
 
-function importsBenchmarkPackage(file: string): boolean {
-    return importSpecifiers(fs.readFileSync(file, 'utf8')).some((specifier) => {
+function readBenchmarkPackageUsage(file: string): boolean {
+    return parseImportSpecifiers(fs.readFileSync(file, 'utf8')).some((specifier) => {
         if (isBenchmarkPackageSpecifier(specifier)) {
             return true;
         }
@@ -105,6 +111,22 @@ function importsBenchmarkPackage(file: string): boolean {
 }
 
 describe('shared RTC benchmark package boundaries', () => {
+    it('loads the canonical Either owner through standalone Node producer admission', () => {
+        const result = spawnSync(process.execPath, [browserSoakProducerPath, '--iterations=0'], {
+            cwd: repoRoot,
+            encoding: 'utf8'
+        });
+        expect(result.status).toBe(1);
+        expect(result.stdout).toBe('');
+        expect(result.stderr.trim()).toBe('RTC-B05: option --iterations must be an integer from 1 through 10000');
+    });
+
+    it('limits the standalone producer relative shared dependency to canonical Either', () => {
+        expect(isApprovedImport(browserSoakProducerPath, '../../../shared/resilience/Either.ts')).toBe(true);
+        expect(isApprovedImport(browserSoakProducerPath, '../../../shared/api/api-json-value.ts')).toBe(false);
+        expect(isApprovedImport(path.join(packageRoot, 'workloads/another-consumer.mjs'), '../../shared/resilience/Either.ts')).toBe(false);
+    });
+
     it('enforces the exact direct-import allowlist and reverse-import package prefix', () => {
         const packageFile = path.join(packageRoot, 'tests/architecture/example.test.ts');
         expect(
@@ -139,7 +161,7 @@ describe('shared RTC benchmark package boundaries', () => {
         const catalogFile = path.join(packageRoot, 'baseline/catalog/rtc-baseline-workload-catalog.ts');
         expect(isApprovedImport(catalogFile, '../../../shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts')).toBe(true);
         expect(isApprovedImport(catalogFile, '../../../shared-test/black-box-runner/rallar-in-memory-runtime.ts')).toBe(false);
-        expect(importSpecifiers(fs.readFileSync(finiteIceFixturePolicyPath, 'utf8'))).toEqual([]);
+        expect(parseImportSpecifiers(fs.readFileSync(finiteIceFixturePolicyPath, 'utf8'))).toEqual([]);
     });
 
     it('admits the exact portable production proof/provenance owners while keeping other runner imports closed', () => {
@@ -149,7 +171,7 @@ describe('shared RTC benchmark package boundaries', () => {
             const dependencies = fixture.endsWith('/full-stack-rtc-production-proof.ts')
                 ? ['../../../../shared/api/api-json-value.ts', '../../../../shared/resilience/Either.ts']
                 : [];
-            expect(importSpecifiers(fs.readFileSync(fixture, 'utf8'))).toEqual(dependencies);
+            expect(parseImportSpecifiers(fs.readFileSync(fixture, 'utf8'))).toEqual(dependencies);
         }
         expect(isApprovedImport(consumer, '../../../shared-test/black-box-runner/fixtures/rtc-production/read-full-stack-rtc-build-tool-inputs.ts')).toBe(
             false
@@ -162,18 +184,18 @@ describe('shared RTC benchmark package boundaries', () => {
     });
 
     it('owns every RTC/WebRTC performance source outside scripts', () => {
-        const oldSources = rtcPerformanceScriptSources().map((file) => path.relative(repoRoot, file));
+        const oldSources = readRtcPerformanceScriptSources().map((file) => path.relative(repoRoot, file));
         expect(oldSources, `old RTC/WebRTC performance sources:\n${oldSources.join('\n')}`).toEqual([]);
     });
 
     it('has no prohibited package imports or reverse product imports', () => {
-        const packageViolations = [...filesBelow(packageRoot), ...rtcPerformanceScriptSources()]
+        const packageViolations = [...readFilesBelow(packageRoot), ...readRtcPerformanceScriptSources()]
             .filter((file) => /\.[cm]?[jt]s$/.test(file))
-            .flatMap(unapprovedImports);
+            .flatMap(readUnapprovedImports);
         const reverseImports = [path.join(repoRoot, 'apps'), path.join(repoRoot, 'packages')]
-            .flatMap(filesBelow)
+            .flatMap(readFilesBelow)
             .filter((file) => !file.startsWith(packageRoot) && /\.[cm]?[jt]s$/.test(file))
-            .filter(importsBenchmarkPackage)
+            .filter(readBenchmarkPackageUsage)
             .map((file) => path.relative(repoRoot, file));
         expect([...packageViolations, ...reverseImports]).toEqual([]);
     });

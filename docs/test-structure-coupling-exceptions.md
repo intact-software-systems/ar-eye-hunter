@@ -3905,6 +3905,51 @@ moved or changed test.
       }
     },
     {
+      "id": "rtc-b05-command-issue-aggregation-before-launch",
+      "domain": "RTC-B05 command and artifact admission",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "One raw command has an override, invalid baseline and phase, missing case/input options, and an out-of-range ordinal. The real exported CLI must reject with every applicable issue before browser creation.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports every independent raw-command admission issue before launch",
+      "coverageRelation": "The test invokes the exported CLI with independently invalid input, checks each refusal meaning on its one rejection, and observes its injected launch port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "runRtcDataChannelBrowserSoakCli launchBrowser dependency",
+        "observableEffect": "Creation of a measurement browser process after admission",
+        "requiredConstraint": "A raw command with independent admission issues reports them together and launches zero browsers.",
+        "failureRationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect."
+      }
+    },
+    {
+      "id": "rtc-b05-manifest-issue-aggregation-before-launch",
+      "domain": "RTC-B05 command and artifact admission",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "A real initialized manifest has independent identity, workload, repeat-link/multiplier, matrix, and requested-attempt failures. The real exported CLI must reject with every applicable issue before browser creation.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports independent manifest identity, workload, repeat, and matrix issues together",
+      "coverageRelation": "The test invokes the exported CLI with independently invalid input, checks each refusal meaning on its one rejection, and observes its injected launch port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "runRtcDataChannelBrowserSoakCli launchBrowser dependency",
+        "observableEffect": "Creation of a measurement browser process after admission",
+        "requiredConstraint": "An initialized manifest with independent admission issues reports them together and launches zero browsers.",
+        "failureRationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect."
+      }
+    },
+    {
+      "id": "rtc-b05-environment-issue-aggregation-before-launch",
+      "domain": "RTC-B05 command and artifact admission",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "A real initialized environment has an incompatible environment identity and runtime controller provenance. The real exported CLI must reject with every applicable issue before browser creation.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports environment identity and runtime provenance issues together",
+      "coverageRelation": "The test invokes the exported CLI with independently invalid input, checks each refusal meaning on its one rejection, and observes its injected launch port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "runRtcDataChannelBrowserSoakCli launchBrowser dependency",
+        "observableEffect": "Creation of a measurement browser process after admission",
+        "requiredConstraint": "An initialized environment with independent identity and provenance issues reports both and launches zero browsers.",
+        "failureRationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect."
+      }
+    },
+    {
       "id": "rtc-b05-failed-producer-suppresses-staged-read",
       "domain": "RTC-B05 browser producer admission and resource ownership",
       "owner": "Rallar RTC benchmark maintainers",
@@ -8862,6 +8907,39 @@ moved or changed test.
       "owner": "Rallar RTC benchmark maintainers",
       "rationale": "The launch absence protects controller provenance admission rather than the private functions used to reconcile that provenance.",
       "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#rejects changed initialized B05 controller identity before browser launch"
+    },
+    {
+      "id": "test-structure-coupling-5d72a75e78b20921",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-command-issue-aggregation-before-launch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports every independent raw-command admission issue before launch"
+    },
+    {
+      "id": "test-structure-coupling-816cf8ffd701175e",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-manifest-issue-aggregation-before-launch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports independent manifest identity, workload, repeat, and matrix issues together"
+    },
+    {
+      "id": "test-structure-coupling-ab8a4e6fa4e7eb7d",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-environment-issue-aggregation-before-launch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports environment identity and runtime provenance issues together"
     },
     {
       "id": "test-structure-coupling-23072b4b9df3349b",
