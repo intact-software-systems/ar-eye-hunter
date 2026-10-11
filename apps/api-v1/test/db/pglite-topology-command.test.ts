@@ -23,8 +23,8 @@ import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/t
 import { RallarRtcTopologyService, type RallarRtcTopologyUpdateResult } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import type { ResourceInboxRelease } from '@shared/queuebox/queue-box-types.ts';
 import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
 import type {
     GroupPresenceSummary,

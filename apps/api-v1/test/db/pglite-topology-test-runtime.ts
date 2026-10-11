@@ -1,6 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
-import type { Either } from '@shared/resilience/Either.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -9,6 +7,7 @@ import {
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
@@ -63,6 +62,7 @@ import type {
     Key,
     ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
