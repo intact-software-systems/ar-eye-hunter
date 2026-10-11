@@ -20,12 +20,18 @@ import type { RtcBaselineCaptureRequestDto } from '../../../baseline/contracts/r
 import { createRtcBaselineRuntimeObservationInput } from '../../../baseline/runtime/create-rtc-baseline-runtime-observation-input.ts';
 import type { RtcBaselineCaptureAdmission } from '../../../baseline/runtime/rtc-baseline-capture-admission.ts';
 import type { DenoRtcBaselineAdapters } from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
+import { createRtcBaselineDenoEvidence } from '../../../baseline/runtime/rtc-baseline-deno-evidence.ts';
 import { createRtcBaselineDenoRuntime } from '../../../baseline/runtime/rtc-baseline-deno-runtime.ts';
 import { createRtcBaselineDenoObservation } from '../../../baseline/runtime/rtc-baseline-runtime-observation.ts';
 
+interface RtcBaselineRuntimeTestAdapters {
+    adapters: DenoRtcBaselineAdapters;
+    rootPath: string;
+}
+
 const baselineId = '20260816-956a057c9ab5-e1-local';
 
-function readWorkerFlag(arguments_: readonly string[], name: string) {
+function resolveWorkerFlag(arguments_: readonly string[], name: string) {
     const value = arguments_.find((argument) => argument.startsWith(`--${name}=`));
     if (!value) {
         throw new Error(`Worker command is missing --${name}.`);
@@ -109,12 +115,12 @@ function createRtcBaselineTemporaryWriterLockFixture(rootPath: string): Pick<Den
 function createNeutralRtcBaselineSyntheticWorkerFixture(): DenoRtcBaselineAdapters['freshWorker'] {
     return {
         run: async ({ arguments: workerArguments }) => {
-            const workloadId = readWorkerFlag(workerArguments, 'workload');
-            const caseId = readWorkerFlag(workerArguments, 'case-id');
-            const inputKey = readWorkerFlag(workerArguments, 'input-key');
-            const intendedPhase = readWorkerFlag(workerArguments, 'intended-phase');
-            const outerOrdinal = Number(readWorkerFlag(workerArguments, 'outer-ordinal'));
-            const sampleIds = readWorkerFlag(workerArguments, 'sample-ids').split(',');
+            const workloadId = resolveWorkerFlag(workerArguments, 'workload');
+            const caseId = resolveWorkerFlag(workerArguments, 'case-id');
+            const inputKey = resolveWorkerFlag(workerArguments, 'input-key');
+            const intendedPhase = resolveWorkerFlag(workerArguments, 'intended-phase');
+            const outerOrdinal = Number(resolveWorkerFlag(workerArguments, 'outer-ordinal'));
+            const sampleIds = resolveWorkerFlag(workerArguments, 'sample-ids').split(',');
             return {
                 ok: true as const,
                 value: {
@@ -145,11 +151,6 @@ function createNeutralRtcBaselineSyntheticWorkerFixture(): DenoRtcBaselineAdapte
             };
         }
     };
-}
-
-interface RtcBaselineRuntimeTestAdapters {
-    adapters: DenoRtcBaselineAdapters;
-    rootPath: string;
 }
 
 async function createRtcBaselineRuntimeAdaptersFixture(): Promise<RtcBaselineRuntimeTestAdapters> {
@@ -191,7 +192,7 @@ async function createRtcBaselineRuntimeAdaptersFixture(): Promise<RtcBaselineRun
 }
 
 describe('RTC baseline Deno runtime observation binding', () => {
-    it.each([undefined, 'true', 'false'])('freezes initialized ALM %s across observations and conditional repeat', async (selection) => {
+    it.each([undefined, 'true', 'false'])('reconciles frozen ALM %s through external recording and finalization', async (selection) => {
         const { adapters, rootPath } = await createRtcBaselineRuntimeAdaptersFixture();
         const environment: Record<string, string> = {
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
@@ -199,8 +200,17 @@ describe('RTC baseline Deno runtime observation binding', () => {
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100',
             ...(selection === undefined ? {} : { RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: selection })
         };
-        adapters.environment.readAllowlisted = () => ({ ...environment });
+        adapters.environment.readAllowlisted = (names) =>
+            Object.fromEntries(
+                names.filter((name) => environment[name] !== undefined).map((name) => [name, environment[name]!])
+            );
         const observe = createRtcBaselineDenoObservation(adapters);
+        const evidence = createRtcBaselineDenoEvidence({
+            rootPath: 'tmp/perf/rtc-baseline',
+            filePort: adapters.filePort,
+            writerLockRuntime: adapters.writerLockRuntime,
+            observeRuntime: observe
+        });
         const request: RtcBaselineCaptureRequestDto = {
             schema: 'rallar.rtc-baseline.capture-request.v1',
             retainedSampleMultiplier: 1,
@@ -211,9 +221,13 @@ describe('RTC baseline Deno runtime observation binding', () => {
             environmentId: 'E3-memory'
         };
         try {
+            expect(await createRtcBaselineDenoRuntime(adapters).initializeBaseline(request)).toEqual({ ok: true, value: undefined });
             const first = await observe(request);
             if (!first.ok) {
                 throw new Error(JSON.stringify(first.issues));
+            }
+            for (const operation of ['external', 'finalize']) {
+                expect(await evidence.reconcileAcceptedOperation(operation, { baselineId: request.baselineId })).toEqual([]);
             }
             environment.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS = 'invalid-after-initialization';
             for (const initialized of [first.value, undefined]) {
@@ -222,6 +236,9 @@ describe('RTC baseline Deno runtime observation binding', () => {
                     ok: true,
                     value: { resolvedConfiguration: first.value.resolvedConfiguration, allowlistedEnvironment: first.value.allowlistedEnvironment }
                 });
+            }
+            for (const operation of ['external', 'finalize']) {
+                expect(await evidence.reconcileAcceptedOperation(operation, { baselineId: request.baselineId })).toEqual([]);
             }
             const missing = await observe(request, {
                 ...first.value,
