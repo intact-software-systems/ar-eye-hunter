@@ -39,6 +39,7 @@ class StateWriteMeasurement {
         this.sequence = 0;
         this.position = 0;
         this.activeChild = null;
+        this.activeGroupStopRequested = false;
         this.interrupted = false;
         this.rawAcquisitionAdmitted = false;
         this.acquisitionRefused = false;
@@ -338,13 +339,17 @@ class StateWriteMeasurement {
     }
 
     stopChild() {
-        if (this.activeChild !== null && this.activeChild.pid !== undefined) {
+        if (this.activeChild !== null && this.activeChild.pid !== undefined && !this.activeGroupStopRequested) {
             try {
                 process.kill(-this.activeChild.pid, 'SIGKILL');
+                this.activeGroupStopRequested = true;
             }
             catch (error) {
                 if (error.code !== 'ESRCH') {
                     this.recordFailure({ stage: 'child-stop', exitCode: null, signal: null });
+                }
+                else {
+                    this.activeGroupStopRequested = true;
                 }
             }
         }
@@ -360,6 +365,8 @@ class StateWriteMeasurement {
         const startedAt = new Date().toISOString();
         const child = spawn(command, args, { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
         this.activeChild = child;
+        this.activeGroupStopRequested = false;
+        child.once('exit', () => this.stopChild());
         const closed = new Promise((fulfill) =>
             child.once('close', (exitCode, signal) => fulfill({ exitCode, signal }))
         );
