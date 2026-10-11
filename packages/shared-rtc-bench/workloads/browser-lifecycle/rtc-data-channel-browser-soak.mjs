@@ -215,6 +215,7 @@ function validateRepeatContract(manifest, baselineId) {
     if (
         repeat &&
         (repeatLink?.primaryBaselineId !== baselineId.replace(/-repeat-01$/, '') ||
+            typeof repeatLink?.primarySummarySha256 !== 'string' ||
             !/^[0-9a-f]{64}$/.test(repeatLink?.primarySummarySha256 ?? ''))
     ) {
         issues.push('repeat manifest must link to the exact primary summary');
@@ -290,7 +291,7 @@ function validateEnvironment(environment, manifest) {
     const observation = environment.observation;
     if (
         !isJsonObject(observation) || !Array.isArray(observation.sourceHashes) ||
-        !observation.sourceHashes.every(isJsonObject)
+        !observation.sourceHashes.every((entry) => isJsonObject(entry) && typeof entry.sha256 === 'string')
     ) {
         issues.push(
             'environment changes the accepted RTC-B05 configuration or provenance: invalid-runtime-observation'

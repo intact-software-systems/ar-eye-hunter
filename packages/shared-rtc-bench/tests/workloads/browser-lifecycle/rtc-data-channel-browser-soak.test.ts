@@ -943,6 +943,109 @@ it('reports environment identity and runtime provenance issues together', async 
 });
 
 it.each([
+    { digestName: 'array', digest: ['c'.repeat(64)] },
+    { digestName: 'nested array', digest: [['c'.repeat(64)]] },
+    { digestName: 'throwing JSON object', digest: { toString: null } }
+].flatMap((digestCase) => [false, true].map((independentIssue) => ({ ...digestCase, independentIssue }))))(
+    'refuses repeat-summary $digestName with independent identity issue=$independentIssue before launch',
+    async ({ digest, independentIssue }) => {
+        const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-repeat-digest-'));
+        const captureManifest = createManifest(repeatBaselineId, 2);
+        const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
+        const launchBrowser = vi.fn(async () => createFakeBrowser().browser);
+        const repeatLink = { primaryBaselineId, primarySummarySha256: digest };
+        writeFileSync(
+            join(baselinePath, 'manifest.json'),
+            JSON.stringify({
+                ...captureManifest,
+                request: {
+                    ...captureManifest.request,
+                    environmentId: independentIssue ? 'E1-local' : 'E2-browser',
+                    repeatLink
+                },
+                repeatLink
+            })
+        );
+        writeFileSync(
+            join(baselinePath, 'environment.json'),
+            JSON.stringify({
+                ...createEnvironment(captureManifest),
+                repeatLink
+            })
+        );
+
+        try {
+            const result = browserSoak.runRtcDataChannelBrowserSoakCli(
+                toRawArguments({ baselineId: repeatBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+                { baselineRootPath: rootPath, launchBrowser }
+            );
+            await expect(result).rejects.toThrow('RTC-B05:');
+            await expect(result).rejects.toThrow('repeat manifest must link to the exact primary summary');
+            if (independentIssue) {
+                await expect(result).rejects.toThrow('manifest identity does not match');
+            }
+            expect(launchBrowser).not.toHaveBeenCalled();
+            expect(existsSync(join(baselinePath, toRawRelativePath('warmup', 1)))).toBe(false);
+        }
+        finally {
+            rmSync(rootPath, { recursive: true, force: true });
+        }
+    }
+);
+
+it.each([
+    { digestName: 'array', digest: ['a'.repeat(64)] },
+    { digestName: 'nested array', digest: [['a'.repeat(64)]] },
+    { digestName: 'throwing JSON object', digest: { toString: null } }
+].flatMap((digestCase) => [
+    { ...digestCase, sourceHashIndex: 0, independentIssue: false },
+    { ...digestCase, sourceHashIndex: 0, independentIssue: true },
+    { ...digestCase, sourceHashIndex: 1, independentIssue: false },
+    { ...digestCase, sourceHashIndex: 1, independentIssue: true }
+]))(
+    'refuses runtime-source[$sourceHashIndex] $digestName with independent identity issue=$independentIssue before launch',
+    async ({ digest, sourceHashIndex, independentIssue }) => {
+        const rootPath = mkdtempSync(join(tmpdir(), 'rtc-b05-source-digest-'));
+        const captureManifest = createManifest(primaryBaselineId, 1);
+        const baselinePath = writeInitializedBaseline(rootPath, captureManifest);
+        const environment = createEnvironment(captureManifest);
+        const launchBrowser = vi.fn(async () => createFakeBrowser().browser);
+        writeFileSync(
+            join(baselinePath, 'environment.json'),
+            JSON.stringify({
+                ...environment,
+                environmentId: independentIssue ? 'E1-local' : 'E2-browser',
+                observation: {
+                    ...environment.observation,
+                    sourceHashes: initializedRuntimeObservation.sourceHashes.map((entry, index) =>
+                        index === sourceHashIndex ? { ...entry, sha256: digest } : entry
+                    )
+                }
+            })
+        );
+
+        try {
+            const result = browserSoak.runRtcDataChannelBrowserSoakCli(
+                toRawArguments({ baselineId: primaryBaselineId, phase: 'warmup', outerOrdinal: 1 }),
+                { baselineRootPath: rootPath, launchBrowser }
+            );
+            await expect(result).rejects.toThrow('RTC-B05:');
+            await expect(result).rejects.toThrow(
+                'environment changes the accepted RTC-B05 configuration or provenance: invalid-runtime-observation'
+            );
+            if (independentIssue) {
+                await expect(result).rejects.toThrow('environment identity does not match');
+            }
+            expect(launchBrowser).not.toHaveBeenCalled();
+            expect(existsSync(join(baselinePath, toRawRelativePath('warmup', 1)))).toBe(false);
+        }
+        finally {
+            rmSync(rootPath, { recursive: true, force: true });
+        }
+    }
+);
+
+it.each([
     { artifactName: 'manifest', value: null, message: 'manifest identity does not match' },
     { artifactName: 'manifest', value: { request: null }, message: 'manifest identity does not match' },
     { artifactName: 'environment', value: null, message: 'environment identity does not match' },
