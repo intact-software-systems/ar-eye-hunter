@@ -20,6 +20,13 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'readWebSocketTicket'
     }),
+    // Caught cleanup rejections are immediately narrowed to Error or normalized
+    // through String. Only a stage-labelled Error with that cause leaves this owner.
+    Object.freeze({
+        path: 'apps/api-v1/test/db/native-admission-test-cleanup.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeAdmissionCleanupFailure'
+    }),
     // Agent review: malformed JSON fixtures feed only the guarded readiness
     // admission above; the callback never interprets or trusts the raw value.
     Object.freeze({
