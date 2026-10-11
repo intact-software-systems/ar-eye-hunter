@@ -10,6 +10,7 @@ import {
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import { ResourceInboxCommandRejectedError } from '../queuebox/resource-inbox/resource-inbox-command-rejected-error.ts';
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
     EntityStatus,
@@ -49,7 +50,12 @@ export class QueueBoxUtilities {
         })
             .onFailedEntries(
                 (failures) => {
-                    if ([...failures.values()].some((failure) => !isNotReadyException(failure.exception))) {
+                    if (
+                        [...failures.values()].some((failure) =>
+                            !isNotReadyException(failure.exception) &&
+                            !(failure.exception instanceof ResourceInboxCommandRejectedError)
+                        )
+                    ) {
                         resilience.failure();
                     }
                 }
