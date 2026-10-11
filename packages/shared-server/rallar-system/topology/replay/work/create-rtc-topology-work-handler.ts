@@ -10,7 +10,7 @@ import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgr
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { AppOutboxType } from '../../../app-outbox/app-outbox-type.ts';
 import type { RtcRttRefinementService } from '../../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
-import type { RtcTopologyMutationComputed, RtcTopologyMutationRead } from '../../mutation/rtc-topology-mutations.ts';
+import type { RtcTopologyMutationRead } from '../../mutation/rtc-topology-mutations.ts';
 import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyPlanningService } from '../../planning/group-topology-planning-service.ts';
 import { computeRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
