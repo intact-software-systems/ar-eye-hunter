@@ -106,8 +106,8 @@ describe('state-write diagnostic projection', () => {
         const client = new AppInboxCommandClient(
             {
                 queueEntryWriter: {
-                    enqueue: async (enqueue) => toAppInboxResourceEntry(enqueue, 'PRIVATE-worker-b'),
-                    enqueueReplacingTerminal: async (enqueue) => toAppInboxResourceEntry(enqueue, 'PRIVATE-worker-b').key
+                    enqueue: async (enqueue) => toAppInboxResourceEntry(enqueue, 'PRIVATE-worker-a'),
+                    enqueueReplacingTerminal: async (enqueue) => toAppInboxResourceEntry(enqueue, 'PRIVATE-worker-a').key
                 },
                 resultWaiter: {
                     waitForResult: async <Result>(
@@ -118,7 +118,7 @@ describe('state-write diagnostic projection', () => {
                 }
             },
             {
-                serviceId: 'PRIVATE-worker-b',
+                serviceId: 'PRIVATE-worker-a',
                 timing: (event) => events.push(event),
                 options: {
                     phaseTiming: false,
@@ -175,7 +175,7 @@ describe('state-write diagnostic projection', () => {
                     commandOrdinal: 0,
                     operation: 'profile',
                     originatingStack: 0,
-                    observingStack: 1,
+                    observingStack: 0,
                     attempt: 'unavailable'
                 },
                 queueAgeMs: 'unavailable',
@@ -195,7 +195,7 @@ describe('state-write diagnostic projection', () => {
                     commandOrdinal: 0,
                     operation: 'instance',
                     originatingStack: 0,
-                    observingStack: 1,
+                    observingStack: 0,
                     attempt: 'unavailable'
                 },
                 queueAgeMs: 'unavailable',
@@ -213,7 +213,12 @@ describe('state-write diagnostic projection', () => {
         const events = [
             createEvent(instance.logicalResourceId, { ...instance.physicalKey, attempt: 2 }),
             createEvent(config.physicalKey.resourceId, { ...config.physicalKey }),
-            createEvent(profile.logicalResourceId, { ...profile.physicalKey, attempt: 1 })
+            createEvent(profile.logicalResourceId, { ...profile.physicalKey, attempt: 1 }),
+            {
+                ...createEvent(profile.logicalResourceId, { ...profile.physicalKey, attempt: 1 }),
+                component: 'app-inbox-handler',
+                operation: 'CLIENT_PRINCIPAL_UPSERT'
+            }
         ];
         const releases = [instance, profile, config].map((entry) => ({
             key: entry.physicalKey,
@@ -234,6 +239,7 @@ describe('state-write diagnostic projection', () => {
         expect(records.filter((record) => record.record === 'timing').map((record) => record.association)).toEqual([
             { kind: 'command-operation', commandOrdinal: 0, operation: 'instance', originatingStack: 0, observingStack: 1, attempt: 2 },
             { kind: 'command-operation', commandOrdinal: 1, operation: 'command', originatingStack: 1, observingStack: 1, attempt: 'unavailable' },
+            { kind: 'command-operation', commandOrdinal: 0, operation: 'profile', originatingStack: 0, observingStack: 1, attempt: 1 },
             { kind: 'command-operation', commandOrdinal: 0, operation: 'profile', originatingStack: 0, observingStack: 1, attempt: 1 }
         ]);
         expect(records.find((record) => record.record === 'timing')).toMatchObject({
@@ -310,6 +316,7 @@ describe('state-write diagnostic projection', () => {
         const event = {
             ...createEvent(profile.logicalResourceId, { ...profile.physicalKey, contextId: 'PRIVATE-wrong' }),
             component,
+            serviceId: 'PRIVATE-worker-a',
             operation: component === 'app-inbox' ? 'enqueueAndWaitForResult' : 'transaction'
         };
         const events = [event, { ...event, requestId: 'PRIVATE-unknown', details: {} }, {
@@ -326,11 +333,15 @@ describe('state-write diagnostic projection', () => {
         expect(readRecords(ambiguousRequest.serialized).at(-1)).toMatchObject({ timing: { total: 1, rejected: 1, retained: 0 } });
     });
 
-    it.each(['app-inbox-phase', 'app-inbox'])('marks missing required %s request identity and contradictory identity incomplete', (component) => {
+    it.each([
+        { component: 'app-inbox-phase', retained: 2, rejected: 3 },
+        { component: 'app-inbox', retained: 0, rejected: 5 }
+    ])('marks missing required $component origin identity and contradictions incomplete', ({ component, retained, rejected }) => {
         const phase = createPhase();
         const event = {
             ...createEvent(profile.logicalResourceId, {}),
             component,
+            serviceId: 'PRIVATE-worker-a',
             operation: component === 'app-inbox' ? 'enqueueAndWaitForResult' : 'transaction'
         };
         const missing = { ...event, requestId: undefined };
@@ -340,14 +351,23 @@ describe('state-write diagnostic projection', () => {
             operation: 'GROUP_UPDATE'
         };
         const result = computeStateWriteDiagnosticPhase(
-            { ...phase, timingEvents: [missing, contradictory, { ...event, details: { ...instance.physicalKey } }] },
+            {
+                ...phase,
+                timingEvents: [
+                    missing,
+                    contradictory,
+                    { ...event, details: { ...instance.physicalKey } },
+                    { ...event, serviceId: undefined },
+                    { ...event, serviceId: 'PRIVATE-worker-b' }
+                ]
+            },
             budget,
             65_536
         );
         expect(result.complete).toBe(false);
-        expect(readRecords(result.serialized).at(-1)).toMatchObject({ timing: { total: 3, rejected: 3, retained: 0 } });
+        expect(readRecords(result.serialized).at(-1)).toMatchObject({ timing: { total: 5, rejected, retained } });
         const ambiguousWorker = computeStateWriteDiagnosticPhase(
-            { ...phase, serviceIds: ['PRIVATE-worker-b', 'PRIVATE-worker-b'], timingEvents: [event] },
+            { ...phase, serviceIds: ['PRIVATE-worker-a', 'PRIVATE-worker-a'], timingEvents: [event] },
             budget,
             65_536
         );
