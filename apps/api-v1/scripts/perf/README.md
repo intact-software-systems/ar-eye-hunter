@@ -215,6 +215,61 @@ Loop-driving CLI values are bounded safe integers: warmup runs 1–10, measured
 runs 1–100, and concurrency 1–256. The state-write gate requires exactly one warmup,
 at least three measured runs, and concurrency 10.
 
+## Opt-in state-write diagnostic timeline
+
+Add `--diagnostics-dir=tmp/perf/<fresh-directory>` to retain a supplemental timeline.
+The default is disabled. The enabled writer reserves a new private directory;
+existing directories and files are never reused. Canonical v6 output, collection,
+workload, comparator and thresholds remain unchanged.
+
+Each warmup or measured phase writes `phase-<ordinal>.ndjson` after its duration,
+CPU and PostgreSQL counters have been captured. Fixed ceilings are 100,000 retained
+timing plus release records per phase, 33,554,432 serialized bytes per phase and
+536,870,912 serialized bytes per run. Boundary records are counted separately;
+command/kind boundaries and release facts have priority over timing events.
+These limits are safeguards, not measured event maxima. No canonical arrays are
+truncated. The phase footer reports total, retained, unassociated, rejected and
+truncated counts. Expected process-level SQL or unavailable attempt/worker facts
+are disclosed; invalid joins and capacity loss make the projection incomplete.
+
+The sidecar exports fixed labels and phase-local command ordinals. Private exact
+logical/physical AppInbox expectations associate profile and instance separately.
+Originating command stack and observing timing stack are distinct; release worker
+identity is unavailable. Raw identities, authority, payloads, SQL and error text
+are excluded. Command/run monotonic bounds reuse existing clock reads, with the
+performance clock origin read outside timing. Timing completion stamps and rounded
+durations retain their original meaning; completion minus duration is approximate,
+and kind intervals are derived command envelopes. Exact kind endpoints, selected
+due timestamps and native-profiler alignment are unavailable. The SQL transaction
+wrapper's status is not commit evidence. A failed command retains its observed
+start and explicitly unavailable end.
+
+A final `receipt.json` is complete only when all requested projections and writes
+succeeded. Fixed status stages disclose the first failure; `projection` includes
+invalid associations and phase truncation, whose counts are in the phase footer.
+Each file is written and closed at an exclusive `.partial` path before reserving
+an empty canonical path and renaming over that owned reservation. A failed write,
+close or rename retains partial evidence and may leave an empty canonical file;
+only a published canonical receipt establishes completeness. No fallible cleanup
+follows successful publication. Receipt byte accounting conservatively reserves
+all projected phase bytes, including failed writes, plus 1,024 bytes for the
+receipt, so partial evidence also remains within the run ceiling. The writer
+reports incomplete status without source error text. An otherwise successful
+benchmark still writes v6 and exits nonzero for incomplete diagnostics; an
+original operation failure remains the original failure.
+
+Scalar stores and allocations in the mapper are diagnostic overhead. Post-phase
+projection and I/O can affect later phases. This overlay is not a performance
+improvement claim and does not authorize or replace the governed comparison.
+
+For source navigation, start at `api-v1-state-write-concurrency-bench.ts` for
+SQL/phase/artifact lifecycle. Under `state-write/`, `state-write-workload.ts` owns
+the complete seven-kind command and queue-pump flow, `state-write-seed.ts` owns
+setup, and `state-write-measurement.ts` owns summaries. Diagnostic policy and safe
+projection live in `state-write-diagnostic-projection.ts`; file lifecycle lives
+in `state-write-diagnostic-writer.ts`. `state-write-benchmark-output.ts` owns the
+mandatory v6 file effect followed by supplemental finalization.
+
 ## Pinned Benchmark Environment
 
 The dev container in `docker-compose.yml` is deliberately convenient — floating

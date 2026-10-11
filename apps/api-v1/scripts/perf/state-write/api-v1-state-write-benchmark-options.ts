@@ -10,6 +10,10 @@ import {
 
 export const STATE_WRITE_REQUIRED_CONCURRENCY = 10;
 
+export type StateWriteDiagnosticConfiguration =
+    | { readonly kind: 'disabled'; }
+    | { readonly kind: 'enabled'; readonly directory: string; };
+
 const MAX_WARMUP_RUNS = 10;
 const MAX_MEASURED_RUNS = 100;
 const MAX_CONCURRENCY = 256;
@@ -28,6 +32,7 @@ export interface StateWriteBenchmarkOptions {
     readonly runs: number;
     readonly concurrency: number;
     readonly out: string;
+    readonly diagnostics: StateWriteDiagnosticConfiguration;
     readonly regressionReasonsFile?: string;
     readonly regressionReasonProfile?:
         | typeof RTC_TOPOLOGY_REGRESSION_REASON_PROFILE
@@ -44,26 +49,11 @@ export function parseBenchmarkOptions(args: readonly string[]): StateWriteBenchm
             return [key, rest.join('=')];
         })
     );
-    const regressionReasonsFile = values.get('regression-reasons-file');
-    const regressionReasonProfile = values.get('regression-reason-profile');
-    if (regressionReasonsFile !== undefined) {
-        assertPerfInputPath(regressionReasonsFile);
+    const diagnosticsDirectory = values.get('diagnostics-dir');
+    if (diagnosticsDirectory !== undefined && diagnosticsDirectory.trim().length === 0) {
+        throw new Error('Diagnostic directory must be nonempty');
     }
-    if (
-        regressionReasonProfile !== undefined &&
-        regressionReasonProfile !== RTC_TOPOLOGY_REGRESSION_REASON_PROFILE &&
-        regressionReasonProfile !== GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE &&
-        regressionReasonProfile !== PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE &&
-        regressionReasonProfile !== MEMBER_POLICY_ROW_WIDTH_REGRESSION_REASON_PROFILE &&
-        regressionReasonProfile !== COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE
-    ) {
-        throw new Error(
-            `Unsupported state-write regression reason profile: ${regressionReasonProfile}`
-        );
-    }
-    if (regressionReasonsFile !== undefined && regressionReasonProfile !== undefined) {
-        throw new Error('--regression-reasons-file and --regression-reason-profile cannot be combined');
-    }
+    const regressionReasons = readRegressionReasonOptions(values);
     return {
         backend: values.get('backend') || 'postgres',
         warmup: parseIntegerOption({
@@ -88,6 +78,37 @@ export function parseBenchmarkOptions(args: readonly string[]): StateWriteBenchm
             maximum: MAX_CONCURRENCY
         }),
         out: values.get('out') || 'tmp/perf/api-v1-state-write-results.json',
+        diagnostics: diagnosticsDirectory === undefined
+            ? { kind: 'disabled' }
+            : { kind: 'enabled', directory: diagnosticsDirectory },
+        ...regressionReasons
+    };
+}
+
+function readRegressionReasonOptions(
+    values: ReadonlyMap<string | undefined, string>
+): Pick<StateWriteBenchmarkOptions, 'regressionReasonsFile' | 'regressionReasonProfile'> {
+    const regressionReasonsFile = values.get('regression-reasons-file');
+    const regressionReasonProfile = values.get('regression-reason-profile');
+    if (regressionReasonsFile !== undefined) {
+        assertPerfInputPath(regressionReasonsFile);
+    }
+    if (
+        regressionReasonProfile !== undefined &&
+        regressionReasonProfile !== RTC_TOPOLOGY_REGRESSION_REASON_PROFILE &&
+        regressionReasonProfile !== GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE &&
+        regressionReasonProfile !== PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE &&
+        regressionReasonProfile !== MEMBER_POLICY_ROW_WIDTH_REGRESSION_REASON_PROFILE &&
+        regressionReasonProfile !== COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE
+    ) {
+        throw new Error(
+            `Unsupported state-write regression reason profile: ${regressionReasonProfile}`
+        );
+    }
+    if (regressionReasonsFile !== undefined && regressionReasonProfile !== undefined) {
+        throw new Error('--regression-reasons-file and --regression-reason-profile cannot be combined');
+    }
+    return {
         ...(regressionReasonsFile === undefined ? {} : { regressionReasonsFile }),
         ...(regressionReasonProfile === undefined ? {} : { regressionReasonProfile })
     };
