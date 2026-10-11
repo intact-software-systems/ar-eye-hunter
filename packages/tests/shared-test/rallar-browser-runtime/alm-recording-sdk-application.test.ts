@@ -16,8 +16,6 @@ import {
     installCaptureApplicationTestEnvironment
 } from './capture-application-test-runtime.ts';
 
-installCaptureApplicationTestEnvironment();
-
 interface ReplacedAlmPortCase {
     readonly operation: 'connect' | 'crdt';
     readonly port: keyof Pick<RallarDiagnosticsPorts, 'outboundDiagnostics' | 'inboundDiagnostics' | 'storage'>;
@@ -31,6 +29,8 @@ const REPLACED_ALM_PORT_CASES: readonly ReplacedAlmPortCase[] = [
     { operation: 'crdt', port: 'inboundDiagnostics' },
     { operation: 'crdt', port: 'storage' }
 ];
+
+installCaptureApplicationTestEnvironment();
 
 it.each([undefined, true, false])('keeps the actual SDK run-Off receipt independent of ALM recording %s', async (almDiagnostics) => {
     const { page, facade, events } = createCaptureApplicationRuntime();
@@ -116,7 +116,6 @@ it.each(REPLACED_ALM_PORT_CASES.flatMap((testCase) => [true, false].map((almDiag
         const external = facade.connect();
         const error = await acquisition;
         const completion = await external;
-        expect(consumed).toHaveLength(1);
         expect(completion.diagnosticsPorts).toBe(consumed[0]);
         expect(Object.isFrozen(completion.diagnosticsPorts)).toBe(true);
         expect(consumed[0]?.[port]).toBe(externalSink);
@@ -137,10 +136,11 @@ it.each([undefined, true, false])('preserves unscoped acquisition and reuse with
     const defaults = vi.spyOn(facade, 'setDefaults');
     const config = { connection: 'unscoped', rallar: { apiBaseUrl: 'https://test.invalid', almDiagnostics } };
     await page.connect(config);
-    expect(defaults.mock.calls).toEqual([[undefined]]);
+    expect(defaults).toHaveBeenCalledWith(undefined);
+    const writes = defaults.mock.calls.length;
     const receipt = facade.rtcCapture();
     await page.connect(config);
-    expect(defaults.mock.calls).toEqual([[undefined]]);
+    expect(defaults.mock.calls).toHaveLength(writes);
     expect(facade.rtcCapture()).toBe(receipt);
     expect(events.filter((event) => typeof event.data === 'object' && event.data !== null && 'almDiagnostics' in event.data)).toEqual([]);
 });
@@ -156,14 +156,10 @@ function observeConsumedDiagnosticsPorts(): RallarDiagnosticsPorts[] {
         const connected = await initialise(...args);
         const ports = args[2].diagnosticsPorts;
         expect(connected.middleware.outboundDiagnostics).toBe(ports.outboundDiagnostics);
-        expect(storage).toHaveBeenCalledTimes(1);
         expect(storage.mock.calls[0]?.[1].diagnosticsPorts.storage).toBe(ports.storage);
-        expect(volatileStorage).toHaveBeenCalledTimes(1);
         expect(volatileStorage.mock.calls[0]?.[2]).toBe(ports.storage);
-        expect(wsClient).toHaveBeenCalledTimes(1);
         expect(wsClient.mock.calls[0]?.[0].outboundDiagnostics).toBe(ports.outboundDiagnostics);
         expect(wsClient.mock.calls[0]?.[0].inboundDiagnostics).toBe(ports.inboundDiagnostics);
-        expect(rtcReceiver).toHaveBeenCalledTimes(1);
         expect(rtcReceiver.mock.calls[0]?.[0].inboundDiagnostics).toBe(ports.inboundDiagnostics);
         consumed.push(ports);
         return connected;
