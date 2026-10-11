@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 
-Deno.test('fifteen same-user sessions obtain native WebSocket admission through production queues', async () => {
+Deno.test('fifteen native same-user sessions complete room setup through production automatic queues', async () => {
     const output = await new Deno.Command(Deno.execPath(), {
         args: [
             'test',
@@ -19,6 +19,7 @@ Deno.test('fifteen same-user sessions obtain native WebSocket admission through 
         stdout: 'inherit',
         stderr: 'piped'
     }).output();
+    Deno.stderr.writeSync(output.stderr);
     const stderr = new TextDecoder().decode(output.stderr);
     assert.equal(output.success, true, stderr);
 });
