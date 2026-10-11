@@ -28,11 +28,10 @@ const CONFIG = {
     rallar: { apiBaseUrl: 'https://test.invalid', applicationId: 'app', workspaceId: 'default' }
 };
 
-function configureSuccesses(events: readonly BlackBoxRallarEvent[]): BlackBoxRallarEvent[] {
+function appliedConfigurations(events: readonly BlackBoxRallarEvent[]): BlackBoxRallarEvent[] {
     return events.filter((event) =>
-        event.topic === 'rallar.browser.crdt.configure_completed' ||
-        (event.topic === 'rallar.browser.connect.phase_completed' &&
-            typeof event.data === 'object' && event.data !== null && 'phase' in event.data && event.data.phase === 'configure')
+        (event.topic === 'rallar.browser.crdt.configure_completed' || event.topic === 'rallar.browser.connect.phase_completed') &&
+        typeof event.data === 'object' && event.data !== null && 'almDiagnostics' in event.data
     );
 }
 
@@ -59,11 +58,11 @@ it.each([true, false])('rejects actual SDK active and queued policy changes from
     await first;
     expect(await queued).toMatch(/close.*reinitializ/i);
     expect(defaults.mock.calls).toHaveLength(writes);
-    expect(configureSuccesses(events)).toHaveLength(1);
+    expect(appliedConfigurations(events)).toHaveLength(1);
     await expect(page.connect({ ...CONFIG, rallar: { ...CONFIG.rallar, almDiagnostics: !almDiagnostics } }))
         .rejects.toThrow(/close.*reinitializ/i);
     expect(defaults.mock.calls).toHaveLength(writes);
-    expect(configureSuccesses(events)).toHaveLength(1);
+    expect(appliedConfigurations(events)).toHaveLength(1);
     expect(facade.isConnected()).toBe(true);
 });
 
@@ -83,7 +82,7 @@ it.each([true, false])('rejects connected CRDT reuse with the opposite policy to
         rallar: { almDiagnostics: !almDiagnostics }
     })).rejects.toThrow(/close.*reinitializ/i);
     expect(defaults).not.toHaveBeenCalled();
-    expect(configureSuccesses(events)).toHaveLength(1);
+    expect(appliedConfigurations(events)).toHaveLength(1);
     await expect(page.crdt.open({ name: 'implicit-conflict', transport: 'ws', rallar: { almDiagnostics: !almDiagnostics } }))
         .rejects.toThrow(/close.*reinitializ/i);
     expect(defaults).not.toHaveBeenCalled();
@@ -105,7 +104,7 @@ it.each([true, false])('allows matching policy reuse and applies the opposite on
     await page.connect({ ...CONFIG, rallar: { ...CONFIG.rallar, almDiagnostics: !almDiagnostics } });
     expect(defaults).toHaveBeenCalledTimes(1);
     expect(facade.rtcCapture()).not.toBe(receipt);
-    expect(configureSuccesses(events).at(-1)).toMatchObject({ data: { almDiagnostics: !almDiagnostics } });
+    expect(appliedConfigurations(events).at(-1)).toMatchObject({ data: { almDiagnostics: !almDiagnostics } });
 });
 
 it('enforces the applied policy after CRDT establishes the first actual SDK connection', async () => {
@@ -211,12 +210,12 @@ it('rejects unverified SDK pending and active lifetimes before preparing a harne
     const defaults = vi.spyOn(facade, 'setDefaults');
     await expect(page.connect(CONFIG)).rejects.toThrow(/unverified.*close.*reinitializ/i);
     expect(defaults).not.toHaveBeenCalled();
-    expect(configureSuccesses(events)).toEqual([]);
+    expect(appliedConfigurations(events)).toEqual([]);
     release.resolve();
     await first;
     await expect(page.connect(CONFIG)).rejects.toThrow(/unverified.*close.*reinitializ/i);
     expect(defaults).not.toHaveBeenCalled();
-    expect(configureSuccesses(events)).toEqual([]);
+    expect(appliedConfigurations(events)).toEqual([]);
 });
 
 it('attaches no-api CRDT to externally initialized SDK ports without claiming new ALM application', async () => {
@@ -232,11 +231,11 @@ it('attaches no-api CRDT to externally initialized SDK ports without claiming ne
     await page.crdt.open({ name: 'attach', transport: 'ws', applicationId: 'app', persist: false, tabSync: false });
     expect(defaults).not.toHaveBeenCalled();
     expect(facade.rtcCapture()).toBe(receipt);
-    expect(configureSuccesses(events)).toEqual([]);
+    expect(appliedConfigurations(events)).toEqual([]);
     await expect(page.crdt.open({ name: 'explicit-unverified', transport: 'ws', rallar: { almDiagnostics: false } }))
         .rejects.toThrow(/unverified.*close.*reinitializ/i);
     expect(defaults).not.toHaveBeenCalled();
-    expect(configureSuccesses(events)).toEqual([]);
+    expect(appliedConfigurations(events)).toEqual([]);
 });
 
 it('keeps changed HOST capture subject to actual SDK compatibility during matching ALM reuse', async () => {
@@ -274,7 +273,7 @@ it.each([
         const defaults = vi.spyOn(facade, 'setDefaults');
         const configure = vi.spyOn(facade, 'configure');
         const limits = vi.spyOn(BlackBoxRallarVolatileLimits.prototype, 'set');
-        const successes = configureSuccesses(events).length;
+        const successes = appliedConfigurations(events).length;
         const request = operation === 'connect'
             ? page.connect(config)
             : page.crdt.open({ name: 'stale-explicit', transport: 'ws', rallar: { almDiagnostics } });
@@ -283,7 +282,7 @@ it.each([
         expect(defaults).not.toHaveBeenCalled();
         expect(configure).not.toHaveBeenCalled();
         expect(limits).not.toHaveBeenCalled();
-        expect(configureSuccesses(events)).toHaveLength(successes);
+        expect(appliedConfigurations(events)).toHaveLength(successes);
         expect(facade.rtcCapture()).toBe(replacementReceipt);
     }
 );
@@ -316,7 +315,7 @@ it.each([
     const defaults = vi.spyOn(facade, 'setDefaults');
     const configure = vi.spyOn(facade, 'configure');
     const limits = vi.spyOn(BlackBoxRallarVolatileLimits.prototype, 'set');
-    const successes = configureSuccesses(events).length;
+    const successes = appliedConfigurations(events).length;
     const checked = Promise.withResolvers<void>();
     const readStatus = facade.status;
     const statusObserver = vi.spyOn(facade, 'status').mockImplementation(() => {
@@ -343,5 +342,5 @@ it.each([
     expect(defaults).not.toHaveBeenCalled();
     expect(configure).not.toHaveBeenCalled();
     expect(limits).not.toHaveBeenCalled();
-    expect(configureSuccesses(events)).toHaveLength(successes);
+    expect(appliedConfigurations(events)).toHaveLength(successes);
 });

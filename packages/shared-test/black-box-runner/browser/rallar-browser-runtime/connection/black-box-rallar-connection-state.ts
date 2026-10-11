@@ -1,3 +1,4 @@
+import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { AuthSession, LoginResponse } from '@shared/api/api-config.ts';
 import type {
@@ -22,6 +23,7 @@ export namespace BlackBoxRallarConnectionState {
         readonly defaults: RallarDefaults | undefined;
         readonly config: BlackBoxRallarConnectionConfig;
         readonly almDiagnostics: boolean;
+        readonly diagnosticsPorts: RallarDiagnosticsPorts | undefined;
     }
 
     /** Each unsubscribe is present only when the connection transport installed that subscription. */
@@ -51,13 +53,29 @@ export class BlackBoxRallarConnectionState {
         this.#configurationCompletion = undefined;
     }
 
-    /** Bind prepared policy once; reuse must retain the originating middleware's ownership proof. */
-    bindConfiguration(completion: BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion): void {
+    /** Verify consumed publication ports and current ownership before binding the originating middleware. */
+    bindConfiguration(completion: BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion): boolean | undefined {
+        const configuration = this.#configuration;
+        if (
+            !configuration || completion.captureOwnershipFailure() !== undefined ||
+            !matchesAlmRecordingPorts(configuration.diagnosticsPorts, completion.diagnosticsPorts) ||
+            (this.#configurationCompletion !== undefined && this.verifiedConfiguration() === undefined)
+        ) {
+            throw new Error(
+                'ALM recording policy is unverified for the acquired SDK connection; close and reinitialize before configuring.'
+            );
+        }
         this.#configurationCompletion ??= completion;
+        return configuration.diagnosticsPorts === undefined ? undefined : configuration.almDiagnostics;
     }
 
     verifiedConfiguration(): BlackBoxRallarConnectionState.Configuration | undefined {
-        return this.#configurationCompletion && this.#configurationCompletion.captureOwnershipFailure() === undefined
+        return this.#configuration && this.#configurationCompletion &&
+                this.#configurationCompletion.captureOwnershipFailure() === undefined &&
+                matchesAlmRecordingPorts(
+                    this.#configuration.diagnosticsPorts,
+                    this.#configurationCompletion.diagnosticsPorts
+                )
             ? this.#configuration
             : undefined;
     }
@@ -73,4 +91,16 @@ export class BlackBoxRallarConnectionState {
             this.#configurationCompletion = undefined;
         }
     }
+}
+
+/** Unscoped default clearing installs no harness ports and certifies no ALM selection. */
+function matchesAlmRecordingPorts(
+    prepared: RallarDiagnosticsPorts | undefined,
+    consumed: RallarDiagnosticsPorts
+): boolean {
+    return prepared === undefined || (
+        prepared.outboundDiagnostics === consumed.outboundDiagnostics &&
+        prepared.inboundDiagnostics === consumed.inboundDiagnostics &&
+        prepared.storage === consumed.storage
+    );
 }

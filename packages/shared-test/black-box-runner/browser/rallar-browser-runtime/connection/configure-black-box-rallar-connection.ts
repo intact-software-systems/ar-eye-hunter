@@ -36,7 +36,10 @@ export function configureBlackBoxRallarConnection(
     const almDiagnostics = config.rallar.almDiagnostics ?? true;
     if (rallar.status() !== 'idle') {
         const current = connectionState.verifiedConfiguration();
-        const rejection = toAlmRecordingCompatibilityRejection(current?.almDiagnostics, almDiagnostics);
+        const applied = current?.diagnosticsPorts === undefined && toBlackBoxRallarDefaults(config) !== undefined
+            ? undefined
+            : current?.almDiagnostics;
+        const rejection = toAlmRecordingCompatibilityRejection(applied, almDiagnostics);
         if (rejection) {
             throw rejection;
         }
@@ -45,12 +48,19 @@ export function configureBlackBoxRallarConnection(
             return { defaults: current.defaults, almDiagnostics: current.almDiagnostics };
         }
     }
-    const diagnosticsPorts = createBlackBoxRallarDiagnosticsPorts(diagnostics, rallar.diagnostics, almDiagnostics);
+    const diagnosticsPorts = Object.freeze(
+        createBlackBoxRallarDiagnosticsPorts(diagnostics, rallar.diagnostics, almDiagnostics)
+    );
     rallar.configure({ apiBaseUrl: config.rallar.apiBaseUrl });
     const defaults = toBlackBoxRallarDefaults(config);
     rallar.setDefaults(defaults === undefined ? undefined : { ...defaults, diagnosticsPorts });
     volatileLimits.set(config);
-    connectionState.recordConfiguration({ config, defaults, almDiagnostics });
+    connectionState.recordConfiguration({
+        config,
+        defaults,
+        almDiagnostics,
+        diagnosticsPorts: defaults === undefined ? undefined : diagnosticsPorts
+    });
     return { defaults, almDiagnostics };
 }
 

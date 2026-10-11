@@ -15,6 +15,7 @@ import {
     type BrowserConnectOptions,
     type MiddlewareInitOptions
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { ApiMiddleware, RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { readALBrowserLocks } from '@shared/alm/storage/al-browser-locks.ts';
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
@@ -44,16 +45,19 @@ export interface BrowserTransportRuntimePort {
     shutdown(reason?: string): void;
 }
 
-/** One connect's middleware as the facade holds it, and the checkpoints its page lifecycle flushes. */
-interface BrowserTransportConstruction {
-    readonly middleware: ApiMiddleware;
-    readonly rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt;
-    readonly checkpoints: BrowserConnectedMiddleware['checkpoints'];
-}
-
 export namespace BrowserTransportRuntime {
+    /** One connect's middleware as the facade holds it, and the checkpoints its page lifecycle flushes. */
+    export interface Construction {
+        readonly middleware: ApiMiddleware;
+        readonly diagnosticsPorts: RallarDiagnosticsPorts;
+        readonly rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt;
+        readonly checkpoints: BrowserConnectedMiddleware['checkpoints'];
+    }
+
     export interface Connection {
         readonly middleware: ApiMiddleware;
+        /** Immutable ports supplied to this middleware's initializer, retained across cached reuse. */
+        readonly diagnosticsPorts: RallarDiagnosticsPorts;
         readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     }
 
@@ -196,7 +200,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     }
 
     private acceptConnection(
-        connected: BrowserTransportConstruction,
+        connected: BrowserTransportRuntime.Construction,
         connection: BrowserTransportRuntime.PendingConnection
     ): BrowserTransportRuntime.Connection {
         const currentSession = readSession();
@@ -209,6 +213,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         }
         const connectionResult: BrowserTransportRuntime.Connection = Object.freeze({
             middleware: connected.middleware,
+            diagnosticsPorts: connected.diagnosticsPorts,
             rtcCapture: Object.freeze({ status: 'observed', value: connected.rtcCaptureReceipt })
         });
         this.activeConnection = connectionResult;
@@ -274,7 +279,8 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     private async createMiddleware(
         session: AuthSession,
         options: BrowserConnectOptions
-    ): Promise<BrowserTransportConstruction> {
+    ): Promise<BrowserTransportRuntime.Construction> {
+        const diagnosticsPorts = Object.freeze({ ...options.diagnosticsPorts });
         const authFetch: ApiMiddleware['authFetch'] = (input, init) => {
             const headers = new Headers(init?.headers);
             headers.set('authorization', `Bearer ${session.accessToken}`);
@@ -284,10 +290,10 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         const { middleware, checkpoints, rtcCaptureReceipt } = await initialiseMiddleware(
             session,
             AppTopics.rtcSignaling,
-            options
+            { ...options, diagnosticsPorts }
         );
 
-        return { middleware: { session, authFetch, middleware }, checkpoints, rtcCaptureReceipt };
+        return { middleware: { session, authFetch, middleware }, diagnosticsPorts, checkpoints, rtcCaptureReceipt };
     }
 
     private shutdownMiddleware(

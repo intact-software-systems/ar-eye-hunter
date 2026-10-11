@@ -103,7 +103,7 @@ it.each([undefined, true, false])('applies ALM recording %s while preserving obs
     await expect(runtime.readAlmUsage()).resolves.toMatchObject({ orderingTracks: 3 });
     expect(events).toContainEqual(expect.objectContaining({
         topic: 'rallar.browser.connect.phase_completed',
-        data: expect.objectContaining({ phase: 'configure', almDiagnostics: almDiagnostics !== false })
+        data: expect.objectContaining({ phase: 'rallar-connect', almDiagnostics: almDiagnostics !== false })
     }));
 });
 
@@ -199,7 +199,7 @@ it('preserves unscoped default clearing with ALM Off', async () => {
     expect(facade.records.defaultWrites.at(-1)).toBeUndefined();
     expect(events).toContainEqual(expect.objectContaining({
         topic: 'rallar.browser.connect.phase_completed',
-        data: { phase: 'configure', almDiagnostics: false }
+        data: expect.objectContaining({ phase: 'configure' })
     }));
 });
 

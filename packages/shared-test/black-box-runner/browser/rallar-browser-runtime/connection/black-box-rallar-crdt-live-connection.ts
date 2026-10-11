@@ -73,7 +73,6 @@ export class BlackBoxRallarCrdtLiveConnection {
             connectionState: this.#input.connectionState,
             config
         });
-        diagnostics.emitDiagnostic(config, 'rallar.browser.crdt.configure_completed', configured);
         const connected = rallar.isConnected();
         const session = connected ? undefined : await this.#input.authentication.sessionForAuthentication(config);
         context.assertCurrent();
@@ -83,7 +82,11 @@ export class BlackBoxRallarCrdtLiveConnection {
             rtcCaptureContext: config.rallar.rtcCaptureContext
         });
         context.assertCurrent();
-        this.#input.connectionState.bindConfiguration(completion);
+        const almDiagnostics = this.#input.connectionState.bindConfiguration(completion);
+        diagnostics.emitDiagnostic(config, 'rallar.browser.crdt.configure_completed', {
+            defaults: configured.defaults,
+            ...(almDiagnostics === undefined ? {} : { almDiagnostics })
+        });
         if (session === undefined) {
             return;
         }
@@ -93,6 +96,7 @@ export class BlackBoxRallarCrdtLiveConnection {
                 scope: blackBoxRallarScopeOf(config)
             });
             context.assertCurrent();
+            this.#input.connectionState.bindConfiguration(completion);
         }
         diagnostics.emitDiagnostic(config, 'rallar.browser.crdt.connected', {
             session: toBlackBoxRallarSessionDiagnostic(session),

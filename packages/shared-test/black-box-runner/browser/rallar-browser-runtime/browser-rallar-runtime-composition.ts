@@ -31,6 +31,7 @@ import {
     type BrowserCrdtComposition,
     type BrowserSessionCoreComposition
 } from '@shared-web/browser/composition/browser-session-composition.ts';
+import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { BrowserRallarCrdtFacade } from '@shared-web/browser/crdt/create-rallar-crdt-facade.ts';
 import type {
     RallarDirectorFacade,
@@ -98,6 +99,7 @@ import {
 export namespace BlackBoxBrowserRallarRuntimeDependency {
     export interface ConnectCompletion {
         readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
+        readonly diagnosticsPorts: RallarDiagnosticsPorts;
         captureOwnershipFailure(): ReturnType<BrowserSessionDeliveries['captureOwnershipFailure']>;
     }
 }
@@ -373,6 +375,7 @@ function toBlackBoxBrowserRuntimeDependency(
             const connected = await session.session.connectWithRtcCapture(options);
             return Object.freeze({
                 rtcCapture: connected.rtcCapture,
+                diagnosticsPorts: connected.diagnosticsPorts,
                 captureOwnershipFailure: () =>
                     browserDeliveryComposition.sessionDeliveries.captureOwnershipFailure(connected.middleware)
             });

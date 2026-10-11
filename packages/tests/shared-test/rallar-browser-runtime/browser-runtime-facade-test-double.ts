@@ -23,6 +23,10 @@ import {
     type BlackBoxBrowserWsDependency
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/browser-delivery-composition.ts';
+import {
+    toRallarDiagnosticsPorts,
+    type RallarDiagnosticsPorts
+} from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type {
     RallarMessageHandle,
@@ -231,6 +235,7 @@ export const facadeBehavior = {
 };
 
 let connectState: ReturnType<BlackBoxBrowserRallarRuntimeDependency['status']> = 'idle';
+let connectedDiagnosticsPorts: RallarDiagnosticsPorts | undefined;
 
 const auth: BlackBoxBrowserAuthDependency = {
     login: async (request, options) => {
@@ -248,6 +253,7 @@ const auth: BlackBoxBrowserAuthDependency = {
         }
         finally {
             connectState = 'idle';
+            connectedDiagnosticsPorts = undefined;
         }
     },
     restore: () => {
@@ -439,10 +445,13 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
     },
     connect: async (options) => {
         facadeRecords.connectionAttempts.push([options]);
+        const diagnosticsPorts = connectedDiagnosticsPorts ??
+            toRallarDiagnosticsPorts(facadeRecords.defaultWrites.at(-1)?.diagnosticsPorts);
         connectState = 'connecting';
         try {
             await facadeBehavior.connect(options);
             connectState = 'connected';
+            connectedDiagnosticsPorts = diagnosticsPorts;
         }
         catch (error) {
             connectState = 'idle';
@@ -450,6 +459,7 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
         }
         return Object.freeze<BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion>({
             rtcCapture: { status: 'unavailable', reason: 'absent' },
+            diagnosticsPorts,
             captureOwnershipFailure: () => undefined
         });
     },
@@ -460,6 +470,7 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
         }
         finally {
             connectState = 'idle';
+            connectedDiagnosticsPorts = undefined;
         }
     },
     refreshRoomState: async (roomRef, options) => {
@@ -485,6 +496,7 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
 export function resetBrowserRuntimeFacadeTestDouble(): void {
     vi.resetAllMocks();
     connectState = 'idle';
+    connectedDiagnosticsPorts = undefined;
     clearRecords();
     scriptedFaults = createScriptedTransportFaultPort();
     countingStorage = createCountingIndexedDbOperationObserver();

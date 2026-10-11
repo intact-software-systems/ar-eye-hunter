@@ -196,7 +196,7 @@ export class BlackBoxRallarConnectOperation {
             connectionState: this.#input.connectionState,
             config
         });
-        diagnostics.emitConnectPhaseCompleted(config, attempt.phase, configured);
+        diagnostics.emitConnectPhaseCompleted(config, attempt.phase, { defaults: configured.defaults });
     }
 
     async #openConnection(attempt: ConnectionAttempt): Promise<void> {
@@ -214,9 +214,13 @@ export class BlackBoxRallarConnectOperation {
             rtcCaptureMode: config.rallar.rtcCaptureMode,
             rtcCaptureContext: config.rallar.rtcCaptureContext
         });
-        this.#input.connectionState.bindConfiguration(attempt.completion);
+        this.#assertRtcAttemptEligible(attempt);
+        const almDiagnostics = this.#input.connectionState.bindConfiguration(attempt.completion);
         this.#assertAttemptEligible(attempt);
-        diagnostics.emitConnectPhaseCompleted(config, attempt.phase, { ...health.getStatusDiagnostics(config) });
+        diagnostics.emitConnectPhaseCompleted(config, attempt.phase, {
+            ...health.getStatusDiagnostics(config),
+            ...(almDiagnostics === undefined ? {} : { almDiagnostics })
+        });
         this.#assertAttemptEligible(attempt);
         if (!config.roomId) {
             return;
@@ -243,6 +247,15 @@ export class BlackBoxRallarConnectOperation {
     }
 
     #assertAttemptEligible(attempt: ConnectionAttempt): void {
+        this.#assertRtcAttemptEligible(attempt);
+        if (!this.#input.connectionState.verifiedConfiguration()) {
+            throw new Error(
+                'ALM recording policy is unverified for the acquired SDK connection; close and reinitialize before configuring.'
+            );
+        }
+    }
+
+    #assertRtcAttemptEligible(attempt: ConnectionAttempt): void {
         const rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt> =
             attempt.completion?.rtcCapture ?? { status: 'unavailable', reason: 'absent' };
         try {
