@@ -1,10 +1,12 @@
+import type { Sql } from 'postgres';
+
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import type { Sql } from 'postgres';
+
 import { toApiV1PostgresClient } from '../../../src/db/api-v1-database-lifecycle.ts';
 import {
     createStateWriteServiceRuntime,
@@ -14,7 +16,28 @@ import { mapWithConcurrency } from '../map-with-concurrency.ts';
 import { toStateWriteBenchmarkGroupContextId } from './api-v1-state-write-app-inbox-evidence.ts';
 import { STATE_WRITE_REQUIRED_CONCURRENCY } from './api-v1-state-write-benchmark-options.ts';
 import { newRunContext } from './state-write-measurement.ts';
-import { CLIENT_COUNT, createBenchmarkAuthSession, runAppInboxMutation, WORKLOADS } from './state-write-workload.ts';
+import {
+    CLIENT_COUNT,
+    createBenchmarkAuthSession,
+    runAppInboxMutation,
+    WORKLOADS
+} from './state-write-workload.ts';
+
+interface BenchmarkSeedContext {
+    readonly runtime: StateWriteServiceRuntime;
+    readonly scope: StateScope;
+    readonly authSessionRepository: AuthSessionRepository;
+}
+
+interface BenchmarkSeedClient {
+    readonly runtime: StateWriteServiceRuntime;
+    readonly scope: StateScope;
+    readonly authority: IssuedAuthSession;
+    readonly principalId: string;
+    readonly clientIndex: number;
+    readonly contextId: string;
+}
+
 export async function seedCompleteState(
     sql: Sql,
     scope: StateScope,
@@ -41,12 +64,6 @@ export async function seedCompleteState(
         STATE_WRITE_REQUIRED_CONCURRENCY,
         async (clientIndex) => await seedBenchmarkClient({ runtime, scope, authSessionRepository }, clientIndex)
     );
-}
-
-interface BenchmarkSeedContext {
-    readonly runtime: StateWriteServiceRuntime;
-    readonly scope: StateScope;
-    readonly authSessionRepository: AuthSessionRepository;
 }
 
 async function seedBenchmarkGroup(context: BenchmarkSeedContext, groupIndex: number): Promise<void> {
@@ -107,15 +124,6 @@ async function seedBenchmarkClient(context: BenchmarkSeedContext, clientIndex: n
     });
     await seedClientPrincipal({ runtime, scope, authority, principalId, clientIndex, contextId });
     await seedClientInstance({ runtime, scope, authority, principalId, clientIndex, contextId });
-}
-
-interface BenchmarkSeedClient {
-    readonly runtime: StateWriteServiceRuntime;
-    readonly scope: StateScope;
-    readonly authority: IssuedAuthSession;
-    readonly principalId: string;
-    readonly clientIndex: number;
-    readonly contextId: string;
 }
 
 async function seedClientPrincipal(input: BenchmarkSeedClient): Promise<void> {
