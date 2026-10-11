@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -231,6 +231,7 @@ it.each(BACKEND_KINDS)('states a retained attempt only when its carrier settles 
         planOutgoingMessage: planSend(),
         sendPreparedMessage: async () => ({ status: 'queued', settled: settled.promise })
     });
+    onTestFinished(() => settled.resolve({ status: 'cancelled', submissionAttempted: false }));
     const message = createOutboundMessage('msg-settled-retained');
 
     await enqueueOutboundOrThrow(runtime, message);
@@ -707,6 +708,7 @@ it.each(BACKEND_KINDS)(
                 return { status: 'queued', settled: settled.promise };
             }
         });
+        onTestFinished(() => settled.resolve({ status: 'cancelled', submissionAttempted: false }));
         const message = createOutboundMessage('msg-cancel-retained');
 
         await enqueueOutboundOrThrow(runtime, message);
@@ -795,6 +797,11 @@ it.each(BACKEND_KINDS)(
                 settledByMsgId.set(msgId, settled);
                 signalByMsgId.set(msgId, lifecycle.signal);
                 return { status: 'queued', settled: settled.promise };
+            }
+        });
+        onTestFinished(() => {
+            for (const settled of settledByMsgId.values()) {
+                settled.resolve({ status: 'cancelled', submissionAttempted: false });
             }
         });
         // Two independent messages: disposal must reach both controllers, not just one shared signal.

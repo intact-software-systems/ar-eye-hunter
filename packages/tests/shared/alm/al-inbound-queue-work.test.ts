@@ -52,6 +52,7 @@ it('terminalizes a malformed reservation without starving independent timeout re
     });
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const engine = new InboxOutboxEngine();
+    onTestFinished(() => engine.stop());
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
         queueEngine: engine,
@@ -109,6 +110,7 @@ it('retries durable local delivery after restart with a single admission work ow
         vi.useRealTimers();
     });
     const engine = new InboxOutboxEngine();
+    onTestFinished(() => engine.stop());
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
         queueEngine: engine,
@@ -169,6 +171,7 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
         });
         vi.spyOn(console, 'error').mockImplementation(() => {});
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             queueEngine: engine,
@@ -304,6 +307,7 @@ it('retains predecessor completion through the longest admitted deadline across 
         maxOrderingTracks: undefined
     });
     const engine = new InboxOutboxEngine();
+    onTestFinished(() => engine.stop());
     const delivered: string[] = [];
     const createRuntime = () =>
         new ALInboundMessageRuntime({
@@ -363,6 +367,7 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
         maxOrderingTracks: undefined
     });
     const engine = new InboxOutboxEngine();
+    onTestFinished(() => engine.stop());
     const trackKey = toALOrderingTrackKey(createOrderedMessage(1))!;
     const progressKey = `${store.namespace}:delivered:${trackKey}`;
     let available = false;
@@ -426,7 +431,6 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
     const delivered: string[] = [];
     const failedAttemptReleased = Promise.withResolvers<void>();
     const resume = Promise.withResolvers<void>();
-    onTestFinished(() => resume.resolve());
     const release = backend.workQueue.releaseEntries.bind(backend.workQueue);
     vi.spyOn(backend.workQueue, 'releaseEntries').mockImplementation(async (releases) => {
         const released = await release(releases);
@@ -461,6 +465,7 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
         diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
+    onTestFinished(() => resume.resolve());
     const second: ALMessage = { ...createOrderedMessage(2), qos: { durability: { algo: durability } } };
     await runtime.admitIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
     const admittedFirst = runtime.admitIncomingMessage(createOrderedMessage(1), { kind: 'rtc-peer', peerId: 'sender' });
@@ -505,6 +510,7 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
             maxOrderingTracks: undefined
         });
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const controls: ALMessage[] = [];
         const delivered: string[] = [];
         let available = false;
@@ -600,6 +606,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
     let unavailable = true;
     const createRuntime = (): OrderedRestartFixture => {
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const runtime = new ALInboundMessageRuntime({
             carrier: 'rtc',
             ...createDefaultALInboundRuntimeResources({

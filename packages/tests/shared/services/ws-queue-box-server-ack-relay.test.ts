@@ -445,11 +445,13 @@ function forgedAck(recipient: string, index: number): ALMessage {
     );
 }
 
-function readReceipts(socket: SimulatedWebSocket): readonly Readonly<{
-    phase: ALReceiptPayload['phase'];
-    expected: readonly string[];
-    confirmed: readonly string[];
-}>[] {
+interface ReceiptObservation {
+    readonly phase: ALReceiptPayload['phase'];
+    readonly expected: ALReceiptPayload['expectedRecipientPeerIds'];
+    readonly confirmed: ALReceiptPayload['confirmedRecipientPeerIds'];
+}
+
+function readReceipts(socket: SimulatedWebSocket): readonly ReceiptObservation[] {
     return socket.sent
         .map((frame) => decodePersistedALMessage(frame))
         .filter((message) => message.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)

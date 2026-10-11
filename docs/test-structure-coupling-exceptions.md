@@ -335,14 +335,6 @@ moved or changed test.
       }
     },
     {
-      "id": "alm-outbound-held-claim-quiescence",
-      "domain": "ALM outbound held-claim test fixture",
-      "owner": "Rallar shared maintainers",
-      "summary": "The held-claim fixture restores real queue reservations only once no owner batch is still asking for work, so a disposed runtime cannot strand rows in a reservation nobody releases. Executable assertion: “lets only one runtime claim the same committed send effect”.",
-      "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#lets only one runtime claim the same committed send effect",
-      "coverageRelation": "The named test holds every claim while a first runtime commits send work, disposes that runtime, releases the hold, and proves a second runtime claims and sends the row exactly once; the fixture wait is the precondition that the release never lands inside a batch."
-    },
-    {
       "id": "alm-outbound-runtime-control-conflict-retention",
       "domain": "ALM outbound runtime control admission recovery",
       "owner": "Rallar shared maintainers",

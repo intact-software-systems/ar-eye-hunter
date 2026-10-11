@@ -250,6 +250,13 @@ describe('verified direct room row delivery', () => {
     });
 });
 
+namespace RoomFixture {
+    export interface Publication {
+        readonly message: ALMessage;
+        readonly entry: ResourceEntry;
+    }
+}
+
 class RoomFixture {
     readonly repository = new FakeRuntimeStateRepository();
     readonly socket = new JsonWebSocketServer();
@@ -320,7 +327,7 @@ class RoomFixture {
         await expect.poll(async () => (await this.stores.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
     }
 
-    async publish(audience: readonly string[], corruption = '') {
+    async publish(audience: readonly string[], corruption = ''): Promise<RoomFixture.Publication> {
         const broadcast = newALBroadcastMessage(
             'server',
             { topicId: 'snapshot', resourceId: 'room', contextId: 'event' },

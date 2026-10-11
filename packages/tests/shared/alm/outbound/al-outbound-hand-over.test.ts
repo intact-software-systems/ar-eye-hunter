@@ -4,10 +4,11 @@ import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/
 import { ALOutboundSendControls } from '@shared/alm/outbound/lane/al-outbound-send-controls.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 import {
@@ -58,10 +59,12 @@ function createHandOverFixture(persist: boolean, receiptTimeoutMs = 60_000): Han
 }
 
 describe('the settlement-free hand-over (D56, Q3)', () => {
-    afterEach(() => {
-        vi.useRealTimers();
-        vi.restoreAllMocks();
-    });
+    beforeEach(() =>
+        onTestFinished(() => {
+            vi.useRealTimers();
+            vi.restoreAllMocks();
+        })
+    );
 
     it.each([true, false])('ends the receipt row and every later effect of the message, and states no cancellation (persist: %s)', async (persist) => {
         const fixture = createHandOverFixture(persist);

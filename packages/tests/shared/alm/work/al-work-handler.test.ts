@@ -1009,6 +1009,7 @@ describe('ALWorkHandler', () => {
             })
         );
         for (const handler of handlers) {
+            onTestFinished(() => handler.dispose());
             await handler.ready();
         }
         await engine.executeOnce();
@@ -1025,8 +1026,6 @@ describe('ALWorkHandler', () => {
         await engine.executeOnce();
 
         expect(probeCounts.outbound).toBeGreaterThan(afterBootstrap.outbound);
-        for (const handler of handlers) {
-        }
     });
 
     it('turns a remembered ready time into a batch without reading storage again', async () => {

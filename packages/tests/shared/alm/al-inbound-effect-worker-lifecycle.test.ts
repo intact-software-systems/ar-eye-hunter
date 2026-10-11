@@ -19,6 +19,7 @@ import {
     computeALInboundWorkEntry,
     toALInboundWorkKey
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -41,6 +42,8 @@ import {
     INBOUND_TEST_SOURCE,
     setNextInboundCommitConflicted
 } from './inbound-runtime-test-fixture.ts';
+
+import { ALWorkBatchTestObserver } from './work/al-work-batch-test-observer.ts';
 
 describe('inbound durable effect worker lifecycle', () => {
     beforeEach(() =>
@@ -248,6 +251,7 @@ describe('inbound durable effect worker lifecycle', () => {
 
     it('rejects work missing its ingress source without blocking a valid sibling', async () => {
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             queueEngine: engine,
@@ -642,6 +646,7 @@ describe('inbound durable effect worker lifecycle', () => {
             queueEngine: new InboxOutboxEngine(),
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
         });
+        const batches = new ALWorkBatchTestObserver();
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
             carrier: 'ws',
@@ -651,10 +656,13 @@ describe('inbound durable effect worker lifecycle', () => {
             sendControlMessages: async (messages) => {
                 controls.push(...messages);
             },
-            diagnostics: undefined
+            diagnostics: Object.assign(() => {}, {
+                acknowledgementCapture: { evidence: ALInboundAcknowledgementEvidence, batchObservations: batches.batchObservations }
+            })
         });
         onTestFinished(() => runtime.dispose());
         await runtime.ready();
+        await batches.waitForPublishedBatches();
 
         // The retained row of the pin above, behind the page the bootstrap batch already read. No
         // engine round is ever driven here, so only an announcement can bring the batch that claims it.
@@ -695,8 +703,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
 
         const acceptance = await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await batches.waitForPublishedBatches();
 
         expect(acceptance.right).toEqual({ kind: 'not-admitted', reason: 'expired' });
         expect(controls).toEqual([]);
@@ -868,6 +875,7 @@ describe('inbound durable effect worker lifecycle', () => {
 
     it('keeps one page read in flight when admission overlaps work advertisement', async () => {
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             queueEngine: engine,

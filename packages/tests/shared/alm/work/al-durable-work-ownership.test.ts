@@ -213,8 +213,18 @@ function createTestDurableWorkOwnership(owned: boolean): TestDurableWorkOwnershi
     };
 }
 
-function createOwnedHandler<TOwnership extends ALDurableWorkOwnership>(ownership: TOwnership) {
+interface OwnedHandlerFixture<TOwnership extends ALDurableWorkOwnership> {
+    readonly handler: ALWorkHandler;
+    readonly engine: InboxOutboxEngine;
+    readonly ownership: TOwnership;
+    readonly released: readonly string[];
+    readonly probes: readonly ALWorkReadinessProbeDiagnostics[];
+    readonly batchCount: () => number;
+}
+
+function createOwnedHandler<TOwnership extends ALDurableWorkOwnership>(ownership: TOwnership): OwnedHandlerFixture<TOwnership> {
     const engine = new InboxOutboxEngine();
+    onTestFinished(() => engine.stop());
     const released: string[] = [];
     const diagnostics: ALWorkDiagnostics[] = [];
     const probes: ALWorkReadinessProbeDiagnostics[] = [];
