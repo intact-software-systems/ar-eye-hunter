@@ -35,7 +35,7 @@ export function configureBlackBoxRallarConnection(
     const { rallar, diagnostics, volatileLimits, config, connectionState } = input;
     const almDiagnostics = config.rallar.almDiagnostics ?? true;
     if (rallar.status() !== 'idle') {
-        const current = connectionState.configuration();
+        const current = connectionState.verifiedConfiguration();
         const rejection = toAlmRecordingCompatibilityRejection(current?.almDiagnostics, almDiagnostics);
         if (rejection) {
             throw rejection;

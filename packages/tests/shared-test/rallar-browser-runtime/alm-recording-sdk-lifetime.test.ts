@@ -6,6 +6,7 @@ import {
 } from 'vitest';
 
 import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
 import { createRallarFacade } from '@shared-web/browser/composition/create-rallar-facade.ts';
 import * as connectionHttp from '@shared-web/browser/connection/connection-http-api.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
@@ -248,4 +249,99 @@ it('keeps changed HOST capture subject to actual SDK compatibility during matchi
     await expect(page.connect({ ...CONFIG, rallar: { ...CONFIG.rallar, rtc: { captureMode: 'native' } } }))
         .rejects.toMatchObject({ code: 'new-connection-required', requestedConfiguration: { mode: 'native', origin: 'host' } });
     expect(defaults).not.toHaveBeenCalled();
+});
+
+it.each([
+    { almDiagnostics: true, operation: 'connect' },
+    { almDiagnostics: false, operation: 'connect' },
+    { almDiagnostics: true, operation: 'crdt' },
+    { almDiagnostics: false, operation: 'crdt' }
+])(
+    'rejects stale $operation policy $almDiagnostics after external SDK replacement while preserving omitted attachment',
+    async ({ almDiagnostics, operation }) => {
+        const { page, facade, events } = createCaptureApplicationRuntime();
+        onTestFinished(async () => {
+            await page.close();
+        });
+        const config = { ...CONFIG, rallar: { ...CONFIG.rallar, almDiagnostics } };
+        await page.connect(config);
+        const originalReceipt = facade.rtcCapture();
+        await facade.disconnect();
+        facade.setDefaults({ applicationId: 'app', diagnosticsPorts: { outboundDiagnostics: () => {} } });
+        await facade.connect();
+        const replacementReceipt = facade.rtcCapture();
+        expect(replacementReceipt).not.toBe(originalReceipt);
+        const defaults = vi.spyOn(facade, 'setDefaults');
+        const configure = vi.spyOn(facade, 'configure');
+        const limits = vi.spyOn(BlackBoxRallarVolatileLimits.prototype, 'set');
+        const successes = configureSuccesses(events).length;
+        const request = operation === 'connect'
+            ? page.connect(config)
+            : page.crdt.open({ name: 'stale-explicit', transport: 'ws', rallar: { almDiagnostics } });
+        await expect(request).rejects.toThrow(/unverified.*close.*reinitializ/i);
+        await page.crdt.open({ name: 'preserved-attachment', transport: 'ws', applicationId: 'app', persist: false, tabSync: false });
+        expect(defaults).not.toHaveBeenCalled();
+        expect(configure).not.toHaveBeenCalled();
+        expect(limits).not.toHaveBeenCalled();
+        expect(configureSuccesses(events)).toHaveLength(successes);
+        expect(facade.rtcCapture()).toBe(replacementReceipt);
+    }
+);
+
+it.each([
+    { almDiagnostics: true, operation: 'connect' },
+    { almDiagnostics: false, operation: 'connect' },
+    { almDiagnostics: true, operation: 'crdt' },
+    { almDiagnostics: false, operation: 'crdt' }
+])('rejects stale $operation policy $almDiagnostics while external SDK replacement is pending', async ({ almDiagnostics, operation }) => {
+    const { page, facade, events } = createCaptureApplicationRuntime();
+    const config = { ...CONFIG, rallar: { ...CONFIG.rallar, almDiagnostics } };
+    await page.connect(config);
+    await facade.disconnect();
+    facade.setDefaults({ applicationId: 'app' });
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    vi.spyOn(connectionHttp, 'readIceCandidates').mockImplementation(async () => {
+        entered.resolve();
+        await release.promise;
+        return { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 };
+    });
+    const replacement = facade.connect();
+    onTestFinished(async () => {
+        release.resolve();
+        await replacement;
+        await page.close();
+    });
+    await entered.promise;
+    const defaults = vi.spyOn(facade, 'setDefaults');
+    const configure = vi.spyOn(facade, 'configure');
+    const limits = vi.spyOn(BlackBoxRallarVolatileLimits.prototype, 'set');
+    const successes = configureSuccesses(events).length;
+    const checked = Promise.withResolvers<void>();
+    const readStatus = facade.status;
+    const statusObserver = vi.spyOn(facade, 'status').mockImplementation(() => {
+        expect(readStatus()).toBe('connecting');
+        checked.resolve();
+        return readStatus();
+    });
+    const request = operation === 'connect'
+        ? page.connect(config)
+        : page.crdt.open({
+            name: 'pending-explicit',
+            transport: 'ws',
+            apiBaseUrl: CONFIG.rallar.apiBaseUrl,
+            applicationId: 'app',
+            workspaceId: 'default',
+            rallar: { almDiagnostics }
+        });
+    const rejected = expect(request).rejects.toThrow(/unverified.*close.*reinitializ/i);
+    await checked.promise;
+    statusObserver.mockRestore();
+    release.resolve();
+    await rejected;
+    await replacement;
+    expect(defaults).not.toHaveBeenCalled();
+    expect(configure).not.toHaveBeenCalled();
+    expect(limits).not.toHaveBeenCalled();
+    expect(configureSuccesses(events)).toHaveLength(successes);
 });

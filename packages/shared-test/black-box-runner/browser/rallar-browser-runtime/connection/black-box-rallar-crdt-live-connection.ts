@@ -74,22 +74,19 @@ export class BlackBoxRallarCrdtLiveConnection {
             config
         });
         diagnostics.emitDiagnostic(config, 'rallar.browser.crdt.configure_completed', configured);
-        if (rallar.isConnected()) {
-            await rallar.connect({
-                rtcCaptureMode: config.rallar.rtcCaptureMode,
-                rtcCaptureContext: config.rallar.rtcCaptureContext
-            });
-            context.assertCurrent();
-            return;
-        }
-        const session = await this.#input.authentication.sessionForAuthentication(config);
+        const connected = rallar.isConnected();
+        const session = connected ? undefined : await this.#input.authentication.sessionForAuthentication(config);
         context.assertCurrent();
-        await rallar.connect({
-            timeoutMs: config.rallar.timeoutMs,
+        const completion = await rallar.connect({
+            timeoutMs: connected ? undefined : config.rallar.timeoutMs,
             rtcCaptureMode: config.rallar.rtcCaptureMode,
             rtcCaptureContext: config.rallar.rtcCaptureContext
         });
         context.assertCurrent();
+        this.#input.connectionState.bindConfiguration(completion);
+        if (session === undefined) {
+            return;
+        }
         if (config.roomId) {
             await rallar.rooms.join(config.roomId, {
                 timeoutMs: config.rallar.timeoutMs,

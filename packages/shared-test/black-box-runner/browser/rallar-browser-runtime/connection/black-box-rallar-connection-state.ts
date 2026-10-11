@@ -5,6 +5,7 @@ import type {
     BlackBoxRallarConnectDiagnostics,
     BlackBoxRallarConnectionConfig
 } from '../black-box-rallar-operation-contracts.ts';
+import type { BlackBoxBrowserRallarRuntimeDependency } from '../browser-rallar-runtime-composition.ts';
 import type { BlackBoxRallarLifecycleController } from '../lifecycle-controller.ts';
 
 export namespace BlackBoxRallarConnectionState {
@@ -39,6 +40,7 @@ export namespace BlackBoxRallarConnectionState {
 export class BlackBoxRallarConnectionState {
     #value: BlackBoxRallarConnectionState.Value | undefined;
     #configuration: BlackBoxRallarConnectionState.Configuration | undefined;
+    #configurationCompletion: BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion | undefined;
 
     configuration(): BlackBoxRallarConnectionState.Configuration | undefined {
         return this.#configuration;
@@ -46,6 +48,18 @@ export class BlackBoxRallarConnectionState {
 
     recordConfiguration(configuration: BlackBoxRallarConnectionState.Configuration): void {
         this.#configuration = configuration;
+        this.#configurationCompletion = undefined;
+    }
+
+    /** Bind prepared policy once; reuse must retain the originating middleware's ownership proof. */
+    bindConfiguration(completion: BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion): void {
+        this.#configurationCompletion ??= completion;
+    }
+
+    verifiedConfiguration(): BlackBoxRallarConnectionState.Configuration | undefined {
+        return this.#configurationCompletion && this.#configurationCompletion.captureOwnershipFailure() === undefined
+            ? this.#configuration
+            : undefined;
     }
 
     get(): BlackBoxRallarConnectionState.Value | undefined {
@@ -56,6 +70,7 @@ export class BlackBoxRallarConnectionState {
         this.#value = value;
         if (value === undefined) {
             this.#configuration = undefined;
+            this.#configurationCompletion = undefined;
         }
     }
 }

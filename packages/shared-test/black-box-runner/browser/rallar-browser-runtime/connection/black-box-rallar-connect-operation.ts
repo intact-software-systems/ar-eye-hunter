@@ -214,6 +214,7 @@ export class BlackBoxRallarConnectOperation {
             rtcCaptureMode: config.rallar.rtcCaptureMode,
             rtcCaptureContext: config.rallar.rtcCaptureContext
         });
+        this.#input.connectionState.bindConfiguration(attempt.completion);
         this.#assertAttemptEligible(attempt);
         diagnostics.emitConnectPhaseCompleted(config, attempt.phase, { ...health.getStatusDiagnostics(config) });
         this.#assertAttemptEligible(attempt);
