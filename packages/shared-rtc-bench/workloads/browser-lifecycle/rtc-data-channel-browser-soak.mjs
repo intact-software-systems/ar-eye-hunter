@@ -517,7 +517,7 @@ async function runPageLifecycle(page, input) {
     }, input);
 }
 
-function createAcceptedSample({ command, context, measurement, argumentsList, nowUtc }) {
+function createAcceptedSample({ command, context, measurement, argumentsList, createdAt }) {
     const sampleIdentity = {
         sampleId: context.outerAttempt.sampleIds[0],
         workloadId: WORKLOAD_ID,
@@ -543,7 +543,7 @@ function createAcceptedSample({ command, context, measurement, argumentsList, no
             evidenceClass: 'native-browser',
             metrics: [],
             rawEvidence: {
-                createdAt: nowUtc(),
+                createdAt,
                 identity,
                 input: { iterations: ACCEPTED_ITERATIONS },
                 producerCommand: {
@@ -560,13 +560,13 @@ function createAcceptedSample({ command, context, measurement, argumentsList, no
     );
 }
 
-function toExternalAttempt({ command, context, measurement, argumentsList, nowUtc }) {
+function toExternalAttempt({ command, context, measurement, argumentsList, createdAt }) {
     const sample = createAcceptedSample({
         command,
         context,
         measurement,
         argumentsList,
-        nowUtc
+        createdAt
     });
     return {
         schema: 'rallar.rtc-baseline.external-attempt.v1',
@@ -632,12 +632,13 @@ export async function runRtcDataChannelBrowserSoakCli(argumentsList, overrides =
         context.outerAttempt.sampleIds[0],
         dependencies
     );
+    const createdAt = dependencies.nowUtc();
     const output = toExternalAttempt({
         command,
         context,
         measurement,
         argumentsList,
-        nowUtc: dependencies.nowUtc
+        createdAt
     });
     writeJson(context.outputPath, output, true);
     return { mode: command.mode, outputPath: context.outputPath, output };
