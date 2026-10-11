@@ -17,9 +17,10 @@ import {
     writeFile
 } from 'node:fs/promises';
 import { arch } from 'node:os';
-import { dirname } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs, promisify } from 'node:util';
+
 import {
     readApiV1StateWriteImageIdentity,
     toImageManifestDescriptor
@@ -66,13 +67,16 @@ export async function captureApiV1StateWriteEnvironment(argumentsInput = process
         ? await readPreflightCapture({ options })
         : await readPostflightCapture({ options });
     await mkdir(dirname(options.out), { recursive: true });
-    await writeFile(options.out, captured.text);
+    await writeFile(options.out, captured.text, { flag: 'wx' });
     console.log(`Wrote ${options.out}`);
 }
 
 async function readPreflightCapture({ options }) {
     const container = await readContainerRecord({ container: options.container });
-    const image = await readApiV1StateWriteImageIdentity({ container });
+    const image = await readApiV1StateWriteImageIdentity({
+        container,
+        directory: resolve(`${options.out}.acquisition`)
+    });
     const postgres = await readPostgresRecord({ options });
     const record = {
         ...image.record,
@@ -82,7 +86,10 @@ async function readPreflightCapture({ options }) {
         ...(await readOverlapRecord({ container: options.container })),
         host_architecture: arch()
     };
-    validatePreflightIsClean({ record });
+    const dirty = validatePreflightIsClean({ record });
+    if (dirty.length > 0) {
+        throw new TypeError(`preflight database is not empty: ${dirty.join(', ')}`);
+    }
     return {
         text: `${
             JSON.stringify(
@@ -122,18 +129,14 @@ async function readPostflightCapture({ options }) {
 // equivalently empty database, so a dirty preflight fails here rather than
 // surviving into a verdict.
 function validatePreflightIsClean({ record }) {
-    const dirty = ENVIRONMENT_FIELDS.filter(
+    return ENVIRONMENT_FIELDS.filter(
         (field) => field.startsWith('preflight_') && record[field] !== '0'
     );
-    if (dirty.length > 0) {
-        throw new TypeError(`preflight database is not empty: ${dirty.join(', ')}`);
-    }
 }
 
 async function readContainerRecord({ container }) {
-    const inspected = toNativeObject({
-        value: JSON.parse(await readDockerJson({ argumentsInput: ['container', 'inspect', container] }))
-    });
+    const inspectionBytes = await readDockerJson({ argumentsInput: ['container', 'inspect', container] });
+    const inspected = toNativeObject({ value: JSON.parse(inspectionBytes.toString('utf8')) });
     const host = toNativeObject({ value: inspected.HostConfig });
     const config = toNativeObject({ value: inspected.Config });
     const id = toNativeText({ value: inspected.Id });
@@ -143,6 +146,7 @@ async function readContainerRecord({ container }) {
     }
     return {
         id,
+        inspectionBytes,
         startedAt: toNativeRunningSession({ value: inspected.State }),
         imageId,
         manifest: toImageManifestDescriptor({ value: inspected.ImageManifestDescriptor }),
@@ -164,7 +168,8 @@ async function readContainerRecord({ container }) {
 async function readDockerJson({ argumentsInput }) {
     const { stdout } = await execFileAsync('docker', [...argumentsInput, '--format', '{{json .}}'], {
         timeout: 15_000,
-        maxBuffer: 65_536
+        maxBuffer: 65_536,
+        encoding: 'buffer'
     });
     return stdout;
 }

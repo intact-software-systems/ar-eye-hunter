@@ -275,11 +275,19 @@ This capture requires a POSIX `tar` supporting `-tf`, `-tvf` and `-xOf` with
 `--` before the named member, and Docker image-save platform selection. The
 reader was verified with native macOS BSD tar on the retained arm64 export;
 Linux/GNU tar and Windows execution have not been verified by that local proof.
-No layers are extracted, metadata/process output is bounded, and temporary
-exports are removed after success or failure. Local export and metadata I/O
-occur before benchmark timing. The preflight sidecar records archive size and
-metadata acquisition milliseconds (export through metadata/stat, excluding
-initial inspect and final cleanup), so its preparation cost remains visible.
+No layers are extracted and metadata/process output is bounded. Each preflight
+reserves a fresh `<out>.acquisition` directory; an existing directory or output
+is rejected. The native export is written directly there, without a temporary
+transport copy. Original container/image inspection bytes, export index or classic
+metadata, selected manifest (containerd) and configuration bytes remain readable.
+The sidecar's `imageProof.acquisition` binds their absolute paths, byte sizes and
+SHA256 hashes. The directory is private to the capture; raw inspection documents
+may contain sensitive native configuration and should stay with private evidence.
+Failed attempts retain any acquired bytes for diagnosis and emit no successful
+sidecar; use a fresh output for a later authorized attempt rather than reusing it.
+Local export, metadata I/O and archive hashing occur before benchmark timing.
+Metadata acquisition milliseconds cover export through retained archive hashing,
+excluding initial native inspection, so preparation cost remains visible.
 
 The postflight stage validates before writing, so a descriptor that reaches
 disk is one the pooling protocol accepts. It preserves preflight empty-table

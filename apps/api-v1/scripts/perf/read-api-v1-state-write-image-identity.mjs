@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { createReadStream } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -14,52 +14,79 @@ const METADATA_LIMIT = 65_536;
 // Docker's containerd Id is an index/manifest target, while the governed field
 // denotes original configuration bytes. This owner binds those representations
 // through the actual container and a local export, never an expected-ID lookup.
-export async function readApiV1StateWriteImageIdentity({ container }) {
+export async function readApiV1StateWriteImageIdentity({ container, directory }) {
+    await mkdir(dirname(directory), { recursive: true });
+    await mkdir(directory, { mode: 0o700 });
+    const containerInspection = await writeAcquisitionMetadata({
+        directory,
+        name: 'container-inspect.json',
+        bytes: container.inspectionBytes
+    });
     const { stdout } = await execFileAsync(
         'docker',
         ['image', 'inspect', container.imageId, '--format', '{{json .}}'],
-        { timeout: 15_000, maxBuffer: METADATA_LIMIT }
+        { timeout: 15_000, maxBuffer: METADATA_LIMIT, encoding: 'buffer' }
     );
-    const nativeImage = toNativeImage({ text: stdout, container });
+    const imageInspection = await writeAcquisitionMetadata({ directory, name: 'image-inspect.json', bytes: stdout });
+    const nativeImage = toNativeImage({ text: stdout.toString('utf8'), container });
     const acquisitionStarted = performance.now();
-    const directory = await mkdtemp(join(tmpdir(), 'rallar-state-write-image-'));
-    try {
-        const archive = join(directory, 'image.tar');
-        await execFileAsync('docker', [
-            'image',
-            'save',
-            '--platform',
-            `${nativeImage.os}/${nativeImage.architecture}`,
-            '--output',
-            archive,
-            PINNED_IMAGE
-        ], { timeout: 120_000, maxBuffer: METADATA_LIMIT });
-        const names = await readArchiveNames({ archive });
-        const identity = container.manifest === undefined
-            ? await readClassicConfiguration({ archive, names, nativeImage })
-            : await readContainerConfiguration({ archive, names, nativeImage, manifest: container.manifest });
-        return {
-            record: {
-                image_ref: PINNED_IMAGE,
-                repo_digest: PINNED_IMAGE,
-                image_id: identity.digest,
-                image_architecture: nativeImage.architecture,
-                image_os: nativeImage.os,
-                entrypoint: nativeImage.entrypoint
-            },
-            proof: {
-                containerImageId: container.imageId,
-                nativeImageId: nativeImage.id,
-                nativeRepoDigests: nativeImage.repoDigests,
-                archiveBytes: (await stat(archive)).size,
-                metadataAcquisitionMs: performance.now() - acquisitionStarted,
-                ...identity.proof
+    const archive = join(directory, 'image.tar');
+    await readImageArchive({ archive, nativeImage });
+    const names = await readArchiveNames({ archive });
+    const identity = container.manifest === undefined
+        ? await readClassicConfiguration({ archive, names, nativeImage, directory })
+        : await readContainerConfiguration({ archive, names, nativeImage, directory, manifest: container.manifest });
+    const archiveArtifact = await readAcquisitionArchive({ path: archive });
+    return {
+        record: {
+            image_ref: PINNED_IMAGE,
+            repo_digest: PINNED_IMAGE,
+            image_id: identity.digest,
+            image_architecture: nativeImage.architecture,
+            image_os: nativeImage.os,
+            entrypoint: nativeImage.entrypoint
+        },
+        proof: {
+            containerImageId: container.imageId,
+            nativeImageId: nativeImage.id,
+            nativeRepoDigests: nativeImage.repoDigests,
+            archiveBytes: archiveArtifact.bytes,
+            metadataAcquisitionMs: performance.now() - acquisitionStarted,
+            ...identity.proof,
+            acquisition: {
+                directory,
+                artifacts: { archive: archiveArtifact, containerInspection, imageInspection, ...identity.artifacts }
             }
-        };
+        }
+    };
+}
+
+async function readImageArchive({ archive, nativeImage }) {
+    await execFileAsync('docker', [
+        'image',
+        'save',
+        '--platform',
+        `${nativeImage.os}/${nativeImage.architecture}`,
+        '--output',
+        archive,
+        PINNED_IMAGE
+    ], { timeout: 120_000, maxBuffer: METADATA_LIMIT });
+}
+
+async function writeAcquisitionMetadata({ directory, name, bytes }) {
+    const path = join(directory, name);
+    await writeFile(path, bytes, { flag: 'wx', mode: 0o600 });
+    return { path, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+}
+
+async function readAcquisitionArchive({ path }) {
+    const hash = createHash('sha256');
+    let bytes = 0;
+    for await (const chunk of createReadStream(path)) {
+        bytes += chunk.length;
+        hash.update(chunk);
     }
-    finally {
-        await rm(directory, { recursive: true, force: true });
-    }
+    return { path, bytes, sha256: hash.digest('hex') };
 }
 
 function toNativeImage({ text, container }) {
@@ -106,8 +133,9 @@ export function toImageManifestDescriptor({ value }) {
     return { ...descriptor, platform: { os, architecture, variant: platform.variant } };
 }
 
-async function readContainerConfiguration({ archive, names, nativeImage, manifest }) {
+async function readContainerConfiguration({ archive, names, nativeImage, manifest, directory }) {
     const indexBytes = await readArchiveMetadata({ archive, names, name: 'index.json' });
+    const exportIndex = await writeAcquisitionMetadata({ directory, name: 'export-index.json', bytes: indexBytes });
     const index = toNativeObject({ value: JSON.parse(indexBytes.toString('utf8')) });
     if (
         index.schemaVersion !== 2 || index.mediaType !== 'application/vnd.oci.image.index.v1+json' ||
@@ -130,17 +158,27 @@ async function readContainerConfiguration({ archive, names, nativeImage, manifes
         names,
         name: `blobs/sha256/${manifest.digest.slice(7)}`
     });
-    validateContentBytes({ bytes: manifestBytes, descriptor: manifest });
-    const originalManifest = toNativeObject({ value: JSON.parse(manifestBytes.toString('utf8')) });
+    const selectedManifest = await writeAcquisitionMetadata({
+        directory,
+        name: 'selected-manifest.json',
+        bytes: manifestBytes
+    });
+    const originalManifest = toNativeObject({
+        value: JSON.parse(toContentBytes({ bytes: manifestBytes, descriptor: manifest }).toString('utf8'))
+    });
     if (originalManifest.mediaType !== MANIFEST_MEDIA_TYPE || originalManifest.schemaVersion !== 2) {
         throw new TypeError('original selected manifest must be OCI image metadata');
     }
     const config = toContentDescriptor({ value: originalManifest.config, mediaType: CONFIG_MEDIA_TYPE });
     const configBytes = await readArchiveMetadata({ archive, names, name: `blobs/sha256/${config.digest.slice(7)}` });
-    validateContentBytes({ bytes: configBytes, descriptor: config });
-    validateConfigurationPlatform({ bytes: configBytes, nativeImage });
+    const configuration = await writeAcquisitionMetadata({ directory, name: 'config.json', bytes: configBytes });
+    const digest = toConfigurationIdentity({
+        bytes: toContentBytes({ bytes: configBytes, descriptor: config }),
+        nativeImage
+    });
     return {
-        digest: toBytesDigest({ bytes: configBytes }),
+        digest,
+        artifacts: { exportIndex, selectedManifest, configuration },
         proof: {
             store: 'containerd',
             containerManifest: manifest,
@@ -151,21 +189,29 @@ async function readContainerConfiguration({ archive, names, nativeImage, manifes
     };
 }
 
-async function readClassicConfiguration({ archive, names, nativeImage }) {
-    const metadata = JSON.parse(
-        (await readArchiveMetadata({ archive, names, name: 'manifest.json' })).toString('utf8')
-    );
+async function readClassicConfiguration({ archive, names, nativeImage, directory }) {
+    const metadataBytes = await readArchiveMetadata({ archive, names, name: 'manifest.json' });
+    const exportMetadata = await writeAcquisitionMetadata({
+        directory,
+        name: 'export-metadata.json',
+        bytes: metadataBytes
+    });
+    const metadata = JSON.parse(metadataBytes.toString('utf8'));
     if (!Array.isArray(metadata) || metadata.length !== 1) {
         throw new TypeError('classic export must identify exactly one configuration');
     }
     const configName = toNativeString({ value: toNativeObject({ value: metadata[0] }).Config });
     const configBytes = await readArchiveMetadata({ archive, names, name: configName });
-    const digest = toBytesDigest({ bytes: configBytes });
+    const configuration = await writeAcquisitionMetadata({ directory, name: 'config.json', bytes: configBytes });
+    const digest = toConfigurationIdentity({ bytes: configBytes, nativeImage });
     if (digest !== nativeImage.id) {
         throw new TypeError('classic configuration bytes must match the native container image identity');
     }
-    validateConfigurationPlatform({ bytes: configBytes, nativeImage });
-    return { digest, proof: { store: 'classic', configBytes: configBytes.length } };
+    return {
+        digest,
+        artifacts: { exportMetadata, configuration },
+        proof: { store: 'classic', configBytes: configBytes.length }
+    };
 }
 
 async function readArchiveNames({ archive }) {
@@ -205,17 +251,19 @@ async function readArchiveMetadata({ archive, names, name }) {
     return stdout;
 }
 
-function validateContentBytes({ bytes, descriptor }) {
+function toContentBytes({ bytes, descriptor }) {
     if (bytes.length !== descriptor.size || toBytesDigest({ bytes }) !== descriptor.digest) {
         throw new TypeError('image identity metadata bytes do not match their descriptor');
     }
+    return bytes;
 }
 
-function validateConfigurationPlatform({ bytes, nativeImage }) {
+function toConfigurationIdentity({ bytes, nativeImage }) {
     const config = toNativeObject({ value: JSON.parse(bytes.toString('utf8')) });
     if (config.os !== nativeImage.os || config.architecture !== nativeImage.architecture) {
         throw new TypeError('configuration bytes must declare the native selected platform');
     }
+    return toBytesDigest({ bytes });
 }
 
 function toContentDescriptor({ value, mediaType }) {
