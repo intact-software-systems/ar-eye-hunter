@@ -86,8 +86,8 @@ describe('state-write environment capture native image provenance', () => {
                     containerInspection: Buffer.from(`${fixture.facts.containerText}\n`),
                     imageInspection: Buffer.from(`${fixture.facts.imageText}\n`),
                     exportIndex: await readFile(indexPath),
-                    selectedManifest: await readFile(join(FIXTURES, 'arm64-manifest.json')),
-                    configuration: await readFile(join(FIXTURES, 'arm64-config.json'))
+                    selectedManifest: await readFile(join(fixture.directory, `image/blobs/sha256/${MANIFEST}`)),
+                    configuration: await readFile(join(fixture.directory, `image/blobs/sha256/${CONFIG}`))
                 }
             });
         }
@@ -150,7 +150,7 @@ describe('state-write environment capture native image provenance', () => {
                     containerInspection: Buffer.from(`${facts.containerText}\n`),
                     imageInspection: Buffer.from(`${facts.imageText}\n`),
                     exportMetadata: await readFile(join(fixture.directory, 'image/manifest.json')),
-                    configuration: await readFile(join(FIXTURES, 'arm64-config.json'))
+                    configuration: await readFile(join(fixture.directory, `image/blobs/sha256/${CONFIG}`))
                 }
             });
         }
@@ -313,7 +313,7 @@ describe('state-write environment capture native image provenance', () => {
     it('rejects the wrong configuration descriptor size after a valid manifest hash', async () => {
         const fixture = await createCaptureFixture();
         try {
-            const manifest = toFixtureObject({ value: decodeJsonWireText(await readFile(join(FIXTURES, 'arm64-manifest.json'), 'utf8')) });
+            const manifest = toFixtureObject({ value: decodeJsonWireText(await readFile(join(fixture.directory, `image/blobs/sha256/${MANIFEST}`), 'utf8')) });
             await writeChangedManifest({ fixture, manifest: { ...manifest, config: { ...toFixtureObject({ value: manifest.config }), size: 10151 } } });
             await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow(/bytes do not match their descriptor/);
             await expectNoSuccessfulCapture({ fixture });
@@ -326,11 +326,11 @@ describe('state-write environment capture native image provenance', () => {
     it('rejects a hash-consistent configuration declaring the wrong platform', async () => {
         const fixture = await createCaptureFixture();
         try {
-            const config = toFixtureObject({ value: decodeJsonWireText(await readFile(join(FIXTURES, 'arm64-config.json'), 'utf8')) });
+            const config = toFixtureObject({ value: decodeJsonWireText(await readFile(join(fixture.directory, `image/blobs/sha256/${CONFIG}`), 'utf8')) });
             const changed = Buffer.from(JSON.stringify({ ...config, architecture: 'amd64' }));
             const digest = createHash('sha256').update(changed).digest('hex');
             await writeFile(join(fixture.directory, `image/blobs/sha256/${digest}`), changed);
-            const manifest = toFixtureObject({ value: decodeJsonWireText(await readFile(join(FIXTURES, 'arm64-manifest.json'), 'utf8')) });
+            const manifest = toFixtureObject({ value: decodeJsonWireText(await readFile(join(fixture.directory, `image/blobs/sha256/${MANIFEST}`), 'utf8')) });
             await writeChangedManifest({
                 fixture,
                 manifest: { ...manifest, config: { ...toFixtureObject({ value: manifest.config }), digest: `sha256:${digest}`, size: changed.length } }
