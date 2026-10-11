@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALOutboundEffectPayload } from '@shared/alm/outbound/al-outbound-effect-validation.ts';

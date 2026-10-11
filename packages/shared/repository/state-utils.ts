@@ -5,7 +5,17 @@ export function arrayEquals<T>(left: readonly T[], right: readonly T[]): boolean
 }
 
 export function jsonEquals(left: unknown, right: unknown): boolean {
-    return JSON.stringify(toOrderedJson(left, 'content')) === JSON.stringify(toOrderedJson(right, 'content'));
+    // Content ordering follows conversion so toJSON observes the established projection.
+    const leftJson = stableJsonStringify(left);
+    const rightJson = stableJsonStringify(right);
+    if (leftJson === rightJson) {
+        return true;
+    }
+    if (leftJson === undefined || rightJson === undefined) {
+        return false;
+    }
+    return JSON.stringify(toOrderedJson(JSON.parse(leftJson), 'content')) ===
+        JSON.stringify(toOrderedJson(JSON.parse(rightJson), 'content'));
 }
 
 export function stableJsonStringify(value: unknown): string {
