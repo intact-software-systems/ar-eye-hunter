@@ -4257,6 +4257,21 @@ moved or changed test.
         "requiredConstraint": "An unowned reload continuation must not request physical page replacement.",
         "failureRationale": "An error result or missing session record does not independently prove that the page destruction effect was absent."
       }
+    },
+    {
+      "id": "rtc-topology-incomparable-work-no-transaction-or-commit-observation",
+      "domain": "RTC topology queue conflict boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Incomparable RTC work remains retryable without entering a database transaction or observing an uncommitted topology. Executable assertion: “leaves incomparable work retryable without writing or observing a commit”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/work/rtc-topology-work-conflict.test.ts#leaves incomparable work retryable without writing or observing a commit",
+      "coverageRelation": "The test seeds a persisted topology and an incomparable queued causal revision, invokes the real queue handler, and checks RuntimeStateWriteConflictError, unchanged durable runtime state, and absence at the database transaction and committed-topology observation ports. Both absence assertions protect this one retry boundary.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "PSqlSql.begin and GroupTopologyPlanningService.observeCommittedTopology owned ports supplied to createRtcTopologyWorkHandler",
+        "observableEffect": "Database.begin opens a database transaction; observeCommittedTopology updates or removes the in-memory committed topology through the topology service. Neither effect may occur for incomparable work that has no accepted prepared write.",
+        "requiredConstraint": "An incomparable-work retry exits before any Database.begin invocation and emits no observeCommittedTopology call during that queue attempt.",
+        "failureRationale": "The retry exception and unchanged durable rows do not exclude an unnecessary empty or rolled-back transaction, or an in-memory observation emitted before rejection. Either invocation would cross a commit boundary without an accepted prepared write."
+      }
     }
   ],
   "entries": [
@@ -9495,6 +9510,28 @@ moved or changed test.
       "owner": "Shared Test maintainers",
       "rationale": "An error result or missing session record does not independently prove that the page destruction effect was absent.",
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#refuses an unowned reload continuation before replacing the page"
+    },
+    {
+      "id": "test-structure-coupling-55b5e9afd2e8d707",
+      "path": "packages/tests/shared-server/rallar-system/topology/replay/work/rtc-topology-work-conflict.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-topology-incomparable-work-no-transaction-or-commit-observation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The begin absence assertion observes the owned database transaction entry port after the real handler rejects incomparable work. Unchanged runtime-state rows and the retry exception would also pass if an unnecessary empty or rolled-back transaction had opened; zero begin invocations proves the attempt exits before transaction entry.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/work/rtc-topology-work-conflict.test.ts#leaves incomparable work retryable without writing or observing a commit"
+    },
+    {
+      "id": "test-structure-coupling-db36bd5b6f5f44d9",
+      "path": "packages/tests/shared-server/rallar-system/topology/replay/work/rtc-topology-work-conflict.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-topology-incomparable-work-no-transaction-or-commit-observation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The observeCommittedTopology absence assertion observes the owned committed-topology effect port after the real handler rejects incomparable work. The exception and unchanged durable state do not exclude a premature in-memory topology observation; zero observations proves uncommitted work cannot be advertised as committed.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/work/rtc-topology-work-conflict.test.ts#leaves incomparable work retryable without writing or observing a commit"
     }
   ]
 }
