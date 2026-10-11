@@ -5,6 +5,49 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Babel parser fields remain raw until object/array/type and consumed scalar
+    // checks normalize them. These are the five exact reviewed traversal owners;
+    // undefined identifies the current AST index field, not named-owner immunity.
+    // Every future touched use still needs validation and propagation review.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-call-graph.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-call-graph.ts',
+        rule: 'boundary.unknown',
+        symbol: 'findAstNode'
+    }),
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-call-graph.ts',
+        rule: 'boundary.unknown',
+        symbol: 'visitAll'
+    }),
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-call-graph.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asNode'
+    }),
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-call-graph.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asNodes'
+    }),
+    // Canonical filesystem JSON must be a record with a record imports member;
+    // every target is checked as a string before the import mapping leaves.
+    Object.freeze({
+        path: 'apps/api-v1/test/db/native-receiver-receipts.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readNativeReceiptDenoImports'
+    }),
+    // The caught boundary preserves an original Error's identity and otherwise
+    // normalizes through String into Error; no raw exception feeds domain policy.
+    Object.freeze({
+        path: 'apps/api-v1/test/db/native-receiver-receipts.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeReceiptFailure'
+    }),
     // This caught/framework boundary immediately normalizes Error.message or
     // String into response text and derives status only from RequestAuthFailure.
     // No raw exception reaches domain logic; only this exact owner is reviewed.

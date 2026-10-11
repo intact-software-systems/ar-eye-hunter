@@ -1,4 +1,10 @@
-import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    afterEach,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
@@ -8,6 +14,7 @@ import {
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import { room, RtcEndpointFixture } from '../rtc-endpoint-fixture.ts';
 
@@ -32,11 +39,9 @@ it('retries the inbound forward owner when the forward admission answers storage
     const message = createRoomMessage();
 
     expect((await sender.multicast.enqueueIfAbsent(message)).verdict).toMatchObject({ kind: 'admitted' });
-    await sender.waitForDeliveries();
-    await relay.waitForDeliveries();
+    await expect.poll(() => readForwardWork(relay, EntityStatus.RETRY)).toHaveLength(1);
 
-    expect(relay.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
-    expect(await readForwardWork(relay, EntityStatus.RETRY)).toHaveLength(1);
+    await expect.poll(() => relay.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
     expect(receiver.delivered).toEqual([]);
 });
 
@@ -58,10 +63,12 @@ function createRelayedEndpoints(): RelayedRtcEndpoints {
         endpoint.observe(1, room, ['sender', 'relay', 'receiver']);
         endpoint.observeOverlay(1);
     }
-    onTestFinished(() => {
-        sender.close();
-        relay.close();
-        receiver.close();
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([sender.close(), relay.close(), receiver.close()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw toError(failure.reason);
+        }
     });
     return { sender, relay, receiver };
 }

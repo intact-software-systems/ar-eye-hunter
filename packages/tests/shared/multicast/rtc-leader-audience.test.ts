@@ -4,6 +4,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -14,12 +15,17 @@ import {
     type ALMessage,
     type ALTargets
 } from '@shared/al-contracts/al-contract.ts';
+import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
+import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+
+import { room, RtcEndpointFixture } from '../rtc-endpoint-fixture.ts';
 
 import {
-    acknowledgeAtOrigin,
     createOriginPrincipalSnapshot,
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
@@ -61,26 +67,126 @@ describe('the RTC leg of a group-leader room send', () => {
         }
     );
 
-    it('completes the leader receipt on the director\'s ACK alone', async () => {
-        const fixture = createLeaderFixture(toDirectedSnapshot('d'));
-        const message = createLeaderSend('room multicast', []);
-
-        await enqueueLegAndDrain(fixture, message);
-        await acknowledgeAtOrigin(fixture.manager, {
-            msgId: message.id.msgId,
-            fromPeerId: 'b',
-            logicalRecipientPeerId: 'd',
-            status: 'delivered'
+    it('completes concurrent direct and multihop leader receipts through the same origin-and-relay owner', async () => {
+        vi.useRealTimers();
+        // 02 owns its direct receipts while relaying 03's leader controls through 04; 08 is 03's leaf side branch.
+        const messages = ['03', '02'].flatMap((senderId) =>
+            Array.from({ length: 6 }, (_, index) =>
+                newALMulticastMessage(
+                    senderId,
+                    { topicId: 'room.ar-eye-hunter.director', resourceId: `${senderId}-shot-${index + 1}`, contextId: room.groupId },
+                    room,
+                    'room.ar-eye-hunter.director.intent.v1',
+                    { kind: 'player-shot-intent', senderId, seq: index + 1 },
+                    { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000, qos: { durability: { algo: 'volatile' } } }
+                ))
+        );
+        const deliveryWaiters = new Map(messages.map((message) => [message.id.msgId, Promise.withResolvers<ALMessage>()]));
+        const receiptWaiters = new Map(messages.map((message) => [message.id.msgId, Promise.withResolvers<ALDeliverySettlement>()]));
+        const receipts: ALDeliverySettlement[] = [];
+        const topology = [
+            ['03', ['04', '08']],
+            ['04', ['03', '02']],
+            ['02', ['04', 'director']],
+            ['director', ['02']],
+            ['08', ['03']]
+        ] as const;
+        const endpoints = topology.map(([sessionId, peerIds]) =>
+            new RtcEndpointFixture(sessionId, peerIds, {
+                outboundSettlements: (settlement) => {
+                    if (
+                        settlement.kind !== 'acknowledgement' ||
+                        !messages.some((message) => message.id.msgId === settlement.msgId && message.id.senderId === sessionId)
+                    ) {
+                        return;
+                    }
+                    receipts.push(settlement);
+                    if (settlement.complete) {
+                        receiptWaiters.get(settlement.msgId)?.resolve(settlement);
+                    }
+                },
+                inbox: {
+                    onMessage: async (message) => {
+                        if (sessionId === 'director') {
+                            deliveryWaiters.get(message.id.msgId)?.resolve(message);
+                        }
+                    }
+                }
+            })
+        );
+        onTestFinished(async () => {
+            const outcomes = await Promise.allSettled(endpoints.map((endpoint) => endpoint.close()));
+            const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw toError(failure.reason);
+            }
         });
-        await vi.advanceTimersByTimeAsync(0);
+        const bySession = new Map(endpoints.map((endpoint) => [endpoint.sessionId, endpoint]));
+        for (const endpoint of endpoints) {
+            endpoint.observe(1, room, ['03', '04', '02', 'director', '08']);
+            endpoint.observeOverlay(1);
+            const key = toScopedOverlayId(room);
+            endpoint.groups.set(key, toOriginDirectedSnapshot(endpoint.groups.read(key)!, 'director'));
+            for (const peerId of endpoint.peers.keys()) {
+                endpoint.connect(bySession.get(peerId)!);
+            }
+        }
 
-        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
-            mode: 'leader',
-            expectedRecipientPeerIds: ['d'],
-            confirmedRecipientPeerIds: ['d'],
-            unconfirmedRecipientPeerIds: [],
-            complete: true
-        });
+        const admitted = await Promise.all(messages.map((message) => bySession.get(message.id.senderId)!.multicast.enqueueIfAbsent(message)));
+        expect(admitted.every((result) => result.verdict.kind === 'admitted')).toBe(true);
+        const completed = await Promise.all([
+            ...[...deliveryWaiters.values()].map((waiter) => waiter.promise),
+            ...[...receiptWaiters.values()].map((waiter) => waiter.promise)
+        ]);
+
+        expect(completed).toHaveLength(24);
+        expect(bySession.get('director')!.delivered.map((message) => message.id.msgId).toSorted())
+            .toEqual(messages.map((message) => message.id.msgId).toSorted());
+        expect(endpoints.filter((endpoint) => endpoint.sessionId !== 'director').flatMap((endpoint) => endpoint.delivered)).toEqual([]);
+        const completeReceipts = receipts.filter((settlement) => settlement.kind === 'acknowledgement' && settlement.complete);
+        expect(completeReceipts).toHaveLength(12);
+        for (const receipt of completeReceipts) {
+            expect(receipt).toMatchObject({
+                mode: 'leader',
+                expectedRecipientPeerIds: ['director'],
+                confirmedRecipientPeerIds: ['director'],
+                unconfirmedRecipientPeerIds: [],
+                complete: true
+            });
+        }
+        for (const message of messages) {
+            const copies = endpoints.flatMap((endpoint) => endpoint.sent).filter((copy) => copy.id.msgId === message.id.msgId);
+            expect(copies.length).toBeGreaterThan(0);
+            for (const copy of copies) {
+                expect(copy.id).toEqual(message.id);
+                expect(copy.delivery).toEqual(message.delivery);
+                expect(copy.constraints).toEqual(message.constraints);
+                expect(copy.payload).toEqual(message.payload);
+                expect(copy.targets).toMatchObject({ mode: 'multicast', groupRef: room, recipientPeerIds: ['director'], snapshotVersion: 1 });
+            }
+            const leaderAck = {
+                ackedMsgId: message.id.msgId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId: 'director',
+                carrier: 'rtc'
+            };
+            expect(bySession.get('director')!.sent.map(parseALControlMessage)).toContainEqual({
+                type: 'ack',
+                payload: expect.objectContaining({ ...leaderAck, fromPeerId: 'director', toPeerId: '02', status: 'delivered' })
+            });
+            if (message.id.senderId === '03') {
+                for (const [relay, parent] of [['02', '04'], ['04', '03']]) {
+                    expect(bySession.get(relay)!.sent.map(parseALControlMessage)).toContainEqual({
+                        type: 'ack',
+                        payload: expect.objectContaining({ ...leaderAck, fromPeerId: relay, toPeerId: parent, status: 'forwarded' })
+                    });
+                }
+            }
+            expect(bySession.get(message.id.senderId)!.received.map(parseALControlMessage)).toContainEqual({
+                type: 'ack',
+                payload: expect.objectContaining({ ...leaderAck, toPeerId: message.id.senderId })
+            });
+        }
     });
 
     it.each([{ readyPeerIds: [] }, { readyPeerIds: ['r'] }])(

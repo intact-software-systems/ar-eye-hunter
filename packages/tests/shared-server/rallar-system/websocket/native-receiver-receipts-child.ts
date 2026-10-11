@@ -22,7 +22,7 @@ import {
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
-import { stopNativeReceiptScenario } from './native-admission-test-cleanup.ts';
+import { stopNativeReceiptScenario } from '../../../../../apps/api-v1/test/db/native-admission-test-cleanup.ts';
 import {
     createNativeSessionTestFixture,
     issueNativeWebSocketTicket,
@@ -32,8 +32,9 @@ import {
     writeNativeGroupJoin,
     writeNativeGroupPresence,
     type NativeGroupRequestResult,
+    type NativeGroupSessionFlow,
     type NativeSessionTestFixture
-} from './native-session-test-fixture.ts';
+} from '../../../../../apps/api-v1/test/db/native-session-test-fixture.ts';
 
 const EVENT_TOPIC = 'room.native-receipt-game';
 const EVENT_TYPE = `${EVENT_TOPIC}.event.v1`;
@@ -136,10 +137,24 @@ Deno.test('fourteen automatic receiver ACKs cross native API sockets and complet
                 originPeerId: originSession.sessionId
             });
             peers.push(peer);
-            await connectNativeReceiptPeer(peer, { fixture, baseUrl, groupRef }, index);
+            await peer.socket.connect({ signal: AbortSignal.timeout(45_000) });
             return peer;
         }));
         for (const result of connected) {
+            if (result.status === 'rejected') {
+                throw result.reason;
+            }
+        }
+        const origin = peers.find((peer) => peer.session.sessionId === originSession.sessionId);
+        assert.ok(origin);
+        const setup = { fixture, baseUrl, groupRef };
+        const originFlow = getNativeReceiptRoomFlow(origin, setup, 0);
+        assertNativeReceiptRoomResponse(await writeNativeGroupCreate(originFlow));
+        assertNativeReceiptRoomResponse(await writeNativeGroupJoin(originFlow));
+        const presenceConnections = await Promise.allSettled(
+            peers.map(async (peer, index) => await connectNativeReceiptPeer(peer, setup, index))
+        );
+        for (const result of presenceConnections) {
             if (result.status === 'rejected') {
                 throw result.reason;
             }
@@ -154,8 +169,6 @@ Deno.test('fourteen automatic receiver ACKs cross native API sockets and complet
             presence.map((session) => session.sessionId).sort(),
             sessions.map((session) => session.sessionId).sort()
         );
-        const origin = peers.find((peer) => peer.session.sessionId === originSession.sessionId);
-        assert.ok(origin);
         const subject = createNativeReceiptEvent(originSession.sessionId, groupRef);
         heldAck.setSubject(subject.id.msgId);
         const arrivals = observeNativeReceiptArrivals(peers, expectedAudience);
@@ -212,11 +225,15 @@ Deno.test('fourteen automatic receiver ACKs cross native API sockets and complet
     }
     finally {
         await stopNativeReceiptScenario({
-            releaseDeliveryRegistry: () => registry.releaseAll(),
+            releaseDeliveryRegistry: () => {
+                registry.releaseAll();
+            },
             stopPeers: peers.map((peer) => () => stopNativeReceiptPeer(peer)),
             stopRuntime: (closures, failure) => fixture.stop(closures, failure),
             primaryFailure,
-            reportSecondaryFailures: (failure) => console.error('Native receipt secondary cleanup failures', failure)
+            reportSecondaryFailures: (failure) => {
+                console.error('Native receipt secondary cleanup failures', failure);
+            }
         });
     }
 });
@@ -260,37 +277,40 @@ async function connectNativeReceiptPeer(
     setup: NativeReceiptRoomSetup,
     index: number
 ): Promise<void> {
-    await peer.socket.connect({ signal: AbortSignal.timeout(45_000) });
-    const connection = setup.fixture.runtime.wsQBoxServerService.socket.connections.get(peer.session.sessionId);
-    assert.ok(connection?.isOpen);
-    const flow = {
-        baseUrl: setup.baseUrl,
-        session: peer.session,
-        groupRef: setup.groupRef,
-        generationId: connection.generationId,
-        index
-    };
-    assertNativeReceiptRoomResponse(await writeNativeGroupCreate(flow));
-    assertNativeReceiptRoomResponse(await writeNativeGroupJoin(flow));
+    const flow = getNativeReceiptRoomFlow(peer, setup, index);
     assertNativeReceiptRoomResponse(await writeNativeGroupPresence(flow));
     const presence = await setup.fixture.runtime.groupsRepository.findPresenceSession({
         ...setup.groupRef,
         sessionId: peer.session.sessionId
     });
     assert.ok(presence);
-    assert.equal(presence.generationId, connection.generationId);
+    assert.equal(presence.generationId, flow.generationId);
     assert.equal(presence.status, 'active');
 }
 
+function getNativeReceiptRoomFlow(
+    peer: NativeReceiptPeer,
+    setup: NativeReceiptRoomSetup,
+    index: number
+): NativeGroupSessionFlow {
+    const connection = setup.fixture.runtime.wsQBoxServerService.socket.connections.get(peer.session.sessionId);
+    assert.ok(connection?.isOpen);
+    return {
+        baseUrl: setup.baseUrl,
+        session: peer.session,
+        groupRef: setup.groupRef,
+        generationId: connection.generationId,
+        index
+    };
+}
+
 function assertNativeReceiptRoomResponse(request: NativeGroupRequestResult): void {
-    assert.ok(
-        request.status === (request.command.operation === 'create-group' ? 201 : 200) ||
-            (request.command.operation === 'create-group' && request.status === 409),
+    assert.equal(
+        request.status,
+        request.command.operation === 'create-group' ? 201 : 200,
         `${request.command.request.requestId}: ${JSON.stringify(request.body)}`
     );
-    if (request.status !== 409) {
-        validateAuthoritativeGroupSnapshot(request.body, request.command.scope);
-    }
+    validateAuthoritativeGroupSnapshot(request.body, request.command.scope);
 }
 
 function createNativeReceiptEvent(originPeerId: string, roomRef: GroupRef): ALMessage {
@@ -412,12 +432,9 @@ async function waitBeforeSubjectDeadline<T>(observed: Promise<T>, expiresAtMs: n
         return await Promise.race([
             observed,
             new Promise<never>((_resolve, reject) => {
-                timer = setTimeout(() =>
-                    reject(
-                        new Error(
-                            'Native receiver receipt did not complete within the original 30000 ms subject lifetime'
-                        )
-                    ), Math.max(0, expiresAtMs - Date.now()));
+                timer = setTimeout(() => {
+                    reject(new Error('Native receiver receipt did not complete within the original 30000 ms subject lifetime'));
+                }, Math.max(0, expiresAtMs - Date.now()));
             })
         ]);
     }
@@ -430,7 +447,11 @@ async function stopNativeReceiptPeer(peer: NativeReceiptPeer): Promise<void> {
     const socket = peer.socket.ws;
     const closed = socket === undefined || socket.readyState === WebSocket.CLOSED
         ? Promise.resolve()
-        : new Promise<void>((resolve) => socket.addEventListener('close', () => resolve(), { once: true }));
+        : new Promise<void>((resolve) => {
+            socket.addEventListener('close', () => {
+                resolve();
+            }, { once: true });
+        });
     const failures: Error[] = [];
     try {
         await peer.service.close();
