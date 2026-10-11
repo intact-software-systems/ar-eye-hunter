@@ -686,26 +686,48 @@ describe('Hetzner workflow contracts and effects', () => {
         const prerequisites = steps.slice(0, materializationIndex);
         const setupIndex = prerequisites.findIndex((step) => step.uses?.startsWith('actions/setup-node@') && step.if === undefined);
         expect(setupIndex).toBeGreaterThanOrEqual(0);
-        const installIndex = prerequisites.findIndex((step) => step.run?.includes('npm'));
-        expect(installIndex).toBeGreaterThan(setupIndex);
-        const install = prerequisites[installIndex];
-        expect(install.if).toBeUndefined();
-        if (!install.run) {
-            throw new Error('Runner requires its dependency installation body.');
-        }
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-loader-install-'));
         context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
         const executablePath = path.join(directory, 'npm');
-        await writeFile(executablePath, '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "${OWNED_NPM_ARGS}"\n');
+        await writeFile(executablePath, '#!/usr/bin/env bash\nprintf "%s\\n" "${1:-}" >> "${OWNED_NPM_SUBCOMMANDS}"\n');
         await chmod(executablePath, 0o755);
-        const argsPath = path.join(directory, 'npm-args.txt');
-        await runOwnedTestProcess(context, {
-            executable: 'bash',
-            args: ['-c', install.run],
-            options: { cwd: repoRoot, env: { PATH: `${directory}${path.delimiter}${process.env.PATH ?? ''}`, OWNED_NPM_ARGS: argsPath } }
-        });
-        const installationArgs = (await readFile(argsPath, 'utf8')).trim().split('\n');
-        expect(installationArgs[0]).toBe('ci');
+        const subcommandsPath = path.join(directory, 'npm-subcommands.txt');
+        let installIndex = -1;
+        for (const [index, step] of prerequisites.entries()) {
+            if (!step.run) {
+                continue;
+            }
+            await writeFile(subcommandsPath, '');
+            await runOwnedTestProcess(context, {
+                executable: 'bash',
+                args: ['-c', step.run],
+                options: {
+                    cwd: repoRoot,
+                    env: {
+                        PATH: `${directory}${path.delimiter}${process.env.PATH ?? ''}`,
+                        OWNED_NPM_SUBCOMMANDS: subcommandsPath,
+                        GITHUB_OUTPUT: path.join(directory, 'outputs.txt'),
+                        INPUT_RUN_ID: 'owned-run',
+                        MANIFEST_PATH: path.join(repoRoot, supportedMainlineManifestPaths[0]),
+                        INPUT_AGENT_COUNT: '',
+                        INPUT_ROOM_ID: '',
+                        INPUT_APPLICATION_ID: '',
+                        INPUT_WORKSPACE_ID: '',
+                        INPUT_TERMINAL_TIMEOUT_SECONDS: '',
+                        INPUT_ROLLOUT_BEFORE_RUN: 'true',
+                        INPUT_AGENT_SOURCE: 'hetzner',
+                        INPUT_OPERATOR_PHASE: 'full'
+                    }
+                }
+            });
+            const subcommands = (await readFile(subcommandsPath, 'utf8')).split('\n');
+            if (subcommands.includes('ci')) {
+                expect(step.if).toBeUndefined();
+                installIndex = index;
+                break;
+            }
+        }
+        expect(installIndex).toBeGreaterThan(setupIndex);
         expect(steps[materializationIndex].env?.INPUT_RTC_CAPTURE_MODE).toBe('${{ inputs.rtc_capture_mode }}');
     });
 
