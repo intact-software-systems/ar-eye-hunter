@@ -4,6 +4,7 @@ import type {
     ResourceInboxAttempt,
     ResourceInboxAttemptTelemetry
 } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import { ResourceInboxCommandRejectedError } from '@shared/queuebox/resource-inbox/resource-inbox-command-rejected-error.ts';
 import {
     EntityStatus,
     toResourceEntryWithUpdatedResource,
@@ -254,7 +255,9 @@ export class AppInboxHandlerExecutor {
         await this.transactionWriter.writeComputedTerminalFailure(terminalContext, computed);
         throw new ResourceInboxHandlerEntryError(
             computed.finalizedEntry,
-            input.error
+            input.classification.queueFailure === 'command-rejected'
+                ? new ResourceInboxCommandRejectedError(input.classification.code, input.error)
+                : input.error
         );
     }
 
