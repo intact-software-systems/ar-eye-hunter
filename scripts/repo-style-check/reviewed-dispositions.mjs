@@ -5,6 +5,14 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // This caught/framework boundary immediately normalizes Error.message or
+    // String into response text and derives status only from RequestAuthFailure.
+    // No raw exception reaches domain logic; only this exact owner is reviewed.
+    Object.freeze({
+        path: 'packages/shared-server/http/request-auth-service.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toAuthErrorResponse'
+    }),
     // Ticket HTTP JSON is untrusted until object, property and string checks
     // admit the ticket. Only that checked string leaves this network boundary.
     Object.freeze({

@@ -137,7 +137,7 @@ async function verifyTicketRejection(
     const requestId = `consume-${provenance}`;
     const loggedErrors: Error[] = [];
     const originalConsoleError = console.error;
-    console.error = (...values: unknown[]) => {
+    console.error = (...values) => {
         for (const value of values) {
             if (value instanceof Error) {
                 loggedErrors.push(value);
@@ -177,7 +177,7 @@ async function verifyFailedTicketRead(fixture: TicketRejectionFixture): Promise<
     await fixture.runtime.upsert('auth-sessions:ws-tickets', key, '{"encoded-secret":true}', FUTURE_MS);
     const errors: Error[] = [];
     const originalConsoleError = console.error;
-    console.error = (...values: unknown[]) => {
+    console.error = (...values) => {
         for (const value of values) {
             if (value instanceof Error) {
                 errors.push(value);
