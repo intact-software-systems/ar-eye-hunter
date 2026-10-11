@@ -13,7 +13,6 @@ import {
 } from 'node:fs/promises';
 import { arch, tmpdir } from 'node:os';
 import {
-    dirname,
     join,
     resolve
 } from 'node:path';
@@ -73,11 +72,33 @@ describe('state-write environment capture native image provenance', () => {
             await rm(fixture.directory, { recursive: true, force: true });
         }
     });
-    it('completes a governed descriptor with the unchanged validator and no leftover export', async () => {
+    it('retains and binds the acquired original chain after the public preflight returns', async () => {
+        const fixture = await createCaptureFixture();
+        try {
+            const indexPath = join(fixture.directory, 'image/index.json');
+            await writeFile(indexPath, `\n  ${await readFile(indexPath, 'utf8')}\n`);
+            await repackFixtureArchive({ fixture });
+            await readCaptureStage({ fixture, stage: 'preflight' });
+            await expectRetainedAcquisition({
+                fixture,
+                originals: {
+                    archive: await readFile(fixture.facts.archive),
+                    containerInspection: Buffer.from(`${fixture.facts.containerText}\n`),
+                    imageInspection: Buffer.from(`${fixture.facts.imageText}\n`),
+                    exportIndex: await readFile(indexPath),
+                    selectedManifest: await readFile(join(FIXTURES, 'arm64-manifest.json')),
+                    configuration: await readFile(join(FIXTURES, 'arm64-config.json'))
+                }
+            });
+        }
+        finally {
+            await rm(fixture.directory, { recursive: true, force: true });
+        }
+    });
+    it('completes a governed descriptor with retained originals and the unchanged validator', async () => {
         const fixture = await createCaptureFixture();
         try {
             await readCaptureStage({ fixture, stage: 'preflight' });
-            await expectTemporaryExportsRemoved({ fixture });
             const sidecar = decodeJsonWireText(await readFile(fixture.preflight, 'utf8'));
             expect(sidecar).toMatchObject({
                 imageProof: {
@@ -121,7 +142,63 @@ describe('state-write environment capture native image provenance', () => {
                 record: { image_id: `sha256:${CONFIG}` },
                 imageProof: { store: 'classic' }
             });
-            await expectTemporaryExportsRemoved({ fixture });
+            const facts = toFixtureObject({ value: decodeJsonWireText(await readFile(fixture.factsPath, 'utf8')) });
+            await expectRetainedAcquisition({
+                fixture,
+                originals: {
+                    archive: await readFile(fixture.facts.archive),
+                    containerInspection: Buffer.from(`${facts.containerText}\n`),
+                    imageInspection: Buffer.from(`${facts.imageText}\n`),
+                    exportMetadata: await readFile(join(fixture.directory, 'image/manifest.json')),
+                    configuration: await readFile(join(FIXTURES, 'arm64-config.json'))
+                }
+            });
+        }
+        finally {
+            await rm(fixture.directory, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects an existing acquisition location without changing its bytes or launching an export', async () => {
+        const fixture = await createCaptureFixture();
+        try {
+            const directory = `${fixture.preflight}.acquisition`;
+            await mkdir(directory);
+            const marker = join(directory, 'original.txt');
+            await writeFile(marker, 'previous acquisition');
+            await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow(/EEXIST/);
+            expect(await readFile(marker, 'utf8')).toBe('previous acquisition');
+            await expect(access(fixture.facts.exports)).rejects.toThrow();
+            await expectNoSuccessfulCapture({ fixture });
+        }
+        finally {
+            await rm(fixture.directory, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects repeated capture and preserves the original sidecar and acquisition bytes', async () => {
+        const fixture = await createCaptureFixture();
+        try {
+            await readCaptureStage({ fixture, stage: 'preflight' });
+            const originalSidecar = await readFile(fixture.preflight);
+            const originalArchive = await readFile(`${fixture.preflight}.acquisition/image.tar`);
+            await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow(/EEXIST/);
+            expect(await readFile(fixture.preflight)).toEqual(originalSidecar);
+            expect(await readFile(`${fixture.preflight}.acquisition/image.tar`)).toEqual(originalArchive);
+            expect((await readFile(fixture.facts.exports, 'utf8')).trim().split('\n')).toHaveLength(1);
+        }
+        finally {
+            await rm(fixture.directory, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a pre-existing sidecar without overwriting it', async () => {
+        const fixture = await createCaptureFixture();
+        try {
+            await writeFile(fixture.preflight, 'previous sidecar');
+            await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow(/EEXIST/);
+            expect(await readFile(fixture.preflight, 'utf8')).toBe('previous sidecar');
+            expect(await readFile(`${fixture.preflight}.acquisition/image.tar`)).toEqual(await readFile(fixture.facts.archive));
         }
         finally {
             await rm(fixture.directory, { recursive: true, force: true });
@@ -147,7 +224,7 @@ describe('state-write environment capture native image provenance', () => {
             await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow(
                 /classic configuration bytes must match the native container image identity/
             );
-            await expectTemporaryExportsRemoved({ fixture });
+            await expectNoSuccessfulCapture({ fixture });
         }
         finally {
             await rm(fixture.directory, { recursive: true, force: true });
@@ -167,7 +244,7 @@ describe('state-write environment capture native image provenance', () => {
                 }
             });
             await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow(/actual container selected manifest/);
-            await expectTemporaryExportsRemoved({ fixture });
+            await expectNoSuccessfulCapture({ fixture });
         }
         finally {
             await rm(fixture.directory, { recursive: true, force: true });
@@ -180,7 +257,7 @@ describe('state-write environment capture native image provenance', () => {
             await writeFile(join(fixture.directory, `image/blobs/sha256/${MANIFEST}`), 'tampered manifest');
             await repackFixtureArchive({ fixture });
             await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow(/bytes do not match their descriptor/);
-            await expectTemporaryExportsRemoved({ fixture });
+            await expectNoSuccessfulCapture({ fixture });
         }
         finally {
             await rm(fixture.directory, { recursive: true, force: true });
@@ -213,8 +290,7 @@ describe('state-write environment capture native image provenance', () => {
             }
             await repackFixtureArchive({ fixture });
             await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow();
-            await expectTemporaryExportsRemoved({ fixture });
-            await expect(access(fixture.preflight)).rejects.toThrow();
+            await expectNoSuccessfulCapture({ fixture });
         }
         finally {
             await rm(fixture.directory, { recursive: true, force: true });
@@ -227,7 +303,7 @@ describe('state-write environment capture native image provenance', () => {
             await writeFile(join(fixture.directory, `image/blobs/sha256/${CONFIG}`), 'tampered');
             await repackFixtureArchive({ fixture });
             await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow(/bytes do not match their descriptor/);
-            await expectTemporaryExportsRemoved({ fixture });
+            await expectNoSuccessfulCapture({ fixture });
         }
         finally {
             await rm(fixture.directory, { recursive: true, force: true });
@@ -240,7 +316,7 @@ describe('state-write environment capture native image provenance', () => {
             const manifest = toFixtureObject({ value: decodeJsonWireText(await readFile(join(FIXTURES, 'arm64-manifest.json'), 'utf8')) });
             await writeChangedManifest({ fixture, manifest: { ...manifest, config: { ...toFixtureObject({ value: manifest.config }), size: 10151 } } });
             await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow(/bytes do not match their descriptor/);
-            await expectTemporaryExportsRemoved({ fixture });
+            await expectNoSuccessfulCapture({ fixture });
         }
         finally {
             await rm(fixture.directory, { recursive: true, force: true });
@@ -260,14 +336,14 @@ describe('state-write environment capture native image provenance', () => {
                 manifest: { ...manifest, config: { ...toFixtureObject({ value: manifest.config }), digest: `sha256:${digest}`, size: changed.length } }
             });
             await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow(/configuration bytes must declare the native selected platform/);
-            await expectTemporaryExportsRemoved({ fixture });
+            await expectNoSuccessfulCapture({ fixture });
         }
         finally {
             await rm(fixture.directory, { recursive: true, force: true });
         }
     });
 
-    it.each(['missing', 'duplicate', 'ambiguous', 'malformed'] as const)('rejects %s image metadata and removes temporary exports', async (failure) => {
+    it.each(['missing', 'duplicate', 'ambiguous', 'malformed'] as const)('rejects %s image metadata without a successful sidecar', async (failure) => {
         const fixture = await createCaptureFixture();
         try {
             if (failure === 'missing') {
@@ -290,15 +366,14 @@ describe('state-write environment capture native image provenance', () => {
                 await repackFixtureArchive({ fixture });
             }
             await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow();
-            await expectTemporaryExportsRemoved({ fixture });
-            await expect(access(fixture.preflight)).rejects.toThrow();
+            await expectNoSuccessfulCapture({ fixture });
         }
         finally {
             await rm(fixture.directory, { recursive: true, force: true });
         }
     });
 
-    it.each(['export', 'reader'] as const)('cleans temporary files after native %s failure', async (failure) => {
+    it.each(['export', 'reader'] as const)('retains acquired originals without a successful sidecar after native %s failure', async (failure) => {
         const fixture = await createCaptureFixture();
         try {
             if (failure === 'reader') {
@@ -306,8 +381,16 @@ describe('state-write environment capture native image provenance', () => {
             }
             await writeNativeFacts({ fixture, facts: { ...fixture.facts, exportFailure: failure === 'export' } });
             await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow(new RegExp(`native ${failure} failed`));
-            await expectTemporaryExportsRemoved({ fixture });
-            await expect(access(fixture.preflight)).rejects.toThrow();
+            await expectNoSuccessfulCapture({ fixture });
+            expect(await readFile(`${fixture.preflight}.acquisition/container-inspect.json`, 'utf8')).toBe(`${fixture.facts.containerText}\n`);
+            expect(await readFile(`${fixture.preflight}.acquisition/image-inspect.json`, 'utf8')).toBe(`${fixture.facts.imageText}\n`);
+            if (failure === 'reader') {
+                expect(await readFile(`${fixture.preflight}.acquisition/image.tar`)).toEqual(await readFile(fixture.facts.archive));
+            }
+            else {
+                await expect(access(`${fixture.preflight}.acquisition/image.tar`)).rejects.toThrow();
+            }
+            await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow(/EEXIST/);
         }
         finally {
             await rm(fixture.directory, { recursive: true, force: true });
@@ -455,7 +538,7 @@ describe('state-write environment capture native image provenance', () => {
                 facts: { ...fixture.facts, sqlText: fixture.facts.sqlText.replace('preflight_app_data_store_rows=0', 'preflight_app_data_store_rows=1') }
             });
             await expect(readCaptureStage({ fixture, stage: 'preflight' })).rejects.toThrow(/preflight database is not empty/);
-            await expectTemporaryExportsRemoved({ fixture });
+            await expectNoSuccessfulCapture({ fixture });
         }
         finally {
             await rm(fixture.directory, { recursive: true, force: true });
@@ -623,10 +706,28 @@ async function writeChangedManifest({ fixture, manifest }: { readonly fixture: C
     await repackFixtureArchive({ fixture });
 }
 
-async function expectTemporaryExportsRemoved({ fixture }: { readonly fixture: CaptureFixture; }): Promise<void> {
-    const paths = (await readFile(fixture.facts.exports, 'utf8')).trim().split('\n');
-    for (const path of paths) {
-        await expect(access(path)).rejects.toThrow();
-        await expect(access(dirname(path))).rejects.toThrow();
+async function expectNoSuccessfulCapture({ fixture }: { readonly fixture: CaptureFixture; }): Promise<void> {
+    await expect(access(fixture.preflight)).rejects.toThrow();
+}
+
+async function expectRetainedAcquisition({ fixture, originals }: {
+    readonly fixture: CaptureFixture;
+    readonly originals: Readonly<Record<string, Buffer>>;
+}): Promise<void> {
+    const sidecar = toFixtureObject({ value: decodeJsonWireText(await readFile(fixture.preflight, 'utf8')) });
+    const proof = toFixtureObject({ value: sidecar.imageProof });
+    expect(proof.acquisition).toMatchObject({ directory: `${fixture.preflight}.acquisition` });
+    const acquisition = toFixtureObject({ value: proof.acquisition });
+    const artifacts = toFixtureObject({ value: acquisition.artifacts });
+    expect(Object.keys(artifacts).sort()).toEqual(Object.keys(originals).sort());
+    for (const [name, original] of Object.entries(originals)) {
+        const artifact = toFixtureObject({ value: artifacts[name] });
+        if (typeof artifact.path !== 'string') {
+            throw new TypeError('retained acquisition artifact must identify its original path');
+        }
+        expect(artifact.path.startsWith(`${fixture.preflight}.acquisition/`)).toBe(true);
+        const retained = await readFile(artifact.path);
+        expect(retained).toEqual(original);
+        expect(artifact).toMatchObject({ bytes: retained.length, sha256: createHash('sha256').update(retained).digest('hex') });
     }
 }
