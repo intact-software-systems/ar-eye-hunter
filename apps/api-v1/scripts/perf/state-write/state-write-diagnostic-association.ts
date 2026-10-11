@@ -105,7 +105,8 @@ export function toStateWriteTimingAssociation(
     index: StateWriteDiagnosticAssociationIndex,
     phase: StateWriteDiagnosticPhase
 ): StateWriteDiagnosticAssociation | undefined {
-    if (!OPERATIONS[event.component]?.includes(event.operation) || !['ok', 'error'].includes(event.status)) {
+    const operations = Object.hasOwn(OPERATIONS, event.component) ? OPERATIONS[event.component] : undefined;
+    if (!operations?.includes(event.operation) || !['ok', 'error'].includes(event.status)) {
         return undefined;
     }
     const observingStack = event.serviceId === undefined ? 'unavailable' : phase.serviceIds.indexOf(event.serviceId);

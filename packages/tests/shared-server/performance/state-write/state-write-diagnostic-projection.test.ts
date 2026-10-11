@@ -319,13 +319,19 @@ describe('state-write diagnostic projection', () => {
             serviceId: 'PRIVATE-worker-a',
             operation: component === 'app-inbox' ? 'enqueueAndWaitForResult' : 'transaction'
         };
-        const events = [event, { ...event, requestId: 'PRIVATE-unknown', details: {} }, {
-            ...event,
-            operation: 'PRIVATE-SQL-payload'
-        }];
+        const events = [
+            event,
+            { ...event, requestId: 'PRIVATE-unknown', details: {} },
+            {
+                ...event,
+                operation: 'PRIVATE-SQL-payload'
+            },
+            { ...event, component: 'constructor', details: {} },
+            { ...event, component: 'toString', details: {} }
+        ];
         const result = computeStateWriteDiagnosticPhase({ ...phase, timingEvents: events }, budget, 65_536);
         expect(result.complete).toBe(false);
-        expect(readRecords(result.serialized).at(-1)).toMatchObject({ timing: { total: 3, retained: 0, rejected: 3, truncated: 0 } });
+        expect(readRecords(result.serialized).at(-1)).toMatchObject({ timing: { total: 5, retained: 0, rejected: 5, truncated: 0 } });
         expect(result.serialized).not.toContain('PRIVATE');
         const duplicate = { ...phase, commands: [...phase.commands, phase.commands[0]], timingEvents: [{ ...event, details: {} }] };
         const ambiguousRequest = computeStateWriteDiagnosticPhase(duplicate, budget, 65_536);
