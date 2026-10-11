@@ -13,11 +13,14 @@ import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-t
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
-import type {
-    ALDeliveryCarrierFallback,
-    ALDeliveryDurabilityDowngrade,
-    ALDeliveryRelayRejection,
-    ALDeliveryState
+import {
+    isALDeliveryTerminalState,
+    type ALDeliveryCarrier,
+    type ALDeliveryCarrierFallback,
+    type ALDeliveryDurabilityDowngrade,
+    type ALDeliveryReceiptEvidence,
+    type ALDeliveryRelayRejection,
+    type ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 type MessagesPortKind =
@@ -40,6 +43,12 @@ type PortCheckpoint = 'unsaved' | 'saved' | 'lost';
 
 type PortCheckpointHealth = 'healthy' | 'delayed' | 'failing';
 
+export interface AlmReloadParticipant {
+    readonly role: PortRole;
+    readonly sessionId: string;
+    readonly principalId: string;
+}
+
 export interface PortMessage {
     readonly command: RallarBlackBoxTestMessagesSendCommand;
     readonly msgId: string;
@@ -48,6 +57,10 @@ export interface PortMessage {
     checkpoint: PortCheckpoint | undefined;
     state: ALDeliveryState;
     submitted: boolean;
+    activeCarrier: ALDeliveryCarrier;
+    readonly recipientRoles: readonly PortRole[];
+    deliveredRecipientRoles: readonly PortRole[];
+    receiptEvidence: ALDeliveryReceiptEvidence;
     /** An ordered send the receiver holds back behind a gap: submitted, but handed to no channel yet. */
     buffered: boolean;
     /** The order the receiver's channel saw it in; undefined until it did. */
@@ -177,8 +190,10 @@ export class AlmReloadPorts {
     private entered = Promise.withResolvers<void>();
     private holdNextSleep = false;
     private readonly replacesDocument: boolean;
+    private readonly participants: readonly AlmReloadParticipant[];
 
-    constructor(replacesDocument: boolean) {
+    constructor(replacesDocument: boolean, participants: readonly AlmReloadParticipant[]) {
+        this.participants = [...participants];
         this.replacesDocument = replacesDocument;
         this.receiver = this.createRuntime('receiver');
         this.recipientB = this.createRuntime('recipient-b');
@@ -243,7 +258,9 @@ export class AlmReloadPorts {
     ): RallarBlackBoxTestCommandOutcome | undefined {
         this.settleCheckpoints();
         const document = { origin: 'https://fixture.test', timeOrigin: role === 'sender' ? this.senderDocument : 50 };
-        const session = { clientId: role, sessionId: toPortSessionId(role) };
+        const participant = this.participants.find((participant) => participant.role === role);
+        assert(participant, `${role} is not a participant of this fixture cell`);
+        const session = { clientId: role, sessionId: participant.sessionId };
         switch (command.kind) {
             case 'http.request':
                 return this.requestGroup(role, command);
@@ -265,7 +282,7 @@ export class AlmReloadPorts {
             case 'messages.cancel':
             case 'messages.receipts':
             case 'messages.received':
-                return this.executeMessagesPort(command);
+                return this.executeMessagesPort(role, command);
             case 'close':
                 return { status: 'ok', value: { status: 'closed' } };
             case 'barrier':
@@ -284,7 +301,10 @@ export class AlmReloadPorts {
         }
     }
 
-    private executeMessagesPort(command: PortCommand<MessagesPortKind>): RallarBlackBoxTestCommandOutcome {
+    private executeMessagesPort(
+        role: PortRole,
+        command: PortCommand<MessagesPortKind>
+    ): RallarBlackBoxTestCommandOutcome {
         switch (command.kind) {
             case 'messages.send':
                 return 'replayOnCarrier' in command ? this.replay(command) : this.send(command);
@@ -295,7 +315,7 @@ export class AlmReloadPorts {
             case 'messages.receipts':
                 return this.readReceipts(command);
             case 'messages.received':
-                return this.readReceived(command);
+                return this.readReceived(role, command);
         }
     }
 
@@ -334,11 +354,12 @@ export class AlmReloadPorts {
     private advanceHeldFallback(message: PortMessage): void {
         if (
             !this.handsOverHeldFallback || message.command.carrier !== 'rtc-with-ws-fallback' || message.submitted ||
-            !this.isHeld(message)
+            !this.isHeld(message) || isALDeliveryTerminalState(message.state, message.command.ack ?? 'receiver')
         ) {
             return;
         }
         if (message.carrierFallback === undefined) {
+            message.activeCarrier = 'ws';
             message.carrierFallback = {
                 from: 'rtc',
                 to: 'ws',
@@ -352,11 +373,11 @@ export class AlmReloadPorts {
         message.attemptOutcomes = ['not-ready', 'not-ready'];
     }
 
-    private readReceived(command: PortCommand<'messages.received'>): RallarBlackBoxTestCommandOutcome {
+    private readReceived(role: PortRole, command: PortCommand<'messages.received'>): RallarBlackBoxTestCommandOutcome {
         // A command addressed to the server reaches no member of the room; a buffered one has not reached its channel.
         const arrived = this.messages.filter((message) =>
             message.command.typeId === command.typeId && message.submitted && !message.buffered &&
-            message.command.toPeer !== 'server'
+            message.deliveredRecipientRoles.includes(role)
         );
         this.admitReceiverInbox(arrived);
         const count = arrived.length;
@@ -611,6 +632,7 @@ export class AlmReloadPorts {
         const downgraded = durable && unavailable && command.onStorageUnavailable === 'volatile';
         const cause = checkpointed ? 'checkpoint-lag' : 'quota';
         const rejected = payload.marker === 'bounded-rejection' || capacityRefused || storageRefused;
+        const recipientRoles = resolvePortRecipientRoles(command, this.participants, this.group);
         const message: PortMessage = {
             command,
             msgId: `port-message-${this.messages.length + 1}`,
@@ -618,6 +640,14 @@ export class AlmReloadPorts {
             checkpoint: checkpointed && !storageRefused && !downgraded ? 'unsaved' : undefined,
             state: storageRefused ? 'failed' : rejected ? 'rejected' : payload.seq === 300 ? 'queued' : 'accepted',
             submitted: false,
+            activeCarrier: command.carrier === 'ws' ? 'ws' : 'rtc',
+            recipientRoles,
+            deliveredRecipientRoles: [],
+            receiptEvidence: createInitialPortReceiptEvidence(
+                command,
+                this.participants.filter((participant) => recipientRoles.includes(participant.role)),
+                this.group.owner
+            ),
             buffered: false,
             deliveredIndex: undefined,
             repairAttempts: 0,
@@ -790,7 +820,7 @@ export class AlmReloadPorts {
 
     /** Delivered with an attempt on each carrier; the receiver states its verdict on the WS copy. */
     private handOver(message: PortMessage, handedOver: HandedOverOutcome): void {
-        this.deliver(message);
+        message.activeCarrier = 'ws';
         message.attemptCarriers = ['rtc', 'ws'];
         message.attemptOutcomes = handedOver.attemptOutcomes;
         message.carrierFallback = {
@@ -800,6 +830,7 @@ export class AlmReloadPorts {
             atMs: this.now,
             detail: 'The RTC leg handed the send over to WS.'
         };
+        this.deliver(message);
         this.receiver.recordEvent({
             kind: 'diagnostic',
             topic: 'rallar.browser.alm.inbound_diagnostics',
@@ -821,6 +852,7 @@ export class AlmReloadPorts {
     private acknowledgeByServer(message: PortMessage): void {
         message.submitted = true;
         message.state = 'acknowledged';
+        message.receiptEvidence = toCompletedPortReceiptEvidence(message, ['server-peer']);
     }
 
     /**
@@ -1076,14 +1108,21 @@ export class AlmReloadPorts {
         // S3a: a send that names no ack is receipted by default; only an explicit `none` ends at transport acceptance.
         const receipted = message.command.ack !== 'none';
         message.submitted = true;
-        message.state = message.command.carrier === 'ws' && !receipted ? 'transport-accepted' : 'acknowledged';
-        if (message.command.carrier !== 'ws') {
+        message.state = message.activeCarrier === 'ws' && !receipted ? 'transport-accepted' : 'acknowledged';
+        if (message.activeCarrier === 'rtc') {
             this.admitReceiverAck(message);
         }
         else if (receipted) {
             this.admitServerReceipts(message);
         }
         this.recordReceiverMessage(message);
+        if (receipted) {
+            message.receiptEvidence = toCompletedPortReceiptEvidence(
+                message,
+                this.participants.filter((participant) => message.deliveredRecipientRoles.includes(participant.role))
+                    .map((participant) => participant.sessionId)
+            );
+        }
         this.releaseBuffered(message);
     }
 
@@ -1091,8 +1130,9 @@ export class AlmReloadPorts {
     private recordReceiverMessage(message: PortMessage): void {
         this.deliveries += 1;
         message.deliveredIndex = this.deliveries;
-        const recipients = this.group.left.has('recipient-b') ? [this.receiver] : [this.receiver, this.recipientB];
-        for (const recipient of recipients) {
+        const deliveredRecipientRoles = message.recipientRoles.filter((role) => !this.group.left.has(role));
+        for (const role of deliveredRecipientRoles) {
+            const recipient = role === 'receiver' ? this.receiver : this.recipientB;
             recipient.recordEvent({
                 kind: 'message',
                 connection: 'almConformanceReceiver',
@@ -1102,12 +1142,13 @@ export class AlmReloadPorts {
                         msgId: message.msgId,
                         typeId: message.command.typeId,
                         rosterVersion: message.rosterVersion,
-                        transport: message.command.carrier === 'ws' ? 'ws' : 'rtc',
+                        transport: message.activeCarrier,
                         payload: message.command.payload
                     }
                 }
             });
         }
+        message.deliveredRecipientRoles = deliveredRecipientRoles;
     }
 }
 
@@ -1127,26 +1168,16 @@ function toPortDeliveryObservation(
     handleId: string,
     message: PortMessage | undefined
 ): BlackBoxRallarDeliveryObservation {
-    const acknowledged = message?.state === 'acknowledged' && message.command.ack !== 'none';
-    const addressed = message?.command.toPeer;
-    const isWs = message?.command.carrier === 'ws';
-    const recipient = addressed === 'server'
-        ? 'server-peer'
-        : toPortSessionId(message?.command.recipientPeer ?? 'receiver');
-    const tracksReceipt = message !== undefined && message.command.ack !== 'none';
-    const recipients = tracksReceipt ? [recipient] : [];
     return {
         handleId,
         state: message?.state ?? 'unobservable',
         submitted: message?.submitted ?? false,
-        receiptMode: acknowledged ? message.command.ack === 'group-leader' ? 'leader' : 'receiver' : undefined,
-        confirmedHopPeerIds: acknowledged && !isWs && addressed === undefined ? ['receiver'] : [],
-        unconfirmedHopPeerIds: !acknowledged && message?.submitted && !isWs && addressed === undefined
-            ? ['receiver']
-            : [],
-        expectedRecipientPeerIds: recipients,
-        confirmedRecipientPeerIds: acknowledged ? recipients : [],
-        unconfirmedRecipientPeerIds: acknowledged ? [] : recipients,
+        receiptMode: message?.receiptEvidence.receiptMode,
+        confirmedHopPeerIds: message?.receiptEvidence.confirmedHopPeerIds ?? [],
+        unconfirmedHopPeerIds: message?.receiptEvidence.unconfirmedHopPeerIds ?? [],
+        expectedRecipientPeerIds: message?.receiptEvidence.expectedRecipientPeerIds ?? [],
+        confirmedRecipientPeerIds: message?.receiptEvidence.confirmedRecipientPeerIds ?? [],
+        unconfirmedRecipientPeerIds: message?.receiptEvidence.unconfirmedRecipientPeerIds ?? [],
         attempts: message?.attemptCarriers.length ?? 0,
         attemptCarriers: message?.attemptCarriers ?? [],
         attemptOutcomes: message?.attemptOutcomes ?? [],
@@ -1172,10 +1203,6 @@ function isUnsavedCheckpoint(message: PortMessage): boolean {
     return message.checkpoint === 'unsaved';
 }
 
-function toPortSessionId(role: PortRole): string {
-    return `${role}-stored-session`;
-}
-
 /** Admission reads only these typed facts from the opaque recipe payload. */
 function toAlmReloadAdmissionPayload(
     payload: RallarBlackBoxTestMessagesSendCommand['payload']
@@ -1185,5 +1212,68 @@ function toAlmReloadAdmissionPayload(
         marker: typeof payload.marker === 'string' ? payload.marker : undefined,
         index: typeof payload.index === 'number' ? payload.index : undefined,
         seq: typeof payload.seq === 'number' ? payload.seq : undefined
+    };
+}
+
+function resolvePortRecipientRoles(
+    command: RallarBlackBoxTestMessagesSendCommand,
+    participants: readonly AlmReloadParticipant[],
+    group: PortGroup
+): readonly PortRole[] {
+    if (command.toPeer === 'server') {
+        return [];
+    }
+    return participants.filter((participant) => {
+        const role = participant.role;
+        if (role === 'sender' || group.left.has(role)) {
+            return false;
+        }
+        if (command.toPeer === 'receiver' || command.recipientPeer !== undefined) {
+            return role === (command.toPeer ?? command.recipientPeer);
+        }
+        return command.scope !== 'principal' || participant.principalId === command.principalId;
+    }).map((participant) => participant.role);
+}
+
+function createInitialPortReceiptEvidence(
+    command: RallarBlackBoxTestMessagesSendCommand,
+    recipients: readonly AlmReloadParticipant[],
+    owner: PortRole
+): ALDeliveryReceiptEvidence {
+    const receiptRecipients = command.ack === 'group-leader'
+        ? recipients.filter((participant) => participant.role === owner)
+        : recipients;
+    const expectedRecipientPeerIds = command.ack === 'none'
+        ? []
+        : command.toPeer === 'server'
+        ? ['server-peer']
+        : receiptRecipients.map((participant) => participant.sessionId);
+    return {
+        receiptMode: undefined,
+        confirmedHopPeerIds: [],
+        unconfirmedHopPeerIds: [],
+        expectedRecipientPeerIds,
+        confirmedRecipientPeerIds: [],
+        unconfirmedRecipientPeerIds: expectedRecipientPeerIds
+    };
+}
+
+function toCompletedPortReceiptEvidence(
+    message: PortMessage,
+    acknowledgedPeerIds: readonly string[]
+): ALDeliveryReceiptEvidence {
+    const confirmedRecipientPeerIds = message.receiptEvidence.expectedRecipientPeerIds.filter((peerId) =>
+        acknowledgedPeerIds.includes(peerId)
+    );
+    return {
+        ...message.receiptEvidence,
+        receiptMode: message.command.ack === 'group-leader' ? 'leader' : 'receiver',
+        confirmedHopPeerIds: message.activeCarrier === 'rtc' && message.command.toPeer === undefined
+            ? message.deliveredRecipientRoles.slice(0, 1)
+            : [],
+        confirmedRecipientPeerIds,
+        unconfirmedRecipientPeerIds: message.receiptEvidence.expectedRecipientPeerIds.filter((peerId) =>
+            !confirmedRecipientPeerIds.includes(peerId)
+        )
     };
 }

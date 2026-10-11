@@ -23,7 +23,7 @@ import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schem
 
 import { createAlmConformance2AgentEntry } from '../../rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
 import { createRallarBlackBoxControlService, type RallarBlackBoxControlService } from '../src/control-service.ts';
-import { AlmReloadPorts, type PortMessage } from './support/alm-reload-ports.ts';
+import { AlmReloadPorts, type AlmReloadParticipant, type PortMessage } from './support/alm-reload-ports.ts';
 import {
     assertRight,
     toControlServiceInput,
@@ -34,7 +34,7 @@ import {
 for (const replacesDocument of [true, false]) {
     Deno.test(`unmodified combined ALM runs every checkpoint and trailing scenario through restored runtime evidence (fresh document=${replacesDocument})`, async () => {
         const manifest = createAlmConformance2AgentEntry().manifest;
-        const ports = new AlmReloadPorts(replacesDocument);
+        const ports = new AlmReloadPorts(replacesDocument, createFixtureParticipants(false));
         const input = toControlServiceInput({ now: () => ports.now, runtimeRetentionBounds: { commands: 1, results: 1 } });
         let service = createRallarBlackBoxControlService(input);
         const runId = manifest.controlRunId;
@@ -152,7 +152,7 @@ for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             deadlineMs: 18_000
         }).find((candidate) => candidate.scenarioId === 'durable-takeover');
         assert(scenario?.successor);
-        const ports = new AlmReloadPorts(true);
+        const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
 
         const owner = await ports.sender.execute(toRecipeRun(scenario.sender));
         const held = ports.messages.filter((message) => isJsonRecordValue(message.command.payload) && message.command.payload.marker === 'durable-takeover');
@@ -183,7 +183,7 @@ Deno.test('the rtc-with-ws-fallback owner fails while its held RTC leg never han
         deadlineMs: 18_000
     }).find((candidate) => candidate.scenarioId === 'durable-takeover');
     assert(scenario);
-    const ports = new AlmReloadPorts(true);
+    const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
     ports.handsOverHeldFallback = false;
 
     const owner = await ports.sender.execute(toRecipeRun(scenario.sender));
@@ -225,7 +225,7 @@ for (const carrier of ALM_CONFORMANCE_CARRIERS) {
         const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'checkpoint-recovery');
         const [checkpoint] = toAlmReloadCheckpoints(sender.metadata?.almReloadCheckpoints) ?? [];
         assert(checkpoint);
-        const ports = new AlmReloadPorts(true);
+        const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
 
         const results = [
             await ports.receiver.execute(toRecipeRun(toSegment(receiver, undefined, checkpoint.receiverReadyEnd))),
@@ -246,7 +246,7 @@ for (const carrier of ALM_CONFORMANCE_CARRIERS) {
 
     Deno.test(`the ${carrier} checkpoint-lag recipes lag, refuse, recover and deliver the admitted sends`, async () => {
         const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'checkpoint-lag');
-        const ports = new AlmReloadPorts(true);
+        const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
 
         const owner = await ports.sender.execute(toRecipeRun(sender));
         const received = await ports.receiver.execute(toRecipeRun(receiver));
@@ -264,7 +264,7 @@ for (const carrier of ['ws', 'rtc'] as const) {
     Deno.test(`the ${carrier} flush-on-hide successor restores what the owner's lifecycle flush saved`, async () => {
         const { sender, receiver, successor } = findCatalogScenario(toCatalogInput(carrier), 'flush-on-hide');
         assert(successor);
-        const ports = new AlmReloadPorts(true);
+        const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
 
         const owner = await ports.sender.execute(toRecipeRun(sender));
         ports.flushCheckpoints();
@@ -281,7 +281,7 @@ for (const carrier of ['ws', 'rtc'] as const) {
     Deno.test(`the ${carrier} flush-on-hide successor restores nothing when the owner's page ends unflushed inside the interval`, async () => {
         const { sender, successor } = findCatalogScenario(toCatalogInput(carrier), 'flush-on-hide');
         assert(successor);
-        const ports = new AlmReloadPorts(true);
+        const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
 
         await ports.sender.execute(toRecipeRun(sender));
         ports.replaceSenderDocument();
@@ -295,7 +295,7 @@ for (const carrier of ['ws', 'rtc'] as const) {
 for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
     Deno.test(`the ${carrier} ordering-gap-repair pair holds the second frame, reads the range NACK and delivers all three in order`, async () => {
         const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'ordering-gap-repair');
-        const ports = new AlmReloadPorts(true);
+        const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
 
         const sent = await ports.sender.execute(toRecipeRun(sender));
         const received = await ports.receiver.execute(toRecipeRun(receiver));
@@ -320,7 +320,7 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
 for (const carrier of ALM_CONFORMANCE_CARRIERS) {
     Deno.test(`the ${carrier} repair-exhausted pair keeps the hold, spends the budget and reads the second send skipped`, async () => {
         const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'repair-exhausted');
-        const ports = new AlmReloadPorts(true);
+        const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
 
         const sent = await ports.sender.execute(toRecipeRun(sender));
         const received = await ports.receiver.execute(toRecipeRun(receiver));
@@ -341,7 +341,7 @@ for (const carrier of ['rtc', 'rtc-with-ws-fallback'] as const) {
     Deno.test(`the ${carrier} ordering-resync receiver with a recording owner reads the owner's invocation and its cursor`, async () => {
         const { sender, receiver } = findCatalogScenario({ ...toCatalogInput(carrier), recoveryOwner: 'record' }, 'ordering-resync');
         const connectId = `${receiver.recipeId}-connect`;
-        const ports = new AlmReloadPorts(true);
+        const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
 
         const connected = await ports.receiver.execute(toRecipeRun(toSegment(receiver, undefined, connectId)));
         const sent = await ports.sender.execute(toRecipeRun(sender));
@@ -358,7 +358,7 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
     Deno.test(`the ${carrier} fenced-delivery trio delivers the member's send stamped with the group's roster`, async () => {
         const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'fenced-delivery');
         assert(recipientB);
-        const ports = new AlmReloadPorts(true);
+        const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
 
         const results = [
             await ports.sender.execute(toRecipeRun(sender)),
@@ -370,13 +370,24 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
             assertEquals(result.ok, true, JSON.stringify(result));
         }
         assertEquals(findMarked(ports, 'fenced-delivery').map((message) => [message.submitted, message.rosterVersion]), [[true, 4]]);
+        const [message] = findMarked(ports, 'fenced-delivery');
+        assert(message.command.handleId);
+        const receipt = await ports.sender.execute({
+            kind: 'messages.receipts',
+            commandId: 'fenced-delivery-current-receipt',
+            handleId: message.command.handleId
+        });
+        assert(receipt.ok && isJsonRecordValue(receipt.value));
+        assertEquals(receipt.value.expectedRecipientPeerIds, ['receiver-stored-session', 'recipient-b-stored-session']);
+        assertEquals(receipt.value.confirmedRecipientPeerIds, ['receiver-stored-session', 'recipient-b-stored-session']);
+        assertEquals(receipt.value.unconfirmedRecipientPeerIds, []);
     });
 
     // The sender runs before recipient-b, which leaves on the cue; the receiver reads what followed.
     Deno.test(`the ${carrier} fenced-catch-up trio delivers the floored send once recipient-b's leave moves the roster`, async () => {
         const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'fenced-catch-up');
         assert(recipientB);
-        const ports = new AlmReloadPorts(true);
+        const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
 
         const results = [
             await ports.sender.execute(toRecipeRun(sender)),
@@ -397,7 +408,7 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
 
     Deno.test(`the ${carrier} fenced-catch-up receiver fails while no roster move lifts the floor`, async () => {
         const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'fenced-catch-up');
-        const ports = new AlmReloadPorts(true);
+        const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
         const floored = `${receiver.recipeId}-received-floored`;
         // The arrival never comes, so the wait is shortened to keep the absence of a delivery cheap to prove.
         const shortened = {
@@ -414,7 +425,7 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
     Deno.test(`the ${carrier} fenced-catch-up trio fails when recipient-b owns the group, whose only owner cannot leave`, async () => {
         const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'fenced-catch-up');
         assert(recipientB);
-        const ports = new AlmReloadPorts(true);
+        const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
         ports.group.owner = 'recipient-b';
         const floored = `${receiver.recipeId}-received-floored`;
         // The arrival never comes, so the wait is shortened to keep the absence of a delivery cheap to prove.
@@ -436,7 +447,7 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
 Deno.test('the ws fenced-rejection trio reads the trusted server\'s membership-fenced rejection and delivers nothing', async () => {
     const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput('ws'), 'fenced-rejection');
     assert(recipientB);
-    const ports = new AlmReloadPorts(true);
+    const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
 
     const results = [
         await ports.sender.execute(toRecipeRun(sender)),
@@ -477,4 +488,78 @@ function recordResult(service: RallarBlackBoxControlService, envelope: ControlCo
         }).accepted,
         true
     );
+}
+
+Deno.test('a dropped RTC leg followed by WS delivery confirms logical recipients without an RTC hop', async () => {
+    const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
+    const sent = await ports.sender.execute({
+        kind: 'messages.send',
+        commandId: 'fallback-current-send',
+        handleId: 'fallback-current',
+        carrier: 'rtc-with-ws-fallback',
+        typeId: 'fixture.fallback',
+        payload: { marker: 'fallback-within-deadline' },
+        ack: 'receiver'
+    });
+    assert(sent.ok);
+    const receipt = await ports.sender.execute({
+        kind: 'messages.receipts',
+        commandId: 'fallback-current-receipt',
+        handleId: 'fallback-current'
+    });
+    assert(receipt.ok && isJsonRecordValue(receipt.value));
+    assertEquals(receipt.value.attemptCarriers, ['rtc', 'ws']);
+    assertEquals(receipt.value.attemptOutcomes, ['not-ready', 'sent']);
+    assertEquals(receipt.value.confirmedRecipientPeerIds, ['receiver-stored-session']);
+    assertEquals(receipt.value.confirmedHopPeerIds, []);
+    assertEquals(receipt.value.unconfirmedHopPeerIds, []);
+});
+
+Deno.test('cancelled held fallback retains its terminal evidence through repeated receipt reads', async () => {
+    const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
+    const held = await ports.sender.execute({
+        kind: 'fault.inject',
+        commandId: 'cancel-held-fault',
+        faultId: 'cancel-held-fault',
+        carrier: 'rtc',
+        match: { typeId: 'fixture.cancel' },
+        action: 'drop',
+        remaining: 'until-cleared'
+    });
+    assert(held.ok);
+    const sent = await ports.sender.execute({
+        kind: 'messages.send',
+        commandId: 'cancel-held-send',
+        handleId: 'cancel-held',
+        carrier: 'rtc-with-ws-fallback',
+        typeId: 'fixture.cancel',
+        payload: { marker: 'held-cancellation' },
+        ack: 'receiver'
+    });
+    assert(sent.ok);
+    const cancelled = await ports.sender.execute({ kind: 'messages.cancel', commandId: 'cancel-held-command', handleId: 'cancel-held' });
+    assert(cancelled.ok);
+    for (let index = 0; index < 3; index += 1) {
+        const receipt = await ports.sender.execute({
+            kind: 'messages.receipts',
+            commandId: `cancel-held-receipt-${index}`,
+            handleId: 'cancel-held'
+        });
+        assert(receipt.ok && isJsonRecordValue(receipt.value));
+        assertEquals(receipt.value.state, 'cancelled');
+        assertEquals(receipt.value.submitted, false);
+        assertEquals(receipt.value.carrierFallback, undefined);
+        assertEquals(receipt.value.attemptCarriers, []);
+        assertEquals(receipt.value.confirmedRecipientPeerIds, []);
+    }
+});
+
+function createFixtureParticipants(recipientB: boolean): readonly AlmReloadParticipant[] {
+    const participants: readonly AlmReloadParticipant[] = [
+        { role: 'sender', sessionId: 'sender-stored-session', principalId: 'sender-principal' },
+        { role: 'receiver', sessionId: 'receiver-stored-session', principalId: 'receiver-principal' }
+    ];
+    return recipientB
+        ? [...participants, { role: 'recipient-b', sessionId: 'recipient-b-stored-session', principalId: 'recipient-b-principal' }]
+        : participants;
 }
