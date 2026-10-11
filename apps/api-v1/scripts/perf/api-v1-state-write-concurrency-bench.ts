@@ -1,10 +1,11 @@
-import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
-import { Either } from '@shared/resilience/Either.ts';
 import * as diagnosticFiles from 'node:fs/promises';
 import { normalize } from 'node:path';
 import process from 'node:process';
 import type { Sql } from 'postgres';
+
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
+
 import { queryStateWriteDurableEvidence } from './api-v1-state-write-durable-evidence.ts';
 import { createStateWriteBenchmarkSql } from './create-state-write-benchmark-sql.ts';
 import {
@@ -53,6 +54,7 @@ import {
     StateWriteCommandCapture,
     WORKLOADS
 } from './state-write/state-write-workload.ts';
+
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
 if (import.meta.main) {
     await main();
@@ -60,37 +62,38 @@ if (import.meta.main) {
 
 function validateBenchmarkRunOptions(
     options: StateWriteBenchmarkOptions
-): Either<Error, StateWriteBenchmarkOptions> {
+): readonly Error[] {
+    const issues: Error[] = [];
     if (options.backend !== 'postgres') {
-        return Either.ofLeft(
+        issues.push(
             new Error(
                 `State-write benchmark requires --backend=postgres; received ${options.backend}`
             )
         );
     }
     if (options.warmup !== 1) {
-        return Either.ofLeft(
+        issues.push(
             new Error(
                 `State-write benchmark requires --warmup=1; received ${options.warmup}`
             )
         );
     }
     if (options.runs < 3) {
-        return Either.ofLeft(
+        issues.push(
             new Error(
                 `State-write benchmark requires --runs>=3; received ${options.runs}`
             )
         );
     }
     if (options.concurrency !== STATE_WRITE_REQUIRED_CONCURRENCY) {
-        return Either.ofLeft(
+        issues.push(
             new Error(
                 `State-write benchmark requires --concurrency=${STATE_WRITE_REQUIRED_CONCURRENCY}; ` +
                     `received ${options.concurrency}`
             )
         );
     }
-    return Either.ofRight(options);
+    return issues;
 }
 
 interface BenchmarkConfiguration {
@@ -103,9 +106,9 @@ interface BenchmarkConfiguration {
 
 async function readBenchmarkConfiguration(): Promise<BenchmarkConfiguration> {
     const options = parseBenchmarkOptions(Deno.args);
-    const validation = validateBenchmarkRunOptions(options);
-    if (validation.left) {
-        throw validation.left;
+    const issues = validateBenchmarkRunOptions(options);
+    if (issues.length > 0) {
+        throw issues[0];
     }
     const outputIssues = validatePerfOutputPath(options.out);
     if (outputIssues.length > 0) {

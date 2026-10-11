@@ -1,4 +1,10 @@
-import { isAbsolute, normalize, relative, resolve, sep } from 'node:path';
+import {
+    isAbsolute,
+    normalize,
+    relative,
+    resolve,
+    sep
+} from 'node:path';
 import process from 'node:process';
 
 import {
