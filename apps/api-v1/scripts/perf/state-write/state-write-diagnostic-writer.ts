@@ -1,7 +1,14 @@
-import { Either } from '@shared/resilience/Either.ts';
 import type * as files from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join } from 'node:path';
+import {
+    basename,
+    dirname,
+    isAbsolute,
+    join
+} from 'node:path';
 import process from 'node:process';
+
+import { Either } from '@shared/resilience/Either.ts';
+
 import {
     validateStateWriteOutputDestinations,
     type StateWriteDiagnosticConfiguration

@@ -1,5 +1,6 @@
 import * as files from 'node:fs/promises';
 import { dirname } from 'node:path';
+
 import type { StateWriteBenchmarkArtifact } from './api-v1-state-write-benchmark-artifact.ts';
 import type { StateWriteDiagnosticStatus, StateWriteDiagnosticWriter } from './state-write-diagnostic-writer.ts';
 
