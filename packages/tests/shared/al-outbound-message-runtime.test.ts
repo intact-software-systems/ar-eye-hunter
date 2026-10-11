@@ -446,6 +446,8 @@ describe('ALOutboundMessageRuntime', () => {
             })
         });
 
+        onTestFinished(() => sendGate.resolve());
+
         const enqueue = runtime.enqueueIfAbsent(createOutboundMessage('msg-web-lock-drain'));
         await waitUntil(() => events.includes('send-start'));
 
@@ -486,6 +488,11 @@ describe('ALOutboundMessageRuntime', () => {
                     preparedMessages: [{ kind: 'send', resourceId: msg.route.resourceId }]
                 };
             }
+        });
+
+        onTestFinished(() => {
+            firstGate.resolve();
+            secondGate.resolve();
         });
 
         const first = runtime.enqueueIfAbsent(createOutboundMessage('msg-drain-first'));
@@ -1319,6 +1326,8 @@ describe('ALOutboundMessageRuntime', () => {
                 ]
             })
         });
+
+        onTestFinished(() => sendCompleted.resolve());
 
         const enqueue = enqueueOutboundOrThrow(runtime, msg);
         await sendStarted.promise;

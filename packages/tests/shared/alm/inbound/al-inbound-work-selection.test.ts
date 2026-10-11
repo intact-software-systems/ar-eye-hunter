@@ -2,10 +2,11 @@ import '../../../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -68,9 +69,11 @@ const ROTATION_ROUND_LIMIT = 16;
 /** Rows that are not due yet: with a commit's own row they fill three NEW pages. */
 const WAITING_NEW_ROWS = 40;
 
-afterEach(() => {
-    vi.restoreAllMocks();
-});
+beforeEach(() =>
+    onTestFinished(() => {
+        vi.restoreAllMocks();
+    })
+);
 
 describe('ALInboundWorkSelector readiness', () => {
     it('advertises no readiness from a batch that claimed nothing', async () => {
@@ -425,6 +428,8 @@ describe('ALInboundWorkSelector claim order', () => {
             }
         });
 
+        onTestFinished(() => releaseHeld?.());
+
         for (let round = 0; round < ROTATION_ROUND_LIMIT && !heldEntered; round += 1) {
             await fixture.queueEngine.executeOnce();
             await new Promise((resolve) => setTimeout(resolve, 0));
@@ -467,6 +472,7 @@ describe('ALInboundWorkSelector claim order', () => {
                     await held;
                 }
             });
+            onTestFinished(() => releaseHeld?.());
             const wake = vi.spyOn(fixture.queueEngine, 'wake');
             await fixture.runtime.ready();
             wake.mockClear();

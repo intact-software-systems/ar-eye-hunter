@@ -2,6 +2,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -261,6 +262,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         });
         const commands = (await harness.queueEntries()).filter((entry) => entry.key.resourceId === 'shared-graph-request');
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         registerApplicationQueueReaderTasks({
             engine,
             inboxQueueReader: harness.reader,

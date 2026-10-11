@@ -1,10 +1,11 @@
 import '../../../setup-browser-indexeddb.ts';
 
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -31,9 +32,11 @@ import {
 import type { OutboundTestPayload } from '../outbound-test-payload.ts';
 import { recordIndexedDbTransactions } from '../record-indexed-db-transactions.ts';
 
-afterEach(() => {
-    vi.restoreAllMocks();
-});
+beforeEach(() =>
+    onTestFinished(() => {
+        vi.restoreAllMocks();
+    })
+);
 
 const GUARDS_NAMESPACE = 'send-guards';
 const STATE_STORE_NAME = 'entries';

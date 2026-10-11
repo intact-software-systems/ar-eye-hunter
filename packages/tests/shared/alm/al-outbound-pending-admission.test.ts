@@ -1,7 +1,8 @@
 import {
-    afterEach,
+    beforeEach,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -21,10 +22,12 @@ import {
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
-afterEach(() => {
-    vi.restoreAllMocks();
-    vi.useRealTimers();
-});
+beforeEach(() =>
+    onTestFinished(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    })
+);
 
 it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict through %s restart with one payload and the captured plan', async (kind) => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -103,6 +106,7 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
         });
     const restartedStore = createALOutboundAdmissionStore({ ...options, backend: restartedBackend });
     const engine = new InboxOutboxEngine();
+    onTestFinished(() => engine.stop());
     const sent: string[] = [];
     const restarted = createDefaultOutboundTestRuntime({
         stores: { admissionStore: restartedStore, workQueue: restartedBackend.workQueue },

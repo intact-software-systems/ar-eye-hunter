@@ -449,7 +449,12 @@ async function createClientIngressFixture(
     };
 }
 
-async function connectClientIngressSocket(beforeMessage: OnWebSocketMessageCallback | undefined) {
+interface ClientIngressConnection {
+    readonly client: JsonWebSocketClient;
+    readonly socket: TestWebSocket;
+}
+
+async function connectClientIngressSocket(beforeMessage: OnWebSocketMessageCallback | undefined): Promise<ClientIngressConnection> {
     vi.stubGlobal('WebSocket', TestWebSocket);
     const client = new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort());
     if (beforeMessage) {

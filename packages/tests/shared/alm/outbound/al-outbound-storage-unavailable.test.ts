@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
@@ -23,9 +23,11 @@ import {
 const QUOTA = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
 
 describe('outbound storage unavailability', () => {
-    afterEach(() => {
-        vi.unstubAllGlobals();
-    });
+    beforeEach(() =>
+        onTestFinished(() => {
+            vi.unstubAllGlobals();
+        })
+    );
 
     // The failed transaction wrote nothing, so the send settles typed; the next commit is a recovery point.
     it('answers a send whose commit hits the quota storage-unavailable, then healthy at the next commit', async () => {
@@ -99,6 +101,7 @@ describe('outbound storage unavailability', () => {
         const events: ALStorageEvent[] = [];
         const observer = createCountingIndexedDbOperationObserver();
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const volatileStores = createVolatileOutboundTestStores();
         const runtime = createDefaultOutboundTestRuntime({
             queueEngine: engine,
