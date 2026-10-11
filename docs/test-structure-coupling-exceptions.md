@@ -86,6 +86,22 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
+      "id": "hetzner-original-scale-serialized-arrival-isolation",
+      "domain": "Serialized room matching for unchanged ALM traffic",
+      "owner": "Rallar operations maintainers",
+      "summary": "The original fifteen-agent manifest accepts its outgoing effective-room traffic in preserved and isolated modes while excluding unrelated and original-room traffic after isolation.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#keeps original fifteen-agent serialized arrivals consistent with isolated outgoing traffic",
+      "coverageRelation": "The test runs the actual CLI on the original hashed fixture, expands real runtime placeholders and result references, and uses the actual wait matcher for 86 arrivals per mode with independent room/session literals, wrong-room/type/sender/sequence controls and source byte preservation."
+    },
+    {
+      "id": "hetzner-serialized-source-room-refusal",
+      "domain": "Serialized wait scope admission before filesystem effects",
+      "owner": "Rallar operations maintainers",
+      "summary": "A source wait fragment naming a room outside the source GroupRef is rejected before output or record creation and preserves its test-owned input bytes.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#rejects a serialized source room mismatch before output writes",
+      "coverageRelation": "The test independently appends a wrong-room partial matcher to a valid fixture, invokes the actual CLI, checks the room-specific diagnostic and complete directory inventory, and compares the original input bytes after refusal."
+    },
+    {
       "id": "alm-frozen-full-stack-observation-input",
       "domain": "Frozen ALM full-stack observation workload",
       "owner": "Rallar Black Box maintainers",
@@ -4194,6 +4210,50 @@ moved or changed test.
   ],
   "entries": [
     {
+      "id": "test-structure-coupling-feb9d2bd497981ef",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
+      "kind": "production-source-read",
+      "contract": "hetzner-materializer-rename-refusal-preserves-input",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar operations maintainers",
+      "rationale": "Reads the test-owned valid input after actual CLI rename refusal and compares it with independently written source text, proving input preservation alongside destination preservation and temporary cleanup.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#removes its atomic temporary after rename refusal while preserving the existing destination"
+    },
+    {
+      "id": "test-structure-coupling-98f26fa7bd7adf53",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
+      "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar operations maintainers",
+      "rationale": "Acquires the authored 05a manifest bytes before two actual CLI executions; the independently captured input supplies the later exact source-preservation comparison.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+    },
+    {
+      "id": "test-structure-coupling-4777071ecb48b051",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
+      "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar operations maintainers",
+      "rationale": "Re-reads the same authored 05a JSON manifest after CLI execution and compares it with the independently acquired input bytes alongside repeated output and record equality.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+    },
+    {
+      "id": "test-structure-coupling-daffd5843912e07c",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
+      "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow--rejects-an-executable-command-scoped-outside-the-source-manifest",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar operations maintainers",
+      "rationale": "Reads the canonical smoke JSON fixture before independently injecting room, marked-request and canonical-path scope violations; the actual child diagnostic must identify each violation.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#rejects an executable command scoped outside the source manifest group"
+    },
+    {
       "id": "test-structure-coupling-108bf4e4b3f9ad57",
       "path": "tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts",
       "kind": "production-source-read",
@@ -4824,12 +4884,12 @@ moved or changed test.
       "id": "test-structure-coupling-50e937a698c474eb",
       "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--preserves-a-parallel-label-that-happens-to-equal-the-source-room",
+      "contract": "hetzner-original-scale-serialized-arrival-isolation",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Loads the fully validated source fixture consumed by the real materializer child; independent output assertions distinguish the parallel label from executable scope.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#preserves a parallel label that happens to equal the source room"
+      "rationale": "Decodes the same original fifteen-agent fixture used by the CLI; its commands supply corresponding outgoing traffic and unchanged policies for real matcher evaluation.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#keeps original fifteen-agent serialized arrivals consistent with isolated outgoing traffic"
     },
     {
       "id": "test-structure-coupling-3f87efb9ffdb8ee2",
@@ -4857,12 +4917,12 @@ moved or changed test.
       "id": "test-structure-coupling-222daf3d9786f3ed",
       "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
-      "contract": "hetzner-materializer-null-refusal-preserves-input",
+      "contract": "hetzner-original-scale-serialized-arrival-isolation",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Reads the test-owned null input after actual CLI validation refusal and compares it with literal null bytes, proving refusal preserves the input independently of the diagnostic and absent output artifacts.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#refuses null source as validation before materialization effects"
+      "rationale": "Reads the checked-in original fifteen-agent JSON bytes before CLI execution; its fixed digest and later exact byte comparison bind the actual workload without depending on implementation text.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#keeps original fifteen-agent serialized arrivals consistent with isolated outgoing traffic"
     },
     {
       "id": "test-structure-coupling-03bcfb46477d3a40",
@@ -4879,45 +4939,45 @@ moved or changed test.
       "id": "test-structure-coupling-f27c417734abdf55",
       "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
-      "contract": "hetzner-materializer-rename-refusal-preserves-input",
+      "contract": "hetzner-original-scale-serialized-arrival-isolation",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Reads the test-owned valid input after actual CLI rename refusal and compares it with the independently written source text, proving input preservation in addition to destination preservation and atomic temporary cleanup.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#removes its atomic temporary after rename refusal while preserving the existing destination"
+      "rationale": "Re-reads the original fifteen-agent source after preserved and isolated CLI executions and compares it with its independently acquired bytes.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#keeps original fifteen-agent serialized arrivals consistent with isolated outgoing traffic"
     },
     {
       "id": "test-structure-coupling-006aa8cedfed3b9a",
       "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
+      "contract": "hetzner-serialized-source-room-refusal",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Acquires the authored 05a manifest bytes before actual CLI execution; the same path is consumed twice and the independently captured bytes supply the later source-preservation comparison.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+      "rationale": "Reads the test-created wrong-room source after actual validation refusal; exact authored byte equality proves refusal preserves input alongside absence of output artifacts.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#rejects a serialized source room mismatch before output writes"
     },
     {
       "id": "test-structure-coupling-911706494df90df1",
       "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
+      "contract": "hetzner-materializer-null-refusal-preserves-input",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Re-reads the same authored 05a manifest after actual CLI execution and compares it byte-for-byte with the independently acquired pre-execution input, proving source preservation alongside repeated output and record equality.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+      "rationale": "Reads the test-owned null input after actual CLI validation refusal and compares it with literal null bytes, proving refusal preserves input independently of the diagnostic and absent output artifacts.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#refuses null source as validation before materialization effects"
     },
     {
       "id": "test-structure-coupling-49b2eb646cbcf30e",
       "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--rejects-an-executable-command-scoped-outside-the-source-manifest",
+      "contract": "hetzner-distributed-workflow--preserves-a-parallel-label-that-happens-to-equal-the-source-room",
       "disposition": "durable-boundary",
-      "boundary": "security",
+      "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Reads the canonical source fixture before independently injecting three executable scope violations; the real child stderr must identify each violation.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#rejects an executable command scoped outside the source manifest group"
+      "rationale": "Loads the fully validated composite JSON fixture consumed by the real materializer child; independent output assertions distinguish the parallel label from executable scope.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#preserves a parallel label that happens to equal the source room"
     },
     {
       "id": "test-structure-coupling-2fe7626b3fa35573",

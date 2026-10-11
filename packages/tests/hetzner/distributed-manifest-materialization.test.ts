@@ -18,10 +18,20 @@ import {
 } from 'vitest';
 import type { TestContext } from 'vitest';
 
+import { isRallarBlackBoxTestMessagesSendCommand } from '../../shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
+import { replaceCommandPlaceholders } from '../../shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
 import { decodeDistributedRunManifest, toDistributedRunManifestValidationText } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { RallarBlackBoxDistributedGroupRef, RallarBlackBoxDistributedRunManifest } from '../../shared-test/rallar-bb-test/distributed-run.ts';
+import { toLoopChildCommand } from '../../shared-test/rallar-bb-test/loop/to-loop-child-command.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestEvent,
+    RallarBlackBoxTestResult
+} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { isJsonRecordValue, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { resolveWaitMatchResultReferences } from '../../shared-test/rallar-bb-test/wait/resolve-wait-match-result-references.ts';
+import { resolveLatestWaitEvent } from '../../shared-test/rallar-bb-test/wait/wait-event-match.ts';
 import type { RtcSignalingDiagnostics } from '../../shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import { runOwnedTestProcess, type OwnedTestProcessOutcome } from './owned-test-process.ts';
@@ -268,7 +278,293 @@ async function materializeCaptureManifest(context: TestContext, input: CaptureMa
     };
 }
 
+function toNestedMaterializationCommands(commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestCommand[] {
+    return commands.flatMap((command) => {
+        const children = command.kind === 'parallel'
+            ? command.groups.flatMap((group) => group.commands)
+            : command.kind === 'loop'
+            ? command.commands
+            : [];
+        return [command, ...toNestedMaterializationCommands(children)];
+    });
+}
+
+function createMaterializationReferenceResult(commandId: string, value: object): RallarBlackBoxTestResult {
+    return {
+        commandId,
+        kind: 'messages.receipts',
+        status: 'ok',
+        ok: true,
+        startedAtEpochMs: 1802088000000,
+        endedAtEpochMs: 1802088000000,
+        durationMs: 0,
+        value
+    };
+}
+
 describe('Hetzner materialization contracts and effects', () => {
+    it('keeps original fifteen-agent serialized arrivals consistent with isolated outgoing traffic', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-scoped-traffic-materialization-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const sourcePath = path.join(repoRoot, 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json');
+        const sourceText = await readFile(sourcePath, 'utf8');
+        const source = await readManifest(sourcePath);
+        const sourceCommands = source.recipes.flatMap((selection) => {
+            if (!selection.recipe) {
+                throw new Error('Original scale fixture requires inline recipes.');
+            }
+            return toNestedMaterializationCommands(selection.recipe.commands);
+        });
+        const receiptId = 'alm-scale-director-traffic:g1:workload:c1:alm-scale-director-window:g1:commands:c3:alm-scale-director-start-receipt';
+        const playerSessions = Array.from({ length: 14 }, (_, index) => `independent-player-session-${index + 1}`);
+        const directorSession = 'independent-director-session';
+        const resultCache = {
+            [receiptId]: createMaterializationReferenceResult(receiptId, { expectedRecipientPeerIds: playerSessions }),
+            'alm-scale-player-ready-status': createMaterializationReferenceResult('alm-scale-player-ready-status', {
+                directorStatus: { appointment: { sessionId: directorSession } }
+            })
+        };
+
+        for (
+            const mode of [
+                { agentSource: 'external', roomId: 'hetzner-headless-room', isolationMode: 'preserved' },
+                {
+                    agentSource: 'hetzner',
+                    roomId: 'hetzner-run-4dc3addcb02f1780025a0592507e5cc03d8d279a98f0ae363e062fceeff4870f',
+                    isolationMode: 'isolated'
+                }
+            ] as const
+        ) {
+            const outputPath = path.join(directory, `${mode.agentSource}.json`);
+            const recordPath = path.join(directory, `${mode.agentSource}-record.json`);
+            await runMaterializer(context, {
+                ...materializerInvocationDefaults,
+                sourcePath,
+                outputPath,
+                recordPath,
+                agentSource: mode.agentSource,
+                operatorPhase: 'full',
+                controlRunId: 'alm-v1c-task47-15-20261011T105041Z',
+                distributedRunId: 'dist-alm-v1c-task47-15-20261011T105041Z',
+                workflowRunId: '38133404936',
+                workflowRunAttempt: '1',
+                rtcCaptureMode: 'off'
+            });
+            const manifest = await readManifest(outputPath);
+            expect(manifest.group).toEqual({ applicationId: 'rallar-server', workspaceId: 'default', groupId: mode.roomId });
+            expect(manifest.groupAssertions).toEqual(source.groupAssertions);
+            expect(JSON.parse(await readFile(recordPath, 'utf8'))).toMatchObject({
+                isolationMode: mode.isolationMode,
+                sourceManifestSha256: '43db26dfab5a32b28f12b9d34db3be32b071a08139eee57f450807109072ecd3'
+            });
+            const commands = manifest.recipes.flatMap((selection) => {
+                if (!selection.recipe) {
+                    throw new Error('Materialized scale fixture requires inline recipes.');
+                }
+                return toNestedMaterializationCommands(selection.recipe.commands);
+            });
+            const waits = commands.filter((command) => command.kind === 'wait' && command.match.payloadPath === 'data.payload');
+            expect(waits.map((command) => command.commandId)).toEqual([
+                ...Array.from({ length: 14 }, (_, index) => `alm-scale-director-player-${index + 1}-arrival`),
+                'alm-scale-player-started-arrival',
+                'alm-scale-player-ended-arrival'
+            ]);
+            for (const [index, wait] of waits.entries()) {
+                if (wait.kind !== 'wait') {
+                    throw new Error('Traffic arrival must remain a wait command.');
+                }
+                const original = sourceCommands.find((command) => command.commandId === wait.commandId);
+                if (original?.kind !== 'wait') {
+                    throw new Error('Traffic wait must retain its source command identity.');
+                }
+                expect({ ...wait, match: { ...wait.match, contains: original.match.contains } }).toEqual(original);
+                expect(wait.match.contains?.match(/\{[^{}]+\}/g)).toEqual(original.match.contains?.match(/\{[^{}]+\}/g));
+                expect(wait.match.contains?.match(/match:hetzner-headless-room:1802088000000:60000/g)).toEqual(
+                    original.match.contains?.match(/match:hetzner-headless-room:1802088000000:60000/g)
+                );
+                for (const sequence of index < 14 ? [1, 2, 3, 4, 5, 6] : [index === 14 ? 1 : 2]) {
+                    const sendId = index < 14 ? `alm-scale-player-shot-${sequence}-send` : `alm-scale-director-${index === 14 ? 'started' : 'ended'}-send`;
+                    const send = commands.find((command) => command.commandId === sendId);
+                    if (!send || !isRallarBlackBoxTestMessagesSendCommand(send)) {
+                        throw new Error(`Missing corresponding authored outgoing traffic: ${sendId}`);
+                    }
+                    const originalSend = sourceCommands.find((command) => command.commandId === sendId);
+                    if (
+                        !originalSend || !isRallarBlackBoxTestMessagesSendCommand(originalSend) ||
+                        !isJsonRecordValue(send.payload) || !isJsonRecordValue(send.payload.payload) ||
+                        !isJsonRecordValue(originalSend.payload) || !isJsonRecordValue(originalSend.payload.payload)
+                    ) {
+                        throw new Error('Traffic preservation requires the complete original outgoing envelopes.');
+                    }
+                    expect({ ...send, roomRef: originalSend.roomRef, payload: originalSend.payload }).toEqual(originalSend);
+                    expect(send.roomRef).toEqual({ applicationId: 'rallar-server', workspaceId: 'default', groupId: mode.roomId });
+                    expect({
+                        ...send.payload,
+                        roomId: originalSend.payload.roomId,
+                        payload: { ...send.payload.payload, roomId: originalSend.payload.payload.roomId }
+                    }).toEqual(originalSend.payload);
+                    const payload = replaceCommandPlaceholders(send.payload, {
+                        session: {
+                            clientId: 'independent-client',
+                            accessToken: 'test-placeholder',
+                            username: 'Independent player',
+                            sessionId: index < 14 ? playerSessions[index] : directorSession,
+                            expiresAtEpochMs: 1802088060000
+                        },
+                        config: undefined,
+                        wsTicket: undefined
+                    });
+                    if (!isJsonRecordValue(payload) || !isJsonRecordValue(payload.payload)) {
+                        throw new Error('Outgoing scale traffic requires its complete relay and game envelope.');
+                    }
+                    expect(payload.roomId).toBe(mode.roomId);
+                    expect(payload.payload.roomId).toBe(mode.roomId);
+                    const child = toLoopChildCommand({
+                        template: wait,
+                        context: { loopCommandId: 'arrival-test', index: sequence - 1, iteration: sequence, elapsedMs: 0, commandIndex: index }
+                    });
+                    if (child.kind !== 'wait') {
+                        throw new Error('Runtime loop expansion must retain the wait contract.');
+                    }
+                    const match = resolveWaitMatchResultReferences(child.match, resultCache).fold(({ reference }) => {
+                        throw new Error(`Unresolved fixture traffic reference: ${reference}`);
+                    }, (resolved) => resolved);
+                    const event: RallarBlackBoxTestEvent = {
+                        eventId: `${wait.commandId}-${sequence}`,
+                        kind: 'message',
+                        topic: 'rallar.messages.received',
+                        atEpochMs: 1802088060000,
+                        connection: index < 14 ? 'alm-scale-director' : 'alm-scale-player',
+                        payload: { data: { typeId: send.typeId, payload } }
+                    };
+                    for (const wrongRoomId of mode.agentSource === 'hetzner' ? ['wrong-room', 'hetzner-headless-room'] : ['wrong-room']) {
+                        const wrongRoom = {
+                            ...event,
+                            payload: {
+                                data: {
+                                    typeId: send.typeId,
+                                    payload: { ...payload, roomId: wrongRoomId, payload: { ...payload.payload, roomId: wrongRoomId } }
+                                }
+                            }
+                        };
+                        expect.soft(resolveLatestWaitEvent([wrongRoom], match), `${mode.isolationMode} ${wait.commandId}: exclude ${wrongRoomId}`)
+                            .toBeUndefined();
+                    }
+                    for (
+                        const altered of [
+                            { ...payload, typeId: 'wrong-type' },
+                            { ...payload, payload: { ...payload.payload, senderId: 'wrong-sender' } },
+                            { ...payload, payload: { ...payload.payload, seq: sequence + 1 } }
+                        ]
+                    ) {
+                        expect.soft(resolveLatestWaitEvent([{ ...event, payload: { data: { typeId: send.typeId, payload: altered } } }], match))
+                            .toBeUndefined();
+                    }
+                    expect.soft(resolveLatestWaitEvent([event], match), `${mode.isolationMode} ${wait.commandId} sequence ${sequence}: effective room arrival`)
+                        .toEqual(event);
+                }
+            }
+            const displayNames = commands.flatMap((command) =>
+                command.kind === 'http.request' && isJsonRecordValue(command.request.body) && typeof command.request.body.displayName === 'string'
+                    ? [command.request.body.displayName]
+                    : []
+            );
+            expect(displayNames).toEqual(['hetzner-headless-room', 'hetzner-headless-room']);
+            if (mode.agentSource === 'external') {
+                expect(manifest.recipes).toEqual(source.recipes);
+            }
+        }
+        expect(await readFile(sourcePath, 'utf8')).toBe(sourceText);
+    });
+
+    it.for(['preserved', 'explicit'] as const)('preserves serialized fragment syntax and opaque text with $0 scope', async (mode, context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-serialized-room-fragment-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const fixture = await readCaptureManifestFixture({ groupId: 'off', captureMode: 'off' });
+        const contains = String
+            .raw`{"roomId" : "\u006f\u0066\u0066","matchId":"match:off:fixture","note":"{\"roomId\":\"off\"}","seq":{loop.iteration},"payload":{"roomId":"off",`;
+        const source = {
+            ...fixture,
+            metadata: { ...fixture.metadata, contains },
+            recipes: fixture.recipes.map((selection) => {
+                if (!selection.recipe) {
+                    throw new Error('Serialized fragment fixture requires an inline recipe.');
+                }
+                return {
+                    ...selection,
+                    recipe: {
+                        ...selection.recipe,
+                        commands: [...selection.recipe.commands, {
+                            kind: 'wait' as const,
+                            commandId: 'serialized-room-arrival',
+                            match: { kind: 'message' as const, payloadPath: 'data.payload', contains }
+                        }]
+                    }
+                };
+            })
+        };
+        const sourcePath = path.join(directory, 'source.json');
+        const outputPath = path.join(directory, 'output.json');
+        const recordPath = path.join(directory, 'record.json');
+        const sourceText = `${JSON.stringify(source, null, 2)}\n`;
+        await writeFile(sourcePath, sourceText);
+        await runMaterializer(context, {
+            ...materializerInvocationDefaults,
+            sourcePath,
+            outputPath,
+            recordPath,
+            agentSource: 'external',
+            roomId: mode === 'explicit' ? 'quote"slash\\room' : ''
+        });
+        const output = await readManifest(outputPath);
+        const wait = output.recipes[0].recipe?.commands.at(-1);
+        if (wait?.kind !== 'wait') {
+            throw new Error('Serialized fragment must retain its wait command.');
+        }
+        expect(wait.match.contains).toBe(
+            mode === 'explicit'
+                ? String
+                    .raw`{"roomId" : "quote\"slash\\room","matchId":"match:off:fixture","note":"{\"roomId\":\"off\"}","seq":{loop.iteration},"payload":{"roomId":"quote\"slash\\room",`
+                : contains
+        );
+        expect(output.metadata?.contains).toBe(contains);
+        expect(await readFile(sourcePath, 'utf8')).toBe(sourceText);
+    });
+
+    it('rejects a serialized source room mismatch before output writes', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-serialized-room-mismatch-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const fixture = await readCaptureManifestFixture({ groupId: 'off', captureMode: 'off' });
+        const source = {
+            ...fixture,
+            recipes: fixture.recipes.map((selection) => {
+                if (!selection.recipe) {
+                    throw new Error('Serialized mismatch fixture requires an inline recipe.');
+                }
+                return {
+                    ...selection,
+                    recipe: {
+                        ...selection.recipe,
+                        commands: [...selection.recipe.commands, {
+                            kind: 'wait' as const,
+                            commandId: 'wrong-room-arrival',
+                            match: { kind: 'message' as const, contains: '{"roomId":"wrong-room","seq":{loop.iteration},' }
+                        }]
+                    }
+                };
+            })
+        };
+        const sourcePath = path.join(directory, 'source.json');
+        const outputPath = path.join(directory, 'output.json');
+        const recordPath = path.join(directory, 'record.json');
+        const sourceText = `${JSON.stringify(source, null, 2)}\n`;
+        await writeFile(sourcePath, sourceText);
+        await expect(runMaterializer(context, { ...materializerInvocationDefaults, sourcePath, outputPath, recordPath }))
+            .rejects.toMatchObject({ stderr: expect.stringContaining('contains serialized room "wrong-room"; expected "off"') });
+        expect((await readdir(directory)).sort()).toEqual(['source.json']);
+        expect(await readFile(sourcePath, 'utf8')).toBe(sourceText);
+    });
+
     it('refuses null source as validation before materialization effects', async (context) => {
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-materializer-null-source-'));
         context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
