@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
@@ -44,8 +45,7 @@ import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
-import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
-import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
+import { createOutboundRuntimeWithWorkTask, drainEngine, runOutboundWorkTask } from './alm/outbound-runtime-test-fixture.ts';
 import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 interface CapturedRtcChannel extends QRtcDataChannel {
@@ -53,10 +53,12 @@ interface CapturedRtcChannel extends QRtcDataChannel {
 }
 
 describe('WebRtc overlay services', () => {
-    afterEach(() => {
-        vi.useRealTimers();
-        vi.restoreAllMocks();
-    });
+    beforeEach(() =>
+        onTestFinished(() => {
+            vi.useRealTimers();
+            vi.restoreAllMocks();
+        })
+    );
 
     it.each([false, true])('retains eligible queue work only when its owner is disposed (disposed=%s)', async (disposed) => {
         vi.useFakeTimers();
@@ -64,20 +66,22 @@ describe('WebRtc overlay services', () => {
         const peer: { channel: CapturedRtcChannel | undefined; } = { channel: undefined };
         const connectionService = createConnectionService(['peer-1'], { 'peer-1': peer });
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
-        const manager = new WebRtcOverlayMulticastManager({
-            connectionService,
-            groupCache: new LatestRepository(),
-            overlayCache: new LatestRepository(),
-            multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connectionService),
-            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
-            outboundDiagnostics: undefined,
-            outboundSettlements: undefined,
-            outboundRuntime: resources,
-            circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
-        });
+        const manager = createOutboundRuntimeWithWorkTask(() =>
+            new WebRtcOverlayMulticastManager({
+                connectionService,
+                groupCache: new LatestRepository(),
+                overlayCache: new LatestRepository(),
+                multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connectionService),
+                qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+                outboundDiagnostics: undefined,
+                outboundSettlements: undefined,
+                outboundRuntime: resources,
+                circuitBreaker: toCircuitBreaker(),
+                rateLimiter: toRateLimiter(),
+                faultPort: createPassThroughTransportFaultPort(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
+            })
+        );
         onTestFinished(() => manager.dispose());
         const message = newALUnicastMessage(
             'self',
@@ -99,7 +103,7 @@ describe('WebRtc overlay services', () => {
         expect(readyAtMs).toBeLessThan(message.constraints!.expiresAtMs!);
         expect(vi.getTimerCount()).toBeGreaterThan(0);
         if (disposed) {
-            manager.dispose();
+            await manager.dispose();
         }
         peer.channel = createOpenRtcChannel();
         await vi.advanceTimersByTimeAsync(readyAtMs - nowMs + 1);
@@ -111,7 +115,7 @@ describe('WebRtc overlay services', () => {
         else {
             expect(peer.channel.sendCalls).toHaveLength(1);
             expect(peer.channel.sendCalls[0]?.[0]).toMatchObject({ id: message.id });
-            manager.dispose();
+            await manager.dispose();
         }
         expect(vi.getTimerCount()).toBe(0);
     });
@@ -170,7 +174,7 @@ describe('WebRtc overlay services', () => {
             expect(channel.sendCalls).toHaveLength(1);
         }
         finally {
-            manager.dispose();
+            await manager.dispose();
         }
     });
 
@@ -230,24 +234,26 @@ describe('WebRtc overlay services', () => {
 
     it('skips volatile immediate sends when no rtc channel exists for the planned next hop', async () => {
         const connectionService = createConnectionService(['peer-1']);
-        const manager = new WebRtcOverlayMulticastManager({
-            connectionService: connectionService,
-            groupCache: createReadableCache({}),
-            overlayCache: createReadableCache({}),
-            multicasterFactory: (overlayId) =>
-                new WebRtcOverlayMulticastService(
-                    overlayId,
-                    connectionService
-                ),
-            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
-            outboundDiagnostics: undefined,
-            outboundSettlements: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
-            circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
-        });
+        const manager = createOutboundRuntimeWithWorkTask(() =>
+            new WebRtcOverlayMulticastManager({
+                connectionService: connectionService,
+                groupCache: createReadableCache({}),
+                overlayCache: createReadableCache({}),
+                multicasterFactory: (overlayId) =>
+                    new WebRtcOverlayMulticastService(
+                        overlayId,
+                        connectionService
+                    ),
+                qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+                outboundDiagnostics: undefined,
+                outboundSettlements: undefined,
+                outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+                circuitBreaker: toCircuitBreaker(),
+                rateLimiter: toRateLimiter(),
+                faultPort: createPassThroughTransportFaultPort(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
+            })
+        );
         onTestFinished(() => manager.dispose());
 
         const msg = newALUnicastMessage(
@@ -282,24 +288,26 @@ describe('WebRtc overlay services', () => {
     // at-least-once send retries, so it waits for its hop's channel instead of falling back.
     it('admits a volatile at-least-once immediate send whose next hop has no rtc channel yet', async () => {
         const connectionService = createConnectionService(['peer-1']);
-        const manager = new WebRtcOverlayMulticastManager({
-            connectionService: connectionService,
-            groupCache: createReadableCache({}),
-            overlayCache: createReadableCache({}),
-            multicasterFactory: (overlayId) =>
-                new WebRtcOverlayMulticastService(
-                    overlayId,
-                    connectionService
-                ),
-            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
-            outboundDiagnostics: undefined,
-            outboundSettlements: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
-            circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
-        });
+        const manager = createOutboundRuntimeWithWorkTask(() =>
+            new WebRtcOverlayMulticastManager({
+                connectionService: connectionService,
+                groupCache: createReadableCache({}),
+                overlayCache: createReadableCache({}),
+                multicasterFactory: (overlayId) =>
+                    new WebRtcOverlayMulticastService(
+                        overlayId,
+                        connectionService
+                    ),
+                qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+                outboundDiagnostics: undefined,
+                outboundSettlements: undefined,
+                outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+                circuitBreaker: toCircuitBreaker(),
+                rateLimiter: toRateLimiter(),
+                faultPort: createPassThroughTransportFaultPort(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
+            })
+        );
         onTestFinished(() => manager.dispose());
 
         const msg: ALMessage = {
@@ -327,24 +335,26 @@ describe('WebRtc overlay services', () => {
     it('skips outbound messages without targets or next hop', async () => {
         const warnings = captureWarnings();
         const connectionService = createConnectionService(['peer-1']);
-        const manager = new WebRtcOverlayMulticastManager({
-            connectionService: connectionService,
-            groupCache: createReadableCache({}),
-            overlayCache: createReadableCache({}),
-            multicasterFactory: (overlayId) =>
-                new WebRtcOverlayMulticastService(
-                    overlayId,
-                    connectionService
-                ),
-            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
-            outboundDiagnostics: undefined,
-            outboundSettlements: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
-            circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
-        });
+        const manager = createOutboundRuntimeWithWorkTask(() =>
+            new WebRtcOverlayMulticastManager({
+                connectionService: connectionService,
+                groupCache: createReadableCache({}),
+                overlayCache: createReadableCache({}),
+                multicasterFactory: (overlayId) =>
+                    new WebRtcOverlayMulticastService(
+                        overlayId,
+                        connectionService
+                    ),
+                qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+                outboundDiagnostics: undefined,
+                outboundSettlements: undefined,
+                outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+                circuitBreaker: toCircuitBreaker(),
+                rateLimiter: toRateLimiter(),
+                faultPort: createPassThroughTransportFaultPort(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
+            })
+        );
         onTestFinished(() => manager.dispose());
         const msg = newALUntargetedMessage(
             'sender-no-targets',
@@ -369,24 +379,26 @@ describe('WebRtc overlay services', () => {
 
     it('answers no-route for a volatile multicast while room authority is missing', async () => {
         const connectionService = createConnectionService(['peer-1']);
-        const manager = new WebRtcOverlayMulticastManager({
-            connectionService: connectionService,
-            groupCache: createReadableCache({}),
-            overlayCache: createReadableCache({}),
-            multicasterFactory: (overlayId) =>
-                new WebRtcOverlayMulticastService(
-                    overlayId,
-                    connectionService
-                ),
-            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
-            outboundDiagnostics: undefined,
-            outboundSettlements: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
-            circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
-        });
+        const manager = createOutboundRuntimeWithWorkTask(() =>
+            new WebRtcOverlayMulticastManager({
+                connectionService: connectionService,
+                groupCache: createReadableCache({}),
+                overlayCache: createReadableCache({}),
+                multicasterFactory: (overlayId) =>
+                    new WebRtcOverlayMulticastService(
+                        overlayId,
+                        connectionService
+                    ),
+                qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+                outboundDiagnostics: undefined,
+                outboundSettlements: undefined,
+                outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+                circuitBreaker: toCircuitBreaker(),
+                rateLimiter: toRateLimiter(),
+                faultPort: createPassThroughTransportFaultPort(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
+            })
+        );
         onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
             'sender-missing-context',
@@ -414,24 +426,26 @@ describe('WebRtc overlay services', () => {
 
         const connectionService = createConnectionService([]);
         const context = createOverlayContext(['self', 'peer-1'], [], groupRef('group-1'));
-        const manager = new WebRtcOverlayMulticastManager({
-            connectionService: connectionService,
-            groupCache: createReadableCache({ 'group-1': context.room }),
-            overlayCache: createReadableCache({ [toScopedOverlayId(context.room.group)]: context.overlay }),
-            multicasterFactory: (overlayId) =>
-                new WebRtcOverlayMulticastService(
-                    overlayId,
-                    connectionService
-                ),
-            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
-            outboundDiagnostics: undefined,
-            outboundSettlements: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
-            circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
-        });
+        const manager = createOutboundRuntimeWithWorkTask(() =>
+            new WebRtcOverlayMulticastManager({
+                connectionService: connectionService,
+                groupCache: createReadableCache({ 'group-1': context.room }),
+                overlayCache: createReadableCache({ [toScopedOverlayId(context.room.group)]: context.overlay }),
+                multicasterFactory: (overlayId) =>
+                    new WebRtcOverlayMulticastService(
+                        overlayId,
+                        connectionService
+                    ),
+                qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+                outboundDiagnostics: undefined,
+                outboundSettlements: undefined,
+                outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+                circuitBreaker: toCircuitBreaker(),
+                rateLimiter: toRateLimiter(),
+                faultPort: createPassThroughTransportFaultPort(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
+            })
+        );
         onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
             'self',
@@ -480,29 +494,31 @@ describe('WebRtc overlay services', () => {
                 workspaceId: 'workspace-b'
             }
         );
-        const manager = new WebRtcOverlayMulticastManager({
-            connectionService: connectionService,
-            groupCache: createReadableCache({
-                'shared-room': workspaceA.room,
-                'workspace-b-room': workspaceB.room
-            }),
-            overlayCache: createReadableCache({
-                [toScopedOverlayId(workspaceB.room.group)]: workspaceB.overlay
-            }),
-            multicasterFactory: (overlayId) =>
-                new WebRtcOverlayMulticastService(
-                    overlayId,
-                    connectionService
-                ),
-            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
-            outboundDiagnostics: undefined,
-            outboundSettlements: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
-            circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
-        });
+        const manager = createOutboundRuntimeWithWorkTask(() =>
+            new WebRtcOverlayMulticastManager({
+                connectionService: connectionService,
+                groupCache: createReadableCache({
+                    'shared-room': workspaceA.room,
+                    'workspace-b-room': workspaceB.room
+                }),
+                overlayCache: createReadableCache({
+                    [toScopedOverlayId(workspaceB.room.group)]: workspaceB.overlay
+                }),
+                multicasterFactory: (overlayId) =>
+                    new WebRtcOverlayMulticastService(
+                        overlayId,
+                        connectionService
+                    ),
+                qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+                outboundDiagnostics: undefined,
+                outboundSettlements: undefined,
+                outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+                circuitBreaker: toCircuitBreaker(),
+                rateLimiter: toRateLimiter(),
+                faultPort: createPassThroughTransportFaultPort(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
+            })
+        );
         onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
             'self',
@@ -551,32 +567,34 @@ describe('WebRtc overlay services', () => {
                 workspaceId: 'workspace-b'
             }
         );
-        const manager = new WebRtcOverlayMulticastManager({
-            connectionService: connectionService,
-            groupCache: createReadableCache({
-                'workspace-a-room': workspaceA.room,
-                'workspace-b-room': workspaceB.room
-            }),
-            overlayCache: createReadableCache({
-                [toScopedOverlayId(workspaceB.room.group)]: {
-                    ...workspaceA.overlay,
-                    groupRef: workspaceA.room.group
-                }
-            }),
-            multicasterFactory: (overlayId) =>
-                new WebRtcOverlayMulticastService(
-                    overlayId,
-                    connectionService
-                ),
-            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
-            outboundDiagnostics: undefined,
-            outboundSettlements: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
-            circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
-        });
+        const manager = createOutboundRuntimeWithWorkTask(() =>
+            new WebRtcOverlayMulticastManager({
+                connectionService: connectionService,
+                groupCache: createReadableCache({
+                    'workspace-a-room': workspaceA.room,
+                    'workspace-b-room': workspaceB.room
+                }),
+                overlayCache: createReadableCache({
+                    [toScopedOverlayId(workspaceB.room.group)]: {
+                        ...workspaceA.overlay,
+                        groupRef: workspaceA.room.group
+                    }
+                }),
+                multicasterFactory: (overlayId) =>
+                    new WebRtcOverlayMulticastService(
+                        overlayId,
+                        connectionService
+                    ),
+                qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+                outboundDiagnostics: undefined,
+                outboundSettlements: undefined,
+                outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+                circuitBreaker: toCircuitBreaker(),
+                rateLimiter: toRateLimiter(),
+                faultPort: createPassThroughTransportFaultPort(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
+            })
+        );
         onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
             'self',
@@ -606,24 +624,26 @@ describe('WebRtc overlay services', () => {
                 channel
             }
         });
-        const manager = new WebRtcOverlayMulticastManager({
-            connectionService: connectionService,
-            groupCache: createReadableCache({}),
-            overlayCache: createReadableCache({}),
-            multicasterFactory: (overlayId) =>
-                new WebRtcOverlayMulticastService(
-                    overlayId,
-                    connectionService
-                ),
-            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
-            outboundDiagnostics: undefined,
-            outboundSettlements: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
-            circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
-        });
+        const manager = createOutboundRuntimeWithWorkTask(() =>
+            new WebRtcOverlayMulticastManager({
+                connectionService: connectionService,
+                groupCache: createReadableCache({}),
+                overlayCache: createReadableCache({}),
+                multicasterFactory: (overlayId) =>
+                    new WebRtcOverlayMulticastService(
+                        overlayId,
+                        connectionService
+                    ),
+                qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+                outboundDiagnostics: undefined,
+                outboundSettlements: undefined,
+                outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+                circuitBreaker: toCircuitBreaker(),
+                rateLimiter: toRateLimiter(),
+                faultPort: createPassThroughTransportFaultPort(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
+            })
+        );
         onTestFinished(() => manager.dispose());
         const msg = newALUnicastMessage(
             'sender-immediate',
@@ -654,24 +674,26 @@ describe('WebRtc overlay services', () => {
                 channel
             }
         });
-        const manager = new WebRtcOverlayMulticastManager({
-            connectionService: connectionService,
-            groupCache: createReadableCache({}),
-            overlayCache: createReadableCache({}),
-            multicasterFactory: (overlayId) =>
-                new WebRtcOverlayMulticastService(
-                    overlayId,
-                    connectionService
-                ),
-            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
-            outboundDiagnostics: undefined,
-            outboundSettlements: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
-            circuitBreaker: CircuitBreaker.create(createCircuitBreakerPolicy()),
-            rateLimiter: RateLimiter.init(1_000, 2),
-            faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
-        });
+        const manager = createOutboundRuntimeWithWorkTask(() =>
+            new WebRtcOverlayMulticastManager({
+                connectionService: connectionService,
+                groupCache: createReadableCache({}),
+                overlayCache: createReadableCache({}),
+                multicasterFactory: (overlayId) =>
+                    new WebRtcOverlayMulticastService(
+                        overlayId,
+                        connectionService
+                    ),
+                qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+                outboundDiagnostics: undefined,
+                outboundSettlements: undefined,
+                outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+                circuitBreaker: CircuitBreaker.create(createCircuitBreakerPolicy()),
+                rateLimiter: RateLimiter.init(1_000, 2),
+                faultPort: createPassThroughTransportFaultPort(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
+            })
+        );
         onTestFinished(() => manager.dispose());
 
         const first = await enqueueRtcAndDrain(
@@ -777,7 +799,7 @@ describe('WebRtc overlay services', () => {
 
         expect(channel.sendCalls).toEqual([]);
         expect((await manager.outbox.getItem(message.route))?.status).not.toBe(EntityStatus.COMPLETED);
-        manager.dispose();
+        await manager.dispose();
     });
 
     it('returns an outbox entry for durable RTC sends', async () => {
@@ -890,24 +912,26 @@ describe('WebRtc overlay services', () => {
 
         const connectionService = createConnectionService(['peer-1']);
         const context = createOverlayContext(['self', 'peer-1'], ['peer-1'], groupRef('group-1'));
-        const manager = new WebRtcOverlayMulticastManager({
-            connectionService: connectionService,
-            groupCache: createReadableCache({ 'group-1': context.room }),
-            overlayCache: createReadableCache({ [toScopedOverlayId(context.room.group)]: context.overlay }),
-            multicasterFactory: (overlayId) =>
-                new WebRtcOverlayMulticastService(
-                    overlayId,
-                    connectionService
-                ),
-            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
-            outboundDiagnostics: undefined,
-            outboundSettlements: undefined,
-            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
-            circuitBreaker: toCircuitBreaker(),
-            rateLimiter: toRateLimiter(),
-            faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
-        });
+        const manager = createOutboundRuntimeWithWorkTask(() =>
+            new WebRtcOverlayMulticastManager({
+                connectionService: connectionService,
+                groupCache: createReadableCache({ 'group-1': context.room }),
+                overlayCache: createReadableCache({ [toScopedOverlayId(context.room.group)]: context.overlay }),
+                multicasterFactory: (overlayId) =>
+                    new WebRtcOverlayMulticastService(
+                        overlayId,
+                        connectionService
+                    ),
+                qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+                outboundDiagnostics: undefined,
+                outboundSettlements: undefined,
+                outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+                circuitBreaker: toCircuitBreaker(),
+                rateLimiter: toRateLimiter(),
+                faultPort: createPassThroughTransportFaultPort(),
+                dequeueResilience: createDefaultALOutboundDequeueResilience()
+            })
+        );
         onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
             'self',
@@ -1019,7 +1043,7 @@ async function enqueueRtcAndDrain(
     msg: ALMessage
 ): Promise<ALOutboundEnqueueResult> {
     const result = await manager.enqueueIfAbsent(msg);
-    await settleCommittedOutboundBatch();
+    await runOutboundWorkTask(manager);
     return result;
 }
 
@@ -1176,3 +1200,73 @@ function createCircuitBreakerPolicy(maxConsecutiveFailures: number = 10) {
         duration
     );
 }
+
+describe('RTC overlay owned outbound completion', () => {
+    it.each(['clean', 'release-failure'] as const)('joins its direct commit-started release and clears cached overlays immediately for %s', async (ending) => {
+        const connection = createConnectionService(['peer-1']);
+        const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: new InboxOutboxEngine() });
+        const entered = Promise.withResolvers<void>();
+        const allowRelease = Promise.withResolvers<void>();
+        const failure = new ALAdmissionCorruptionError('overlay-release', new Error('owned release failed'));
+        const releaseEntries = resources.workQueue.releaseEntries.bind(resources.workQueue);
+        const release = vi.spyOn(resources.workQueue, 'releaseEntries').mockImplementation(async (entries) => {
+            if (entries.length > 0) {
+                entered.resolve();
+                await allowRelease.promise;
+            }
+            if (ending === 'release-failure' && entries.length > 0) {
+                throw failure;
+            }
+            return await releaseEntries(entries);
+        });
+        const manager = new WebRtcOverlayMulticastManager({
+            connectionService: connection,
+            groupCache: new LatestRepository(),
+            overlayCache: new LatestRepository(),
+            multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, connection),
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+            outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
+            outboundRuntime: resources,
+            circuitBreaker: toCircuitBreaker(),
+            rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
+        });
+        const diagnostics = vi.spyOn(console, 'error').mockImplementation(() => {});
+        onTestFinished(async () => {
+            allowRelease.resolve();
+            await Promise.allSettled([Promise.resolve(manager.dispose()), resources.queueEngine.stop()]);
+            release.mockRestore();
+            diagnostics.mockRestore();
+        });
+        const message = newALUnicastMessage('self', { topicId: 'test', resourceId: 'owned-release', contextId: 'outbound' }, 'peer-1', 'received', {}, {
+            ttlMs: 30_000,
+            qos: { durability: { algo: 'local-outbox' } }
+        });
+        expect((await manager.enqueueIfAbsent(message)).verdict.kind).toBe('admitted');
+        await entered.promise;
+        const cached = manager.getOrCreateMulticaster('cleanup-overlay');
+        let completed = false;
+        const disposal = Promise.resolve(manager.dispose()).then(
+            () => {
+                completed = true;
+                return undefined;
+            },
+            (error) => {
+                completed = true;
+                return error;
+            }
+        );
+        expect(manager.getOrCreateMulticaster('cleanup-overlay')).not.toBe(cached);
+        expect((await manager.enqueueIfAbsent(message)).verdict).toMatchObject({ kind: 'skipped', reason: 'disposed' });
+        try {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(completed, 'RTC overlay disposal escaped its direct commit-started release').toBe(false);
+        }
+        finally {
+            allowRelease.resolve();
+        }
+        expect(await disposal).toBe(ending === 'clean' ? undefined : failure);
+    });
+});

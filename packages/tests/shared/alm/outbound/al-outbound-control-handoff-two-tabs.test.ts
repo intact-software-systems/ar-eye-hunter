@@ -71,11 +71,13 @@ it('sends each control two tabs hand off for one admission once, in hand-off ord
 it('sends each control once, in hand-off order, when the tab that committed the first closes before sending it', async () => {
     const session = createTwoTabSession();
     const [first, second] = session.tabs as [TwoTabRuntime, TwoTabRuntime];
+    let disposing: Promise<void> | undefined;
+    onTestFinished(() => disposing);
     const commitBundle = first.stores.admissionStore.commitBundle.bind(first.stores.admissionStore);
     vi.spyOn(first.stores.admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
         const status = await commitBundle(bundle);
         // The tab closes the moment its commit lands, before its worker claims the send.
-        first.runtime.dispose();
+        disposing = first.runtime.dispose();
         return status;
     });
 
@@ -109,6 +111,7 @@ it('sends each control once, in hand-off order, when the tab that committed the 
 it('retries a control the closed tab never finished sending only once that tab lease lapses', async () => {
     const abandonedSend = Promise.withResolvers<ALOutboundSettledSendResult>();
     let beforeCleanup: readonly (ResourceEntry | undefined)[] | undefined;
+    let disposing: Promise<void> | undefined;
     const session = createTwoTabSession({ abandonedSend: abandonedSend.promise });
     const [first, second] = session.tabs as [TwoTabRuntime, TwoTabRuntime];
 
@@ -120,7 +123,7 @@ it('retries a control the closed tab never finished sending only once that tab l
         )
             .toBe('admitted');
         await expect.poll(() => session.crashedInsideTransport).toBe(true);
-        first.runtime.dispose();
+        disposing = first.runtime.dispose();
         const retried = await second.runtime.enqueueAllIfAbsent([
             createControlMessage('control-1', session.nowMs())
         ]);
@@ -145,7 +148,7 @@ it('retries a control the closed tab never finished sending only once that tab l
     }
     finally {
         abandonedSend.resolve({ status: 'cancelled', submissionAttempted: false });
-        await first.runtime.dispose();
+        await (disposing ?? first.runtime.dispose());
     }
     expect(await readQueueRows(second.stores)).toEqual(beforeCleanup);
 });

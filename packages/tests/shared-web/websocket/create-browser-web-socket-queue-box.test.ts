@@ -30,6 +30,7 @@ import type { ClientInfo } from '@shared/api/api-config.ts';
 import { CommandTimedOutError } from '@shared/cache/Command.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type WsQueueBoxClientService from '@shared/services/ws-queue-box-client-service.ts';
+import * as wsClientFactory from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
@@ -55,6 +56,62 @@ describe('createBrowserWebSocketQueueBox', () => {
             TestWebSocket.instances.length = 0;
         });
         configureBrowserALRuntimeStores(clientData.sessionId, { scope: defaultStateScope(), diagnosticsPorts });
+    });
+
+    it.each(['records', 'throws'])('disposes its acquired real service when initial connection rejects and cleanup reporting %s', async (reporting) => {
+        const failure = new Error('initial socket connection failed');
+        const reported = vi.spyOn(console, 'error').mockImplementation(() => {
+            if (reporting === 'throws') {
+                throw new Error('reporting failed');
+            }
+        });
+        const cleanupFailure = new Error('secondary close failure');
+        onTestFinished(() => reported.mockRestore());
+        const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
+        vi.spyOn(socket, 'connect').mockRejectedValue(failure);
+        vi.spyOn(socket, 'close').mockImplementation(() => {
+            throw cleanupFailure;
+        });
+        const engine = new InboxOutboxEngine();
+        const original = wsClientFactory.createDefaultWsQueueBoxClientService;
+        let acquired: WsQueueBoxClientService | undefined;
+        const factory = vi.spyOn(wsClientFactory, 'createDefaultWsQueueBoxClientService').mockImplementation((input) => {
+            acquired = original(input);
+            return acquired;
+        });
+        onTestFinished(async () => {
+            if (acquired) {
+                await acquired.close().catch(() => {});
+            }
+            await engine.stop();
+            factory.mockRestore();
+        });
+        await expect(createBrowserWebSocketQueueBox({
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
+            qosProvider: undefined,
+            submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
+            outboundSettlements: () => {},
+            newConnectionRequestId: undefined,
+            qboxEngine: engine,
+            socket,
+            clientData,
+            serverPeerId: 'server',
+            inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+                toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
+                createDefaultVolatileSessionBudget(),
+                createPassThroughALStorageEventSink()
+            ),
+            volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveWsClientCheckpointStores(),
+            connectTimeoutMs: 0
+        })).rejects.toBe(failure);
+        expect(reported).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ errors: [cleanupFailure] }));
+        if (!acquired) {
+            throw new Error('Initial socket acquisition must construct the service');
+        }
+        const sent = await acquired.enqueueOutboxIfAbsent(createChatSend('failed-connect'));
+        expect(sent.verdict).toMatchObject({ kind: 'skipped', reason: 'disposed' });
     });
 
     it('returns an open service for the session after the initial socket opens', async () => {

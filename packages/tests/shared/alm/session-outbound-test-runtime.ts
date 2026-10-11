@@ -26,7 +26,7 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { GLOBAL_CHECKPOINT_TIMERS, TEST_CHECKPOINT_SETTINGS } from './checkpoint/al-checkpoint-test-support.ts';
-import { createVolatileOutboundTestStores } from './outbound-runtime-test-fixture.ts';
+import { createOutboundRuntimeWithWorkTask, createVolatileOutboundTestStores } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 /** One browser session's IndexedDB outbound store, which every runtime of the session opens, as tabs do. */
@@ -82,30 +82,38 @@ export function createSessionOutboundTestRuntime<TOwnership extends ALDurableWor
         storageHealth: new ALStorageHealth({ storeId: session.namespace, storage: (event) => session.storage.push(event) })
     });
     const checkpointStores = createSessionCheckpointTestStores(session, ownership);
-    const runtime = createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
-        decodePreparedMessage: decodeOutboundTestPayload,
-        queueEngine: engine,
-        outbox: new InMemoryQueueBox(new Map()),
-        stores,
-        volatileStores: createVolatileOutboundTestStores(),
-        checkpointStores,
-        durableWorkOwnership: ownership,
-        carrier: 'ws',
-        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
-        readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-        planOutgoingMessage: (msg) => ({
-            msg,
-            dropReasonCode: undefined,
-            lane: toSessionTestLane(msg.route.resourceId),
-            preparedMessages: [{ peer: 'receiver' }]
-        }),
-        sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
-            sent.push(lifecycle.canonicalMessage.route.resourceId);
-            return { status: 'sent', submissionAttempted: true };
-        },
-        diagnostics: (event) => diagnostics.push(event)
+    const runtime = createOutboundRuntimeWithWorkTask(() =>
+        createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
+            decodePreparedMessage: decodeOutboundTestPayload,
+            queueEngine: engine,
+            outbox: new InMemoryQueueBox(new Map()),
+            stores,
+            volatileStores: createVolatileOutboundTestStores(),
+            checkpointStores,
+            durableWorkOwnership: ownership,
+            carrier: 'ws',
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: toSessionTestLane(msg.route.resourceId),
+                preparedMessages: [{ peer: 'receiver' }]
+            }),
+            sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
+                sent.push(lifecycle.canonicalMessage.route.resourceId);
+                return { status: 'sent', submissionAttempted: true };
+            },
+            diagnostics: (event) => diagnostics.push(event)
+        })
+    );
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([runtime.dispose(), engine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
-    onTestFinished(() => runtime.dispose());
     return {
         runtime,
         engine,

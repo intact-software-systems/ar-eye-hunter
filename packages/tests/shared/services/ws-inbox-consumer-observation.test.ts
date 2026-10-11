@@ -162,9 +162,10 @@ it('reports returned invocation while closing prevents later wildcard and any ca
     });
     expect(await fixture.service.acceptIncomingMessage(signal)).toMatchObject({ left: undefined, right: { kind: 'admitted' } });
     await entered.promise;
-    fixture.service.close();
+    const closing = fixture.service.close();
     release.resolve();
     await expect.poll(() => toConsumerInvocations(fixture.events)).toMatchObject([{ outcome: 'returned' }]);
+    await closing;
     expect(calls).toEqual(['exact']);
     expect(fixture.events).toContainEqual(expect.objectContaining({ kind: 'dispatch-decision', disposition: 'port-retry' }));
 });

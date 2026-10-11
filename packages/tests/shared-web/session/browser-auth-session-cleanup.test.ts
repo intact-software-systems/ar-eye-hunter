@@ -250,6 +250,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         });
         mocks.rtcRxStreamer.dispose.mockImplementation(() => {
             cleanupState.rtcReceiverDisposed = true;
+            return Promise.resolve();
         });
         mocks.webRtcConnectionService.knownPeerIds.mockImplementation(() => {
             cleanupState.knownPeersRead = true;
@@ -362,6 +363,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         });
         mocks.rtcRxStreamer.dispose.mockImplementation(() => {
             logoutState.rtcReceiverDisposed = true;
+            return Promise.resolve();
         });
         mocks.logoutFromApi.mockImplementation(async () => {
             logoutState.backendRevoked = true;

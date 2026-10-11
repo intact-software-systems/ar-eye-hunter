@@ -44,9 +44,12 @@ async function createObservedServer(observe: WsQueueBoxServerReceiptObserver | u
                 : ({ authorized: true }),
         sendNacks: false
     });
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return service;
 }
@@ -143,11 +146,16 @@ interface ReceiptAggregationFixtureEffects {
     readonly acceptServerReceipt?: WsQueueBoxServerReceiptAggregation.Dependencies['acceptServerReceipt'];
 }
 
+interface ObservedReceiptAggregation {
+    readonly aggregation: WsQueueBoxServerReceiptAggregation;
+    readonly clock: ReceiptClock;
+}
+
 function createObservedAggregation(
     observe: WsQueueBoxServerReceiptObserver | undefined,
     enqueue: WsQueueBoxServerReceiptAggregation.Dependencies['enqueueOutbox'],
     effects: ReceiptAggregationFixtureEffects = {}
-) {
+): ObservedReceiptAggregation {
     const clock = effects.clock ?? { value: 1000 };
     const aggregation = new WsQueueBoxServerReceiptAggregation({
         serverPeerId: 'server',
@@ -432,3 +440,7 @@ it('retains the closed actual storage failure cause while excluding arbitrary en
     expect(event).toMatchObject({ verdict: { kind: 'storage-unavailable', cause: 'quota' }, trackedReceiptAlgo: 'none' });
     expect(JSON.stringify(event)).not.toContain('PRIVATE_FAILURE_PROSE');
 });
+
+interface ReceiptClock {
+    value: number;
+}

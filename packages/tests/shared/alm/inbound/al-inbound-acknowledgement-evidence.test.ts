@@ -119,7 +119,7 @@ class AcknowledgementFixture {
         });
         onTestFinished(() => {
             this.sendGate.resolve();
-            this.runtime.dispose();
+            return this.runtime.dispose();
         });
     }
 
@@ -297,7 +297,7 @@ class AcknowledgementCaptureScenario {
             senderId: 'origin'
         });
         expect(stored.acks).toHaveLength(1);
-        this.fixture.runtime.dispose();
+        await this.fixture.runtime.dispose();
         vi.restoreAllMocks();
         return { acceptance: acceptance.right, sent: this.fixture.sent.map((msg) => msg.id.msgId), clocks: this.clockReads, released: this.released };
     }

@@ -336,7 +336,7 @@ async function runRealEngineHandoffTest(sql: PGliteSql): Promise<void> {
         assert.equal(fixture.wakeCount, 3);
     }
     finally {
-        await fixture.stopAndDrain();
+        await fixture.stop();
     }
 }
 

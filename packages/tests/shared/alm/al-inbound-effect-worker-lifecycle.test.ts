@@ -25,7 +25,7 @@ import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/Res
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
@@ -33,6 +33,7 @@ import {
     vi
 } from 'vitest';
 
+import { toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import {
     createInboundTestMessage,
     createInboundTestRuntime,
@@ -42,10 +43,12 @@ import {
 } from './inbound-runtime-test-fixture.ts';
 
 describe('inbound durable effect worker lifecycle', () => {
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
-    });
+    beforeEach(() =>
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+            vi.useRealTimers();
+        })
+    );
 
     it('retries persisted effects after a transient claim failure', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
@@ -69,7 +72,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 observedAtMs: Date.now(),
                 effectId: 'persisted-dispatch',
                 expireAtTimestamp: Date.now() + 60_000,
-                payload: { kind: 'dispatch-local', message: toMessageReference(message) }
+                payload: { kind: 'dispatch-local', message: toALInboundMessageReference(message) }
             })]
         });
         const reserveEntries = resources.workQueue.reserveEntries.bind(resources.workQueue);
@@ -101,7 +104,7 @@ describe('inbound durable effect worker lifecycle', () => {
             await expect.poll(() => deliveredMessageIds).toEqual([message.id.msgId]);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -127,7 +130,7 @@ describe('inbound durable effect worker lifecycle', () => {
             await expect(runtime.ready()).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -158,7 +161,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 observedAtMs: Date.now(),
                 effectId: 'corrupt-delivery',
                 expireAtTimestamp: Date.now() + 60_000,
-                payload: { kind: 'dispatch-local', message: toMessageReference(message) }
+                payload: { kind: 'dispatch-local', message: toALInboundMessageReference(message) }
             })]
         });
         const runtime = new ALInboundMessageRuntime({
@@ -183,7 +186,7 @@ describe('inbound durable effect worker lifecycle', () => {
             expect(stored).toMatchObject({ status: EntityStatus.NON_RETRYABLE, dequeueAudit: { attempts: 1, nextTs: undefined } });
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -257,7 +260,7 @@ describe('inbound durable effect worker lifecycle', () => {
             observedAtMs: Date.now(),
             expireAtTimestamp: Date.now() + 60_000,
             effectId: 'missing-source',
-            payload: { kind: 'dispatch-local', message: toMessageReference(missingSource) }
+            payload: { kind: 'dispatch-local', message: toALInboundMessageReference(missingSource) }
         });
         // A surviving queue entry with lost provenance cannot regain authority by retrying.
         await resources.workQueue.enqueueIfAbsent(work.entry);
@@ -336,7 +339,7 @@ describe('inbound durable effect worker lifecycle', () => {
             expect(stored).toMatchObject({ status: EntityStatus.NON_RETRYABLE, dequeueAudit: { attempts: 1, nextTs: undefined } });
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -366,7 +369,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const trackKey = toALOrderingTrackKey(message)!;
         await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
         await expect.poll(async () => (await store.readOrderedDelivery(trackKey, 2)).completedThrough).toBe(1);
-        runtime.dispose();
+        await runtime.dispose();
         expect(await store.readBufferedRelease({ trackKey, seq: 1, nowMs: Date.now() })).toBeUndefined();
 
         const work = computeALInboundWorkEntry({
@@ -470,7 +473,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         onTestFinished(() => {
             releaseDispatch.resolve();
-            runtime.dispose();
+            return runtime.dispose();
         });
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'unawaited', contextId: 'room' }, 'receiver', 'chat', {});
 
@@ -501,7 +504,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         onTestFinished(() => {
             releaseSend.resolve();
-            runtime.dispose();
+            return runtime.dispose();
         });
         await runtime.ready();
 
@@ -859,7 +862,7 @@ describe('inbound durable effect worker lifecycle', () => {
         }
         finally {
             releaseFinalization.resolve();
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -885,7 +888,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const resumeRead = Promise.withResolvers<void>();
         onTestFinished(() => {
             resumeRead.resolve();
-            runtime.dispose();
+            return runtime.dispose();
         });
         await runtime.ready();
         const readStarted = Promise.withResolvers<void>();
@@ -952,7 +955,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 effectId: 'externally-admitted-work',
                 observedAtMs: Date.now(),
                 expireAtTimestamp,
-                payload: { kind: 'dispatch-local', message: toMessageReference(external) }
+                payload: { kind: 'dispatch-local', message: toALInboundMessageReference(external) }
             })]
         });
         await expect.poll(async () => {
@@ -986,7 +989,7 @@ describe('inbound durable effect worker lifecycle', () => {
             await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
             await expect.poll(() => attempts).toBe(1);
 
-            runtime.dispose();
+            await runtime.dispose();
             vi.setSystemTime(Date.now() + 30_000);
             await resources.queueEngine.executeOnce();
             await runtime.ready();
@@ -995,7 +998,7 @@ describe('inbound durable effect worker lifecycle', () => {
             expect(attempts).toBe(1);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -1013,7 +1016,7 @@ describe('inbound durable effect worker lifecycle', () => {
             effectId: 'paused-delivery',
             observedAtMs: Date.now(),
             expireAtTimestamp: Date.now() + 60_000,
-            payload: { kind: 'dispatch-local', message: toMessageReference(message) }
+            payload: { kind: 'dispatch-local', message: toALInboundMessageReference(message) }
         });
         await store.commitBundle({
             admissionExpiresAtMs: null,
@@ -1059,13 +1062,14 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime(dependencies);
         onTestFinished(() => {
             resumeOperation.resolve();
-            runtime.dispose();
+            return runtime.dispose();
         });
         const ready = runtime.ready();
         await operationStarted.promise;
-        runtime.dispose();
+        const disposing = runtime.dispose();
         resumeOperation.resolve();
         await ready;
+        await disposing;
         await resources.queueEngine.executeOnce();
         expect(deliveredMessageIds).toEqual([]);
         expect(await resources.workQueue.getItem(work.entry.key)).toMatchObject({
@@ -1102,10 +1106,6 @@ function planIncomingMessage(
         groupMemberPeerIds: ['sender', 'receiver'],
         overlayNeighborPeerIds: []
     });
-}
-
-function toMessageReference(message: ALMessage) {
-    return { senderId: message.id.senderId, msgId: message.id.msgId };
 }
 
 function toMessageOwnerMutation(message: ALMessage, expireAtTimestamp: number): ALInboundAdmissionMutation {

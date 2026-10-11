@@ -242,19 +242,20 @@ export class ALWorkHandler {
         }
     }
 
-    /** Cancels synchronously; completion joins the running batch and every retained claim's release. */
+    /** Cancels synchronously; completion joins the owned engine, running batch and retained releases. */
     async dispose(): Promise<void> {
         this.shutdown.abort();
         this.engine.dispose();
-        if (this.dependencies.ownsQueueEngine) {
-            this.dependencies.queueEngine.stop();
-        }
-        try {
-            await this.batch;
-        }
-        finally {
-            // A batch may register retained work while disposal is awaiting its mandatory releases.
-            await Promise.all([...this.retainedReleases]);
+        const retained = [...this.retainedReleases];
+        const stoppingEngine = this.dependencies.ownsQueueEngine
+            ? this.dependencies.queueEngine.stop()
+            : undefined;
+        const outcomes = await Promise.allSettled([this.batch, stoppingEngine]);
+        // A batch can register retained work while disposal joins its mandatory releases.
+        outcomes.push(...await Promise.allSettled([...new Set([...retained, ...this.retainedReleases])]));
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw toError(failure.reason);
         }
     }
 
@@ -355,16 +356,40 @@ export class ALWorkHandler {
         const deferObservation = this.dependencies.batchObservations === undefined
             ? undefined
             : observations?.defer ?? this.dependencies.batchObservations.discard;
+        let primaryFailure: Error | undefined;
         this.batch = this.runSelectedWork(deferObservation)
             .then((ended) => this.endBatch(ended))
-            .catch((error) => this.failBatch(toError(error)))
-            .finally(() => {
-                this.batch = undefined;
+            .catch((error) => {
                 try {
-                    this.runPendingCommit();
+                    this.failBatch(toError(error));
                 }
-                finally {
+                catch (failure) {
+                    primaryFailure = toError(failure);
+                }
+            })
+            .then(async () => {
+                this.batch = undefined;
+                let following: Promise<void> | undefined;
+                try {
+                    following = this.runPendingCommit();
+                }
+                catch (failure) {
+                    primaryFailure ??= toError(failure);
+                }
+                try {
                     observations?.publish();
+                }
+                catch (failure) {
+                    primaryFailure ??= toError(failure);
+                }
+                try {
+                    await following;
+                }
+                catch (failure) {
+                    primaryFailure ??= toError(failure);
+                }
+                if (primaryFailure !== undefined) {
+                    throw primaryFailure;
                 }
             });
         return this.batch;
@@ -398,13 +423,13 @@ export class ALWorkHandler {
     }
 
     /** A commit that landed behind the batch earns the immediate re-run the page read missed. */
-    private runPendingCommit(): void {
+    private runPendingCommit(): Promise<void> | undefined {
         if (!this.commitPending || this.shutdown.signal.aborted) {
             return;
         }
         this.commitPending = false;
         this.dependencies.queueEngine.wake();
-        void this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
+        return this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
     }
 
     private async runSelectedWork(deferObservation: ALWorkObservationDeferral | undefined): Promise<ALWorkBatchEnd> {

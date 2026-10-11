@@ -37,6 +37,7 @@ import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceIn
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import {
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
@@ -121,6 +122,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             }),
             sendPreparedMessage: async () => ({ status: 'queued', settled: abandonedSend.promise })
         });
+        let disposing: Promise<void> | undefined;
         try {
             for (const msg of messages) {
                 expect((await runtime1.enqueueIfAbsent(msg)).verdict).toMatchObject({ kind: 'admitted', durable: false });
@@ -147,7 +149,7 @@ describe('outbound IndexedDB durable queue replay', () => {
                     await runOutboundWorkTask(runtime1);
                 }
             }
-            runtime1.dispose();
+            disposing = runtime1.dispose();
             vi.setSystemTime(Date.now() + 10_001);
 
             const sent: string[] = [];
@@ -177,7 +179,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         }
         finally {
             abandonedSend.resolve({ status: 'cancelled', submissionAttempted: false });
-            await runtime1.dispose();
+            await (disposing ?? runtime1.dispose());
         }
         expect(await readQueueRows(stores.workQueue)).toEqual(beforeCleanup);
     });
@@ -218,7 +220,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             },
             ongoingTasks: []
         });
-        runtime.dispose();
+        await runtime.dispose();
         await engine.executeOnce();
         expect(unrelatedWork).toBe(false);
         expect(sent).toEqual(['engine-owned', 'engine-owned']);
@@ -334,12 +336,13 @@ describe('outbound IndexedDB durable queue replay', () => {
             // A send held through the crash assertions keeps its claim, so the row survives the runtime as a reservation.
             sendPreparedMessage: async () => ({ status: 'queued', settled: abandonedSend.promise })
         });
+        let disposing: Promise<void> | undefined;
         try {
             const enqueued = await runtime1.enqueueIfAbsent(msg);
             const workKey = await readOutboundWorkKey(backend.workQueue);
             await expect.poll(async () => (await backend.workQueue.getItem(workKey))?.status)
                 .toBe(EntityStatus.RESERVED);
-            runtime1.dispose();
+            disposing = runtime1.dispose();
             vi.setSystemTime(Date.now() + 10_001);
             const [claimed] = await claimOne(port);
             const work = await admissionStore.readWorkSnapshot(claimed!.entry, undefined);
@@ -377,7 +380,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         }
         finally {
             abandonedSend.resolve({ status: 'cancelled', submissionAttempted: false });
-            await runtime1.dispose();
+            await (disposing ?? runtime1.dispose());
         }
         expect(await readQueueRows(stores.workQueue)).toEqual(beforeCleanup);
     });
@@ -455,12 +458,13 @@ describe('outbound IndexedDB durable queue replay', () => {
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ text: 'captured' }] }),
             sendPreparedMessage: async () => ({ status: 'queued', settled: abandonedSend.promise })
         });
+        let disposing: Promise<void> | undefined;
         try {
             const admitted = await runtime1.enqueueIfAbsent(message);
             const workKey = await readOutboundWorkKey(backend.workQueue);
             await expect.poll(async () => (await backend.workQueue.getItem(workKey))?.status)
                 .toBe(EntityStatus.RESERVED);
-            runtime1.dispose();
+            disposing = runtime1.dispose();
             vi.setSystemTime(Date.now() + 10_001);
             const canonical = await backend.workQueue.getItem(admitted.entry!.key);
             const corrupted = {
@@ -489,7 +493,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         }
         finally {
             abandonedSend.resolve({ status: 'cancelled', submissionAttempted: false });
-            await runtime1.dispose();
+            await (disposing ?? runtime1.dispose());
         }
         expect(await readQueueRows(stores.workQueue)).toEqual(beforeCleanup);
     });
@@ -508,6 +512,14 @@ async function readNextRetryAtMs(
     return nextTs === undefined ? undefined : Number(nextTs) + 1;
 }
 
+interface ReplayAdmissionFixture {
+    readonly backend: InMemoryAdmissionBackend | IndexedDbAdmissionBackend;
+    readonly stores: ALOutboundRuntimeStores<OutboundTestPayload>;
+    readonly admissionStore: ALOutboundAdmissionStore<OutboundTestPayload>;
+    readonly port: ALWorkQueuePort;
+    readonly peek: () => Promise<number | undefined>;
+}
+
 /** The single outbound work row an admitted message committed. */
 async function readOutboundWorkKey(
     workQueue: QueueBoxResourceEntryRepository
@@ -519,7 +531,7 @@ async function readOutboundWorkKey(
     return key;
 }
 
-function createAdmission(storage: 'memory' | 'indexeddb' = 'indexeddb') {
+function createAdmission(storage: 'memory' | 'indexeddb' = 'indexeddb'): ReplayAdmissionFixture {
     const backend = storage === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
         : new IndexedDbAdmissionBackend({

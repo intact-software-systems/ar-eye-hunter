@@ -24,6 +24,10 @@ import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
+import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
@@ -217,7 +221,22 @@ describe('producer provenance through WS dequeue', () => {
     );
 });
 
-async function createFixture() {
+interface ProvenanceDequeueFixture {
+    readonly message: ALMessage;
+    readonly entry: ResourceEntry;
+    readonly proof: WsOutboxProvenance;
+    readonly repository: FakeRuntimeStateRepository;
+    readonly key: string;
+    readonly socket: JsonWebSocketServer;
+    readonly native: TestWebSocket;
+    readonly authentication: ProvenanceAuthentication;
+    readonly engine: InboxOutboxEngine;
+    readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+    readonly settled: string[];
+    readonly service: WsQueueBoxServerService;
+}
+
+async function createFixture(): Promise<ProvenanceDequeueFixture> {
     const message = newALUnicastMessage('server', { topicId: 'snapshot', resourceId: 'page', contextId: 'request' }, 'peer', 'snapshot.v1', {}, {
         ttlMs: 30_000,
         qos: { durability: { algo: 'local-outbox' } }
@@ -254,10 +273,13 @@ async function createFixture() {
             }
         }
     });
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
         vi.restoreAllMocks();
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { message, entry, proof, repository, key, socket, native, authentication, engine, stores, settled, service };
 }
@@ -274,4 +296,10 @@ async function createProof(messageId: string, entry: ResourceEntry): Promise<WsO
         target: { kind: 'scoped-unicast', peerId: 'peer', scope: SCOPE, admittedAudience: ['peer'] }
     };
     return { ...facts, digest: await computeWsOutboxProvenanceDigest(entry, facts) };
+}
+
+interface ProvenanceAuthentication {
+    scope: typeof SCOPE;
+    principalId: string;
+    readonly expiresAtEpochMs: number;
 }

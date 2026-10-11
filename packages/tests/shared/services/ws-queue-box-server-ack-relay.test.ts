@@ -278,9 +278,14 @@ function createSharedInboundStores(): ALInboundRuntimeStores {
     });
 }
 
+interface AckRelayCluster {
+    readonly owner: ServerInstance;
+    readonly other: ServerInstance;
+}
+
 async function createCluster(
     roomAudience: readonly string[] = ['a', 'b', 'c']
-): Promise<{ readonly owner: ServerInstance; readonly other: ServerInstance; }> {
+): Promise<AckRelayCluster> {
     const instances: ServerInstance[] = [];
     const inboundStores = createSharedInboundStores();
     const owner = await createServerInstance({
@@ -338,10 +343,13 @@ async function createServerInstance(input: ServerInstanceInput): Promise<ServerI
                 }
                 : { authorized: true }
     });
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
         vi.restoreAllMocks();
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { service, engine, sockets, relayed };
 }

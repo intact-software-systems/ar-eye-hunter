@@ -102,8 +102,11 @@ describe('AL work observation boundary', () => {
             );
         }
         finally {
-            fixture.handler.dispose();
-            fixture.engine.stop();
+            const cleanup = await Promise.allSettled([fixture.handler.dispose(), fixture.engine.stop()]);
+            const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         }
     });
 
@@ -121,8 +124,11 @@ describe('AL work observation boundary', () => {
             ]);
         }
         finally {
-            fixture.handler.dispose();
-            fixture.engine.stop();
+            const cleanup = await Promise.allSettled([fixture.handler.dispose(), fixture.engine.stop()]);
+            const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         }
     });
 
@@ -134,8 +140,11 @@ describe('AL work observation boundary', () => {
             expect(fixture.order).toEqual(['capture-present', 'release:completed:1000', 'sink']);
         }
         finally {
-            fixture.handler.dispose();
-            fixture.engine.stop();
+            const cleanup = await Promise.allSettled([fixture.handler.dispose(), fixture.engine.stop()]);
+            const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         }
     });
 
@@ -161,8 +170,11 @@ describe('AL work observation boundary', () => {
             );
         }
         finally {
-            fixture.handler.dispose();
-            fixture.engine.stop();
+            const cleanup = await Promise.allSettled([fixture.handler.dispose(), fixture.engine.stop()]);
+            const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         }
     });
 
@@ -182,8 +194,12 @@ describe('AL work observation boundary', () => {
             expect(fixture.order).toContain('release:completed:99000');
         }
         finally {
-            fixture.handler.dispose();
-            fixture.engine.stop();
+            complete?.({ status: 'completed' });
+            const cleanup = await Promise.allSettled([fixture.handler.dispose(), fixture.engine.stop()]);
+            const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         }
     });
 });

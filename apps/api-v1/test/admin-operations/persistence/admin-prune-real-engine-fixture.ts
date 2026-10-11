@@ -7,10 +7,9 @@ import type { AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin
 import type { AppAdminInboxService } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
-import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { Either } from '@shared/resilience/Either.ts';
-import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { createApiAdminInboxService } from '../../../src/admin-operations/create-api-admin-inbox-service.ts';
@@ -31,7 +30,6 @@ export async function assertUtcPGliteSession(sql: PGliteSql): Promise<void> {
 
 export class RealEngineAdminPruneFixture {
     readonly engine = new InboxOutboxEngine();
-    readonly activeDequeues = new Set<Promise<void>>();
     readonly appAdmin: AppAdminInboxService;
     wakeCount = 0;
 
@@ -43,8 +41,6 @@ export class RealEngineAdminPruneFixture {
         const queue = new PSqlQueueBox(repository);
         const inbox = new InboxQueueReader(queue);
         const outbox = new OutboxQueueReader(queue);
-        inbox.dequeueInbox = trackDequeue(this.activeDequeues, inbox.dequeueInbox.bind(inbox));
-        outbox.dequeueOutbox = trackDequeue(this.activeDequeues, outbox.dequeueOutbox.bind(outbox));
         const resilience = createApiV1TestQueueResilience();
         registerApplicationQueueReaderTasks({
             engine: this.engine,
@@ -94,12 +90,8 @@ export class RealEngineAdminPruneFixture {
         });
     }
 
-    async stopAndDrain(): Promise<void> {
-        this.engine.stop();
-        while (this.activeDequeues.size > 0) {
-            await Promise.allSettled([...this.activeDequeues]);
-        }
-        assert.equal(this.activeDequeues.size, 0);
+    async stop(): Promise<void> {
+        await this.engine.stop();
     }
 
     /** The port it stands in for is the middleware's, which announces an external write. */
@@ -119,19 +111,4 @@ export class RealEngineAdminPruneFixture {
             expiresAtEpochMs: this.now + 60_000
         };
     }
-}
-
-function trackDequeue(
-    active: Set<Promise<void>>,
-    dequeue: (typesToDequeue: Set<string>, resilience: ResourceInboxResilience) => Promise<void>
-): (typesToDequeue: Set<string>, resilience: ResourceInboxResilience) => Promise<void> {
-    return (typesToDequeue, resilience) => {
-        const pending = dequeue(typesToDequeue, resilience);
-        active.add(pending);
-        void pending.then(
-            () => active.delete(pending),
-            () => active.delete(pending)
-        );
-        return pending;
-    };
 }

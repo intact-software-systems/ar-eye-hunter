@@ -22,6 +22,11 @@ import { BrowserSessionConnectionLifecycle, type RallarSessionConnectionInput } 
 import { toALDurableOwnerLockName, type ALBrowserLockOptions } from '@shared/alm/storage/al-browser-locks.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
@@ -48,6 +53,48 @@ vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
 }));
 
 describe('Browser transport cleanup', () => {
+    it('contains the real asynchronous socket-close failure while shutdown remains immediate', async () => {
+        const escaped: Error[] = [];
+        const record = (error: Error) => {
+            escaped.push(error);
+        };
+        process.on('unhandledRejection', record);
+        const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
+        const socketFailure = new Error('actual socket close failed');
+        const closing = vi.spyOn(socket, 'close').mockImplementation(() => {
+            throw socketFailure;
+        });
+        const engine = new InboxOutboxEngine();
+        const service = createDefaultWsQueueBoxClientService({
+            sessionId: 'session-1',
+            serverPeerId: 'server',
+            socket,
+            queueEngine: engine,
+            outbox: new InMemoryQueueBox()
+        });
+        const middleware = createDefaultApiMiddlewareTestDouble();
+        const transport = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
+        onTestFinished(async () => {
+            process.off('unhandledRejection', record);
+            closing.mockRestore();
+            transport.shutdown();
+            await Promise.allSettled([service.close(), engine.stop()]);
+        });
+        mocks.readSession.mockReturnValue(middleware.session);
+        mocks.initialiseMiddleware.mockResolvedValue({
+            middleware: { ...middleware.middleware, qboxEngine: engine, webSocketQueueBox: service },
+            rtcCaptureReceipt,
+            checkpoints: []
+        });
+        await transport.init(toInitOptions());
+        expect(transport.shutdown()).toBeUndefined();
+        expect(transport.isReady()).toBe(false);
+        expect(closing).toHaveBeenCalledOnce();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(escaped, 'Immediate shutdown leaked the actual close AggregateError').toEqual([]);
+    });
+
     it('disposes native observations after a throwing peer-disconnect loop and continues shutdown', async () => {
         const effects: string[] = [];
         const middleware = createDefaultApiMiddlewareTestDouble({
@@ -353,6 +400,7 @@ describe('Browser transport cleanup', () => {
         });
         vi.mocked(middleware.middleware.rtcRxStreamer.dispose).mockImplementation(() => {
             effects.push('rtc-disposed');
+            return Promise.resolve();
         });
         vi.mocked(middleware.middleware.webRtcGroupManager.stopReconcileWakes).mockImplementation(() => {
             effects.push('reconcile-wakes-stopped');
@@ -367,6 +415,7 @@ describe('Browser transport cleanup', () => {
         });
         vi.mocked(middleware.middleware.webRtcOverlayMulticastManager!.dispose!).mockImplementation(() => {
             effects.push('multicast');
+            return Promise.resolve();
         });
         vi.mocked(middleware.middleware.qboxEngine.stop).mockImplementation(() => {
             effects.push('queue');

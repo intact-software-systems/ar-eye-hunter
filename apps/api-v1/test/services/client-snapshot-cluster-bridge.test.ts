@@ -10,6 +10,7 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -74,6 +75,7 @@ for (const placement of ['publisher', 'remote'] as const) {
                 readAuthenticatedConnectionScope: readAuthorisedWsConnectionEligibility
             });
             const bridge = new SnapshotBridge();
+            let bodyFailure: Error | undefined;
             try {
                 for (const [service, socket, id] of [[publisher, publisherSocket, 'publisher'], [remote, remoteSocket, 'remote']] as const) {
                     await installQueueBoxPubSubBridge({
@@ -94,18 +96,34 @@ for (const placement of ['publisher', 'remote'] as const) {
                 assert.equal(bridge.published.length, 1);
                 assert.equal(native.sent.length, 1);
             }
-            finally {
-                publisher.dispose();
-                remote.dispose();
-                publisherEngine.stop();
-                remoteEngine.stop();
-                releaseAuthorisedWsCloseFacts({
-                    sessionId: recipient.sessionId,
-                    generationId: 'generation',
-                    generationStartedAtEpochMs: recipient.now,
-                    disconnectedAtEpochMs: Date.now(),
-                    reason: 'test-finished'
-                });
+            catch (caught) {
+                bodyFailure = toError(caught);
+            }
+            const cleanup = await Promise.allSettled([
+                publisher.dispose(),
+                remote.dispose(),
+                publisherEngine.stop(),
+                remoteEngine.stop()
+            ]);
+            releaseAuthorisedWsCloseFacts({
+                sessionId: recipient.sessionId,
+                generationId: 'generation',
+                generationStartedAtEpochMs: recipient.now,
+                disconnectedAtEpochMs: Date.now(),
+                reason: 'test-finished'
+            });
+            const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+            if (bodyFailure) {
+                if (failure?.status === 'rejected') {
+                    try {
+                        console.error('Snapshot bridge cleanup failed after body failure:', failure.reason);
+                    }
+                    catch { /* Diagnostic failure cannot replace the original body error. */ }
+                }
+                throw bodyFailure;
+            }
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
             }
         });
     });

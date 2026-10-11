@@ -119,6 +119,7 @@ describe('Rallar auth login, expiry, and registration contract', () => {
         });
         mocks.rtcRxStreamer.dispose.mockImplementation(() => {
             transportState.rtcReceiverDisposed = true;
+            return Promise.resolve();
         });
         mocks.logoutFromApi.mockImplementation(async () => {
             transportState.remoteLogoutRequested = true;

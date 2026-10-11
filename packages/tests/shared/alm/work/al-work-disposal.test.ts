@@ -60,7 +60,6 @@ it('awaited disposal joins the mandatory release of a directly committed batch',
     handler.committed({ dueByMs: nowMs, writtenKeys: [] });
     await releaseStarted.promise;
     let disposed = false;
-    void handler.dispose();
     const disposal = Promise.resolve(handler.dispose()).then(() => {
         disposed = true;
     });
@@ -123,7 +122,6 @@ it('awaited disposal joins retained settlement and its release after the batch h
     await handler.ready();
     expect((await port.readEntry(entry.key))?.status).toBe(EntityStatus.RESERVED);
     let disposed = false;
-    void handler.dispose();
     const disposal = Promise.resolve(handler.dispose()).then(() => {
         disposed = true;
     });

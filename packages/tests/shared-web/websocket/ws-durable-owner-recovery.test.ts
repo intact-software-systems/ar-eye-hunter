@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 
 import {
-    afterEach,
     beforeEach,
     expect,
     it,
@@ -61,13 +60,15 @@ beforeEach(() => {
     configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
 });
 
-afterEach(() => {
-    clearSession();
-    vi.clearAllTimers();
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-    TestWebSocket.instances.length = 0;
+beforeEach(() => {
+    onTestFinished(() => {
+        clearSession();
+        vi.clearAllTimers();
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        TestWebSocket.instances.length = 0;
+    });
 });
 
 it('a fresh WS owner recovers the same pending IndexedDB original with a fresh fault map and no second enqueue', async () => {
@@ -112,9 +113,12 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
     }
     oldNative.open();
     const oldOwner = await oldConnecting;
-    onTestFinished(() => {
-        oldOwner.close();
-        oldEngine.stop();
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([oldOwner.close(), oldEngine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     const original = {
         ...newALUnicastMessage(sessionId, { topicId: 'reload', contextId: 'room', resourceId: 'one' }, 'receiver', 'reload.original', { original: true }, {
@@ -128,8 +132,11 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
     expect(oldNative.sent).toEqual([]);
     const retained = await Promise.all((await oldOwner.outbox.getAllKeys()).map((key) => oldOwner.outbox.getItem(key)));
     expect(retained.some((entry) => entry && (entry.status === EntityStatus.NEW || entry.status === EntityStatus.RETRY))).toBe(true);
-    oldOwner.close();
-    oldEngine.stop();
+    const retiring = await Promise.allSettled([oldOwner.close(), oldEngine.stop()]);
+    const retirementFailure = retiring.find((outcome) => outcome.status === 'rejected');
+    if (retirementFailure?.status === 'rejected') {
+        throw retirementFailure.reason;
+    }
 
     // Recreate both runtime store wrappers and transport owners while keeping the same real IndexedDB namespace/session.
     configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
@@ -163,9 +170,12 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
     }
     freshNative.open();
     const freshOwner = await freshConnecting;
-    onTestFinished(() => {
-        freshOwner.close();
-        freshEngine.stop();
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([freshOwner.close(), freshEngine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     await drainFresh();
     await drainFresh();
@@ -227,8 +237,11 @@ it('retains the restored room original until actual scoped presence authorizes i
     expect((await old.service.enqueueOutboxIfAbsent(original)).verdict).toMatchObject({ kind: 'admitted', durable: true });
     await old.drain();
     expect(old.native.sent).toEqual([]);
-    old.service.close();
-    old.engine.stop();
+    const retiring = await Promise.allSettled([old.service.close(), old.engine.stop()]);
+    const retirementFailure = retiring.find((outcome) => outcome.status === 'rejected');
+    if (retirementFailure?.status === 'rejected') {
+        throw retirementFailure.reason;
+    }
     const fresh = await openRecoveryOwner(sessionId, principalId, createScriptedTransportFaultPort());
     const authorizationInput = {
         message: original,
@@ -397,7 +410,7 @@ it.each(['expiry', 'cancel', 'dispose'] as const)('never resurrects room work af
         owner.service.cancelOutbox(original.id.msgId);
     }
     if (ending === 'dispose') {
-        owner.service.close();
+        await owner.service.close();
     }
     await vi.advanceTimersByTimeAsync(ending === 'expiry' ? 30_001 : 2_000);
     setGroupStateSnapshot(createGroupSnapshotFixture({ ...ref, sessionIds: [sessionId] }));
@@ -492,9 +505,12 @@ async function openRecoveryOwner(
     }
     native.open();
     const service = await connecting;
-    onTestFinished(() => {
-        service.close();
-        engine.stop();
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([service.close(), engine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { engine, drain, native, service, settlements };
 }

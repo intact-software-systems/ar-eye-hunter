@@ -92,9 +92,12 @@ describe('verified direct room row delivery', () => {
             outboundStores: fixture.stores,
             queueEngine: winnerEngine
         });
-        onTestFinished(() => {
-            winnerService.dispose();
-            winnerEngine.stop();
+        onTestFinished(async () => {
+            const cleanup = await Promise.allSettled([winnerService.dispose(), winnerEngine.stop()]);
+            const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
         const readProof = fixture.reader.readProducerProvenance.bind(fixture.reader);
         vi.spyOn(fixture.reader, 'readProducerProvenance').mockImplementationOnce(async (message, entry) => {
@@ -255,6 +258,7 @@ class RoomFixture {
     readonly stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     readonly reader = new WsOutboxProvenanceReader({ repository: this.repository, nowMs: Date.now });
     readonly outcomes: WsOutboxDeliveryOutcome[] = [];
+    readonly retiredCompletions: Promise<PromiseSettledResult<void>[]>[] = [];
     engine = new InboxOutboxEngine();
     service = this.createService();
 
@@ -262,10 +266,14 @@ class RoomFixture {
         for (const id of ['session', 'peer-socket', 'late']) {
             this.addSocket(id);
         }
-        onTestFinished(() => {
-            this.service.dispose();
-            this.engine.stop();
+        onTestFinished(async () => {
+            this.retireTransport();
+            const outcomes = (await Promise.all(this.retiredCompletions)).flat();
             vi.restoreAllMocks();
+            const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
     }
 
@@ -291,10 +299,14 @@ class RoomFixture {
     }
 
     restart(): void {
-        this.service.dispose();
-        this.engine.stop();
+        this.retireTransport();
         this.engine = new InboxOutboxEngine();
         this.service = this.createService();
+    }
+
+    private retireTransport(): void {
+        // Restart can happen inside a send; cancellation is immediate and final cleanup joins it.
+        this.retiredCompletions.push(Promise.allSettled([this.service.dispose(), this.engine.stop()]));
     }
 
     async redeliver(entry: ResourceEntry): Promise<void> {

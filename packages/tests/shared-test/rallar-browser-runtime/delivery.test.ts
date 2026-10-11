@@ -1,9 +1,9 @@
 import 'fake-indexeddb/auto';
 import {
-    afterEach,
     beforeEach,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -133,14 +133,13 @@ async function readEveryLedgerView(
 }
 
 beforeEach(() => {
+    onTestFinished(() => {
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
+    });
     resetFacade();
     vi.useFakeTimers();
 });
-afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-});
-
 it('projects queued, submitted and acknowledged evidence without bridging settlements', async () => {
     const runtime = await loadRuntime();
     const delivery = openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
@@ -435,9 +434,7 @@ it('observes a retained pending admission without storage reads and wakes on the
     await vi.advanceTimersByTimeAsync(50);
     expect(settled).toBe(false);
     expect(observer.getCounts()).toEqual(storageBefore);
-    const releasing = claims.release();
-    await vi.advanceTimersByTimeAsync(1);
-    await releasing;
+    await claims.release(outbound);
     await runOutboundWorkTask(outbound);
     expect(settled).toBe(true);
     expect(await replayed).toMatchObject({ state: 'queued', enqueued: true });

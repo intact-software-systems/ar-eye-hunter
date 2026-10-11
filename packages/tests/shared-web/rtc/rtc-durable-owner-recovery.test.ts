@@ -2,7 +2,6 @@
 
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import {
-    afterEach,
     beforeEach,
     expect,
     it,
@@ -53,12 +52,11 @@ beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(1_000);
     nativeRuntime = installNativeRtcRuntime();
-});
-
-afterEach(() => {
-    nativeRuntime.dispose();
-    vi.restoreAllMocks();
-    vi.useRealTimers();
+    onTestFinished(() => {
+        nativeRuntime.dispose();
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
 });
 
 it('recovers the same IndexedDB room original when its captured RTC edge becomes authorized after owner recreation', async () => {
@@ -117,7 +115,7 @@ it.each(['cancel', 'dispose'] as const)('prevents the current owner writing afte
         fresh.manager.cancel(original.id.msgId);
     }
     else {
-        fresh.close();
+        await fresh.close();
     }
     fresh.observe(['receiver']);
     vi.setSystemTime(1_200);
@@ -193,7 +191,7 @@ it.each(['different-origin', 'relay'] as const)('does not grant originating rete
     }
     await old.drain();
     expect(old.native.sent).toEqual([]);
-    old.close();
+    await old.close();
     const fresh = new RtcRecoveryOwner(sessionId);
     await fresh.open();
     fresh.observe(mode === 'relay' ? ['origin'] : []);
@@ -223,7 +221,7 @@ async function recreateHeldOriginal(): Promise<RetainedRtcOriginal> {
     expect(admission.verdict).toMatchObject({ kind: 'admitted', durable: true });
     await old.drain();
     expect(oldNative.sent).toEqual([]);
-    old.close();
+    await old.close();
     const fresh = new RtcRecoveryOwner(sessionId);
     await fresh.open();
     fresh.observe([]);
@@ -368,11 +366,14 @@ class RtcRecoveryOwner {
         };
     }
 
-    close(): void {
-        this.manager.dispose();
-        this.engine.stop();
+    async close(): Promise<void> {
+        const cleanup = Promise.allSettled([this.manager.dispose(), this.engine.stop()]);
         for (const peerId of this.connection.knownPeerIds()) {
             this.connection.removePeerIfPresent(peerId);
+        }
+        const failure = (await cleanup).find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
         }
     }
 }

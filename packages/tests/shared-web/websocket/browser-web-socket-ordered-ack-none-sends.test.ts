@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
@@ -40,10 +40,12 @@ interface OrderedSender {
 
 describe('ordered ack-none room sends on the browser WS client', () => {
     beforeEach(() => vi.stubGlobal('WebSocket', TestWebSocket));
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.unstubAllGlobals();
-        TestWebSocket.instances.length = 0;
+    beforeEach(() => {
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+            vi.unstubAllGlobals();
+            TestWebSocket.instances.length = 0;
+        });
     });
 
     it('submits all 65 sends of a track sent seq 2 to 65 then seq 1, none waiting on a receipt', async () => {
@@ -120,10 +122,16 @@ async function openOrderedSender(leaseMs: number): Promise<OrderedSender> {
     const native = TestWebSocket.instances.at(-1)!;
     native.open();
     const service = await connecting;
-    onTestFinished(() => {
-        service.close();
-        engine.stop();
-        socket.close(1000, 'test-finished');
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([
+            service.close(),
+            engine.stop(),
+            Promise.resolve().then(() => socket.close(1000, 'test-finished'))
+        ]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { service, socket: native, settlements, sessionId };
 }

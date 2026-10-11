@@ -81,6 +81,10 @@ import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-clie
 import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/ws-queue-box-client-service.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { JsonWebSocketClient, type WebSocketConnectOptions } from '@shared/websocket/json-web-socket-client.ts';
+import {
+    closeBrowserTransportResources,
+    reportBrowserStartupCleanupFailure
+} from './close-browser-transport-resources.ts';
 
 import {
     browserStateCacheLifecycle,
@@ -175,6 +179,14 @@ interface BrowserRtcTransport {
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
 }
 
+/** Only successfully acquired RTC owners enter startup rollback; construction fills this journal. */
+interface BrowserRtcAcquisitions {
+    readonly webRtcConnectionService: WebRtcConnectionService;
+    webRtcOverlayMulticastManager?: WebRtcOverlayMulticastManager;
+    rtcRxStreamer?: WebRtcRxStreamerService;
+    webRtcGroupManager?: WebRtcGroupManager;
+}
+
 interface InitialiseBrowserRtcTransportInput extends InitialiseBrowserTransportInput {
     readonly rtcSignalingTopicId: string;
     readonly webSocketTransport: BrowserWebSocketTransport;
@@ -240,12 +252,13 @@ export async function initialiseMiddleware(
     );
     const transportInput = createBrowserTransportInput(session, options);
     const webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
-    const rtcTransport = await initialiseBrowserRtcTransport({
-        ...transportInput,
-        rtcSignalingTopicId,
-        webSocketTransport
-    });
+    let rtcTransport: BrowserRtcTransport | undefined;
     try {
+        rtcTransport = await initialiseBrowserRtcTransport({
+            ...transportInput,
+            rtcSignalingTopicId,
+            webSocketTransport
+        });
         const bootstrapDegree = resolveBootstrapDegree({
             bootstrapDegree: options.bootstrapDegree,
             maxPeerConnections: options.maxPeerConnections
@@ -277,7 +290,8 @@ export async function initialiseMiddleware(
         };
     }
     catch (caught) {
-        rtcTransport.webRtcConnectionService.disposeNativeObservations();
+        await closeBrowserTransportResources({ ...webSocketTransport, ...rtcTransport })
+            .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
         throw caught;
     }
 }
@@ -440,13 +454,23 @@ async function initialiseBrowserWebSocketTransport(
     );
     const socket = createBrowserWebSocketClient(input, apiConfig);
     const qboxEngine = createBrowserQueueBoxEngine();
-    const webSocketQueueBox = await createBrowserWebSocketQueueBox(
-        toBrowserWebSocketQueueBoxInput(input, { qboxEngine, socket, serverPeerId: apiConfig.serverPeerId })
-    ).catch((caught) => {
-        const error = toError(caught);
-        console.error('Failed to connect WebSocket client:', error);
-        throw error;
-    });
+    let webSocketQueueBox: WsQueueBoxClientService;
+    try {
+        webSocketQueueBox = await createBrowserWebSocketQueueBox(
+            toBrowserWebSocketQueueBoxInput(input, { qboxEngine, socket, serverPeerId: apiConfig.serverPeerId })
+        ).catch((caught) => {
+            const error = toError(caught);
+            try {
+                console.error('Failed to connect WebSocket client:', error);
+            }
+            catch { /* Preserve the actual connection failure if its reporting sink fails. */ }
+            throw error;
+        });
+    }
+    catch (caught) {
+        await qboxEngine.stop().catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+        throw caught;
+    }
     return { qboxEngine, webSocketQueueBox };
 }
 
@@ -494,6 +518,7 @@ async function initialiseBrowserRtcTransport(
         input,
         iceCandidates
     );
+    const acquired: BrowserRtcAcquisitions = { webRtcConnectionService };
     try {
         const webRtcOverlayMulticastManager = rtcEngine.initialiseRtcOverlayMulticastManager(
             toRtcOverlayMulticastManagerInput(input, {
@@ -501,6 +526,7 @@ async function initialiseBrowserRtcTransport(
                 qboxEngine: input.webSocketTransport.qboxEngine
             })
         );
+        acquired.webRtcOverlayMulticastManager = webRtcOverlayMulticastManager;
         const rtcRxStreamer = rtcEngine.initialiseRtcRxStreamer(
             {
                 webRtcOverlayMulticastManager,
@@ -514,6 +540,7 @@ async function initialiseBrowserRtcTransport(
                 onResyncRequired: input.options.onResyncRequired
             }
         );
+        acquired.rtcRxStreamer = rtcRxStreamer;
         registerBrowserRttEgress(input, rtcRxStreamer);
         registerBrowserRtcPeerStreaming(webRtcConnectionService, rtcRxStreamer);
         const webRtcGroupManager = createBrowserRtcGroupManager(
@@ -521,6 +548,7 @@ async function initialiseBrowserRtcTransport(
             webRtcConnectionService,
             rtcRxStreamer
         );
+        acquired.webRtcGroupManager = webRtcGroupManager;
         return {
             rtcCaptureReceipt,
             webRtcConnectionService,
@@ -530,7 +558,8 @@ async function initialiseBrowserRtcTransport(
         };
     }
     catch (caught) {
-        webRtcConnectionService.disposeNativeObservations();
+        await closeBrowserTransportResources(acquired)
+            .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
         throw caught;
     }
 }

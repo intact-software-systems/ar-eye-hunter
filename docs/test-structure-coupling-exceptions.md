@@ -7194,17 +7194,6 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared/alm/al-outbound-control-admission.test.ts#answers pending-control for a backend conflict without an inner retry"
     },
     {
-      "id": "test-structure-coupling-11102ca02776726f",
-      "path": "packages/tests/shared/alm/outbound-runtime-test-fixture.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "alm-outbound-held-claim-quiescence",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar shared maintainers",
-      "rationale": "The spied claim count is the polled condition of a bounded wait rather than a product property: it is the only observable of “no batch is still asking for work” available to a fixture that receives stores and not a runtime, and the assertion is that wait's budget, failing loudly instead of restoring real claims inside a batch.",
-      "removalCondition": "Remove once the outbound owner exposes batch quiescence to a fixture, so holdOutboundClaims awaits an owner-side idle signal instead of polling the queue spy's call count.",
-      "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#lets only one runtime claim the same committed send effect"
-    },
-    {
       "id": "test-structure-coupling-1dca6ab0819a3459",
       "path": "packages/tests/shared/alm/al-outbound-store-lane.test.ts",
       "kind": "mock-invocation-count-or-order",

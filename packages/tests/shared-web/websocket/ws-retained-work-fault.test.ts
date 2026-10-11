@@ -1,5 +1,4 @@
 import {
-    afterEach,
     beforeEach,
     describe,
     expect,
@@ -45,12 +44,14 @@ describe('WS retained-work faults', () => {
         });
         vi.stubGlobal('WebSocket', TestWebSocket);
     });
-    afterEach(() => {
-        vi.clearAllTimers();
-        vi.useRealTimers();
-        vi.restoreAllMocks();
-        vi.unstubAllGlobals();
-        TestWebSocket.instances.length = 0;
+    beforeEach(() => {
+        onTestFinished(() => {
+            vi.clearAllTimers();
+            vi.useRealTimers();
+            vi.restoreAllMocks();
+            vi.unstubAllGlobals();
+            TestWebSocket.instances.length = 0;
+        });
     });
 
     it('supersedes held work through the real configured QoS normalizer and submits only its replacement', async () => {
@@ -96,9 +97,12 @@ describe('WS retained-work faults', () => {
         }
         native.open();
         const service = await connecting;
-        onTestFinished(() => {
-            service.close();
-            engine.stop();
+        onTestFinished(async () => {
+            const outcomes = await Promise.allSettled([service.close(), engine.stop()]);
+            const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
         const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
         // This fixture owns the auth-storage port; room authority is the real readable repository.
@@ -181,9 +185,12 @@ describe('WS retained-work faults', () => {
         }
         native.open();
         const service = await connecting;
-        onTestFinished(() => {
-            service.close();
-            engine.stop();
+        onTestFinished(async () => {
+            const outcomes = await Promise.allSettled([service.close(), engine.stop()]);
+            const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
         const callbackMessages: string[] = [];
         service.onOutboxMessageDo('observer', {

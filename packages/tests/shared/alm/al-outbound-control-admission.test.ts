@@ -9,6 +9,7 @@ import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-reso
 import { toALOrderingTrackKey, type ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import { toALSeqRangesText } from '@shared/al-contracts/al-seq-range.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import type { ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { decodeALAdmissionControlValue } from '@shared/alm/al-admission-value-validation.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
@@ -30,6 +31,7 @@ import {
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import type { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -504,7 +506,6 @@ describe('outbound control admission identity', () => {
             { fromPeerId: 'receiver', toPeerId: 'sender', msgId: 'unowned', reason: 'retransmit', observedAtEpochMs: 1 }
         );
         expect(await runtime.acceptControlMessage(foreign, 'peer')).toEqual({ kind: 'not-handled' });
-        await settleOutboundBatches();
         expect(claimed).not.toHaveBeenCalled();
 
         expect(await runtime.acceptControlMessage(repairControl(1), 'peer')).toEqual({ kind: 'committed' });
@@ -798,7 +799,15 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
     });
 });
 
-function createFixture(settlements?: ALOutboundSettlementFact[]) {
+interface ControlAdmissionFixture {
+    readonly backend: InMemoryAdmissionBackend;
+    readonly admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>;
+    readonly state: ALAdmissionMemoryState;
+    readonly workQueue: InMemoryQueueBox;
+    readonly control: ALOutboundControlAdmission<ALOutboundTransportMessage>;
+}
+
+function createFixture(settlements?: ALOutboundSettlementFact[]): ControlAdmissionFixture {
     const state = createInMemoryALAdmissionState();
     const backend = new InMemoryAdmissionBackend(state, Date.now);
     const admissionStore = createALOutboundAdmissionStore({
@@ -823,13 +832,6 @@ function createFixture(settlements?: ALOutboundSettlementFact[]) {
             settlements: settlements === undefined ? undefined : (fact) => settlements.push(fact)
         })
     };
-}
-
-/** Lets every already-started work batch settle, so "no batch ran" is a claim about a quiet queue. */
-async function settleOutboundBatches(): Promise<void> {
-    for (let pass = 0; pass < 5; pass += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
 }
 
 /** The work rows the owner retained for this scope, decoded the way its worker decodes them. */

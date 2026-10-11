@@ -108,9 +108,12 @@ describe('RTC topology producer provenance', () => {
                     expiresAtEpochMs: publication.expiresAtEpochMs
                 })
             });
-            onTestFinished(() => {
-                service.dispose();
-                engine.stop();
+            onTestFinished(async () => {
+                const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
+                const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+                if (failure?.status === 'rejected') {
+                    throw failure.reason;
+                }
             });
             const original = computed.outboxWrites[0]!.entry;
             const entry = recipient === 'changed-row' ? { ...original, resource: `${original.resource} ` } : original;

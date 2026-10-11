@@ -84,8 +84,8 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
     expect(await store.readSentMessage(original.id.msgId)).toBeUndefined();
     expect((await initial.enqueueIfAbsent(original)).verdict).toEqual({ kind: 'pending' });
     expect(await store.readSentMessage(original.id.msgId)).toBeUndefined();
-    initial.dispose();
-    await claims.release();
+    await initial.dispose();
+    await claims.release(initial);
     vi.restoreAllMocks();
     const rows = await Promise.all((await backend.workQueue.getAllKeys()).map((key) => backend.workQueue.getItem(key)));
     expect(rows.filter((row) => row?.resource.includes('pending-unique-payload'))).toHaveLength(1);

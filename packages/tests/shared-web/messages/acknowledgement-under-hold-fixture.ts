@@ -299,9 +299,12 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         inboundDiagnostics: (event) => runtime.diagnostics.push(event)
     });
     streamer.addPeer(service.readPeer('receiver')!);
-    onTestFinished(() => {
-        streamer.dispose();
-        manager.dispose();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([streamer.dispose(), manager.dispose()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return manager;
 }
@@ -385,9 +388,12 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
     }
     native.open();
     const service = await connecting;
-    onTestFinished(() => {
-        service.close();
-        runtime.engine.stop();
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([service.close(), runtime.engine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { service, native };
 }

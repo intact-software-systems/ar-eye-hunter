@@ -107,7 +107,7 @@ const apiProcess = await startApiProcess({
     stopAfterStartupFailure: async (boundHttpServer) => {
         const failures: Error[] = [];
         try {
-            rallar.runtime.qboxEngine.stop();
+            await rallar.runtime.qboxEngine.stop();
         }
         catch (error) {
             failures.push(

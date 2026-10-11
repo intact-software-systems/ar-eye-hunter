@@ -202,7 +202,7 @@ describe('the committed canonical message handed to dispatch', () => {
             durable: true
         });
         counting.reset();
-        await claims.release();
+        await claims.release(runtime);
 
         await runOutboundWorkTask(runtime);
 
@@ -211,7 +211,6 @@ describe('the committed canonical message handed to dispatch', () => {
             counting.getCounts().byKind['work-read'] ?? 0,
             'a hit reads neither canonical nor identity row'
         ).toBe(0);
-        runtime.dispose();
     });
 
     it.each(['another tab', 'a reload'] as const)(
@@ -228,7 +227,7 @@ describe('the committed canonical message handed to dispatch', () => {
                 durable: true
             });
             if (claimant === 'a reload') {
-                committer.dispose();
+                await committer.dispose();
             }
             const claiming = openHandoffTestPair(dbName);
             const sent: ALMessage[] = [];
@@ -242,7 +241,7 @@ describe('the committed canonical message handed to dispatch', () => {
                 claiming.counting.getCounts().byKind['work-read'],
                 'a miss reads the canonical pair'
             ).toBe(2);
-            await claims.release();
+            await claims.release(committer);
         }
     );
 
@@ -284,7 +283,6 @@ describe('the committed canonical message handed to dispatch', () => {
             await engine.executeOnce();
             return sent;
         }).toEqual([message]);
-        runtime.dispose();
     });
 
     it('is dropped when the storage of its pair is reset', async () => {
@@ -309,7 +307,7 @@ describe('the committed canonical message handed to dispatch', () => {
             reason: 'store-schema-mismatch'
         });
         counting.reset();
-        await claims.release();
+        await claims.release(runtime);
         await runOutboundWorkTask(runtime);
 
         expect(sent).toEqual([message]);
@@ -317,7 +315,6 @@ describe('the committed canonical message handed to dispatch', () => {
             counting.getCounts().byKind['work-read'],
             'the claim after a reset reads the canonical pair'
         ).toBe(2);
-        runtime.dispose();
     });
 
     it('is dropped when its runtime is disposed', async () => {
@@ -336,10 +333,11 @@ describe('the committed canonical message handed to dispatch', () => {
         );
         expect(handoff!.takeCanonical(held!, Date.now()), 'held while the runtime lives').toBeDefined();
 
-        runtime.dispose();
+        const disposing = runtime.dispose();
 
         expect(handoff!.takeCanonical(dropped!, Date.now())).toBeUndefined();
-        await claims.release();
+        await disposing;
+        await claims.release(runtime);
     });
 
     it('tells the lane of an IndexedDB pair when its database is reset on open', async () => {
@@ -396,7 +394,7 @@ describe('the committed canonical message handed to dispatch', () => {
         });
 
         counting.reset();
-        await claims.release();
+        await claims.release(runtime);
         await runOutboundWorkTask(runtime);
 
         expect(sent).toEqual([]);
@@ -438,7 +436,7 @@ describe('the committed canonical message handed to dispatch', () => {
             }
         });
 
-        await claims.release();
+        await claims.release(runtime);
         await runOutboundWorkTask(runtime);
 
         expect(sent).toEqual([]);
@@ -464,7 +462,7 @@ describe('the committed canonical message handed to dispatch', () => {
             'one hand-off per committed member'
         ).toEqual(members.map((member) => toALOutboundCanonicalKey(HANDOFF_NAMESPACE, member)));
         counting.reset();
-        await claims.release();
+        await claims.release(runtime);
         await runOutboundWorkTask(runtime);
         expect(sent).toHaveLength(2);
         expect(sent).toEqual(expect.arrayContaining(members));
@@ -533,13 +531,13 @@ describe('the committed canonical message handed to dispatch', () => {
         // The commit lands, then the runtime is disposed before its result reaches the lane.
         vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementation(async (bundle, observation) => {
             const committed = await commit(bundle, observation);
-            runtime.dispose();
+            await runtime.dispose();
             return committed;
         });
 
         await runtime.enqueueIfAbsent(createOutboundMessage('handoff-late-commit'));
 
         expect(handedOff, 'a disposed lane holds nothing a claim could reach').toEqual([]);
-        await claims.release();
+        await claims.release(runtime);
     });
 });

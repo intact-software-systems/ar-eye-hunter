@@ -374,7 +374,7 @@ it.each(BACKEND_KINDS)('states expiry for work claimed past its own deadline ove
     await runtime.enqueueIfAbsent(message);
     // The owner's clock passes the message deadline while its work is still unclaimed.
     ownerNowMs = Date.now() + 5_000;
-    await claims.release();
+    await claims.release(runtime);
     await runOutboundWorkTask(runtime);
 
     // Expiry alone: an attempt that ran would have stated `attempt-started` before its carrier.
@@ -450,7 +450,7 @@ it.each(BACKEND_KINDS)('states the old message superseded when its replacement c
     expect(settlements.filter((settlement) => settlement.msgId === old.id.msgId)).toEqual([
         expect.objectContaining({ kind: 'superseded', replacementMsgId: replacement.id.msgId })
     ]);
-    await held.release();
+    await held.release(runtime);
     await expect.poll(async () => {
         await runOutboundWorkTask(runtime);
         return settlements.some((settlement) => settlement.msgId === old.id.msgId && settlement.kind === 'attempt-settled');
@@ -805,7 +805,7 @@ it.each(BACKEND_KINDS)(
         await enqueueOutboundOrThrow(runtime, second);
         expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'attempt-started']);
 
-        runtime.dispose();
+        const disposing = runtime.dispose();
 
         expect(signalByMsgId.get(first.id.msgId)?.aborted).toBe(true);
         expect(signalByMsgId.get(second.id.msgId)?.aborted).toBe(true);
@@ -813,6 +813,7 @@ it.each(BACKEND_KINDS)(
 
         settledByMsgId.get(first.id.msgId)?.resolve({ status: 'cancelled', submissionAttempted: false });
         settledByMsgId.get(second.id.msgId)?.resolve({ status: 'cancelled', submissionAttempted: false });
+        await disposing;
         await waitUntil(() => settlements.length === 4);
 
         // Both attempts settle cancelled; the owner itself states no `cancelled` fact for a disposed message.

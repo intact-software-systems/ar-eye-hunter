@@ -627,13 +627,6 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
-    // The addressed-receipt test decodes raw control frames through the strict
-    // payload decoders; its values reach an assertion or a production decoder only.
-    Object.freeze({
-        path: 'packages/tests/shared/services/ws-queue-box-server-addressed-receipts.test.ts',
-        rule: 'boundary.unknown',
-        symbol: 'readControlPayloads'
-    }),
     // This predicate checks typeof, null and property presence before comparing
     // kind. Only a boolean leaves the boundary; its unknown values stay local.
     // The checker reports the boolean signature as a manual-review signal.

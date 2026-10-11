@@ -66,9 +66,12 @@ describe('middleware remote live WS notices', () => {
                 filterEligibleRecipientSessionIds: (ids) => ids
             }
         }, engine);
-        onTestFinished(() => {
-            runtime.wsQBoxServerService.dispose();
-            engine.stop();
+        onTestFinished(async () => {
+            const cleanup = await Promise.allSettled([runtime.wsQBoxServerService.dispose(), engine.stop()]);
+            const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
         await runtime.liveWsNoticeSubscriberReadiness;
         const route = { topicId: 'app.notice', contextId: 'direct', resourceId: 'notice' };
@@ -159,9 +162,12 @@ describe('middleware remote live WS notices', () => {
                 }
             }
         }, engine);
-        onTestFinished(() => {
-            runtime.wsQBoxServerService.dispose();
-            engine.stop();
+        onTestFinished(async () => {
+            const cleanup = await Promise.allSettled([runtime.wsQBoxServerService.dispose(), engine.stop()]);
+            const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
         await runtime.liveWsNoticeSubscriberReadiness;
         const message = newALBroadcastMessage(

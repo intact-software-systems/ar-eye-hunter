@@ -12,7 +12,6 @@ import {
 import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 import {
-    afterEach,
     beforeEach,
     describe,
     expect,
@@ -21,7 +20,9 @@ import {
     vi
 } from 'vitest';
 import {
-    peekOutboundWorkReadyAt
+    createOutboundRuntimeWithWorkTask,
+    peekOutboundWorkReadyAt,
+    runOutboundWorkTask
 } from '../alm/outbound-runtime-test-fixture.ts';
 import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
@@ -53,15 +54,14 @@ let nativeRuntime: NativeRtcRuntime;
 let settlements: ALDeliverySettlement[] = [];
 
 beforeEach(() => {
+    onTestFinished(() => {
+        nativeRuntime.dispose();
+        vi.useRealTimers();
+    });
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
     nativeRuntime = installNativeRtcRuntime();
     settlements = [];
-});
-
-afterEach(() => {
-    nativeRuntime.dispose();
-    vi.useRealTimers();
 });
 
 describe('RTC outbound transport results', () => {
@@ -97,9 +97,12 @@ describe('RTC outbound transport results', () => {
             outboundStores: storesFor('self:ws'),
             qosProvider: { capabilitiesForMessage: () => ({ supportedExpiry: ['ttl-only'] }) }
         });
-        onTestFinished(() => {
-            manager.dispose();
-            ws.close();
+        onTestFinished(async () => {
+            const cleanup = await Promise.allSettled([manager.dispose(), ws.close()]);
+            const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
         const original = createMessage('fallback', 'peer-1', 5_000);
         const first = await enqueueRtcAndDrain(manager, original);
@@ -232,10 +235,11 @@ describe('RTC outbound transport results', () => {
 
         await enqueueRtcAndDrain(manager, createMessage('dispose-retained'));
         expect(channel.readHealth().queuedItemCount).toBe(1);
-        manager.dispose();
+        const disposing = manager.dispose();
         expect(channel.readHealth().queuedItemCount).toBe(0);
         native.bufferedAmount = 0;
         await native.drain();
+        await disposing;
         expect(native.sent).toEqual([]);
     });
 
@@ -395,29 +399,31 @@ function createManager(
     resources: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>,
     qosProvider?: ALQosInputProvider
 ): WebRtcOverlayMulticastManager {
-    return new WebRtcOverlayMulticastManager({
-        connectionService: {
-            input: { sessionId: 'self' },
-            readyPeerIdsForLane: () => channels.map((channel) => channel.input.peerId),
-            readPeer: (peerId) => {
-                const channel = channels.find((candidate) => candidate.input.peerId === peerId);
-                return channel ? { channel } : undefined;
-            }
-        },
-        groupCache: new LatestRepository(),
-        overlayCache: new LatestRepository(),
-        multicasterFactory: () => {
-            throw new Error('A direct send must not construct a room multicaster');
-        },
-        qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, qosProvider),
-        outboundDiagnostics: undefined,
-        outboundSettlements: (settlement) => settlements.push(settlement),
-        outboundRuntime: resources,
-        circuitBreaker: toCircuitBreaker(),
-        rateLimiter: toRateLimiter(),
-        faultPort: createPassThroughTransportFaultPort(),
-        dequeueResilience: createDefaultALOutboundDequeueResilience()
-    });
+    return createOutboundRuntimeWithWorkTask(() =>
+        new WebRtcOverlayMulticastManager({
+            connectionService: {
+                input: { sessionId: 'self' },
+                readyPeerIdsForLane: () => channels.map((channel) => channel.input.peerId),
+                readPeer: (peerId) => {
+                    const channel = channels.find((candidate) => candidate.input.peerId === peerId);
+                    return channel ? { channel } : undefined;
+                }
+            },
+            groupCache: new LatestRepository(),
+            overlayCache: new LatestRepository(),
+            multicasterFactory: () => {
+                throw new Error('A direct send must not construct a room multicaster');
+            },
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, qosProvider),
+            outboundDiagnostics: undefined,
+            outboundSettlements: (settlement) => settlements.push(settlement),
+            outboundRuntime: resources,
+            circuitBreaker: toCircuitBreaker(),
+            rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
+        })
+    );
 }
 
 /** Admits a message and runs the one owner batch the admission committed, the way the worker does. */
@@ -427,7 +433,7 @@ async function enqueueRtcAndDrain(
 ): Promise<ALOutboundEnqueueResult> {
     const result = await manager.enqueueIfAbsent(msg);
     // enqueueIfAbsent's own commit fires the owner's batch without awaiting it; this settles that pass.
-    await vi.advanceTimersByTimeAsync(0);
+    await runOutboundWorkTask(manager);
     return result;
 }
 

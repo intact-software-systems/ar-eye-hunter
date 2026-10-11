@@ -146,7 +146,7 @@ it('retries durable local delivery after restart with a single admission work ow
     expect(keys).toHaveLength(1);
     const owner = (await resources.workQueue.getItem(keys[0]))!;
     expect(owner).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
-    first.dispose();
+    await first.dispose();
 
     vi.setSystemTime(owner.dequeueAudit.nextTs!.epochMilliseconds);
     const restarted = createRuntime();
@@ -204,7 +204,7 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
         expect(keys).toHaveLength(1);
         const owner = (await resources.workQueue.getItem(keys[0]))!;
         expect(owner).toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } });
-        initial.dispose();
+        await initial.dispose();
 
         vi.setSystemTime(Number(owner.dequeueAudit.startTs!.epochMilliseconds) + 10_001);
         const resumed = createRuntime();
@@ -333,7 +333,7 @@ it('retains predecessor completion through the longest admitted deadline across 
         peerId: 'sender'
     });
     await initial.admitIncomingMessage(createOrderedMessage(3), { kind: 'rtc-peer', peerId: 'sender' });
-    initial.dispose();
+    await initial.dispose();
     paused.mockRestore();
     nowMs = admittedAt + 1_000;
     const resumed = createRuntime();
@@ -650,7 +650,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
     }
     expect(waiting.length).toBeGreaterThanOrEqual(255);
     expect(waiting.every((entry) => entry.dequeueAudit.attempts === 0)).toBe(true);
-    first.runtime.dispose();
+    await first.runtime.dispose();
 
     unavailable = false;
     vi.setSystemTime(Date.now() + 10_001);
@@ -663,7 +663,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
     await expect.poll(async () => {
         return (await store.readOrderedDelivery(toALOrderingTrackKey(createOrderedMessage(1))!, 257)).completedThrough;
     }).toBe(256);
-    restarted.runtime.dispose();
+    await restarted.runtime.dispose();
     backend.workQueue.cleanup();
 
     const afterCleanup = createRuntime();

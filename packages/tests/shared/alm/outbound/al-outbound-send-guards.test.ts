@@ -188,9 +188,9 @@ describe('the guards a prepared send rechecks before its carrier runs', () => {
                 kind: 'admitted',
                 durable: true
             });
-            await claims.release();
+            await claims.release(committer);
             if (handoff === 'miss') {
-                committer.dispose();
+                await committer.dispose();
             }
             const readSessions = recordAdmissionReadSessions();
             // A miss: a restarted runtime over the same database claims what the first one committed.
