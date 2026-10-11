@@ -155,12 +155,13 @@ export class ALInboundStoreLane {
         return await this.readiness.ready();
     }
 
-    dispose(): void {
+    dispose(): Promise<void> {
         this.disposed = true;
         this.removeForeignCommitListener?.();
         this.admission.dispose();
-        this.work.dispose();
+        const workDisposed = this.work.dispose();
         this.delivery.dispose();
+        return workDisposed;
     }
 
     /** Another runtime of the session admitted to this lane's work type; inbound commits name no rows. */

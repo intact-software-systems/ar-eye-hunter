@@ -153,15 +153,16 @@ export class ALOutboundStoreLane<TPrepared> {
         return await this.readiness.ready();
     }
 
-    dispose(): void {
+    dispose(): Promise<void> {
         this.disposed = true;
-        this.work.dispose();
+        const workDisposed = this.work.dispose();
         this.dispatchAdmission.dispose();
         this.removeStorageResetListener?.();
         this.removeForeignCommitListener?.();
         this.takeOverSubscription?.unsubscribe();
         this.input.checkpoint?.dispose();
         this.input.canonicalHandoff?.clear();
+        return workDisposed;
     }
 
     flushCheckpoint(): void {

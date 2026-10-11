@@ -432,13 +432,20 @@ export class WsQueueBoxServerService {
         });
     }
 
-    dispose(): void {
+    /** Stops ingress and all ALM producers synchronously; resolves after their owned releases finish. */
+    async dispose(): Promise<void> {
         this.inboundAuthority.dispose();
         this.socket.removeOnMessageCallbackById(this.name);
-        this.inboundRuntime.dispose();
+        const inboundDisposed = this.inboundRuntime.dispose();
         this.receipts.dispose();
-        this.outboundRuntime.dispose();
+        const outboundDisposed = this.outboundRuntime.dispose();
         this.inboundDelivery.dispose();
+        const disposed = await Promise.allSettled([inboundDisposed, outboundDisposed]);
+        for (const outcome of disposed) {
+            if (outcome.status === 'rejected') {
+                throw outcome.reason;
+            }
+        }
     }
 
     authorizeInboundMessagesWith(authorizer: WsServerInboundAuthorizer): void {

@@ -1,12 +1,16 @@
-import '../../../setup-browser-indexeddb.ts';
-
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createCheckpointALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALCheckpointWriter } from '@shared/alm/checkpoint/al-checkpoint-writer.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundMessageRuntime, ALOutboundSettledSendResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
@@ -19,6 +23,8 @@ import {
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
+import '../../../setup-browser-indexeddb.ts';
 
 import {
     createTakeableDurableWorkOwnership,
@@ -111,18 +117,25 @@ describe('the checkpoint lane of an outbound runtime', () => {
     it('claims a row a reloaded document left reserved once the row\'s lease ends', async () => {
         const dbName = newDbName();
         const clock = { nowMs: Date.now() };
-        const reloaded = createCheckpointTestRuntime({ dbName, owned: true, clock, holdSends: true });
-        await reloaded.runtime.enqueueIfAbsent(createOutboundMessage('checkpoint-reserved'));
-        await vi.waitFor(() => expect(reloaded.attempted).toEqual(['checkpoint-reserved']));
-        reloaded.runtime.flushCheckpoint();
-        await vi.waitFor(() => expect(reloaded.observer.getCounts().byKind.write).toBe(1));
-        reloaded.runtime.dispose();
-        clock.nowMs += OUTBOUND_LEASE_RECOVERY_BOUND_MS;
+        const abandonedSend = Promise.withResolvers<ALOutboundSettledSendResult>();
+        const reloaded = createCheckpointTestRuntime({ dbName, owned: true, clock, abandonedSend: abandonedSend.promise });
+        try {
+            await reloaded.runtime.enqueueIfAbsent(createOutboundMessage('checkpoint-reserved'));
+            await vi.waitFor(() => expect(reloaded.attempted).toEqual(['checkpoint-reserved']));
+            reloaded.runtime.flushCheckpoint();
+            await vi.waitFor(() => expect(reloaded.observer.getCounts().byKind.write).toBe(1));
+            reloaded.runtime.dispose();
+            clock.nowMs += OUTBOUND_LEASE_RECOVERY_BOUND_MS;
 
-        const restored = createCheckpointTestRuntime({ dbName, owned: true, clock });
-        await restored.runtime.ready();
+            const restored = createCheckpointTestRuntime({ dbName, owned: true, clock });
+            await restored.runtime.ready();
 
-        await vi.waitFor(() => expect(restored.sent).toEqual(['checkpoint-reserved']));
+            await vi.waitFor(() => expect(restored.sent).toEqual(['checkpoint-reserved']));
+        }
+        finally {
+            abandonedSend.resolve({ status: 'cancelled', submissionAttempted: false });
+            await reloaded.runtime.dispose();
+        }
     });
 
     // Refusing a send while the lag stands is the browser dispatch's: the lane states the lag and keeps sending.
@@ -163,8 +176,8 @@ interface CheckpointTestRuntimeInput {
     /** Asked before each storage operation of the checkpoint store, after the counting observer. */
     readonly fault?: IndexedDbOperationObserver;
     readonly clock?: { readonly nowMs: number; };
-    /** Every attempt starts and none settles, as a document that reloads mid-send leaves it. */
-    readonly holdSends?: boolean;
+    /** An attempt held through the reload assertions; its test owns final settlement. */
+    readonly abandonedSend?: Promise<ALOutboundSettledSendResult>;
     /** A runtime built without the checkpoint pair, as the server's and Node's are. */
     readonly withoutCheckpointLane?: boolean;
 }
@@ -196,8 +209,8 @@ function createCheckpointTestRuntime(input: CheckpointTestRuntimeInput) {
         }),
         sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
             attempted.push(lifecycle.canonicalMessage.route.resourceId);
-            if (input.holdSends === true) {
-                return await new Promise(() => undefined);
+            if (input.abandonedSend !== undefined) {
+                return await input.abandonedSend;
             }
             sent.push(lifecycle.canonicalMessage.route.resourceId);
             return { status: 'sent', submissionAttempted: true };

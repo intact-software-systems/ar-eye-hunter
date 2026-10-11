@@ -202,6 +202,7 @@ interface ALWorkBatchEnd {
 export class ALWorkHandler {
     private readonly dependencies: ALWorkHandlerDependencies;
     private batch: Promise<void> | undefined;
+    private readonly retainedReleases = new Set<Promise<void>>();
     private bootstrapped = false;
     private readonly readiness: ALWorkReadinessMemory;
     /** Set when committed() lands while a batch is running; drained by one follow-up batch at that batch's end. */
@@ -241,11 +242,19 @@ export class ALWorkHandler {
         }
     }
 
-    dispose(): void {
+    /** Cancels synchronously; completion joins the running batch and every retained claim's release. */
+    async dispose(): Promise<void> {
         this.shutdown.abort();
         this.engine.dispose();
         if (this.dependencies.ownsQueueEngine) {
             this.dependencies.queueEngine.stop();
+        }
+        try {
+            await this.batch;
+        }
+        finally {
+            // A batch may register retained work while disposal is awaiting its mandatory releases.
+            await Promise.all([...this.retainedReleases]);
         }
     }
 
@@ -565,7 +574,7 @@ export class ALWorkHandler {
      * on this path or on the eventual release.
      */
     private releaseRetainedClaim(claim: ALWorkClaim, settled: Promise<ALWorkOutcome>): void {
-        void settled
+        const release = settled
             .then((outcome) => this.dependencies.port.releaseAll([{ claim, outcome }]))
             .catch((error) => console.error('Retained ALM work failed', error))
             .finally(() => {
@@ -574,6 +583,10 @@ export class ALWorkHandler {
                 this.readiness.forget('retained-release');
                 this.dependencies.queueEngine.wake();
             });
+        this.retainedReleases.add(release);
+        void release.then(() => {
+            this.retainedReleases.delete(release);
+        });
     }
 
     /** A storage failure wrote nothing, so its rows wait for the next batch; the store's health states it. */
