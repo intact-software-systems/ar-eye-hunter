@@ -1,3 +1,9 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { AppInboxIdempotencyConflictError, AppInboxReservationConflictError } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts';
 import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
@@ -6,7 +12,6 @@ import { GroupConnectDeniedError } from '@shared-server/rallar-system/group-stat
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { GroupTopologyConfigValidationError } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { GROUP_CONNECT_REJECTION_CODES } from '@shared/api/group-lifecycle/group-connect-rejection-codes.ts';
-import { describe, expect, it } from 'vitest';
 
 describe('AppInbox error classification', () => {
     it('serializes typed validation issues into the current failure contract', () => {
