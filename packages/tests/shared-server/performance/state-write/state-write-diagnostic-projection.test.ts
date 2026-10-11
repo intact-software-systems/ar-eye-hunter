@@ -1,12 +1,42 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { decodeJsonWireText, type JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it } from 'vitest';
-import { toStateWriteAppInboxExpectations } from '../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-app-inbox-evidence.ts';
+
 import {
     computeStateWriteDiagnosticPhase,
     type StateWriteDiagnosticPhase
 } from '../../../../../apps/api-v1/scripts/perf/state-write/state-write-diagnostic-projection.ts';
+
+const profile = {
+    logicalResourceId: 'PRIVATE:profile-instance:0-profile',
+    physicalKey: {
+        resourceId: 'PRIVATE:profile-instance:0-profile',
+        topicId: 'CLIENT_PRINCIPAL_UPSERT',
+        contextId: 'application-PRIVATE-ap-chsq5tya15k6'
+    }
+};
+const instance = {
+    logicalResourceId: 'PRIVATE:profile-instance:0-instance',
+    physicalKey: {
+        resourceId: 'PRIVATE:profile-instance:0-instance',
+        topicId: 'CLIENT_INSTANCE_UPSERT',
+        contextId: 'application-PRIVATE-ap-chsq5tya15k6'
+    }
+};
+const config = {
+    physicalKey: {
+        resourceId: 'PRIVATE:config:1',
+        topicId: 'GROUP_UPDATE',
+        contextId: 'PRIVATE-application-PR-b08hzzfx65w9'
+    }
+};
 
 const budget = { eventsPerPhase: 100, bytesPerPhase: 32_768, bytesPerRun: 65_536 };
 
@@ -51,14 +81,22 @@ function createEvent(requestId: string, details: RallarTimingEvent['details']): 
     };
 }
 
-function readRecords(serialized: string): Record<string, unknown>[] {
-    return serialized.trim() ? serialized.trim().split('\n').map((line) => JSON.parse(line)) : [];
+function readRecords(serialized: string): readonly JsonWireObject[] {
+    if (!serialized.trim()) {
+        return [];
+    }
+    return serialized.trim().split('\n').map((line) => {
+        const record = decodeJsonWireText(line, 'Diagnostic test record');
+        if (record === null || typeof record !== 'object' || Array.isArray(record)) {
+            throw new TypeError('Diagnostic test record must be an object');
+        }
+        return record as JsonWireObject;
+    });
 }
 
 describe('state-write diagnostic projection', () => {
     it('joins interleaved physical and logical operations while separating origin, observer and clocks', () => {
         const phase = createPhase();
-        const [profile, instance, config] = toStateWriteAppInboxExpectations(phase.commands, phase.scope, 5);
         const events = [
             createEvent(instance.logicalResourceId, { ...instance.physicalKey, attempt: 2 }),
             createEvent(config.physicalKey.resourceId, { ...config.physicalKey }),
@@ -107,7 +145,6 @@ describe('state-write diagnostic projection', () => {
 
     it('rejects mismatched and ambiguous identities and unsupported labels without guessing missing attempts', () => {
         const phase = createPhase();
-        const [profile] = toStateWriteAppInboxExpectations(phase.commands, phase.scope, 5);
         const events = [createEvent(profile.logicalResourceId, { ...profile.physicalKey, contextId: 'PRIVATE-wrong' }), {
             ...createEvent('PRIVATE-unknown', {}),
             operation: 'PRIVATE-SQL-payload'
@@ -122,7 +159,6 @@ describe('state-write diagnostic projection', () => {
 
     it('marks missing required request identity and contradictory operation identity incomplete', () => {
         const phase = createPhase();
-        const [profile] = toStateWriteAppInboxExpectations(phase.commands, phase.scope, 5);
         const missing = { ...createEvent(profile.logicalResourceId, {}), requestId: undefined };
         const contradictory = {
             ...createEvent(profile.physicalKey.resourceId, { ...profile.physicalKey }),
@@ -160,7 +196,6 @@ describe('state-write diagnostic projection', () => {
 
     it('shares the event ceiling between releases and timing records, retaining release facts first', () => {
         const phase = createPhase();
-        const [profile] = toStateWriteAppInboxExpectations(phase.commands, phase.scope, 5);
         const release = {
             key: profile.physicalKey,
             type: 'APP_INBOX',
@@ -185,7 +220,6 @@ describe('state-write diagnostic projection', () => {
 
     it('bounds records and serialized bytes while preserving inputs and prioritizing boundaries', () => {
         const phase = createPhase();
-        const [profile] = toStateWriteAppInboxExpectations(phase.commands, phase.scope, 5);
         const events = Array.from({ length: 20 }, () => createEvent(profile.logicalResourceId, {}));
         const snapshot = JSON.stringify(events);
         const capped = computeStateWriteDiagnosticPhase({ ...phase, timingEvents: events }, { ...budget, eventsPerPhase: 2 }, 65_536);

@@ -275,9 +275,10 @@ improvement claim and does not authorize or replace the governed comparison.
 
 For source navigation, start at `api-v1-state-write-concurrency-bench.ts` for
 SQL/phase/artifact lifecycle. Under `state-write/`, `state-write-workload.ts` owns
-the complete seven-kind command and queue-pump flow, `state-write-seed.ts` owns
-setup, and `state-write-measurement.ts` owns summaries. Diagnostic policy and safe
-projection live in `state-write-diagnostic-projection.ts`; file lifecycle lives
+the complete seven-kind command and queue-pump flow, `seed-complete-state.ts` owns
+setup, and `state-write-measurement.ts` owns summaries. Exact command/operation association
+policy lives in `state-write-diagnostic-association.ts`; record projection and caps
+live in `state-write-diagnostic-projection.ts`; file lifecycle lives
 in `state-write-diagnostic-writer.ts`. `state-write-benchmark-output.ts` owns the
 mandatory v6 file effect followed by supplemental finalization.
 

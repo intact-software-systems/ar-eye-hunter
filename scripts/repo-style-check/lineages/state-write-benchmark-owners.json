@@ -9,7 +9,7 @@
       },
       "targets": [
         "apps/api-v1/scripts/perf/state-write/state-write-workload.ts",
-        "apps/api-v1/scripts/perf/state-write/state-write-seed.ts",
+        "apps/api-v1/scripts/perf/state-write/seed-complete-state.ts",
         "apps/api-v1/scripts/perf/state-write/state-write-measurement.ts",
         "apps/api-v1/scripts/perf/state-write/state-write-benchmark-output.ts"
       ]

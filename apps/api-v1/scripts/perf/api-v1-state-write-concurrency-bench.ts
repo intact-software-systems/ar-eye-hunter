@@ -32,6 +32,7 @@ import {
     type StateWriteBenchmarkOptions
 } from './state-write/api-v1-state-write-benchmark-options.ts';
 import { selectStateWriteRegressionReasons } from './state-write/api-v1-state-write-regression-reasons.ts';
+import { seedCompleteState } from './state-write/seed-complete-state.ts';
 import { writeStateWriteBenchmarkOutput } from './state-write/state-write-benchmark-output.ts';
 import {
     STATE_WRITE_DIAGNOSTIC_BUDGET,
@@ -45,7 +46,6 @@ import {
     type RunSample,
     type WorkloadEvidence
 } from './state-write/state-write-measurement.ts';
-import { seedCompleteState } from './state-write/state-write-seed.ts';
 import type { StateWriteBenchmarkCommand, StateWriteDiagnosticCommand } from './state-write/state-write-workload.ts';
 import {
     createCommands,
