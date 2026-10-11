@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { AL_CONTROL_ACK_TYPE_ID } from '../../al-contracts/al-control-type-ids.ts';
 import { parseALControlMessage } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { Either } from '../../resilience/Either.ts';
@@ -20,7 +21,76 @@ export type ALInboundAdmissionOutcome =
     | 'unauthorized'
     | 'pending';
 
+export type ALInboundDispatchDisposition =
+    | 'shutdown'
+    | 'expired'
+    | 'plan-retry'
+    | 'plan-dropped'
+    | 'local-disabled'
+    | 'ordering-completed'
+    | 'ordering-retry'
+    | 'consumer-unavailable'
+    | 'port-returned'
+    | 'port-retry'
+    | 'port-threw';
+
+export interface ALInboundDispatchDecision {
+    readonly kind: 'dispatch-decision';
+    readonly lane: ALStoreDurability;
+    readonly workerId: string;
+    readonly effectId: string;
+    readonly msgId: string | null;
+    readonly typeId: string | null;
+    readonly carrier: ALDeliveryCarrier;
+    readonly attempts: number;
+    readonly atEpochMs: number;
+    readonly disposition: ALInboundDispatchDisposition;
+}
+
+/** One concrete WS selection; exact callback settlement is not a native application receipt. */
+export interface ALInboundConsumerInvocation {
+    readonly kind: 'consumer-invocation';
+    readonly msgId: string;
+    readonly typeId: string;
+    readonly carrier: 'ws';
+    readonly selection: 'exact-type' | 'absent';
+    readonly outcome: 'returned' | 'retry' | 'threw' | 'not-invoked';
+    readonly beganAtMs: number;
+    readonly settledAtMs: number;
+}
+
+/** Registered AL callback/admission facts, after earlier receive processing; never native arrival time. */
+export type ALInboundRtcAckIngress =
+    & Readonly<{
+        kind: 'rtc-ack-ingress';
+        controlMsgId: string;
+        controlSenderId: string;
+        fromPeerId: string;
+        toPeerId: string;
+        carrier: 'rtc';
+        observedAtEpochMs: number;
+    }>
+    & (
+        | Readonly<{ stage: 'callback-entered'; }>
+        | Readonly<{ stage: 'admission-threw'; pass: 'initial' | 'after-authority-refresh'; }>
+        | Readonly<{
+            stage: 'admission-returned';
+            pass: 'initial' | 'after-authority-refresh';
+            outcome: 'accepted';
+            acceptance: ALInboundMessageRuntime.Acceptance['kind'];
+        }>
+        | Readonly<{
+            stage: 'admission-returned';
+            pass: 'initial' | 'after-authority-refresh';
+            outcome: 'rejected';
+            rejection: ALMessageRejection['code'];
+        }>
+    );
+
 export type ALInboundRuntimeDiagnosticsEvent =
+    | ALInboundDispatchDecision
+    | ALInboundConsumerInvocation
+    | ALInboundRtcAckIngress
     | ALInboundAcknowledgementEvidence.Association
     | ALInboundAcknowledgementEvidence.Handoff
     | Readonly<{
@@ -224,5 +294,125 @@ function toAcceptanceDiagnostics(
             return { outcome: 'not-handled', reason: `storage-unavailable: ${acceptance.unavailable.cause}` };
         default:
             return { outcome: 'not-handled', reason: acceptance.kind };
+    }
+}
+/** Diagnostics are supplemental: a failed sink must not change delivery or replace its original error. */
+export function recordALInboundDiagnostic(
+    sink: ALInboundRuntimeDiagnosticsSink | undefined,
+    event: ALInboundRuntimeDiagnosticsEvent
+): void {
+    try {
+        sink?.(event);
+    }
+    catch {
+        // No second sink or arbitrary error text escapes this optional observation boundary.
+    }
+}
+
+export namespace ALInboundRtcAckObservation {
+    export interface Dependencies {
+        readonly sessionId: string;
+        readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
+        readonly epochNow: () => number;
+    }
+
+    export interface Identity {
+        readonly controlMsgId: string;
+        readonly controlSenderId: string;
+        readonly fromPeerId: string;
+        readonly toPeerId: string;
+    }
+
+    export interface AdmissionInput {
+        readonly pass: 'initial' | 'after-authority-refresh';
+        readonly admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance> | 'threw';
+    }
+}
+
+/** Closed optional facts of one registered RTC ACK invocation; never admission or routing policy. */
+export class ALInboundRtcAckObservation {
+    private readonly dependencies: ALInboundRtcAckObservation.Dependencies;
+    private readonly identity: ALInboundRtcAckObservation.Identity;
+    private readonly sink: ALInboundRuntimeDiagnosticsSink;
+
+    constructor(
+        dependencies: ALInboundRtcAckObservation.Dependencies,
+        identity: ALInboundRtcAckObservation.Identity,
+        sink: ALInboundRuntimeDiagnosticsSink
+    ) {
+        this.dependencies = dependencies;
+        this.identity = identity;
+        this.sink = sink;
+    }
+
+    static tryCreate(
+        dependencies: ALInboundRtcAckObservation.Dependencies,
+        message: ALMessage | undefined,
+        fromPeerId: string
+    ): ALInboundRtcAckObservation | undefined {
+        try {
+            const sink = dependencies.inboundDiagnostics;
+            if (!sink || message?.payload.typeId !== AL_CONTROL_ACK_TYPE_ID) {
+                return;
+            }
+            return new this(
+                dependencies,
+                Object.freeze({
+                    controlMsgId: message.id.msgId,
+                    controlSenderId: message.id.senderId,
+                    fromPeerId,
+                    toPeerId: dependencies.sessionId
+                }),
+                sink
+            );
+        }
+        catch { /* Optional construction cannot block mandatory admission. */ }
+    }
+
+    callbackEntered(): void {
+        try {
+            recordALInboundDiagnostic(this.sink, {
+                kind: 'rtc-ack-ingress',
+                ...this.identity,
+                carrier: 'rtc',
+                stage: 'callback-entered',
+                observedAtEpochMs: this.dependencies.epochNow()
+            });
+        }
+        catch { /* Optional projection and clock cannot block mandatory admission. */ }
+    }
+
+    admissionResult(input: ALInboundRtcAckObservation.AdmissionInput): void {
+        try {
+            const identity = {
+                kind: 'rtc-ack-ingress',
+                ...this.identity,
+                carrier: 'rtc',
+                pass: input.pass,
+                observedAtEpochMs: this.dependencies.epochNow()
+            } as const;
+            let event: ALInboundRtcAckIngress;
+            if (input.admitted === 'threw') {
+                event = { ...identity, stage: 'admission-threw' };
+            }
+            else if (input.admitted.left) {
+                event = {
+                    ...identity,
+                    stage: 'admission-returned',
+                    outcome: 'rejected',
+                    rejection: input.admitted.left.code
+                };
+            }
+            else {
+                event = {
+                    ...identity,
+                    stage: 'admission-returned',
+                    outcome: 'accepted',
+                    acceptance: input.admitted.right!.kind
+                };
+            }
+            recordALInboundDiagnostic(this.sink, event);
+        }
+        catch { /* Observation never changes the actual acceptance or original thrown value. */ }
     }
 }

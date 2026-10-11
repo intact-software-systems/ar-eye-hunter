@@ -17,6 +17,7 @@ import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-t
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
+import type { QRtcDataChannel } from '../../webrtc/qrtc-data-channel.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALCheckpointPort } from '../checkpoint/al-checkpoint.ts';
 import type {
@@ -302,8 +303,23 @@ export type ALOutboundCommitOrigin = 'send' | 'drain' | 'repair';
 /** What the write transaction returned, or that the admission settled before opening one. */
 export type ALOutboundCommitBundleOutcome = 'committed' | 'conflict' | 'expired' | 'not-attempted';
 
+/** The QR terminal fact for one exact ACK/hop; sent establishes local submission, not recipient delivery. */
+export interface ALOutboundRtcAckSubmission {
+    readonly kind: 'rtc-ack-submission';
+    readonly controlMsgId: string;
+    readonly controlSenderId: string;
+    readonly fromPeerId: string;
+    readonly toPeerId: string;
+    readonly carrier: 'rtc';
+    readonly status: QRtcDataChannel.SendSettlement['status'];
+    readonly submissionAttempted: boolean;
+    /** Terminal observer time, after QR's settlement microtask; not the instant native send ran. */
+    readonly observedAtEpochMs: number;
+}
+
 export type ALOutboundRuntimeDiagnosticsEvent =
     | ALOutboundReceiptConfirmationDiagnostic
+    | ALOutboundRtcAckSubmission
     | Readonly<{
         kind: 'sender-queue-wait';
         senderId: string;
