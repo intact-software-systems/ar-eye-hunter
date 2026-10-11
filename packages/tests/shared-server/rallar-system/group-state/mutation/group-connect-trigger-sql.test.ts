@@ -25,6 +25,7 @@ import {
     computeAppOutboxInsert,
     writeAppOutboxInsert
 } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { computeGroupConnectTriggerEntry } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
 import type { GroupMutationComputedWrite } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
@@ -46,6 +47,7 @@ import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topol
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -89,7 +91,7 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
             expect(statements.filter((statement) => statement.includes('from resource_inbox'))).toEqual([]);
             expect((await latches.read(identity))?.latch.state).toBe('awaiting-publication');
             const batch = computed.persistence.guardedBatch;
-            expect(JSON.parse((await runtime.findEntry(batch.guard.namespace, batch.guard.key))!.value).lifecycleState).toBe('planned');
+            expect(decodeJsonWireText((await runtime.findEntry(batch.guard.namespace, batch.guard.key))!.value)).toMatchObject({ lifecycleState: 'planned' });
             await sql`delete from resource_inbox where fk_ext_bank_id = ${entry.key.contextId} and ri_resource_id = ${entry.key.resourceId}`;
             await sql.begin((tx) => writeGroupMutation(tx, computed));
             expect((await latches.read(identity))?.latch.state).toBe('consumed');
@@ -112,18 +114,18 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
                     throw new Error('after publication before commit');
                 });
             });
-            await expect(h.handler.onMessage(JSON.parse(first.resource), first)).rejects.toThrow('after publication before commit');
+            await expect(h.handler.onMessage(decodePersistedALMessage(first.resource), first)).rejects.toThrow('after publication before commit');
             fault.mockRestore();
             expect(await h.snapshots.findSnapshot(h.group.group)).toBeUndefined();
             expect(await readPublicationWakes(sql, h.group)).toHaveLength(0);
-            await h.handler.onMessage(JSON.parse(first.resource), first);
+            await h.handler.onMessage(decodePersistedALMessage(first.resource), first);
             const planned = await h.snapshots.findSnapshot(h.group.group);
             expect(planned?.state).toBe('active');
             expect(await readPublicationWakes(sql, h.group)).toHaveLength(1);
             const unchangedKey = await enqueueTopologyWork(h, 'rtt-refresh');
             const unchanged = await reserveTopologyWork(h, unchangedKey);
             expect(unchanged.key).toEqual(unchangedKey);
-            await h.handler.onMessage(JSON.parse(unchanged.resource), unchanged);
+            await h.handler.onMessage(decodePersistedALMessage(unchanged.resource), unchanged);
             expect(await h.snapshots.findSnapshot(h.group.group)).toEqual(planned);
             expect(await readPublicationWakes(sql, h.group)).toHaveLength(2);
             expect((await h.queue.getItem(foreignKey))?.status).toBe(EntityStatus.NEW);
@@ -374,6 +376,7 @@ function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string): P
         topologySnapshotRepository: snapshots
     });
     const handler = createRtcTopologyWorkHandler({
+        nowEpochMs: Date.now,
         outboxQueueReader,
         database: sql,
         topologyPlanning: topology.planning,
@@ -448,7 +451,11 @@ async function enqueueTopologyWork(
     return entry.key;
 }
 
-async function readPublicationWakes(sql: PSqlSql, group: GroupSnapshot) {
+interface PublicationWakeRow {
+    readonly ri_resource_id: string;
+}
+
+async function readPublicationWakes(sql: PSqlSql, group: GroupSnapshot): Promise<PublicationWakeRow[]> {
     const key = toAppQueueKey({ contextId: groupStateGroupStorageKey(group.group), topicId: 'app-outbox.group-connect-trigger', resourceId: 'unused' });
-    return await sql`select ri_resource_id from resource_inbox where fk_ext_bank_id = ${key.contextId} and ri_topic_id = ${key.topicId}`;
+    return await sql<PublicationWakeRow[]>`select ri_resource_id from resource_inbox where fk_ext_bank_id = ${key.contextId} and ri_topic_id = ${key.topicId}`;
 }

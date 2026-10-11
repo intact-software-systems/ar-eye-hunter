@@ -64,6 +64,7 @@ import {
 } from './group-activation-status-observer.ts';
 
 interface RtcTopologyWorkHandlerOptions {
+    readonly nowEpochMs: () => number;
     readonly outboxQueueReader: OutboxQueueReader;
     readonly database: PSqlSql;
     readonly topologyPlanning: Pick<
@@ -119,7 +120,7 @@ interface ProcessRtcTopologyWorkInput {
 
 async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promise<void> {
     const { options, message, entry, deferredCriterionPetitioner } = input;
-    const reservationFinish = computeRtcTopologyReservationFinish(entry, new Date());
+    const reservationFinish = computeRtcTopologyReservationFinish(entry, new Date(options.nowEpochMs()));
     const workEnvelope = readRtcTopologyWorkEnvelope(
         message,
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE

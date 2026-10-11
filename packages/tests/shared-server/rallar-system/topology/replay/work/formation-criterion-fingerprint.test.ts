@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
@@ -82,6 +87,16 @@ describe('formation criterion after unchanged topology inputs', () => {
             }]);
         }
     );
+
+    it('persists the supplied wall-clock instant when topology work completes', async () => {
+        const fixture = createCriterionFingerprintFixture();
+
+        const entry = await fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded' });
+
+        const completed = await fixture.queue.getItem(entry.key);
+        expect(completed?.status).toBe(EntityStatus.COMPLETED);
+        expect(completed?.dequeueAudit.endTs?.toString()).toBe('1970-01-01T00:00:01Z');
+    });
 
     it('applies computed planning metrics only after the topology transaction commits', async () => {
         const times = [10, 17, 20, 28];
@@ -261,6 +276,7 @@ function createCriterionFingerprintFixture(
         }
     });
     const handler = createRtcTopologyWorkHandler({
+        nowEpochMs: () => NOW,
         outboxQueueReader,
         database,
         topologyPlanning: planning,

@@ -13,14 +13,14 @@ import { COALESCED_APP_OUTBOX_WORK_FIELD } from '@shared-server/rallar-system/ap
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import {
-    decodeJsonWireValue,
+    decodeJsonWireText,
     type JsonWireObject,
     type JsonWireValue
 } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { toRtcRttMutationReceiptId, toRtcRttTopologyOutboxId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { RtcRttRefinementGate } from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-gate.ts';
 import { RtcRttRefinementService } from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-service.ts';
-import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { computeRtcTopologyOutboxInsert, type ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
@@ -49,6 +49,7 @@ import {
 } from '@shared/mod.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -61,6 +62,11 @@ import { createAppInboxTestDatabase } from '../../../app-inbox/test-support/app-
 import { GroupBarrierRepository } from '../../../group-state/group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../../../group-state/mutation/group-mutation-test-runtime.ts';
 import { createService, summaryReservationRead } from '../../../group-state/presence/group-presence-test-runtime.ts';
+
+interface CriterionSubmission {
+    readonly command: GroupMutationCommand;
+    readonly atEpochMs: number;
+}
 
 interface EnqueueAndReserveRttInput {
     readonly queue: InMemoryQueueBox;
@@ -106,6 +112,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             topologySnapshotRepository: snapshots
         }).planning;
         const handler = createRtcTopologyWorkHandler({
+            nowEpochMs: () => nowEpochMs,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, { replace: async (entry) => entry }, {
                 runtimeRepository: runtime
@@ -281,6 +288,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository)
         });
         const handler = createRtcTopologyWorkHandler({
+            nowEpochMs: () => 10,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -289,7 +297,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             executionRepository: new RtcTopologyExecutionRepository(runtimeRepository)
         });
 
-        await expect(handler.onMessage(JSON.parse(entry!.resource), entry!)).rejects.toMatchObject({
+        await expect(handler.onMessage(decodePersistedALMessage(entry!.resource), entry!)).rejects.toMatchObject({
             name: 'StateSnapshotRevisionConflictError'
         });
     });
@@ -323,6 +331,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository)
         });
         const handler = createRtcTopologyWorkHandler({
+            nowEpochMs: () => 10,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -331,7 +340,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             executionRepository: new RtcTopologyExecutionRepository(runtimeRepository)
         });
 
-        await expect(handler.onMessage(JSON.parse(entry!.resource), entry!)).rejects.toMatchObject({
+        await expect(handler.onMessage(decodePersistedALMessage(entry!.resource), entry!)).rejects.toMatchObject({
             name: 'GroupStateSnapshotIncomparableError'
         });
         expect(authoritySelections).toEqual([queuedGroup.causalRevision, undefined]);
@@ -373,6 +382,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository)
         });
         const handler = createRtcTopologyWorkHandler({
+            nowEpochMs: () => 10,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -381,7 +391,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             executionRepository: new RtcTopologyExecutionRepository(runtimeRepository)
         });
 
-        await expect(handler.onMessage(JSON.parse(entry!.resource), entry!)).rejects.toMatchObject({
+        await expect(handler.onMessage(decodePersistedALMessage(entry!.resource), entry!)).rejects.toMatchObject({
             name: 'GroupStateSnapshotIncomparableError'
         });
     });
@@ -403,7 +413,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         const group = createGroupSnapshot(4);
         await enqueueGroupRevisionWork(outboxQueueReader, group);
         const [entry] = await entriesIn(queue);
-        const message = readStoredALMessage(entry);
+        const message = decodePersistedALMessage(entry.resource);
         let corruptMessage: ALMessage;
         if (defect === 'wrong-sender') {
             corruptMessage = {
@@ -506,6 +516,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository)
         });
         const handler = createRtcTopologyWorkHandler({
+            nowEpochMs: () => 10,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -523,7 +534,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         const group = createGroupSnapshot(4);
         await enqueueGroupRevisionWork(outboxQueueReader, group);
         const [entry] = await entriesIn(queue);
-        const message = readStoredALMessage(entry);
+        const message = decodePersistedALMessage(entry.resource);
         const envelope = readJsonObject(message.payload.resource, 'topology work envelope');
         const resourceId = toRtcRttTopologyOutboxId(
             toRtcRttMutationReceiptId(rtt('session-a', 'session-b', 1)),
@@ -554,6 +565,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository)
         });
         const handler = createRtcTopologyWorkHandler({
+            nowEpochMs: () => 10,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -598,6 +610,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         };
         const runtimeRepository = new FakeRuntimeStateRepository();
         const handler = createRtcTopologyWorkHandler({
+            nowEpochMs: () => 10,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -623,7 +636,7 @@ describe('RTC topology APP_OUTBOX work', () => {
                 group,
                 version
             });
-            await expect(handler.onMessage(JSON.parse(entry.resource), entry)).resolves.toBeUndefined();
+            await expect(handler.onMessage(decodePersistedALMessage(entry.resource), entry)).resolves.toBeUndefined();
         }
         const qualifying = await enqueueAndReserveRtt({
             queue,
@@ -631,10 +644,10 @@ describe('RTC topology APP_OUTBOX work', () => {
             group,
             version: 3
         });
-        await expect(handler.onMessage(JSON.parse(qualifying.resource), qualifying)).rejects.toBe(
+        await expect(handler.onMessage(decodePersistedALMessage(qualifying.resource), qualifying)).rejects.toBe(
             planned
         );
-        await expect(handler.onMessage(JSON.parse(qualifying.resource), qualifying)).rejects.toBe(
+        await expect(handler.onMessage(decodePersistedALMessage(qualifying.resource), qualifying)).rejects.toBe(
             planned
         );
         expect(observedRttVersions).toEqual([1, 2, 3]);
@@ -702,12 +715,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             knownGroup: group,
             snapshotSelection: 'prefer-current'
         });
-        const submittedCommands: Array<
-            Readonly<{
-                command: GroupMutationCommand;
-                atEpochMs: number;
-            }>
-        > = [];
+        const submittedCommands: CriterionSubmission[] = [];
         const reservationStatusesAtSubmission: Array<EntityStatus | undefined> = [];
         const submitCommand = async (command: GroupMutationCommand, atEpochMs: number) => {
             effects.push('criterion-submission');
@@ -715,6 +723,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             submittedCommands.push({ command, atEpochMs });
         };
         const handler = createRtcTopologyWorkHandler({
+            nowEpochMs: () => 1_000,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -769,7 +778,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             group,
             version: 1
         });
-        await expect(handler.onMessage(JSON.parse(entry.resource), entry)).rejects.toThrow(
+        await expect(handler.onMessage(decodePersistedALMessage(entry.resource), entry)).rejects.toThrow(
             'Injected commit failure'
         );
 
@@ -789,7 +798,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         failCommit = false;
         effects.length = 0;
         await expect(
-            handler.onMessage(JSON.parse(redelivered.resource), redelivered)
+            handler.onMessage(decodePersistedALMessage(redelivered.resource), redelivered)
         ).resolves.toBeUndefined();
 
         expect(effects).toEqual([
@@ -822,6 +831,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             throw planned;
         };
         const handler = createRtcTopologyWorkHandler({
+            nowEpochMs: () => 10,
             outboxQueueReader,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
@@ -844,10 +854,10 @@ describe('RTC topology APP_OUTBOX work', () => {
             group: createGroupSnapshot(3),
             version: 1
         });
-        await expect(handler.onMessage(JSON.parse(canonical.resource), canonical)).rejects.toBe(
+        await expect(handler.onMessage(decodePersistedALMessage(canonical.resource), canonical)).rejects.toBe(
             planned
         );
-        await expect(handler.onMessage(JSON.parse(canonical.resource), canonical)).rejects.toBe(
+        await expect(handler.onMessage(decodePersistedALMessage(canonical.resource), canonical)).rejects.toBe(
             planned
         );
         expect(observedRttVersions).toEqual([1]);
@@ -902,7 +912,7 @@ async function reserveOnlyTopologyWork(queue: InMemoryQueueBox) {
     return entry;
 }
 
-async function entriesIn(queue: InMemoryQueueBox) {
+async function entriesIn(queue: InMemoryQueueBox): Promise<ResourceEntry[]> {
     return await Promise.all((await queue.getAllKeys()).map((key) => queue.getItem(key))).then(
         (entries) => entries.filter((entry) => entry !== undefined)
     );
@@ -914,7 +924,7 @@ function readStoredALMessage(entry: { resource: string; }): ALMessage {
 
 function readJsonObject(serialized: string, label: string): JsonWireObject {
     return requireJsonObject(
-        decodeJsonWireValue(JSON.parse(serialized), label),
+        decodeJsonWireText(serialized, label),
         label
     );
 }
@@ -930,7 +940,7 @@ function isJsonObject(value: JsonWireValue): value is JsonWireObject {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function rtt(sessionIdFrom: string, sessionIdTo: string, version: number) {
+function rtt(sessionIdFrom: string, sessionIdTo: string, version: number): RttMeasurementInfo {
     return {
         sessionIdFrom,
         sessionIdTo,
@@ -940,7 +950,7 @@ function rtt(sessionIdFrom: string, sessionIdTo: string, version: number) {
     };
 }
 
-async function enqueueAndReserveRtt(input: EnqueueAndReserveRttInput) {
+async function enqueueAndReserveRtt(input: EnqueueAndReserveRttInput): Promise<ResourceEntry> {
     const { queue, outboxQueueReader, group, version } = input;
     await enqueueRttRefreshWork(
         outboxQueueReader,
@@ -991,7 +1001,9 @@ async function enqueueRttRefreshWork(
     );
 }
 
-function topologyWorkBase(group: GroupSnapshot, resourceId: string) {
+interface TopologyWorkBase extends Omit<ComputedRtcTopologyOutbox, 'payloadKind'> {}
+
+function topologyWorkBase(group: GroupSnapshot, resourceId: string): TopologyWorkBase {
     return {
         commandId: resourceId,
         aggregateRef: group.group,

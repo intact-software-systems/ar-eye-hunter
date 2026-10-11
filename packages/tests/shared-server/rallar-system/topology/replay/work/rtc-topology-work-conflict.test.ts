@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
@@ -43,6 +48,7 @@ describe('RTC topology queue conflict boundary', () => {
         const begin = vi.spyOn(database, 'begin');
         const observeCommittedTopology = vi.fn();
         const handler = createRtcTopologyWorkHandler({
+            nowEpochMs: () => 1_000,
             outboxQueueReader: new OutboxQueueReader(queue),
             database,
             executionRepository: new RtcTopologyExecutionRepository(runtime),

@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -21,7 +23,10 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 import {
     type TopologyAppInboxCommand
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
-import type { TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
+import type {
+    TopologyAppInboxMutationOwners,
+    TopologyAppInboxResult
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import type { GroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
 import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
@@ -85,7 +90,7 @@ export function submitPGliteTopologyCommand(
     appGroup: TopologyInboxService,
     authority: IssuedAuthSession,
     command: TopologyAppInboxCommand
-) {
+): Promise<Either<AppInboxFailure, TopologyAppInboxResult>> {
     const type = command.operation === 'putConfig'
         ? AppInboxType.TOPOLOGY_CONFIG_PUT
         : command.operation === 'deleteConfig'
@@ -340,7 +345,7 @@ async function planTopologyWorkPublication(
 }
 
 async function registerTopologyWorkDelivery(setup: PGliteTopologyWorkSetup): Promise<PGliteTopologyWorkDelivery> {
-    const { sql, resourceInbox, topologyManagement, executionRepository } = setup;
+    const { sql, resourceInbox, topologyManagement, executionRepository, nowEpochMs } = setup;
     const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
     const publisherStreamId = '00000000-0000-4000-8000-000000000001';
     const topologyDelivery = new PSqlRtcTopologyDeliveryRepository(sql);
@@ -355,6 +360,7 @@ async function registerTopologyWorkDelivery(setup: PGliteTopologyWorkSetup): Pro
     );
     const outboxQueueReader = new OutboxQueueReader(queue);
     const handler = createRtcTopologyWorkHandler({
+        nowEpochMs: () => nowEpochMs,
         outboxQueueReader,
         database: sql,
         topologyPlanning: topologyManagement.planning,

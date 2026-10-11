@@ -49,9 +49,7 @@ export interface InstallTopologyAppOutboxOptions {
     }>;
 }
 
-export function installTopologyAppOutbox(
-    options: InstallTopologyAppOutboxOptions
-): void {
+export function installTopologyAppOutbox(options: InstallTopologyAppOutboxOptions): void {
     options.outboxQueueReader.onOutboxMessageDo(
         AppOutboxType.GROUP_CONNECT_TRIGGER,
         createGroupConnectTriggerWorkHandler(options.formationAutomation)
@@ -94,6 +92,7 @@ export function installTopologyAppOutbox(
     options.outboxQueueReader.onOutboxMessageDo(
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
         createRtcTopologyWorkHandler({
+            nowEpochMs: options.nowEpochMs,
             outboxQueueReader: options.outboxQueueReader,
             database: options.database,
             topologyPlanning: options.topologyPlanning,

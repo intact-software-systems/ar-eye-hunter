@@ -20,15 +20,17 @@ import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { RallarRtcTopologyService, type RallarRtcTopologyUpdateResult } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import type { ResourceInboxRelease } from '@shared/queuebox/queue-box-types.ts';
 import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
 import type {
     GroupPresenceSummary,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
@@ -209,11 +211,11 @@ Deno.test(
                 version: 1
             };
             assert.equal(await rttRepository.putMeasurementIfNewer(storedRtt), true);
-            let plannedRtts: Parameters<RallarRtcTopologyService['planGroupTopologyAt']>[1] = [];
+            let plannedRtts: readonly RttMeasurementInfo[] = [];
             class RecordingTopologyService extends RallarRtcTopologyService {
                 override planGroupTopologyAt(
                     ...args: Parameters<RallarRtcTopologyService['planGroupTopologyAt']>
-                ): ReturnType<RallarRtcTopologyService['planGroupTopologyAt']> {
+                ): RallarRtcTopologyUpdateResult {
                     plannedRtts = args[1];
                     return super.planGroupTopologyAt(...args);
                 }
@@ -333,10 +335,10 @@ Deno.test(
             let retryReleaseCount = 0;
             class RetryObservedQueueBox extends PSqlQueueBox {
                 override async releaseEntries(
-                    ...args: Parameters<PSqlQueueBox['releaseEntries']>
-                ): ReturnType<PSqlQueueBox['releaseEntries']> {
-                    const released = await super.releaseEntries(...args);
-                    if (args[0].some((release) => release.disposition.status === EntityStatus.RETRY)) {
+                    releases: readonly ResourceInboxRelease[]
+                ): Promise<Map<Key, ResourceEntry>> {
+                    const released = await super.releaseEntries(releases);
+                    if (releases.some((release) => release.disposition.status === EntityStatus.RETRY)) {
                         retryReleaseCount += 1;
                     }
                     return released;
@@ -353,6 +355,7 @@ Deno.test(
             outboxReader.onOutboxMessageDo(
                 AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
                 createRtcTopologyWorkHandler({
+                    nowEpochMs: () => nowEpochMs,
                     outboxQueueReader: outboxReader,
                     database: sql,
                     topologyPlanning: topologyManagement.planning,
