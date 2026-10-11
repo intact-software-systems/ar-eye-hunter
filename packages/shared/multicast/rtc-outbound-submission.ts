@@ -1,8 +1,10 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
+import { AL_CONTROL_ACK_TYPE_ID } from '../al-contracts/al-control-type-ids.ts';
 import type { ALQosInputProvider } from '../al-contracts/al-policy.ts';
 import {
     AL_SUBMISSION_NOT_READY_RETRY_MS,
     writeALOutboundCongestionDeferral,
+    writeALOutboundRuntimeDiagnostic,
     type ALOutboundMessageRuntime,
     type ALOutboundPreparedSendResult,
     type ALOutboundRuntimeDiagnosticsSink,
@@ -103,11 +105,12 @@ export class RtcOutboundSubmission {
         const settled = new Promise<QRtcDataChannel.SendSettlement>((resolve) => {
             resolveSettlement = resolve;
         });
+        const onSettled = this.toSettlementObserver(msg, hop.peerId, resolveSettlement);
         const expiresAtEpochMs = Math.min(lifecycle.expiresAtMs ?? Infinity, lifecycle.leaseUntilMs ?? Infinity);
         const result = hop.channel.sendJson(msg, {
             signal: lifecycle.signal,
             expiresAtEpochMs: Number.isFinite(expiresAtEpochMs) ? expiresAtEpochMs : undefined,
-            onSettled: resolveSettlement
+            onSettled
         });
         if (result.status === 'queued' || result.status === 'replaced') {
             return {
@@ -133,6 +136,40 @@ export class RtcOutboundSubmission {
             messageExpiresAtMs: lifecycle.expiresAtMs,
             observedAtMs: this.dependencies.clock.nowMs()
         });
+    }
+
+    private toSettlementObserver(
+        msg: ALMessage,
+        peerId: string,
+        resolveSettlement: (value: QRtcDataChannel.SendSettlement) => void
+    ): (value: QRtcDataChannel.SendSettlement) => void {
+        try {
+            const diagnostics = this.dependencies.diagnostics;
+            if (diagnostics && msg.payload.typeId === AL_CONTROL_ACK_TYPE_ID) {
+                const identity = {
+                    controlMsgId: msg.id.msgId,
+                    controlSenderId: msg.id.senderId,
+                    fromPeerId: this.dependencies.connectionService.input.sessionId,
+                    toPeerId: peerId
+                };
+                return (value) => {
+                    resolveSettlement(value);
+                    try {
+                        writeALOutboundRuntimeDiagnostic(diagnostics, {
+                            kind: 'rtc-ack-submission',
+                            ...identity,
+                            carrier: 'rtc',
+                            status: value.status,
+                            submissionAttempted: value.submissionAttempted,
+                            observedAtEpochMs: this.dependencies.clock.nowMs()
+                        });
+                    }
+                    catch { /* Optional projection and clock cannot replace mandatory settlement. */ }
+                };
+            }
+        }
+        catch { /* Without a usable observer, retain the original settlement callback. */ }
+        return resolveSettlement;
     }
 }
 

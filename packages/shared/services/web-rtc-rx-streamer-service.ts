@@ -1,7 +1,8 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import {
     decodeALMessageValue,
-    decodePersistedALMessage
+    decodePersistedALMessage,
+    type ALMessageRejection
 } from '../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import type { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
@@ -11,11 +12,13 @@ import type {
 } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundResyncRequired } from '../alm/inbound/al-inbound-resync-required.ts';
-import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
+import {
+    ALInboundRtcAckObservation,
+    type ALInboundRuntimeDiagnosticsSink
+} from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { toALRtcPeerSource } from '../alm/inbound/al-inbound-source-validation.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
-import type { ALOutboundCancelOutcome } from '../alm/outbound/al-outbound-message-runtime.ts';
-import type { ALOutboundEnqueueResult } from '../alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundCancelOutcome, ALOutboundEnqueueResult } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALDurableWorkOwnership } from '../alm/work/al-durable-work-ownership.ts';
 import {
     EnqueuedType,
@@ -26,6 +29,7 @@ import type { RtcCarrierGapAdmission } from '../multicast/compute-rtc-outbound-c
 import type { WebRtcOverlayMulticastManager } from '../multicast/web-rtc-overlay-multicast-manager.ts';
 import { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import type { Either } from '../resilience/Either.ts';
 import { toError } from '../resilience/to-error.ts';
 import type { QRtcClientCallbacks } from '../webrtc/qrtc-client-callbacks.ts';
 import type { QRtcMediaPolicy } from '../webrtc/qrtc-peer-connection.ts';
@@ -220,7 +224,17 @@ export class WebRtcRxStreamerService {
         }
         const message = decodeALMessageValue(value).right;
         const source = toALRtcPeerSource(peer.peerId, message);
-        const acceptance = await this.inboundRuntime.admitIncomingMessage(value, source);
+        const observation = ALInboundRtcAckObservation.tryCreate(this.dependencies, message, peer.peerId);
+        observation?.callbackEntered();
+        let acceptance: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
+        try {
+            acceptance = await this.inboundRuntime.admitIncomingMessage(value, source);
+        }
+        catch (caught) {
+            observation?.admissionResult({ pass: 'initial', admitted: 'threw' });
+            throw caught;
+        }
+        observation?.admissionResult({ pass: 'initial', admitted: acceptance });
         if (acceptance.left) {
             console.warn('Rejected RTC message', acceptance.left.code);
             return;
@@ -235,7 +249,15 @@ export class WebRtcRxStreamerService {
         if (!refreshed || this.disposed || this.peersByPeerId.get(peer.peerId) !== peer) {
             return;
         }
-        const retry = await this.inboundRuntime.admitIncomingMessage(message, source);
+        let retry: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
+        try {
+            retry = await this.inboundRuntime.admitIncomingMessage(message, source);
+        }
+        catch (caught) {
+            observation?.admissionResult({ pass: 'after-authority-refresh', admitted: 'threw' });
+            throw caught;
+        }
+        observation?.admissionResult({ pass: 'after-authority-refresh', admitted: retry });
         if (retry.left) {
             console.warn('Rejected RTC message after authority refresh', retry.left.code);
         }
