@@ -18,10 +18,14 @@ on:
         default: true
         type: boolean
       rtc_capture_mode:
-        description: RTC diagnostics capture mode (off, signaling, native)
+        description: RTC diagnostics capture mode
         required: true
         default: signaling
-        type: string
+        type: choice
+        options:
+          - disabled
+          - signaling
+          - native
 
 permissions:
   contents: read
@@ -35,6 +39,8 @@ jobs:
     name: Resolve RTC-B06 run source
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    outputs:
+      rtc_capture_mode: ${{ steps.capture-mode.outputs.rtc_capture_mode }}
     steps:
       - name: Validate the requested source
         env:
@@ -51,6 +57,21 @@ jobs:
             echo "::error::RTC observation source SHA is malformed"
             exit 1
           fi
+
+      - name: Resolve RTC capture mode
+        id: capture-mode
+        env:
+          RTC_CAPTURE_SELECTION: ${{ inputs.rtc_capture_mode }}
+        run: |
+          case "$RTC_CAPTURE_SELECTION" in
+            disabled) rtc_capture_mode=off ;;
+            signaling|native) rtc_capture_mode="$RTC_CAPTURE_SELECTION" ;;
+            *)
+              echo "::error::RTC capture selection must be disabled, signaling, or native"
+              exit 1
+              ;;
+          esac
+          echo "rtc_capture_mode=$rtc_capture_mode" >> "$GITHUB_OUTPUT"
 
   capture:
     name: Run RTC-B06 E3-memory
@@ -97,7 +118,7 @@ jobs:
       - name: Capture RTC-B06 E3-memory observation
         if: ${{ inputs.mode == 'publish' }}
         env:
-          RTC_CAPTURE_MODE: ${{ inputs.rtc_capture_mode }}
+          RTC_CAPTURE_MODE: ${{ needs.source.outputs.rtc_capture_mode }}
           ALM_DIAGNOSTICS: ${{ inputs.alm_diagnostics }}
         run: |
           env -u DATABASE_URL -u RALLAR_ICE_MODE -u RALLAR_BLACK_BOX_RTC_CAPTURE_MODE \
@@ -116,7 +137,7 @@ jobs:
       - name: Capture RTC-B06 governed branch baseline
         if: ${{ inputs.mode == 'baseline' }}
         env:
-          RTC_CAPTURE_MODE: ${{ inputs.rtc_capture_mode }}
+          RTC_CAPTURE_MODE: ${{ needs.source.outputs.rtc_capture_mode }}
           ALM_DIAGNOSTICS: ${{ inputs.alm_diagnostics }}
           RTC_SOURCE_REF: ${{ github.ref_name }}
         run: |
@@ -205,7 +226,7 @@ jobs:
 
       - name: Exercise RTC-B06 diagnostic cases
         env:
-          RTC_CAPTURE_MODE: ${{ inputs.rtc_capture_mode }}
+          RTC_CAPTURE_MODE: ${{ needs.source.outputs.rtc_capture_mode }}
           ALM_DIAGNOSTICS: ${{ inputs.alm_diagnostics }}
         run: |
           set -o pipefail
