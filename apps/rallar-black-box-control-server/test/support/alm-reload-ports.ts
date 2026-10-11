@@ -14,14 +14,17 @@ import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schem
 import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
 import {
+    createInitialALDeliveryLifecycle,
     isALDeliveryTerminalState,
     type ALDeliveryCarrier,
     type ALDeliveryCarrierFallback,
     type ALDeliveryDurabilityDowngrade,
+    type ALDeliveryLifecycle,
     type ALDeliveryReceiptEvidence,
     type ALDeliveryRelayRejection,
     type ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 
 type MessagesPortKind =
     | 'messages.send'
@@ -851,8 +854,8 @@ export class AlmReloadPorts {
     /** The server keeps a command addressed to itself and answers it with its own ACK; no member receives it. */
     private acknowledgeByServer(message: PortMessage): void {
         message.submitted = true;
-        message.state = 'acknowledged';
-        message.receiptEvidence = toCompletedPortReceiptEvidence(message, ['server-peer']);
+        message.state = 'transport-accepted';
+        this.completeReceipt(message, ['server-peer']);
     }
 
     /**
@@ -1059,9 +1062,12 @@ export class AlmReloadPorts {
         });
     }
 
-    /** Over WS the server answers a receipted send with its admitted receipt, then the complete one (R-S3a-9). */
+    /** Over WS admission precedes completion; a missing logical recipient leaves the admitted receipt pending. */
     private admitServerReceipts(message: PortMessage): void {
         for (const phase of ['admitted', 'complete'] as const) {
+            if (phase === 'complete' && message.state !== 'acknowledged') {
+                return;
+            }
             this.sender.recordEvent({
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.outbound_diagnostics',
@@ -1108,22 +1114,33 @@ export class AlmReloadPorts {
         // S3a: a send that names no ack is receipted by default; only an explicit `none` ends at transport acceptance.
         const receipted = message.command.ack !== 'none';
         message.submitted = true;
-        message.state = message.activeCarrier === 'ws' && !receipted ? 'transport-accepted' : 'acknowledged';
+        message.state = 'transport-accepted';
+        this.recordReceiverMessage(message);
+        this.completeReceipt(
+            message,
+            this.participants.filter((participant) => message.deliveredRecipientRoles.includes(participant.role))
+                .map((participant) => participant.sessionId)
+        );
         if (message.activeCarrier === 'rtc') {
             this.admitReceiverAck(message);
         }
         else if (receipted) {
             this.admitServerReceipts(message);
         }
-        this.recordReceiverMessage(message);
-        if (receipted) {
-            message.receiptEvidence = toCompletedPortReceiptEvidence(
-                message,
-                this.participants.filter((participant) => message.deliveredRecipientRoles.includes(participant.role))
-                    .map((participant) => participant.sessionId)
-            );
-        }
         this.releaseBuffered(message);
+    }
+
+    private completeReceipt(message: PortMessage, acknowledgedPeerIds: readonly string[]): void {
+        if (message.command.ack === 'none') {
+            return;
+        }
+        const lifecycle = computePortAcknowledgement(
+            message,
+            toCompletedPortReceiptEvidence(message, acknowledgedPeerIds),
+            this.now
+        );
+        message.receiptEvidence = lifecycle.evidence;
+        message.state = lifecycle.state;
     }
 
     /** Every recipient still in the group reads the arrival, with the roster its room target carried. */
@@ -1276,4 +1293,38 @@ function toCompletedPortReceiptEvidence(
             !confirmedRecipientPeerIds.includes(peerId)
         )
     };
+}
+
+function computePortAcknowledgement(
+    message: PortMessage,
+    receiptEvidence: ALDeliveryReceiptEvidence,
+    atMs: number
+): ALDeliveryLifecycle {
+    const mode = receiptEvidence.receiptMode;
+    assert(mode !== undefined);
+    const previous = createInitialALDeliveryLifecycle({
+        msgId: message.msgId,
+        typeId: message.command.typeId,
+        ackMode: message.command.ack ?? 'receiver',
+        receiptAlgo: mode,
+        expiresAtMs: message.command.ttlMs === undefined ? undefined : message.admittedAtMs + message.command.ttlMs,
+        submittedAtMs: message.admittedAtMs
+    });
+    return computeALDeliveryLifecycle({
+        ...previous,
+        state: message.state,
+        evidence: { ...previous.evidence, ...message.receiptEvidence, carrierFallback: message.carrierFallback }
+    }, {
+        kind: 'acknowledgement',
+        msgId: message.msgId,
+        carrier: message.activeCarrier,
+        atMs,
+        mode,
+        confirmedHopPeerIds: receiptEvidence.confirmedHopPeerIds,
+        unconfirmedHopPeerIds: receiptEvidence.unconfirmedHopPeerIds,
+        expectedRecipientPeerIds: receiptEvidence.expectedRecipientPeerIds,
+        confirmedRecipientPeerIds: receiptEvidence.confirmedRecipientPeerIds,
+        unconfirmedRecipientPeerIds: receiptEvidence.unconfirmedRecipientPeerIds,
+        complete: receiptEvidence.unconfirmedRecipientPeerIds.length === 0
+    });
 }

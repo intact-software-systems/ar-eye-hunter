@@ -23,7 +23,11 @@ import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schem
 
 import { createAlmConformance2AgentEntry } from '../../rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
 import { createRallarBlackBoxControlService, type RallarBlackBoxControlService } from '../src/control-service.ts';
-import { AlmReloadPorts, type AlmReloadParticipant, type PortMessage } from './support/alm-reload-ports.ts';
+import {
+    AlmReloadPorts,
+    type AlmReloadParticipant,
+    type PortMessage
+} from './support/alm-reload-ports.ts';
 import {
     assertRight,
     toControlServiceInput,
@@ -381,6 +385,7 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
         assertEquals(receipt.value.expectedRecipientPeerIds, ['receiver-stored-session', 'recipient-b-stored-session']);
         assertEquals(receipt.value.confirmedRecipientPeerIds, ['receiver-stored-session', 'recipient-b-stored-session']);
         assertEquals(receipt.value.unconfirmedRecipientPeerIds, []);
+        assertEquals(receipt.value.state, 'acknowledged');
     });
 
     // The sender runs before recipient-b, which leaves on the cue; the receiver reads what followed.
@@ -404,6 +409,19 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
             [[8, true], [undefined, true]],
             'the floored send waited for the move, the cue did not'
         );
+        const message = findMarked(ports, 'fenced-catch-up').find((message) => message.floor !== undefined);
+        assert(message?.command.handleId);
+        const receipt = await ports.sender.execute({
+            kind: 'messages.receipts',
+            commandId: 'fenced-catch-up-current-receipt',
+            handleId: message.command.handleId
+        });
+        assert(receipt.ok && isJsonRecordValue(receipt.value));
+        assertEquals(receipt.value.expectedRecipientPeerIds, ['receiver-stored-session', 'recipient-b-stored-session']);
+        assertEquals(receipt.value.confirmedRecipientPeerIds, ['receiver-stored-session']);
+        assertEquals(receipt.value.unconfirmedRecipientPeerIds, ['recipient-b-stored-session']);
+        assertEquals(receipt.value.submitted, true);
+        assertEquals(receipt.value.state, 'transport-accepted');
     });
 
     Deno.test(`the ${carrier} fenced-catch-up receiver fails while no roster move lifts the floor`, async () => {
@@ -511,6 +529,7 @@ Deno.test('a dropped RTC leg followed by WS delivery confirms logical recipients
     assertEquals(receipt.value.attemptCarriers, ['rtc', 'ws']);
     assertEquals(receipt.value.attemptOutcomes, ['not-ready', 'sent']);
     assertEquals(receipt.value.confirmedRecipientPeerIds, ['receiver-stored-session']);
+    assertEquals(receipt.value.state, 'acknowledged');
     assertEquals(receipt.value.confirmedHopPeerIds, []);
     assertEquals(receipt.value.unconfirmedHopPeerIds, []);
 });
