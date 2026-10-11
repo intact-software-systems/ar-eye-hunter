@@ -12,7 +12,17 @@ export interface StateWriteBenchmarkOutput {
 export async function writeStateWriteBenchmarkOutput(
     output: StateWriteBenchmarkOutput
 ): Promise<StateWriteDiagnosticStatus> {
-    await files.mkdir(dirname(output.destination), { recursive: true });
-    await files.writeFile(output.destination, `${JSON.stringify(output.artifact, null, 2)}\n`);
+    try {
+        const issues = await output.diagnostics.readCanonicalDestinationIssues(output.destination);
+        if (issues.length > 0) {
+            throw new Error(issues.join('; '));
+        }
+        await files.mkdir(dirname(output.destination), { recursive: true });
+        await files.writeFile(output.destination, `${JSON.stringify(output.artifact, null, 2)}\n`);
+    }
+    catch (error) {
+        await output.diagnostics.finish(false);
+        throw error;
+    }
     return await output.diagnostics.finish(true);
 }

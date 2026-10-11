@@ -107,7 +107,10 @@ async function readBenchmarkConfiguration(): Promise<BenchmarkConfiguration> {
     if (validation.left) {
         throw validation.left;
     }
-    assertPerfOutputPath(options.out);
+    const outputIssues = validatePerfOutputPath(options.out);
+    if (outputIssues.length > 0) {
+        throw new Error(outputIssues.join('; '));
+    }
     const gitIdentity = await readBenchmarkGitIdentity();
     const reasonsText = options.regressionReasonsFile === undefined
         ? undefined
@@ -149,8 +152,8 @@ async function main(): Promise<void> {
     );
     const performanceTimeOriginEpochMs = options.diagnostics.kind === 'enabled' ? performance.timeOrigin : undefined;
     let completed = false;
-    await diagnostics.start();
     try {
+        await diagnostics.start(options.out);
         await assertStateWriteSchemaReady(adminSql);
         const workloads = await runBenchmarkWorkloads({
             adminSql,
@@ -426,9 +429,10 @@ async function readWorkloadEvidence(
     return { postgresAfter, walBytes, durable };
 }
 
-function assertPerfOutputPath(path: string): void {
+function validatePerfOutputPath(path: string): readonly string[] {
     const normalized = normalize(path).replaceAll('\\', '/');
     if (!normalized.startsWith('tmp/perf/') || normalized.includes('/../')) {
-        throw new Error(`Benchmark output must remain under tmp/perf/: ${path}`);
+        return [`Benchmark output must remain under tmp/perf/: ${path}`];
     }
+    return [];
 }
