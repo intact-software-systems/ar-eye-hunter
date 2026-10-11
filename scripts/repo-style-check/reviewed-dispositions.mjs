@@ -340,6 +340,36 @@ export const reviewedDispositions = Object.freeze([
         rule: 'layout.primary-export-name',
         symbol: 'createRtcBaselineRepeatInitializer'
     }),
+    // HTTP JSON remains opaque evidence compared with the real persisted result;
+    // no response body becomes command input or authoritative group/member state.
+    // Undefined is the checker's exact contract owner, not a named-function waiver.
+    Object.freeze({
+        path: 'apps/api-v1/test/db/pglite-concurrent-group-setup.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Caught values are narrowed through typed errors and guarded code extraction
+    // before producing the finite AppInbox failure classification. Raw exceptions
+    // never become mutation facts, authorization input or durable domain state.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts',
+        rule: 'boundary.unknown',
+        symbol: 'classifyAppInboxError'
+    }),
+    // Property presence/type and instanceof Error guard this caught-value read;
+    // only a string code/name leaves the boundary for the owned failure policy.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toAppInboxErrorCode'
+    }),
+    // Error.message or String converts the caught value into failure text only;
+    // code/status come from the classifier's policy, never from raw domain input.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toExplicitStatusFailure'
+    }),
     // AppInbox accepts raw JSON only at this exact decoder. It immediately
     // validates the complete persisted command as JsonWireValue before any
     // identity, routing, hashing, or domain decision consumes it.
