@@ -215,6 +215,7 @@ export class ALWorkHandler {
         this.readiness = new ALWorkReadinessMemory(dependencies.readinessMemoryMs);
         this.engine = new ALWorkEngineMembership({
             queueEngine: dependencies.queueEngine,
+            ownsQueueEngine: dependencies.ownsQueueEngine,
             workerId: dependencies.workerId,
             task: {
                 name: dependencies.workerId,
@@ -237,9 +238,7 @@ export class ALWorkHandler {
         }
         await this.runBatch();
         this.bootstrapped = true;
-        if (!this.shutdown.signal.aborted && this.dependencies.ownsQueueEngine) {
-            this.dependencies.queueEngine.start();
-        }
+        this.engine.startOwnedEngine();
     }
 
     /** Cancels synchronously; completion joins the owned engine, running batch and retained releases. */
@@ -247,9 +246,7 @@ export class ALWorkHandler {
         this.shutdown.abort();
         this.engine.dispose();
         const retained = [...this.retainedReleases];
-        const stoppingEngine = this.dependencies.ownsQueueEngine
-            ? this.dependencies.queueEngine.stop()
-            : undefined;
+        const stoppingEngine = this.engine.stopOwnedEngine();
         const outcomes = await Promise.allSettled([this.batch, stoppingEngine]);
         // A batch can register retained work while disposal joins its mandatory releases.
         outcomes.push(...await Promise.allSettled([...new Set([...retained, ...this.retainedReleases])]));
@@ -356,43 +353,44 @@ export class ALWorkHandler {
         const deferObservation = this.dependencies.batchObservations === undefined
             ? undefined
             : observations?.defer ?? this.dependencies.batchObservations.discard;
-        let primaryFailure: Error | undefined;
         this.batch = this.runSelectedWork(deferObservation)
             .then((ended) => this.endBatch(ended))
-            .catch((error) => {
-                try {
-                    this.failBatch(toError(error));
-                }
-                catch (failure) {
-                    primaryFailure = toError(failure);
-                }
-            })
-            .then(async () => {
-                this.batch = undefined;
-                let following: Promise<void> | undefined;
-                try {
-                    following = this.runPendingCommit();
-                }
-                catch (failure) {
-                    primaryFailure ??= toError(failure);
-                }
-                try {
-                    observations?.publish();
-                }
-                catch (failure) {
-                    primaryFailure ??= toError(failure);
-                }
-                try {
-                    await following;
-                }
-                catch (failure) {
-                    primaryFailure ??= toError(failure);
-                }
-                if (primaryFailure !== undefined) {
-                    throw primaryFailure;
-                }
-            });
+            .catch((error) => this.failBatch(toError(error)))
+            .then(
+                () => this.completeBatch(observations, undefined),
+                (error) => this.completeBatch(observations, toError(error))
+            );
         return this.batch;
+    }
+
+    /** Start the owed batch, publish this batch, then join the owed work even when either failed. */
+    private async completeBatch(
+        observations: ALWorkBatchObservations | undefined,
+        primaryFailure: Error | undefined
+    ): Promise<void> {
+        this.batch = undefined;
+        let following: Promise<void> | undefined;
+        try {
+            following = this.runPendingCommit();
+        }
+        catch (failure) {
+            primaryFailure ??= toError(failure);
+        }
+        try {
+            observations?.publish();
+        }
+        catch (failure) {
+            primaryFailure ??= toError(failure);
+        }
+        try {
+            await following;
+        }
+        catch (failure) {
+            primaryFailure ??= toError(failure);
+        }
+        if (primaryFailure !== undefined) {
+            throw primaryFailure;
+        }
     }
 
     private endBatch(ended: ALWorkBatchEnd): void {
@@ -563,18 +561,20 @@ export class ALWorkHandler {
             result = toALWorkFailureOutcome(toError(error));
         }
         progress.runDurationMs += computeElapsedMs(runStartedAtMs, clock.nowMs());
-        if (result.status === 'retained') {
-            this.releaseRetainedClaim(claim, result.settled);
-            return undefined;
-        }
-        if (result.status === 'completed') {
-            progress.completedCount += 1;
-        }
-        else if (result.status === 'non-retryable') {
-            progress.rejectedCount += 1;
-        }
-        else {
-            progress.rescheduledCount += 1;
+        switch (result.status) {
+            case 'retained':
+                this.releaseRetainedClaim(claim, result.settled);
+                return undefined;
+            case 'completed':
+                progress.completedCount += 1;
+                break;
+            case 'non-retryable':
+                progress.rejectedCount += 1;
+                break;
+            case 'retry':
+            case 'not-ready':
+                progress.rescheduledCount += 1;
+                break;
         }
         return { claim, outcome: result };
     }

@@ -1,4 +1,10 @@
-import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    afterEach,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import {
@@ -6,6 +12,7 @@ import {
     toALInboundWorkType
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import { RtcEndpointFixture } from '../rtc-endpoint-fixture.ts';
 
@@ -93,9 +100,12 @@ function createConnectedEndpoints(): ConnectedRtcEndpoints {
     const receiver = new RtcEndpointFixture('receiver', 'sender');
     sender.connect(receiver);
     receiver.connect(sender);
-    onTestFinished(() => {
-        sender.close();
-        receiver.close();
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([sender.close(), receiver.close()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw toError(failure.reason);
+        }
     });
     return { sender, receiver };
 }

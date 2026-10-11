@@ -1,7 +1,13 @@
-export type MutationRoutingAstNode = {
+export interface MutationRoutingAstNode {
     readonly type: string;
     readonly [key: string]: unknown;
-};
+}
+
+interface ExecutedNodeScan {
+    readonly matched: boolean;
+    readonly callNames: ReadonlySet<string>;
+    readonly callbacks: readonly MutationRoutingAstNode[];
+}
 
 export function findRouteRegistration(
     program: MutationRoutingAstNode,
@@ -61,8 +67,7 @@ export function hasReachableAstNode(
     const functions = collectLocalFunctions(program);
     const pending = [handler];
     const visited = new Set<MutationRoutingAstNode>();
-    while (pending.length > 0) {
-        const current = pending.shift()!;
+    for (let current = pending.shift(); current !== undefined; current = pending.shift()) {
         if (visited.has(current)) {
             continue;
         }
@@ -85,36 +90,25 @@ export function hasReachableAstNode(
 function scanExecutedNodes(
     root: MutationRoutingAstNode,
     predicate: (node: MutationRoutingAstNode) => boolean
-): Readonly<{
-    matched: boolean;
-    callNames: ReadonlySet<string>;
-    callbacks: readonly MutationRoutingAstNode[];
-}> {
-    let matched = false;
+): ExecutedNodeScan {
     const callNames = new Set<string>();
     const callbacks: MutationRoutingAstNode[] = [];
-    const scan = (value: unknown, isRoot = false): void => {
-        if (!value || typeof value !== 'object' || matched) {
-            return;
-        }
-        if (Array.isArray(value)) {
-            for (const child of value) {
-                scan(child);
-            }
-            return;
-        }
-        const node = value as MutationRoutingAstNode;
-        if (!isRoot && isFunctionNode(node)) {
-            return;
+    const pending = [root];
+    for (let node = pending.shift(); node !== undefined; node = pending.shift()) {
+        if (node !== root && isFunctionNode(node)) {
+            continue;
         }
         if (typeof node.type === 'string' && predicate(node)) {
-            matched = true;
-            return;
+            return { matched: true, callNames, callbacks };
         }
         if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
-            const name = readCallName(asNode(node.callee));
+            const callee = asNode(node.callee);
+            const name = readCallName(callee);
             if (name) {
                 callNames.add(name);
+            }
+            if (callee && isFunctionNode(callee)) {
+                callbacks.push(callee);
             }
             callbacks.push(...asNodes(node.arguments).filter(isFunctionNode));
         }
@@ -124,14 +118,9 @@ function scanExecutedNodes(
                 callbacks.push(returned);
             }
         }
-        for (const [name, child] of Object.entries(node)) {
-            if (!['loc', 'start', 'end', 'comments', 'tokens'].includes(name)) {
-                scan(child);
-            }
-        }
-    };
-    scan(root, true);
-    return { matched, callNames, callbacks };
+        pending.push(...readAstChildren(node));
+    }
+    return { matched: false, callNames, callbacks };
 }
 
 function isFunctionNode(node: MutationRoutingAstNode): boolean {
@@ -149,9 +138,6 @@ export function findAstNode(
     value: unknown,
     predicate: (node: MutationRoutingAstNode) => boolean
 ): MutationRoutingAstNode | undefined {
-    if (!value || typeof value !== 'object') {
-        return undefined;
-    }
     if (Array.isArray(value)) {
         for (const item of value) {
             const found = findAstNode(item, predicate);
@@ -161,14 +147,14 @@ export function findAstNode(
         }
         return undefined;
     }
-    const node = value as MutationRoutingAstNode;
-    if (typeof node.type === 'string' && predicate(node)) {
+    const node = asNode(value);
+    if (node === undefined) {
+        return undefined;
+    }
+    if (predicate(node)) {
         return node;
     }
-    for (const [name, child] of Object.entries(node)) {
-        if (['loc', 'start', 'end', 'comments', 'tokens'].includes(name)) {
-            continue;
-        }
+    for (const child of readAstChildren(node)) {
         const found = findAstNode(child, predicate);
         if (found) {
             return found;
@@ -268,24 +254,33 @@ function findModuleConst(
 }
 
 function visitAll(value: unknown, visit: (node: MutationRoutingAstNode) => void): void {
-    if (!value || typeof value !== 'object') {
-        return;
-    }
     if (Array.isArray(value)) {
         for (const item of value) {
             visitAll(item, visit);
         }
         return;
     }
-    const node = value as MutationRoutingAstNode;
-    if (typeof node.type === 'string') {
-        visit(node);
+    const node = asNode(value);
+    if (node === undefined) {
+        return;
     }
-    for (const [name, child] of Object.entries(node)) {
-        if (!['loc', 'start', 'end', 'comments', 'tokens'].includes(name)) {
-            visitAll(child, visit);
+    visit(node);
+    for (const child of readAstChildren(node)) {
+        visitAll(child, visit);
+    }
+}
+
+/** Parser metadata is never executable; normalize child records and arrays at this one boundary. */
+function readAstChildren(node: MutationRoutingAstNode): readonly MutationRoutingAstNode[] {
+    const children: MutationRoutingAstNode[] = [];
+    for (const [name, value] of Object.entries(node)) {
+        if (['loc', 'start', 'end', 'comments', 'tokens'].includes(name)) {
+            continue;
         }
+        const child = asNode(value);
+        children.push(...(child === undefined ? asNodes(value) : [child]));
     }
+    return children;
 }
 
 function readCallName(node: MutationRoutingAstNode | undefined): string {
@@ -310,14 +305,17 @@ function readTemplateElement(node: MutationRoutingAstNode | undefined): string |
     if (node?.type !== 'TemplateElement') {
         return undefined;
     }
-    const value = asNode(node.value);
-    return typeof value?.cooked === 'string' ? value.cooked : undefined;
+    const value = node.value;
+    return value !== null && typeof value === 'object' && 'cooked' in value && typeof value.cooked === 'string'
+        ? value.cooked
+        : undefined;
 }
 
 function asNode(value: unknown): MutationRoutingAstNode | undefined {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? (value as MutationRoutingAstNode)
-        : undefined;
+    if (value === null || typeof value !== 'object' || Array.isArray(value) || !('type' in value) || typeof value.type !== 'string') {
+        return undefined;
+    }
+    return value as MutationRoutingAstNode;
 }
 
 function asNodes(value: unknown): readonly MutationRoutingAstNode[] {
