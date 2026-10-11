@@ -29,7 +29,7 @@ import type { GroupStateRouteCommandInput } from '../../src/group-state/group-st
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
 import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-configuration-test-fixture.ts';
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
-import { stopNativeAdmissionTestRuntime } from './native-admission-test-cleanup.ts';
+import { closeNativeAdmissionTestDatabase, stopNativeAdmissionTestRuntime } from './native-admission-test-cleanup.ts';
 
 const PRINCIPAL_REF = {
     applicationId: 'rallar-server',
@@ -95,9 +95,7 @@ Deno.test('fifteen native same-user sessions complete concurrent room setup thro
                 if (queueEngineLifecycle.started) {
                     await queueEngineStopped.promise;
                 }
-                console.log('Native admission cleanup: database close started');
-                await databaseLifecycle.close();
-                console.log('Native admission cleanup: database close finished');
+                await closeNativeAdmissionTestDatabase(databaseLifecycle, console.log);
             }
         }
     });
