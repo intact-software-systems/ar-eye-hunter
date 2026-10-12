@@ -282,15 +282,25 @@ export type RallarBlackBoxTestAssertOperator =
     | 'length'
     | 'matches'
     | 'matchesShape'
-    | 'matchesShapeComplete';
+    | 'matchesShapeComplete'
+    | 'sameUniqueStringSet';
 
 export type RallarBlackBoxTestAssertCommand =
     & RallarBlackBoxTestCommandBase<'assert'>
-    & Readonly<{
-        source: string;
-        operator: RallarBlackBoxTestAssertOperator;
-        expected?: ApiJsonValue;
-    }>;
+    & (
+        | Readonly<{
+            source: string;
+            operator: Exclude<RallarBlackBoxTestAssertOperator, 'sameUniqueStringSet'>;
+            expected?: ApiJsonValue;
+            comparisonSource?: never;
+        }>
+        | Readonly<{
+            source: string;
+            operator: 'sameUniqueStringSet';
+            comparisonSource: string;
+            expected?: never;
+        }>
+    );
 
 export interface RallarBlackBoxTestRtcConnectReadiness {
     readonly minReadyPeers?: number;
@@ -593,6 +603,8 @@ export interface RallarBlackBoxTestCrdtWaitCondition {
     readonly path?: string;
     readonly operator: RallarBlackBoxTestCrdtWaitOperator;
     readonly expected?: unknown;
+    readonly comparisonSource?: never;
+    readonly comparisonExists?: never;
 }
 
 export type RallarBlackBoxTestCrdtWaitCommand =
@@ -1017,15 +1029,11 @@ export interface RallarBlackBoxTestWaitResultValue {
     readonly event?: RallarBlackBoxTestEvent;
 }
 
-export interface RallarBlackBoxTestAssertResultValue {
-    readonly commandId: string;
-    readonly source: string;
-    readonly operator: RallarBlackBoxTestAssertOperator;
-    readonly expected?: unknown;
-    readonly actual?: unknown;
-    readonly exists: boolean;
-    readonly passed: boolean;
-}
+export type {
+    RallarBlackBoxTestAssertResultValue,
+    RallarBlackBoxTestSetAssertResultValue,
+    RallarBlackBoxTestValueAssertResultValue
+} from './assert/assert-result-contracts.ts';
 
 export type RallarBlackBoxTestEventKind =
     | 'event'

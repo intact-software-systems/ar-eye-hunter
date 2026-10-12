@@ -38,7 +38,8 @@ export function createAlmScaleWorkloadCommands(
             complete,
             ...createLifecycleSendCommands(input, 'end', 9),
             createReceivedCommand(prefix, 'intent', (input.participantCount - 1) * 6),
-            createAlmScaleShotArrivals(input)
+            createAlmScaleShotArrivals(input),
+            ...createLifecycleAudienceAssertions()
         ]
         : [
             { ...createReceivedCommand(prefix, 'event', 1), commandId: `${prefix}-received-start` },
@@ -48,6 +49,45 @@ export function createAlmScaleWorkloadCommands(
             createReceivedCommand(prefix, 'event', 2),
             ...createAlmScaleLifecycleArrival(input, 'ended')
         ];
+}
+
+function createLifecycleAudienceAssertions(): readonly RallarBlackBoxTestCommand[] {
+    const prefix = 'alm-scale-director';
+    const receiptSource = (event: 'start' | 'end', field: 'expectedRecipientPeerIds' | 'confirmedRecipientPeerIds') =>
+        `resultCache.${prefix}-traffic:g1:workload:c1:${prefix}-window:g1:commands:c${
+            event === 'start' ? 3 : 12
+        }:${prefix}-${event}-receipt.value.${field}`;
+    const startExpected = receiptSource('start', 'expectedRecipientPeerIds');
+    return [
+        {
+            kind: 'assert',
+            commandId: `${prefix}-start-audience-unique`,
+            source: startExpected,
+            operator: 'sameUniqueStringSet',
+            comparisonSource: startExpected
+        },
+        {
+            kind: 'assert',
+            commandId: `${prefix}-start-confirmed-audience`,
+            source: receiptSource('start', 'confirmedRecipientPeerIds'),
+            operator: 'sameUniqueStringSet',
+            comparisonSource: startExpected
+        },
+        {
+            kind: 'assert',
+            commandId: `${prefix}-end-expected-audience`,
+            source: receiptSource('end', 'expectedRecipientPeerIds'),
+            operator: 'sameUniqueStringSet',
+            comparisonSource: startExpected
+        },
+        {
+            kind: 'assert',
+            commandId: `${prefix}-end-confirmed-audience`,
+            source: receiptSource('end', 'confirmedRecipientPeerIds'),
+            operator: 'sameUniqueStringSet',
+            comparisonSource: startExpected
+        }
+    ];
 }
 
 function createLifecycleSendCommands(

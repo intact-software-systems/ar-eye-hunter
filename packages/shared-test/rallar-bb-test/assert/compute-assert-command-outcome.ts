@@ -9,6 +9,7 @@ import type {
     RallarBlackBoxTestStatsSnapshot
 } from '../rallar-black-box-test-contracts.ts';
 import { decodePayloadPathValue, type PayloadPathLookup } from '../wait/wait-event-match.ts';
+import { areSameUniqueStringSet } from './are-same-unique-string-set.ts';
 import {
     isAssertOperatorSatisfied,
     isRallarBlackBoxAssertOperator,
@@ -46,6 +47,13 @@ interface AssertEventViews {
     readonly reports: readonly RallarBlackBoxTestEvent[];
 }
 
+interface ToAssertResultValueInput {
+    readonly command: AssertCommandEvidence['command'];
+    readonly source: PayloadPathLookup;
+    readonly comparison: PayloadPathLookup | undefined;
+    readonly passed: boolean;
+}
+
 const RECENT_ASSERT_SOURCE_LIMIT = 20;
 
 export function computeAssertCommandOutcome(evidence: AssertCommandEvidence): RallarBlackBoxTestCommandOutcome {
@@ -56,13 +64,25 @@ export function computeAssertCommandOutcome(evidence: AssertCommandEvidence): Ra
     if (!isRallarBlackBoxAssertOperator(command.operator)) {
         return toInvalidAssertOutcome(command, 'Assert operator is not supported.', {
             operator: command.operator,
-            supportedOperators: RALLAR_BLACK_BOX_ASSERT_OPERATORS
+            supportedOperators: [...RALLAR_BLACK_BOX_ASSERT_OPERATORS, 'sameUniqueStringSet']
         });
     }
 
-    const source = resolveAssertSource(command.source, toAssertSourceRoots(evidence));
-    const passed = isAssertOperatorSatisfied(source, command.operator, command.expected);
-    const value = toAssertResultValue(command, source, passed);
+    const roots = toAssertSourceRoots(evidence);
+    const source = resolveAssertSource(command.source, roots);
+    if (
+        command.operator === 'sameUniqueStringSet' &&
+        (typeof command.comparisonSource !== 'string' || command.comparisonSource.trim().length === 0)
+    ) {
+        return toInvalidAssertOutcome(command, 'Set comparison requires a non-empty comparisonSource.', undefined);
+    }
+    const comparison = command.operator === 'sameUniqueStringSet'
+        ? resolveAssertSource(command.comparisonSource, roots)
+        : undefined;
+    const passed = command.operator === 'sameUniqueStringSet'
+        ? source.exists && comparison?.exists === true && areSameUniqueStringSet(source.value, comparison.value)
+        : isAssertOperatorSatisfied(source, command.operator, command.expected);
+    const value = toAssertResultValue({ command, source, comparison, passed });
     return passed
         ? { status: 'ok', value, nextStatus: state.status }
         : {
@@ -112,11 +132,21 @@ function toAssertSourceRoots(evidence: AssertCommandEvidence): AssertSourceRoots
     };
 }
 
-function toAssertResultValue(
-    command: AssertCommandEvidence['command'],
-    source: PayloadPathLookup,
-    passed: boolean
-): RallarBlackBoxTestAssertResultValue {
+function toAssertResultValue(input: ToAssertResultValueInput): RallarBlackBoxTestAssertResultValue {
+    const { command, source, comparison, passed } = input;
+    if (command.operator === 'sameUniqueStringSet') {
+        return {
+            commandId: command.commandId,
+            source: command.source,
+            operator: command.operator,
+            comparisonSource: command.comparisonSource,
+            actual: source.exists ? source.value : undefined,
+            comparisonActual: comparison?.exists ? comparison.value : undefined,
+            exists: source.exists,
+            comparisonExists: comparison?.exists ?? false,
+            passed
+        };
+    }
     return {
         commandId: command.commandId,
         source: command.source,
@@ -133,16 +163,27 @@ function toInvalidAssertOutcome(
     message: string,
     details: Readonly<{ operator: string; supportedOperators: readonly string[]; }> | undefined
 ): RallarBlackBoxTestCommandOutcome {
-    return {
-        status: 'failed',
-        value: {
+    const value: RallarBlackBoxTestAssertResultValue = command.operator === 'sameUniqueStringSet'
+        ? {
+            commandId: command.commandId,
+            source: command.source,
+            operator: command.operator,
+            comparisonSource: typeof command.comparisonSource === 'string' ? command.comparisonSource : '',
+            exists: false,
+            comparisonExists: false,
+            passed: false
+        }
+        : {
             commandId: command.commandId,
             source: command.source,
             operator: command.operator,
             expected: command.expected,
             exists: false,
             passed: false
-        } satisfies RallarBlackBoxTestAssertResultValue,
+        };
+    return {
+        status: 'failed',
+        value,
         error: { code: 'RALLAR_BLACK_BOX_ASSERT_INVALID', message, details },
         nextStatus: 'failed'
     };

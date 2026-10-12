@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { areSameUniqueStringSet } from '../../shared-test/rallar-bb-test/assert/are-same-unique-string-set.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
@@ -11,7 +12,7 @@ import { createDeterministicRuntime } from './rallar-bb-runtime/create-determini
 
 async function evaluateAssert(
     runtime: RallarBlackBoxTestRuntime,
-    assert: Omit<RallarBlackBoxTestAssertCommand, 'kind'>
+    assert: Omit<Extract<RallarBlackBoxTestAssertCommand, { comparisonSource?: never; }>, 'kind'>
 ): Promise<RallarBlackBoxTestResult> {
     return runtime.execute({
         kind: 'assert',
@@ -20,6 +21,49 @@ async function evaluateAssert(
 }
 
 describe('rallar-bb-test extended assert operators', () => {
+    it('compares complete unique recipient sets without depending on order', () => {
+        expect(areSameUniqueStringSet(['player-a', 'player-b'], ['player-b', 'player-a'])).toBe(true);
+        expect(areSameUniqueStringSet(['player-a', 'player-b'], ['player-a', 'player-c'])).toBe(false);
+        expect(areSameUniqueStringSet(['player-a', 'player-a'], ['player-a', 'player-b'])).toBe(false);
+        expect(areSameUniqueStringSet(['player-a', 'player-b'], ['player-a', 'player-a'])).toBe(false);
+        expect(areSameUniqueStringSet(['player-a', ''], ['player-a', 'player-b'])).toBe(false);
+        expect(areSameUniqueStringSet(['player-a', '  '], ['player-a', 'player-b'])).toBe(false);
+        expect(areSameUniqueStringSet(['player-a', 3], ['player-a', 'player-b'])).toBe(false);
+    });
+
+    it('records both resolved sources for a set comparison command', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'audience',
+            payload: { expected: ['player-a', 'player-b'], confirmed: ['player-b', 'player-a'] }
+        });
+        const result = await runtime.execute({
+            kind: 'assert',
+            commandId: 'audience-set',
+            source: 'messages.0.payload.confirmed',
+            operator: 'sameUniqueStringSet',
+            comparisonSource: 'messages.0.payload.expected'
+        });
+        expect(result).toMatchObject({
+            ok: true,
+            value: {
+                comparisonSource: 'messages.0.payload.expected',
+                exists: true,
+                comparisonExists: true,
+                passed: true
+            }
+        });
+        expect(
+            (await runtime.execute({
+                kind: 'assert',
+                commandId: 'audience-missing',
+                source: 'messages.0.payload.confirmed',
+                operator: 'sameUniqueStringSet',
+                comparisonSource: 'messages.0.payload.absent'
+            })).ok
+        ).toBe(false);
+    });
     it('reads recorded evidence in the JSON form a control connection carries', async () => {
         const runtime = createDeterministicRuntime();
         runtime.recordEvent({

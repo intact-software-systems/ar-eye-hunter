@@ -16,7 +16,7 @@ import { createAlmScaleSetupCommands } from './create-alm-scale-setup-commands.t
 import { createAlmScaleWorkloadCommands } from './create-alm-scale-workload-commands.ts';
 
 export interface AlmScaleRecipeInput {
-    readonly participantCount: 15 | 30 | 50;
+    readonly participantCount: 6 | 11 | 15 | 30 | 50;
     readonly group: RallarBlackBoxDistributedGroupRef;
     readonly readyTimeoutMs: number;
 }
@@ -56,7 +56,10 @@ export function createAlmScaleRecipes(input: AlmScaleRecipeInput): AlmScaleRecip
             'AR Eye wire fixtures; representative baseline/results identities are fixture facts, not live game authority.',
         acceptanceSources: groupAssertions.map((assertion) => ({
             ...assertion.source,
-            role: assertion.scope?.role ?? ''
+            role: assertion.scope?.role ?? '',
+            ...(assertion.aggregate === 'sameUniqueStringSetAsRole'
+                ? { comparison: assertion.comparison }
+                : {})
         }))
     };
     return {

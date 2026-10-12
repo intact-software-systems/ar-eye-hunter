@@ -216,6 +216,7 @@ class ScaleActor {
     readonly runtime: RallarBlackBoxBrowserTestRuntime;
     readonly recipe: RallarBlackBoxTestRecipe;
     readonly starts: ShotStart[] = [];
+    connectResult: RallarBlackBoxTestResult | undefined;
     private readonly cohort: ScaleCohort;
 
     constructor(cohort: ScaleCohort, index: number) {
@@ -262,9 +263,21 @@ class ScaleActor {
             now: Date.now,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
-                connect: async () => {
-                    throw new Error('Actor is connected through its native page before traffic');
-                },
+                connect: async () =>
+                    this.native.connect({
+                        connection: `alm-scale-${this.role}`,
+                        roomRef: GROUP,
+                        rallar: {
+                            apiBaseUrl: 'https://api.example.test',
+                            applicationId: GROUP.applicationId,
+                            workspaceId: GROUP.workspaceId,
+                            username: this.session.username,
+                            password: 'test-password',
+                            transport: 'messages.rtc',
+                            typeId: 'room.ar-eye-hunter.director.intent.v1',
+                            topicId: 'room.ar-eye-hunter.director'
+                        }
+                    }),
                 send: async () => {
                     throw new Error('Scale uses typed messages.send');
                 },
@@ -316,20 +329,12 @@ class ScaleActor {
     }
 
     async connect(): Promise<void> {
-        await this.native.connect({
-            connection: `alm-scale-${this.role}`,
-            roomRef: GROUP,
-            rallar: {
-                apiBaseUrl: 'https://api.example.test',
-                applicationId: GROUP.applicationId,
-                workspaceId: GROUP.workspaceId,
-                username: this.session.username,
-                password: 'test-password',
-                transport: 'messages.rtc',
-                typeId: 'room.ar-eye-hunter.director.intent.v1',
-                topicId: 'room.ar-eye-hunter.director'
-            }
-        });
+        const connect = this.recipe.commands.find((command) => command.kind === 'rtc.connect');
+        if (connect?.kind !== 'rtc.connect') {
+            throw new Error('Scale actor has no authored RTC connect command');
+        }
+        this.connectResult = await this.runtime.execute({ ...connect, readiness: undefined });
+        expect(this.connectResult).toMatchObject({ ok: true, value: { sessionId: this.session.sessionId } });
         expect(await this.runtime.execute({ kind: 'director.status', commandId: `alm-scale-${this.role}-ready-status`, roomRef: GROUP, refresh: true }))
             .toMatchObject({ ok: true });
         expect(await this.runtime.execute({ kind: 'storage.counters', commandId: `alm-scale-${this.role}-storage-reset`, reset: true })).toMatchObject({
@@ -501,7 +506,17 @@ class ScaleCohort {
                 agentId: actor.agentId,
                 recipeId: actor.recipe.recipeId,
                 hasResult: true,
-                resultValue: results[index].value!
+                resultValue: {
+                    ...(isJsonRecordValue(results[index].value) ? results[index].value : {}),
+                    results: [
+                        actor.connectResult,
+                        ...(
+                            isJsonRecordValue(results[index].value) && Array.isArray(results[index].value.results)
+                                ? results[index].value.results
+                                : []
+                        )
+                    ]
+                }
             })),
             recipeResults: this.actors.map((actor, index) => ({
                 agentId: actor.agentId,
@@ -523,7 +538,7 @@ function toScaleWirePayload(value: RallarBlackBoxTestJsonValue | undefined): Sca
     return { ...value, typeId: value.typeId, payload };
 }
 
-it('passes all 73 assertions from real generated 15-participant traffic and final result trees', async () => {
+it('passes all 231 assertions from real generated 15-participant traffic and final result trees', async () => {
     const cohort = new ScaleCohort(NORMAL_POLICY);
     const results = await cohort.run();
     expect(results.map((result) => ({ ok: result.ok, error: result.error }))).toEqual(Array.from({ length: 15 }, () => ({ ok: true, error: undefined })));
@@ -531,7 +546,7 @@ it('passes all 73 assertions from real generated 15-participant traffic and fina
     expect(cohort.lifecycle).toHaveLength(2);
     expect(cohort.arrivals.get('alm-scale-shots-complete')?.size).toBe(15);
     const assertions = cohort.evaluate(results);
-    expect(assertions).toHaveLength(73);
+    expect(assertions).toHaveLength(231);
     expect(assertions.filter((assertion) => !assertion.ok)).toEqual([]);
     expect(assertions.every((assertion) => assertion.perAgent.every((row) => row.evidence === 'resolved'))).toBe(true);
 });

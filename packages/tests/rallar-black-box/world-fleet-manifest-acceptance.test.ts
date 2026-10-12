@@ -6,9 +6,15 @@ import {
     it
 } from 'vitest';
 
-import { expectWorldFleetManifest } from '../../../tests/playwright/rallar-black-box/expect-world-fleet-manifest.ts';
+import {
+    expectWorldFleetGroupAssertions,
+    expectWorldFleetManifest
+} from '../../../tests/playwright/rallar-black-box/expect-world-fleet-manifest.ts';
 import { decodeDistributedRunManifest } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '../../shared-test/rallar-bb-test/distributed-run.ts';
+import { computeDistributedGroupAssertionResults } from '../../shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
+import type { RallarBlackBoxTestResult } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { ApiJsonValue } from '../../shared/api/api-json-value.ts';
 
 interface ManifestMutation {
     readonly label: string;
@@ -22,14 +28,161 @@ const authored = decodeDistributedRunManifest(JSON.parse(source.toString('utf8')
     },
     (manifest) => manifest
 );
+const senderAssertion = authored.groupAssertions.find((assertion) => assertion.aggregate === 'allMatch' && assertion.scope?.role === 'sender')!;
+const receiverAssertion = authored.groupAssertions.find((assertion) => assertion.aggregate === 'allMatch' && assertion.scope?.role === 'receiver')!;
+const roleSetAssertion = authored.groupAssertions.find((assertion) => assertion.aggregate === 'sameUniqueStringSetAsRole')!;
+const nativeManifest = {
+    ...authored,
+    groupAssertions: [senderAssertion, receiverAssertion, roleSetAssertion]
+};
+const receiverAssignments = authored.roleAssignments.filter((assignment) => assignment.role === 'receiver');
+const recipientSessions = receiverAssignments.map((assignment) => `session-${assignment.agentId}`);
+const nativeParticipants = authored.roleAssignments.map((assignment) => ({
+    agentId: assignment.agentId,
+    roles: [assignment.role]
+}));
+const nativeEvidence = authored.roleAssignments.map((assignment) => ({
+    agentId: assignment.agentId,
+    recipeId: assignment.role === 'sender' ? 'alm-scale-director' : 'alm-scale-player',
+    role: assignment.role,
+    hasResult: true as const,
+    resultValue: {
+        results: assignment.role === 'sender'
+            ? [
+                recordedResult('alm-scale-director-sampler', 'parallel', { groupCount: 7 }),
+                recordedResult('alm-scale-director-start-receipt', 'messages.receipts', {
+                    expectedRecipientPeerIds: recipientSessions
+                })
+            ]
+            : [
+                recordedResult('alm-scale-player-sampler', 'parallel', { groupCount: 7 }),
+                recordedResult('alm-scale-player-connect', 'rtc.connect', {
+                    sessionId: `session-${assignment.agentId}`
+                })
+            ]
+    }
+}));
+const nativeResults = computeDistributedGroupAssertionResults({
+    manifest: nativeManifest,
+    participants: nativeParticipants,
+    recipeResults: nativeParticipants.map((participant) => ({
+        agentId: participant.agentId,
+        recipeKey: participant.agentId,
+        state: 'passed'
+    })),
+    recipeEvidence: nativeEvidence
+});
+if (nativeResults === undefined) {
+    throw new Error('Canonical evaluator did not complete the native fixture.');
+}
+const senderRows = nativeResults[0].perAgent;
+const receiverRows = nativeResults[1].perAgent;
+
+function recordedResult(
+    commandId: string,
+    kind: RallarBlackBoxTestResult['kind'],
+    value: ApiJsonValue
+): RallarBlackBoxTestResult {
+    return {
+        commandId,
+        kind,
+        value,
+        status: 'ok',
+        ok: true,
+        startedAtEpochMs: 1_000,
+        endedAtEpochMs: 1_001,
+        durationMs: 1
+    };
+}
 
 describe('world-fleet native manifest acceptance', () => {
+    it('accepts every authored native predicate with its frozen role audience in any row order', () => {
+        expect(nativeResults.every((result) => result.ok)).toBe(true);
+        expect(nativeResults[2].perAgent.every((row) => row.evidence === 'resolved' && row.verdict === 'agreeing')).toBe(true);
+        expect(() => expectWorldFleetGroupAssertions(nativeManifest, [...nativeResults].reverse())).not.toThrow();
+    });
+
+    it('rejects a contradictory violating verdict in an otherwise passing evaluator result', () => {
+        const contradictory = [nativeResults[0], nativeResults[1], {
+            ...nativeResults[2],
+            perAgent: nativeResults[2].perAgent.map((row, index) =>
+                index === 0 && row.evidence === 'resolved' ? { ...row, verdict: 'violating' as const } : row
+            )
+        }];
+        expect(() => expectWorldFleetGroupAssertions(nativeManifest, contradictory)).toThrow();
+    });
+
+    it('rejects a passing allMatch result whose matching count or row verdict contradicts success', () => {
+        const wrongCount = [
+            {
+                ...nativeResults[0],
+                participants: { expected: 1, required: 1, withEvidence: 1, matching: 0 }
+            },
+            nativeResults[1],
+            nativeResults[2]
+        ];
+        const wrongVerdict = [
+            {
+                ...nativeResults[0],
+                perAgent: nativeResults[0].perAgent.map((row) => row.evidence === 'resolved' ? { ...row, verdict: 'not-matching' as const } : row)
+            },
+            nativeResults[1],
+            nativeResults[2]
+        ];
+        expect(() => expectWorldFleetGroupAssertions(nativeManifest, wrongCount)).toThrow();
+        expect(() => expectWorldFleetGroupAssertions(nativeManifest, wrongVerdict)).toThrow();
+    });
+
+    it('rejects a duplicate passing predicate row that replaces another authored predicate', () => {
+        const replaced = [nativeResults[0], nativeResults[0], nativeResults[2]];
+        expect(() => expectWorldFleetGroupAssertions(nativeManifest, replaced)).toThrow();
+    });
+
+    it('rejects a missing authored predicate result', () => {
+        expect(() => expectWorldFleetGroupAssertions(nativeManifest, nativeResults.slice(0, 2))).toThrow();
+    });
+
+    it('rejects an unknown passing predicate in place of one authored predicate', () => {
+        const replaced = [nativeResults[0], { ...nativeResults[1], groupAssertionId: 'substituted' }, nativeResults[2]];
+        expect(() => expectWorldFleetGroupAssertions(nativeManifest, replaced)).toThrow();
+    });
+
+    it('rejects an empty scoped native audience despite a passing result', () => {
+        const empty = [nativeResults[0], { ...nativeResults[1], perAgent: [] }, nativeResults[2]];
+        expect(() => expectWorldFleetGroupAssertions(nativeManifest, empty)).toThrow();
+    });
+
+    it('rejects a duplicate or substituted actor in a scoped audience', () => {
+        const duplicate = [nativeResults[0], {
+            ...nativeResults[1],
+            perAgent: [receiverRows[0], receiverRows[0], ...receiverRows.slice(2)]
+        }, nativeResults[2]];
+        const substituted = [nativeResults[0], {
+            ...nativeResults[1],
+            perAgent: [{ ...receiverRows[0], agentId: 'not-frozen' }, ...receiverRows.slice(1)]
+        }, nativeResults[2]];
+        expect(() => expectWorldFleetGroupAssertions(nativeManifest, duplicate)).toThrow();
+        expect(() => expectWorldFleetGroupAssertions(nativeManifest, substituted)).toThrow();
+    });
+
+    it('rejects incomplete cross-role evidence and dishonest participant counts', () => {
+        const incomplete = [nativeResults[0], nativeResults[1], {
+            ...nativeResults[2],
+            perAgent: senderRows
+        }];
+        const dishonest = [nativeResults[0], {
+            ...nativeResults[1],
+            participants: { expected: 14, required: 14, withEvidence: 0, matching: 14 }
+        }, nativeResults[2]];
+        expect(() => expectWorldFleetGroupAssertions(nativeManifest, incomplete)).toThrow();
+        expect(() => expectWorldFleetGroupAssertions(nativeManifest, dishonest)).toThrow();
+    });
     it('keeps the independent authored-byte workload identity', () => {
-        expect(source.byteLength).toBe(243280);
-        expect(createHash('sha256').update(source).digest('hex')).toBe('43db26dfab5a32b28f12b9d34db3be32b071a08139eee57f450807109072ecd3');
+        expect(source.byteLength).toBe(515978);
+        expect(createHash('sha256').update(source).digest('hex')).toBe('6dd898ab001a404c857e567ea42b41694c230df49e4b5e16bea2f2d8cc08d4c2');
         expect(authored.rtcCaptureMode).toBeUndefined();
         expect(authored.targetPolicy.expectedParticipantCount).toBe(15);
-        expect(authored.groupAssertions).toHaveLength(73);
+        expect(authored.groupAssertions).toHaveLength(231);
     });
 
     it.each(
