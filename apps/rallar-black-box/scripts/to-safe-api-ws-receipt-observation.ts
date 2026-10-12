@@ -2,6 +2,7 @@ import type { ApiJsonObject, ApiJsonValue } from '../../../packages/shared/api/a
 
 export interface SafeApiWsReceiptObservationDto extends ApiJsonObject {
     readonly kind:
+        | 'business-socket-decision'
         | 'socket-decision'
         | 'ack-count'
         | 'ack-relay'
@@ -17,6 +18,8 @@ export function toSafeApiWsReceiptObservation(value: unknown): SafeApiWsReceiptO
         return undefined;
     }
     switch (value.kind) {
+        case 'business-socket-decision':
+            return toSafeBusinessSocketDecision(value);
         case 'socket-decision':
             return toSafeSocketDecision(value);
         case 'ack-count':
@@ -58,6 +61,22 @@ interface ReceiptReturnField {
     readonly kind: 'identity' | 'number' | 'boolean' | readonly string[];
     readonly optional?: boolean;
 }
+
+const SOCKET_REJECTION_CODES = ['malformed', 'unsupported', 'unauthorized', 'oversized', 'capacity'];
+const BUSINESS_SOCKET_FIELDS: readonly ReceiptReturnField[] = [
+    { name: 'msgId', kind: 'identity' },
+    { name: 'senderId', kind: 'identity' },
+    { name: 'typeId', kind: 'identity' },
+    { name: 'topicId', kind: 'identity' },
+    { name: 'connectionId', kind: 'identity' },
+    { name: 'fromPeerId', kind: 'identity', optional: true },
+    { name: 'scopeDisposition', kind: ['authorized', 'refused', 'unobserved'] },
+    {
+        name: 'outcome',
+        kind: ['admitted', 'pending-admission', 'duplicate', 'not-admitted', 'resync-required', 'disposed', 'rejected']
+    },
+    { name: 'rejectionCode', kind: SOCKET_REJECTION_CODES, optional: true }
+];
 
 const OUTBOX_VERDICT_KINDS = [
     'admitted',
@@ -174,6 +193,34 @@ function isSafeReceiptScalar(value: unknown, kind: ReceiptReturnField['kind']): 
     }
 }
 
+function toSafeBusinessSocketDecision(
+    record: Readonly<Record<string, unknown>>
+): SafeApiWsReceiptObservationDto | undefined {
+    const fields = toSafeClosedReceiptFields(record, BUSINESS_SOCKET_FIELDS);
+    const scope = record.authenticatedScope === undefined
+        ? undefined
+        : toSafeAuthenticatedScope(record.authenticatedScope);
+    if (
+        fields === undefined || (record.authenticatedScope !== undefined && scope === undefined) ||
+        (record.outcome === 'rejected' && fields.rejectionCode === undefined)
+    ) {
+        return undefined;
+    }
+    return {
+        kind: 'business-socket-decision',
+        serverPeerId: String(record.serverPeerId),
+        ...fields,
+        ...(scope === undefined ? {} : { authenticatedScope: scope })
+    };
+}
+
+function toSafeAuthenticatedScope(record: unknown): ApiJsonObject | undefined {
+    return !isApiTimingRecord(record) || !isSafeApiTimingIdentity(record.applicationId) ||
+            !isSafeApiTimingIdentity(record.workspaceId)
+        ? undefined
+        : { applicationId: record.applicationId, workspaceId: record.workspaceId };
+}
+
 function toSafeSocketDecision(record: Readonly<Record<string, unknown>>): SafeApiWsReceiptObservationDto | undefined {
     const ack = toSafeAck(record.ack);
     if (
@@ -200,14 +247,11 @@ function toSafeSocketDecision(record: Readonly<Record<string, unknown>>): SafeAp
         fields.handled = record.handled;
     }
     if (record.authenticatedScope !== undefined) {
-        const scope = record.authenticatedScope;
-        if (
-            !isApiTimingRecord(scope) || !isSafeApiTimingIdentity(scope.applicationId) ||
-            !isSafeApiTimingIdentity(scope.workspaceId)
-        ) {
+        const scope = toSafeAuthenticatedScope(record.authenticatedScope);
+        if (scope === undefined) {
             return undefined;
         }
-        fields.authenticatedScope = { applicationId: scope.applicationId, workspaceId: scope.workspaceId };
+        fields.authenticatedScope = scope;
     }
     return {
         ...toSafeAckIdentity(record, 'socket-decision', ack),
@@ -447,15 +491,7 @@ function retainSafeNumber(
 }
 
 function retainSafeRejection(safe: Record<string, ApiJsonValue>, record: Readonly<Record<string, unknown>>): void {
-    if (
-        isAllowedApiTimingString(record.rejectionCode, [
-            'malformed',
-            'unsupported',
-            'unauthorized',
-            'oversized',
-            'capacity'
-        ])
-    ) {
+    if (isAllowedApiTimingString(record.rejectionCode, SOCKET_REJECTION_CODES)) {
         safe.rejectionCode = record.rejectionCode;
     }
 }

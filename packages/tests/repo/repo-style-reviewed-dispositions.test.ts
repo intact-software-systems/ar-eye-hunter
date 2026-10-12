@@ -252,7 +252,8 @@ describe('reviewed repository style dispositions', () => {
         { relativeFile: 'packages/shared-test/rallar-bb-test/control/control-rtc-capture-evidence.ts', maximumMagnitude: 91 },
         { relativeFile: 'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts', maximumMagnitude: 117 },
         { relativeFile: 'packages/shared/services/web-rtc-connection-service.ts', maximumMagnitude: 142 },
-        { relativeFile: 'packages/shared-web/browser/messages/browser-rallar-message-dispatch.ts', maximumMagnitude: 51 }
+        { relativeFile: 'packages/shared-web/browser/messages/browser-rallar-message-dispatch.ts', maximumMagnitude: 51 },
+        { relativeFile: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts', maximumMagnitude: 66 }
     ])('keeps the reviewed cognitive magnitude bounded for $relativeFile', ({ relativeFile, maximumMagnitude }) => {
         const finding = {
             file: path.join(repoRoot, relativeFile),
@@ -559,7 +560,11 @@ describe('reviewed repository style dispositions', () => {
             file: 'packages/shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts',
             symbols: ['validateRallarBlackBoxTestCommand']
         },
-        { file: 'packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts', symbols: [undefined] }
+        { file: 'packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts', symbols: [undefined] },
+        {
+            file: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+            symbols: ['toSafeBusinessSocketDecision', 'toSafeAuthenticatedScope']
+        }
     ])('recognizes only the reviewed recipe capture boundary keys in $file', ({ file: relativeFile, symbols }) => {
         const file = path.join(repoRoot, relativeFile);
         const raw = symbols.map((symbol) =>

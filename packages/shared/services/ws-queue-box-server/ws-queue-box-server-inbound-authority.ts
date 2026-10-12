@@ -158,7 +158,8 @@ export class WsQueueBoxServerInboundAuthority {
                 result: Either.ofLeft({
                     code: 'unsupported',
                     message: 'Room messages require a server authority provider'
-                })
+                }),
+                socketFacts: origin.value.socketFacts
             };
         }
         const authorization = toWsQueueBoxServerAddresseeAuthorization({
