@@ -80,16 +80,14 @@ describe('reviewed repository style dispositions', () => {
 
     it('retains raw API capture boundary warnings while the CLI accepts only the seven reviewed owners', () => {
         const fixture = createReviewedFixture();
-        for (const file of new Set(reviewedApiCaptureBoundaries.map(({ file }) => file))) {
-            writeFixture(fixture, file, '');
-        }
-        for (const { file, symbol } of reviewedApiCaptureBoundaries) {
-            appendFixture(fixture, file, unknownSource(symbol, 0));
-        }
-        const sources = [...new Set(reviewedApiCaptureBoundaries.map(({ file }) => file))].map((file) => ({
-            file: path.join(fixture, file),
-            raw: readFileSync(path.join(fixture, file), 'utf8')
+        const sources: readonly ReviewedStyleSourceFixtureDto[] = [...new Set(reviewedApiCaptureBoundaries.map(({ file }) => file))].map((relativeFile) => ({
+            file: path.join(fixture, relativeFile),
+            raw: reviewedApiCaptureBoundaries.filter(({ file }) => file === relativeFile)
+                .map(({ symbol }) => unknownSource(symbol, 0)).join('')
         }));
+        for (const { file, raw } of sources) {
+            writeFixture(fixture, path.relative(fixture, file), raw);
+        }
         const findings = scanProductionSources({ repoRoot: fixture, sources, options: { layoutOnly: false } }).findings
             .filter(({ ruleId }) => ruleId === 'boundary.unknown');
         expect(findings.map(({ file, symbol }) => ({ file: path.relative(fixture, file), symbol }))).toEqual([...reviewedApiCaptureBoundaries]);
