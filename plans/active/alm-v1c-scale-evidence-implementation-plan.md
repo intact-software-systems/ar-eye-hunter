@@ -122,22 +122,39 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
   cause or show that this coupling accounts for every failed receipt. All shot submissions arrived,
   while eight receipt observations timed out. The local capture is diagnostic evidence, not
   capture-off acceptance, capacity, memory or performance proof.
+- RTC quota denial is now separate from operation-failure accounting. The current ACK boundary
+  tests prove quota-window recovery, preservation of real failure history, real-failure opening,
+  circuit-open priority and half-open recovery with the existing limiter and breaker defaults.
+  The unchanged eleven-browser diagnostic still fails: all sixty shots reach the director over RTC
+  and all 847 sampled budget predicates pass, but seven final-shot ACK waits time out. One additional
+  ACK wait returns successfully after the workload deadline. The earliest failed receipt has a
+  required director ACK submitted before the deadline and relay JavaScript callback entry afterward.
+  Native data-channel receipt and renderer task queueing are uncaptured, so the evidence cannot
+  distinguish delivery delay from delayed callback scheduling. Final storage and all 231 coordinator
+  predicates remain unexecuted. Neither quota isolation nor sampled bounds establish scale acceptance.
 - Full source/support closure, whole-branch review, original scale and benefit, readiness and manual
   merge remain open. The pull request owns current source, CI, test and run outcomes; do not copy
   delivery history here.
 
 ## Next two useful slices
 
-### 1. Isolate RTC quota denial from operation-failure accounting
+### 1. Explain the remaining final-shot ACK delay
 
-Test the actual RTC control enqueue boundary with the current ACK producer. Preserve 20 admissions
-per 1,000 ms, the ten-failure breaker and its ten-second reset, typed refusal reasons, durable
-admission guards and normal runtime behavior. A local quota denial must not count as a failed
-operation or erase earlier real failure history. Prove quota-window recovery, real-failure opening,
-circuit-open priority and half-open recovery before repeating the unchanged eleven-browser
-diagnostic once through its existing source and hosted lifecycle. Review every changed human-authored
+First establish, in a small disposable Playwright fixture, whether the installed Chromium trace can
+positively join complete native data-channel receipt or renderer event queueing to the same
+JavaScript callback. Verify sender and receiver renderer separation, retain bounded trace evidence,
+and treat truncation or ambiguous correlation as inconclusive. Another JavaScript callback timestamp
+or an enqueue refusal alone does not distinguish the missing boundary.
+
+Only a demonstrated capability earns one bounded observation of that boundary in the unchanged
+eleven-browser workload. Join the required director ACK, subject, relay and callback privately.
+Native receipt before the deadline with callback entry after it proves scheduling delay for that
+ACK; native receipt already after the deadline proves delivery was late. Preserve the frozen audience,
+cadence, topology, deadlines, native predicates, storage bounds and owned cleanup. Do not infer an
+uncaptured cause or repeat an unchanged failed diagnostic. Earn any repair from that evidence and
+a meaningful failing-first behavior test at its actual owner. Review every changed human-authored
 file in full; changed support files enter recursive closure, and independent untouched code remains
-outside. Incomplete capture cannot prove that this repair cures every missing receipt.
+outside.
 
 ### 2. Establish original capture-off fifteen-agent acceptance
 
