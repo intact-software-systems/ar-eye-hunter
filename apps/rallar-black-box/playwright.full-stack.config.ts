@@ -42,13 +42,15 @@ const requireFreshPostgresApi = [
     process.env.RALLAR_BLACK_BOX_REQUIRE_FRESH_POSTGRES_API?.trim().toLowerCase() ?? ''
 );
 const captureSetupTiming = process.env.RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING === 'true';
+const captureWsObservations = process.env.RALLAR_BLACK_BOX_CAPTURE_WS_OBSERVATIONS === 'true';
+const captureApiObservations = captureSetupTiming || captureWsObservations;
 if (
-    captureSetupTiming && (!fullStackEnabled || !headlessSpaEnabled || fullStackApiServerMode !== 'memory' ||
+    captureApiObservations && (!fullStackEnabled || !headlessSpaEnabled || fullStackApiServerMode !== 'memory' ||
         !process.env.RALLAR_BLACK_BOX_STORAGE_DIR)
 ) {
     throw new Error('Setup timing capture requires the all-local memory/headless lifecycle and recorder directory.');
 }
-const timingCaptureDirectory = captureSetupTiming ? process.env.RALLAR_BLACK_BOX_STORAGE_DIR : undefined;
+const timingCaptureDirectory = captureApiObservations ? process.env.RALLAR_BLACK_BOX_STORAGE_DIR : undefined;
 const liveRtcClusterEnabled = process.env.RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER === '1';
 const clusterApiBaseUrls = [
     process.env.VITE_RALLAR_API_BASE_URL_B,
@@ -110,6 +112,7 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                 reuseExistingServer,
                 requireFreshPostgres: requireFreshPostgresApi,
                 timingCaptureDirectory,
+                appInboxPhaseTiming: captureSetupTiming,
                 admittedRtcCaseId: admittedRtcAttempt?.locator.caseId ?? null,
                 environment: process.env
             }),

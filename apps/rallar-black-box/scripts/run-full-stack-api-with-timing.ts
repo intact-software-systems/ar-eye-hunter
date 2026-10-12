@@ -1,37 +1,53 @@
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import {
+    spawn,
+    spawnSync,
+    type ChildProcess
+} from 'node:child_process';
+import {
+    appendFileSync,
+    mkdirSync,
+    writeFileSync
+} from 'node:fs';
 import { constants } from 'node:os';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import { toSafeApiTimingRecord } from './to-safe-api-timing-record.ts';
 
-interface SetupTimingSummary {
-    readonly sourceCommit: string | null;
-    readonly apiEntry: string | null;
-    readonly effectiveFlags: { readonly timingLogs: boolean; readonly appInboxPhaseTiming: boolean; };
-    readonly durableRequestCompletion: 'unverified';
-    retainedRecords: number;
-    rejectedLines: number;
-    oversizedLines: number;
-    trailingPartial: boolean;
-    stdoutEof: boolean;
-    stderrBytes: number;
-    childExitCode: number | null;
-    childSignal: NodeJS.Signals | null;
-    childFailure: 'spawn' | null;
-    childErrorCode: string | null;
-    requestedSignal: NodeJS.Signals | null;
-    cleanup: 'not-started' | 'running' | 'reaped' | 'killed-and-reaped';
-    captureFailure: 'record-write' | 'summary-write' | 'stdout-read' | 'stderr-read' | null;
-    observation: 'missing' | 'partial' | 'stream-complete';
+const MAX_LINE_BYTES = 65_536;
+
+namespace FullStackApiTimingCapture {
+    export interface EffectiveFlagsDto {
+        readonly timingLogs: boolean;
+        readonly appInboxPhaseTiming: boolean;
+    }
+
+    export interface Summary {
+        readonly sourceCommit: string | null;
+        readonly apiEntry: string | null;
+        readonly effectiveFlags: EffectiveFlagsDto;
+        readonly durableRequestCompletion: 'unverified';
+        retainedRecords: number;
+        rejectedLines: number;
+        oversizedLines: number;
+        trailingPartial: boolean;
+        stdoutEof: boolean;
+        stderrBytes: number;
+        childExitCode: number | null;
+        childSignal: NodeJS.Signals | null;
+        childFailure: 'spawn' | null;
+        childErrorCode: string | null;
+        requestedSignal: NodeJS.Signals | null;
+        cleanup: 'not-started' | 'running' | 'reaped' | 'killed-and-reaped';
+        captureFailure: 'record-write' | 'summary-write' | 'stdout-read' | 'stderr-read' | null;
+        observation: 'missing' | 'partial' | 'stream-complete';
+    }
 }
 
-const MAX_LINE_BYTES = 65_536;
 class FullStackApiTimingCapture {
     private readonly recordsPath: string;
     private readonly summaryPath: string;
-    private readonly summary: SetupTimingSummary;
+    private readonly summary: FullStackApiTimingCapture.Summary;
     private readonly decoder = new StringDecoder('utf8');
     private pending = '';
     private discardingOversizedLine = false;
@@ -39,7 +55,11 @@ class FullStackApiTimingCapture {
     private killTimeout: ReturnType<typeof setTimeout> | undefined;
     private forcedKill = false;
 
-    constructor(directory: string, apiArguments: readonly string[]) {
+    constructor(
+        directory: string,
+        apiArguments: readonly string[],
+        effectiveFlags: FullStackApiTimingCapture.EffectiveFlagsDto
+    ) {
         this.recordsPath = path.join(directory, 'api-setup-timing.jsonl');
         this.summaryPath = path.join(directory, 'api-setup-timing-summary.json');
         const commit = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' });
@@ -48,10 +68,7 @@ class FullStackApiTimingCapture {
                 ? commit.stdout.trim()
                 : null,
             apiEntry: apiArguments.includes('apps/api-v1/src/main.ts') ? 'apps/api-v1/src/main.ts' : null,
-            effectiveFlags: {
-                timingLogs: true,
-                appInboxPhaseTiming: true
-            },
+            effectiveFlags,
             durableRequestCompletion: 'unverified',
             retainedRecords: 0,
             rejectedLines: 0,
@@ -206,7 +223,7 @@ class FullStackApiTimingCapture {
         }
     }
 
-    private recordCaptureFailure(failure: NonNullable<SetupTimingSummary['captureFailure']>): void {
+    private recordCaptureFailure(failure: NonNullable<FullStackApiTimingCapture.Summary['captureFailure']>): void {
         if (this.summary.captureFailure === null) {
             this.summary.captureFailure = failure;
             process.stderr.write(`API timing capture failed: ${failure}\n`);
@@ -216,16 +233,21 @@ class FullStackApiTimingCapture {
 
 async function startFullStackApiWithTiming(): Promise<void> {
     const [directory, separator, ...apiArguments] = process.argv.slice(2);
+    const timingLogs = process.env.RALLAR_TIMING_LOGS;
+    const appInboxPhaseTiming = process.env.RALLAR_APP_INBOX_PHASE_TIMING;
     if (
         !directory || !path.isAbsolute(directory) || separator !== '--' || apiArguments.length === 0 ||
-        process.env.RALLAR_TIMING_LOGS !== 'true' || process.env.RALLAR_APP_INBOX_PHASE_TIMING !== 'true'
+        timingLogs !== 'true' || (appInboxPhaseTiming !== 'true' && appInboxPhaseTiming !== 'false')
     ) {
         process.stderr.write('API timing capture failed: configuration\n');
         process.exitCode = 1;
         return;
     }
     try {
-        const capture = new FullStackApiTimingCapture(directory, apiArguments);
+        const capture = new FullStackApiTimingCapture(directory, apiArguments, {
+            timingLogs: timingLogs === 'true',
+            appInboxPhaseTiming: appInboxPhaseTiming === 'true'
+        });
         process.exitCode = await capture.start(apiArguments);
     }
     catch {

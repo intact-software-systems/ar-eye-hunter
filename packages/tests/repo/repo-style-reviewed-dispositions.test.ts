@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import {
     mkdirSync,
     mkdtempSync,
@@ -18,9 +18,23 @@ import {
 import { scanProductionSources } from '../../../scripts/repo-style-check/repository-scan.mjs';
 import { isReviewedDisposition, reviewedDispositions } from '../../../scripts/repo-style-check/reviewed-dispositions.mjs';
 
+interface ReviewedStyleSourceFixtureDto {
+    readonly file: string;
+    readonly raw: string;
+}
+
 const repoRoot = process.cwd();
 const checkerPath = path.join(repoRoot, 'scripts/check-changed-repo-style.mjs');
 const fixtureRoots: string[] = [];
+const reviewedApiCaptureBoundaries = [
+    { file: 'apps/api-v1/test/configuration/read-api-v1-configuration.test.ts', symbol: 'readIceOverrideConfigurationResource' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts', symbol: 'assertSelectedFullStackApiCapture' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts', symbol: 'assertIndependentCaptureConsumer' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts', symbol: 'assertOrdinaryExhaustiveApiCommand' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts', symbol: 'assertSelectedFullStackSpaCommand' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-timing-capture.test.ts', symbol: 'toTimingCaptureObject' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-receipt-capture.test.ts', symbol: 'toReceiptCaptureObject' }
+] as const;
 
 afterEach(() => {
     for (const fixtureRoot of fixtureRoots.splice(0)) {
@@ -29,6 +43,81 @@ afterEach(() => {
 });
 
 describe('reviewed repository style dispositions', () => {
+    it.each(reviewedApiCaptureBoundaries)('recognizes the exact API capture boundary $file / $symbol', ({ file: relativeFile, symbol }) => {
+        const file = path.join(repoRoot, relativeFile);
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{ file, raw: unknownSource(symbol, 0) }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings).toHaveLength(1);
+        expect(findings[0].symbol).toBe(symbol);
+        expect(isReviewedDisposition(repoRoot, findings[0])).toBe(true);
+    });
+
+    it.each(reviewedApiCaptureBoundaries)('keeps wrong and neighboring API capture boundary keys blocking for $symbol', ({ file: relativeFile, symbol }) => {
+        const file = path.join(repoRoot, relativeFile);
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{
+                file,
+                raw: unknownSource(symbol, 0) +
+                    '\nfunction unreviewedCaptureBoundary(value: unknown): string { return String(value); }\n' +
+                    '\nconst anonymousCaptureBoundary: unknown = null;\n'
+            }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings.map(({ symbol: owner }) => owner)).toEqual([symbol, 'unreviewedCaptureBoundary', undefined]);
+        const finding = findings[0];
+        expect(isReviewedDisposition(repoRoot, { ...finding, file: `${file}.other.ts` })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'function.input-contract' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'wrongCaptureBoundary' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: undefined })).toBe(false);
+        for (const neighbor of findings.slice(1)) {
+            expect(isReviewedDisposition(repoRoot, { ...neighbor, message: finding.message })).toBe(false);
+        }
+    });
+
+    it('retains raw API capture boundary warnings while the CLI accepts only the seven reviewed owners', () => {
+        const fixture = createReviewedFixture();
+        for (const file of new Set(reviewedApiCaptureBoundaries.map(({ file }) => file))) {
+            writeFixture(fixture, file, '');
+        }
+        for (const { file, symbol } of reviewedApiCaptureBoundaries) {
+            appendFixture(fixture, file, unknownSource(symbol, 0));
+        }
+        const sources = [...new Set(reviewedApiCaptureBoundaries.map(({ file }) => file))].map((file) => ({
+            file: path.join(fixture, file),
+            raw: readFileSync(path.join(fixture, file), 'utf8')
+        }));
+        const findings = scanProductionSources({ repoRoot: fixture, sources, options: { layoutOnly: false } }).findings
+            .filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings.map(({ file, symbol }) => ({ file: path.relative(fixture, file), symbol }))).toEqual([...reviewedApiCaptureBoundaries]);
+        const result = runChangedChecker(fixture);
+        expect(result.status, result.stdout).toBe(0);
+        expect(result.stdout).toContain('PASS: no new repository style findings');
+    });
+
+    it('keeps named and anonymous API capture boundary neighbors blocking in the CLI', () => {
+        const fixture = createReviewedFixture();
+        for (const file of new Set(reviewedApiCaptureBoundaries.map(({ file }) => file))) {
+            writeFixture(fixture, file, '');
+        }
+        for (const { file, symbol } of reviewedApiCaptureBoundaries) {
+            appendFixture(fixture, file, unknownSource(symbol, 0));
+        }
+        appendFixture(
+            fixture,
+            'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts',
+            '\nfunction unreviewedCaptureBoundary(value: unknown): string { return String(value); }\n' +
+                '\nconst anonymousCaptureBoundary: unknown = null;\n'
+        );
+        const result = runChangedChecker(fixture);
+        expect(result.status, result.stdout).toBe(1);
+        expect(result.stdout).toContain('FAIL: 2 new or worsened repository style findings');
+        expect(result.stdout).toContain('boundary.unknown');
+    });
+
     it('keeps an unchecked Relic browser cast blocking', () => {
         const findings = scanProductionSources({
             repoRoot,
@@ -656,7 +745,7 @@ function createReviewedFixture(): string {
     return fixture;
 }
 
-function reviewedSources(root: string) {
+function reviewedSources(root: string): readonly ReviewedStyleSourceFixtureDto[] {
     return [
         {
             file: path.join(
@@ -731,7 +820,7 @@ function commitAll(fixtureRoot: string, message: string): void {
     runGit(fixtureRoot, ['commit', '-m', message]);
 }
 
-function runChangedChecker(fixtureRoot: string) {
+function runChangedChecker(fixtureRoot: string): SpawnSyncReturns<string> {
     return spawnSync(process.execPath, [checkerPath, 'HEAD'], {
         cwd: fixtureRoot,
         encoding: 'utf8'

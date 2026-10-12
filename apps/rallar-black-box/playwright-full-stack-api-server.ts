@@ -5,14 +5,7 @@ import {
     type ReadFullStackRtcIceFixtureRequestsInput
 } from '../../packages/shared-test/black-box-runner/fixtures/read-full-stack-rtc-ice-fixture-requests.ts';
 
-const FULL_STACK_API_SERVER_MODES = [
-    'postgres',
-    'memory'
-] as const;
-
 export type FullStackApiServerMode = typeof FULL_STACK_API_SERVER_MODES[number];
-
-type EnvReader = Readonly<Record<string, string | undefined>>;
 
 export interface FullStackApiV1WebServer {
     readonly command: string;
@@ -29,7 +22,8 @@ export interface DefaultFullStackApiV1WebServerInput {
     readonly reuseExistingServer?: boolean;
     readonly requireFreshPostgres?: boolean;
     readonly timingCaptureDirectory?: string;
-    readonly environment?: EnvReader;
+    readonly appInboxPhaseTiming?: boolean;
+    readonly environment?: Readonly<NodeJS.ProcessEnv>;
     readonly admittedRtcCaseId?: ReadFullStackRtcIceFixtureRequestsInput['admittedCaseId'];
 }
 
@@ -39,8 +33,9 @@ export interface FullStackApiV1WebServerInput {
     readonly spaBaseUrl: string;
     readonly reuseExistingServer: boolean;
     readonly requireFreshPostgres: boolean;
-    readonly timingCaptureDirectory: string | undefined;
-    readonly environment: EnvReader;
+    readonly timingCaptureDirectory?: string;
+    readonly appInboxPhaseTiming?: boolean;
+    readonly environment: Readonly<NodeJS.ProcessEnv>;
     readonly admittedRtcCaseId: ReadFullStackRtcIceFixtureRequestsInput['admittedCaseId'];
 }
 
@@ -74,11 +69,16 @@ interface MemoryApiCommandInput {
     readonly iceRequests: number;
 }
 
+const FULL_STACK_API_SERVER_MODES = [
+    'postgres',
+    'memory'
+] as const;
+
 const DEFAULT_API_BASE_URL = 'http://localhost:8080';
 const DEFAULT_SPA_BASE_URL = 'http://localhost:5176';
 
 export function readFullStackApiServerMode(
-    env: EnvReader = process.env
+    env: Readonly<NodeJS.ProcessEnv> = process.env
 ): FullStackApiServerMode {
     const raw = env.RALLAR_BLACK_BOX_API_MODE?.trim();
     if (!raw) {
@@ -95,13 +95,13 @@ export function readFullStackApiServerMode(
 }
 
 export function readFullStackApiBaseUrl(
-    env: EnvReader = process.env
+    env: Readonly<NodeJS.ProcessEnv> = process.env
 ): string {
     return normalizeBaseUrl(env.VITE_RALLAR_API_BASE_URL ?? DEFAULT_API_BASE_URL);
 }
 
 export function readFullStackSpaBaseUrl(
-    env: EnvReader = process.env
+    env: Readonly<NodeJS.ProcessEnv> = process.env
 ): string {
     return normalizeBaseUrl(env.VITE_RALLAR_SPA_BASE_URL ?? DEFAULT_SPA_BASE_URL);
 }
@@ -117,6 +117,7 @@ export function createDefaultFullStackApiV1WebServer(
         reuseExistingServer: input.reuseExistingServer ?? true,
         requireFreshPostgres: input.requireFreshPostgres ?? false,
         timingCaptureDirectory: input.timingCaptureDirectory,
+        appInboxPhaseTiming: input.appInboxPhaseTiming,
         environment,
         admittedRtcCaseId: input.admittedRtcCaseId ?? null
     });
@@ -132,7 +133,8 @@ export function createFullStackApiV1WebServer(
     const apiBaseUrl = normalizeBaseUrl(input.apiBaseUrl);
     const spaBaseUrl = normalizeBaseUrl(input.spaBaseUrl);
 
-    const apiInvocation = toFullStackApiInvocation(input.timingCaptureDirectory, mode);
+    const appInboxPhaseTiming = input.appInboxPhaseTiming ?? true;
+    const apiInvocation = toFullStackApiInvocation(input.timingCaptureDirectory, mode, appInboxPhaseTiming);
     const iceRequests = mode === 'memory'
         ? readFullStackRtcIceFixtureRequests({
             environment: input.environment,
@@ -252,6 +254,15 @@ export function createFullStackApiProfileEnvBlock(): string {
     ].join(' ');
 }
 
+export function portFromBaseUrl(apiBaseUrl: string): number {
+    const url = new URL(apiBaseUrl);
+    if (url.port) {
+        return Number(url.port);
+    }
+
+    return url.protocol === 'https:' ? 443 : 80;
+}
+
 function createFullStackApiUrlEnvBlock(apiBaseUrl: string): string {
     const normalizedApiBaseUrl = normalizeBaseUrl(apiBaseUrl);
     return [
@@ -275,15 +286,6 @@ function createFullStackSpaCorsOrigins(spaBaseUrl: string): string {
     return origins.join(',');
 }
 
-export function portFromBaseUrl(apiBaseUrl: string): number {
-    const url = new URL(apiBaseUrl);
-    if (url.port) {
-        return Number(url.port);
-    }
-
-    return url.protocol === 'https:' ? 443 : 80;
-}
-
 function createMemoryApiCommand({ apiBaseUrl, spaBaseUrl, apiInvocation, iceRequests }: MemoryApiCommandInput): string {
     return `cd ../.. && CORS_ORIGINS=${createFullStackSpaCorsOrigins(spaBaseUrl)} PORT=${portFromBaseUrl(apiBaseUrl)} ${
         createFullStackApiUrlEnvBlock(apiBaseUrl)
@@ -298,7 +300,11 @@ function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string, apiInv
     } ${apiInvocation} run --env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
 }
 
-function toFullStackApiInvocation(directory: string | undefined, mode: FullStackApiServerMode): string {
+function toFullStackApiInvocation(
+    directory: string | undefined,
+    mode: FullStackApiServerMode,
+    appInboxPhaseTiming: boolean
+): string {
     if (directory === undefined) {
         return 'deno';
     }
@@ -306,7 +312,7 @@ function toFullStackApiInvocation(directory: string | undefined, mode: FullStack
         throw new Error('Setup timing capture requires the local memory API and an absolute recorder directory.');
     }
     const quotedDirectory = '\'' + directory.replaceAll('\'', '\'\\\'\'') + '\'';
-    return `RALLAR_TIMING_LOGS=true RALLAR_APP_INBOX_PHASE_TIMING=true node --import tsx apps/rallar-black-box/scripts/run-full-stack-api-with-timing.ts ${quotedDirectory} -- deno`;
+    return `RALLAR_TIMING_LOGS=true RALLAR_APP_INBOX_PHASE_TIMING=${appInboxPhaseTiming} node --import tsx apps/rallar-black-box/scripts/run-full-stack-api-with-timing.ts ${quotedDirectory} -- deno`;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -326,5 +332,5 @@ function toWsBaseUrl(apiBaseUrl: string): string {
 function isFullStackApiServerMode(
     value: string
 ): value is FullStackApiServerMode {
-    return FULL_STACK_API_SERVER_MODES.includes(value as FullStackApiServerMode);
+    return FULL_STACK_API_SERVER_MODES.some((mode) => mode === value);
 }

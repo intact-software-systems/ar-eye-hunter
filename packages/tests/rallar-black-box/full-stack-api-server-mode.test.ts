@@ -1,11 +1,15 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import {
+    execFileSync,
+    spawnSync,
+    type SpawnSyncReturns
+} from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
     mkdir,
     rm,
     writeFile
 } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
     afterEach,
     describe,
@@ -26,8 +30,23 @@ import {
     readFullStackSpaBaseUrl
 } from '../../../apps/rallar-black-box/playwright-full-stack-api-server.ts';
 import { loadLiveRtcPerformanceAttempt } from '../../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
+import type { ApiJsonObject } from '../../shared/api/api-json-value.ts';
 
 const CONFIG_LOADER_TEST_TIMEOUT_MS = 30_000;
+const captureProbeEnvironment: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH,
+    LANG: 'C',
+    LC_ALL: 'C',
+    CI: '1',
+    TSX_TSCONFIG_PATH: resolve('packages/tests/tsconfig.json'),
+    RALLAR_BLACK_BOX_FULL_STACK: '1',
+    RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '1',
+    RALLAR_BLACK_BOX_API_MODE: 'memory',
+    RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING: 'false',
+    RALLAR_BLACK_BOX_CAPTURE_WS_OBSERVATIONS: 'false',
+    RALLAR_BLACK_BOX_STORAGE_DIR: '/tmp/rallar-capture-selection-recorder',
+    RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER: '0'
+};
 
 const predeclaredEnvironmentObservation = {
     git: { headCommit: 'a'.repeat(40), headTree: 'b'.repeat(40), ref: 'codex/unit-fixture', clean: true },
@@ -69,14 +88,92 @@ afterEach(() => {
 });
 
 describe('rallar-black-box full-stack API server mode', () => {
-    it('preserves the ordinary exhaustive consumer with no diagnostic capture', () => {
+    it.each([
+        { setup: 'false', ws: 'false', wrapper: false, direct: true, timingLogs: null, appInboxPhaseTiming: null, gracefulShutdown: null },
+        { setup: 'true', ws: 'false', wrapper: true, direct: false, timingLogs: true, appInboxPhaseTiming: true, gracefulShutdown: 'SIGTERM' },
+        { setup: 'false', ws: 'true', wrapper: true, direct: false, timingLogs: true, appInboxPhaseTiming: false, gracefulShutdown: 'SIGTERM' },
+        { setup: 'true', ws: 'true', wrapper: true, direct: false, timingLogs: true, appInboxPhaseTiming: true, gracefulShutdown: 'SIGTERM' }
+    ])(
+        'capture selection normalizes setup=$setup and WS=$ws at the real config/command boundary',
+        function assertSelectedFullStackApiCapture ({ setup, ws, ...expected }) {
+            const result = startFullStackApiCaptureConfigProbe('full-stack', {
+                RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING: setup,
+                RALLAR_BLACK_BOX_CAPTURE_WS_OBSERVATIONS: ws
+            });
+            expect(result.status, 'The selected config must produce its owned API command.').toBe(0);
+            const observation: unknown = JSON.parse(result.stdout);
+            expect(observation).toEqual({ ...expected, reuseExistingServer: false });
+        }
+    );
+
+    it.each([
+        { selectedPhase: undefined, expectedPhase: true },
+        { selectedPhase: true, expectedPhase: true },
+        { selectedPhase: false, expectedPhase: false }
+    ])('capture selection preserves or selects phase=$expectedPhase at the current command owner', ({ selectedPhase, expectedPhase }) => {
+        const captureRequest = {
+            mode: 'memory' as const,
+            timingCaptureDirectory: '/tmp/rallar-capture-selection-recorder',
+            appInboxPhaseTiming: selectedPhase,
+            environment: {}
+        };
+        const server = createDefaultFullStackApiV1WebServer(captureRequest);
+        expect(server.command.includes(`RALLAR_APP_INBOX_PHASE_TIMING=${String(expectedPhase)}`)).toBe(true);
+        expect(server.command.includes('RALLAR_TIMING_LOGS=true')).toBe(true);
+        expect(server.command.includes('run-full-stack-api-with-timing.ts')).toBe(true);
+        expect(server.reuseExistingServer).toBe(false);
+        expect(server.gracefulShutdown).toEqual({ signal: 'SIGTERM', timeout: 7_000 });
+    });
+
+    it.each([
+        { RALLAR_BLACK_BOX_FULL_STACK: '0' },
+        { RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '0' },
+        { RALLAR_BLACK_BOX_API_MODE: 'postgres' },
+        { RALLAR_BLACK_BOX_STORAGE_DIR: '' },
+        { RALLAR_BLACK_BOX_STORAGE_DIR: 'relative/recorder' }
+    ])('capture selection rejects either opt-in outside its local memory/headless/absolute lifecycle: %j', (override) => {
+        for (const flag of ['RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING', 'RALLAR_BLACK_BOX_CAPTURE_WS_OBSERVATIONS']) {
+            const result = startFullStackApiCaptureConfigProbe('full-stack', { [flag]: 'true', ...override });
+            expect(result.status, `${flag} must refuse the incompatible lifecycle before command use.`).toBe(1);
+            expect(result.stderr).toContain('Setup timing capture requires');
+        }
+    });
+
+    it.each(['worker-capture', 'exhaustive'] as const)(
+        'capture selection leaves the independent %s consumer on direct execution',
+        function assertIndependentCaptureConsumer (configName) {
+            const result = startFullStackApiCaptureConfigProbe(configName, {
+                RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING: 'true',
+                RALLAR_BLACK_BOX_CAPTURE_WS_OBSERVATIONS: 'true'
+            });
+            expect(result.status, 'The independent consumer config must remain loadable.').toBe(0);
+            const observation: unknown = JSON.parse(result.stdout);
+            expect(observation).toEqual({
+                wrapper: false,
+                direct: true,
+                timingLogs: null,
+                appInboxPhaseTiming: null,
+                reuseExistingServer: false,
+                gracefulShutdown: null
+            });
+        }
+    );
+
+    it('preserves the ordinary exhaustive consumer with no diagnostic capture', function assertOrdinaryExhaustiveApiCommand () {
         const result = spawnSync(process.execPath, [
             '--import',
             'tsx',
             '--input-type=module',
             '--eval',
             `import config from './apps/rallar-black-box/playwright.exhaustive.config.ts';
-             process.stdout.write(JSON.stringify(config.webServer));`
+             const api = config.webServer[0];
+             process.stdout.write(JSON.stringify({
+                 retainsLoginOverride: api.command.includes('RALLAR_LOGIN_USER_RATE_LIMIT=123 CORS_ORIGINS='),
+                 postgresInvocation: api.command.includes('deno run --env-file=apps/api-v1/.env.local'),
+                 wrapper: api.command.includes('run-full-stack-api-with-timing'),
+                 url: api.url, reuseExistingServer: api.reuseExistingServer, timeout: api.timeout,
+                 gracefulShutdown: api.gracefulShutdown?.signal ?? null
+             }));`
         ], {
             encoding: 'utf8',
             env: {
@@ -88,77 +185,60 @@ describe('rallar-black-box full-stack API server mode', () => {
             }
         });
         expect(result.status).toBe(0);
-        const api = JSON.parse(result.stdout)[0];
-        expect(api.command).toContain('RALLAR_LOGIN_USER_RATE_LIMIT=123 CORS_ORIGINS=');
-        expect(api.command).toContain('deno run --env-file=apps/api-v1/.env.local');
-        expect(api.command).not.toContain('run-full-stack-api-with-timing');
-        expect(api).toMatchObject({ url: 'http://localhost:8080/api/config', reuseExistingServer: false, timeout: 90_000 });
-        expect(api).not.toHaveProperty('gracefulShutdown');
-    });
-
-    it.each([
-        { RALLAR_BLACK_BOX_FULL_STACK: '0' },
-        { RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '0' },
-        { RALLAR_BLACK_BOX_API_MODE: 'postgres' },
-        { RALLAR_BLACK_BOX_STORAGE_DIR: '' },
-        { RALLAR_BLACK_BOX_STORAGE_DIR: 'relative/recorder' }
-    ])('rejects capture outside the local lifecycle %s', (override) => {
-        const result = spawnSync(process.execPath, [
-            '--import',
-            'tsx',
-            '--input-type=module',
-            '--eval',
-            'import \'./apps/rallar-black-box/playwright.full-stack.config.ts\';'
-        ], {
-            encoding: 'utf8',
-            env: {
-                ...process.env,
-                RALLAR_BLACK_BOX_FULL_STACK: '1',
-                RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '1',
-                RALLAR_BLACK_BOX_API_MODE: 'memory',
-                RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING: 'true',
-                RALLAR_BLACK_BOX_STORAGE_DIR: '/tmp/recorder',
-                RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER: '0',
-                ...override
-            }
+        const observed: unknown = JSON.parse(result.stdout);
+        expect(observed).toEqual({
+            retainsLoginOverride: true,
+            postgresInvocation: true,
+            wrapper: false,
+            url: 'http://localhost:8080/api/config',
+            reuseExistingServer: false,
+            timeout: 90_000,
+            gracefulShutdown: null
         });
-        expect(result.status).toBe(1);
-        expect(result.stderr).toContain('Setup timing capture requires');
     });
 
     it.each([
         { headless: '1', workspace: 'rallar-black-box-headless', readiness: '/headless/' },
         { headless: '', workspace: 'rallar-black-box', readiness: '' }
-    ])('selects $workspace at the configured SPA port with fresh CI ownership', ({ headless, workspace, readiness }) => {
-        const result = spawnSync(process.execPath, [
-            '--import',
-            'tsx',
-            '--input-type=module',
-            '--eval',
-            `import config from './apps/rallar-black-box/playwright.full-stack.config.ts';
-             process.stdout.write(JSON.stringify(config.webServer));`
-        ], {
-            encoding: 'utf8',
-            env: {
-                ...process.env,
-                CI: '1',
-                RALLAR_BLACK_BOX_FULL_STACK: '1',
-                RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: headless,
-                RALLAR_BLACK_BOX_API_MODE: 'memory',
-                VITE_RALLAR_SPA_BASE_URL: 'http://127.0.0.1:5376',
-                RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER: '0'
-            }
-        });
-        expect(result.status).toBe(0);
-        const servers = JSON.parse(result.stdout);
-        expect(servers).toHaveLength(3);
-        expect(servers[1]).toMatchObject({
-            command: `cd ../.. && npm --workspace ${workspace} run dev -- --port 5376 --force`,
-            url: `http://127.0.0.1:5376${readiness}`,
-            reuseExistingServer: false
-        });
-        expect(servers.every((server: { reuseExistingServer: boolean; }) => !server.reuseExistingServer)).toBe(true);
-    });
+    ])(
+        'selects $workspace at the configured SPA port with fresh CI ownership',
+        function assertSelectedFullStackSpaCommand ({ headless, workspace, readiness }) {
+            const result = spawnSync(process.execPath, [
+                '--import',
+                'tsx',
+                '--input-type=module',
+                '--eval',
+                `import config from './apps/rallar-black-box/playwright.full-stack.config.ts';
+             const spa = config.webServer[1];
+             process.stdout.write(JSON.stringify({
+                 serverCount: config.webServer.length,
+                 selectedWorkspaceAndPort: spa.command === 'cd ../.. && npm --workspace ${workspace} run dev -- --port 5376 --force',
+                 url: spa.url, reuseExistingServer: spa.reuseExistingServer,
+                 allFresh: config.webServer.every(server => !server.reuseExistingServer)
+             }));`
+            ], {
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    CI: '1',
+                    RALLAR_BLACK_BOX_FULL_STACK: '1',
+                    RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: headless,
+                    RALLAR_BLACK_BOX_API_MODE: 'memory',
+                    VITE_RALLAR_SPA_BASE_URL: 'http://127.0.0.1:5376',
+                    RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER: '0'
+                }
+            });
+            expect(result.status).toBe(0);
+            const observed: unknown = JSON.parse(result.stdout);
+            expect(observed).toEqual({
+                serverCount: 3,
+                selectedWorkspaceAndPort: true,
+                url: `http://127.0.0.1:5376${readiness}`,
+                reuseExistingServer: false,
+                allFresh: true
+            });
+        }
+    );
 
     it('defaults to the existing Postgres-backed full-stack API server mode', () => {
         expect(readFullStackApiServerMode({})).toBe('postgres');
@@ -553,18 +633,72 @@ describe('rallar-black-box full-stack API server mode', () => {
     });
 });
 
-async function createPredeclaredSelection(caseId: string): Promise<Record<string, string>> {
+function startFullStackApiCaptureConfigProbe(
+    configName: 'full-stack' | 'worker-capture' | 'exhaustive',
+    environment: NodeJS.ProcessEnv
+): SpawnSyncReturns<string> {
+    return spawnSync(process.execPath, [
+        '--import',
+        'tsx',
+        '--input-type=module',
+        '--eval',
+        String.raw`
+        import config from ${JSON.stringify(`./apps/rallar-black-box/playwright.${configName}.config.ts`)};
+        const api = config.webServer[0];
+        const timing = /(?:^|\s)RALLAR_TIMING_LOGS=(true|false)(?:\s|$)/.exec(api.command);
+        const phase = /(?:^|\s)RALLAR_APP_INBOX_PHASE_TIMING=(true|false)(?:\s|$)/.exec(api.command);
+        const wrapper = api.command.includes('run-full-stack-api-with-timing.ts');
+        process.stdout.write(JSON.stringify({
+            wrapper,
+            direct: !wrapper && /(?:^|\s)deno\s+run/.test(api.command),
+            timingLogs: timing === null ? null : timing[1] === 'true',
+            appInboxPhaseTiming: phase === null ? null : phase[1] === 'true',
+            reuseExistingServer: api.reuseExistingServer,
+            gracefulShutdown: api.gracefulShutdown?.signal ?? null
+        }));
+    `
+    ], {
+        encoding: 'utf8',
+        env: { ...captureProbeEnvironment, ...environment },
+        timeout: CONFIG_LOADER_TEST_TIMEOUT_MS
+    });
+}
+
+async function createPredeclaredSelection(caseId: string): Promise<NodeJS.ProcessEnv> {
     // Synthetic unit initialization: never a live receipt or accepted performance cohort.
     const baselineId = `20261009T204500000Z-${randomBytes(6).toString('hex')}-e3-memory-local`;
     const baselineRoot = join(process.cwd(), 'tmp', 'perf', 'rtc-baseline', baselineId);
     onTestFinished(() => rm(baselineRoot, { recursive: true, force: true }));
     await mkdir(baselineRoot, { recursive: true });
+    await writeFile(join(baselineRoot, 'manifest.json'), JSON.stringify(toPredeclaredSelectionManifest(baselineId)));
+    await writeFile(
+        join(baselineRoot, 'environment.json'),
+        JSON.stringify({
+            schema: 'rallar.rtc-baseline.environment.v1',
+            baselineId,
+            workloadIds: ['RTC-B06'],
+            environmentId: 'E3-memory',
+            repeatLink: null,
+            conditionalEnvironmentDecisions: [],
+            observation: predeclaredEnvironmentObservation
+        })
+    );
+    return {
+        RALLAR_BLACK_BOX_RTC_BASELINE_ID: baselineId,
+        RALLAR_BLACK_BOX_RTC_CASE_ID: caseId,
+        RALLAR_BLACK_BOX_RTC_INPUT_KEY: `e3-memory-${caseId}`,
+        RALLAR_BLACK_BOX_RTC_INTENDED_PHASE: 'retained',
+        RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL: '1'
+    };
+}
+
+function toPredeclaredSelectionManifest(baselineId: string): ApiJsonObject {
     const cases = ['default', 'all-scenarios', 'retention-100'].map((caseId) => ({
         workloadId: 'RTC-B06',
         caseId,
         inputKey: `e3-memory-${caseId}`
     }));
-    const manifest = {
+    return {
         schema: 'rallar.rtc-baseline.manifest.v1',
         request: {
             schema: 'rallar.rtc-baseline.capture-request.v1',
@@ -586,25 +720,5 @@ async function createPredeclaredSelection(caseId: string): Promise<Record<string
         })),
         expectedCohorts: [],
         repeatLink: null
-    };
-    await writeFile(join(baselineRoot, 'manifest.json'), JSON.stringify(manifest));
-    await writeFile(
-        join(baselineRoot, 'environment.json'),
-        JSON.stringify({
-            schema: 'rallar.rtc-baseline.environment.v1',
-            baselineId,
-            workloadIds: ['RTC-B06'],
-            environmentId: 'E3-memory',
-            repeatLink: null,
-            conditionalEnvironmentDecisions: [],
-            observation: predeclaredEnvironmentObservation
-        })
-    );
-    return {
-        RALLAR_BLACK_BOX_RTC_BASELINE_ID: baselineId,
-        RALLAR_BLACK_BOX_RTC_CASE_ID: caseId,
-        RALLAR_BLACK_BOX_RTC_INPUT_KEY: `e3-memory-${caseId}`,
-        RALLAR_BLACK_BOX_RTC_INTENDED_PHASE: 'retained',
-        RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL: '1'
     };
 }

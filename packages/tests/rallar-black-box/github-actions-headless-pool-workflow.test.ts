@@ -30,18 +30,6 @@ interface GitHubFreeMatrixOutput {
     readonly matrix: readonly { readonly shard_index: number; readonly agent_start_index: number; readonly agent_count: number; }[];
 }
 
-const repoRoot = path.resolve(__dirname, '../../..');
-const osEnvironment = { PATH: process.env.PATH, LANG: 'C', LC_ALL: 'C' };
-const productionConcurrency = {
-    group: 'hetzner-production-distributed-recipe',
-    'cancel-in-progress': false,
-    queue: 'max'
-};
-const workflowPath = path.join(
-    repoRoot,
-    '.github/workflows/github-free-distributed-recipe.yml'
-);
-
 interface WorkflowStep {
     readonly name?: string;
     readonly if?: string;
@@ -74,6 +62,18 @@ interface WorkflowDocument {
     };
     readonly jobs?: Readonly<Record<string, WorkflowJob>>;
 }
+
+const repoRoot = path.resolve(__dirname, '../../..');
+const osEnvironment = { PATH: process.env.PATH, LANG: 'C', LC_ALL: 'C' };
+const productionConcurrency = {
+    group: 'hetzner-production-distributed-recipe',
+    'cancel-in-progress': false,
+    queue: 'max'
+};
+const workflowPath = path.join(
+    repoRoot,
+    '.github/workflows/github-free-distributed-recipe.yml'
+);
 
 const workflowSchema: JsonSchema = {
     type: 'object',
@@ -181,6 +181,63 @@ const findStep = (job: WorkflowJob, name: string): WorkflowStep =>
     );
 
 describe('GitHub Free distributed recipe workflow', () => {
+    it('WS observation selection is false by default and belongs only to the local observation caller', async () => {
+        const workflow = await readWorkflow();
+        const selection = workflow.on?.workflow_dispatch?.inputs?.capture_ws_observations;
+        expect(selection?.type).toBe('boolean');
+        expect(selection?.default).toBe(false);
+        const jobs = required(workflow.jobs, 'jobs');
+        expect(findStep(jobs['all-local'], 'Observe frozen 15-agent manifest').env).toHaveProperty(
+            'RALLAR_BLACK_BOX_CAPTURE_WS_OBSERVATIONS',
+            '${{ inputs.capture_ws_observations }}'
+        );
+        for (const job of ['plan', 'prepare-hetzner', 'github-agents', 'operator']) {
+            expect(JSON.stringify(jobs[job])).not.toMatch(/capture_ws_observations|RALLAR_BLACK_BOX_CAPTURE_WS_OBSERVATIONS/);
+        }
+    });
+
+    it.each(['false', 'true'])('WS observation selection %s reaches the unchanged local external-command port', async (selection) => {
+        const local = required((await readWorkflow()).jobs?.['all-local'], 'all-local job');
+        const measurement = findStep(local, 'Observe frozen 15-agent manifest');
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-ws-capture-launch-'));
+        try {
+            await writeFile(
+                path.join(directory, 'npx'),
+                `#!/bin/sh
+node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAPTURE_WS_OBSERVATIONS ?? null, args: process.argv.slice(1)}))' -- "$@"
+`
+            );
+            await chmod(path.join(directory, 'npx'), 0o700);
+            const environment = Object.fromEntries(
+                Object.entries(required(measurement.env, 'local launch environment')).map(([name, value]) => [
+                    name,
+                    value === '${{ inputs.capture_ws_observations }}' ? selection : String(value)
+                ])
+            );
+            const launched = spawnSync('bash', ['-c', required(measurement.run, 'local launch command')], {
+                cwd: repoRoot,
+                encoding: 'utf8',
+                env: { ...osEnvironment, ...environment, PATH: `${directory}:${osEnvironment.PATH}` }
+            });
+            expect(launched.status).toBe(0);
+            const observed: unknown = JSON.parse(launched.stdout);
+            expect(observed).toEqual({
+                wsCapture: selection,
+                args: [
+                    'playwright',
+                    'test',
+                    '--config',
+                    'apps/rallar-black-box/playwright.full-stack.config.ts',
+                    'tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts',
+                    '--retries=0'
+                ]
+            });
+        }
+        finally {
+            await rm(directory, { force: true, recursive: true });
+        }
+    });
+
     it('exposes false-by-default setup timing only to the local observation caller', async () => {
         const workflow = await readWorkflow();
         expect(workflow.on?.workflow_dispatch?.inputs?.capture_setup_timing).toMatchObject({
