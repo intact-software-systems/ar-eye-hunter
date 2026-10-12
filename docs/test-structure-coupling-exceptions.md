@@ -102,12 +102,20 @@ moved or changed test.
       "coverageRelation": "The test independently appends a wrong-room partial matcher to a valid fixture, invokes the actual CLI, checks the room-specific diagnostic and complete directory inventory, and compares the original input bytes after refusal."
     },
     {
-      "id": "alm-frozen-full-stack-observation-input",
-      "domain": "Frozen ALM full-stack observation workload",
+      "id": "alm-all-local-runner-provenance-source",
+      "domain": "Frozen ALM all-local runner provenance",
       "owner": "Rallar Black Box maintainers",
-      "summary": "The opt-in full-stack observation executes the unchanged reusable 15-agent ALM manifest and requires canonical native acceptance for that exact workload, rather than accepting a substituted or weakened recipe.",
-      "semanticCoverage": "tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts#observes the unchanged 15-agent ALM manifest with complete native evidence",
-      "coverageRelation": "The source bytes are the actual workload input: the test asserts their independently fixed SHA256 before launching agents, passes the same manifest path to the canonical operator, then checks the exported native manifest equals the canonical effective input with only the authorized finite RUN capture selection applied and requires 15 distinct participants with all 73 group assertions passed. A changed fixture must fail the digest assertion even if its easier workload would otherwise pass."
+      "summary": "Runner provenance and the retained frozen source identify the admitted authored ALM workload even if a later selected path points to different bytes.",
+      "semanticCoverage": "packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts#retains runner resources and exact source before service startup can fail",
+      "coverageRelation": "The test invokes the workflow's source-admission and provenance commands, substitutes a different later path, then checks the recorded digest and retained manifest against the originally selected authored bytes."
+    },
+    {
+      "id": "alm-all-local-source-admission-freeze",
+      "domain": "Frozen ALM all-local source admission",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "The all-local admission rejects substituted ALM source bytes and retains the admitted canonical bytes after the selected path changes.",
+      "semanticCoverage": "packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts#admits only canonical source bytes and retains them after the selected path changes",
+      "coverageRelation": "The test supplies a selected file under an isolated repository root, observes rejection of invalid bytes before a frozen copy exists, admits the canonical authored bytes, then changes the selected file and reads the retained frozen copy."
     },
     {
       "id": "agent-reload-result-precedes-page-reload",
@@ -4261,15 +4269,26 @@ moved or changed test.
       "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#rejects an executable command scoped outside the source manifest group"
     },
     {
-      "id": "test-structure-coupling-108bf4e4b3f9ad57",
-      "path": "tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts",
+      "id": "test-structure-coupling-d42efd00615f3637",
+      "path": "packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts",
       "kind": "production-source-read",
-      "contract": "alm-frozen-full-stack-observation-input",
+      "contract": "alm-all-local-runner-provenance-source",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "Reads the reusable manifest that the observation actually executes and retains as native provenance. The literal digest rejects workload substitution before worker startup; exact equality of the canonical exported manifest and the decoded workload with its authorized finite RUN capture selection ties native acceptance to those frozen bytes while allowing the offered capture override. Unrelated workload, participant, assertion and deadline changes remain rejected. This read is executable recipe input, not inspection of implementation topology.",
-      "semanticCoverage": "tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts#observes the unchanged 15-agent ALM manifest with complete native evidence"
+      "rationale": "Reads the selected authored manifest before executing the workflow's admission and provenance commands so the resulting digest and frozen copy can be compared with the exact source that was admitted, even after the provenance command receives a substituted path.",
+      "semanticCoverage": "packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts#retains runner resources and exact source before service startup can fail"
+    },
+    {
+      "id": "test-structure-coupling-42a6da1c993e593c",
+      "path": "packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts",
+      "kind": "production-source-read",
+      "contract": "alm-all-local-source-admission-freeze",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "Reads the canonical authored manifest as the positive input for an isolated source-admission test; invalid bytes are refused, canonical bytes are admitted, and the frozen copy stays unchanged after the selected path is overwritten.",
+      "semanticCoverage": "packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts#admits only canonical source bytes and retains them after the selected path changes"
     },
     {
       "id": "test-structure-coupling-0ce4af5c7c62c033",
