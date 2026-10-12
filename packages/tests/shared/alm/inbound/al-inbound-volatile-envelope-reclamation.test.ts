@@ -335,7 +335,9 @@ describe('volatile inbound canonical envelope reclamation', () => {
             const [claim] = [...reserved.values()];
             await stores.workQueue.releaseEntries([{
                 entry: claim,
-                disposition: { status, delayMs: status === EntityStatus.RETRY ? 1_000 : null }
+                disposition: status === EntityStatus.RETRY
+                    ? { status, delayMs: 1_000 }
+                    : { status, delayMs: null }
             }]);
 
             stores.evictExpired();
