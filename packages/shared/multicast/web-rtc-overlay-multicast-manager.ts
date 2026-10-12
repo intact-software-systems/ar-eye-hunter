@@ -291,30 +291,37 @@ export class WebRtcOverlayMulticastManager {
         });
     }
 
-    /** One circuit-breaker call and one rate-limiter token for the whole group, whose messages commit as one. */
+    /** An already-open circuit spends no quota token; local quota refusals never enter failure accounting. */
     async enqueueAllIfAbsent(msgs: readonly ALMessage[]): Promise<readonly ALOutboundEnqueueResult[]> {
         if (this.disposed) {
             return msgs.map((msg) => WebRtcOverlayMulticastManager.toDisposedEnqueueResult(msg));
         }
 
+        if (!this.circuitBreaker.isAllowedThrough()) {
+            return msgs.map(WebRtcOverlayMulticastManager.toCircuitOpenResult);
+        }
+
+        return RateLimiter.tryToExecuteOrDefault<readonly ALOutboundEnqueueResult[]>(
+            this.rateLimiter,
+            () => this.enqueueThroughCircuitBreaker(msgs),
+            msgs.map((msg) =>
+                WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
+                    kind: 'unroutable',
+                    reason: 'rate-limited',
+                    detail: 'RTC enqueue rate limit exceeded'
+                })
+            )
+        );
+    }
+
+    private async enqueueThroughCircuitBreaker(
+        msgs: readonly ALMessage[]
+    ): Promise<readonly ALOutboundEnqueueResult[]> {
         const either = await CircuitBreaker.tryToExecute<readonly ALOutboundEnqueueResult[]>(
             this.circuitBreaker,
-            () => {
-                return RateLimiter.tryToExecuteOrDefault<readonly ALOutboundEnqueueResult[]>(
-                    this.rateLimiter,
-                    () => this.outboundRuntime.enqueueAllIfAbsent(msgs),
-                    msgs.map((msg) =>
-                        WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
-                            kind: 'unroutable',
-                            reason: 'rate-limited',
-                            detail: 'RTC enqueue rate limit exceeded'
-                        })
-                    )
-                );
-            },
+            () => this.outboundRuntime.enqueueAllIfAbsent(msgs),
             (results) => results.every(isRtcEnqueueBreakerSuccess)
         );
-
         return either.fold(
             (error) => msgs.map((msg) => WebRtcOverlayMulticastManager.toCircuitBreakerResult(msg, error)),
             (value) => value
@@ -326,16 +333,20 @@ export class WebRtcOverlayMulticastManager {
         error: Error
     ): ALOutboundEnqueueResult {
         if (error.message === 'Not allowed to execute') {
-            return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
-                kind: 'unroutable',
-                reason: 'circuit-open',
-                detail: 'RTC enqueue circuit breaker open'
-            });
+            return WebRtcOverlayMulticastManager.toCircuitOpenResult(msg);
         }
 
         return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
             kind: 'failed',
             detail: `RTC enqueue failed: ${error.message}`
+        });
+    }
+
+    private static toCircuitOpenResult(msg: ALMessage): ALOutboundEnqueueResult {
+        return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
+            kind: 'unroutable',
+            reason: 'circuit-open',
+            detail: 'RTC enqueue circuit breaker open'
         });
     }
 

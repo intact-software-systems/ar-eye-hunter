@@ -112,71 +112,46 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 - The sampler and exact lifecycle-audience repairs are implemented and locally verified with
   meaningful failing-first cases and healthy controls at their command/runtime/evaluator owners.
   They preserve every original acceptance requirement; native workload acceptance remains unproved.
-- Six- and eleven-browser ALM match diagnostics have no hosted passing evidence. The user has
-  selected them using the same match workload. Existing numbered RTC catalog entries are different
-  workloads and do not prove these cohorts. The repaired assertion admission now permits every
-  six-browser recipe to load and start. The result traversal repair permits all six successful
-  native finals and all strengthened coordinator predicates to pass. The enclosing observation
-  still fails: its terminal snapshot decoder omits the already-supported
-  `sameUniqueStringSetAsRole` equality aggregate and refuses the producer's successful result.
-  Native workload success does not excuse a failed terminal decoder or establish original scale
-  acceptance.
+- The six-browser full diagnostic passes with the same match workload. The assertion admission,
+  result traversal and terminal aggregate decoding repairs are complete. This diagnostic is
+  smaller than the original acceptance cohort and does not establish original scale acceptance.
+- The eleven-browser diagnostic still fails. A conditional local capture found 48 rejected RTC ACK
+  admissions: 33 `rate-limited` and 15 `circuit-open`. One exact forwarded ACK control was
+  rejected first by quota and later by the breaker, with matching handoff failures. The capture
+  was incomplete, so it does not identify the earliest missing shot, prove the sole breaker-opening
+  cause or show that this coupling accounts for every failed receipt. All shot submissions arrived,
+  while eight receipt observations timed out. The local capture is diagnostic evidence, not
+  capture-off acceptance, capacity, memory or performance proof.
 - Full source/support closure, whole-branch review, original scale and benefit, readiness and manual
   merge remain open. The pull request owns current source, CI, test and run outcomes; do not copy
   delivery history here.
 
 ## Next two useful slices
 
-### 1. Close supported terminal aggregate decoding
+### 1. Isolate RTC quota denial from operation-failure accounting
 
-Use TDD at the existing group-assertion producer and terminal snapshot decoder. Prove a serialized
-producer result for `sameUniqueStringSetAsRole` reaches the existing equality aggregate branch.
-Preserve strict participant counts, per-agent rows, verdicts, source identity and malformed-result
-refusal; keep other equality and matching aggregates coherent with their published contracts.
-Do not bypass terminal polling, export validation or native acceptance, add a recipe-specific
-allowlist, or introduce another result evaluator.
+Test the actual RTC control enqueue boundary with the current ACK producer. Preserve 20 admissions
+per 1,000 ms, the ten-failure breaker and its ten-second reset, typed refusal reasons, durable
+admission guards and normal runtime behavior. A local quota denial must not count as a failed
+operation or erase earlier real failure history. Prove quota-window recovery, real-failure opening,
+circuit-open priority and half-open recovery before repeating the unchanged eleven-browser
+diagnostic once through its existing source and hosted lifecycle. Review every changed human-authored
+file in full; changed support files enter recursive closure, and independent untouched code remains
+outside. Incomplete capture cannot prove that this repair cures every missing receipt.
 
-Capture semantic RED before GREEN using the real producer, with malformed aggregate, count and row
-controls. Use the retained successful native snapshot to verify the exact decoder refusal is
-repaired; this supplementary probe cannot substitute for a complete new hosted execution.
-Review/remediate every changed human-authored file completely and recursive changed support closure;
-independent untouched code stays outside. Use affected group-result, terminal snapshot,
-maintained type, consumer and exact changed-range checks, then independent specification and
-quality review before coherent publication. Reuse the already reviewed sampler, exact-audience,
-manifest, source-freeze and native-evidence owners. Preserve their result attribution and every
-original participant, traffic, receipt, storage, deadline, policy and budget requirement.
+### 2. Establish original capture-off fifteen-agent acceptance
 
-### 2. Establish six- and eleven-browser diagnostic checkpoints
-
-Reuse that same canonical recipe and manifest producer for six and eleven browsers under the
-existing diagnostic catalog/path. Preserve one director and N-1 frozen players, tree selection
-with meshMinSize N+1, six exact leader-ACK shots per player, two full-audience lifecycle events,
-seven sampled readings per actor, original thirty-second workload/ACK/TTL, all setup/barrier/outer
-allowances, receipt/security rules, metric/storage budgets and native fail-closed evidence.
-The expected diagnostic work is 30/60 shots and 42/77 readings at six/eleven respectively; these
-are their own full-cohort checks, not reduced evidence for fifteen.
-
-Reuse the implemented cohort/catalog selection and generated requirements; keep original 15/30/50
-acceptance positions and identities distinct. Retain the existing hosted workflow and native
-harness over the selected canonical manifest, full cohort, tree setting and complete strengthened
-predicate set. Preserve source freezing, exact provenance, native acceptance, cleanup, mismatched
-input refusal and every existing lifecycle ceiling. Require actual recipe-load and capability
-admission before a new hosted diagnostic.
-Publish reviewed candidates before bounded runs through the existing hosted lifecycle. Verify exact source, declared/effective inputs, complete cohort and shared
-concurrency immediately before dispatch. Preserve originals once and perform canonical analysis
-with truthful completion, receipt, sampling, storage, loss and cleanup limits.
-
-Run six first to establish whether the complete smaller match works, then eleven when that result
-supports progression. A failure earns exact evidence review and an independently testable repair,
-not an unchanged-source retry. Compare failure boundaries across cohorts without treating unequal
-workloads as a speedup or capacity proof. Select observation flags deliberately and record their
-cost/limits; diagnostic captures cannot replace original capture-off acceptance. Passing six and
-eleven does not waive fifteen, thirty, fifty, the failed performance gate or final review.
+When the unchanged eleven-browser diagnostic supports progression, run the original fifteen-agent
+workload with its frozen audience, tree, six-shot cadence, lifecycle events, exact receipts, seven
+samples per actor, storage and metric limits, deadlines, native predicates, source provenance and
+cleanup. Keep capture off for acceptance. A failed result earns bounded evidence review and an
+independently testable repair before another source-admitted run. Thirty and fifty remain gated by
+fifteen; the unchanged comparative benefit gate and final whole-branch review remain open.
 
 ## Later outcomes and completion
 
-Keep later work outcome-shaped. Finish the original capture-off fifteen-agent acceptance, then
-unchanged thirty and fifty, and satisfy the original comparative benefit gate. Earn any intervening
+Keep later work outcome-shaped. Finish unchanged thirty and fifty after fifteen, and satisfy the
+original comparative benefit gate. Earn any intervening
 repair from independent evidence and meaningful failing-first behavior; keep only the next two
 useful slices concrete. The selected six/eleven checkpoints remain diagnostic. No extra benchmark, quota/capacity
 exploration, unchanged hosted retry or relaxed acceptance is selected.
