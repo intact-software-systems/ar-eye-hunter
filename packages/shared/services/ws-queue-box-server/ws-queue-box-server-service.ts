@@ -4,6 +4,7 @@ import {
     readALTargetGroupRef,
     type ALMessage
 } from '../../al-contracts/al-contract.ts';
+import type { ALAckPayload } from '../../al-contracts/al-control.ts';
 import {
     decodeALMessageValue,
     decodePersistedALMessage,
@@ -151,6 +152,7 @@ export namespace WsQueueBoxServerService {
         readonly connectionId: string;
         readonly result: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
         readonly socketFacts: WsQueueBoxServerReceiptSocketFacts | undefined;
+        readonly currentnessRejection?: WsQueueBoxServerInboundAuthority.CurrentnessRejection;
     }
 
     export interface EnqueueAuthority {
@@ -419,12 +421,23 @@ export class WsQueueBoxServerService {
             onControlMessage: async (message) => {
                 await this.receipts.acceptControlMessage(message);
             },
-            readRelayedAckRejection: (ack) => this.ackRelay.readRelayedAckRejection(ack),
+            readRelayedAckRejection: (ack, controlIdentity) =>
+                this.readRuntimeProtocolAckRejection(ack, controlIdentity),
             forwardMessage: (input) => this.inboundDelivery.forwardIncomingMessage(input),
             canForwardMessage: (message) =>
                 this.forwardsRoomScopedMessages || (!isRoomScopedALMessage(message) && !isALWorldBroadcast(message)),
             diagnostics: dependencies.inboundDiagnostics
         });
+    }
+
+    private readRuntimeProtocolAckRejection(
+        ack: ALAckPayload,
+        controlIdentity?: ALMessage['id']
+    ): ALMessageRejection | undefined {
+        return this.ackRelay.readRelayedAckRejection(
+            ack,
+            this.receiptObserver === undefined ? undefined : { stage: 'runtime-protocol', controlIdentity }
+        );
     }
 
     private registerSocketIngress(): void {
@@ -556,7 +569,8 @@ export class WsQueueBoxServerService {
             return subject === undefined ? decision.result : this.recordSocketDecision({
                 ...subject,
                 result: decision.result,
-                socketFacts: decision.socketFacts
+                socketFacts: decision.socketFacts,
+                currentnessRejection: decision.currentnessRejection
             });
         }
         if (decision.kind === 'retain') {
@@ -578,7 +592,8 @@ export class WsQueueBoxServerService {
             return subject === undefined ? current.result : this.recordSocketDecision({
                 ...subject,
                 result: current.result,
-                socketFacts: current.socketFacts
+                socketFacts: current.socketFacts,
+                currentnessRejection: current.currentnessRejection
             });
         }
         const result = await this.admitAuthorizedMessage(current.value);
@@ -591,6 +606,7 @@ export class WsQueueBoxServerService {
         observation: WsQueueBoxServerService.SocketObservation
     ): Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance> {
         const outcome = observation.result.left !== undefined ? 'rejected' : observation.result.right?.kind;
+        this.recordCurrentnessAckRejection(observation);
         if (observation.ackFacts !== undefined && outcome !== undefined) {
             recordWsQueueBoxServerReceiptObservation(this.receiptObserver, {
                 ...observation.ackFacts,
@@ -620,6 +636,28 @@ export class WsQueueBoxServerService {
             });
         }
         return observation.result;
+    }
+
+    private recordCurrentnessAckRejection(observation: WsQueueBoxServerService.SocketObservation): void {
+        const { ackFacts, currentnessRejection } = observation;
+        if (
+            this.receiptObserver === undefined || currentnessRejection === undefined || ackFacts === undefined ||
+            ackFacts.controlMsgId === undefined || ackFacts.controlSenderId === undefined ||
+            ackFacts.controlCreatedAtEpochMs === undefined
+        ) {
+            return;
+        }
+        recordWsQueueBoxServerReceiptObservation(this.receiptObserver, {
+            kind: 'ack-rejection',
+            serverPeerId: this.name,
+            controlMsgId: ackFacts.controlMsgId,
+            controlSenderId: ackFacts.controlSenderId,
+            controlCreatedAtEpochMs: ackFacts.controlCreatedAtEpochMs,
+            rejectionCode: 'unauthorized',
+            owner: 'inbound-authority',
+            connectionId: observation.connectionId,
+            ...currentnessRejection
+        });
     }
 
     private async admitAuthorizedMessage(

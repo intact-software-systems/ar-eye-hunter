@@ -58,14 +58,37 @@ export class WsQueueBoxServerAckRelay {
     }
 
     /** The ingress check; an ACK this instance will hand over is checked only for what needs no aggregate. */
-    readRelayedAckRejection(ack: ALAckPayload): ALMessageRejection | undefined {
+    readRelayedAckRejection(
+        ack: ALAckPayload,
+        observation?: WsQueueBoxServerReceiptAggregation.ProtocolObservation
+    ): ALMessageRejection | undefined {
         if (this.#publishRelayedAck === undefined || this.#receipts.holdsReceiptFor(ack)) {
-            return this.#receipts.readRelayedAckRejection(ack);
+            return this.#receipts.readRelayedAckRejection(ack, observation);
         }
-        return ack.toPeerId === ack.originPeerId ? undefined : {
+        if (ack.toPeerId === ack.originPeerId) {
+            return undefined;
+        }
+        const rejection: ALMessageRejection = {
             code: 'unauthorized',
             message: 'AL acknowledgement is not addressed to the origin it names'
         };
+        if (this.#receiptObserver !== undefined && observation?.controlIdentity !== undefined) {
+            try {
+                recordWsQueueBoxServerReceiptObservation(this.#receiptObserver, {
+                    kind: 'ack-rejection',
+                    serverPeerId: this.#serverPeerId,
+                    controlMsgId: observation.controlIdentity.msgId,
+                    controlSenderId: observation.controlIdentity.senderId,
+                    controlCreatedAtEpochMs: observation.controlIdentity.ts,
+                    rejectionCode: 'unauthorized',
+                    owner: 'ack-relay',
+                    stage: observation.stage,
+                    failedGuards: Object.freeze(['origin-addressee-mismatch'] as const)
+                });
+            }
+            catch { /* Optional evidence cannot change the fixed-address refusal. */ }
+        }
+        return rejection;
     }
 
     /**

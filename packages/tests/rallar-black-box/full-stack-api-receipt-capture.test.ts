@@ -82,6 +82,45 @@ const BUSINESS_SOCKET_DECISION = {
     outcome: 'admitted'
 };
 
+const ACK_REJECTION = {
+    kind: 'ack-rejection',
+    serverPeerId: 'server',
+    controlMsgId: 'ack-A',
+    controlSenderId: 'recipient',
+    controlCreatedAtEpochMs: 900,
+    rejectionCode: 'unauthorized',
+    owner: 'receipt-aggregation',
+    stage: 'runtime-protocol',
+    failedGuards: ['already-confirmed', 'deadline-expired'],
+    validationAtEpochMs: 30000,
+    deadlineAtMs: 30000
+};
+
+const CURRENTNESS_ACK_REJECTION = {
+    kind: 'ack-rejection',
+    serverPeerId: 'server',
+    controlMsgId: 'ack-A',
+    controlSenderId: 'recipient',
+    controlCreatedAtEpochMs: 900,
+    rejectionCode: 'unauthorized',
+    owner: 'inbound-authority',
+    stage: 'admission-currentness',
+    connectionId: 'recipient',
+    failedGuards: ['connection-closed']
+};
+
+const RELAY_ACK_REJECTION = {
+    kind: 'ack-rejection',
+    serverPeerId: 'server',
+    controlMsgId: 'ack-A',
+    controlSenderId: 'recipient',
+    controlCreatedAtEpochMs: 900,
+    rejectionCode: 'unauthorized',
+    owner: 'ack-relay',
+    stage: 'ingress-protocol',
+    failedGuards: ['origin-addressee-mismatch']
+};
+
 function toReceiptOwnerChildSource(expectedRecipientPeerIds: readonly string[]): string {
     const source = (file: string) => JSON.stringify(path.resolve(file));
     return `
@@ -289,6 +328,143 @@ async function removeReceiptCaptureDirectory(directory: string, bodyFailed: bool
 }
 
 describe('full-stack private upstream receipt capture', () => {
+    it('retains closed terminal aggregate, currentness and relay refusals with their actual owner and stage', () => {
+        expect(toSafeApiWsReceiptObservation(ACK_REJECTION)).toEqual(ACK_REJECTION);
+        const absent = { ...ACK_REJECTION, stage: 'ingress-protocol', failedGuards: ['aggregate-absent'], deadlineAtMs: undefined };
+        expect(toSafeApiWsReceiptObservation(absent)).toEqual({
+            kind: 'ack-rejection',
+            serverPeerId: 'server',
+            controlMsgId: 'ack-A',
+            controlSenderId: 'recipient',
+            controlCreatedAtEpochMs: 900,
+            rejectionCode: 'unauthorized',
+            owner: 'receipt-aggregation',
+            stage: 'ingress-protocol',
+            failedGuards: ['aggregate-absent'],
+            validationAtEpochMs: 30000
+        });
+        for (const stage of ['post-authorizer-currentness', 'admission-currentness']) {
+            for (const guard of ['connection-replaced', 'connection-closed']) {
+                const current = {
+                    kind: 'ack-rejection',
+                    serverPeerId: 'server',
+                    controlMsgId: 'ack-A',
+                    controlSenderId: 'recipient',
+                    controlCreatedAtEpochMs: 900,
+                    rejectionCode: 'unauthorized',
+                    owner: 'inbound-authority',
+                    stage,
+                    connectionId: 'recipient',
+                    failedGuards: [guard]
+                };
+                expect(toSafeApiWsReceiptObservation(current)).toEqual(current);
+            }
+        }
+        const relay = {
+            kind: 'ack-rejection',
+            serverPeerId: 'server',
+            controlMsgId: 'ack-A',
+            controlSenderId: 'recipient',
+            controlCreatedAtEpochMs: 900,
+            rejectionCode: 'unauthorized',
+            owner: 'ack-relay',
+            stage: 'ingress-protocol',
+            failedGuards: ['origin-addressee-mismatch']
+        };
+        expect(toSafeApiWsReceiptObservation(relay)).toEqual(relay);
+    });
+
+    it.each([
+        { serverPeerId: undefined },
+        { serverPeerId: 'unsafe identity' },
+        { controlMsgId: undefined },
+        { controlMsgId: 'unsafe identity' },
+        { controlSenderId: undefined },
+        { controlSenderId: 'unsafe identity' },
+        { controlCreatedAtEpochMs: undefined },
+        { controlCreatedAtEpochMs: -1 },
+        { controlCreatedAtEpochMs: NaN },
+        { controlCreatedAtEpochMs: Infinity },
+        { rejectionCode: 'malformed' },
+        { rejectionCode: undefined },
+        { owner: undefined },
+        { owner: 'unknown' },
+        { stage: undefined },
+        { stage: 'unknown' },
+        { stage: 'admission-currentness' },
+        { failedGuards: undefined },
+        { failedGuards: [] },
+        { failedGuards: 'deadline-expired' },
+        { failedGuards: ['deadline-expired', 'deadline-expired'] },
+        { failedGuards: ['unknown'] },
+        { failedGuards: ['connection-replaced'] },
+        { failedGuards: ['aggregate-absent', 'deadline-expired'] },
+        { failedGuards: ['aggregate-absent'] },
+        { failedGuards: Array.from({ length: 7 }, () => 'deadline-expired') },
+        { validationAtEpochMs: undefined },
+        { validationAtEpochMs: -1 },
+        { validationAtEpochMs: NaN },
+        { validationAtEpochMs: Infinity },
+        { deadlineAtMs: undefined },
+        { deadlineAtMs: null },
+        { deadlineAtMs: -1 },
+        { deadlineAtMs: Infinity }
+    ])('refuses the whole terminal ACK record for an invalid owner/stage/guard/identity/clock combination %j', (corruption) => {
+        expect(toSafeApiWsReceiptObservation(ACK_REJECTION)).toEqual(ACK_REJECTION);
+        expect(toSafeApiWsReceiptObservation({ ...ACK_REJECTION, ...corruption })).toBeUndefined();
+    });
+
+    it.each([
+        { stage: 'runtime-protocol' },
+        { connectionId: undefined },
+        { connectionId: 'unsafe identity' },
+        { failedGuards: ['connection-closed', 'connection-replaced'] },
+        { failedGuards: ['deadline-expired'] }
+    ])('refuses an invalid currentness requirement independently of aggregate clocks %j', (corruption) => {
+        expect(toSafeApiWsReceiptObservation(CURRENTNESS_ACK_REJECTION)).toEqual(CURRENTNESS_ACK_REJECTION);
+        expect(toSafeApiWsReceiptObservation({ ...CURRENTNESS_ACK_REJECTION, ...corruption })).toBeUndefined();
+    });
+
+    it.each([
+        { stage: 'admission-currentness' },
+        { failedGuards: ['origin-addressee-mismatch', 'origin-addressee-mismatch'] },
+        { failedGuards: ['aggregate-absent'] }
+    ])('refuses an invalid relay requirement independently of aggregate clocks %j', (corruption) => {
+        expect(toSafeApiWsReceiptObservation(RELAY_ACK_REJECTION)).toEqual(RELAY_ACK_REJECTION);
+        expect(toSafeApiWsReceiptObservation({ ...RELAY_ACK_REJECTION, ...corruption })).toBeUndefined();
+    });
+
+    it.each([
+        { baseline: CURRENTNESS_ACK_REJECTION, clock: 'validationAtEpochMs' },
+        { baseline: CURRENTNESS_ACK_REJECTION, clock: 'deadlineAtMs' },
+        { baseline: RELAY_ACK_REJECTION, clock: 'validationAtEpochMs' },
+        { baseline: RELAY_ACK_REJECTION, clock: 'deadlineAtMs' }
+    ])('refuses supplied $clock at the non-aggregate owner $baseline.owner', ({ baseline, clock }) => {
+        expect(toSafeApiWsReceiptObservation(baseline)).toEqual(baseline);
+        expect(toSafeApiWsReceiptObservation({ ...baseline, [clock]: 30000 })).toBeUndefined();
+    });
+
+    it('drops raw, auth, configuration and error extras from terminal ACK timing and preserves operation-kind equality', () => {
+        const wire = {
+            type: 'rallar.timing',
+            component: 'ws-receipt',
+            operation: 'ack-rejection',
+            status: 'ok',
+            durationMs: 0,
+            atEpochMs: 30000,
+            wsReceipt: {
+                ...ACK_REJECTION,
+                raw: 'RAW_SENTINEL',
+                payload: 'PAYLOAD_SENTINEL',
+                authorization: 'AUTH_SENTINEL',
+                configuration: 'CONFIG_SENTINEL',
+                error: 'ERROR_SENTINEL'
+            }
+        };
+        expect(toSafeApiTimingRecord(JSON.stringify(wire))).toEqual({ ...wire, wsReceipt: ACK_REJECTION });
+        expect(toSafeApiTimingRecord(JSON.stringify({ ...wire, operation: 'ack-count' }))).toBeUndefined();
+    });
+
     it.each(['admitted', 'pending-admission', 'duplicate', 'not-admitted', 'resync-required', 'disposed'])(
         'retains the closed ordinary business outcome %s',
         (outcome) => {

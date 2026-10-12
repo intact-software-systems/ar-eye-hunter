@@ -4,8 +4,10 @@ import type { ALAckPayload, ALReceiptPayload } from '../../al-contracts/al-contr
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
-import type { ALOutboundSettledSendResult } from '../../alm/outbound/al-outbound-message-runtime.ts';
-import type { ALOutboundEnqueueResult } from '../../alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundEnqueueResult,
+    ALOutboundSettledSendResult
+} from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type {
     ALOutboundReceiptFacts,
     ALOutboundReceiptWorkObservation
@@ -13,6 +15,32 @@ import type {
 import type { ALWorkObservationDeferral } from '../../alm/work/al-work-handler.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { WsServerLiveSendResult } from './ws-queue-box-server-contracts.ts';
+import type { WsQueueBoxServerInboundAuthority } from './ws-queue-box-server-inbound-authority.ts';
+import type { WsQueueBoxServerReceiptAggregation } from './ws-queue-box-server-receipt-aggregation.ts';
+
+export type WsQueueBoxServerReceiptAckRejectionObservation =
+    & WsQueueBoxServerReceiptAckRejectionIdentity
+    & (
+        | (WsQueueBoxServerInboundAuthority.CurrentnessRejection & {
+            readonly owner: 'inbound-authority';
+            readonly connectionId: string;
+        })
+        | {
+            readonly owner: 'receipt-aggregation';
+            readonly stage: WsQueueBoxServerReceiptAggregation.ProtocolObservation['stage'];
+            readonly failedGuards: readonly [
+                WsQueueBoxServerReceiptAggregation.AckGuard,
+                ...WsQueueBoxServerReceiptAggregation.AckGuard[]
+            ];
+            readonly validationAtEpochMs: number;
+            readonly deadlineAtMs: number | undefined;
+        }
+        | {
+            readonly owner: 'ack-relay';
+            readonly stage: WsQueueBoxServerReceiptAggregation.ProtocolObservation['stage'];
+            readonly failedGuards: readonly ['origin-addressee-mismatch'];
+        }
+    );
 
 export interface WsQueueBoxServerReceiptSocketFacts {
     readonly fromPeerId: string | undefined;
@@ -89,6 +117,7 @@ export interface WsQueueBoxServerReceiptPublicationObservation extends ALOutboun
 }
 
 export type WsQueueBoxServerReceiptObservation =
+    | WsQueueBoxServerReceiptAckRejectionObservation
     | (ALOutboundReceiptWorkObservation & { readonly serverPeerId: string; })
     | WsQueueBoxServerReceiptTransportObservation
     | WsQueueBoxServerReceiptPublicationObservation
@@ -137,6 +166,15 @@ export type WsQueueBoxServerReceiptObservation =
 
 /** Private receipt-chain evidence includes ordinary subject ingress after owned effects; failures preserve results. */
 export type WsQueueBoxServerReceiptObserver = (observation: WsQueueBoxServerReceiptObservation) => void;
+
+interface WsQueueBoxServerReceiptAckRejectionIdentity {
+    readonly kind: 'ack-rejection';
+    readonly serverPeerId: string;
+    readonly controlMsgId: string;
+    readonly controlSenderId: string;
+    readonly controlCreatedAtEpochMs: number;
+    readonly rejectionCode: 'unauthorized';
+}
 
 export function recordWsQueueBoxServerReceiptObservation(
     observer: WsQueueBoxServerReceiptObserver | undefined,

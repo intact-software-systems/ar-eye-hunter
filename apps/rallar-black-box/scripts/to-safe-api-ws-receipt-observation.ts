@@ -4,6 +4,7 @@ export interface SafeApiWsReceiptObservationDto extends ApiJsonObject {
     readonly kind:
         | 'business-socket-decision'
         | 'socket-decision'
+        | 'ack-rejection'
         | 'ack-count'
         | 'ack-relay'
         | 'receipt-outbox'
@@ -13,49 +14,6 @@ export interface SafeApiWsReceiptObservationDto extends ApiJsonObject {
     readonly serverPeerId: string;
 }
 
-export function toSafeApiWsReceiptObservation(value: unknown): SafeApiWsReceiptObservationDto | undefined {
-    if (!isApiTimingRecord(value) || !isSafeApiTimingIdentity(value.serverPeerId)) {
-        return undefined;
-    }
-    switch (value.kind) {
-        case 'business-socket-decision':
-            return toSafeBusinessSocketDecision(value);
-        case 'socket-decision':
-            return toSafeSocketDecision(value);
-        case 'ack-count':
-            return toSafeAckCount(value);
-        case 'ack-relay':
-            return toSafeAckRelay(value);
-        case 'receipt-work':
-        case 'receipt-transport':
-        case 'receipt-publication':
-            return toSafeReceiptReturn(value);
-        case 'receipt-outbox':
-            return toSafeReceiptOutbox(value);
-        default:
-            return undefined;
-    }
-}
-
-function toSafeReceiptReturn(record: Readonly<Record<string, unknown>>): SafeApiWsReceiptObservationDto | undefined {
-    const receipt = toSafeReceipt(record.receipt);
-    if (!receipt || !isSafeApiTimingIdentity(record.receiptControlMsgId)) {
-        return undefined;
-    }
-    const contract = RECEIPT_RETURN_FIELDS[String(record.kind)];
-    const fields = toSafeClosedReceiptFields(record, contract);
-    if (fields === undefined) {
-        return undefined;
-    }
-    return {
-        kind: record.kind as SafeApiWsReceiptObservationDto['kind'],
-        serverPeerId: String(record.serverPeerId),
-        receiptControlMsgId: record.receiptControlMsgId,
-        receipt,
-        ...fields
-    };
-}
-
 interface ReceiptReturnField {
     readonly name: string;
     readonly kind: 'identity' | 'number' | 'boolean' | readonly string[];
@@ -63,6 +21,23 @@ interface ReceiptReturnField {
 }
 
 const SOCKET_REJECTION_CODES = ['malformed', 'unsupported', 'unauthorized', 'oversized', 'capacity'];
+
+const ACK_REJECTION_FIELDS: readonly ReceiptReturnField[] = [
+    { name: 'controlMsgId', kind: 'identity' },
+    { name: 'controlSenderId', kind: 'identity' },
+    { name: 'controlCreatedAtEpochMs', kind: 'number' },
+    { name: 'rejectionCode', kind: ['unauthorized'] }
+];
+
+const AGGREGATE_ACK_GUARDS = [
+    'aggregate-absent',
+    'origin-addressee-mismatch',
+    'sender-recipient-mismatch',
+    'outside-frozen-audience',
+    'already-confirmed',
+    'deadline-expired'
+];
+
 const BUSINESS_SOCKET_FIELDS: readonly ReceiptReturnField[] = [
     { name: 'msgId', kind: 'identity' },
     { name: 'senderId', kind: 'identity' },
@@ -161,6 +136,80 @@ const RECEIPT_RETURN_FIELDS: Readonly<Record<string, readonly ReceiptReturnField
     ]
 };
 
+const OUTBOX_VERDICT_REASONS = [
+    'not-yet-in-sync',
+    'unauthorized',
+    'malformed',
+    'oversized',
+    'unsupported',
+    'capacity',
+    'no-leader',
+    'congested',
+    'no-route',
+    'rate-limited',
+    'circuit-open',
+    'disposed',
+    'repair-exhausted',
+    'pending-terminated',
+    'planner-drop'
+];
+
+const OUTBOX_STORAGE_CAUSES = [
+    'missing',
+    'open-failed',
+    'reset-blocked',
+    'quota',
+    'closed',
+    'evicted',
+    'transaction-failed',
+    'checkpoint-lag'
+];
+
+export function toSafeApiWsReceiptObservation(value: unknown): SafeApiWsReceiptObservationDto | undefined {
+    if (!isApiTimingRecord(value) || !isSafeApiTimingIdentity(value.serverPeerId)) {
+        return undefined;
+    }
+    switch (value.kind) {
+        case 'business-socket-decision':
+            return toSafeBusinessSocketDecision(value);
+        case 'socket-decision':
+            return toSafeSocketDecision(value);
+        case 'ack-rejection':
+            return decodeSafeApiAckRejection(value);
+        case 'ack-count':
+            return toSafeAckCount(value);
+        case 'ack-relay':
+            return toSafeAckRelay(value);
+        case 'receipt-work':
+        case 'receipt-transport':
+        case 'receipt-publication':
+            return toSafeReceiptReturn(value);
+        case 'receipt-outbox':
+            return toSafeReceiptOutbox(value);
+        default:
+            return undefined;
+    }
+}
+
+function toSafeReceiptReturn(record: Readonly<Record<string, unknown>>): SafeApiWsReceiptObservationDto | undefined {
+    const receipt = toSafeReceipt(record.receipt);
+    if (!receipt || !isSafeApiTimingIdentity(record.receiptControlMsgId)) {
+        return undefined;
+    }
+    const contract = RECEIPT_RETURN_FIELDS[String(record.kind)];
+    const fields = toSafeClosedReceiptFields(record, contract);
+    if (fields === undefined) {
+        return undefined;
+    }
+    return {
+        kind: record.kind as SafeApiWsReceiptObservationDto['kind'],
+        serverPeerId: String(record.serverPeerId),
+        receiptControlMsgId: record.receiptControlMsgId,
+        receipt,
+        ...fields
+    };
+}
+
 /** Reject an unsafe supplied value; omit only absent optional fields and unlisted fields. */
 function toSafeClosedReceiptFields(
     record: Readonly<Record<string, unknown>>,
@@ -219,6 +268,84 @@ function toSafeAuthenticatedScope(record: unknown): ApiJsonObject | undefined {
             !isSafeApiTimingIdentity(record.workspaceId)
         ? undefined
         : { applicationId: record.applicationId, workspaceId: record.workspaceId };
+}
+
+function decodeSafeApiAckRejection(record: unknown): SafeApiWsReceiptObservationDto | undefined {
+    if (!isApiTimingRecord(record)) {
+        return undefined;
+    }
+    const identity = toSafeClosedReceiptFields(record, ACK_REJECTION_FIELDS);
+    const owner = decodeSafeApiAckRejectionOwner(record);
+    return identity === undefined || owner === undefined ? undefined : {
+        kind: 'ack-rejection',
+        serverPeerId: String(record.serverPeerId),
+        ...identity,
+        ...owner
+    };
+}
+
+function decodeSafeApiAckRejectionOwner(record: unknown): ApiJsonObject | undefined {
+    if (!isApiTimingRecord(record)) {
+        return undefined;
+    }
+    if (record.owner === 'receipt-aggregation') {
+        return decodeSafeApiAggregateAckRejection(record);
+    }
+    if (record.validationAtEpochMs !== undefined || record.deadlineAtMs !== undefined) {
+        return undefined;
+    }
+    if (record.owner === 'inbound-authority') {
+        return !isAllowedApiTimingString(record.stage, ['post-authorizer-currentness', 'admission-currentness']) ||
+                !isSafeApiTimingIdentity(record.connectionId) ||
+                !isSafeAckRejectionGuards(record.failedGuards, ['connection-replaced', 'connection-closed']) ||
+                record.failedGuards.length !== 1
+            ? undefined
+            : {
+                owner: record.owner,
+                stage: record.stage,
+                connectionId: record.connectionId,
+                failedGuards: [...record.failedGuards]
+            };
+    }
+    return record.owner !== 'ack-relay' ||
+            !isAllowedApiTimingString(record.stage, ['ingress-protocol', 'runtime-protocol']) ||
+            !isSafeAckRejectionGuards(record.failedGuards, ['origin-addressee-mismatch']) ||
+            record.failedGuards.length !== 1
+        ? undefined
+        : { owner: record.owner, stage: record.stage, failedGuards: [...record.failedGuards] };
+}
+
+function decodeSafeApiAggregateAckRejection(record: unknown): ApiJsonObject | undefined {
+    if (!isApiTimingRecord(record)) {
+        return undefined;
+    }
+    if (
+        !isAllowedApiTimingString(record.stage, ['ingress-protocol', 'runtime-protocol']) ||
+        !isNonNegativeApiTimingNumber(record.validationAtEpochMs) ||
+        !isSafeAckRejectionGuards(record.failedGuards, AGGREGATE_ACK_GUARDS)
+    ) {
+        return undefined;
+    }
+    const absent = record.failedGuards.includes('aggregate-absent');
+    if (
+        absent
+            ? record.failedGuards.length !== 1 || record.deadlineAtMs !== undefined
+            : !isNonNegativeApiTimingNumber(record.deadlineAtMs)
+    ) {
+        return undefined;
+    }
+    return {
+        owner: 'receipt-aggregation',
+        stage: record.stage,
+        failedGuards: [...record.failedGuards],
+        validationAtEpochMs: record.validationAtEpochMs,
+        ...(absent ? {} : { deadlineAtMs: record.deadlineAtMs as number })
+    };
+}
+
+function isSafeAckRejectionGuards(value: unknown, allowed: readonly string[]): value is readonly string[] {
+    return Array.isArray(value) && value.length > 0 && value.length <= 6 &&
+        new Set(value).size === value.length && value.every((guard) => isAllowedApiTimingString(guard, allowed));
 }
 
 function toSafeSocketDecision(record: Readonly<Record<string, unknown>>): SafeApiWsReceiptObservationDto | undefined {
@@ -406,34 +533,6 @@ function toSafeReceipt(record: unknown): ApiJsonObject | undefined {
         confirmedRecipientPeerIds: [...record.confirmedRecipientPeerIds]
     };
 }
-
-const OUTBOX_VERDICT_REASONS = [
-    'not-yet-in-sync',
-    'unauthorized',
-    'malformed',
-    'oversized',
-    'unsupported',
-    'capacity',
-    'no-leader',
-    'congested',
-    'no-route',
-    'rate-limited',
-    'circuit-open',
-    'disposed',
-    'repair-exhausted',
-    'pending-terminated',
-    'planner-drop'
-];
-const OUTBOX_STORAGE_CAUSES = [
-    'missing',
-    'open-failed',
-    'reset-blocked',
-    'quota',
-    'closed',
-    'evicted',
-    'transaction-failed',
-    'checkpoint-lag'
-];
 
 function toSafeOutboxVerdict(record: unknown): ApiJsonObject | undefined {
     if (!isApiTimingRecord(record) || !isAllowedApiTimingString(record.kind, OUTBOX_VERDICT_KINDS)) {

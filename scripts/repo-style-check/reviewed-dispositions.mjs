@@ -1343,14 +1343,24 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
-    // One private receipt sanitizer owns all eight closed record variants. Its
-    // explicit scalar allowlists reject unsafe declared values before producing
-    // safe JSON; splitting the validation would hide that single capture boundary.
+    // Origin, scope, protocol, application authority and connection currentness
+    // are gates of one socket admission. Delivery remains with its own owner;
+    // separating these gates would obscure the candidate-to-refusal path.
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-inbound-authority.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 53
+    }),
+    // One receipt sanitizer owns nine closed record kinds, including terminal
+    // ACK identity, owner/stage and guard/deadline relations. Adjacent schema
+    // decisions produce safe JSON without a transport or authority lifecycle;
+    // this reviewed warning-tier cap does not authorize future growth.
     Object.freeze({
         path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 66
+        maximumMagnitude: 87
     }),
     Object.freeze({
         path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
@@ -1497,14 +1507,15 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'isClosedAck'
     }),
     // Receipt aggregation is one bounded frozen-audience/count/deadline
-    // lifecycle. The private count decision and immutable enqueue projection
-    // remain beside its effects; the README exposes both callback timelines.
+    // lifecycle, including terminal ACK facts from its existing validator.
+    // Count and immutable enqueue projections remain beside their effects;
+    // the README exposes both callback timelines.
     // This exact warning-tier cap is a cohesion review, not a hard-tier exception.
     Object.freeze({
         path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 62
+        maximumMagnitude: 66
     }),
     // This one WS feature has direct authority, delivery, relay, receipt and
     // scope owners. Its README maps construction and five runtime probes; no

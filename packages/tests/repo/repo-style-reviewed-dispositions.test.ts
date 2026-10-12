@@ -340,7 +340,7 @@ describe('reviewed repository style dispositions', () => {
         { relativeFile: 'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts', maximumMagnitude: 117 },
         { relativeFile: 'packages/shared/services/web-rtc-connection-service.ts', maximumMagnitude: 142 },
         { relativeFile: 'packages/shared-web/browser/messages/browser-rallar-message-dispatch.ts', maximumMagnitude: 51 },
-        { relativeFile: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts', maximumMagnitude: 66 }
+        { relativeFile: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts', maximumMagnitude: 87 }
     ])('keeps the reviewed cognitive magnitude bounded for $relativeFile', ({ relativeFile, maximumMagnitude }) => {
         const finding = {
             file: path.join(repoRoot, relativeFile),
@@ -364,6 +364,49 @@ describe('reviewed repository style dispositions', () => {
         expect(isReviewedDisposition(repoRoot, { ...finding, file: `${finding.file}.other.ts` })).toBe(false);
         expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'file.length' })).toBe(false);
         expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'otherOwner' })).toBe(false);
+    });
+
+    it.each([
+        { relativeFile: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts', cap: 87 },
+        { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-inbound-authority.ts', cap: 53 },
+        { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts', cap: 66 }
+    ])('exposes one canonical terminal receipt policy record at $cap for $relativeFile', ({ relativeFile, cap }) => {
+        const entries = reviewedDispositions.filter((entry) =>
+            entry.path === relativeFile && entry.rule === 'file.cognitive-load' && entry.symbol === undefined
+        );
+        expect(entries).toEqual([{
+            path: relativeFile,
+            rule: 'file.cognitive-load',
+            symbol: undefined,
+            maximumMagnitude: cap
+        }]);
+    });
+
+    it.each([
+        { relativeFile: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts', cap: 87 },
+        { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-inbound-authority.ts', cap: 53 },
+        { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts', cap: 66 }
+    ])('bounds the reviewed terminal receipt owner at $cap without matching another path or function in $relativeFile', ({ relativeFile, cap }) => {
+        const file = path.join(repoRoot, relativeFile);
+        const raw = Array.from({ length: cap }, (_, index) => `function receiptGuard${index}(value: boolean): number { if (value) { return 1; } return 0; }`)
+            .join('\n');
+        const findings = scanProductionSources({ repoRoot, sources: [{ file, raw }], options: { cognitiveMetrics: true } }).findings
+            .filter(({ ruleId }) => ruleId === 'file.cognitive-load');
+        expect(findings).toHaveLength(1);
+        const finding = findings[0];
+        expect(finding.symbol).toBeUndefined();
+        expect(finding.message).toContain(`File cognitive load ${cap} `);
+        expect(isReviewedDisposition(repoRoot, finding)).toBe(true);
+        expect(isReviewedDisposition(repoRoot, { ...finding, file: `${file}.other.ts` })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'receiptGuard0' })).toBe(false);
+        const grown = scanProductionSources({
+            repoRoot,
+            sources: [{ file, raw: `${raw}\nfunction addedReceiptGuard(value: boolean): number { if (value) { return 1; } return 0; }` }],
+            options: { cognitiveMetrics: true }
+        }).findings.filter(({ ruleId }) => ruleId === 'file.cognitive-load');
+        expect(grown).toHaveLength(1);
+        expect(grown[0].message).toContain(`File cognitive load ${cap + 1} `);
+        expect(isReviewedDisposition(repoRoot, grown[0])).toBe(false);
     });
 
     it('bounds directory review and distinguishes checker-owned prefixes at the same path', () => {

@@ -2,8 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     decodeALControlMessage,
     toALControlRecipientPeerId,
-    type ALAckPayload,
-    type ALParsedControlMessage
+    type ALAckPayload
 } from '../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
@@ -17,7 +16,10 @@ export interface ALInboundReceiver {
      * Why a receiver's ACK addressed to its origin may not be admitted here as that origin's aggregating
      * relay hop; undefined admits it. The WS server answers for the broadcasts it aggregates.
      */
-    readonly readRelayedAckRejection: (ack: ALAckPayload) => ALMessageRejection | undefined;
+    readonly readRelayedAckRejection: (
+        ack: ALAckPayload,
+        controlIdentity?: ALMessage['id']
+    ) => ALMessageRejection | undefined;
 }
 
 const NOT_THIS_RECEIVER: ALMessageRejection = {
@@ -57,11 +59,7 @@ export function validateALInboundMessage(
         return Either.ofLeft({ code: 'malformed', message: 'RTC room multicast carries no frozen audience' });
     }
     if (msg.payload.typeId.startsWith('al.control.')) {
-        const control = decodeALControlMessage(msg);
-        if (control.left) {
-            return Either.ofLeft(control.left);
-        }
-        const rejection = validateALInboundControlAddress(control.right!, source, receiver);
+        const rejection = validateALInboundControlAddress(msg, source, receiver);
         if (rejection) {
             return Either.ofLeft(rejection);
         }
@@ -75,10 +73,15 @@ export function validateALInboundMessage(
  * or a receiver ACK a relaying WS server admits for the origin it names.
  */
 function validateALInboundControlAddress(
-    control: ALParsedControlMessage,
+    msg: ALMessage,
     source: ALInboundMessageRuntime.Source,
     receiver: ALInboundReceiver
 ): ALMessageRejection | undefined {
+    const decoded = decodeALControlMessage(msg);
+    if (decoded.left) {
+        return decoded.left;
+    }
+    const control = decoded.right!;
     if (control.type === 'receipt' && source.kind !== 'trusted-server') {
         return { code: 'unauthorized', message: 'AL receipt control comes only from the trusted server' };
     }
@@ -95,6 +98,6 @@ function validateALInboundControlAddress(
         return undefined;
     }
     return control.type === 'ack' && source.kind === 'ws-client'
-        ? receiver.readRelayedAckRejection(control.payload)
+        ? receiver.readRelayedAckRejection(control.payload, msg.id)
         : NOT_THIS_RECEIVER;
 }

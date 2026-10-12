@@ -1,18 +1,34 @@
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { installRelayedAckNoticeSubscriber } from '@shared-server/rallar-system/queue-pubsub/relayed-ack-notice-subscriber.ts';
 import { toRelayedAckNotice } from '@shared-server/rallar-system/queue-pubsub/relayed-ack-notice.ts';
 import { isRoomScopedALMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodeALControlMessage, newALAckControlMessage, type ALAckPayload } from '@shared/al-contracts/al-control.ts';
+import {
+    decodeALControlMessage,
+    newALAckControlMessage,
+    type ALAckPayload,
+    type ALReceiptPayload
+} from '@shared/al-contracts/al-control.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { WsQueueBoxServerAckRelay } from '@shared/services/ws-queue-box-server/ws-queue-box-server-ack-relay.ts';
+import type { WsServerInboundAuthorizer } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import { WsQueueBoxServerControlDelivery } from '@shared/services/ws-queue-box-server/ws-queue-box-server-control-delivery.ts';
+import { WsQueueBoxServerInboundAuthority } from '@shared/services/ws-queue-box-server/ws-queue-box-server-inbound-authority.ts';
 import { WsQueueBoxServerReceiptAggregation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
 import * as wsQueueBoxServerReceiptObservation from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import type {
@@ -20,6 +36,7 @@ import type {
     WsQueueBoxServerReceiptObserver
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
@@ -30,6 +47,7 @@ interface ObservedServerOptions {
     readonly inboundStores?: ALInboundRuntimeStores;
     readonly installRoomAuthorizer?: boolean;
     readonly readAuthenticatedConnectionScope?: WsQueueBoxServerService.Input['readAuthenticatedConnectionScope'];
+    readonly authorizer?: WsServerInboundAuthorizer;
 }
 
 async function createObservedServer(
@@ -55,13 +73,15 @@ async function createObservedServer(
         receiptObserver: observe
     });
     if (options.installRoomAuthorizer !== false) {
-        service.authorizeInboundMessagesWith({
-            authorize: async (message) =>
-                isRoomScopedALMessage(message)
-                    ? ({ authorized: true, roomAudience: { recipientPeerIds: ['recipient'], snapshotVersion: 7 } })
-                    : ({ authorized: true }),
-            sendNacks: false
-        });
+        service.authorizeInboundMessagesWith(
+            options.authorizer ?? {
+                authorize: async (message) =>
+                    isRoomScopedALMessage(message)
+                        ? ({ authorized: true, roomAudience: { recipientPeerIds: ['recipient'], snapshotVersion: 7 } })
+                        : ({ authorized: true }),
+                sendNacks: false
+            }
+        );
     }
     onTestFinished(async () => {
         const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
@@ -71,6 +91,49 @@ async function createObservedServer(
         }
     });
     return service;
+}
+
+interface AckAuthorizerGate {
+    readonly authorizer: WsServerInboundAuthorizer;
+    readonly entered: Promise<void>;
+    readonly release: () => void;
+}
+
+function createAckAuthorizerGate(controlMsgId: string): AckAuthorizerGate {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    return {
+        entered: entered.promise,
+        release: () => release.resolve(),
+        authorizer: {
+            sendNacks: false,
+            authorize: async (message) => {
+                if (message.id.msgId === controlMsgId) {
+                    entered.resolve();
+                    await release.promise;
+                }
+                return isRoomScopedALMessage(message)
+                    ? { authorized: true, roomAudience: { recipientPeerIds: ['recipient'], snapshotVersion: 7 } }
+                    : { authorized: true };
+            }
+        }
+    };
+}
+
+async function replaceRecipientConnection(socket: JsonWebSocketServer): Promise<void> {
+    const native = new SimulatedWebSocket('ws://replacement');
+    await native.open();
+    socket.addConnection(new ConnectionContext({ id: 'recipient', socket: native }));
+}
+
+async function readCompleteReceipts(service: WsQueueBoxServerService): Promise<readonly ALReceiptPayload[]> {
+    const entries = await Promise.all((await service.outbox.getAllKeys()).map((key) => service.outbox.getItem(key)));
+    return entries
+        .flatMap((entry) => entry?.typeId === EnqueuedType.WS_OUTBOX ? [decodePersistedALMessage(entry.resource)] : [])
+        .flatMap((message) => {
+            const control = decodeALControlMessage(message).right;
+            return control?.type === 'receipt' && control.payload.phase === 'complete' ? [control.payload] : [];
+        });
 }
 
 function createObservedInboundStores(): ALInboundRuntimeStores {
@@ -193,6 +256,7 @@ describe('private upstream receipt observation', () => {
             outcome: 'admitted'
         }));
         expect(events.filter((event) => event.kind === 'business-socket-decision')).toHaveLength(1);
+        expect(events.filter((event) => event.kind === 'ack-rejection')).toEqual([]);
     });
 
     it('preserves the actual resolved scope when a room submission has no installed authorizer', async () => {
@@ -228,6 +292,19 @@ describe('private upstream receipt observation', () => {
         expect(canonicalAckIsRoomScoped).toBe(false);
         expect(decodeALControlMessage(canonicalAck).right?.type).toBe('ack');
         expect((await service.acceptIncomingMessage(canonicalAck, 'recipient')).left?.code).toBe('unauthorized');
+        expect(events).toContainEqual({
+            kind: 'ack-rejection',
+            serverPeerId: 'server',
+            controlMsgId: 'ack-1',
+            controlSenderId: 'recipient',
+            controlCreatedAtEpochMs: canonicalAck.id.ts,
+            rejectionCode: 'unauthorized',
+            owner: 'receipt-aggregation',
+            stage: 'ingress-protocol',
+            failedGuards: ['aggregate-absent'],
+            validationAtEpochMs: expect.any(Number),
+            deadlineAtMs: undefined
+        });
         expect(events).toContainEqual(expect.objectContaining({
             kind: 'socket-decision',
             fromPeerId: 'recipient',
@@ -342,6 +419,140 @@ describe('private upstream receipt observation', () => {
     });
 });
 
+describe('terminal ACK rejection observation', () => {
+    it.each(['absent', 'throwing', 'mutating'] as const)('preserves missing aggregate refusal and live 1/1 completion with a %s sink', async (sink) => {
+        const events: WsQueueBoxServerReceiptObservation[] = [];
+        const mutationResults: boolean[] = [];
+        const service = await createObservedServer(
+            sink === 'absent' ? undefined : (event) => {
+                events.push(event);
+                if (event.kind === 'ack-rejection' && sink === 'mutating') {
+                    mutationResults.push(Reflect.set(event, 'controlMsgId', 'forged'));
+                    mutationResults.push(Reflect.set(event.failedGuards, '0', 'deadline-expired'));
+                }
+                if (sink === 'throwing') {
+                    throw new Error('sink failure');
+                }
+            }
+        );
+        expect((await service.acceptIncomingMessage(ack(), 'recipient')).left).toEqual({
+            code: 'unauthorized',
+            message: 'AL acknowledgement names no receipt this server aggregates'
+        });
+        expect(await readCompleteReceipts(service)).toEqual([]);
+        const rejected = events.filter((event) => event.kind === 'ack-rejection');
+        expect(rejected).toEqual(sink === 'absent' ? [] : [expect.objectContaining({ stage: 'ingress-protocol', failedGuards: ['aggregate-absent'] })]);
+        expect((await service.acceptIncomingMessage(data(), 'origin')).right?.kind).toBe('admitted');
+        expect((await service.acceptIncomingMessage(ack(), 'recipient')).right?.kind).toBe('control');
+        expect(await readCompleteReceipts(service)).toMatchObject([{
+            expectedRecipientPeerIds: ['recipient'],
+            confirmedRecipientPeerIds: ['recipient'],
+            phase: 'complete'
+        }]);
+        expect(events.filter((event) => event.kind === 'ack-rejection')).toEqual(rejected);
+        expect(mutationResults).toEqual(sink === 'mutating' ? [false, false] : []);
+    });
+
+    it.each(['collecting', 'absent', 'throwing', 'mutating'] as const)(
+        'distinguishes the runtime aggregate refusal after a lawful competing 1/1 completion with a %s sink',
+        async (sink) => {
+            const gate = createAckAuthorizerGate('ack-A');
+            const events: WsQueueBoxServerReceiptObservation[] = [];
+            const mutationResults: boolean[] = [];
+            const observe: WsQueueBoxServerReceiptObserver = (event) => {
+                events.push(event);
+                if (event.kind === 'ack-rejection' && sink === 'mutating') {
+                    mutationResults.push(Reflect.set(event, 'controlMsgId', 'forged'));
+                    mutationResults.push(Reflect.set(event.failedGuards, '0', 'forged'));
+                }
+                if (sink === 'throwing') {
+                    throw new Error('optional sink failed');
+                }
+            };
+            const service = await createObservedServer(sink === 'absent' ? undefined : observe, undefined, { authorizer: gate.authorizer });
+            expect((await service.acceptIncomingMessage(data(), 'origin')).right?.kind).toBe('admitted');
+            const messageA = { ...ack(), id: { v: 3, msgId: 'ack-A', senderId: 'recipient', ts: 900 } };
+            const messageB = { ...ack(), id: { v: 3, msgId: 'ack-B', senderId: 'recipient', ts: 901 } };
+            const pendingA = service.acceptIncomingMessage(messageA, 'recipient');
+            await gate.entered;
+            const acceptedB = await service.acceptIncomingMessage(messageB, 'recipient');
+            expect(acceptedB.left).toBeUndefined();
+            expect(acceptedB.right?.kind).toBe('control');
+            gate.release();
+            expect((await pendingA).left).toEqual({ code: 'unauthorized', message: 'AL acknowledgement names no receipt this server aggregates' });
+            expect(await readCompleteReceipts(service)).toMatchObject([{
+                expectedRecipientPeerIds: ['recipient'],
+                confirmedRecipientPeerIds: ['recipient'],
+                phase: 'complete'
+            }]);
+            if (sink === 'absent') {
+                expect(events).toEqual([]);
+            }
+            else {
+                expect(events.filter((event) => event.kind === 'ack-rejection')).toEqual([{
+                    kind: 'ack-rejection',
+                    serverPeerId: 'server',
+                    controlMsgId: 'ack-A',
+                    controlSenderId: 'recipient',
+                    controlCreatedAtEpochMs: 900,
+                    rejectionCode: 'unauthorized',
+                    owner: 'receipt-aggregation',
+                    stage: 'runtime-protocol',
+                    failedGuards: ['aggregate-absent'],
+                    validationAtEpochMs: expect.any(Number),
+                    deadlineAtMs: undefined
+                }]);
+            }
+            if (sink === 'mutating') {
+                expect(mutationResults).toEqual([false, false]);
+            }
+        }
+    );
+
+    it.each(['connection-replaced', 'connection-closed'] as const)(
+        'records only the actual post-authorizer %s guard and leaves the aggregate uncounted',
+        async (guard) => {
+            const gate = createAckAuthorizerGate('ack-1');
+            const events: WsQueueBoxServerReceiptObservation[] = [];
+            const service = await createObservedServer((event) => events.push(event), undefined, { authorizer: gate.authorizer });
+            expect((await service.acceptIncomingMessage(data(), 'origin')).right?.kind).toBe('admitted');
+            const message = ack();
+            const pending = service.acceptIncomingMessage(message, 'recipient');
+            await gate.entered;
+            const original = service.socket.connections.get('recipient')!;
+            if (guard === 'connection-replaced') {
+                await replaceRecipientConnection(service.socket);
+            }
+            else {
+                original.socket.close();
+            }
+            expect(original.isOpen).toBe(false);
+            gate.release();
+            expect((await pending).left).toEqual({ code: 'unauthorized', message: 'WS connection changed during authorization' });
+            expect(events.filter((event) => event.kind === 'ack-rejection')).toEqual([{
+                kind: 'ack-rejection',
+                serverPeerId: 'server',
+                controlMsgId: 'ack-1',
+                controlSenderId: 'recipient',
+                controlCreatedAtEpochMs: message.id.ts,
+                rejectionCode: 'unauthorized',
+                owner: 'inbound-authority',
+                stage: 'post-authorizer-currentness',
+                connectionId: 'recipient',
+                failedGuards: [guard]
+            }]);
+            expect(events).toContainEqual(expect.objectContaining({ kind: 'socket-decision', scopeDisposition: 'authorized', outcome: 'rejected' }));
+            expect(events.filter((event) => event.kind === 'ack-count')).toEqual([]);
+            const retry = { ...ack(), id: { ...ack().id, msgId: 'ack-retry' } };
+            if (guard === 'connection-closed') {
+                await replaceRecipientConnection(service.socket);
+            }
+            expect((await service.acceptIncomingMessage(retry, 'recipient')).right?.kind).toBe('control');
+            expect(events).toContainEqual(expect.objectContaining({ kind: 'ack-count', outcome: 'complete' }));
+        }
+    );
+});
+
 interface ReceiptAggregationFixtureEffects {
     readonly clock?: { value: number; };
     readonly acceptServerReceipt?: WsQueueBoxServerReceiptAggregation.Dependencies['acceptServerReceipt'];
@@ -380,7 +591,163 @@ function createObservedAggregation(
     return { aggregation, clock };
 }
 
+function createObservedAuthority(
+    socket: JsonWebSocketServer,
+    aggregation: WsQueueBoxServerReceiptAggregation
+): WsQueueBoxServerInboundAuthority {
+    const clock = { nowMs: () => 1000 };
+    const controlDelivery = new WsQueueBoxServerControlDelivery({
+        clock,
+        liveDelivery: {
+            sendToResolvedPeer: () => {
+                throw new Error('no control send expected');
+            }
+        },
+        clusterPublication: { hasPublisher: () => false },
+        outbound: {
+            enqueueIfAbsent: async () => {
+                throw new Error('no enqueue expected');
+            }
+        }
+    });
+    const ackRelay = new WsQueueBoxServerAckRelay({
+        serverPeerId: 'server',
+        clock,
+        receipts: aggregation,
+        readIngressAudience: async () => undefined,
+        publishRelayedAck: undefined
+    });
+    return new WsQueueBoxServerInboundAuthority({
+        socket,
+        observesReceipts: true,
+        serverPeerId: 'server',
+        clock,
+        newControlId: () => 'nack',
+        targetResolution: new WsQueueBoxServerTargetResolution({ socket, targetResolver: {} }),
+        controlDelivery,
+        ackRelay,
+        validateInboundMessage: Either.ofRight,
+        readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: 30000 })
+    });
+}
+
+describe('admission currentness observation at the owned authority boundary', () => {
+    it.each(['connection-replaced', 'connection-closed'] as const)('identifies the actual second %s check from its returned fact', async (guard) => {
+        const socket = new JsonWebSocketServer();
+        await replaceRecipientConnection(socket);
+        const { aggregation } = createObservedAggregation(undefined, async () => {
+            throw new Error('no enqueue expected');
+        });
+        const authority = createObservedAuthority(socket, aggregation);
+        const candidate = await authority.readSocketAdmission(Either.ofRight(ack()), 'recipient');
+        expect(candidate.kind).toBe('candidate');
+        if (candidate.kind !== 'candidate') {
+            throw new Error('Expected live authorized ACK candidate');
+        }
+        const original = candidate.value.origin.connection;
+        if (guard === 'connection-replaced') {
+            await replaceRecipientConnection(socket);
+        }
+        else {
+            original.socket.close();
+        }
+        const result = authority.resolveAuthorizedSocketAdmission(candidate.value, 'recipient');
+        expect(result.kind).toBe('finished');
+        if (result.kind !== 'finished') {
+            throw new Error('Expected currentness rejection');
+        }
+        expect(result.result.left).toEqual({ code: 'unauthorized', message: 'WS connection changed during authorization' });
+        expect(result.currentnessRejection).toEqual({ stage: 'admission-currentness', failedGuards: [guard] });
+        expect(Object.isFrozen(result.currentnessRejection)).toBe(true);
+        expect(Object.isFrozen(result.currentnessRejection?.failedGuards)).toBe(true);
+    });
+});
+
 describe('owned receipt count observation', () => {
+    it('preserves every coexisting protocol issue in validation order without changing its rejection prose', () => {
+        const events: WsQueueBoxServerReceiptObservation[] = [];
+        const { aggregation, clock } = createObservedAggregation((event) => events.push(event), async () => {
+            throw new Error('no enqueue expected');
+        });
+        const payload = ackPayload();
+        expect(aggregation.recordAck(payload).right?.receipt).toBeUndefined();
+        clock.value = 30000;
+        const invalid = { ...payload, toPeerId: 'wrong', fromPeerId: 'other' };
+        const identity: ALMessage['id'] = { v: 3, msgId: 'repeated', senderId: 'other', ts: 900 };
+        expect(aggregation.readRelayedAckRejection(invalid, { stage: 'ingress-protocol', controlIdentity: identity })).toEqual({
+            code: 'unauthorized',
+            message:
+                'AL acknowledgement is not addressed to the origin it names; AL acknowledgement speaks for another recipient than its sender; AL acknowledgement confirms a peer the receipt already counted; AL acknowledgement arrived after its receipt deadline'
+        });
+        expect(events).toContainEqual({
+            kind: 'ack-rejection',
+            serverPeerId: 'server',
+            controlMsgId: 'repeated',
+            controlSenderId: 'other',
+            controlCreatedAtEpochMs: 900,
+            rejectionCode: 'unauthorized',
+            owner: 'receipt-aggregation',
+            stage: 'ingress-protocol',
+            failedGuards: ['origin-addressee-mismatch', 'sender-recipient-mismatch', 'already-confirmed', 'deadline-expired'],
+            validationAtEpochMs: 30000,
+            deadlineAtMs: 30000
+        });
+        expect(aggregation.recordAck(invalid).left?.message).toBe(
+            'AL acknowledgement is not addressed to the origin it names; AL acknowledgement speaks for another recipient than its sender; AL acknowledgement confirms a peer the receipt already counted; AL acknowledgement arrived after its receipt deadline'
+        );
+        const outside = { ...invalid, logicalRecipientPeerId: 'outside' };
+        expect(aggregation.readRelayedAckRejection(outside, { stage: 'runtime-protocol', controlIdentity: identity })?.code).toBe('unauthorized');
+        expect(events).toContainEqual(expect.objectContaining({
+            kind: 'ack-rejection',
+            stage: 'runtime-protocol',
+            failedGuards: ['origin-addressee-mismatch', 'sender-recipient-mismatch', 'outside-frozen-audience', 'deadline-expired']
+        }));
+    });
+
+    it('preserves rejection and skips identity projection when the observer or control identity is absent', () => {
+        for (const sink of ['absent', 'throwing'] as const) {
+            let identityReads = 0;
+            let clockReads = 0;
+            const identity: ALMessage['id'] = {
+                v: 3,
+                msgId: 'ack-1',
+                senderId: 'recipient',
+                get ts(): number {
+                    identityReads += 1;
+                    throw new Error('projection failure');
+                }
+            };
+            const { aggregation } = createObservedAggregation(
+                sink === 'absent' ? undefined : () => {
+                    throw new Error('sink failure');
+                },
+                async () => {
+                    throw new Error('no enqueue expected');
+                },
+                {
+                    clock: {
+                        get value() {
+                            clockReads += 1;
+                            return 1000;
+                        }
+                    }
+                }
+            );
+            aggregation.sweep(30000);
+            clockReads = 0;
+            expect(aggregation.readRelayedAckRejection(ackPayload(), { stage: 'ingress-protocol', controlIdentity: identity })).toEqual({
+                code: 'unauthorized',
+                message: 'AL acknowledgement names no receipt this server aggregates'
+            });
+            expect(aggregation.readRelayedAckRejection(ackPayload())).toEqual({
+                code: 'unauthorized',
+                message: 'AL acknowledgement names no receipt this server aggregates'
+            });
+            expect(identityReads).toBe(sink === 'absent' ? 0 : 1);
+            expect(clockReads).toBe(2);
+        }
+    });
+
     it('retains partial, duplicate, outside-audience and deadline decisions with the owned clock and exact frozen sets', () => {
         const events: WsQueueBoxServerReceiptObservation[] = [];
         const { aggregation, clock } = createObservedAggregation((event) => events.push(event), async () => {
@@ -441,6 +808,41 @@ describe('owned receipt count observation', () => {
 });
 
 describe('owned ACK relay observation', () => {
+    it('keeps an unowned fixed-address refusal at its actual relay owner without a parallel provenance classification', () => {
+        const events: WsQueueBoxServerReceiptObservation[] = [];
+        const { aggregation } = createObservedAggregation((event) => events.push(event), async () => {
+            throw new Error('no enqueue expected');
+        });
+        const relay = new WsQueueBoxServerAckRelay({
+            serverPeerId: 'other-server',
+            clock: { nowMs: () => 1000 },
+            receipts: aggregation,
+            readIngressAudience: async () => undefined,
+            publishRelayedAck: async () => Either.ofRight('published'),
+            receiptObserver: (event) => events.push(event)
+        });
+        const invalid = { ...ackPayload(), ackedMsgId: 'unowned', toPeerId: 'wrong' };
+        expect(
+            relay.readRelayedAckRejection(invalid, { stage: 'ingress-protocol', controlIdentity: { v: 3, msgId: 'ack-relay', senderId: 'recipient', ts: 900 } })
+        ).toEqual({
+            code: 'unauthorized',
+            message: 'AL acknowledgement is not addressed to the origin it names'
+        });
+        expect(events).toEqual([{
+            kind: 'ack-rejection',
+            serverPeerId: 'other-server',
+            controlMsgId: 'ack-relay',
+            controlSenderId: 'recipient',
+            controlCreatedAtEpochMs: 900,
+            rejectionCode: 'unauthorized',
+            owner: 'ack-relay',
+            stage: 'ingress-protocol',
+            failedGuards: ['origin-addressee-mismatch']
+        }]);
+        expect(relay.readRelayedAckRejection(invalid)?.code).toBe('unauthorized');
+        expect(events).toHaveLength(1);
+    });
+
     it('retains failed publication separately from the existing successful handoff return', async () => {
         const events: WsQueueBoxServerReceiptObservation[] = [];
         const { aggregation } = createObservedAggregation((event) => events.push(event), async () => {
@@ -473,6 +875,43 @@ describe('owned ACK relay observation', () => {
 });
 
 describe('private evidence does not control delivery', () => {
+    it.each(['absent', 'throwing', 'mutating'] as const)(
+        'preserves the mandatory settlement exception and complete outbox effect with a %s sink',
+        async (sink) => {
+            const events: WsQueueBoxServerReceiptObservation[] = [];
+            const mutationResults: boolean[] = [];
+            const { aggregation } = createObservedAggregation(
+                sink === 'absent' ? undefined : (event) => {
+                    events.push(event);
+                    if (sink === 'mutating') {
+                        mutationResults.push(Reflect.set(event, 'kind', 'forged'));
+                    }
+                    if (sink === 'throwing') {
+                        throw new Error('optional sink failed');
+                    }
+                },
+                async (message) => ({ message, verdict: { kind: 'duplicate' }, entries: [], trackedReceiptAlgo: 'none' }),
+                {
+                    acceptServerReceipt: async () => {
+                        throw new Error('mandatory settlement failed');
+                    }
+                }
+            );
+            await aggregation.acceptControlMessage(ack());
+            await expect(aggregation.acceptControlMessage(ack('other'))).rejects.toThrow('mandatory settlement failed');
+            expect(aggregation.recordAck(ackPayload()).left?.message).toBe('AL acknowledgement names no receipt this server aggregates');
+            if (sink !== 'absent') {
+                expect(events).toContainEqual(
+                    expect.objectContaining({ kind: 'receipt-outbox', receipt: expect.objectContaining({ phase: 'complete' }), verdict: { kind: 'duplicate' } })
+                );
+            }
+            if (sink === 'mutating') {
+                expect(mutationResults.length).toBeGreaterThan(0);
+                expect(mutationResults.every((result) => result === false)).toBe(true);
+            }
+        }
+    );
+
     it('retains scope refusal from the already-read authority proof without counting', async () => {
         const events: WsQueueBoxServerReceiptObservation[] = [];
         const service = await createObservedServer((event) => events.push(event), 0);

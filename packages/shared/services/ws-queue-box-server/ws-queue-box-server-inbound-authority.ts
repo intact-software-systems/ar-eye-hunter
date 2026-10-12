@@ -1,5 +1,13 @@
-import { AL_MESSAGE_ENVELOPE_VERSION, isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
-import { prepareALNackControlMessage, type ALNackPayload } from '../../al-contracts/al-control.ts';
+import {
+    AL_MESSAGE_ENVELOPE_VERSION,
+    isRoomScopedALMessage,
+    type ALMessage
+} from '../../al-contracts/al-contract.ts';
+import {
+    prepareALNackControlMessage,
+    type ALAckPayload,
+    type ALNackPayload
+} from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import { toALInboundReceiver, validateALInboundMessage } from '../../alm/inbound/validate-al-inbound-message.ts';
@@ -30,6 +38,10 @@ interface WsQueueBoxServerInboundScopeDecision {
 }
 
 export namespace WsQueueBoxServerInboundAuthority {
+    export interface CurrentnessRejection {
+        readonly stage: 'post-authorizer-currentness' | 'admission-currentness';
+        readonly failedGuards: readonly ['connection-replaced' | 'connection-closed'];
+    }
     export interface Dependencies {
         readonly socket: JsonWebSocketServer;
         readonly observesReceipts?: boolean;
@@ -68,6 +80,7 @@ export namespace WsQueueBoxServerInboundAuthority {
         readonly kind: 'finished';
         readonly result: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
         readonly socketFacts?: WsQueueBoxServerReceiptSocketFacts;
+        readonly currentnessRejection?: CurrentnessRejection;
     }
 
     export type SocketOriginDecision = { readonly kind: 'origin'; readonly value: SocketOrigin; } | FinishedDecision;
@@ -168,7 +181,11 @@ export class WsQueueBoxServerInboundAuthority {
             sendNack: this.#authorizer?.sendNacks ?? false,
             authorization: await this.#authorizer?.authorize(message) ?? { authorized: true }
         });
-        const current = this.readCurrentConnectionRefusal(connectionId, origin.value.connection);
+        const current = this.readCurrentConnectionRefusal(
+            connectionId,
+            origin.value.connection,
+            'post-authorizer-currentness'
+        );
         if (current) {
             return { ...current, socketFacts: origin.value.socketFacts };
         }
@@ -214,7 +231,7 @@ export class WsQueueBoxServerInboundAuthority {
         connectionId: string
     ): WsQueueBoxServerInboundAuthority.AdmissionDecision {
         const { message, connection, fromPeerId } = candidate.origin;
-        const current = this.readCurrentConnectionRefusal(connectionId, connection);
+        const current = this.readCurrentConnectionRefusal(connectionId, connection, 'admission-currentness');
         if (current) {
             return { ...current, socketFacts: candidate.origin.socketFacts };
         }
@@ -270,7 +287,10 @@ export class WsQueueBoxServerInboundAuthority {
         const protocol = validateALInboundMessage(
             message,
             { kind: 'ws-client', peerId: fromPeerId, authenticatedScope: scope.authorization.proof.scope },
-            toALInboundReceiver(this.#serverPeerId, (ack) => this.#ackRelay.readRelayedAckRejection(ack))
+            toALInboundReceiver(
+                this.#serverPeerId,
+                (ack, controlIdentity) => this.readIngressProtocolAckRejection(ack, controlIdentity)
+            )
         );
         if (protocol.left) {
             return { ...toFinishedRejection(protocol.left), socketFacts };
@@ -280,6 +300,16 @@ export class WsQueueBoxServerInboundAuthority {
             return { ...toFinishedRejection(validation.left), socketFacts };
         }
         return { kind: 'origin', value: { message, connection, fromPeerId, socketFacts } };
+    }
+
+    private readIngressProtocolAckRejection(
+        ack: ALAckPayload,
+        controlIdentity?: ALMessage['id']
+    ): ALMessageRejection | undefined {
+        return this.#ackRelay.readRelayedAckRejection(
+            ack,
+            !this.#observesReceipts ? undefined : { stage: 'ingress-protocol', controlIdentity }
+        );
     }
 
     private readScopeAuthorization(
@@ -316,18 +346,28 @@ export class WsQueueBoxServerInboundAuthority {
 
     private readCurrentConnectionRefusal(
         connectionId: string,
-        connection: ConnectionContext
+        connection: ConnectionContext,
+        stage: WsQueueBoxServerInboundAuthority.CurrentnessRejection['stage']
     ): WsQueueBoxServerInboundAuthority.FinishedDecision | undefined {
         if (this.#disposed) {
             return { kind: 'finished', result: Either.ofRight({ kind: 'disposed' }) };
         }
-        if (this.#socket.connections.get(connectionId) !== connection || !connection.isOpen) {
-            return toFinishedRejection({
-                code: 'unauthorized',
-                message: 'WS connection changed during authorization'
-            });
+        const guard = this.#socket.connections.get(connectionId) !== connection
+            ? 'connection-replaced'
+            : !connection.isOpen
+            ? 'connection-closed'
+            : undefined;
+        if (guard === undefined) {
+            return undefined;
         }
-        return undefined;
+        const rejection = toFinishedRejection({
+            code: 'unauthorized',
+            message: 'WS connection changed during authorization'
+        });
+        return !this.#observesReceipts ? rejection : {
+            ...rejection,
+            currentnessRejection: Object.freeze({ stage, failedGuards: Object.freeze([guard] as const) })
+        };
     }
 
     async readPendingAdmissionAuthority(
