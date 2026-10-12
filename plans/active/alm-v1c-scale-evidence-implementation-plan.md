@@ -115,33 +115,32 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 - Six- and eleven-browser ALM match diagnostics have no hosted passing evidence. The user has
   selected them using the same match workload. Existing numbered RTC catalog entries are different
   workloads and do not prove these cohorts. The repaired assertion admission now permits every
-  six-browser recipe to load and start. All six recipes finish locally, with all thirty shots and
-  forty-two authored readings retained, but five successful player finals are refused by control
-  result admission. The result walker charges recipe wrappers against the composite-depth limit,
-  unlike executable validation, and truncates valid nested player evidence. Native coordinator
-  acceptance remains unevaluated; local completion does not establish the full diagnostic or
-  original scale result.
+  six-browser recipe to load and start. The result traversal repair permits all six successful
+  native finals and all strengthened coordinator predicates to pass. The enclosing observation
+  still fails: its terminal snapshot decoder omits the already-supported
+  `sameUniqueStringSetAsRole` equality aggregate and refuses the producer's successful result.
+  Native workload success does not excuse a failed terminal decoder or establish original scale
+  acceptance.
 - Full source/support closure, whole-branch review, original scale and benefit, readiness and manual
   merge remain open. The pull request owns current source, CI, test and run outcomes; do not copy
   delivery history here.
 
 ## Next two useful slices
 
-### 1. Close valid composite result admission
+### 1. Close supported terminal aggregate decoding
 
-Use TDD at the existing runtime-result, serialization and control-admission boundaries. Prove a
-valid recipe at the executable composite-depth limit retains every deepest child and reaches
-control admission. Align result traversal with executable validation: recipe wrappers remain
-visible in display depth and canonical paths but do not consume loop/parallel nesting depth.
-Preserve the existing depth and expanded-command limits, attribution, identities, required capture
-and fail-closed malformed-result checks. Do not raise limits, add a recipe-specific allowlist,
-bypass capture admission or introduce another result evaluator.
+Use TDD at the existing group-assertion producer and terminal snapshot decoder. Prove a serialized
+producer result for `sameUniqueStringSetAsRole` reaches the existing equality aggregate branch.
+Preserve strict participant counts, per-agent rows, verdicts, source identity and malformed-result
+refusal; keep other equality and matching aggregates coherent with their published contracts.
+Do not bypass terminal polling, export validation or native acceptance, add a recipe-specific
+allowlist, or introduce another result evaluator.
 
-Capture semantic RED before GREEN, with healthy shallow results and malformed or genuinely
-over-depth results as controls. Reuse the retained successful player finals to verify that the
-specific admission refusal is repaired; that probe cannot substitute for a new native execution.
+Capture semantic RED before GREEN using the real producer, with malformed aggregate, count and row
+controls. Use the retained successful native snapshot to verify the exact decoder refusal is
+repaired; this supplementary probe cannot substitute for a complete new hosted execution.
 Review/remediate every changed human-authored file completely and recursive changed support closure;
-independent untouched code stays outside. Use affected composite-result, control-admission,
+independent untouched code stays outside. Use affected group-result, terminal snapshot,
 maintained type, consumer and exact changed-range checks, then independent specification and
 quality review before coherent publication. Reuse the already reviewed sampler, exact-audience,
 manifest, source-freeze and native-evidence owners. Preserve their result attribution and every
