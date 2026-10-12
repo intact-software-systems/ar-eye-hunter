@@ -115,7 +115,18 @@ async function main() {
         repoRoot,
         mergeBase,
         targetReference,
-        newFindings: newFindings.filter((finding) => !isReviewedDisposition(repoRoot, finding))
+        newFindings: newFindings.filter((finding) => {
+            if (finding.ruleId !== 'boundary.unknown') {
+                return !isReviewedDisposition(repoRoot, finding);
+            }
+            const ownerTotal = targetFindings
+                .filter((target) =>
+                    target.ruleId === finding.ruleId && target.file === finding.file &&
+                    target.symbol === finding.symbol
+                )
+                .reduce((count, target) => count + boundaryUnknownMagnitude(target), 0);
+            return !isReviewedDisposition(repoRoot, { ...finding, affectedCount: ownerTotal });
+        })
     });
 }
 

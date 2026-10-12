@@ -144,7 +144,13 @@ describe('ALM scale recipes', () => {
                 expect.objectContaining({ kind: 'barrier', barrierId: 'alm-scale-traffic-ready' })
             ]));
             expect(commands).toEqual(expect.arrayContaining([
-                expect.objectContaining({ kind: 'loop', count: 7, intervalMs: 5_000 }),
+                expect.objectContaining({
+                    kind: 'parallel',
+                    maxConcurrency: 7,
+                    groups: expect.arrayContaining([
+                        expect.objectContaining({ groupId: 'sample-7' })
+                    ])
+                }),
                 expect.objectContaining({ kind: 'parallel', maxConcurrency: 2 }),
                 expect.objectContaining({ kind: 'barrier', barrierId: 'alm-scale-shots-complete' }),
                 expect.objectContaining({ kind: 'director.status', refresh: true }),
@@ -190,7 +196,7 @@ describe('ALM scale recipes', () => {
                 predicate: { operator: 'equals', expected: 6 }
             })
         ]));
-        expect(scale.groupAssertions).toHaveLength(73);
+        expect(scale.groupAssertions).toHaveLength(231);
         for (const assertion of scale.groupAssertions) {
             const recipe = scale.recipes.find((recipe) => recipe.recipeId === assertion.source.recipeId)!;
             const sources = flattenCommands(recipe.commands).filter((command) => command.commandId === assertion.source.commandId);

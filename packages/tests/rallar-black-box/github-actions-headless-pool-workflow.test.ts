@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
     chmod,
+    mkdir,
     mkdtemp,
     readFile,
     rm,
@@ -18,6 +19,7 @@ import {
     it
 } from 'vitest';
 
+import { admitAllLocalAlmManifest } from '../../../apps/rallar-black-box/scripts/select-all-local-alm-manifest.mjs';
 import {
     formatJsonSchemaValidationErrors,
     validateJsonSchema,
@@ -187,7 +189,7 @@ describe('GitHub Free distributed recipe workflow', () => {
         expect(selection?.type).toBe('boolean');
         expect(selection?.default).toBe(false);
         const jobs = required(workflow.jobs, 'jobs');
-        expect(findStep(jobs['all-local'], 'Observe frozen 15-agent manifest').env).toHaveProperty(
+        expect(findStep(jobs['all-local'], 'Observe selected ALM manifest').env).toHaveProperty(
             'RALLAR_BLACK_BOX_CAPTURE_WS_OBSERVATIONS',
             '${{ inputs.capture_ws_observations }}'
         );
@@ -198,7 +200,7 @@ describe('GitHub Free distributed recipe workflow', () => {
 
     it.each(['false', 'true'])('WS observation selection %s reaches the unchanged local external-command port', async (selection) => {
         const local = required((await readWorkflow()).jobs?.['all-local'], 'all-local job');
-        const measurement = findStep(local, 'Observe frozen 15-agent manifest');
+        const measurement = findStep(local, 'Observe selected ALM manifest');
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-ws-capture-launch-'));
         try {
             await writeFile(
@@ -245,7 +247,7 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
             default: false
         });
         const jobs = required(workflow.jobs, 'jobs');
-        expect(findStep(jobs['all-local'], 'Observe frozen 15-agent manifest').env).toHaveProperty(
+        expect(findStep(jobs['all-local'], 'Observe selected ALM manifest').env).toHaveProperty(
             'RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING',
             '${{ inputs.capture_setup_timing }}'
         );
@@ -281,16 +283,45 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
         });
     });
 
+    it.each([6, 11, 15, 30, 50])('admits the authored %s-agent ALM cohort before local startup', async (count) => {
+        const local = required((await readWorkflow()).jobs?.['all-local'], 'all-local job');
+        const step = findStep(local, 'Validate frozen local inputs');
+        const relativePath = count === 6 || count === 11
+            ? `apps/rallar-black-box/manifests/hetzner/diagnostic/alm-conformance-${count}-agent-30s.json`
+            : `apps/rallar-black-box/manifests/hetzner/${count === 15 ? '19' : count === 30 ? '20' : '21'}-alm-conformance-${count}-agent-30s.json`;
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-local-selector-'));
+        try {
+            const githubEnvironment = path.join(directory, 'github-env');
+            const result = spawnSync('bash', ['-c', required(step.run, 'local preflight')], {
+                cwd: repoRoot,
+                encoding: 'utf8',
+                env: {
+                    ...osEnvironment,
+                    MANIFEST_PATH: relativePath,
+                    TARGET_AGENT_COUNT: String(count),
+                    BROWSER_ENGINE: 'chromium',
+                    REGISTER_BEFORE_LOGIN: 'true',
+                    GITHUB_ENV: githubEnvironment
+                }
+            });
+            expect(result.status).toBe(0);
+            expect(await readFile(githubEnvironment, 'utf8')).toBe(`ALM_MESH_MIN_SIZE=${count + 1}\n`);
+        }
+        finally {
+            await rm(directory, { force: true, recursive: true });
+        }
+    });
+
     it('starts complete recorder storage and retains local native evidence even on failure', async () => {
         const local = required((await readWorkflow()).jobs?.['all-local'], 'all-local job');
-        const measurement = findStep(local, 'Observe frozen 15-agent manifest');
+        const measurement = findStep(local, 'Observe selected ALM manifest');
         expect(measurement.env).toMatchObject({
             CI: '1',
             INPUT_RTC_CAPTURE_MODE: '${{ inputs.rtc_capture_mode }}',
             RALLAR_BLACK_BOX_FULL_STACK: '1',
             RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '1',
             RALLAR_BLACK_BOX_API_MODE: 'memory',
-            RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '16',
+            RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '${{ env.ALM_MESH_MIN_SIZE }}',
             RALLAR_BLACK_BOX_STORAGE_DIR: '${{ github.workspace }}/tmp/alm-v1c/all-local-recorder',
             RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS: 'unbounded',
             RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS: 'unbounded',
@@ -313,7 +344,7 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
 
     it.each(['', 'off', 'signaling', 'native'])('passes the selected RUN capture %j through the local process boundary', async (mode) => {
         const local = required((await readWorkflow()).jobs?.['all-local'], 'all-local job');
-        const measurement = findStep(local, 'Observe frozen 15-agent manifest');
+        const measurement = findStep(local, 'Observe selected ALM manifest');
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-local-capture-launch-'));
         try {
             await writeFile(
@@ -355,19 +386,46 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
     it('retains runner resources and exact source before service startup can fail', async () => {
         const local = required((await readWorkflow()).jobs?.['all-local'], 'all-local job');
         const capture = findStep(local, 'Record runner provenance');
+        const admission = findStep(local, 'Admit frozen ALM source');
+        const steps = required(local.steps, 'all-local steps');
+        expect(steps.indexOf(admission)).toBeGreaterThan(steps.indexOf(findStep(local, 'Setup local toolchains')));
+        expect(steps.indexOf(admission)).toBeLessThan(steps.indexOf(capture));
+        expect(steps.indexOf(capture)).toBeLessThan(steps.indexOf(findStep(local, 'Observe selected ALM manifest')));
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-all-local-provenance-'));
+        const manifestPath = 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json';
+        const selectedSource = await readFile(path.join(repoRoot, manifestPath));
+        const selectedHash = createHash('sha256').update(selectedSource).digest('hex');
         try {
+            const admitted = spawnSync('bash', ['-c', required(admission.run, 'source admission command')], {
+                cwd: repoRoot,
+                encoding: 'utf8',
+                env: {
+                    ...osEnvironment,
+                    MANIFEST_PATH: manifestPath,
+                    TARGET_AGENT_COUNT: '15',
+                    BROWSER_ENGINE: 'chromium',
+                    REGISTER_BEFORE_LOGIN: 'true',
+                    RALLAR_BLACK_BOX_STORAGE_DIR: directory
+                }
+            });
+            expect(admitted.status).toBe(0);
+            const substituted = path.join(directory, 'substituted.json');
+            await writeFile(substituted, '{}\n');
             const result = spawnSync('bash', ['-c', required(capture.run, 'provenance command')], {
                 cwd: repoRoot,
                 encoding: 'utf8',
-                env: { ...osEnvironment, RALLAR_BLACK_BOX_STORAGE_DIR: directory }
+                env: {
+                    ...osEnvironment,
+                    RALLAR_BLACK_BOX_STORAGE_DIR: directory,
+                    MANIFEST_PATH: substituted
+                }
             });
             expect(result.status).toBe(0);
             expect(result.stdout).toBe('');
             const provenance: unknown = JSON.parse(await readFile(path.join(directory, 'runner-provenance.json'), 'utf8'));
             expect(provenance).toEqual(expect.objectContaining({
                 sourceCommit: expect.stringMatching(/^[a-f0-9]{40}$/),
-                manifestSha256: '43db26dfab5a32b28f12b9d34db3be32b071a08139eee57f450807109072ecd3',
+                manifestSha256: selectedHash,
                 cpuCount: expect.any(Number),
                 memoryBytes: expect.any(Number),
                 diskAvailableBytes: expect.any(Number),
@@ -388,9 +446,8 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
             expect(provenance.memoryBytes).toBeGreaterThan(0);
             expect(provenance.diskAvailableBytes).toBeGreaterThan(0);
             const retainedManifest = await readFile(path.join(directory, 'source-manifest.json'));
-            expect(createHash('sha256').update(retainedManifest).digest('hex')).toBe(
-                '43db26dfab5a32b28f12b9d34db3be32b071a08139eee57f450807109072ecd3'
-            );
+            expect(retainedManifest.equals(selectedSource)).toBe(true);
+            expect(createHash('sha256').update(retainedManifest).digest('hex')).toBe(selectedHash);
         }
         finally {
             await rm(directory, { force: true, recursive: true });
@@ -421,6 +478,60 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
         }
         const steps = required(local.steps, 'all-local steps');
         expect(steps.indexOf(preflight)).toBeLessThan(steps.indexOf(findStep(local, 'Setup local toolchains')));
+    });
+
+    it('refuses provenance from a substituted source without an admitted frozen copy', async () => {
+        const local = required((await readWorkflow()).jobs?.['all-local'], 'all-local job');
+        const capture = findStep(local, 'Record runner provenance');
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-unadmitted-source-'));
+        try {
+            const substituted = path.join(directory, 'substituted.json');
+            const storage = path.join(directory, 'storage');
+            await writeFile(substituted, '{}\n');
+            const result = spawnSync('bash', ['-c', required(capture.run, 'provenance command')], {
+                cwd: repoRoot,
+                encoding: 'utf8',
+                env: {
+                    ...osEnvironment,
+                    MANIFEST_PATH: substituted,
+                    RALLAR_BLACK_BOX_STORAGE_DIR: storage
+                }
+            });
+            expect(result.status).toBe(1);
+            await expect(readFile(path.join(storage, 'runner-provenance.json'))).rejects.toThrow();
+        }
+        finally {
+            await rm(directory, { force: true, recursive: true });
+        }
+    });
+
+    it('admits only canonical source bytes and retains them after the selected path changes', async () => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-local-admission-'));
+        const manifestPath = 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json';
+        const selectedFile = path.join(directory, manifestPath);
+        const storageDir = path.join(directory, 'storage');
+        const canonical = await readFile(path.join(repoRoot, manifestPath));
+        const input = {
+            manifestPath,
+            targetAgentCount: '15',
+            browserEngine: 'chromium',
+            registerBeforeLogin: 'true',
+            storageDir,
+            repositoryRoot: directory
+        };
+        try {
+            await mkdir(path.dirname(selectedFile), { recursive: true });
+            await writeFile(selectedFile, '{}\n');
+            await expect(admitAllLocalAlmManifest(input)).rejects.toThrow();
+            await expect(readFile(path.join(storageDir, 'source-manifest.json'))).rejects.toThrow();
+            await writeFile(selectedFile, canonical);
+            await expect(admitAllLocalAlmManifest(input)).resolves.toMatchObject({ participantCount: 15 });
+            await writeFile(selectedFile, '{}\n');
+            expect(await readFile(path.join(storageDir, 'source-manifest.json'))).toEqual(canonical);
+        }
+        finally {
+            await rm(directory, { force: true, recursive: true });
+        }
     });
 
     it('locks the complete production run with the shared queued group', async () => {

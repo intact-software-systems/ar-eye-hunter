@@ -449,7 +449,7 @@ jobs:
     secrets: inherit
 
   all-local:
-    name: Observe all-local 15-agent ALM manifest
+    name: Observe selected all-local ALM manifest
     if: ${{ inputs.execution_mode == 'all-local' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -468,10 +468,7 @@ jobs:
           REGISTER_BEFORE_LOGIN: '${{ inputs.register_before_login }}'
         run: |
           set -euo pipefail
-          if [[ "$MANIFEST_PATH" != 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json' || "$TARGET_AGENT_COUNT" != '15' || "$BROWSER_ENGINE" != 'chromium' || "$REGISTER_BEFORE_LOGIN" != 'true' ]]; then
-            echo 'All-local requires the frozen 15-agent ALM manifest, Chromium and registration.' >&2
-            exit 1
-          fi
+          node apps/rallar-black-box/scripts/select-all-local-alm-manifest.mjs
 
       - name: Setup local toolchains
         uses: ./.github/actions/release-gate-setup
@@ -479,21 +476,31 @@ jobs:
           deno: 'true'
           playwright: 'true'
 
+      - name: Admit frozen ALM source
+        shell: bash
+        env:
+          MANIFEST_PATH: ${{ inputs.manifest_path }}
+          TARGET_AGENT_COUNT: ${{ inputs.target_agent_count }}
+          BROWSER_ENGINE: ${{ inputs.browser_engine }}
+          REGISTER_BEFORE_LOGIN: '${{ inputs.register_before_login }}'
+          RALLAR_BLACK_BOX_STORAGE_DIR: ${{ github.workspace }}/tmp/alm-v1c/all-local-recorder
+        run: |
+          set -euo pipefail
+          node --import tsx apps/rallar-black-box/scripts/select-all-local-alm-manifest.mjs --admit
+
       - name: Record runner provenance
         shell: bash
         env:
           RALLAR_BLACK_BOX_STORAGE_DIR: ${{ github.workspace }}/tmp/alm-v1c/all-local-recorder
         run: |
           node <<'NODE'
-          const { copyFileSync, mkdirSync, readFileSync, statfsSync, writeFileSync } = require('node:fs');
+          const { readFileSync, statfsSync, writeFileSync } = require('node:fs');
           const { spawnSync } = require('node:child_process');
           const { createHash } = require('node:crypto');
           const os = require('node:os');
           const path = require('node:path');
           const directory = process.env.RALLAR_BLACK_BOX_STORAGE_DIR;
-          const manifest = 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json';
-          mkdirSync(directory, { recursive: true });
-          copyFileSync(manifest, path.join(directory, 'source-manifest.json'));
+          const manifest = path.join(directory, 'source-manifest.json');
           const disk = statfsSync(directory);
           const provenance = {
             sourceCommit: spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(),
@@ -508,16 +515,19 @@ jobs:
           writeFileSync(path.join(directory, 'runner-provenance.json'), JSON.stringify(provenance, null, 2));
           NODE
 
-      - name: Observe frozen 15-agent manifest
+      - name: Observe selected ALM manifest
         run: npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts --retries=0
         env:
           CI: '1'
+          INPUT_RTC_CAPTURE_MODE: ${{ inputs.rtc_capture_mode }}
+          BROWSER_ENGINE: ${{ inputs.browser_engine }}
+          REGISTER_BEFORE_LOGIN: '${{ inputs.register_before_login }}'
           RALLAR_BLACK_BOX_FULL_STACK: '1'
           RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '1'
           RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING: '${{ inputs.capture_setup_timing }}'
           RALLAR_BLACK_BOX_CAPTURE_WS_OBSERVATIONS: '${{ inputs.capture_ws_observations }}'
           RALLAR_BLACK_BOX_API_MODE: memory
-          RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '16'
+          RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: ${{ env.ALM_MESH_MIN_SIZE }}
           RALLAR_BLACK_BOX_STORAGE_DIR: ${{ github.workspace }}/tmp/alm-v1c/all-local-recorder
           RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS: unbounded
           RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS: unbounded

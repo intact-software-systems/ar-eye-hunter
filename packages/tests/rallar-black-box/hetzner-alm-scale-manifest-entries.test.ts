@@ -8,6 +8,47 @@ import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-bl
 import { toHetznerRecipeCommands } from './hetzner-manifest-test-commands.ts';
 
 describe('Hetzner scale catalog', () => {
+    it('registers six- and eleven-browser diagnostic checkpoints through the same scale fixture', () => {
+        const catalog = createHetznerDistributedManifestCatalog();
+        expect(
+            catalog.filter((entry) => /\/(?:19|20|21)-alm-conformance-/.test(entry.filePath))
+                .map((entry) => entry.agentCount)
+        ).toEqual([15, 30, 50]);
+        for (const [agentCount, shots, readings] of [[6, 30, 42], [11, 60, 77]] as const) {
+            const entry = catalog.find((candidate) =>
+                candidate.filePath ===
+                    `apps/rallar-black-box/manifests/hetzner/diagnostic/alm-conformance-${agentCount}-agent-30s.json`
+            );
+            expect(entry).toMatchObject({
+                agentCount,
+                diagnostic: true,
+                mainline: false
+            });
+            expect(entry?.manifest.metadata).toMatchObject({ diagnostic: true, expectedFailure: false });
+            expect(entry?.manifest.metadata).not.toHaveProperty('stress');
+            expect(entry?.manifest.roleAssignments).toHaveLength(agentCount);
+            expect(entry?.manifest.metadata).toMatchObject({
+                family: 'alm-scale',
+                receiverCount: agentCount - 1,
+                recommendedTerminalTimeoutSeconds: 330,
+                rtcTopologyEnv: { RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: String(agentCount + 1) },
+                almMetrics: { sampleCount: 7, samplingWindowMs: 30_000, workloadWindowMs: 30_000 }
+            });
+            const director = entry?.manifest.recipes.find((recipe) => recipe.role === 'sender')?.recipe;
+            const player = entry?.manifest.recipes.find((recipe) => recipe.role === 'receiver')?.recipe;
+            const directorCommands = toHetznerRecipeCommands(director?.commands ?? []);
+            const playerCommands = toHetznerRecipeCommands(player?.commands ?? []);
+            expect(directorCommands.filter((command) => command.kind === 'messages.send')).toHaveLength(2);
+            expect(playerCommands.filter((command) => command.kind === 'messages.send')).toHaveLength(6);
+            const sampler = playerCommands.find((command) => command.commandId === 'alm-scale-player-sampler');
+            expect(sampler).toMatchObject({ kind: 'parallel', maxConcurrency: 7 });
+            expect(sampler?.kind === 'parallel' ? sampler.groups.length * agentCount : undefined).toBe(readings);
+            expect(entry?.manifest.groupAssertions.find((assertion) => assertion.source.commandId === 'alm-scale-director-received')).toMatchObject({
+                predicate: { operator: 'equals', expected: shots }
+            });
+            expect(entry?.manifest.groupAssertions.filter((assertion) => assertion.aggregate === 'sameUniqueStringSetAsRole')).toHaveLength(4);
+        }
+    });
     it('publishes frozen match workloads with the shared scale acceptance metadata', () => {
         const catalog = createHetznerDistributedManifestCatalog();
         for (const [agentCount, shotArrivals, meshMinSize] of [[15, 84, '16'], [30, 174, '31'], [50, 294, '51']] as const) {
@@ -71,8 +112,8 @@ describe('Hetzner scale catalog', () => {
 
 describe('ALM scale manifest acceptance', () => {
     it('requires complete per-role sampler, workload, arrival and storage evidence for each frozen participant', () => {
-        const entries = createHetznerDistributedManifestCatalog().filter((entry) => /(?:19|20|21)-alm-/.test(entry.filePath));
-        expect(entries.map((entry) => entry.agentCount)).toEqual([15, 30, 50]);
+        const entries = createHetznerDistributedManifestCatalog().filter((entry) => entry.manifest.metadata?.family === 'alm-scale');
+        expect(entries.map((entry) => entry.agentCount)).toEqual([15, 30, 50, 6, 11]);
         for (const entry of entries) {
             for (const [role, recipeId] of [['sender', 'alm-scale-director'], ['receiver', 'alm-scale-player']] as const) {
                 const selection = entry.manifest.recipes.find((recipe) => recipe.role === role);
@@ -82,7 +123,7 @@ describe('ALM scale manifest acceptance', () => {
                     rallar: { messageTypeIds: ['room.ar-eye-hunter.director.intent.v1', 'room.ar-eye-hunter.director.event.v1'] }
                 });
                 expect(commands.find((command) => command.commandId === `${recipeId}-window`)).toMatchObject({ kind: 'parallel', timeoutMs: 30_000 });
-                expect(commands.find((command) => command.commandId === `${recipeId}-sampler`)).toMatchObject({ kind: 'loop', count: 7, intervalMs: 5_000 });
+                expect(commands.find((command) => command.commandId === `${recipeId}-sampler`)).toMatchObject({ kind: 'parallel', maxConcurrency: 7 });
                 const sends = commands.filter((command) => command.kind === 'messages.send');
                 expect(sends).toHaveLength(role === 'sender' ? 2 : 6);
                 for (const send of sends) {
@@ -100,12 +141,15 @@ describe('ALM scale manifest acceptance', () => {
                 expect(commands.find((command) => command.commandId === `${recipeId}-storage-reset`)).toMatchObject({ reset: true });
                 expect(commands.find((command) => command.commandId === `${recipeId}-storage`)).toMatchObject({ reset: false });
                 const assertions = entry.manifest.groupAssertions.filter((assertion) => assertion.scope?.role === role);
-                expect(assertions.every((assertion) => assertion.aggregate === 'allMatch' && assertion.source.recipeId === recipeId)).toBe(true);
+                expect(assertions.every((assertion) =>
+                    assertion.source.recipeId === recipeId &&
+                    (assertion.aggregate === 'allMatch' || assertion.aggregate === 'sameUniqueStringSetAsRole')
+                )).toBe(true);
                 for (
                     const [commandId, path, operator, expected] of [
-                        [`${recipeId}-sampler`, 'iterations', 'equals', 7],
-                        [`${recipeId}-sampler`, 'pacing.completedIterations', 'equals', 7],
-                        [`${recipeId}-sampler`, 'passed', 'equals', 84],
+                        [`${recipeId}-sampler`, 'groupCount', 'equals', 7],
+                        [`${recipeId}-sampler`, 'maxConcurrency', 'equals', 7],
+                        [`${recipeId}-sampler`, 'passed', 'equals', 90],
                         [`${recipeId}-sampler`, 'failed', 'equals', 0],
                         [`${recipeId}-sampler`, 'cancelled', 'equals', false],
                         [`${recipeId}-window`, 'groups.0.durationMs', 'lt', 30_000],

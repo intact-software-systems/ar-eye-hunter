@@ -5,7 +5,11 @@ import type {
 } from '../distributed-run.ts';
 import type { RallarBlackBoxTestRedactionOptions } from '../rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '../redaction.ts';
-import { computeGroupAssertionVerdict, type GroupAssertionVerdict } from './group-assertions-aggregates.ts';
+import {
+    computeGroupAssertionVerdict,
+    computeRoleSetVerdict,
+    type GroupAssertionVerdict
+} from './group-assertions-aggregates.ts';
 import {
     computeGroupAssertionEvidenceRows,
     type DistributedGroupAssertionParticipant,
@@ -88,6 +92,9 @@ function computeGroupAssertionResult(
     assertion: RallarBlackBoxDistributedGroupAssertion,
     input: ComputeDistributedGroupAssertionResultsInput
 ): RallarBlackBoxDistributedGroupAssertionResult {
+    if (assertion.aggregate === 'sameUniqueStringSetAsRole') {
+        return computeRoleSetGroupAssertionResult(assertion, input);
+    }
     const scopeRole = assertion.scope?.role;
     const scopedParticipants = scopeRole === undefined
         ? input.participants
@@ -125,6 +132,66 @@ function computeGroupAssertionResult(
     });
 }
 
+function computeRoleSetGroupAssertionResult(
+    assertion: Extract<RallarBlackBoxDistributedGroupAssertion, { aggregate: 'sameUniqueStringSetAsRole'; }>,
+    input: ComputeDistributedGroupAssertionResultsInput
+): RallarBlackBoxDistributedGroupAssertionResult {
+    const senders = input.participants.filter((participant) => participant.roles.includes(assertion.scope.role));
+    if (senders.length === 0) {
+        return toNoParticipantsResult(assertion);
+    }
+    const receivers = input.participants.filter((participant) => participant.roles.includes(assertion.comparison.role));
+    const senderRows = computeGroupAssertionEvidenceRows({
+        source: assertion.source,
+        participants: senders,
+        recipeEvidence: input.recipeEvidence
+    });
+    const receiverRows = computeGroupAssertionEvidenceRows({
+        source: assertion.comparison.source,
+        participants: receivers,
+        recipeEvidence: input.recipeEvidence
+    });
+    const rows = [...senderRows, ...receiverRows];
+    const senderAgentIds = new Set(senders.map((participant) => participant.agentId));
+    const ambiguousAgentIds = receivers
+        .filter((participant) => senderAgentIds.has(participant.agentId))
+        .map((participant) => participant.agentId);
+    const resolvedSenders = senderRows.filter((row): row is ResolvedGroupAssertionEvidenceRow =>
+        row.status === 'resolved'
+    );
+    const resolvedReceivers = receiverRows.filter((row): row is ResolvedGroupAssertionEvidenceRow =>
+        row.status === 'resolved'
+    );
+    const resolved = [...resolvedSenders, ...resolvedReceivers];
+    const brokenEvidence = rows.filter((row) => row.status !== 'resolved' && row.status !== 'missing');
+    const comparisonVerdict = computeRoleSetVerdict(resolvedSenders, resolvedReceivers, receivers.length);
+    const verdict: GroupAssertionVerdict = ambiguousAgentIds.length === 0
+        ? comparisonVerdict
+        : {
+            ...comparisonVerdict,
+            ok: false,
+            violatingAgentIds: [...new Set([...comparisonVerdict.violatingAgentIds, ...ambiguousAgentIds])],
+            reason: 'A frozen participant holds both comparison roles.'
+        };
+    return toGroupAssertionResult({
+        assertion,
+        counts: {
+            expected: rows.length,
+            required: rows.length,
+            withEvidence: resolved.length
+        },
+        outcome: toGroupAssertionOutcome({
+            assertion,
+            perAgent: toRedactedAgentRows(rows, verdict, input.redaction),
+            verdict,
+            evidenceOk: receivers.length > 0 && brokenEvidence.length === 0 && resolved.length === rows.length,
+            missingAgentIds: rows.filter((row) => row.status === 'missing').map((row) => row.agentId),
+            brokenEvidence,
+            redaction: input.redaction
+        })
+    });
+}
+
 function toGroupAssertionOutcome(input: ToGroupAssertionOutcomeInput): GroupAssertionOutcome {
     const ok = input.evidenceOk && input.verdict.ok;
     return {
@@ -138,7 +205,10 @@ function toGroupAssertionOutcome(input: ToGroupAssertionOutcomeInput): GroupAsse
 
 function toGroupAssertionResult(input: ToGroupAssertionResultInput): RallarBlackBoxDistributedGroupAssertionResult {
     const { assertion } = input;
-    if (assertion.aggregate === 'allEqual' || assertion.aggregate === 'allEqualWithin') {
+    if (
+        assertion.aggregate === 'allEqual' || assertion.aggregate === 'allEqualWithin' ||
+        assertion.aggregate === 'sameUniqueStringSetAsRole'
+    ) {
         return {
             groupAssertionId: assertion.groupAssertionId,
             aggregate: assertion.aggregate,

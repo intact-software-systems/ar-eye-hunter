@@ -80,6 +80,8 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/22-alm-conformance-3-agent.json'
         ]);
         expect(diagnosticPaths.filter((filePath) => !filePath.includes('/matrix/'))).toEqual([
+            'apps/rallar-black-box/manifests/hetzner/diagnostic/alm-conformance-6-agent-30s.json',
+            'apps/rallar-black-box/manifests/hetzner/diagnostic/alm-conformance-11-agent-30s.json',
             'apps/rallar-black-box/manifests/hetzner/diagnostic/barrier-health-2-agent.json',
             'apps/rallar-black-box/manifests/hetzner/diagnostic/expected-failure-1-agent.json',
             'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-realtime-2-agent-20hz-stress.json',

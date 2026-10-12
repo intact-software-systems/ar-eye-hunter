@@ -1,7 +1,7 @@
 import type { RallarBlackBoxDistributedGroupAssertion } from '../../../distributed/group-assertions.ts';
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestLoopCommand,
+    RallarBlackBoxTestParallelCommand,
     RallarBlackBoxTestRecord
 } from '../../../rallar-black-box-test-contracts.ts';
 
@@ -25,22 +25,38 @@ const BUDGET_FACTS: readonly AlmScaleAcceptanceFact[] = [
     { path: 'rallar.alm.limits.maxTracks', operator: 'equals', expected: 64 }
 ];
 
-export function createAlmScaleSampler(prefix: string): RallarBlackBoxTestLoopCommand {
+export function createAlmScaleSampler(prefix: string): RallarBlackBoxTestParallelCommand {
     return {
-        kind: 'loop',
+        kind: 'parallel',
         commandId: `${prefix}-sampler`,
-        count: 7,
-        intervalMs: 5_000,
-        commands: [
-            { kind: 'stats', commandId: `${prefix}-sample-stats` },
-            ...BUDGET_FACTS.map((fact, index): RallarBlackBoxTestCommand => ({
-                kind: 'assert',
-                commandId: `${prefix}-sample-budget-${index + 1}`,
-                source: `stats.${fact.path}`,
-                operator: fact.operator,
-                expected: fact.expected
-            }))
-        ]
+        maxConcurrency: 7,
+        groups: Array.from({ length: 7 }, (_, index) => {
+            const slot = index + 1;
+            const statsId = `${prefix}-sample-${slot}-stats`;
+            const statsResultId = `${prefix}-traffic:g2:sampling:c1:${prefix}-sampler:g${slot}:sample-${slot}:c${
+                slot === 1 ? 1 : 2
+            }:${statsId}`;
+            return {
+                groupId: `sample-${slot}`,
+                commands: [
+                    ...(slot === 1 ? [] : [{
+                        kind: 'wait' as const,
+                        commandId: `${prefix}-sample-${slot}-offset`,
+                        match: { kind: 'diagnostic' as const, topic: 'rallar.black-box.alm.scale.sample-offset' },
+                        absent: true as const,
+                        timeoutMs: index * 5_000
+                    }]),
+                    { kind: 'stats' as const, commandId: statsId },
+                    ...BUDGET_FACTS.map((fact, budgetIndex): RallarBlackBoxTestCommand => ({
+                        kind: 'assert',
+                        commandId: `${prefix}-sample-${slot}-budget-${budgetIndex + 1}`,
+                        source: `resultCache.${statsResultId}.value.${fact.path}`,
+                        operator: fact.operator,
+                        expected: fact.expected
+                    }))
+                ]
+            };
+        })
     };
 }
 
@@ -75,15 +91,27 @@ export function createAlmScaleFinalCommands(prefix: string): readonly RallarBlac
 export function createAlmScaleGroupAssertions(playerCount: number): readonly RallarBlackBoxDistributedGroupAssertion[] {
     return (['director', 'player'] as const).flatMap((role) => {
         const prefix = `alm-scale-${role}`;
-        const sampler = [['iterations', 7], ['pacing.completedIterations', 7], ['passed', 84], ['failed', 0], [
+        const sampler = [['groupCount', 7], ['maxConcurrency', 7], ['passed', 90], ['failed', 0], [
             'cancelled',
             false
         ]] as const;
         const assertions = sampler.map(([path, expected]) =>
             createGroupAssertion(role, `${prefix}-sampler`, { path, operator: 'equals', expected })
         );
+        const sampledBudgets = Array.from(
+            { length: 7 },
+            (_, index) =>
+                BUDGET_FACTS.map((fact) =>
+                    createGroupAssertion(role, `${prefix}-sampler`, {
+                        path: `groups.${index}.results.${index === 0 ? 0 : 1}.result.value.${fact.path}`,
+                        operator: fact.operator,
+                        expected: fact.expected
+                    })
+                )
+        ).flat();
         return [
             ...assertions,
+            ...sampledBudgets,
             ...createWorkloadGroupAssertions(role, playerCount),
             ...BUDGET_FACTS.map((fact) => createGroupAssertion(role, `${prefix}-final-stats`, fact)),
             createGroupAssertion(role, `${prefix}-storage`, {
@@ -102,9 +130,31 @@ export function createAlmScaleGroupAssertions(playerCount: number): readonly Ral
                 expected: role === 'director' ? playerCount * 6 : 2
             }),
             ...(role === 'director'
-                ? ['start', 'end'].flatMap((event) =>
-                    createReceiptGroupAssertions(`${prefix}-${event}-receipt`, playerCount)
-                )
+                ? [
+                    ...['start', 'end'].flatMap((event) =>
+                        createReceiptGroupAssertions(`${prefix}-${event}-receipt`, playerCount)
+                    ),
+                    ...(['start', 'end'] as const).flatMap((event) =>
+                        (['expectedRecipientPeerIds', 'confirmedRecipientPeerIds'] as const).map((field) => ({
+                            groupAssertionId: `${prefix}-${event}-receipt-${field}-frozen-player-sessions`,
+                            aggregate: 'sameUniqueStringSetAsRole' as const,
+                            scope: { role: 'sender' },
+                            source: {
+                                recipeId: 'alm-scale-director',
+                                commandId: `${prefix}-${event}-receipt`,
+                                path: field
+                            },
+                            comparison: {
+                                role: 'receiver',
+                                source: {
+                                    recipeId: 'alm-scale-player',
+                                    commandId: 'alm-scale-player-connect',
+                                    path: 'sessionId'
+                                }
+                            }
+                        }))
+                    )
+                ]
                 : ([['iterations', 6], ['pacing.completedIterations', 6], ['failed', 0], ['cancelled', false]] as const)
                     .map(([path, expected]) =>
                         createGroupAssertion(role, `${prefix}-shots`, { path, operator: 'equals', expected })
@@ -120,8 +170,8 @@ function createWorkloadGroupAssertions(
     const prefix = `alm-scale-${role}`;
     const window = [
         ['groupCount', 1],
-        ['groups.0.commandCount', role === 'director' ? 19 : 8],
-        ['passed', role === 'director' ? 19 : 8],
+        ['groups.0.commandCount', role === 'director' ? 23 : 8],
+        ['passed', role === 'director' ? 23 : 8],
         ['failed', 0],
         ['cancelled', false]
     ] as const;
@@ -161,7 +211,7 @@ export function createAlmScaleAcceptanceMetadata(): RallarBlackBoxTestRecord {
     return {
         budgets: Object.fromEntries(BUDGET_FACTS.map((fact) => [fact.path, fact.expected])),
         samplingScope:
-            'Seven page ledger and congestion readings at 0/5/10/15/20/25/30 seconds; observed bounds, not continuous peaks.',
+            'Seven page ledger and congestion reads initiated at nominal 0/5/10/15/20/25/30 seconds; completion may follow initiation, and observed bounds are not continuous peaks.',
         storageResetScope:
             'AL IndexedDB counters reset after group, membership, connection, audience and director setup; shared barrier precedes traffic.',
         storageBudgets: { 'byOwner.al-admission': 0, workNonProbeCount: 0 },

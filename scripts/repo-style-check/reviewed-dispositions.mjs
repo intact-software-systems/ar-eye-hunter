@@ -1839,6 +1839,84 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'toReceiptCaptureObject'
     }),
+    // The recursive JSON Schema validator keeps raw schema values and candidate
+    // instance values opaque until its type/record checks make each decision.
+    // Six module-level declarations are schema literals or the node input type.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 6
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateJsonSchema',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toDiscriminatedSchema',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isExpectedType',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isSameJsonValue',
+        maximumMagnitude: 2
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isJsonRecordValue',
+        maximumMagnitude: 1
+    }),
+    // Filesystem and guide JSON enter the schema tests as raw values. The
+    // corpus, manifest, example and OpenAPI traversals validate before typing;
+    // anonymous unknowns describe only deliberately malformed corpus values.
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readJsonFile',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'expectValid',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 3
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readGoldenCompatibilityCorpus',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'inlineRecipesInManifest',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonCodeBlocks',
+        maximumMagnitude: 1
+    }),
     ...reviewedScenarioDispositions,
     ...reviewedBrowserDispositions
 ]);

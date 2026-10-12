@@ -560,11 +560,33 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         match: waitMatchSchema,
         absent: { const: true }
     }),
-    assert: strictCommandSchema('assert', {
-        source: stringSchema,
-        operator: assertOperatorSchema,
-        expected: anySchema
-    }),
+    assert: {
+        properties: { kind: { const: 'assert' } },
+        oneOf: [
+            {
+                type: 'object',
+                required: ['kind', 'source', 'operator'],
+                properties: {
+                    ...commandBaseProperties('assert'),
+                    source: stringSchema,
+                    operator: assertOperatorSchema,
+                    expected: anySchema
+                },
+                additionalProperties: false
+            },
+            {
+                type: 'object',
+                required: ['kind', 'source', 'operator', 'comparisonSource'],
+                properties: {
+                    ...commandBaseProperties('assert'),
+                    source: stringSchema,
+                    operator: { const: 'sameUniqueStringSet' },
+                    comparisonSource: stringSchema
+                },
+                additionalProperties: false
+            }
+        ]
+    },
     barrier: strictCommandSchema('barrier', {
         barrierId: stringSchema,
         timeoutMs: { type: 'integer', minimum: 1 },

@@ -3,7 +3,8 @@
 ## Goal and ownership
 
 Deliver the original 15/30/50-agent match-payload acceptance and prove the selected fairness
-benefit. Implement [the V1c design](../../playground/alm/alm-v1c-design-proposal.md) and D183 in
+benefit. Add six- and eleven-browser diagnostic checkpoints to isolate smaller-cohort failures;
+they do not replace any original acceptance or benefit gate. Implement [the V1c design](../../playground/alm/alm-v1c-design-proposal.md) and D183 in
 [the ALM improvement plan](../../playground/alm/alm-improvement-plan.md). V1d remains an outcome
 until this work is accepted and the user manually merges its pull request.
 
@@ -49,8 +50,9 @@ pull request retain prior outcomes and review chronology; do not copy that histo
   must complete its sampler, with zero failures and cancellation false. Missing, duplicate,
   incomplete or cancelled evidence fails closed; a transient excess followed by zero still fails.
   Final stats do not replace samples. For fifteen, require all 15 recipe finals, 84 exact director
-  shot arrivals, both lifecycle events, all 15 completion arrivals, 105 readings and all 73 native
-  coordinator predicates evaluated and passed. Larger cohorts retain all their declared assertions.
+  shot arrivals, both lifecycle events, all 15 completion arrivals, 105 readings and the complete native
+  coordinator predicate set evaluated and passed. Strengthened predicates must retain every original
+  requirement; historical 73-predicate results remain bound to their original source. Larger cohorts retain all their declared assertions.
 - At every sample, own admissions are at most 1,000; own bytes 4,194,304; counted oldest age
   300,000 ms; own tracks 64; ordering snapshots 512; overloaded is false; congestion dropped is
   zero. Preserve the runtime-limit checks as well as those literal limits, role-scoped sources and
@@ -101,91 +103,88 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 
 ## Current evidence and open facts
 
-- Original capture-off fifteen-agent acceptance remains FAILED: 82/84 shots, 28 director arrivals,
-  two complete player leader receipts and all 73 coordinator predicates unevaluated. Thirty and
-  fifty remain gated. The failed original execution is not repaired by local interoperability or
-  observation tests.
-- Current source release, API medium-scale and formation CI pass. Earlier native setup timeout
-  operations and causes remain unknown; current CI does not establish that those causes were fixed
-  or that original scale acceptance passed.
-- The reviewed recorder-on observation remains FAILED: 80/84 shots, 54 diagnostic director arrivals,
-  twelve exact leader receipts, 98/105 samples and all 73 coordinator predicates unevaluated.
-  Source/manifest provenance, timing=true/phase=false, safe retained rows and owned reaping are
-  verified. Partial capture and unverified durability constrain absence claims. Recorder and I/O
-  costs prevent using this run as original capture-off acceptance or a matched performance arm.
-- The exact observed director WS ACK returns unauthorized despite matching director peer/control
-  identities and authorized socket scope. The completed owner survey narrows the remaining paths
-  to connection-currentness versus aggregate first/repeated validation. It earns no defect, cause
-  or relationship to the observer timeout. Root review and the minimum design remain prerequisites
-  for the next source slice.
-- The valid 5.40% comparison is still failed and unwaived. Original scale acceptance, comparative
-  benefit, full changed-source closure, final whole-branch review, readiness and manual merge remain
-  open. There is no selected extra benchmark, quota/capacity diagnostic, unchanged hosted retry,
-  speculative repair or deadline/cohort relaxation.
+- Original capture-off fifteen-agent acceptance remains FAILED; thirty and fifty remain gated.
+  Local source tests or recorder-on traces do not repair that failed execution.
+- The valid 5.40% shared-throughput comparison remains failed against the unchanged 5% allowance.
+  Conditional IndexedDB scheduling benefit does not establish native or universal performance.
+- The approved guard observation remains inconclusive for a guard defect or causal repair. Partial
+  capture cannot prove that an unobserved guard never ran. Do not repeat that diagnostic workstream.
+- Independent source review identifies two acceptance defects: serial sampler reads accumulate
+  latency beyond the nominal schedule, and lifecycle receipt predicates compare cardinality without
+  proving every frozen player's identity. Meaningful failing-first cases and healthy controls expose
+  both defects through current command/runtime/evaluator owners. Neither establishes the hosted
+  delivery-timeout or performance cause.
+- Six- and eleven-browser ALM match diagnostics have no hosted passing evidence. The user has
+  selected them using the same match workload. Existing numbered RTC catalog entries are different
+  workloads and do not prove these cohorts. The selected hosted workflow and native harness must
+  admit the actual cohort and strengthened manifest before either checkpoint can execute.
+- Full source/support closure, whole-branch review, original scale and benefit, readiness and manual
+  merge remain open. The pull request owns current source, CI, test and run outcomes; do not copy
+  delivery history here.
 
 ## Next two useful slices
 
-### 1. Discriminate the closed ACK rejection guard
+### 1. Close the independently proved acceptance defects
 
-Subject to root's reviewed minimum design, use the existing optional receipt observer and safe
-exporter to retain which actual guard rejected the matching ACK: connection-currentness versus
-aggregate first/repeated validation. Preserve the actual validation pass and all coexisting closed
-reasons. Reuse already-owned decoded identity, read facts, validation results and return disposition. Do not rerun authorization/validation, add a read, clock or durable
-write, reconstruct missing state, or infer a guard from prose. Keep unknown facts explicitly unknown.
-The exact contract and minimum source/test/support owners come from that reviewed design; this
-plan does not invent new APIs.
+Use TDD and the existing shared-test scale fixture, authored command runtime and native group
+assertion evaluator. Preserve generic loop semantics. Schedule seven sampler slots at nominal
+0/5/10/15/20/25/30-second offsets using current wait/parallel primitives; bind every budget check to
+its own exact stats result so overlapping reads cannot overwrite evidence. Retain all 105 readings,
+transient failures, missing/cancelled evidence refusal, every budget and actor attribution.
+Distinguish a read's initiation from acquisition/completion, retain actual owned timestamps and do
+not invent a timing tolerance or claim that start timestamps prove completion inside thirty seconds.
 
-A fresh implementer first exercises the existing real ingress/aggregate owners and actual
-producer-to-recorder path. Independently prove unchanged security/refusal behavior and mandatory
-effects before establishing meaningful missing-observation RED. Then implement the smallest closed
-projection and safe retention, GREEN and refactor. Absent, throwing or mutating observers preserve
-results, original failures, effects and configured deadlines; disabled capture avoids diagnostic allocation,
-copies and clocks. Keep immutable facts and publication at the existing owned effect boundary.
-Retain only closed safe facts under the current observer/exporter contract, excluding credentials,
-application payloads, raw headers, environment values and arbitrary error prose. Preserve the current
-line bound, exclusive 0600 files, unsafe/oversized/trailing-record refusal, loss/EOF accounting and
-original child exit/reap ownership.
-No public delivery, wire or persisted-format change is selected.
+Use each frozen player's actual rtc.connect session result for the native identity comparison.
+Require unique complete START and END expected/confirmed sets, zero unconfirmed and all existing
+state/mode/arrival/completion guarantees. Reuse a single pure set comparison at the current local
+assertion and native cross-role aggregate boundaries; missing, duplicate or ambiguous identity fails
+closed without shrinking the cohort. Reordered identical sets remain valid. Extend current typed
+contracts/schema at those owners only where existing literal predicates cannot express the required
+comparison; keep old operators/defaults compatible and introduce no alternate evaluator, new live
+read, migration, legacy adapter or dependency.
 
-Review and remediate every changed human-authored file in full; every support file changed by that
-remediation enters closure recursively until closed. Independent untouched code remains outside
-closure. Remove affected obsolete or duplicate paths; any independently required public migration
-or retained legacy boundary needs explicit maintainer approval and its focused registry entry.
-Run direct real-owner/retention tests and affected package/API/type checks, then proportional exact
-changed-range style, coupling, formatting and navigation checks. Classify failures before edits;
-checker tolerance never waives a touched-file violation. Obtain fresh specification and quality
-review before coherent publication. The controller owns source review, scope decisions and dispatch;
-implementers do not dispatch subagents or hosted runs.
+Prove each defect with independent runtime/evaluator RED and healthy controls before GREEN.
+Review/remediate every changed human-authored file completely and recursive changed support closure;
+independent untouched code stays outside. Use affected schema, command, recipe, cadence, catalog,
+maintained type, build/boundary and exact changed-range checks, then independent specification and
+quality review before coherent publication. Regenerated manifests are strengthened acceptance inputs
+with their own identities, not byte-identical versions of old frozen executions. Preserve all
+original participant, traffic, receipt, storage, deadline, policy and budget requirements.
 
-### 2. Observe the changed capability once on frozen fifteen
+### 2. Establish six- and eleven-browser diagnostic checkpoints
 
-Only after the first slice's independent approval and publication, select one bounded hosted
-observation through the existing all-local lifecycle on the frozen original fifteen-agent workload.
-Keep Chromium, registration-before-login, setup capture off, RTC capture off and the existing
-WS-observation selection, with truthful timing=true/phase=false. Verify exact published source,
-unchanged manifest, effective flags, draft/manual-merge state and absence of an active conflicting
-run immediately before dispatch. Preserve every participant, traffic, receipt, storage, deadline
-and acceptance requirement; there is no unchanged-source retry.
+Reuse that same canonical recipe and manifest producer for six and eleven browsers under the
+existing diagnostic catalog/path. Preserve one director and N-1 frozen players, tree selection
+with meshMinSize N+1, six exact leader-ACK shots per player, two full-audience lifecycle events,
+seven sampled readings per actor, original thirty-second workload/ACK/TTL, all setup/barrier/outer
+allowances, receipt/security rules, metric/storage budgets and native fail-closed evidence.
+The expected diagnostic work is 30/60 shots and 42/77 readings at six/eleven respectively; these
+are their own full-cohort checks, not reduced evidence for fifteen.
 
-Acquire originals once, preserve immutable custody and use existing canonical analysis on the new
-bytes. A bounded analyst and independent evidence reviewer verify retained guard discrimination,
-exact ACK/subject/origin/director joins, refusals, sampling/receipt/storage/native acceptance facts
-and cleanup. Separate producer/observer clocks, partial/lost capture, failed from unevaluated
-predicates, diagnostic arrivals from canonical workload proof and reaping from durable completeness.
-No causal timeout or speedup claim follows merely from record order or one observation.
+Use TDD for cohort/catalog selection and generated requirements; keep original 15/30/50 acceptance
+positions and identities distinct. Close the existing hosted workflow and native harness over the
+selected canonical manifest, full cohort, tree setting and complete strengthened predicate set;
+remove obsolete fifteen-only source/hash/count assumptions. Retain source freezing, exact
+provenance, native acceptance, cleanup and every existing lifecycle ceiling. Prove admission and
+provenance for six/eleven and refusal of mismatched or unrelated inputs before implementation.
+Publish reviewed candidates before bounded runs through the existing hosted lifecycle. Verify exact source, declared/effective inputs, complete cohort and shared
+concurrency immediately before dispatch. Preserve originals once and perform canonical analysis
+with truthful completion, receipt, sampling, storage, loss and cleanup limits.
 
-An actual supported defect then earns its independent semantic RED and the smallest corresponding
-repair through current owners, followed by affected validation, specification/quality review and
-publication. Otherwise report the precise remaining gap promptly; do not turn uncertainty into
-another diagnostic workstream. Recorder-on findings do not replace original acceptance or benefit.
+Run six first to establish whether the complete smaller match works, then eleven when that result
+supports progression. A failure earns exact evidence review and an independently testable repair,
+not an unchanged-source retry. Compare failure boundaries across cohorts without treating unequal
+workloads as a speedup or capacity proof. Select observation flags deliberately and record their
+cost/limits; diagnostic captures cannot replace original capture-off acceptance. Passing six and
+eleven does not waive fifteen, thirty, fifty, the failed performance gate or final review.
 
 ## Later outcomes and completion
 
 Keep later work outcome-shaped. Finish the original capture-off fifteen-agent acceptance, then
 unchanged thirty and fifty, and satisfy the original comparative benefit gate. Earn any intervening
 repair from independent evidence and meaningful failing-first behavior; keep only the next two
-useful slices concrete. No extra benchmark, quota/capacity exploration, unchanged hosted retry or
-relaxed acceptance is selected.
+useful slices concrete. The selected six/eleven checkpoints remain diagnostic. No extra benchmark, quota/capacity
+exploration, unchanged hosted retry or relaxed acceptance is selected.
 
 Use subagent-driven development for implementation with fresh implementer, specification and
 quality review; the controller owns fixes and final whole-branch review. Preserve RED → GREEN →

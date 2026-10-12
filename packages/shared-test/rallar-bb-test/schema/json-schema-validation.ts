@@ -122,6 +122,16 @@ function validateAlternatives(input: SchemaNodeInput): void {
             // This diagnostic selection must never decide whether the oneOf accepts a value.
             errors.push(...toValidationErrors({ ...input, schema: discriminated.schema }));
         }
+        else if (matches === 0 && isJsonRecordValue(value) && typeof value.operator === 'string') {
+            const selected = schema.oneOf.find((candidate) =>
+                candidate.properties?.operator?.const === value.operator
+            ) ?? schema.oneOf.find((candidate) => candidate.properties?.operator?.enum !== undefined);
+            errors.push(
+                ...(selected
+                    ? toValidationErrors({ ...input, schema: selected })
+                    : [{ path, message: 'Expected value to match exactly one schema, matched 0.' }])
+            );
+        }
         else if (matches !== 1) {
             errors.push({ path, message: `Expected value to match exactly one schema, matched ${matches}.` });
         }

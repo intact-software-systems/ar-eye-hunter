@@ -10,15 +10,28 @@ import {
 } from './hetzner-manifest-entry.ts';
 
 interface AlmScaleManifestInput {
-    readonly participantCount: 15 | 30 | 50;
+    readonly participantCount: 6 | 11 | 15 | 30 | 50;
     readonly filePath: string;
+    readonly diagnostic: boolean;
 }
 
 export function createAlmScaleManifestEntries(): readonly HetznerDistributedManifestEntry[] {
     return ([15, 30, 50] as const).map((participantCount, index) =>
         createAlmScaleManifestEntry({
             participantCount,
-            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[18 + index]!
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[18 + index]!,
+            diagnostic: false
+        })
+    );
+}
+
+export function createAlmScaleDiagnosticEntries(): readonly HetznerDistributedManifestEntry[] {
+    return ([6, 11] as const).map((participantCount) =>
+        createAlmScaleManifestEntry({
+            participantCount,
+            filePath:
+                `apps/rallar-black-box/manifests/hetzner/diagnostic/alm-conformance-${participantCount}-agent-30s.json`,
+            diagnostic: true
         })
     );
 }
@@ -31,19 +44,29 @@ function createAlmScaleManifestEntry(input: AlmScaleManifestInput): HetznerDistr
     });
     return createManifestEntry({
         filePath: input.filePath,
-        title: `ALM conformance ${input.participantCount}-agent 30s`,
-        description: `One director and ${input.participantCount - 1} players send reliable AR Eye match payloads ` +
+        title: `ALM conformance ${input.participantCount}-agent 30s${input.diagnostic ? ' diagnostic' : ''}`,
+        description:
+            `${input.diagnostic ? 'Diagnostic: ' : ''}One director and ${
+                input.participantCount - 1
+            } players send reliable AR Eye match payloads ` +
             'within a 30-second workload deadline, with seven bounded ALM samples and native per-agent delivery evidence.',
         distributedRunId: `hetzner-alm-conformance-${input.participantCount}-agent-30s`,
         recipes: scale.recipes,
         agentCount: input.participantCount,
-        profiles: ['alm', 'messages.rtc', 'match-payloads', 'tree', `${input.participantCount}-agent`, 'extended'],
+        profiles: [
+            'alm',
+            'messages.rtc',
+            'match-payloads',
+            'tree',
+            `${input.participantCount}-agent`,
+            input.diagnostic ? 'diagnostic' : 'extended'
+        ],
         live: true,
         targetAgentIds: toControllerAgentIds(input.participantCount),
         targetPolicyMode: 'role-map',
         rolePattern: 'one-sender-many-receivers',
         mainline: false,
-        diagnostic: false,
+        diagnostic: input.diagnostic,
         expectedFailure: false,
         stress: false,
         barrier: true,

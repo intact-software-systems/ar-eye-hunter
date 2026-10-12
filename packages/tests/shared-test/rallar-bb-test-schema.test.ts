@@ -9,6 +9,9 @@ import { toFlowBuilderRunnerScenario } from '../../../apps/rallar-black-box/src/
 import { toManualRecipeText, type ManualActionHistoryEntry } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
 import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/run-manager-command-presets.ts';
 import { BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA } from '../../shared-test/black-box-runner/schema.ts';
+import { decodeDistributedRunManifest } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
+import { RALLAR_BLACK_BOX_GROUP_ASSERTION_AGGREGATES } from '../../shared-test/rallar-bb-test/distributed/group-assertions.ts';
+import { RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA } from '../../shared-test/rallar-bb-test/distributed/rallar-black-box-group-assertions-schema.ts';
 import { projectDistributedRecipeCatalog } from '../../shared-test/rallar-bb-test/mod.ts';
 import { RALLAR_BLACK_BOX_TEST_COMMAND_KINDS, type RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../shared-test/rallar-bb-test/recipe-fixtures.ts';
@@ -21,6 +24,7 @@ import {
 } from '../../shared-test/rallar-bb-test/schema.ts';
 import {
     formatJsonSchemaValidationErrors,
+    isJsonRecordValue,
     validateJsonSchema,
     type JsonSchema
 } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
@@ -78,7 +82,28 @@ interface GoldenCompatibilityCorpus {
 }
 
 function readGoldenCompatibilityCorpus(): GoldenCompatibilityCorpus {
-    return readJsonFile(goldenCompatibilityCorpusPath) as GoldenCompatibilityCorpus;
+    const value = readJsonFile(goldenCompatibilityCorpusPath);
+    if (
+        !isJsonRecordValue(value) || value.schemaVersion !== 1 ||
+        !Array.isArray(value.validRecipes) || !Array.isArray(value.validDistributedManifests) ||
+        !Array.isArray(value.invalidRecipes) || !Array.isArray(value.invalidDistributedManifests) ||
+        !value.validRecipes.every((recipe) => validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe).ok) ||
+        !value.validDistributedManifests.every((manifest) => decodeDistributedRunManifest(manifest).right !== undefined) ||
+        ![...value.invalidRecipes, ...value.invalidDistributedManifests].every((entry) =>
+            isJsonRecordValue(entry) && typeof entry.caseId === 'string' &&
+            Array.isArray(entry.expectedErrors) && entry.expectedErrors.every((error) => typeof error === 'string') &&
+            Object.hasOwn(entry, 'value')
+        )
+    ) {
+        throw new Error('Invalid golden compatibility corpus');
+    }
+    return {
+        schemaVersion: 1,
+        validRecipes: value.validRecipes as readonly RallarBlackBoxTestRecipe[],
+        validDistributedManifests: value.validDistributedManifests as readonly unknown[],
+        invalidRecipes: value.invalidRecipes as GoldenCompatibilityCorpus['invalidRecipes'],
+        invalidDistributedManifests: value.invalidDistributedManifests as GoldenCompatibilityCorpus['invalidDistributedManifests']
+    };
 }
 
 function commandKindsInCommand(command: RallarBlackBoxTestRecipe['commands'][number]): readonly string[] {
@@ -105,23 +130,12 @@ function commandKindsInRecipe(recipe: RallarBlackBoxTestRecipe): readonly string
 }
 
 function inlineRecipesInManifest(manifest: unknown): readonly RallarBlackBoxTestRecipe[] {
-    if (!manifest || typeof manifest !== 'object' || !('recipes' in manifest)) {
-        return [];
-    }
-
-    const manifestRecipes = (manifest as { recipes?: unknown; }).recipes;
-    if (!Array.isArray(manifestRecipes)) {
-        return [];
-    }
-
-    return manifestRecipes.flatMap((entry) => {
-        if (!entry || typeof entry !== 'object' || !('recipe' in entry)) {
-            return [];
-        }
-
-        const recipe = (entry as { recipe?: unknown; }).recipe;
-        return recipe ? [recipe as RallarBlackBoxTestRecipe] : [];
-    });
+    return decodeDistributedRunManifest(manifest).fold(
+        () => {
+            throw new Error('Invalid inline recipe manifest');
+        },
+        (decoded) => decoded.recipes.flatMap((selection) => selection.recipe ? [selection.recipe] : [])
+    );
 }
 
 function jsonCodeBlocks(markdown: string): readonly unknown[] {
@@ -130,6 +144,45 @@ function jsonCodeBlocks(markdown: string): readonly unknown[] {
 }
 
 describe('rallar-bb-test capability and schema contract', () => {
+    it('publishes every admitted group assertion aggregate', () => {
+        const admitted = [
+            'allMatch',
+            'noneMatch',
+            'countMatching',
+            'allEqual',
+            'allEqualWithin',
+            'sameUniqueStringSetAsRole'
+        ];
+        expect(RALLAR_BLACK_BOX_GROUP_ASSERTION_AGGREGATES).toEqual(admitted);
+    });
+    it('rejects a malformed inline recipe before command traversal', () => {
+        expect(() => inlineRecipesInManifest({ recipes: [{ recipe: { recipeId: 'broken' } }] }))
+            .toThrow('Invalid inline recipe manifest');
+    });
+    it('requires a complete cross-role set comparison declaration', () => {
+        const assertion = {
+            groupAssertionId: 'recipient-sessions',
+            aggregate: 'sameUniqueStringSetAsRole',
+            source: { recipeId: 'director', commandId: 'end-receipt', path: 'expectedRecipientPeerIds' },
+            scope: { role: 'sender' },
+            comparison: { role: 'receiver', source: { recipeId: 'player', commandId: 'connect', path: 'sessionId' } }
+        };
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA, [assertion]).ok).toBe(true);
+        expect(
+            validateJsonSchema(RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA, [{
+                groupAssertionId: assertion.groupAssertionId,
+                aggregate: assertion.aggregate,
+                source: assertion.source,
+                scope: assertion.scope
+            }]).ok
+        ).toBe(false);
+        expect(
+            validateJsonSchema(RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA, [{
+                ...assertion,
+                comparison: { source: assertion.comparison.source }
+            }]).ok
+        ).toBe(false);
+    });
     it('keeps catalog schema badges authoritative when preflight alone is clean', () => {
         const recipe: RallarBlackBoxTestRecipe = { schemaVersion: 1, recipeId: 'schema-invalid-preflight-clean', commands: [{ kind: 'health' }] };
         Reflect.set(recipe, 'schemaVersion', 2);
@@ -208,9 +261,11 @@ describe('rallar-bb-test capability and schema contract', () => {
     });
 
     it('keeps the app-local RTC example self-contained for headless browser agents', () => {
-        const recipe = readJsonFile(
+        const rawRecipe = readJsonFile(
             path.join(appExamplesRoot, 'rallar-server-rtc-connect-send.recipe.json')
-        ) as RallarBlackBoxTestRecipe;
+        );
+        expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, rawRecipe);
+        const recipe = rawRecipe as RallarBlackBoxTestRecipe;
 
         expect(recipe.metadata?.requires).not.toEqual(expect.arrayContaining([
             expect.stringContaining('Run rallar-server-group-ws-setup first')
@@ -480,6 +535,22 @@ describe('rallar-bb-test capability and schema contract', () => {
         if (!invalidAssert.ok) {
             expect(formatJsonSchemaValidationErrors(invalidAssert.errors)).toContain('Expected one of');
         }
+
+        for (
+            const command of [
+                { kind: 'assert', source: 'state.a', operator: 'sameUniqueStringSet' },
+                { kind: 'assert', source: 'state.a', operator: 'sameUniqueStringSet', comparisonSource: 'state.b', expected: [] },
+                { kind: 'assert', source: 'state.a', operator: 'equals', comparisonSource: 'state.b', expected: [] }
+            ]
+        ) {
+            expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(false);
+        }
+        expectValid(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'assert',
+            source: 'state.a',
+            operator: 'sameUniqueStringSet',
+            comparisonSource: 'state.b'
+        });
     });
 
     it('validates optional rtc.connect readiness contract', () => {
@@ -708,22 +779,11 @@ describe('rallar-bb-test capability and schema contract', () => {
             metadata: {}
         });
 
-        const spec = controlOpenApiSpec(new Request('http://localhost:5180/api/openapi.json')) as {
-            components?: {
-                schemas?: Record<string, unknown>;
-            };
-            paths?: Record<string, {
-                post?: {
-                    requestBody?: {
-                        content?: Record<string, {
-                            examples?: Record<string, { value: unknown; }>;
-                        }>;
-                    };
-                };
-            }>;
-        };
-        const commandSchema = spec.components?.schemas?.RallarBlackBoxTestCommand;
-        const manifestSchema = spec.components?.schemas?.DistributedRunManifest;
+        const spec = controlOpenApiSpec(new Request('http://localhost:5180/api/openapi.json'));
+        const components = isJsonRecordValue(spec.components) ? spec.components : {};
+        const schemas = isJsonRecordValue(components.schemas) ? components.schemas : {};
+        const commandSchema = schemas.RallarBlackBoxTestCommand;
+        const manifestSchema = schemas.DistributedRunManifest;
         expect(commandSchema).toMatchObject({
             title: RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA.title,
             oneOf: expect.any(Array)
@@ -732,6 +792,54 @@ describe('rallar-bb-test capability and schema contract', () => {
             title: RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA.title,
             type: 'object'
         });
+        const publishedSchemaShape: JsonSchema = {
+            $ref: '#/$defs/schema',
+            $defs: {
+                schema: {
+                    type: 'object',
+                    properties: {
+                        $schema: { type: 'string' },
+                        $ref: { type: 'string' },
+                        $defs: { type: 'object', additionalProperties: { $ref: '#/$defs/schema' } },
+                        $id: { type: 'string' },
+                        title: { type: 'string' },
+                        description: { type: 'string' },
+                        type: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
+                        enum: { type: 'array' },
+                        required: { type: 'array', items: { type: 'string' } },
+                        properties: { type: 'object', additionalProperties: { $ref: '#/$defs/schema' } },
+                        additionalProperties: {
+                            oneOf: [{ type: 'boolean' }, { $ref: '#/$defs/schema' }]
+                        },
+                        items: { $ref: '#/$defs/schema' },
+                        oneOf: { type: 'array', items: { $ref: '#/$defs/schema' } },
+                        anyOf: { type: 'array', items: { $ref: '#/$defs/schema' } },
+                        requiredAnyOf: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                required: ['properties', 'message'],
+                                properties: {
+                                    properties: { type: 'array', items: { type: 'string' } },
+                                    message: { type: 'string' }
+                                }
+                            }
+                        },
+                        minimum: { type: 'number' },
+                        exclusiveMinimum: { type: 'number' },
+                        maximum: { type: 'number' },
+                        minItems: { type: 'number' },
+                        examples: { type: 'array' }
+                    }
+                }
+            }
+        };
+        if (
+            !validateJsonSchema(publishedSchemaShape, commandSchema).ok ||
+            !validateJsonSchema(publishedSchemaShape, manifestSchema).ok
+        ) {
+            throw new Error('Published OpenAPI schemas have an invalid shape');
+        }
         const publishedCommandSchema = JSON.parse(JSON.stringify(commandSchema)) as JsonSchema;
         const publishedManifestSchema = JSON.parse(JSON.stringify(manifestSchema)) as JsonSchema;
         const leaf: RallarBlackBoxTestRecipe = { schemaVersion: 1, recipeId: 'leaf', commands: [{ kind: 'health' }] };
@@ -765,13 +873,22 @@ describe('rallar-bb-test capability and schema contract', () => {
         expect(validateJsonSchema(publishedManifestSchema, manifest).ok).toBe(false);
         expect(JSON.stringify(manifestSchema)).toContain('Rallar black-box distributed run manifest');
 
-        const commandExamples = spec
-            .paths?.['/runs/{runId}/agents/{agentId}/commands']
-            ?.post?.requestBody?.content?.['application/json']?.examples ?? {};
+        const paths = isJsonRecordValue(spec.paths) ? spec.paths : {};
+        const commandPath = paths['/runs/{runId}/agents/{agentId}/commands'];
+        const post = isJsonRecordValue(commandPath) && isJsonRecordValue(commandPath.post) ? commandPath.post : {};
+        const requestBody = isJsonRecordValue(post.requestBody) ? post.requestBody : {};
+        const content = isJsonRecordValue(requestBody.content) ? requestBody.content : {};
+        const applicationJson = isJsonRecordValue(content['application/json']) ? content['application/json'] : {};
+        const commandExamples = isJsonRecordValue(applicationJson.examples) ? applicationJson.examples : {};
         expect(Object.keys(commandExamples).length).toBeGreaterThan(0);
         for (const example of Object.values(commandExamples)) {
-            const value = example.value as { command?: unknown; };
-            expectValid(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, value.command);
+            if (!isJsonRecordValue(example)) {
+                throw new Error('Published OpenAPI command example is invalid');
+            }
+            if (!isJsonRecordValue(example.value)) {
+                throw new Error('Published OpenAPI command example body is invalid');
+            }
+            expectValid(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, example.value.command);
         }
     });
 

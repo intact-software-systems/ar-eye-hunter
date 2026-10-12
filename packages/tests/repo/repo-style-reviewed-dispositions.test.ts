@@ -15,6 +15,7 @@ import {
     it
 } from 'vitest';
 
+import { findingMagnitude } from '../../../scripts/repo-style-check/finding-magnitude.mjs';
 import { scanProductionSources } from '../../../scripts/repo-style-check/repository-scan.mjs';
 import { isReviewedDisposition, reviewedDispositions } from '../../../scripts/repo-style-check/reviewed-dispositions.mjs';
 
@@ -35,6 +36,20 @@ const reviewedApiCaptureBoundaries = [
     { file: 'packages/tests/rallar-black-box/full-stack-api-timing-capture.test.ts', symbol: 'toTimingCaptureObject' },
     { file: 'packages/tests/rallar-black-box/full-stack-api-receipt-capture.test.ts', symbol: 'toReceiptCaptureObject' }
 ] as const;
+const reviewedSchemaJsonBoundaries = [
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: undefined, cap: 6 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'validateJsonSchema', cap: 1 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'toDiscriminatedSchema', cap: 1 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'isExpectedType', cap: 1 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'isSameJsonValue', cap: 2 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'isJsonRecordValue', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'readJsonFile', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'expectValid', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: undefined, cap: 3 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'readGoldenCompatibilityCorpus', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'inlineRecipesInManifest', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'jsonCodeBlocks', cap: 1 }
+] as const;
 
 afterEach(() => {
     for (const fixtureRoot of fixtureRoots.splice(0)) {
@@ -43,6 +58,61 @@ afterEach(() => {
 });
 
 describe('reviewed repository style dispositions', () => {
+    it('counts each real unknown detail as one occurrence', () => {
+        const file = path.join(repoRoot, 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts');
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{ file, raw: unknownSource('isSameJsonValue', 0) }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings).toHaveLength(1);
+        expect(findingMagnitude(findings[0])).toBe(1);
+    });
+
+    it('blocks an extra real unknown in one reviewed owner', () => {
+        const relativeFile = 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+        const fixture = createReviewedFixture();
+        writeFixture(fixture, relativeFile, unknownSource('validateJsonSchema', 0));
+        const accepted = runChangedChecker(fixture);
+        expect(accepted.status, accepted.stdout).toBe(0);
+        writeFixture(fixture, relativeFile, unknownSource('validateJsonSchema', 1));
+        const grown = runChangedChecker(fixture);
+        expect(grown.status, grown.stdout).toBe(1);
+        expect(grown.stdout).toContain('boundary.unknown');
+    });
+
+    it.each(reviewedSchemaJsonBoundaries)('bounds actual scanner unknowns for $file / $symbol at $cap', ({ file: relativeFile, symbol, cap }) => {
+        const fixture = createReviewedFixture();
+        const raw = symbol === undefined
+            ? `interface OpaqueJson {\n${Array.from({ length: cap }, (_, index) => `readonly value${index}: unknown;`).join('\n')}\n}\n`
+            : unknownSource(symbol, cap - 1);
+        writeFixture(fixture, relativeFile, raw);
+        const accepted = runChangedChecker(fixture);
+        expect(accepted.status, accepted.stdout).toBe(0);
+        const grown = symbol === undefined
+            ? `${raw}\ninterface AddedOpaqueJson { readonly added: unknown; }\n`
+            : unknownSource(symbol, cap);
+        writeFixture(fixture, relativeFile, grown);
+        const rejected = runChangedChecker(fixture);
+        expect(rejected.status, rejected.stdout).toBe(1);
+        expect(rejected.stdout).toContain('boundary.unknown');
+    });
+
+    it.each(reviewedSchemaJsonBoundaries)('keeps wrong schema JSON keys and cap growth blocking for $file / $symbol', ({ file: relativeFile, symbol, cap }) => {
+        const file = path.join(repoRoot, relativeFile);
+        const raw = symbol === undefined
+            ? 'export interface OpaqueJson { readonly value: unknown; }\n'
+            : unknownSource(symbol, 0);
+        const findings = scanProductionSources({ repoRoot, sources: [{ file, raw }], options: { layoutOnly: false } })
+            .findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings).toHaveLength(1);
+        const finding = { ...findings[0], affectedCount: cap };
+        expect(isReviewedDisposition(repoRoot, finding)).toBe(true);
+        expect(isReviewedDisposition(repoRoot, { ...finding, affectedCount: cap + 1 })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, file: `${file}.other` })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'function.input-contract' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'unreviewedSchemaBoundary' })).toBe(false);
+    });
     it.each(reviewedApiCaptureBoundaries)('recognizes the exact API capture boundary $file / $symbol', ({ file: relativeFile, symbol }) => {
         const file = path.join(repoRoot, relativeFile);
         const findings = scanProductionSources({

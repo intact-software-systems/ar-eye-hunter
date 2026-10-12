@@ -17,7 +17,7 @@ import type { RallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-
 import { isRallarBlackBoxTestResult } from '../../shared-test/rallar-bb-test/composite-results.ts';
 import { createAlmScalePayload } from '../../shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-payload.ts';
 import { createAlmScaleRecipes } from '../../shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-recipes.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '../../shared-test/rallar-bb-test/distributed-run.ts';
 import { computeDistributedGroupAssertionResults } from '../../shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
 import type { DistributedGroupAssertionRecipeEvidence } from '../../shared-test/rallar-bb-test/distributed/group-assertions-evidence.ts';
@@ -37,11 +37,19 @@ interface SamplerExecution {
     readonly final: RallarBlackBoxTestResult;
     readonly runtime: RallarBlackBoxBrowserTestRuntime;
     readonly elapsedMs: number;
+    readonly sampleStartsMs: readonly number[];
+}
+
+interface SamplerInput {
+    readonly role: 'director' | 'player';
+    readonly readings: readonly (RallarBlackBoxTestAlmUsage | undefined)[];
+    readonly congestion: ALCongestionCounters | undefined;
+    readonly readLatencyMs?: number;
 }
 
 interface TrafficScenario {
     readonly role: 'director' | 'player';
-    readonly participantCount?: 15 | 30 | 50;
+    readonly participantCount?: 6 | 11 | 15 | 30 | 50;
     readonly missingPlayer?: boolean;
     readonly missingSequence?: boolean;
     readonly wrongDirector?: boolean;
@@ -50,6 +58,7 @@ interface TrafficScenario {
     readonly duplicateStart?: boolean;
     readonly startDelayMs?: number;
     readonly ackDelayMs?: number;
+    readonly endAudience?: 'substituted' | 'duplicate' | 'disagreed' | 'reordered';
 }
 
 const GROUP = { applicationId: 'scale-app', workspaceId: 'scale-workspace', groupId: 'scale-room' };
@@ -100,21 +109,18 @@ function getSampler(role: 'director' | 'player'): RallarBlackBoxTestCommand {
     if (traffic?.kind !== 'parallel') {
         throw new Error('Missing scale traffic');
     }
-    return traffic.groups[1].commands[0];
+    const sampler = traffic.groups[1].commands[0];
+    return { ...sampler, commandId: `alm-scale-${role}-traffic:g2:sampling:c1:alm-scale-${role}-sampler` };
 }
 
-async function runSampler(
-    role: 'director' | 'player',
-    readings: readonly (RallarBlackBoxTestAlmUsage | undefined)[],
-    congestion: ALCongestionCounters | undefined
-): Promise<SamplerExecution> {
+async function runSampler(input: SamplerInput): Promise<SamplerExecution> {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
     let index = 0;
-    let now = 1_000;
-    const runtime = createRallarBlackBoxBrowserTestRuntime({
-        now: () => now,
-        sleep: async (ms) => {
-            now += ms;
-        },
+    const sampleStartsMs: number[] = [];
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+        now: Date.now,
+        sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
         rallarRuntime: {
             ...createBrowserRallarRequiredMethodsTestDouble(),
             connect: async () => ({ connected: true }),
@@ -122,28 +128,67 @@ async function runSampler(
             refreshRoom: async () => undefined,
             close: async () => ({ closed: true }),
             health: async () => ({ connected: true }),
-            readAlmUsage: async () => readings[Math.min(index++, readings.length - 1)],
-            readCongestionCounters: async () => congestion
+            readAlmUsage: async () => {
+                sampleStartsMs.push(Date.now() - 1_000);
+                if (input.readLatencyMs) {
+                    await new Promise<void>((resolve) => setTimeout(resolve, input.readLatencyMs));
+                }
+                return input.readings[Math.min(index++, input.readings.length - 1)];
+            },
+            readCongestionCounters: async () => input.congestion
         }
     });
-    const result = await runtime.execute(getSampler(role));
-    const final = await runtime.execute({ kind: 'stats', commandId: `alm-scale-${role}-final-stats` });
-    return { result, final, runtime, elapsedMs: now - 1_000 };
+    const execution = runtime.execute(getSampler(input.role));
+    await vi.runAllTimersAsync();
+    const result = await execution;
+    const elapsedMs = Date.now() - 1_000;
+    const sampledStartsMs = [...sampleStartsMs];
+    const finalExecution = runtime.execute({ kind: 'stats', commandId: `alm-scale-${input.role}-final-stats` });
+    await vi.runAllTimersAsync();
+    const final = await finalExecution;
+    return { result, final, runtime, elapsedMs, sampleStartsMs: sampledStartsMs };
 }
 
 describe('ALM scale sampled acceptance', () => {
+    afterEach(() => vi.useRealTimers());
+
     it.each(['director', 'player'] as const)('checks seven readings across 30 seconds on the %s page', async (role) => {
-        const { result, elapsedMs } = await runSampler(role, [HEALTHY], { dropped: 0, deferred: 2, handedOver: 1 });
+        const { result, elapsedMs, sampleStartsMs } = await runSampler({ role, readings: [HEALTHY], congestion: { dropped: 0, deferred: 2, handedOver: 1 } });
         expect(result.ok).toBe(true);
-        expect(result.value).toMatchObject({ iterations: 7, failed: 0, cancelled: false, pacing: { completedIterations: 7, requestedIntervalMs: 5_000 } });
+        expect(result.value).toMatchObject({ groupCount: 7, maxConcurrency: 7, passed: 90, failed: 0, cancelled: false });
         expect(elapsedMs).toBe(30_000);
+        expect(sampleStartsMs).toEqual([0, 5_000, 10_000, 15_000, 20_000, 25_000, 30_000]);
+    });
+
+    it.each(['director', 'player'] as const)('keeps seven %s readings on nominal five-second starts with one-second read latency', async (role) => {
+        const { result, sampleStartsMs } = await runSampler({
+            role,
+            readings: [HEALTHY],
+            congestion: { dropped: 0, deferred: 2, handedOver: 1 },
+            readLatencyMs: 1_000
+        });
+        expect(result.ok).toBe(true);
+        expect(result.value).toMatchObject({ groupCount: 7, maxConcurrency: 7, passed: 90, failed: 0, cancelled: false });
+        expect(sampleStartsMs).toEqual([0, 5_000, 10_000, 15_000, 20_000, 25_000, 30_000]);
+    });
+
+    it('keeps a six-second overlapping read bound to its own sampled budget result', async () => {
+        const { result, sampleStartsMs } = await runSampler({
+            role: 'player',
+            readings: [HEALTHY, { ...HEALTHY, own: { admissions: 1_001, bytes: 3_000 } }, HEALTHY],
+            congestion: { dropped: 0, deferred: 0, handedOver: 0 },
+            readLatencyMs: 6_000
+        });
+        expect(sampleStartsMs).toEqual([0, 5_000, 10_000, 15_000, 20_000, 25_000, 30_000]);
+        expect(result.ok).toBe(false);
+        expect(result.value).toMatchObject({ failed: 1, groupCount: 7 });
     });
 
     it.each(['director', 'player'] as const)('keeps a transient excess failed even after a zero final reading on %s', async (role) => {
-        const { result, final } = await runSampler(role, [HEALTHY, { ...HEALTHY, own: { admissions: 1_001, bytes: 3_000 } }, EMPTY], {
-            dropped: 0,
-            deferred: 0,
-            handedOver: 0
+        const { result, final } = await runSampler({
+            role,
+            readings: [HEALTHY, { ...HEALTHY, own: { admissions: 1_001, bytes: 3_000 } }, EMPTY],
+            congestion: { dropped: 0, deferred: 0, handedOver: 0 }
         });
         expect(final.value).toMatchObject({ rallar: { alm: { own: { admissions: 0 } } } });
         expect(result.ok).toBe(false);
@@ -173,7 +218,7 @@ describe('ALM scale sampled acceptance', () => {
         },
         { name: 'congestion drop', reading: HEALTHY, congestion: { dropped: 1, deferred: 0, handedOver: 0 } }
     ])('fails closed on $name', async ({ reading, congestion }) => {
-        const { result } = await runSampler('player', [reading], congestion);
+        const { result } = await runSampler({ role: 'player', readings: [reading], congestion });
         expect(result.ok).toBe(false);
     });
 });
@@ -221,6 +266,18 @@ function decodeTrafficFixture(serialized: string): RallarBlackBoxTestJsonValue {
 }
 
 function createTrafficReceipt(scenario: TrafficScenario, handleId: string): BlackBoxRallarDeliveryObservation {
+    const frozenPlayers = Array.from({ length: (scenario.participantCount ?? 15) - 1 }, (_, index) => `session-${index + 1}`);
+    const endReceipt = scenario.role === 'director' && handleId === 'alm-scale-director-end';
+    const expectedPlayers = endReceipt && scenario.endAudience === 'substituted'
+        ? [...frozenPlayers.slice(0, -1), 'substituted-session']
+        : endReceipt && scenario.endAudience === 'duplicate'
+        ? [...frozenPlayers.slice(0, -1), frozenPlayers[0]]
+        : endReceipt && scenario.endAudience === 'reordered'
+        ? [...frozenPlayers].reverse()
+        : frozenPlayers;
+    const confirmedPlayers = endReceipt && scenario.endAudience === 'disagreed'
+        ? [...frozenPlayers.slice(0, -1), 'substituted-session']
+        : expectedPlayers;
     return {
         handleId,
         state: 'acknowledged',
@@ -231,10 +288,10 @@ function createTrafficReceipt(scenario: TrafficScenario, handleId: string): Blac
         unconfirmedHopPeerIds: [],
         expectedRecipientPeerIds: scenario.role === 'player'
             ? ['director-session']
-            : Array.from({ length: (scenario.participantCount ?? 15) - 1 }, (_, index) => `session-${index + 1}`),
+            : expectedPlayers,
         confirmedRecipientPeerIds: scenario.role === 'player'
             ? ['director-session']
-            : Array.from({ length: (scenario.participantCount ?? 15) - 1 }, (_, index) => `session-${index + 1}`),
+            : confirmedPlayers,
         unconfirmedRecipientPeerIds: [],
         attempts: 1,
         attemptOutcomes: [],
@@ -251,7 +308,7 @@ function createTrafficReceipt(scenario: TrafficScenario, handleId: string): Blac
 
 function createTrafficRuntime(scenario: TrafficScenario): RallarBlackBoxBrowserTestRuntime {
     const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-    return createRallarBlackBoxBrowserTestRuntime({
+    return createDefaultRallarBlackBoxBrowserTestRuntime({
         now: Date.now,
         sleep,
         rallarRuntime: {
@@ -368,6 +425,17 @@ describe('ALM scale single-page traffic and arrival validation', () => {
         }
     });
 
+    it.each(['substituted', 'duplicate', 'disagreed'] as const)('rejects acknowledged END with a %s player audience', async (endAudience) => {
+        const result = await runTrafficScenario({ role: 'director', endAudience });
+        expect(result.ok).toBe(false);
+    });
+
+    it('accepts the same unique END player audience in a different order', async () => {
+        const result = await runTrafficScenario({ role: 'director', endAudience: 'reordered' });
+        expect(result.error).toBeUndefined();
+        expect(result.ok).toBe(true);
+    });
+
     it('keeps the generated workload and sampler cancelled after interruption', async () => {
         const result = await runTrafficScenario({ role: 'player', cancelAtMs: 7_000 });
         expect(result.ok).toBe(false);
@@ -378,7 +446,7 @@ describe('ALM scale single-page traffic and arrival validation', () => {
         });
     });
 
-    it.each([30, 50] as const)('executes all per-player arrivals within native composite bounds for %i participants', async (participantCount) => {
+    it.each([6, 11, 30, 50] as const)('executes all per-player arrivals within native composite bounds for %i participants', async (participantCount) => {
         const result = await runTrafficScenario({ role: 'director', participantCount });
         expect(result.error).toBeUndefined();
         expect(result.ok).toBe(true);
@@ -390,12 +458,14 @@ function createEvidenceResult(commandId: string, kind: RallarBlackBoxTestCommand
 }
 
 interface SamplerEvidence {
-    readonly iterations: number;
+    readonly groupCount: number;
     readonly failed: number;
     readonly cancelled: boolean;
+    readonly missingSampleSlot?: number;
+    readonly overLimitSampleSlot?: number;
 }
 
-const HEALTHY_SAMPLER: SamplerEvidence = { iterations: 7, failed: 0, cancelled: false };
+const HEALTHY_SAMPLER: SamplerEvidence = { groupCount: 7, failed: 0, cancelled: false };
 
 interface WorkloadEvidence {
     readonly elapsedMs: number;
@@ -410,6 +480,8 @@ interface ControllerEvidenceInput {
     readonly director: boolean;
     readonly samplerEvidence: SamplerEvidence;
     readonly workloadEvidence: WorkloadEvidence;
+    readonly endAudience?: 'substituted' | 'duplicate' | 'disagreed' | 'reordered';
+    readonly connectSessionId?: string;
 }
 
 function createEvidence(input: ControllerEvidenceInput): DistributedGroupAssertionRecipeEvidence {
@@ -421,6 +493,11 @@ function createEvidence(input: ControllerEvidenceInput): DistributedGroupAsserti
         hasResult: true,
         resultValue: {
             results: [
+                ...(!director
+                    ? [createEvidenceResult(`${prefix}-connect`, 'rtc.connect', {
+                        sessionId: input.connectSessionId ?? `session-${Number(agentId.slice(-2))}`
+                    })]
+                    : []),
                 createSamplerTrafficEvidence(prefix, samplerEvidence),
                 ...createWorkloadEvidence(prefix, director, workloadEvidence),
                 createEvidenceResult(`${prefix}-final-stats`, 'stats', { rallar: { alm: HEALTHY, congestion: { dropped: 0, deferred: 0, handedOver: 0 } } }),
@@ -430,7 +507,7 @@ function createEvidence(input: ControllerEvidenceInput): DistributedGroupAsserti
                     workNonProbeCount: 0
                 }),
                 createEvidenceResult(`${prefix}-received`, 'messages.received', { observed: director ? 84 : 2 }),
-                ...(director ? createLifecycleReceiptEvidence(prefix) : [createEvidenceResult(`${prefix}-shots`, 'loop', {
+                ...(director ? createLifecycleReceiptEvidence(prefix, input.endAudience) : [createEvidenceResult(`${prefix}-shots`, 'loop', {
                     commandId: `${prefix}-shots`,
                     iterations: 6,
                     failed: 0,
@@ -447,10 +524,10 @@ function createWorkloadEvidence(prefix: string, director: boolean, evidence: Wor
     return [
         createEvidenceResult(`${prefix}-window`, 'parallel', {
             groupCount: 1,
-            passed: director ? 19 : 8,
+            passed: director ? 23 : 8,
             failed: 0,
             cancelled: evidence.cancelled,
-            groups: [{ commandCount: director ? 19 : 8, durationMs: evidence.elapsedMs }]
+            groups: [{ commandCount: director ? 23 : 8, durationMs: evidence.elapsedMs }]
         }),
         ...(director
             ? [createEvidenceResult(`${prefix}-shot-arrivals`, 'loop', {
@@ -470,13 +547,35 @@ function createWorkloadEvidence(prefix: string, director: boolean, evidence: Wor
 }
 
 function createSamplerTrafficEvidence(prefix: string, samplerEvidence: SamplerEvidence): RallarBlackBoxTestResult {
-    const sampler = createEvidenceResult(`${prefix}-sampler`, 'loop', {
+    const sampler = createEvidenceResult(`${prefix}-sampler`, 'parallel', {
         commandId: `${prefix}-sampler`,
-        ...samplerEvidence,
-        childResultCount: 84,
-        passed: 84,
-        pacing: { completedIterations: samplerEvidence.iterations },
-        results: []
+        groupCount: samplerEvidence.groupCount,
+        maxConcurrency: 7,
+        passed: 90,
+        failed: samplerEvidence.failed,
+        cancelled: samplerEvidence.cancelled,
+        groups: Array.from({ length: 7 }, (_, index) => {
+            const stats = createEvidenceResult(`${prefix}-sample-${index + 1}-stats`, 'stats', {
+                rallar: {
+                    alm: samplerEvidence.overLimitSampleSlot === index + 1
+                        ? { ...HEALTHY, own: { ...HEALTHY.own, admissions: 1_001 } }
+                        : HEALTHY,
+                    congestion: { dropped: 0, deferred: 0, handedOver: 0 }
+                }
+            });
+            return {
+                groupId: `sample-${index + 1}`,
+                commandCount: index === 0 ? 12 : 13,
+                passed: index === 0 ? 12 : 13,
+                failed: 0,
+                cancelled: false,
+                durationMs: 0,
+                results: [
+                    ...(index === 0 ? [] : [{ result: createEvidenceResult(`${prefix}-sample-${index + 1}-offset`, 'wait', { matched: false }) }]),
+                    ...(samplerEvidence.missingSampleSlot === index + 1 ? [] : [{ result: stats }])
+                ]
+            };
+        })
     });
     return createEvidenceResult(`${prefix}-traffic`, 'parallel', {
         commandId: `${prefix}-traffic`,
@@ -508,16 +607,30 @@ function createSamplerTrafficEvidence(prefix: string, samplerEvidence: SamplerEv
     });
 }
 
-function createLifecycleReceiptEvidence(prefix: string): readonly RallarBlackBoxTestResult[] {
-    return ['start', 'end'].map((event) =>
-        createEvidenceResult(`${prefix}-${event}-receipt`, 'messages.receipts', {
+function createLifecycleReceiptEvidence(
+    prefix: string,
+    endAudience: ControllerEvidenceInput['endAudience']
+): readonly RallarBlackBoxTestResult[] {
+    const frozenPlayers = Array.from({ length: 14 }, (_, index) => `session-${index + 2}`);
+    return ['start', 'end'].map((event) => {
+        const expectedPlayers = event === 'end' && endAudience === 'substituted'
+            ? [...frozenPlayers.slice(0, -1), 'substituted-session']
+            : event === 'end' && endAudience === 'duplicate'
+            ? [...frozenPlayers.slice(0, -1), frozenPlayers[0]]
+            : event === 'end' && endAudience === 'reordered'
+            ? [...frozenPlayers].reverse()
+            : frozenPlayers;
+        const confirmedPlayers = event === 'end' && endAudience === 'disagreed'
+            ? [...frozenPlayers.slice(0, -1), 'substituted-session']
+            : expectedPlayers;
+        return createEvidenceResult(`${prefix}-${event}-receipt`, 'messages.receipts', {
             state: 'acknowledged',
             receiptMode: 'receiver',
-            expectedRecipientPeerIds: Array.from({ length: 14 }, (_, index) => `session-${index + 2}`),
-            confirmedRecipientPeerIds: Array.from({ length: 14 }, (_, index) => `session-${index + 2}`),
+            expectedRecipientPeerIds: expectedPlayers,
+            confirmedRecipientPeerIds: confirmedPlayers,
             unconfirmedRecipientPeerIds: []
-        })
-    );
+        });
+    });
 }
 
 function evaluateEvidence(evidence: readonly DistributedGroupAssertionRecipeEvidence[]) {
@@ -561,16 +674,89 @@ describe('ALM scale controller evidence', () => {
 
     it('accepts all frozen roles with nested sampler, full receipts and named storage exclusions', () => {
         const results = evaluateEvidence(healthy)!;
-        expect(results).toHaveLength(73);
+        expect(results).toHaveLength(231);
         expect(results.every((result) => result.ok)).toBe(true);
-        expect(results.find((result) => result.groupAssertionId === 'alm-scale-player-sampler-iterations')?.perAgent.map((row) => row.agentId))
+        expect(results.find((result) => result.groupAssertionId === 'alm-scale-player-sampler-groupCount')?.perAgent.map((row) => row.agentId))
             .toEqual(Array.from({ length: 14 }, (_, index) => `controller-${String(index + 2).padStart(2, '0')}`));
+    });
+
+    it.each(['substituted', 'duplicate', 'disagreed'] as const)('rejects canonical native evidence with a %s END audience', (endAudience) => {
+        const evidence = healthy.map((row) =>
+            row.agentId === 'controller-01'
+                ? createEvidence({
+                    agentId: row.agentId,
+                    director: true,
+                    samplerEvidence: HEALTHY_SAMPLER,
+                    workloadEvidence: HEALTHY_WORKLOAD,
+                    endAudience
+                })
+                : row
+        );
+        const results = evaluateEvidence(evidence)!;
+        expect(results.some((result) => !result.ok && result.violatingAgentIds.includes('controller-01'))).toBe(true);
+    });
+
+    it('accepts canonical native evidence with the same unique END audience in another order', () => {
+        const evidence = healthy.map((row) =>
+            row.agentId === 'controller-01'
+                ? createEvidence({
+                    agentId: row.agentId,
+                    director: true,
+                    samplerEvidence: HEALTHY_SAMPLER,
+                    workloadEvidence: HEALTHY_WORKLOAD,
+                    endAudience: 'reordered'
+                })
+                : row
+        );
+        expect(evaluateEvidence(evidence)!.every((result) => result.ok)).toBe(true);
+    });
+
+    it('rejects duplicate frozen player connection sessions without shrinking the receiver set', () => {
+        const evidence = healthy.map((row) =>
+            row.agentId === 'controller-09'
+                ? createEvidence({
+                    agentId: row.agentId,
+                    director: false,
+                    samplerEvidence: HEALTHY_SAMPLER,
+                    workloadEvidence: HEALTHY_WORKLOAD,
+                    connectSessionId: 'session-8'
+                })
+                : row
+        );
+        const assertion = evaluateEvidence(evidence)!.find((result) =>
+            result.groupAssertionId === 'alm-scale-director-start-receipt-expectedRecipientPeerIds-frozen-player-sessions'
+        )!;
+        expect(assertion.ok).toBe(false);
+        expect(assertion.participants.expected).toBe(15);
+        expect(assertion.violatingAgentIds).toContain('controller-09');
+    });
+
+    it.each([
+        { name: 'missing fourth reading', sampler: { ...HEALTHY_SAMPLER, missingSampleSlot: 4 } },
+        { name: 'fourth reading over budget', sampler: { ...HEALTHY_SAMPLER, overLimitSampleSlot: 4 } }
+    ])('rejects $name from the exact frozen player', ({ sampler }) => {
+        const evidence = healthy.map((row) =>
+            row.agentId === 'controller-09'
+                ? createEvidence({
+                    agentId: row.agentId,
+                    director: false,
+                    samplerEvidence: sampler,
+                    workloadEvidence: HEALTHY_WORKLOAD
+                })
+                : row
+        );
+        const assertion = evaluateEvidence(evidence)!.find((result) =>
+            result.groupAssertionId === 'alm-scale-player-sampler-groups-3-results-1-result-value-rallar-alm-own-admissions'
+        )!;
+        expect(assertion.ok).toBe(false);
+        expect(assertion.perAgent.find((row) => row.agentId === 'controller-09')?.evidence)
+            .toBe(sampler.missingSampleSlot ? 'unresolved' : 'resolved');
     });
 
     it.each(['missing', 'duplicate'] as const)('fails with the exact controller when its recipe evidence is %s', (failure) => {
         const evidence = failure === 'missing' ? healthy.filter((row) => row.agentId !== 'controller-09') : [...healthy, healthy[8]];
         const results = evaluateEvidence(evidence)!;
-        const sampler = results.find((result) => result.groupAssertionId === 'alm-scale-player-sampler-iterations')!;
+        const sampler = results.find((result) => result.groupAssertionId === 'alm-scale-player-sampler-groupCount')!;
         expect(sampler.ok).toBe(false);
         expect(sampler.missingAgentIds).toEqual(failure === 'missing' ? ['controller-09'] : []);
         expect(sampler.violatingAgentIds).toEqual([]);
@@ -588,7 +774,7 @@ describe('ALM scale controller evidence', () => {
             }
             return { ...row, resultValue: { results: [...results, createSamplerTrafficEvidence('alm-scale-player', HEALTHY_SAMPLER)] } };
         });
-        const assertion = evaluateEvidence(evidence)!.find((result) => result.groupAssertionId === 'alm-scale-player-sampler-iterations')!;
+        const assertion = evaluateEvidence(evidence)!.find((result) => result.groupAssertionId === 'alm-scale-player-sampler-groupCount')!;
         expect(assertion.ok).toBe(false);
         expect(assertion.perAgent.find((row) => row.agentId === 'controller-09')).toMatchObject({ evidence: 'duplicate' });
     });
@@ -628,7 +814,7 @@ describe('ALM scale controller evidence', () => {
 
     it.each([
         { name: 'transient sampler failure', sampler: { ...HEALTHY_SAMPLER, failed: 1 }, assertion: 'failed' },
-        { name: 'incomplete sampler', sampler: { ...HEALTHY_SAMPLER, iterations: 6 }, assertion: 'iterations' },
+        { name: 'incomplete sampler', sampler: { ...HEALTHY_SAMPLER, groupCount: 6 }, assertion: 'groupCount' },
         { name: 'cancelled sampler', sampler: { ...HEALTHY_SAMPLER, cancelled: true }, assertion: 'cancelled' }
     ])('attributes $name to its original controller even with healthy final stats', ({ sampler, assertion }) => {
         const evidence = healthy.map((row) =>

@@ -38,31 +38,44 @@ import {
     toFullStackControlWebSocketUrl
 } from '../../../apps/rallar-black-box/playwright-full-stack-control-server.ts';
 import { runWorldFleetDistributedRecipe } from '../../../apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts';
+import { selectAllLocalAlmManifest } from '../../../apps/rallar-black-box/scripts/select-all-local-alm-manifest.mjs';
+import {
+    createAlmScaleDiagnosticEntries,
+    createAlmScaleManifestEntries
+} from '../../../apps/rallar-black-box/src/hetzner/create-alm-scale-manifest-entries.ts';
 import type { ControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import { decodeControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 import { decodeControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
 import { decodeDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
 import { isJsonRecordValue } from '../../../packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
-import { expectWorldFleetManifest } from './expect-world-fleet-manifest.ts';
+import { expectWorldFleetGroupAssertions, expectWorldFleetManifest } from './expect-world-fleet-manifest.ts';
 
-const MANIFEST_PATH = 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json';
-const MANIFEST_SHA256 = '43db26dfab5a32b28f12b9d34db3be32b071a08139eee57f450807109072ecd3';
-const AGENT_IDS = Array.from({ length: 15 }, (_, index) => `controller-${String(index + 1).padStart(2, '0')}`);
+const REQUIRED_NATIVE_ASSERTION_COUNT = 231;
 
 // The lifecycle ceiling contains registration, both existing operator waits, export and owned cleanup.
 // It does not change any request, socket, RTC, barrier, recipe or ACK deadline.
-test('observes the unchanged 15-agent ALM manifest with complete native evidence', async () => {
+test('observes the selected authored ALM manifest with complete native evidence', async () => {
     test.skip(
         process.env.RALLAR_BLACK_BOX_FULL_STACK !== '1' || process.env.RALLAR_BLACK_BOX_FULL_STACK_HEADLESS !== '1',
         'Opt-in standalone headless full-stack observation required'
     );
     test.setTimeout(900_000);
+    const selection = selectAllLocalAlmManifest({
+        manifestPath: process.env.RALLAR_BLACK_BOX_MANIFEST_PATH,
+        targetAgentCount: process.env.RALLAR_BLACK_BOX_EXPECTED_AGENT_COUNT,
+        browserEngine: process.env.BROWSER_ENGINE,
+        registerBeforeLogin: process.env.REGISTER_BEFORE_LOGIN
+    });
+    const agentIds = Array.from(
+        { length: selection.participantCount },
+        (_, index) => `controller-${String(index + 1).padStart(2, '0')}`
+    );
     const storageDir = process.env.RALLAR_BLACK_BOX_STORAGE_DIR;
     expect(storageDir, 'Recorder storage must be selected before service startup').toBeTruthy();
     const artifactDir = path.join(storageDir!, 'observation');
     await mkdir(artifactDir, { recursive: true });
-    const source = await readFile(MANIFEST_PATH);
+    const source = await readFile(path.join(storageDir!, 'source-manifest.json'));
     await writeFile(path.join(artifactDir, 'source-manifest.json'), source);
     const manifest = decodeDistributedRunManifest(JSON.parse(source.toString('utf8'))).fold(
         () => {
@@ -70,6 +83,12 @@ test('observes the unchanged 15-agent ALM manifest with complete native evidence
         },
         (decoded) => decoded
     );
+    const authored = [...createAlmScaleManifestEntries(), ...createAlmScaleDiagnosticEntries()]
+        .find((entry) => entry.filePath === selection.path && entry.agentCount === selection.participantCount);
+    expect(authored, 'Selected ALM source must be authored by the canonical producer').toBeDefined();
+    expect(source.toString('utf8')).toBe(`${JSON.stringify(authored!.manifest, null, 2)}\n`);
+    expect(manifest.targetPolicy.expectedParticipantCount).toBe(selection.participantCount);
+    expect(manifest.groupAssertions).toHaveLength(REQUIRED_NATIVE_ASSERTION_COUNT);
     const apiBaseUrl = readFullStackApiBaseUrl();
     const spaBaseUrl = readFullStackSpaBaseUrl();
     const controlBaseUrl = readFullStackControlBaseUrl();
@@ -83,16 +102,15 @@ test('observes the unchanged 15-agent ALM manifest with complete native evidence
     const harnessTimer = setTimeout(() => harnessAbort.abort(), 780_000);
 
     try {
-        await writeProvenance(artifactDir, source);
+        await writeProvenance(artifactDir, source, selection.participantCount);
         expect(process.env.CI).toBe('1');
         expect(process.env.RALLAR_BLACK_BOX_FULL_STACK_HEADLESS).toBe('1');
         expect(process.env.RALLAR_BLACK_BOX_API_MODE).toBe('memory');
-        expect(process.env.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE).toBe('16');
+        expect(process.env.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE).toBe(String(selection.meshMinSize));
         expect(process.env.RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS).toBe('unbounded');
         expect(process.env.RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS).toBe('unbounded');
-        expect(process.env.RALLAR_BLACK_BOX_MANIFEST_PATH ?? MANIFEST_PATH).toBe(MANIFEST_PATH);
-        expect(process.env.RALLAR_BLACK_BOX_EXPECTED_AGENT_COUNT ?? '15').toBe('15');
-        expect(createHash('sha256').update(source).digest('hex')).toBe(MANIFEST_SHA256);
+        expect(process.env.RALLAR_BLACK_BOX_MANIFEST_PATH).toBe(selection.path);
+        expect(process.env.RALLAR_BLACK_BOX_EXPECTED_AGENT_COUNT).toBe(String(selection.participantCount));
         for (const baseUrl of [apiBaseUrl, spaBaseUrl, controlBaseUrl]) {
             expect(['localhost', '127.0.0.1', '[::1]']).toContain(new URL(baseUrl).hostname);
         }
@@ -100,8 +118,8 @@ test('observes the unchanged 15-agent ALM manifest with complete native evidence
         expect(await readControlSnapshot(controlBaseUrl, manifest.controlRunId, harnessAbort.signal)).toBeUndefined();
 
         const credentials: NodeJS.ProcessEnv = {};
-        for (let ordinal = 1; ordinal <= 15; ordinal += 1) {
-            credentials[`RALLAR_BLACK_BOX_AGENT_${ordinal}_USERNAME`] = AGENT_IDS[ordinal - 1];
+        for (let ordinal = 1; ordinal <= selection.participantCount; ordinal += 1) {
+            credentials[`RALLAR_BLACK_BOX_AGENT_${ordinal}_USERNAME`] = agentIds[ordinal - 1];
             credentials[`RALLAR_BLACK_BOX_AGENT_${ordinal}_PASSWORD`] = randomBytes(24).toString('hex');
         }
         stage = 'registration';
@@ -117,7 +135,7 @@ test('observes the unchanged 15-agent ALM manifest with complete native evidence
                 RALLAR_API_BASE_URL: apiBaseUrl,
                 RALLAR_BLACK_BOX_RUN_ID: manifest.controlRunId,
                 RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID: manifest.distributedRunId,
-                RALLAR_BLACK_BOX_AGENT_COUNT: '15',
+                RALLAR_BLACK_BOX_AGENT_COUNT: String(selection.participantCount),
                 RALLAR_BLACK_BOX_AGENT_START_INDEX: '1',
                 RALLAR_BLACK_BOX_AGENT_PREFIX: 'controller',
                 RALLAR_BLACK_BOX_APPLICATION_ID: manifest.group.applicationId,
@@ -139,24 +157,47 @@ test('observes the unchanged 15-agent ALM manifest with complete native evidence
                 agent.connected && agent.registeredAtEpochMs !== undefined
             )
                 .map((agent) => agent.agentId).sort();
-        }, { timeout: 90_000, intervals: [1_000] }).toEqual(AGENT_IDS);
+        }, { timeout: 90_000, intervals: [1_000] }).toEqual(agentIds);
 
         stage = 'manifest-operation';
-        await runWorldFleetDistributedRecipe({
+        const operation = await runWorldFleetDistributedRecipe({
             controlBaseUrl,
-            manifestPath: MANIFEST_PATH,
+            manifestPath: selection.path,
             artifactDir,
+            rtcCaptureMode: process.env.INPUT_RTC_CAPTURE_MODE,
             pollMs: 2_000,
-            timeoutMs: 330_000,
+            timeoutMs: 330_000
+        }, {
+            fetch: (url, init) => fetch(url, { ...init, signal: harnessAbort.signal }),
+            readManifestText: async (filePath) => {
+                expect(filePath).toBe(selection.path);
+                return source.toString('utf8');
+            },
+            artifacts: {
+                mkdir: async (directory) => {
+                    await mkdir(directory, { recursive: true });
+                },
+                writeFile: async (filePath, contents) => {
+                    await writeFile(filePath, contents);
+                }
+            },
+            clock: {
+                now: Date.now,
+                wait: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+            },
+            log: console.log,
+            warn: console.warn,
             prepareEvidenceExport: async () => {
                 cleanup = await stopOwnedWorker(worker!);
                 if (cleanup !== 'reaped') {
                     throw new Error('Owned worker completion failed.');
                 }
                 producerCompletedBeforeExport = true;
-            },
-            fetchFn: (url, init) => fetch(url, { ...init, signal: harnessAbort.signal })
+            }
         });
+        operation.fold((failure) => {
+            throw new Error(failure.kind === 'runtime' ? failure.cause.message : failure.message);
+        }, () => undefined);
         stage = 'native-acceptance';
         const distributed = decodeControlDistributedRunSnapshot(
             JSON.parse(await readFile(path.join(artifactDir, 'distributed-run.json'), 'utf8'))
@@ -171,40 +212,36 @@ test('observes the unchanged 15-agent ALM manifest with complete native evidence
         await writeRecorderCompleteness(artifactDir, storageDir!, control);
         expectWorldFleetManifest(distributed.manifest, manifest, process.env.INPUT_RTC_CAPTURE_MODE);
         expect(distributed.state).toBe('passed');
-        expect(distributed.targetAgentIds.slice().sort()).toEqual(AGENT_IDS);
+        expect(distributed.targetAgentIds.slice().sort()).toEqual(agentIds);
         expect(distributed.targetResolution?.roleAssignments.map(({ agentId, role }) => ({ agentId, role }))).toEqual(
-            AGENT_IDS.map((agentId) => ({ agentId, role: agentId === 'controller-01' ? 'sender' : 'receiver' }))
+            agentIds.map((agentId) => ({ agentId, role: agentId === 'controller-01' ? 'sender' : 'receiver' }))
         );
         expect(distributed.rollup.ok).toBe(true);
         expect(distributed.rollup.summary).toEqual({
-            participants: 15,
-            readyParticipants: 15,
-            passedParticipants: 15,
+            participants: selection.participantCount,
+            readyParticipants: selection.participantCount,
+            passedParticipants: selection.participantCount,
             failedParticipants: 0,
-            recipes: 15,
-            passedRecipes: 15,
+            recipes: selection.participantCount,
+            passedRecipes: selection.participantCount,
             failedRecipes: 0,
-            groupAssertions: 73,
-            passedGroupAssertions: 73,
+            groupAssertions: REQUIRED_NATIVE_ASSERTION_COUNT,
+            passedGroupAssertions: REQUIRED_NATIVE_ASSERTION_COUNT,
             failedGroupAssertions: 0,
             blockingFailures: 0
         });
         expect(distributed.rollup.failures).toEqual([]);
-        expect(distributed.rollup.groupAssertions).toHaveLength(73);
-        for (const assertion of distributed.rollup.groupAssertions!) {
-            expect(assertion.ok).toBe(true);
-            expect(assertion.missingAgentIds).toEqual([]);
-            expect(assertion.violatingAgentIds).toEqual([]);
-            expect(assertion.perAgent.every((row) => row.evidence === 'resolved')).toBe(true);
-        }
-        expect(control.agents.map((agent) => agent.agentId).sort()).toEqual(AGENT_IDS);
+        expectWorldFleetGroupAssertions(manifest, distributed.rollup.groupAssertions);
+        expect(control.agents.map((agent) => agent.agentId).sort()).toEqual(agentIds);
         expect(control.agents.every((agent) => Boolean(agent.identity?.clientId && agent.identity?.principalId))).toBe(
             true
         );
-        expect(new Set(control.agents.map((agent) => agent.identity?.clientId)).size).toBe(15);
-        expect(new Set(control.agents.map((agent) => agent.identity?.principalId)).size).toBe(15);
+        expect(new Set(control.agents.map((agent) => agent.identity?.clientId)).size).toBe(selection.participantCount);
+        expect(new Set(control.agents.map((agent) => agent.identity?.principalId)).size).toBe(
+            selection.participantCount
+        );
         const starts = distributed.commandLinks.filter((link) => link.phase === 'start');
-        expect(starts).toHaveLength(15);
+        expect(starts).toHaveLength(selection.participantCount);
         for (const link of starts) {
             expect(link.role).toBe(link.agentId === 'controller-01' ? 'sender' : 'receiver');
             const result = control.results.find((entry) =>
@@ -411,7 +448,7 @@ async function retainAvailableControlSnapshot(
     }
 }
 
-async function writeProvenance(artifactDir: string, source: Buffer): Promise<void> {
+async function writeProvenance(artifactDir: string, source: Buffer, participantCount: number): Promise<void> {
     const configuration = await readLocalApiConfiguration();
     const disk = await statfs(artifactDir);
     await writeFile(
@@ -450,7 +487,7 @@ async function writeProvenance(artifactDir: string, source: Buffer): Promise<voi
                     'Fresh ephemeral PGlite',
                     'Local pubsub and ICE',
                     'Loopback transport',
-                    '15 co-located browser contexts',
+                    `${participantCount} co-located browser contexts`,
                     'Runtime versions differ from hosted runs; CPU-only causality is not established'
                 ]
             },
