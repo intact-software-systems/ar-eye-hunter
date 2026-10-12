@@ -1,34 +1,34 @@
-import type { ALPendingAckSnapshot } from '../../al-contracts/al-control.ts';
-import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
-import { EntityStatus, toKeyAsString } from '../../queuebox/ResourceEntry.ts';
+import type { ALPendingAckSnapshot } from '../../../al-contracts/al-control.ts';
+import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
+import { EntityStatus, toKeyAsString } from '../../../queuebox/ResourceEntry.ts';
 import {
     decodeALAdmissionStoredValue,
     type ALAdmissionStoredValue,
     type InMemoryAdmissionBackend
-} from '../al-admission-backend.ts';
-import { ALAdmissionCorruptionError, decodeALAdmissionValue } from '../al-admission-decoder.ts';
+} from '../../al-admission-backend.ts';
+import { ALAdmissionCorruptionError, decodeALAdmissionValue } from '../../al-admission-decoder.ts';
 import {
     decodeALAdmissionControlValue,
     decodeALAdmissionNumber,
     decodeALAdmissionRecord,
     decodeALAdmissionString
-} from '../al-admission-value-validation.ts';
-import { toALPendingAckOwedPeerIds } from './admission/compute-al-inbound-duplicate-changes.ts';
+} from '../../al-admission-value-validation.ts';
 import {
     decodeALStoredInboundMessage,
     toALInboundMessageKey,
     type ALStoredInboundMessage
-} from './al-inbound-canonical-message.ts';
+} from '../al-inbound-canonical-message.ts';
 import {
     decodeALInboundBufferedSnapshot,
     type ALStoredInboundBufferedSnapshot
-} from './al-inbound-ordering-validation.ts';
+} from '../al-inbound-ordering-validation.ts';
 import {
     decodeALInboundWorkEntry,
     toALInboundWorkKey,
     type ALPersistedInboundEffect
-} from './al-inbound-work-entry.ts';
-import { toALInboundControlPendingKey } from './control/al-inbound-control-rows.ts';
+} from '../al-inbound-work-entry.ts';
+import { toALInboundControlPendingKey } from '../control/al-inbound-control-rows.ts';
+import { toALPendingAckOwedPeerIds } from './compute-al-inbound-duplicate-changes.ts';
 
 interface HeldCanonical {
     readonly key: string;

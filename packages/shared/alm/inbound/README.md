@@ -105,7 +105,8 @@ WS server and Node keep the always-owned default.
   the deadline its admission implies (`durableEffectTtlMs`, 30 min). The durable pair keeps
   the owner row for the repository's 1 h. Both inbound lanes sweep the shared pair on their
   own 60 s schedule; this is idempotent. After the volatile pair's ordinary expiry sweep,
-  that same turn can also release a canonical envelope whose direct work has completed and
+  that same turn can also release a canonical envelope whose direct work has completed
+  ([`evictTerminalVolatileInboundMessages`](./admission/evict-terminal-volatile-inbound-messages.ts)) and
   which no buffered slot or owed child-forwarding receipt still needs. Its owner, dedup and
   control facts keep their original retention. A pending or queued admission write prevents
   this early release; the durable and checkpoint pairs keep their existing policy.

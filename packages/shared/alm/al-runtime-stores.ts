@@ -15,6 +15,7 @@ import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from '
 import type { ALCheckpointWriter } from './checkpoint/al-checkpoint-writer.ts';
 import { ALCheckpoint, type ALCheckpointStorage } from './checkpoint/al-checkpoint.ts';
 import type { ALInboundOrderingTracksReport } from './inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
+import { evictTerminalVolatileInboundMessages } from './inbound/admission/evict-terminal-volatile-inbound-messages.ts';
 import {
     createALInboundAdmissionStore,
     createVolatileALInboundAdmissionStore,
@@ -24,7 +25,6 @@ import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
 } from './inbound/al-inbound-message-runtime.ts';
-import { evictTerminalVolatileInboundMessages } from './inbound/evict-terminal-volatile-inbound-messages.ts';
 import { IndexedDbAdmissionBackend } from './indexed-db-admission-backend.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,

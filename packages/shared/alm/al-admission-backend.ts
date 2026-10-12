@@ -204,12 +204,7 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
         }
         finally {
             const remaining = (pendingWritesByState.get(this.state) ?? 1) - 1;
-            if (remaining === 0) {
-                pendingWritesByState.delete(this.state);
-            }
-            else {
-                pendingWritesByState.set(this.state, remaining);
-            }
+            pendingWritesByState.set(this.state, remaining);
             release?.();
         }
     }
