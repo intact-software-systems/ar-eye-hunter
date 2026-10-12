@@ -1,7 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage, newALNackControlMessage, newALReceiptControlMessage } from '@shared/al-contracts/al-control.ts';
+import {
+    newALAckControlMessage,
+    newALNackControlMessage,
+    newALReceiptControlMessage
+} from '@shared/al-contracts/al-control.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { toALInboundReceiver, validateALInboundMessage } from '@shared/alm/inbound/validate-al-inbound-message.ts';
 
@@ -11,6 +19,28 @@ const SERVER = toALInboundReceiver(
 );
 
 describe('inbound control addressing', () => {
+    it('supplies the original decoded control identity while preserving payload-only relay callers', () => {
+        const message = receiverAck('stranger');
+        const identities: Array<ALMessage['id'] | undefined> = [];
+        const receiver = toALInboundReceiver('server', (_ack, controlIdentity) => {
+            identities.push(controlIdentity);
+            return { code: 'unauthorized', message: 'closed relay refusal' };
+        });
+        expect(validateALInboundMessage(message, fromClient('recipient'), receiver).left).toEqual({ code: 'unauthorized', message: 'closed relay refusal' });
+        expect(identities).toEqual([{ v: 3, msgId: 'ack-1', senderId: 'recipient', ts: 1 }]);
+        expect(receiver.readRelayedAckRejection({
+            ackedMsgId: 'message-1',
+            fromPeerId: 'recipient',
+            toPeerId: 'origin',
+            originPeerId: 'origin',
+            logicalRecipientPeerId: 'recipient',
+            carrier: 'ws',
+            status: 'delivered',
+            observedAtEpochMs: 1
+        })).toEqual({ code: 'unauthorized', message: 'closed relay refusal' });
+        expect(identities[1]).toBeUndefined();
+    });
+
     it('admits a receiver ACK addressed to an origin the WS server relays for', () => {
         const validated = validateALInboundMessage(receiverAck('origin'), fromClient('recipient'), SERVER);
 
