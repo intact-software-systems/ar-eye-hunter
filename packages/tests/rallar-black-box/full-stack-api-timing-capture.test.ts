@@ -1,14 +1,34 @@
-import { spawn, spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+    spawn,
+    spawnSync,
+    type ChildProcess,
+    type SpawnSyncReturns
+} from 'node:child_process';
+import {
+    mkdtemp,
+    readFile,
+    rm,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
-import type { ApiJsonValue } from '../../shared/api/api-json-value.ts';
+import type { ApiJsonObject } from '../../shared/api/api-json-value.ts';
 
 interface TimingCaptureFiles {
     readonly records: string;
-    readonly summary: Readonly<Record<string, ApiJsonValue>>;
+    readonly summary: ApiJsonObject;
+}
+
+interface TimingCaptureCommandDto {
+    readonly directory: string;
+    readonly fixture: string;
+    readonly appInboxPhaseTiming: string | undefined;
 }
 
 const script = 'apps/rallar-black-box/scripts/run-full-stack-api-with-timing.ts';
@@ -44,25 +64,51 @@ const event = {
 };
 
 async function readCapture(directory: string): Promise<TimingCaptureFiles> {
-    const summary: unknown = JSON.parse(await readFile(path.join(directory, 'api-setup-timing-summary.json'), 'utf8'));
-    if (summary === null || typeof summary !== 'object' || Array.isArray(summary)) {
-        throw new Error('Capture summary must be a JSON object.');
-    }
     return {
         records: await readFile(path.join(directory, 'api-setup-timing.jsonl'), 'utf8'),
-        summary: summary as Readonly<Record<string, ApiJsonValue>>
+        summary: toTimingCaptureObject(await readFile(path.join(directory, 'api-setup-timing-summary.json'), 'utf8'))
     };
 }
 
-function runCapture(directory: string, fixture: string) {
-    return spawnSync(process.execPath, ['--import', 'tsx', script, directory, '--', process.execPath, fixture], {
+function toTimingCaptureObject(serialized: string): ApiJsonObject {
+    const value: unknown = JSON.parse(serialized);
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('Capture artifact must be a JSON object.');
+    }
+    return value as ApiJsonObject;
+}
+
+function runCapture(captureCommand: TimingCaptureCommandDto): SpawnSyncReturns<string> {
+    return spawnSync(process.execPath, ['--import', 'tsx', script, captureCommand.directory, '--', process.execPath, captureCommand.fixture], {
         encoding: 'utf8',
-        env: { ...process.env, ...timingFlags },
+        env: { ...process.env, ...timingFlags, RALLAR_APP_INBOX_PHASE_TIMING: captureCommand.appInboxPhaseTiming },
         timeout: 15_000
     });
 }
 
 describe('full-stack API timing stdio capture', () => {
+    it.each([undefined, '', '0', 'FALSE', 'false ', 'invalid'])(
+        'refuses invalid phase timing %j before starting its child or creating capture evidence',
+        async (appInboxPhaseTiming) => {
+            const directory = await mkdtemp(path.join(tmpdir(), 'rallar-api-timing-'));
+            try {
+                const fixture = path.join(directory, 'test-only-child.cjs');
+                const marker = path.join(directory, 'child-started');
+                await writeFile(fixture, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started');`);
+                const result = runCapture({ directory, fixture, appInboxPhaseTiming });
+                expect(result.status).toBe(1);
+                expect(result.stdout).toBe('');
+                expect(result.stderr).toBe('API timing capture failed: configuration\n');
+                await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+                await expect(readFile(path.join(directory, 'api-setup-timing.jsonl'))).rejects.toMatchObject({ code: 'ENOENT' });
+                await expect(readFile(path.join(directory, 'api-setup-timing-summary.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+            }
+            finally {
+                await rm(directory, { recursive: true, force: true });
+            }
+        }
+    );
+
     it('retains chunked safe timing projections and the actual nonzero child exit without raw logs', async () => {
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-api-timing-'));
         const fixture = path.join(directory, 'test-only-child.cjs');
@@ -89,13 +135,13 @@ describe('full-stack API timing stdio capture', () => {
                 setTimeout(() => { process.stdout.write(${JSON.stringify(lines.slice(50))});
                 process.stderr.write('ERROR_SENTINEL'); process.exitCode = 23; }, 10);`
             );
-            const result = runCapture(directory, fixture);
+            const result = runCapture({ directory, fixture, appInboxPhaseTiming: 'true' });
             expect(result.status).toBe(23);
             expect(result.stdout).toBe('');
             expect(result.stderr).toBe('');
             const { records, summary } = await readCapture(directory);
             expect(records).not.toMatch(/AUTH_SENTINEL|PAYLOAD_SENTINEL|ERROR_SENTINEL|headers|errorMessage|partial/);
-            expect(records.trim().split('\n').map((line) => JSON.parse(line))).toEqual([
+            expect(records.trim().split('\n').map(toTimingCaptureObject)).toEqual([
                 {
                     type: 'rallar.timing',
                     component: 'app-inbox-phase',
@@ -157,7 +203,7 @@ describe('full-stack API timing stdio capture', () => {
         try {
             const fixture = path.join(directory, 'test-only-child.cjs');
             await writeFile(fixture, 'process.exitCode = 0;');
-            expect(runCapture(directory, fixture).status).toBe(0);
+            expect(runCapture({ directory, fixture, appInboxPhaseTiming: 'true' }).status).toBe(0);
             const { records, summary } = await readCapture(directory);
             expect(records).toBe('');
             expect(summary).toMatchObject({
@@ -208,10 +254,10 @@ describe('full-stack API timing stdio capture', () => {
                 fs.mkdirSync(${JSON.stringify(path.join(directory, 'api-setup-timing.jsonl'))});
                 process.stdout.write(${JSON.stringify(JSON.stringify(event) + '\n')}); process.exitCode = 31;`
             );
-            const result = runCapture(directory, fixture);
+            const result = runCapture({ directory, fixture, appInboxPhaseTiming: 'true' });
             expect(result.status).toBe(31);
             expect(result.stderr).toContain('API timing capture failed: record-write');
-            const summary = JSON.parse(await readFile(path.join(directory, 'api-setup-timing-summary.json'), 'utf8'));
+            const summary = toTimingCaptureObject(await readFile(path.join(directory, 'api-setup-timing-summary.json'), 'utf8'));
             expect(summary).toMatchObject({ captureFailure: 'record-write', childExitCode: 31, cleanup: 'reaped', retainedRecords: 0, observation: 'partial' });
         }
         finally {
@@ -224,7 +270,7 @@ describe('full-stack API timing stdio capture', () => {
         try {
             const fixture = path.join(directory, 'test-only-child.cjs');
             await writeFile(fixture, 'process.kill(process.pid, \'SIGUSR2\');');
-            expect(runCapture(directory, fixture).status).toBe(process.platform === 'darwin' ? 159 : 140);
+            expect(runCapture({ directory, fixture, appInboxPhaseTiming: 'true' }).status).toBe(process.platform === 'darwin' ? 159 : 140);
             const { summary } = await readCapture(directory);
             expect(summary).toMatchObject({ childSignal: 'SIGUSR2', childExitCode: null, cleanup: 'reaped', observation: 'partial' });
         }
@@ -241,7 +287,7 @@ describe('full-stack API timing stdio capture', () => {
             await writeFile(fixture, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started');`);
             await writeFile(path.join(directory, 'api-setup-timing.jsonl'), 'prior-records');
             await writeFile(path.join(directory, 'api-setup-timing-summary.json'), 'prior-summary');
-            const result = runCapture(directory, fixture);
+            const result = runCapture({ directory, fixture, appInboxPhaseTiming: 'true' });
             expect(result.status).toBe(1);
             expect(result.stderr).toContain('API timing capture failed: initialization');
             expect(await readFile(path.join(directory, 'api-setup-timing.jsonl'), 'utf8')).toBe('prior-records');
@@ -263,7 +309,7 @@ describe('full-stack API timing stdio capture', () => {
                 `const fs = require('node:fs'); fs.unlinkSync(${JSON.stringify(summaryPath)});
                 fs.mkdirSync(${JSON.stringify(summaryPath)}); process.exitCode = 0;`
             );
-            const result = runCapture(directory, fixture);
+            const result = runCapture({ directory, fixture, appInboxPhaseTiming: 'true' });
             expect(result.status).toBe(1);
             expect(result.stderr).toBe('API timing capture failed: summary-write\n');
         }
@@ -281,10 +327,10 @@ describe('full-stack API timing stdio capture', () => {
                 `process.stdout.write('x'.repeat(70000));
                 setTimeout(() => process.stdout.write('suffix\\n' + ${JSON.stringify(JSON.stringify(event) + '\n')}), 10);`
             );
-            expect(runCapture(directory, fixture).status).toBe(0);
+            expect(runCapture({ directory, fixture, appInboxPhaseTiming: 'true' }).status).toBe(0);
             const { records, summary } = await readCapture(directory);
             expect(records.trim().split('\n')).toHaveLength(1);
-            expect(JSON.parse(records).requestId).toBe('request-1');
+            expect(toTimingCaptureObject(records).requestId).toBe('request-1');
             expect(summary).toMatchObject({ retainedRecords: 1, rejectedLines: 1, oversizedLines: 1, trailingPartial: false });
         }
         finally {
@@ -297,7 +343,7 @@ describe('full-stack API timing stdio capture', () => {
         try {
             const fixture = path.join(directory, 'test-only-child.cjs');
             await writeFile(fixture, `process.stdout.write(${JSON.stringify(JSON.stringify(event) + '\n')});`);
-            expect(runCapture(directory, fixture).status).toBe(0);
+            expect(runCapture({ directory, fixture, appInboxPhaseTiming: 'true' }).status).toBe(0);
             const { summary } = await readCapture(directory);
             expect(summary).toMatchObject({
                 observation: 'stream-complete',
@@ -314,7 +360,7 @@ describe('full-stack API timing stdio capture', () => {
 
     it('forwards teardown and bounds cleanup for a child ignoring SIGTERM', async () => {
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-api-timing-'));
-        let runner: ReturnType<typeof spawn> | undefined;
+        let runner: ChildProcess | undefined;
         try {
             const fixture = path.join(directory, 'test-only-child.cjs');
             const ready = path.join(directory, 'ready');
@@ -323,11 +369,12 @@ describe('full-stack API timing stdio capture', () => {
                 `process.on('SIGTERM', () => {});
                 require('node:fs').writeFileSync(${JSON.stringify(ready)}, String(process.pid)); setInterval(() => {}, 1000);`
             );
-            runner = spawn(process.execPath, ['--import', 'tsx', script, directory, '--', process.execPath, fixture], {
+            const capturedRunner = spawn(process.execPath, ['--import', 'tsx', script, directory, '--', process.execPath, fixture], {
                 stdio: 'ignore',
                 env: { ...process.env, ...timingFlags }
             });
-            const closed = new Promise<number | null>((resolve) => runner!.once('close', resolve));
+            runner = capturedRunner;
+            const closed = new Promise<number | null>((resolve) => capturedRunner.once('close', resolve));
             await expect.poll(async () => await readFile(ready, 'utf8').catch(() => ''), { timeout: 5_000 }).not.toBe('');
             const childPid = Number(await readFile(ready, 'utf8'));
             runner.kill('SIGTERM');

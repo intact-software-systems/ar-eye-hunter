@@ -1787,6 +1787,47 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'prefix:webrtc',
         maximumMagnitude: 5
     }),
+    // The selected profile resource is checked as an object before mutation;
+    // other valid JSON resources pass through to the canonical configuration decoder.
+    Object.freeze({
+        path: 'apps/api-v1/test/configuration/read-api-v1-configuration.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readIceOverrideConfigurationResource'
+    }),
+    // Config/command port observations terminate in independent literal assertions.
+    // Exact named callbacks retain their scenario ownership and raw warning output.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertSelectedFullStackApiCapture'
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertIndependentCaptureConsumer'
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertOrdinaryExhaustiveApiCommand'
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertSelectedFullStackSpaCommand'
+    }),
+    // Recorder JSON must be a non-null object before its canonical typed handoff.
+    // Checked artifact fields and independent lifecycle/receipt assertions follow.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-api-timing-capture.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toTimingCaptureObject'
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-api-receipt-capture.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toReceiptCaptureObject'
+    }),
     ...reviewedScenarioDispositions,
     ...reviewedBrowserDispositions
 ]);

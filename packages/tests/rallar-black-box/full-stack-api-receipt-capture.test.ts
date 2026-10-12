@@ -1,17 +1,71 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+    mkdtemp,
+    readFile,
+    rm,
+    stat,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { toSafeApiTimingRecord } from '../../../apps/rallar-black-box/scripts/to-safe-api-timing-record.ts';
-import {
-    toSafeApiWsReceiptObservation,
-    type SafeApiWsReceiptObservationDto
-} from '../../../apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts';
+import { toSafeApiWsReceiptObservation } from '../../../apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts';
+import type { ApiJsonObject } from '../../shared/api/api-json-value.ts';
 import { toError } from '../../shared/resilience/to-error.ts';
 
 import type { ReceiptOwnerScenario, ReceiptOwnerSink } from './full-stack-api-receipt-owner-fixture.ts';
+
+interface ReceiptCaptureSummaryDto extends ApiJsonObject {
+    readonly retainedRecords: number;
+    readonly rejectedLines: number;
+    readonly oversizedLines: number;
+    readonly trailingPartial: boolean;
+    readonly stdoutEof: boolean;
+    readonly cleanup: string;
+    readonly observation: string;
+    readonly durableRequestCompletion: string;
+    readonly effectiveFlags: { readonly timingLogs: boolean; readonly appInboxPhaseTiming: boolean; };
+}
+
+interface CapturedOwnerReceiptEvidence {
+    readonly status: number | null;
+    readonly text: string;
+    readonly mode: number;
+    readonly summary: ReceiptCaptureSummaryDto;
+}
+
+interface PendingReceiptCaptureRequestDto {
+    readonly scenario: ReceiptOwnerScenario;
+    readonly sink: ReceiptOwnerSink;
+    readonly appInboxPhaseTiming: boolean;
+}
+
+interface PendingReceiptCaptureEffectsDto extends ApiJsonObject {
+    readonly conflicted: boolean;
+    readonly receiptControlMsgId: string;
+    readonly nativeCalls: number;
+    readonly publications: number;
+    readonly clockReads: number;
+    readonly releases: number;
+    readonly lastReceiptReleaseAtMs: number;
+    readonly receiptReleaseStatuses: readonly string[];
+    readonly mutationResults: readonly boolean[];
+}
+
+interface PendingReceiptCapture {
+    readonly records: readonly ApiJsonObject[];
+    readonly text: string;
+    readonly mode: number;
+    readonly summaryMode: number;
+    readonly summary: ReceiptCaptureSummaryDto;
+    readonly effects: PendingReceiptCaptureEffectsDto;
+}
 
 const captureScript = 'apps/rallar-black-box/scripts/run-full-stack-api-with-timing.ts';
 const BUSINESS_SOCKET_DECISION = {
@@ -28,7 +82,7 @@ const BUSINESS_SOCKET_DECISION = {
     outcome: 'admitted'
 };
 
-function ownerChild(expectedRecipientPeerIds: readonly string[]): string {
+function toReceiptOwnerChildSource(expectedRecipientPeerIds: readonly string[]): string {
     const source = (file: string) => JSON.stringify(path.resolve(file));
     return `
         import { WsQueueBoxServerReceiptAggregation } from ${source('packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts')};
@@ -80,27 +134,12 @@ function ownerChild(expectedRecipientPeerIds: readonly string[]): string {
     `;
 }
 
-interface CapturedOwnerReceiptEvidence {
-    readonly status: number | null;
-    readonly text: string;
-    readonly mode: number;
-    readonly summary: {
-        readonly retainedRecords: number;
-        readonly rejectedLines: number;
-        readonly oversizedLines: number;
-        readonly stdoutEof: boolean;
-        readonly cleanup: string;
-        readonly observation: string;
-        readonly durableRequestCompletion: string;
-    };
-}
-
 async function captureOwnerReceiptEvidence(expectedRecipientPeerIds: readonly string[]): Promise<CapturedOwnerReceiptEvidence> {
     const directory = await mkdtemp(path.join(tmpdir(), 'rallar-receipt-capture-'));
     let bodyFailed = false;
     try {
         const fixture = path.join(directory, 'owner-child.mts');
-        await writeFile(fixture, ownerChild(expectedRecipientPeerIds));
+        await writeFile(fixture, toReceiptOwnerChildSource(expectedRecipientPeerIds));
         const result = spawnSync(process.execPath, ['--import', 'tsx', captureScript, directory, '--', process.execPath, '--import', 'tsx', fixture], {
             encoding: 'utf8',
             timeout: 15000,
@@ -116,7 +155,7 @@ async function captureOwnerReceiptEvidence(expectedRecipientPeerIds: readonly st
             status: result.status,
             text: await readFile(recordsPath, 'utf8'),
             mode: (await stat(recordsPath)).mode & 0o777,
-            summary: JSON.parse(await readFile(path.join(directory, 'api-setup-timing-summary.json'), 'utf8'))
+            summary: await readReceiptCaptureSummary(directory)
         };
     }
     catch (caught) {
@@ -128,25 +167,7 @@ async function captureOwnerReceiptEvidence(expectedRecipientPeerIds: readonly st
     }
 }
 
-interface PendingReceiptCapture {
-    readonly records: readonly SafeApiWsReceiptObservationDto[];
-    readonly text: string;
-    readonly mode: number;
-    readonly summary: CapturedOwnerReceiptEvidence['summary'];
-    readonly effects: {
-        readonly conflicted: boolean;
-        readonly receiptControlMsgId: string;
-        readonly nativeCalls: number;
-        readonly publications: number;
-        readonly clockReads: number;
-        readonly releases: number;
-        readonly lastReceiptReleaseAtMs: number;
-        readonly receiptReleaseStatuses: readonly string[];
-        readonly mutationResults: readonly boolean[];
-    };
-}
-
-async function capturePendingReceipt(scenario: ReceiptOwnerScenario, sink: ReceiptOwnerSink = 'collecting'): Promise<PendingReceiptCapture> {
+async function capturePendingReceipt(captureRequest: PendingReceiptCaptureRequestDto): Promise<PendingReceiptCapture> {
     const directory = await mkdtemp(path.join(tmpdir(), 'rallar-pending-receipt-'));
     let bodyFailed = false;
     try {
@@ -156,7 +177,9 @@ async function capturePendingReceipt(scenario: ReceiptOwnerScenario, sink: Recei
             fixture,
             `import { writePendingReceiptOwnerEvidence } from ${
                 JSON.stringify(path.resolve('packages/tests/rallar-black-box/full-stack-api-receipt-owner-fixture.ts'))
-            }; await writePendingReceiptOwnerEvidence(${JSON.stringify(evidencePath)}, ${JSON.stringify(scenario)}, ${JSON.stringify(sink)});`
+            }; await writePendingReceiptOwnerEvidence(${JSON.stringify(evidencePath)}, ${JSON.stringify(captureRequest.scenario)}, ${
+                JSON.stringify(captureRequest.sink)
+            });`
         );
         const child = spawnSync(process.execPath, ['--import', 'tsx', captureScript, directory, '--', process.execPath, '--import', 'tsx', fixture], {
             encoding: 'utf8',
@@ -164,21 +187,25 @@ async function capturePendingReceipt(scenario: ReceiptOwnerScenario, sink: Recei
             env: {
                 ...process.env,
                 RALLAR_TIMING_LOGS: 'true',
-                RALLAR_APP_INBOX_PHASE_TIMING: 'true',
+                RALLAR_APP_INBOX_PHASE_TIMING: String(captureRequest.appInboxPhaseTiming),
                 TSX_TSCONFIG_PATH: path.resolve('packages/tests/tsconfig.json')
             }
         });
-        expect(child.status, child.stdout + child.stderr).toBe(0);
-        const effects: PendingReceiptCapture['effects'] = JSON.parse(await readFile(evidencePath, 'utf8'));
+        const startupDiagnostic = child.stderr === 'API timing capture failed: configuration\n'
+            ? 'API timing capture failed: configuration'
+            : 'The recorder must admit the selected configuration and start its owner child.';
+        expect(child.status, startupDiagnostic).toBe(0);
+        const effects = await readPendingReceiptCaptureEffects(evidencePath);
         expect(effects.conflicted).toBe(true);
         const recordsPath = path.join(directory, 'api-setup-timing.jsonl');
         const text = await readFile(recordsPath, 'utf8');
         return {
             effects,
             text,
-            records: text.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line).wsReceipt),
+            records: toReceiptCaptureRecords(text),
             mode: (await stat(recordsPath)).mode & 0o777,
-            summary: JSON.parse(await readFile(path.join(directory, 'api-setup-timing-summary.json'), 'utf8'))
+            summaryMode: (await stat(path.join(directory, 'api-setup-timing-summary.json'))).mode & 0o777,
+            summary: await readReceiptCaptureSummary(directory)
         };
     }
     catch (caught) {
@@ -188,6 +215,60 @@ async function capturePendingReceipt(scenario: ReceiptOwnerScenario, sink: Recei
     finally {
         await removeReceiptCaptureDirectory(directory, bodyFailed);
     }
+}
+
+function isReceiptCaptureObject(value: unknown): value is ApiJsonObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function toReceiptCaptureObject(serialized: string): ApiJsonObject {
+    const value: unknown = JSON.parse(serialized);
+    if (!isReceiptCaptureObject(value)) {
+        throw new Error('Receipt capture artifact must be a JSON object.');
+    }
+    return value;
+}
+
+function toReceiptCaptureRecords(text: string): readonly ApiJsonObject[] {
+    return text.trim().split('\n').filter(Boolean).map((line) => {
+        const record = toReceiptCaptureObject(line);
+        if (!isReceiptCaptureObject(record.wsReceipt)) {
+            throw new Error('Receipt capture record must contain an observation object.');
+        }
+        return record.wsReceipt;
+    });
+}
+
+async function readReceiptCaptureSummary(directory: string): Promise<ReceiptCaptureSummaryDto> {
+    const summary = toReceiptCaptureObject(await readFile(path.join(directory, 'api-setup-timing-summary.json'), 'utf8'));
+    expect(summary).toMatchObject({
+        retainedRecords: expect.any(Number),
+        rejectedLines: expect.any(Number),
+        oversizedLines: expect.any(Number),
+        trailingPartial: expect.any(Boolean),
+        stdoutEof: expect.any(Boolean),
+        cleanup: expect.any(String),
+        observation: expect.any(String),
+        durableRequestCompletion: expect.any(String),
+        effectiveFlags: { timingLogs: expect.any(Boolean), appInboxPhaseTiming: expect.any(Boolean) }
+    });
+    return summary as ReceiptCaptureSummaryDto;
+}
+
+async function readPendingReceiptCaptureEffects(evidencePath: string): Promise<PendingReceiptCaptureEffectsDto> {
+    const effects = toReceiptCaptureObject(await readFile(evidencePath, 'utf8'));
+    expect(effects).toMatchObject({
+        conflicted: expect.any(Boolean),
+        receiptControlMsgId: expect.any(String),
+        nativeCalls: expect.any(Number),
+        publications: expect.any(Number),
+        clockReads: expect.any(Number),
+        releases: expect.any(Number),
+        lastReceiptReleaseAtMs: expect.any(Number)
+    });
+    expect(Array.isArray(effects.receiptReleaseStatuses) && effects.receiptReleaseStatuses.every((status) => typeof status === 'string')).toBe(true);
+    expect(Array.isArray(effects.mutationResults) && effects.mutationResults.every((result) => typeof result === 'boolean')).toBe(true);
+    return effects as PendingReceiptCaptureEffectsDto;
 }
 
 /** Owns temporary recorder cleanup without replacing the failure that produced its evidence. */
@@ -237,6 +318,99 @@ describe('full-stack private upstream receipt capture', () => {
     it.each(['malformed', 'unsupported', 'unauthorized', 'oversized', 'capacity'])('retains the closed ordinary rejection code %s', (rejectionCode) => {
         const rejected = { ...BUSINESS_SOCKET_DECISION, outcome: 'rejected', rejectionCode };
         expect(toSafeApiWsReceiptObservation(rejected)).toEqual(rejected);
+    });
+
+    it('retains real business and receipt observations with AppInbox phase timing off', async () => {
+        const captured = await capturePendingReceipt({ scenario: 'native-return', sink: 'collecting', appInboxPhaseTiming: false });
+        const { records, effects } = captured;
+        expect(effects.conflicted).toBe(true);
+        expect(effects.nativeCalls).toBeGreaterThan(0);
+        expect(effects.releases).toBeGreaterThan(0);
+        expect(effects.receiptReleaseStatuses).toContain('COMPLETED');
+        expect(records).toContainEqual({
+            kind: 'business-socket-decision',
+            serverPeerId: 'server',
+            msgId: 'subject',
+            senderId: 'origin',
+            typeId: 'message.v1',
+            topicId: 'room.notification',
+            connectionId: 'origin',
+            fromPeerId: 'origin',
+            authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+            scopeDisposition: 'authorized',
+            outcome: 'admitted'
+        });
+        expect(records.filter((record) => record.kind === 'ack-count')).toEqual([
+            expect.objectContaining({
+                serverPeerId: 'server',
+                controlMsgId: 'ack-1',
+                source: 'local',
+                outcome: 'complete',
+                ack: expect.objectContaining({ ackedMsgId: 'subject', logicalRecipientPeerId: 'recipient', carrier: 'ws', status: 'delivered' }),
+                before: expect.objectContaining({ expectedRecipientPeerIds: ['recipient'], confirmedRecipientPeerIds: [], snapshotVersion: 7 }),
+                after: expect.objectContaining({ expectedRecipientPeerIds: ['recipient'], confirmedRecipientPeerIds: ['recipient'], snapshotVersion: 7 })
+            })
+        ]);
+        expect(records).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                kind: 'receipt-work',
+                receiptControlMsgId: effects.receiptControlMsgId,
+                effectKind: 'dequeue-message',
+                callbackOutcome: 'completed'
+            }),
+            expect.objectContaining({
+                kind: 'receipt-transport',
+                receiptControlMsgId: effects.receiptControlMsgId,
+                serverPeerId: 'server',
+                transport: 'recipient',
+                nativeCall: 'returned',
+                outcome: 'sent',
+                connectionId: 'origin',
+                receipt: expect.objectContaining({
+                    msgId: 'subject',
+                    originPeerId: 'origin',
+                    expectedRecipientPeerIds: ['recipient'],
+                    confirmedRecipientPeerIds: ['recipient'],
+                    phase: 'complete',
+                    snapshotVersion: 7
+                })
+            })
+        ]));
+        expect(captured.mode).toBe(0o600);
+        expect(captured.summaryMode).toBe(0o600);
+        expect(captured.summary.retainedRecords).toBe(records.length);
+        expect(captured.summary.rejectedLines).toBeGreaterThan(0);
+        expect(captured.summary).toMatchObject({
+            effectiveFlags: { timingLogs: true, appInboxPhaseTiming: false },
+            oversizedLines: 0,
+            trailingPartial: false,
+            stdoutEof: true,
+            childExitCode: 0,
+            childSignal: null,
+            childFailure: null,
+            captureFailure: null,
+            cleanup: 'reaped',
+            observation: 'partial',
+            durableRequestCompletion: 'unverified'
+        });
+        expect(captured.text).not.toMatch(/AUTH_SENTINEL|PAYLOAD_SENTINEL|ERROR_SENTINEL|CONFIG_SENTINEL|authorization|headers/);
+        console.log(
+            'Phase-off recorder witness:',
+            JSON.stringify({
+                effects: {
+                    conflicted: effects.conflicted,
+                    receiptControlMsgId: effects.receiptControlMsgId,
+                    nativeCalls: effects.nativeCalls,
+                    publications: effects.publications,
+                    clockReads: effects.clockReads,
+                    releases: effects.releases,
+                    receiptReleaseStatuses: effects.receiptReleaseStatuses
+                },
+                records,
+                permissions: { records: captured.mode, summary: captured.summaryMode },
+                summary: captured.summary
+            })
+        );
     });
 
     it.each([
@@ -308,16 +482,18 @@ describe('full-stack private upstream receipt capture', () => {
         expect(toSafeApiTimingRecord(JSON.stringify({ ...wire, operation: 'socket-decision' }))).toBeUndefined();
     });
 
-    it.each([
-        ['native-return', { transport: 'recipient', nativeCall: 'returned', outcome: 'sent' }],
-        ['later-throw', { transport: 'recipient', nativeCall: 'returned', outcome: 'threw' }],
-        ['closed', { transport: 'recipient', nativeCall: 'not-called', outcome: 'not-ready' }],
-        ['native-throw', { transport: 'recipient', nativeCall: 'invoked', outcome: 'threw' }],
-        ['publish-return', { transport: 'cluster-receipt', publisherCall: 'returned', outcome: 'not-ready', submissionAttempted: false }],
-        ['publish-throw', { transport: 'cluster-receipt', publisherCall: 'invoked', outcome: 'threw' }],
-        ['direct-failure', { transport: 'cluster-receipt', publisherCall: 'invoked', outcome: 'threw' }]
-    ])('retains real pending receipt %s through the child recorder', async (scenario, transport) => {
-        const captured = await capturePendingReceipt(scenario as ReceiptOwnerScenario);
+    it.each(
+        [
+            ['native-return', { transport: 'recipient', nativeCall: 'returned', outcome: 'sent' }],
+            ['later-throw', { transport: 'recipient', nativeCall: 'returned', outcome: 'threw' }],
+            ['closed', { transport: 'recipient', nativeCall: 'not-called', outcome: 'not-ready' }],
+            ['native-throw', { transport: 'recipient', nativeCall: 'invoked', outcome: 'threw' }],
+            ['publish-return', { transport: 'cluster-receipt', publisherCall: 'returned', outcome: 'not-ready', submissionAttempted: false }],
+            ['publish-throw', { transport: 'cluster-receipt', publisherCall: 'invoked', outcome: 'threw' }],
+            ['direct-failure', { transport: 'cluster-receipt', publisherCall: 'invoked', outcome: 'threw' }]
+        ] as const
+    )('retains real pending receipt %s through the child recorder', async (scenario, transport) => {
+        const captured = await capturePendingReceipt({ scenario, sink: 'collecting', appInboxPhaseTiming: true });
         const { records, effects } = captured;
         expect(records).toEqual(expect.arrayContaining([
             expect.objectContaining({
@@ -344,7 +520,6 @@ describe('full-stack private upstream receipt capture', () => {
             expect(effects.nativeCalls).toBeGreaterThan(0);
             expect(effects.releases).toBeGreaterThan(0);
             expect(captured.mode).toBe(0o600);
-            console.log('Ordinary business recorder effects:', JSON.stringify(effects));
             expect(records).toContainEqual(expect.objectContaining({
                 kind: 'business-socket-decision',
                 serverPeerId: 'server',
@@ -399,9 +574,9 @@ describe('full-stack private upstream receipt capture', () => {
     });
 
     it('preserves actual effects, work release and owned clock reads with absent, mutating or throwing sinks', async () => {
-        const baseline = await capturePendingReceipt('native-return', 'collecting');
+        const baseline = await capturePendingReceipt({ scenario: 'native-return', sink: 'collecting', appInboxPhaseTiming: true });
         for (const sink of ['disabled', 'mutating', 'throwing'] as const) {
-            const captured = await capturePendingReceipt('native-return', sink);
+            const captured = await capturePendingReceipt({ scenario: 'native-return', sink, appInboxPhaseTiming: true });
             expect(captured.effects).toMatchObject({
                 nativeCalls: baseline.effects.nativeCalls,
                 publications: baseline.effects.publications,
@@ -423,14 +598,14 @@ describe('full-stack private upstream receipt capture', () => {
     });
 
     it('publishes transport evidence after the actual work release clock', async () => {
-        const baseline = await capturePendingReceipt('native-return');
-        const captured = await capturePendingReceipt('native-return', 'clock-mutating');
+        const baseline = await capturePendingReceipt({ scenario: 'native-return', sink: 'collecting', appInboxPhaseTiming: true });
+        const captured = await capturePendingReceipt({ scenario: 'native-return', sink: 'clock-mutating', appInboxPhaseTiming: true });
         expect(captured.effects.lastReceiptReleaseAtMs).toBe(baseline.effects.lastReceiptReleaseAtMs);
         expect(captured.effects.lastReceiptReleaseAtMs).toBe(1700000000000);
     });
 
     it('rejects unsafe new work records entirely while retaining the transport evidence', async () => {
-        const captured = await capturePendingReceipt('native-return', 'unsafe');
+        const captured = await capturePendingReceipt({ scenario: 'native-return', sink: 'unsafe', appInboxPhaseTiming: true });
         expect(captured.text).not.toContain('unsafe identity sentinel');
         expect(captured.records).not.toContainEqual(expect.objectContaining({ kind: 'receipt-work' }));
         expect(captured.records).toContainEqual(expect.objectContaining({ kind: 'receipt-transport' }));
@@ -444,7 +619,7 @@ describe('full-stack private upstream receipt capture', () => {
             { sink: 'unsafe-publication', kind: 'receipt-publication', scenario: 'publish-return' }
         ] as const
     )('rejects an unsafe $kind at the actual recorder boundary', async ({ sink, kind, scenario }) => {
-        const captured = await capturePendingReceipt(scenario, sink);
+        const captured = await capturePendingReceipt({ scenario, sink, appInboxPhaseTiming: true });
         expect(captured.text).not.toContain('unsafe identity sentinel');
         expect(captured.records).not.toContainEqual(expect.objectContaining({ kind }));
         expect(captured.records).toContainEqual(expect.objectContaining({ kind: 'receipt-work' }));
@@ -455,7 +630,7 @@ describe('full-stack private upstream receipt capture', () => {
     it('retains actual owner-produced count and outbox fields through the real child recorder', async () => {
         const captured = await captureOwnerReceiptEvidence(['recipient']);
         expect(captured.status).toBe(0);
-        const records = captured.text.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+        const records = captured.text.trim().split('\n').filter(Boolean).map(toReceiptCaptureObject);
         expect(records).toMatchObject([
             {
                 component: 'ws-receipt',
