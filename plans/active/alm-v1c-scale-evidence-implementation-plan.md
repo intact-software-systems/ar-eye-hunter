@@ -114,36 +114,35 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
   They preserve every original acceptance requirement; native workload acceptance remains unproved.
 - Six- and eleven-browser ALM match diagnostics have no hosted passing evidence. The user has
   selected them using the same match workload. Existing numbered RTC catalog entries are different
-  workloads and do not prove these cohorts. Canonical source admission and full-cohort selection
-  work for the six-browser diagnostic, but its director recipe is rejected before workload start.
-  Native protocol evidence and independent use of the actual loader identify four supported
-  `sameUniqueStringSet` assertions omitted from control-command validation. Required and advertised
-  capability detection also omit that operator. Neither fact establishes a workload or performance
-  result.
+  workloads and do not prove these cohorts. The repaired assertion admission now permits every
+  six-browser recipe to load and start. All six recipes finish locally, with all thirty shots and
+  forty-two authored readings retained, but five successful player finals are refused by control
+  result admission. The result walker charges recipe wrappers against the composite-depth limit,
+  unlike executable validation, and truncates valid nested player evidence. Native coordinator
+  acceptance remains unevaluated; local completion does not establish the full diagnostic or
+  original scale result.
 - Full source/support closure, whole-branch review, original scale and benefit, readiness and manual
   merge remain open. The pull request owns current source, CI, test and run outcomes; do not copy
   delivery history here.
 
 ## Next two useful slices
 
-### 1. Close assertion admission at the native control boundary
+### 1. Close valid composite result admission
 
-Use TDD at the existing control-command and control-envelope validators with the actual canonical
-six-browser sender and receiver recipes. Prove the director's four `sameUniqueStringSet` assertions
-are admitted, while malformed source/comparisonSource fields and unexpected expected operands are
-refused consistently with the existing schema and runtime variant. Preserve unrelated operators
-and recursive command validation; do not add a recipe-specific allowlist or a second evaluator.
+Use TDD at the existing runtime-result, serialization and control-admission boundaries. Prove a
+valid recipe at the executable composite-depth limit retains every deepest child and reaches
+control admission. Align result traversal with executable validation: recipe wrappers remain
+visible in display depth and canonical paths but do not consume loop/parallel nesting depth.
+Preserve the existing depth and expanded-command limits, attribution, identities, required capture
+and fail-closed malformed-result checks. Do not raise limits, add a recipe-specific allowlist,
+bypass capture admission or introduce another result evaluator.
 
-Keep operator vocabulary coherent across runtime evaluation, wire admission, schema and agent
-capabilities. Prove the canonical recipe requires the set operator, current agents advertise it,
-missing capability is refused and matching capability passes. Inspect existing vocabulary consumers
-before changing a shared list: the set comparison has a distinct operand shape, so a generic
-value-assertion branch must not accidentally admit a malformed set command or become ambiguous.
-
-Capture semantic RED and healthy controls before GREEN at these actual boundaries.
+Capture semantic RED before GREEN, with healthy shallow results and malformed or genuinely
+over-depth results as controls. Reuse the retained successful player finals to verify that the
+specific admission refusal is repaired; that probe cannot substitute for a new native execution.
 Review/remediate every changed human-authored file completely and recursive changed support closure;
-independent untouched code stays outside. Use affected schema, control-command, recipe-load,
-capability, maintained type, public-boundary and exact changed-range checks, then independent specification and
+independent untouched code stays outside. Use affected composite-result, control-admission,
+maintained type, consumer and exact changed-range checks, then independent specification and
 quality review before coherent publication. Reuse the already reviewed sampler, exact-audience,
 manifest, source-freeze and native-evidence owners. Preserve their result attribution and every
 original participant, traffic, receipt, storage, deadline, policy and budget requirement.
