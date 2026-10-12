@@ -103,8 +103,12 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 
 ## Current evidence and open facts
 
-- Original capture-off fifteen-agent acceptance remains FAILED; thirty and fifty remain gated.
-  Local source tests or recorder-on traces do not repair that failed execution.
+- The original capture-off fifteen-agent run on the free GitHub runner failed in traffic after
+  complete setup, RTC readiness and START. It sent 80 of 84 shots; a required director ACK reached
+  its SDK callback 18.6 seconds after the native-submission observation. Its native message callback
+  entry is uncaptured, and the same actor has long command scheduling delays. Separate local send
+  refusals do not identify that ACK's cause. One bounded callback-entry observation is next; no
+  CPU, memory, database, quota or queue-task cause is established. Thirty and fifty remain gated.
 - The valid 5.40% shared-throughput comparison remains failed against the unchanged 5% allowance.
   Conditional IndexedDB scheduling benefit does not establish native or universal performance.
 - The approved guard observation remains inconclusive for a guard defect or causal repair. Partial
@@ -115,55 +119,57 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 - The six-browser full diagnostic passes with the same match workload. The assertion admission,
   result traversal and terminal aggregate decoding repairs are complete. This diagnostic is
   smaller than the original acceptance cohort and does not establish original scale acceptance.
-- The eleven-browser diagnostic still fails. A conditional local capture found 48 rejected RTC ACK
-  admissions: 33 `rate-limited` and 15 `circuit-open`. One exact forwarded ACK control was
-  rejected first by quota and later by the breaker, with matching handoff failures. The capture
-  was incomplete, so it does not identify the earliest missing shot, prove the sole breaker-opening
-  cause or show that this coupling accounts for every failed receipt. All shot submissions arrived,
-  while eight receipt observations timed out. The local capture is diagnostic evidence, not
-  capture-off acceptance, capacity, memory or performance proof.
 - RTC quota denial is now separate from operation-failure accounting. The current ACK boundary
   tests prove quota-window recovery, preservation of real failure history, real-failure opening,
   circuit-open priority and half-open recovery with the existing limiter and breaker defaults.
-  The unchanged eleven-browser diagnostic still fails: all sixty shots reach the director over RTC
-  and all 847 sampled budget predicates pass, but seven final-shot ACK waits time out. One additional
-  ACK wait returns successfully after the workload deadline. The earliest failed receipt has a
-  required director ACK submitted before the deadline and relay JavaScript callback entry afterward.
-  Native data-channel receipt and renderer task queueing are uncaptured, so the evidence cannot
-  distinguish delivery delay from delayed callback scheduling. Final storage and all 231 coordinator
-  predicates remain unexecuted. Neither quota isolation nor sampled bounds establish scale acceptance.
+  The latest local eleven-browser diagnostic passes all eleven recipes and all 231 native
+  coordinator predicates. All sixty shots, exact leader ACKs, both complete lifecycle audiences,
+  77 readings, 847 sampled budget checks and final zero admission/non-probe work storage pass.
+  Its bounded private observation is complete and identifies 29 START control handoff refusals
+  as rate-limited; the required controls recover. The current END is healthy. Those current-run
+  verdicts cannot identify the cause of the earlier failed END, and instrumented local success
+  does not replace original uninstrumented scale acceptance, benefit or memory-leak evidence.
+- Independent lane-policy review finds an unowned rejecting promise at the engine's canonical
+  task-tracking boundary. Handling the raw executor promise does not handle the distinct promise
+  returned by `finally`. Repair this concrete failure-ownership defect with meaningful rejecting
+  runnable cases and bounded retention. The public finalization type correction still requires
+  the maintainer's compatibility decision; verified repository consumers alone cannot supply it.
 - Full source/support closure, whole-branch review, original scale and benefit, readiness and manual
   merge remain open. The pull request owns current source, CI, test and run outcomes; do not copy
   delivery history here.
 
 ## Next two useful slices
 
-### 1. Explain the remaining final-shot ACK delay
+### 1. Establish original capture-off fifteen-agent acceptance
 
-First establish, in a small disposable Playwright fixture, whether the installed Chromium trace can
-positively join complete native data-channel receipt or renderer event queueing to the same
-JavaScript callback. Verify sender and receiver renderer separation, retain bounded trace evidence,
-and treat truncation or ambiguous correlation as inconclusive. Another JavaScript callback timestamp
-or an enqueue refusal alone does not distinguish the missing boundary.
+Use the existing private Playwright/CDP observation to timestamp the current native RTC message
+callback delegation before its first await, paired with existing submission and SDK ingress for
+current-run required director ACKs. Derive the actor, director, subject and control identities from
+that same run; preserve source admission, bounded scalar capture, currentness and cleanup. Timely
+native entry followed by late SDK ingress locates delay inside receive dispatch. Late native entry
+combines transport and browser scheduling and does not identify CPU or memory cause. Missing or
+clipped capture remains inconclusive. This diagnostic does not replace uninstrumented acceptance.
 
-Only a demonstrated capability earns one bounded observation of that boundary in the unchanged
-eleven-browser workload. Join the required director ACK, subject, relay and callback privately.
-Native receipt before the deadline with callback entry after it proves scheduling delay for that
-ACK; native receipt already after the deadline proves delivery was late. Preserve the frozen audience,
-cadence, topology, deadlines, native predicates, storage bounds and owned cleanup. Do not infer an
-uncaptured cause or repeat an unchanged failed diagnostic. Earn any repair from that evidence and
-a meaningful failing-first behavior test at its actual owner. Review every changed human-authored
-file in full; changed support files enter recursive closure, and independent untouched code remains
-outside.
+Earn a meaningful failing-first repair from the observed boundary before another original
+acceptance execution. That execution retains its frozen audience, tree, six-shot cadence, lifecycle
+events, exact receipts, seven samples per actor, storage and metric limits, deadlines, native
+predicates, source provenance and cleanup. Preserve original capture-off settings. Thirty and fifty
+remain gated by fifteen; comparative benefit and final whole-branch review remain open.
 
-### 2. Establish original capture-off fifteen-agent acceptance
+### 2. Close owned queue-task failure handling
 
-When the unchanged eleven-browser diagnostic supports progression, run the original fifteen-agent
-workload with its frozen audience, tree, six-shot cadence, lifecycle events, exact receipts, seven
-samples per actor, storage and metric limits, deadlines, native predicates, source provenance and
-cleanup. Keep capture off for acceptance. A failed result earns bounded evidence review and an
-independently testable repair before another source-admitted run. Thirty and fifty remain gated by
-fifteen; the unchanged comparative benefit gate and final whole-branch review remain open.
+Exercise a real registered runnable that rejects before and during engine stop. Prove that the
+exact tracked promise has a rejection owner, cleanup is joined, and the failure reaches that
+owner once without an unhandled rejection or unbounded retained failures. Repair the canonical
+task-tracking/engine boundary without another scheduler or a swallow-only catch. Preserve
+registration generation/currentness, replacement/removal, scheduling, quotas and shutdown behavior.
+Resolve the touched engine's clock/random dependency ownership through existing composition
+patterns while preserving public defaults. Do not expand this repair into unrelated queue policy.
+
+Keep the original acceptance workload as the priority while this independently evidenced review
+fix proceeds. A failed fifteen-agent result earns exact evidence review and a meaningful
+failing-first repair before another run. Review every changed human-authored file in full; changed
+support files enter closure recursively, and independent untouched code remains outside.
 
 ## Later outcomes and completion
 

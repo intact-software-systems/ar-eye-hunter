@@ -86,6 +86,66 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
+      "id": "queue-engine-retained-completion-single-report",
+      "domain": "Owned queue task settlement reporting",
+      "owner": "Rallar shared maintainers",
+      "summary": "Replacing a queue registration that retains the same completion reports its eventual failure once and does not report already completed retained work again.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#observes a retained completion once when its registration is replaced",
+      "coverageRelation": "The test registers the same real TrackedTask before and after settlement, rejects its owned completion, then captures the default error sink.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "InboxOutboxEngine task-failure reporting sink and its default console error adapter",
+        "observableEffect": "One retained completion produces one owner-visible task failure report even when its task registration changes.",
+        "requiredConstraint": "Report each owned completion failure exactly once; registration replacement must not duplicate observation.",
+        "failureRationale": "Repeated reports turn one failure into multiple alerts or recovery requests and keep obsolete observation ownership alive."
+      }
+    },
+    {
+      "id": "queue-engine-settled-failure-owned-before-stop",
+      "domain": "Owned queue task settlement reporting",
+      "owner": "Rallar shared maintainers",
+      "summary": "A runnable failure that settles before shutdown reaches the engine failure sink once after its cleanup, without an unhandled rejection.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#reports a settled runnable failure once before stop without an unhandled rejection",
+      "coverageRelation": "The test rejects a real registered runnable, lets its finally cleanup complete, asserts the exact failure report before stop, then verifies that shutdown does not duplicate it and that no process rejection event escaped.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "InboxOutboxEngine task-failure reporting sink and its default console error adapter",
+        "observableEffect": "The owner receives the settled runnable error before shutdown even after the active-work references are removed.",
+        "requiredConstraint": "Report the exact settled error once without keeping a failure history or allowing an unhandled derived rejection.",
+        "failureRationale": "An absent report loses completed failures before stop; repeated reports duplicate owner-visible failure effects."
+      }
+    },
+    {
+      "id": "queue-engine-failure-reporter-exception-owned",
+      "domain": "Owned queue task settlement reporting",
+      "owner": "Rallar shared maintainers",
+      "summary": "A throwing task-failure sink preserves the task and reporter errors in one fallback report without creating an unhandled rejection.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#reports a failure-sink exception without creating an unhandled task rejection",
+      "coverageRelation": "The test rejects a real registered task and supplies a sink that records the task error then throws; it captures the fallback console report and process rejection events.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "InboxOutboxEngine task-failure reporting sink and its default console error adapter",
+        "observableEffect": "One failing reporter invocation creates one fallback report containing both the original task error and reporter error.",
+        "requiredConstraint": "Invoke the supplied sink once and emit exactly one normalized fallback report if it throws.",
+        "failureRationale": "Repeating the sink can repeat its side effects; dropping or rejecting its failure leaves the reporting operation without an owner."
+      }
+    },
+    {
+      "id": "queue-engine-failure-report-follows-cleanup",
+      "domain": "Owned queue task settlement reporting",
+      "owner": "Rallar shared maintainers",
+      "summary": "Shutdown waits for runnable-owned cleanup and the failure sink receives the exact task error only after cleanup settles.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#joins failing runnable cleanup during stop and reports the owned failure once",
+      "coverageRelation": "The test gates a registered runnable computation and its finally release separately, starts stop while both are pending, and verifies no early report, one final report and the stop caller aggregate.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "InboxOutboxEngine task-failure reporting sink and its default console error adapter",
+        "observableEffect": "The resource release finishes before owner-visible failure reporting and shutdown completion.",
+        "requiredConstraint": "Emit no failure report while release is pending, then report once after release completes; stop must join that cleanup.",
+        "failureRationale": "An early report can trigger recovery while the failed task still owns resources; duplicate reporting repeats recovery effects."
+      }
+    },
+    {
       "id": "hetzner-original-scale-serialized-arrival-isolation",
       "domain": "Serialized room matching for unchanged ALM traffic",
       "owner": "Rallar operations maintainers",
@@ -4224,6 +4284,72 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-96e1d9a2fd5d577f",
+      "path": "packages/tests/shared/engine.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-engine-retained-completion-single-report",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The single captured default-sink report proves replacing and reusing the same retained completion cannot duplicate owner-visible failure effects.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#observes a retained completion once when its registration is replaced"
+    },
+    {
+      "id": "test-structure-coupling-bf617164d0219ff9",
+      "path": "packages/tests/shared/engine.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-engine-settled-failure-owned-before-stop",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The one captured report proves an already settled runnable failure reached its owner before stop, rather than disappearing when active-work retention is removed.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#reports a settled runnable failure once before stop without an unhandled rejection"
+    },
+    {
+      "id": "test-structure-coupling-857570b127a2e737",
+      "path": "packages/tests/shared/engine.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-engine-settled-failure-owned-before-stop",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The unchanged single report after stop proves shutdown does not repeat the task failure that the preceding assertion already observed before shutdown.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#reports a settled runnable failure once before stop without an unhandled rejection"
+    },
+    {
+      "id": "test-structure-coupling-9fbfeb7f4d16f815",
+      "path": "packages/tests/shared/engine.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-engine-failure-reporter-exception-owned",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The one fallback report proves a throwing supplied sink preserves both errors without retrying its side effect or leaking a rejected observation.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#reports a failure-sink exception without creating an unhandled task rejection"
+    },
+    {
+      "id": "test-structure-coupling-889f8ee7e21a738e",
+      "path": "packages/tests/shared/engine.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-engine-failure-report-follows-cleanup",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent report while the finally release gate is pending prevents recovery being announced before the failed runnable releases its owned resource.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#joins failing runnable cleanup during stop and reports the owned failure once"
+    },
+    {
+      "id": "test-structure-coupling-21131c618da33553",
+      "path": "packages/tests/shared/engine.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-engine-failure-report-follows-cleanup",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The one post-release report proves the failed runnable reaches its failure owner exactly once after cleanup and beside the stop caller aggregate.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#joins failing runnable cleanup during stop and reports the owned failure once"
+    },
     {
       "id": "test-structure-coupling-feb9d2bd497981ef",
       "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",

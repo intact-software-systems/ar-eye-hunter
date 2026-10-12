@@ -1,3 +1,5 @@
+import { TrackedTask } from '@shared/resilience/ComputeAsyncTask.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     beforeEach,
@@ -11,10 +13,333 @@ import {
 beforeEach(() =>
     onTestFinished(() => {
         vi.useRealTimers();
+        vi.restoreAllMocks();
     })
 );
 
 describe('engine', () => {
+    it.each(['readiness', 'concurrency'] as const)('recovers from eleven %s failures using only its supplied clock', async (port) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        let nowEpochMs = 10_000;
+        const engine = new InboxOutboxEngine({
+            nowEpochMs: () => nowEpochMs,
+            random: () => 0.5,
+            reportTaskFailure: () => undefined
+        });
+        onTestFinished(() => engine.stop());
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        engine.includeTask('owned', {
+            name: 'owned',
+            maxConcurrency: () => {
+                if (port === 'concurrency') {
+                    throw 'registered pass unavailable';
+                }
+                return 1;
+            },
+            isWork: () => {
+                throw 'registered pass unavailable';
+            },
+            runnable: () => {},
+            ongoingTasks: []
+        });
+        for (let attempt = 0; attempt < 11; attempt += 1) {
+            expect(await engine.executeOnce()).toBe(false);
+        }
+        expect(consoleError).toHaveBeenCalledWith('TaskEngine error', expect.any(Error));
+        expect(consoleError).toHaveBeenCalledWith('TaskEngine error', expect.objectContaining({ message: 'registered pass unavailable' }));
+        let runs = 0;
+        engine.includeTask('owned', {
+            name: 'replacement',
+            maxConcurrency: () => 1,
+            isWork: () => runs === 0,
+            runnable: () => {
+                runs += 1;
+            },
+            ongoingTasks: []
+        });
+        nowEpochMs = 20_000;
+        expect(await engine.executeOnce()).toBe(false);
+        expect(runs).toBe(0);
+        nowEpochMs = 20_001;
+        expect(await engine.executeOnce()).toBe(true);
+        expect(runs).toBe(1);
+    });
+
+    it('restarts the supplied-clock reset period after a failed half-open pass', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        let nowEpochMs = 10_000;
+        const engine = new InboxOutboxEngine({
+            nowEpochMs: () => nowEpochMs,
+            random: () => 0.5,
+            reportTaskFailure: () => undefined
+        });
+        onTestFinished(() => engine.stop());
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        let failure = new Error('initial readiness failure');
+        engine.includeTask('owned', {
+            name: 'owned',
+            maxConcurrency: () => 1,
+            isWork: () => {
+                throw failure;
+            },
+            runnable: () => {},
+            ongoingTasks: []
+        });
+        for (let attempt = 0; attempt < 11; attempt += 1) {
+            expect(await engine.executeOnce()).toBe(false);
+        }
+        nowEpochMs = 20_001;
+        failure = new Error('half-open readiness failure');
+        expect(await engine.executeOnce()).toBe(false);
+        expect(consoleError).toHaveBeenCalledWith('TaskEngine error', failure);
+        let runs = 0;
+        engine.includeTask('owned', {
+            name: 'replacement',
+            maxConcurrency: () => 1,
+            isWork: () => runs === 0,
+            runnable: () => {
+                runs += 1;
+            },
+            ongoingTasks: []
+        });
+        nowEpochMs = 30_001;
+        expect(await engine.executeOnce()).toBe(false);
+        expect(runs).toBe(0);
+        nowEpochMs = 30_002;
+        expect(await engine.executeOnce()).toBe(true);
+        expect(runs).toBe(1);
+    });
+
+    it('observes a retained completion once when its registration is replaced', async () => {
+        const engine = new InboxOutboxEngine();
+        const completion = Promise.withResolvers<void>();
+        const failure = new Error('retained completion failed');
+        const ongoing = new TrackedTask(completion.promise);
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const task = {
+            name: 'owned',
+            maxConcurrency: () => 1,
+            isWork: () => false,
+            runnable: () => {},
+            ongoingTasks: [ongoing]
+        };
+        engine.includeTask('owned', task);
+        engine.includeTask('owned', task);
+        completion.reject(failure);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        engine.includeTask('owned', task);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await engine.stop();
+
+        expect(consoleError.mock.calls).toEqual([['Queue engine owned task failed', 'owned', failure]]);
+    });
+
+    it('reports a settled runnable failure once before stop without an unhandled rejection', async () => {
+        const engine = new InboxOutboxEngine();
+        const failure = new Error('registered runnable failed');
+        const unhandled: Error[] = [];
+        const onUnhandled = (error: unknown) => unhandled.push(toError(error));
+        process.on('unhandledRejection', onUnhandled);
+        onTestFinished(() => process.off('unhandledRejection', onUnhandled));
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        let available = true;
+        let released = false;
+        engine.includeTask('owned', {
+            name: 'owned',
+            maxConcurrency: () => 1,
+            isWork: () => available,
+            runnable: async () => {
+                available = false;
+                try {
+                    throw failure;
+                }
+                finally {
+                    released = true;
+                }
+            },
+            ongoingTasks: []
+        });
+
+        await engine.executeOnce();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(consoleError.mock.calls).toEqual([['Queue engine owned task failed', 'owned', failure]]);
+        await engine.stop();
+
+        expect(released).toBe(true);
+        expect(unhandled).toEqual([]);
+        expect(consoleError.mock.calls).toEqual([['Queue engine owned task failed', 'owned', failure]]);
+    });
+
+    it('reports a failure-sink exception without creating an unhandled task rejection', async () => {
+        const failure = new Error('owned task failed');
+        const reporterFailure = new Error('failure sink refused');
+        const reports: Error[] = [];
+        const engine = new InboxOutboxEngine({
+            nowEpochMs: () => Date.now(),
+            random: () => 0.5,
+            reportTaskFailure: (_taskId, error) => {
+                reports.push(error);
+                throw reporterFailure;
+            }
+        });
+        const unhandled: Error[] = [];
+        const onUnhandled = (error: unknown) => unhandled.push(toError(error));
+        process.on('unhandledRejection', onUnhandled);
+        onTestFinished(() => process.off('unhandledRejection', onUnhandled));
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        let available = true;
+        engine.includeTask('owned', {
+            name: 'owned',
+            maxConcurrency: () => 1,
+            isWork: () => available,
+            runnable: () => {
+                available = false;
+                throw failure;
+            },
+            ongoingTasks: []
+        });
+        await engine.executeOnce();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await engine.stop();
+
+        expect(unhandled).toEqual([]);
+        expect(reports).toEqual([failure]);
+        expect(consoleError.mock.calls).toEqual([
+            ['Queue engine owned task failed', 'owned', expect.any(AggregateError)]
+        ]);
+        const reported = consoleError.mock.calls[0]?.[2];
+        if (!(reported instanceof AggregateError)) {
+            throw new Error('Expected an owned reporting failure');
+        }
+        expect(reported.errors).toEqual([failure, reporterFailure]);
+    });
+
+    it('joins failing runnable cleanup during stop and reports the owned failure once', async () => {
+        const engine = new InboxOutboxEngine();
+        const failure = new Error('owned computation failed during shutdown');
+        const unhandled: Error[] = [];
+        const onUnhandled = (error: unknown) => unhandled.push(toError(error));
+        process.on('unhandledRejection', onUnhandled);
+        onTestFinished(() => process.off('unhandledRejection', onUnhandled));
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const entered = Promise.withResolvers<void>();
+        const computation = Promise.withResolvers<void>();
+        const releasing = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        onTestFinished(() => computation.resolve());
+        onTestFinished(() => release.resolve());
+        let available = true;
+        let stopped = false;
+        engine.includeTask('owned', {
+            name: 'owned',
+            maxConcurrency: () => 1,
+            isWork: () => available,
+            runnable: async () => {
+                available = false;
+                entered.resolve();
+                try {
+                    await computation.promise;
+                    throw failure;
+                }
+                finally {
+                    releasing.resolve();
+                    await release.promise;
+                }
+            },
+            ongoingTasks: []
+        });
+        await engine.executeOnce();
+        await entered.promise;
+        const stopping = engine.stop().then(
+            () => ({ status: 'fulfilled' as const }),
+            (error: unknown) => ({ status: 'rejected' as const, error: toError(error) })
+        ).then((outcome) => {
+            stopped = true;
+            return outcome;
+        });
+        computation.resolve();
+        await releasing.promise;
+        expect(stopped, 'stop completed before runnable-owned release').toBe(false);
+        expect(consoleError.mock.calls).toEqual([]);
+
+        release.resolve();
+        const outcome = await stopping;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+
+        expect(outcome.status).toBe('rejected');
+        if (outcome.status === 'rejected') {
+            if (!(outcome.error instanceof AggregateError)) {
+                throw outcome.error;
+            }
+            expect(outcome.error.errors).toEqual([failure]);
+        }
+        expect(unhandled).toEqual([]);
+        expect(consoleError.mock.calls).toEqual([['Queue engine owned task failed', 'owned', failure]]);
+    });
+
+    it('schedules registered readiness using its supplied clock', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        let nowEpochMs = 10_000;
+        const engine = new InboxOutboxEngine({
+            nowEpochMs: () => nowEpochMs,
+            random: () => 0.5,
+            reportTaskFailure: (taskId, error) => {
+                throw new AggregateError([error], `Unexpected failure in ${taskId}`);
+            }
+        });
+        onTestFinished(() => engine.stop());
+        const ranAt: number[] = [];
+        engine.includeTask('receipt', {
+            name: 'receipt',
+            maxConcurrency: () => 1,
+            isWork: () => ranAt.length === 0 && nowEpochMs >= 10_020,
+            runnable: () => {
+                ranAt.push(nowEpochMs);
+            },
+            ongoingTasks: []
+        });
+        engine.start();
+        await vi.advanceTimersByTimeAsync(0);
+        engine.wakeAt('receipt', 10_020);
+        nowEpochMs = 10_020;
+        await vi.advanceTimersByTimeAsync(20);
+
+        expect(ranAt).toEqual([10_020]);
+    });
+
+    it('applies the existing idle jitter through its supplied random source', async () => {
+        vi.useFakeTimers();
+        vi.spyOn(Math, 'random').mockReturnValue(0.5);
+        const engine = new InboxOutboxEngine({
+            nowEpochMs: () => Date.now(),
+            random: () => 1,
+            reportTaskFailure: (taskId, error) => {
+                throw new AggregateError([error], `Unexpected failure in ${taskId}`);
+            }
+        });
+        onTestFinished(() => engine.stop());
+        const checkedAt: number[] = [];
+        const startedAt = Date.now();
+        engine.includeTask('idle', {
+            name: 'idle',
+            maxConcurrency: () => 1,
+            isWork: () => {
+                checkedAt.push(Date.now() - startedAt);
+                return false;
+            },
+            runnable: () => {},
+            ongoingTasks: []
+        });
+        engine.start();
+        await vi.advanceTimersByTimeAsync(119);
+        expect(checkedAt).toEqual([0]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(checkedAt).toEqual([0, 120]);
+    });
+
     it('joins an excluded runnable through computation and resource release when stopped', async () => {
         const engine = new InboxOutboxEngine();
         onTestFinished(() => engine.stop());

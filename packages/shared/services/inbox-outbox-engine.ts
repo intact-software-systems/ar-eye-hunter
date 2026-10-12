@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+
 import { CircuitBreaker, CircuitBreakerPolicy } from '../resilience/circuit-breaker.ts';
 import * as ComputeAsyncTask from '../resilience/ComputeAsyncTask.ts';
 import { toError } from '../resilience/to-error.ts';
@@ -13,6 +14,21 @@ export const INBOX_OUTBOX_ENGINE_MAX_IDLE_MS = 3_000;
 
 /** The share by which the engine stretches or shortens each scheduled pass, so owners sharing a clock drift apart. */
 export const INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO = 0.2;
+
+const defaultInboxOutboxEngineDependencies: InboxOutboxEngine.Dependencies = {
+    nowEpochMs: () => Date.now(),
+    random: () => Math.random(),
+    reportTaskFailure: reportInboxOutboxTaskFailure
+};
+
+export namespace InboxOutboxEngine {
+    export interface Dependencies {
+        readonly nowEpochMs: () => number;
+        readonly random: () => number;
+        /** Receives each settled task failure synchronously once, after runnable-owned cleanup finishes. */
+        readonly reportTaskFailure: (taskId: string, error: Error) => undefined;
+    }
+}
 
 export class InboxOutboxEngine {
     private static readonly MAX_BACKOFF: Temporal.Duration = Temporal.Duration.from({ milliseconds: 100 });
@@ -35,7 +51,7 @@ export class InboxOutboxEngine {
         InboxOutboxEngine.defaultSlidingWindowDuration
     );
 
-    private readonly circuitBreaker: CircuitBreaker = CircuitBreaker.create(InboxOutboxEngine.circuitBreakerPolicy);
+    private readonly circuitBreaker: CircuitBreaker;
 
     private running = false;
     private timer: ReturnType<typeof setTimeout> | typeof NOT_SET = NOT_SET;
@@ -45,16 +61,28 @@ export class InboxOutboxEngine {
     private successiveIdleExecutions = 0;
     private scheduledAtMs: number | undefined;
 
-    private readonly tasksInFlight = new Set<Promise<void>>();
+    private readonly tasksInFlight = new Map<Promise<void>, Promise<void>>();
 
     private readonly tasks = new Map<string, ComputeAsyncTask.LoopsTaskDto>();
     private readonly readyAtByTask = new Map<string, number>();
     private readonly wakeListeners = new Map<string, () => void>();
 
+    private readonly dependencies: InboxOutboxEngine.Dependencies;
+
+    constructor(dependencies: InboxOutboxEngine.Dependencies = defaultInboxOutboxEngineDependencies) {
+        this.dependencies = dependencies;
+        this.circuitBreaker = CircuitBreaker.createWithTs(
+            InboxOutboxEngine.circuitBreakerPolicy,
+            dependencies.nowEpochMs()
+        );
+    }
+
     includeTask(id: string, task: ComputeAsyncTask.LoopsTaskDto): InboxOutboxEngine {
         this.readyAtByTask.delete(id);
         for (const ongoing of task.ongoingTasks) {
-            this.retainTaskCompletion(ongoing.promise);
+            if (!ongoing.done) {
+                this.retainTaskCompletion(id, ongoing.promise);
+            }
         }
         this.tasks.set(id, { ...task, name: id, ongoingTasks: [...task.ongoingTasks] });
         return this;
@@ -96,7 +124,7 @@ export class InboxOutboxEngine {
         this.readyAtByTask.set(taskId, readyAtMs);
         if (this.running && this.execution === undefined) {
             const earliest = Math.min(this.scheduledAtMs ?? readyAtMs, readyAtMs);
-            this.scheduleEngine(Math.max(0, earliest - Date.now()));
+            this.scheduleEngine(Math.max(0, earliest - this.dependencies.nowEpochMs()));
         }
     }
 
@@ -119,9 +147,9 @@ export class InboxOutboxEngine {
         this.timer = NOT_SET;
         this.scheduledAtMs = undefined;
 
-        const started = [...this.tasksInFlight];
+        const started = [...this.tasksInFlight.keys()];
         await this.execution;
-        const outcomes = await Promise.allSettled([...new Set([...started, ...this.tasksInFlight])]);
+        const outcomes = await Promise.allSettled([...new Set([...started, ...this.tasksInFlight.keys()])]);
         const failures = outcomes.filter((outcome) => outcome.status === 'rejected').map((outcome) =>
             toError(outcome.reason)
         );
@@ -179,7 +207,7 @@ export class InboxOutboxEngine {
             this.timer = NOT_SET;
         }
         this.scheduledAtMs = undefined;
-        const nowMs = Date.now();
+        const nowMs = this.dependencies.nowEpochMs();
         for (const [taskId, readyAtMs] of this.readyAtByTask) {
             if (readyAtMs <= nowMs) {
                 this.readyAtByTask.delete(taskId);
@@ -220,7 +248,7 @@ export class InboxOutboxEngine {
         if (this.timer !== NOT_SET) {
             clearTimeout(this.timer);
         }
-        const nowMs = Date.now();
+        const nowMs = this.dependencies.nowEpochMs();
         let scheduledAtMs = nowMs + delayMs;
         for (const readyAtMs of this.readyAtByTask.values()) {
             scheduledAtMs = Math.min(scheduledAtMs, readyAtMs);
@@ -234,38 +262,32 @@ export class InboxOutboxEngine {
     }
 
     private async executeTaskEngine(): Promise<boolean> {
-        const result = await CircuitBreaker.tryToExecute(
-            this.circuitBreaker,
-            async () => {
-                const registrations = new Map(this.tasks);
-                const generation = this.generation;
-                const computedDto = await ComputeAsyncTask.runLoopsWhileWork(
-                    InboxOutboxEngine.toAsyncTaskInput(
-                        [...registrations.values()].map((task) => this.toTaskPass(task, generation))
-                    )
-                );
-
-                for (const task of computedDto.tasks) {
-                    const registration = registrations.get(task.inputTask.name);
-                    if (registration && this.tasks.get(task.inputTask.name) === registration) {
-                        registration.ongoingTasks = task.tasksInFlight;
-                    }
-                }
-
-                return computedDto.totalNumTasksCreated > 0;
-            },
-            () => true
-        );
-
-        return result.fold(
-            (error) => {
-                if (error.message !== 'Not allowed to execute') {
-                    console.error('TaskEngine error', error);
-                }
+        try {
+            if (!this.circuitBreaker.allowAt(this.dependencies.nowEpochMs())) {
                 return false;
-            },
-            (taskCreated) => taskCreated
-        );
+            }
+            const registrations = new Map(this.tasks);
+            const generation = this.generation;
+            const computedDto = await ComputeAsyncTask.runLoopsWhileWork(
+                InboxOutboxEngine.toAsyncTaskInput(
+                    [...registrations.values()].map((task) => this.toTaskPass(task, generation))
+                )
+            );
+
+            for (const task of computedDto.tasks) {
+                const registration = registrations.get(task.inputTask.name);
+                if (registration && this.tasks.get(task.inputTask.name) === registration) {
+                    registration.ongoingTasks = task.tasksInFlight;
+                }
+            }
+            this.circuitBreaker.successAt(this.dependencies.nowEpochMs());
+            return computedDto.totalNumTasksCreated > 0;
+        }
+        catch (error) {
+            this.circuitBreaker.failureAt(this.dependencies.nowEpochMs());
+            console.error('TaskEngine error', toError(error));
+            return false;
+        }
     }
 
     private toTaskPass(task: ComputeAsyncTask.LoopsTaskDto, generation: number): ComputeAsyncTask.LoopsTaskDto {
@@ -273,6 +295,7 @@ export class InboxOutboxEngine {
             ...task,
             executor: (runnable) =>
                 this.retainTaskCompletion(
+                    task.name,
                     task.executor === undefined ? Promise.resolve().then(runnable) : task.executor(runnable)
                 ),
             maxConcurrency: async () => this.isCurrentTask(task, generation) ? await task.maxConcurrency() : 0,
@@ -291,13 +314,34 @@ export class InboxOutboxEngine {
         };
     }
 
-    private retainTaskCompletion(completion: Promise<void>): Promise<void> {
-        this.tasksInFlight.add(completion);
-        void completion.then(
-            () => this.tasksInFlight.delete(completion),
-            () => this.tasksInFlight.delete(completion)
+    private retainTaskCompletion(taskId: string, completion: Promise<void>): Promise<void> {
+        const retained = this.tasksInFlight.get(completion);
+        if (retained !== undefined) {
+            return retained;
+        }
+        const observation = completion.then(
+            () => {
+                this.tasksInFlight.delete(completion);
+            },
+            (error: unknown) => {
+                this.tasksInFlight.delete(completion);
+                this.reportTaskFailure(taskId, toError(error));
+            }
         );
-        return completion;
+        this.tasksInFlight.set(completion, observation);
+        return observation;
+    }
+
+    private reportTaskFailure(taskId: string, error: Error): void {
+        try {
+            this.dependencies.reportTaskFailure(taskId, error);
+        }
+        catch (reporterError) {
+            reportInboxOutboxTaskFailure(
+                taskId,
+                new AggregateError([error, toError(reporterError)], 'Queue task failure reporter failed')
+            );
+        }
     }
 
     private isCurrentTask(task: ComputeAsyncTask.LoopsTaskDto, generation: number): boolean {
@@ -318,12 +362,12 @@ export class InboxOutboxEngine {
             maxDelayMs
         );
 
-        return InboxOutboxEngine.withJitter(delayMs);
+        return this.withJitter(delayMs);
     }
 
-    private static withJitter(delayMs: number): number {
+    private withJitter(delayMs: number): number {
         const jitterRangeMs = delayMs * INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO;
-        const jitterMs = Math.round((Math.random() * 2 - 1) * jitterRangeMs);
+        const jitterMs = Math.round((this.dependencies.random() * 2 - 1) * jitterRangeMs);
 
         return Math.max(0, delayMs + jitterMs);
     }
@@ -338,4 +382,8 @@ export class InboxOutboxEngine {
             maxSuccessiveNoTasksCreated: InboxOutboxEngine.MAX_SUCCESSIVE_NO_TASKS_CREATED
         };
     }
+}
+
+function reportInboxOutboxTaskFailure(taskId: string, error: Error): undefined {
+    console.error('Queue engine owned task failed', taskId, error);
 }
