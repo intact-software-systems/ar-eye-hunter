@@ -133,6 +133,7 @@ interface EntryPlacement {
     readonly path: string;
     readonly sourceRecipePath: string;
     readonly depth: number;
+    readonly compositeDepth: number;
     readonly position: RallarBlackBoxCompositeResultPosition;
 }
 
@@ -185,6 +186,7 @@ export function toRallarBlackBoxCompositeResultFlatEntries(
             path: rootPath,
             sourceRecipePath: rootPath,
             depth: 0,
+            compositeDepth: 0,
             position: { kind: 'root' }
         }, budget);
     });
@@ -293,12 +295,18 @@ function toFlatEntries(
         return [];
     }
     budget.remaining -= 1;
-    const childDecodings = placement.depth >= RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth
+    // Recipe membership changes display depth, while only loop/parallel membership consumes executable composite depth.
+    const atCompositeLimit = (result.kind === 'loop' || result.kind === 'parallel') &&
+        placement.compositeDepth >= RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth;
+    const childDecodings = atCompositeLimit
         ? []
         : toChildDecodings(result, placement);
     const traversal = toBoundedChildTraversal(childDecodings, budget);
     const entry: RallarBlackBoxCompositeResultFlatEntry = {
-        ...placement,
+        path: placement.path,
+        sourceRecipePath: placement.sourceRecipePath,
+        depth: placement.depth,
+        position: placement.position,
         commandId: result.commandId,
         kind: result.kind,
         status: result.status,
@@ -308,7 +316,7 @@ function toFlatEntries(
         durationMs: result.durationMs,
         childDecodeIssues: [
             ...traversal.issues,
-            ...(placement.depth >= RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth && isCompositeResult(result)
+            ...(atCompositeLimit
                 ? [{ valuePath: 'value', invalidFields: ['depth-limit'] }]
                 : [])
         ],
@@ -332,8 +340,9 @@ function toBoundedChildTraversal(
             continue;
         }
         const position = child.placement.position;
-        const index = position.kind === 'root' ? undefined :
-            `${position.kind === 'parallel-child' ? position.groupIndex : ''}:${position.childIndex}`;
+        const index = position.kind === 'root'
+            ? undefined
+            : `${position.kind === 'parallel-child' ? position.groupIndex : ''}:${position.childIndex}`;
         const invalidFields = [
             ...(paths.has(child.placement.path) ? ['duplicate-path'] : []),
             ...(index !== undefined && positions.has(index) ? ['duplicate-childIndex'] : [])
@@ -407,6 +416,7 @@ function decodeRecipeChildResults(
                     path: `${placement.path}.commands[${index}]`,
                     sourceRecipePath: `${placement.sourceRecipePath}.commands[${index}]`,
                     depth: placement.depth + 1,
+                    compositeDepth: placement.compositeDepth,
                     position: {
                         kind: 'recipe-child',
                         parentPath: placement.path,
@@ -445,6 +455,7 @@ function toPlacedChild(
             path: toNestedResultPath(parent.path, child.path),
             sourceRecipePath: toNestedResultPath(parent.sourceRecipePath, child.sourceRecipePath),
             depth: parent.depth + 1,
+            compositeDepth: parent.compositeDepth + 1,
             position
         }
     };
