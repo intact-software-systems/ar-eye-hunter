@@ -32,6 +32,9 @@ export interface ALAdmissionMemoryState {
     writeTail: Promise<void>;
 }
 
+/** A write belongs to its shared memory state even when a second backend wrapper queued it. */
+const pendingWritesByState = new WeakMap<ALAdmissionMemoryState, number>();
+
 export interface ALAdmissionBackendEntry<V> {
     readonly key: string;
     readonly value: V;
@@ -94,6 +97,15 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
     /** Every key held now, expired or not; unlike `list` it removes nothing. */
     peekKeys(): readonly string[] {
         return [...this.state.data.keys()];
+    }
+
+    /** Removes exactly the row a volatile owner observed, only while every wrapper over this state is idle. */
+    removeObservedIfNoWrites(key: string, observed: ALAdmissionStoredValue): boolean {
+        if ((pendingWritesByState.get(this.state) ?? 0) !== 0 || this.state.data.get(key) !== observed) {
+            return false;
+        }
+        this.deleteStored(key);
+        return true;
     }
 
     /** The lazy expiry `read` and `list` apply, run over the whole pair; the owning lane calls it. */
@@ -163,15 +175,15 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
         fn: (tx: ALAdmissionWorkWriteContext) => Promise<T>,
         executionExpiresAtMs: number | null = null
     ): Promise<T> {
+        pendingWritesByState.set(this.state, (pendingWritesByState.get(this.state) ?? 0) + 1);
         const previous = this.state.writeTail;
         let release: (() => void) | undefined;
         this.state.writeTail = new Promise<void>((resolve) => {
             release = resolve;
         });
 
-        await previous;
-
         try {
+            await previous;
             const pending = new InMemoryAdmissionWorkWriteBuffer(this, this.nowMs, this.workQueue);
             const result = await fn(pending);
             const mutations = pending.mutations();
@@ -191,6 +203,13 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
             return result;
         }
         finally {
+            const remaining = (pendingWritesByState.get(this.state) ?? 1) - 1;
+            if (remaining === 0) {
+                pendingWritesByState.delete(this.state);
+            }
+            else {
+                pendingWritesByState.set(this.state, remaining);
+            }
             release?.();
         }
     }

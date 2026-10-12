@@ -24,6 +24,7 @@ import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
 } from './inbound/al-inbound-message-runtime.ts';
+import { evictTerminalVolatileInboundMessages } from './inbound/evict-terminal-volatile-inbound-messages.ts';
 import { IndexedDbAdmissionBackend } from './indexed-db-admission-backend.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
@@ -369,10 +370,16 @@ export function createVolatileALInboundRuntimeStores(
 ): ALVolatileInboundRuntimeStores {
     const input = toDefaultInMemoryInput(options);
     const backend = createVolatileALAdmissionBackend(input.nowMs);
+    const admissionStore = createVolatileALInboundAdmissionStore(
+        toInMemoryALInboundAdmissionStoreInput(input, backend)
+    );
     return {
-        admissionStore: createVolatileALInboundAdmissionStore(toInMemoryALInboundAdmissionStoreInput(input, backend)),
+        admissionStore,
         workQueue: backend.workQueue,
-        evictExpired: () => backend.evictExpired(),
+        evictExpired: () => {
+            backend.evictExpired();
+            evictTerminalVolatileInboundMessages(backend, admissionStore.namespace);
+        },
         budget
     };
 }
