@@ -13,7 +13,7 @@ import { areSameUniqueStringSet } from './are-same-unique-string-set.ts';
 import {
     isAssertOperatorSatisfied,
     isRallarBlackBoxAssertOperator,
-    RALLAR_BLACK_BOX_ASSERT_OPERATORS
+    RALLAR_BLACK_BOX_COMMAND_ASSERT_OPERATORS
 } from './assert-value-operators.ts';
 
 export interface AssertCommandEvidence {
@@ -64,7 +64,7 @@ export function computeAssertCommandOutcome(evidence: AssertCommandEvidence): Ra
     if (!isRallarBlackBoxAssertOperator(command.operator)) {
         return toInvalidAssertOutcome(command, 'Assert operator is not supported.', {
             operator: command.operator,
-            supportedOperators: [...RALLAR_BLACK_BOX_ASSERT_OPERATORS, 'sameUniqueStringSet']
+            supportedOperators: RALLAR_BLACK_BOX_COMMAND_ASSERT_OPERATORS
         });
     }
 

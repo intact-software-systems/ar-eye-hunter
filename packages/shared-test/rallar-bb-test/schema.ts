@@ -34,6 +34,7 @@ const SCHEMA_BASE_ID = 'https://rallar.dev/schemas/black-box';
 const anySchema: JsonSchema = {};
 
 const stringSchema: JsonSchema = { type: 'string' };
+const nonEmptyStringSchema: JsonSchema = { type: 'string', pattern: '\\S' };
 const numberSchema: JsonSchema = { type: 'number' };
 const integerSchema: JsonSchema = { type: 'integer' };
 const booleanSchema: JsonSchema = { type: 'boolean' };
@@ -552,7 +553,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
                 required: ['kind', 'source', 'operator'],
                 properties: {
                     ...commandBaseProperties('assert'),
-                    source: stringSchema,
+                    source: nonEmptyStringSchema,
                     operator: assertOperatorSchema,
                     expected: anySchema
                 },
@@ -563,9 +564,9 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
                 required: ['kind', 'source', 'operator', 'comparisonSource'],
                 properties: {
                     ...commandBaseProperties('assert'),
-                    source: stringSchema,
+                    source: nonEmptyStringSchema,
                     operator: { const: 'sameUniqueStringSet' },
-                    comparisonSource: stringSchema
+                    comparisonSource: nonEmptyStringSchema
                 },
                 additionalProperties: false
             }

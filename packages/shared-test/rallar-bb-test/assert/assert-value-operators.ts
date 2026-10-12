@@ -25,6 +25,11 @@ export const RALLAR_BLACK_BOX_ASSERT_OPERATORS = [
     'matchesShapeComplete'
 ] as const;
 
+export const RALLAR_BLACK_BOX_COMMAND_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = [
+    ...RALLAR_BLACK_BOX_ASSERT_OPERATORS,
+    'sameUniqueStringSet'
+];
+
 type PresentValueAssertOperator = Exclude<
     RallarBlackBoxTestAssertOperator,
     'exists' | 'notEquals' | 'sameUniqueStringSet'
@@ -40,8 +45,8 @@ interface AssertComparison {
 export function isRallarBlackBoxAssertOperator(
     value: unknown
 ): value is RallarBlackBoxTestAssertOperator {
-    return value === 'sameUniqueStringSet' ||
-        typeof value === 'string' && RALLAR_BLACK_BOX_ASSERT_OPERATORS.some((operator) => operator === value);
+    return typeof value === 'string' &&
+        RALLAR_BLACK_BOX_COMMAND_ASSERT_OPERATORS.some((operator) => operator === value);
 }
 
 export function isAssertOperatorSatisfied(

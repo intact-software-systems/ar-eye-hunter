@@ -330,7 +330,7 @@ describe('Hetzner materialization contracts and effects', () => {
                 { agentSource: 'external', roomId: 'hetzner-headless-room', isolationMode: 'preserved' },
                 {
                     agentSource: 'hetzner',
-                    roomId: 'hetzner-run-4dc3addcb02f1780025a0592507e5cc03d8d279a98f0ae363e062fceeff4870f',
+                    roomId: 'hetzner-run-cc8ee5133b1e0e7c083986b2dbc6cf3916b0043df9e618c23181b4d58ae0e7ba',
                     isolationMode: 'isolated'
                 }
             ] as const
@@ -355,7 +355,7 @@ describe('Hetzner materialization contracts and effects', () => {
             expect(manifest.groupAssertions).toEqual(source.groupAssertions);
             expect(JSON.parse(await readFile(recordPath, 'utf8'))).toMatchObject({
                 isolationMode: mode.isolationMode,
-                sourceManifestSha256: '43db26dfab5a32b28f12b9d34db3be32b071a08139eee57f450807109072ecd3'
+                sourceManifestSha256: '6dd898ab001a404c857e567ea42b41694c230df49e4b5e16bea2f2d8cc08d4c2'
             });
             const commands = manifest.recipes.flatMap((selection) => {
                 if (!selection.recipe) {

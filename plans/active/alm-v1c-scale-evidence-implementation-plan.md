@@ -109,47 +109,44 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
   Conditional IndexedDB scheduling benefit does not establish native or universal performance.
 - The approved guard observation remains inconclusive for a guard defect or causal repair. Partial
   capture cannot prove that an unobserved guard never ran. Do not repeat that diagnostic workstream.
-- Independent source review identifies two acceptance defects: serial sampler reads accumulate
-  latency beyond the nominal schedule, and lifecycle receipt predicates compare cardinality without
-  proving every frozen player's identity. Meaningful failing-first cases and healthy controls expose
-  both defects through current command/runtime/evaluator owners. Neither establishes the hosted
-  delivery-timeout or performance cause.
+- The sampler and exact lifecycle-audience repairs are implemented and locally verified with
+  meaningful failing-first cases and healthy controls at their command/runtime/evaluator owners.
+  They preserve every original acceptance requirement; native workload acceptance remains unproved.
 - Six- and eleven-browser ALM match diagnostics have no hosted passing evidence. The user has
   selected them using the same match workload. Existing numbered RTC catalog entries are different
-  workloads and do not prove these cohorts. The selected hosted workflow and native harness must
-  admit the actual cohort and strengthened manifest before either checkpoint can execute.
+  workloads and do not prove these cohorts. Canonical source admission and full-cohort selection
+  work for the six-browser diagnostic, but its director recipe is rejected before workload start.
+  Native protocol evidence and independent use of the actual loader identify four supported
+  `sameUniqueStringSet` assertions omitted from control-command validation. Required and advertised
+  capability detection also omit that operator. Neither fact establishes a workload or performance
+  result.
 - Full source/support closure, whole-branch review, original scale and benefit, readiness and manual
   merge remain open. The pull request owns current source, CI, test and run outcomes; do not copy
   delivery history here.
 
 ## Next two useful slices
 
-### 1. Close the independently proved acceptance defects
+### 1. Close assertion admission at the native control boundary
 
-Use TDD and the existing shared-test scale fixture, authored command runtime and native group
-assertion evaluator. Preserve generic loop semantics. Schedule seven sampler slots at nominal
-0/5/10/15/20/25/30-second offsets using current wait/parallel primitives; bind every budget check to
-its own exact stats result so overlapping reads cannot overwrite evidence. Retain all 105 readings,
-transient failures, missing/cancelled evidence refusal, every budget and actor attribution.
-Distinguish a read's initiation from acquisition/completion, retain actual owned timestamps and do
-not invent a timing tolerance or claim that start timestamps prove completion inside thirty seconds.
+Use TDD at the existing control-command and control-envelope validators with the actual canonical
+six-browser sender and receiver recipes. Prove the director's four `sameUniqueStringSet` assertions
+are admitted, while malformed source/comparisonSource fields and unexpected expected operands are
+refused consistently with the existing schema and runtime variant. Preserve unrelated operators
+and recursive command validation; do not add a recipe-specific allowlist or a second evaluator.
 
-Use each frozen player's actual rtc.connect session result for the native identity comparison.
-Require unique complete START and END expected/confirmed sets, zero unconfirmed and all existing
-state/mode/arrival/completion guarantees. Reuse a single pure set comparison at the current local
-assertion and native cross-role aggregate boundaries; missing, duplicate or ambiguous identity fails
-closed without shrinking the cohort. Reordered identical sets remain valid. Extend current typed
-contracts/schema at those owners only where existing literal predicates cannot express the required
-comparison; keep old operators/defaults compatible and introduce no alternate evaluator, new live
-read, migration, legacy adapter or dependency.
+Keep operator vocabulary coherent across runtime evaluation, wire admission, schema and agent
+capabilities. Prove the canonical recipe requires the set operator, current agents advertise it,
+missing capability is refused and matching capability passes. Inspect existing vocabulary consumers
+before changing a shared list: the set comparison has a distinct operand shape, so a generic
+value-assertion branch must not accidentally admit a malformed set command or become ambiguous.
 
-Prove each defect with independent runtime/evaluator RED and healthy controls before GREEN.
+Capture semantic RED and healthy controls before GREEN at these actual boundaries.
 Review/remediate every changed human-authored file completely and recursive changed support closure;
-independent untouched code stays outside. Use affected schema, command, recipe, cadence, catalog,
-maintained type, build/boundary and exact changed-range checks, then independent specification and
-quality review before coherent publication. Regenerated manifests are strengthened acceptance inputs
-with their own identities, not byte-identical versions of old frozen executions. Preserve all
-original participant, traffic, receipt, storage, deadline, policy and budget requirements.
+independent untouched code stays outside. Use affected schema, control-command, recipe-load,
+capability, maintained type, public-boundary and exact changed-range checks, then independent specification and
+quality review before coherent publication. Reuse the already reviewed sampler, exact-audience,
+manifest, source-freeze and native-evidence owners. Preserve their result attribution and every
+original participant, traffic, receipt, storage, deadline, policy and budget requirement.
 
 ### 2. Establish six- and eleven-browser diagnostic checkpoints
 
@@ -161,12 +158,12 @@ allowances, receipt/security rules, metric/storage budgets and native fail-close
 The expected diagnostic work is 30/60 shots and 42/77 readings at six/eleven respectively; these
 are their own full-cohort checks, not reduced evidence for fifteen.
 
-Use TDD for cohort/catalog selection and generated requirements; keep original 15/30/50 acceptance
-positions and identities distinct. Close the existing hosted workflow and native harness over the
-selected canonical manifest, full cohort, tree setting and complete strengthened predicate set;
-remove obsolete fifteen-only source/hash/count assumptions. Retain source freezing, exact
-provenance, native acceptance, cleanup and every existing lifecycle ceiling. Prove admission and
-provenance for six/eleven and refusal of mismatched or unrelated inputs before implementation.
+Reuse the implemented cohort/catalog selection and generated requirements; keep original 15/30/50
+acceptance positions and identities distinct. Retain the existing hosted workflow and native
+harness over the selected canonical manifest, full cohort, tree setting and complete strengthened
+predicate set. Preserve source freezing, exact provenance, native acceptance, cleanup, mismatched
+input refusal and every existing lifecycle ceiling. Require actual recipe-load and capability
+admission before a new hosted diagnostic.
 Publish reviewed candidates before bounded runs through the existing hosted lifecycle. Verify exact source, declared/effective inputs, complete cohort and shared
 concurrency immediately before dispatch. Preserve originals once and perform canonical analysis
 with truthful completion, receipt, sampling, storage, loss and cleanup limits.
