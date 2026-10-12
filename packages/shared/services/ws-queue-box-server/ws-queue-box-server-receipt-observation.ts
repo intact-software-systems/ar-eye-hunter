@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { AL_CONTROL_ACK_TYPE_ID } from '../../al-contracts/al-control-type-ids.ts';
+import { AL_CONTROL_ACK_TYPE_ID, isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
 import type { ALAckPayload, ALReceiptPayload } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../alm/delivery/al-delivery-lifecycle.ts';
@@ -26,6 +26,13 @@ export interface WsQueueBoxServerReceiptAckFacts {
     readonly controlSenderId: string | undefined;
     readonly controlCreatedAtEpochMs: number | undefined;
     readonly ack: ALAckPayload;
+}
+
+export interface WsQueueBoxServerReceiptBusinessFacts {
+    readonly msgId: string;
+    readonly senderId: string;
+    readonly typeId: string;
+    readonly topicId: string;
 }
 
 export interface WsQueueBoxServerReceiptAggregateFacts {
@@ -85,6 +92,16 @@ export type WsQueueBoxServerReceiptObservation =
     | (ALOutboundReceiptWorkObservation & { readonly serverPeerId: string; })
     | WsQueueBoxServerReceiptTransportObservation
     | WsQueueBoxServerReceiptPublicationObservation
+    | (WsQueueBoxServerReceiptBusinessFacts & {
+        readonly kind: 'business-socket-decision';
+        readonly serverPeerId: string;
+        readonly connectionId: string;
+        readonly fromPeerId: string | undefined;
+        readonly authenticatedScope: StateScope | undefined;
+        readonly scopeDisposition: WsQueueBoxServerReceiptSocketFacts['scopeDisposition'];
+        readonly outcome: 'rejected' | Exclude<ALInboundMessageRuntime.Acceptance['kind'], 'control'>;
+        readonly rejectionCode: ALMessageRejection['code'] | undefined;
+    })
     | (WsQueueBoxServerReceiptAckFacts & WsQueueBoxServerReceiptSocketFacts & {
         readonly kind: 'socket-decision';
         readonly serverPeerId: string;
@@ -118,7 +135,7 @@ export type WsQueueBoxServerReceiptObservation =
         readonly trackedReceiptAlgo: ALOutboundEnqueueResult['trackedReceiptAlgo'];
     };
 
-/** Private evidence only: one synchronous invocation after the owner's effects; failures never control delivery. */
+/** Private receipt-chain evidence includes ordinary subject ingress after owned effects; failures preserve results. */
 export type WsQueueBoxServerReceiptObserver = (observation: WsQueueBoxServerReceiptObservation) => void;
 
 export function recordWsQueueBoxServerReceiptObservation(
@@ -161,6 +178,18 @@ export function toWsQueueBoxServerReceiptAckFacts(message: ALMessage): WsQueueBo
     catch {
         return undefined;
     }
+}
+
+/** Closed subject identities only; controls retain their existing observation contracts. */
+export function toWsQueueBoxServerReceiptBusinessFacts(
+    message: ALMessage
+): WsQueueBoxServerReceiptBusinessFacts | undefined {
+    return isALControlTypeId(message.payload.typeId) ? undefined : Object.freeze({
+        msgId: message.id.msgId,
+        senderId: message.id.senderId,
+        typeId: message.payload.typeId,
+        topicId: message.route.topicId
+    });
 }
 
 export function toImmutableWsQueueBoxServerReceiptAck(ack: ALAckPayload): ALAckPayload {

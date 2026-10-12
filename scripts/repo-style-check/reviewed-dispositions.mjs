@@ -1343,14 +1343,14 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
-    // One private receipt sanitizer owns all seven closed record variants. Its
+    // One private receipt sanitizer owns all eight closed record variants. Its
     // explicit scalar allowlists reject unsafe declared values before producing
     // safe JSON; splitting the validation would hide that single capture boundary.
     Object.freeze({
         path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 59
+        maximumMagnitude: 66
     }),
     Object.freeze({
         path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
@@ -1361,6 +1361,18 @@ export const reviewedDispositions = Object.freeze([
         path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
         rule: 'boundary.unknown',
         symbol: 'toSafeClosedReceiptFields'
+    }),
+    // Ordinary socket JSON is raw until closed identity/result fields and its
+    // complete optional scope validate. Only safe JSON leaves these exact owners.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeBusinessSocketDecision'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeAuthenticatedScope'
     }),
     // The decoded claim's receipt projection narrows JSON bytes to a frozen,
     // closed fact contract. Raw identities become compact locators; no unknown

@@ -1,26 +1,42 @@
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { installRelayedAckNoticeSubscriber } from '@shared-server/rallar-system/queue-pubsub/relayed-ack-notice-subscriber.ts';
 import { toRelayedAckNotice } from '@shared-server/rallar-system/queue-pubsub/relayed-ack-notice.ts';
 import { isRoomScopedALMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALControlMessage, newALAckControlMessage, type ALAckPayload } from '@shared/al-contracts/al-control.ts';
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { WsQueueBoxServerAckRelay } from '@shared/services/ws-queue-box-server/ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerReceiptAggregation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
+import * as wsQueueBoxServerReceiptObservation from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import type {
     WsQueueBoxServerReceiptObservation,
     WsQueueBoxServerReceiptObserver
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
-import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
-async function createObservedServer(observe: WsQueueBoxServerReceiptObserver | undefined, expiresAtEpochMs = Number.MAX_SAFE_INTEGER) {
+interface ObservedServerOptions {
+    readonly inboundStores?: ALInboundRuntimeStores;
+    readonly installRoomAuthorizer?: boolean;
+    readonly readAuthenticatedConnectionScope?: WsQueueBoxServerService.Input['readAuthenticatedConnectionScope'];
+}
+
+async function createObservedServer(
+    observe: WsQueueBoxServerReceiptObserver | undefined,
+    expiresAtEpochMs = Number.MAX_SAFE_INTEGER,
+    options: ObservedServerOptions = {}
+) {
     const socket = new JsonWebSocketServer();
     for (const id of ['origin', 'recipient']) {
         const native = new SimulatedWebSocket(`ws://${id}`);
@@ -33,25 +49,44 @@ async function createObservedServer(observe: WsQueueBoxServerReceiptObserver | u
         socket,
         name: 'server',
         queueEngine: engine,
-        readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs }),
+        inboundStores: options.inboundStores,
+        readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope ?? (() => ({ scope: SCOPE, expiresAtEpochMs })),
         targetResolver: { resolveBroadcastRecipients: () => [{ peerId: 'recipient', connectionId: 'recipient' }] },
-        ...{ receiptObserver: observe }
+        receiptObserver: observe
     });
-    service.authorizeInboundMessagesWith({
-        authorize: async (message) =>
-            isRoomScopedALMessage(message)
-                ? ({ authorized: true, roomAudience: { recipientPeerIds: ['recipient'], snapshotVersion: 7 } })
-                : ({ authorized: true }),
-        sendNacks: false
-    });
+    if (options.installRoomAuthorizer !== false) {
+        service.authorizeInboundMessagesWith({
+            authorize: async (message) =>
+                isRoomScopedALMessage(message)
+                    ? ({ authorized: true, roomAudience: { recipientPeerIds: ['recipient'], snapshotVersion: 7 } })
+                    : ({ authorized: true }),
+            sendNacks: false
+        });
+    }
     onTestFinished(async () => {
         const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
         const failure = cleanup.find((outcome) => outcome.status === 'rejected');
         if (failure?.status === 'rejected') {
-            throw failure.reason;
+            throw toError(failure.reason);
         }
     });
     return service;
+}
+
+function createObservedInboundStores(): ALInboundRuntimeStores {
+    const inbound = createInMemoryALAdmissionState();
+    return {
+        admissionStore: createALInboundAdmissionStore({
+            namespace: 'receipt-observation',
+            nowMs: Date.now,
+            backend: new InMemoryAdmissionBackend(inbound, Date.now),
+            orderingTrackTtlMs: 300000,
+            supersedenceTrackTtlMs: 300000,
+            retention: normalizeALRuntimeStoreRetention(),
+            maxOrderingTracks: undefined
+        }),
+        workQueue: inbound.workQueue
+    };
 }
 
 function data(): ALMessage {
@@ -92,8 +127,18 @@ function ackPayload(): ALAckPayload {
 describe('private upstream receipt observation', () => {
     it('retains real authenticated socket, complete count and distinct outbox outcomes', async () => {
         const events: WsQueueBoxServerReceiptObservation[] = [];
-        const service = await createObservedServer((event) => events.push(event));
-        expect((await service.acceptIncomingMessage(data(), 'origin')).right?.kind).toBe('admitted');
+        const inboundStores = createObservedInboundStores();
+        const { admissionStore } = inboundStores;
+        const service = await createObservedServer((event) => events.push(event), undefined, { inboundStores });
+        const message = data();
+        const admission = await service.acceptIncomingMessage(message, 'origin');
+        expect(admission.left).toBeUndefined();
+        expect(admission.right?.kind).toBe('admitted');
+        expect(events).toContainEqual(expect.objectContaining({
+            kind: 'receipt-outbox',
+            receipt: expect.objectContaining({ phase: 'admitted', msgId: 'subject', expectedRecipientPeerIds: ['recipient'] }),
+            verdict: expect.objectContaining({ kind: 'admitted', durable: true })
+        }));
         const accepted = await service.acceptIncomingMessage(ack(), 'recipient');
         expect(accepted.left).toBeUndefined();
         expect(accepted.right?.kind).toBe('control');
@@ -119,6 +164,102 @@ describe('private upstream receipt observation', () => {
                 verdict: expect.objectContaining({ kind: 'admitted', durable: true })
             })
         ]));
+        const persisted = await admissionStore.readDeliverySurface({ senderId: 'origin', msgId: 'subject' }, Date.now());
+        expect(persisted?.msg).toEqual(message);
+        expect(persisted?.source).toMatchObject({ kind: 'ws-client', peerId: 'origin', authenticatedScope: SCOPE });
+        expect(await admissionStore.readIngressAudience('subject', 'origin')).toEqual(['recipient']);
+        console.log(
+            'Ordinary business admission effects:',
+            JSON.stringify({
+                admission: admission.right?.kind,
+                persistedMsgId: persisted?.msg.id.msgId,
+                originPeerId: persisted?.source.kind === 'ws-client' ? persisted.source.peerId : undefined,
+                recipientPeerIds: await admissionStore.readIngressAudience('subject', 'origin'),
+                ackAcceptance: accepted.right?.kind,
+                completeReceipt: events.some((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete')
+            })
+        );
+        expect(events).toContainEqual(expect.objectContaining({
+            kind: 'business-socket-decision',
+            serverPeerId: 'server',
+            msgId: 'subject',
+            senderId: 'origin',
+            typeId: 'message.v1',
+            topicId: 'room.notification',
+            connectionId: 'origin',
+            fromPeerId: 'origin',
+            authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+            scopeDisposition: 'authorized',
+            outcome: 'admitted'
+        }));
+        expect(events.filter((event) => event.kind === 'business-socket-decision')).toHaveLength(1);
+    });
+
+    it('preserves the actual resolved scope when a room submission has no installed authorizer', async () => {
+        const events: WsQueueBoxServerReceiptObservation[] = [];
+        const inboundStores = createObservedInboundStores();
+        let scopeReads = 0;
+        const service = await createObservedServer((event) => events.push(event), undefined, {
+            inboundStores,
+            installRoomAuthorizer: false,
+            readAuthenticatedConnectionScope: () => {
+                scopeReads += 1;
+                return { scope: SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER };
+            }
+        });
+        const result = await service.acceptIncomingMessage(data(), 'origin');
+        expect(result.left?.code).toBe('unsupported');
+        expect(result.right).toBeUndefined();
+        expect(scopeReads).toBe(1);
+        const businessScopeReads = scopeReads;
+        const persisted = await inboundStores.admissionStore.readDeliverySurface({ senderId: 'origin', msgId: 'subject' }, Date.now());
+        const workKeys = await inboundStores.workQueue.getAllKeys();
+        expect(persisted).toBeUndefined();
+        expect(workKeys).toEqual([]);
+        expect(events.some((event) => event.kind === 'ack-count' || event.kind === 'receipt-outbox')).toBe(false);
+        for (const connection of service.socket.connections.values()) {
+            if (!(connection.socket instanceof SimulatedWebSocket)) {
+                throw new Error('Observed server has an unexpected native socket fixture');
+            }
+            expect(connection.socket.sent).toEqual([]);
+        }
+        const canonicalAck = ack();
+        const canonicalAckIsRoomScoped = isRoomScopedALMessage(canonicalAck);
+        expect(canonicalAckIsRoomScoped).toBe(false);
+        expect(decodeALControlMessage(canonicalAck).right?.type).toBe('ack');
+        expect((await service.acceptIncomingMessage(canonicalAck, 'recipient')).left?.code).toBe('unauthorized');
+        expect(events).toContainEqual(expect.objectContaining({
+            kind: 'socket-decision',
+            fromPeerId: 'recipient',
+            authenticatedScope: SCOPE,
+            scopeDisposition: 'authorized',
+            outcome: 'rejected',
+            rejectionCode: 'unauthorized'
+        }));
+        console.log(
+            'Missing room authorizer effects:',
+            JSON.stringify({
+                rejection: result.left?.code,
+                businessScopeReads,
+                persistedSubject: persisted !== undefined,
+                durableWorkRows: workKeys.length,
+                canonicalAckIsRoomScoped
+            })
+        );
+        expect(events).toContainEqual(expect.objectContaining({
+            kind: 'business-socket-decision',
+            serverPeerId: 'server',
+            msgId: 'subject',
+            senderId: 'origin',
+            typeId: 'message.v1',
+            topicId: 'room.notification',
+            connectionId: 'origin',
+            fromPeerId: 'origin',
+            authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+            scopeDisposition: 'authorized',
+            outcome: 'rejected',
+            rejectionCode: 'unsupported'
+        }));
     });
 
     it('retains the actual forged socket rejection without inventing a count', async () => {
@@ -137,6 +278,66 @@ describe('private upstream receipt observation', () => {
                 outcome: 'rejected',
                 rejectionCode: 'unauthorized'
             })
+        ]);
+        events.length = 0;
+        const message = data();
+        const forged = { ...message, id: { ...message.id, senderId: 'forged' } };
+        expect((await service.acceptIncomingMessage(forged, 'origin')).left?.code).toBe('unauthorized');
+        expect(events).toEqual([expect.objectContaining({
+            kind: 'business-socket-decision',
+            msgId: 'subject',
+            senderId: 'forged',
+            connectionId: 'origin',
+            fromPeerId: 'origin',
+            authenticatedScope: undefined,
+            scopeDisposition: 'unobserved',
+            outcome: 'rejected',
+            rejectionCode: 'unauthorized'
+        })]);
+    });
+
+    it('records the real ordinary duplicate without repeating its admission receipt', async () => {
+        const events: WsQueueBoxServerReceiptObservation[] = [];
+        const service = await createObservedServer((event) => events.push(event));
+        const message = data();
+        expect((await service.acceptIncomingMessage(message, 'origin')).right?.kind).toBe('admitted');
+        const receipts = events.filter((event) => event.kind === 'receipt-outbox');
+        expect((await service.acceptIncomingMessage(message, 'origin')).right?.kind).toBe('duplicate');
+        expect(events.filter((event) => event.kind === 'receipt-outbox')).toEqual(receipts);
+        expect(events.filter((event) => event.kind === 'business-socket-decision')).toMatchObject([
+            { msgId: 'subject', outcome: 'admitted', scopeDisposition: 'authorized' },
+            { msgId: 'subject', outcome: 'duplicate', scopeDisposition: 'authorized' }
+        ]);
+    });
+
+    it('observes missing connections and disposed ordinary submissions without inventing scope or business facts for controls', async () => {
+        const events: WsQueueBoxServerReceiptObservation[] = [];
+        const service = await createObservedServer((event) => events.push(event));
+        expect((await service.acceptIncomingMessage(null, 'origin')).left?.code).toBe('malformed');
+        expect(events).toEqual([]);
+        expect((await service.acceptIncomingMessage(ack(), 'missing')).left?.code).toBe('unauthorized');
+        expect(events.every((event) => event.kind !== 'business-socket-decision')).toBe(true);
+        events.length = 0;
+        expect((await service.acceptIncomingMessage(data(), 'missing')).left?.code).toBe('unauthorized');
+        await service.dispose();
+        expect((await service.acceptIncomingMessage(data(), 'origin')).right?.kind).toBe('disposed');
+        expect(events).toMatchObject([
+            {
+                kind: 'business-socket-decision',
+                connectionId: 'missing',
+                fromPeerId: 'missing',
+                authenticatedScope: undefined,
+                scopeDisposition: 'unobserved',
+                outcome: 'rejected'
+            },
+            {
+                kind: 'business-socket-decision',
+                connectionId: 'origin',
+                fromPeerId: undefined,
+                authenticatedScope: undefined,
+                scopeDisposition: 'unobserved',
+                outcome: 'disposed'
+            }
         ]);
     });
 });
@@ -166,7 +367,7 @@ function createObservedAggregation(
         enqueueOutbox: enqueue,
         acceptServerControl: async () => ({ kind: 'not-handled' }),
         acceptServerReceipt: effects.acceptServerReceipt ?? (async () => ({ kind: 'not-handled' })),
-        ...{ receiptObserver: observe }
+        receiptObserver: observe
     });
     aggregation.recordAdmission({
         msgId: 'subject',
@@ -251,7 +452,7 @@ describe('owned ACK relay observation', () => {
             receipts: aggregation,
             readIngressAudience: async () => ['recipient'],
             publishRelayedAck: async () => Either.ofLeft('private transport prose'),
-            ...{ receiptObserver: (event: WsQueueBoxServerReceiptObservation) => events.push(event) }
+            receiptObserver: (event: WsQueueBoxServerReceiptObservation) => events.push(event)
         });
         const message = ack();
         const control = decodeALControlMessage(message).right;
@@ -285,6 +486,16 @@ describe('private evidence does not control delivery', () => {
             scopeAtEpochMs: expect.any(Number),
             outcome: 'rejected'
         }]);
+        events.length = 0;
+        expect((await service.acceptIncomingMessage(data(), 'origin')).left?.code).toBe('unauthorized');
+        expect(events).toMatchObject([{
+            kind: 'business-socket-decision',
+            fromPeerId: 'origin',
+            authenticatedScope: SCOPE,
+            scopeDisposition: 'refused',
+            outcome: 'rejected',
+            rejectionCode: 'unauthorized'
+        }]);
     });
 
     it('keeps real socket results and aggregate state when the immutable sink throws', async () => {
@@ -297,11 +508,19 @@ describe('private evidence does not control delivery', () => {
                 immutableChecks.push(Object.isFrozen(event.after.confirmedRecipientPeerIds));
                 immutableChecks.push(!Reflect.set(event.after.confirmedRecipientPeerIds, '0', 'forged'));
             }
+            if (event.kind === 'business-socket-decision') {
+                if (event.authenticatedScope !== undefined) {
+                    immutableChecks.push(Object.isFrozen(event.authenticatedScope));
+                    immutableChecks.push(!Reflect.set(event.authenticatedScope, 'applicationId', 'forged'));
+                }
+                immutableChecks.push(!Reflect.set(event, 'msgId', 'forged'));
+            }
             throw new Error('sink failed');
         });
         expect((await service.acceptIncomingMessage(data(), 'origin')).right?.kind).toBe('admitted');
         expect((await service.acceptIncomingMessage(ack(), 'recipient')).right?.kind).toBe('control');
         expect(events).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: 'business-socket-decision', msgId: 'subject', authenticatedScope: SCOPE, outcome: 'admitted' }),
             expect.objectContaining({ kind: 'ack-count', outcome: 'complete', after: expect.objectContaining({ confirmedRecipientPeerIds: ['recipient'] }) }),
             expect.objectContaining({
                 kind: 'receipt-outbox',
@@ -313,6 +532,55 @@ describe('private evidence does not control delivery', () => {
         const disabled = await createObservedServer(undefined);
         expect((await disabled.acceptIncomingMessage(data(), 'origin')).right?.kind).toBe('admitted');
         expect((await disabled.acceptIncomingMessage(ack(), 'recipient')).right?.kind).toBe('control');
+    });
+
+    it('skips the private business projector entirely when its observer is absent', async () => {
+        const project = vi.spyOn(wsQueueBoxServerReceiptObservation, 'toWsQueueBoxServerReceiptBusinessFacts');
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
+        const disabled = await createObservedServer(undefined);
+        expect((await disabled.acceptIncomingMessage(data(), 'origin')).right?.kind).toBe('admitted');
+        expect((await disabled.acceptIncomingMessage(ack(), 'recipient')).right?.kind).toBe('control');
+        expect(project).not.toHaveBeenCalled();
+        const events: WsQueueBoxServerReceiptObservation[] = [];
+        const enabled = await createObservedServer((event) => events.push(event));
+        expect((await enabled.acceptIncomingMessage(data(), 'origin')).right?.kind).toBe('admitted');
+        expect(events).toContainEqual(expect.objectContaining({ kind: 'business-socket-decision', outcome: 'admitted' }));
+        expect(project).toHaveBeenCalled();
+    });
+
+    it('publishes the business decision after the actual admitted receipt effects even when its sink changes the clock', async () => {
+        const clock = { value: 1000 };
+        vi.spyOn(Date, 'now').mockImplementation(() => clock.value);
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
+        const events: WsQueueBoxServerReceiptObservation[] = [];
+        const completedEffects: WsQueueBoxServerReceiptObservation[] = [];
+        const service = await createObservedServer((event) => {
+            events.push(event);
+            if (event.kind === 'business-socket-decision') {
+                completedEffects.push(...events.filter((existing) => existing.kind === 'receipt-outbox'));
+                clock.value = 90000;
+            }
+        });
+        const accepted = await service.acceptIncomingMessage(data(), 'origin');
+        expect(accepted.left).toBeUndefined();
+        expect(accepted.right?.kind).toBe('admitted');
+        expect(events).toContainEqual(expect.objectContaining({
+            kind: 'receipt-outbox',
+            receipt: expect.objectContaining({ phase: 'admitted' }),
+            verdict: expect.objectContaining({ kind: 'admitted', durable: true })
+        }));
+        expect(events).toContainEqual(expect.objectContaining({ kind: 'business-socket-decision', outcome: 'admitted' }));
+        expect(completedEffects).toMatchObject([{
+            kind: 'receipt-outbox',
+            deadlineAtMs: 31000,
+            receipt: { phase: 'admitted', observedAtEpochMs: 1000 },
+            verdict: { kind: 'admitted', durable: true }
+        }]);
+        expect(clock.value).toBe(90000);
     });
 
     it('copies actual enqueue facts before settlement and publishes after its effects even when it throws', async () => {

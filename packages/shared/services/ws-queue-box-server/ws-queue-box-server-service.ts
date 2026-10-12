@@ -45,6 +45,7 @@ import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-t
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
+import { toError } from '../../resilience/to-error.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '../../websocket/json-web-socket-server.ts';
 import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '../queue-box-utilities.ts';
@@ -78,7 +79,9 @@ import { WsQueueBoxServerReceiptAggregation } from './ws-queue-box-server-receip
 import {
     recordWsQueueBoxServerReceiptObservation,
     toWsQueueBoxServerReceiptAckFacts,
+    toWsQueueBoxServerReceiptBusinessFacts,
     type WsQueueBoxServerReceiptAckFacts,
+    type WsQueueBoxServerReceiptBusinessFacts,
     type WsQueueBoxServerReceiptObserver,
     type WsQueueBoxServerReceiptSocketFacts
 } from './ws-queue-box-server-receipt-observation.ts';
@@ -144,6 +147,7 @@ export namespace WsQueueBoxServerService {
 
     export interface SocketObservation {
         readonly ackFacts: WsQueueBoxServerReceiptAckFacts | undefined;
+        readonly businessFacts: WsQueueBoxServerReceiptBusinessFacts | undefined;
         readonly connectionId: string;
         readonly result: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
         readonly socketFacts: WsQueueBoxServerReceiptSocketFacts | undefined;
@@ -443,7 +447,7 @@ export class WsQueueBoxServerService {
         const disposed = await Promise.allSettled([inboundDisposed, outboundDisposed]);
         for (const outcome of disposed) {
             if (outcome.status === 'rejected') {
-                throw outcome.reason;
+                throw toError(outcome.reason);
             }
         }
     }
@@ -540,14 +544,17 @@ export class WsQueueBoxServerService {
         connectionId: string
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
         const decoded = decodeALMessageValue(value);
-        const ackFacts = this.receiptObserver && decoded.right
-            ? toWsQueueBoxServerReceiptAckFacts(decoded.right)
+        const subject = this.receiptObserver && decoded.right
+            ? {
+                ackFacts: toWsQueueBoxServerReceiptAckFacts(decoded.right),
+                businessFacts: toWsQueueBoxServerReceiptBusinessFacts(decoded.right),
+                connectionId
+            }
             : undefined;
         const decision = await this.inboundAuthority.readSocketAdmission(decoded, connectionId);
         if (decision.kind === 'finished') {
-            return ackFacts === undefined ? decision.result : this.recordSocketDecision({
-                ackFacts,
-                connectionId,
+            return subject === undefined ? decision.result : this.recordSocketDecision({
+                ...subject,
                 result: decision.result,
                 socketFacts: decision.socketFacts
             });
@@ -556,29 +563,28 @@ export class WsQueueBoxServerService {
             const result = Either.ofRight<ALMessageRejection, ALInboundMessageRuntime.Acceptance>(
                 await this.inboundRuntime.retainIncomingMessage(decision.message, decision.source)
             );
-            return ackFacts === undefined
+            return subject === undefined
                 ? result
-                : this.recordSocketDecision({ ackFacts, connectionId, result, socketFacts: decision.socketFacts });
+                : this.recordSocketDecision({ ...subject, result, socketFacts: decision.socketFacts });
         }
         const current = this.inboundAuthority.resolveAuthorizedSocketAdmission(decision.value, connectionId);
         if (current.kind === 'refused') {
             const result = await this.inboundAuthority.rejectIncomingMessage(current.message, current.refusal);
-            return ackFacts === undefined
+            return subject === undefined
                 ? result
-                : this.recordSocketDecision({ ackFacts, connectionId, result, socketFacts: current.socketFacts });
+                : this.recordSocketDecision({ ...subject, result, socketFacts: current.socketFacts });
         }
         if (current.kind === 'finished') {
-            return ackFacts === undefined ? current.result : this.recordSocketDecision({
-                ackFacts,
-                connectionId,
+            return subject === undefined ? current.result : this.recordSocketDecision({
+                ...subject,
                 result: current.result,
                 socketFacts: current.socketFacts
             });
         }
         const result = await this.admitAuthorizedMessage(current.value);
-        return ackFacts === undefined
+        return subject === undefined
             ? result
-            : this.recordSocketDecision({ ackFacts, connectionId, result, socketFacts: current.value.socketFacts });
+            : this.recordSocketDecision({ ...subject, result, socketFacts: current.value.socketFacts });
     }
 
     private recordSocketDecision(
@@ -598,6 +604,19 @@ export class WsQueueBoxServerService {
                 outcome,
                 rejectionCode: observation.result.left?.code,
                 handled: observation.result.right?.kind === 'control' ? observation.result.right.handled : undefined
+            });
+        }
+        if (observation.businessFacts !== undefined && outcome !== undefined && outcome !== 'control') {
+            recordWsQueueBoxServerReceiptObservation(this.receiptObserver, {
+                ...observation.businessFacts,
+                kind: 'business-socket-decision',
+                serverPeerId: this.name,
+                connectionId: observation.connectionId,
+                fromPeerId: observation.socketFacts?.fromPeerId,
+                authenticatedScope: observation.socketFacts?.authenticatedScope,
+                scopeDisposition: observation.socketFacts?.scopeDisposition ?? 'unobserved',
+                outcome,
+                rejectionCode: observation.result.left?.code
             });
         }
         return observation.result;
@@ -735,7 +754,7 @@ export class WsQueueBoxServerService {
             return { status: 'sent', submissionAttempted: true };
         }
         catch (error) {
-            const runtimeError = error instanceof Error ? error : new Error(String(error));
+            const runtimeError = toError(error);
             this.deliveryReporting.recordOutcome({
                 status: 'retryable-transport-failure',
                 messageId: message.id.msgId,

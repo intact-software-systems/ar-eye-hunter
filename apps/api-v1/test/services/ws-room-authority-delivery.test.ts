@@ -18,6 +18,11 @@ import type { GroupMember, GroupPresenceSession } from '@shared/api/group-types.
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import type {
+    WsQueueBoxServerReceiptObservation,
+    WsQueueBoxServerReceiptObserver
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import {
     createDefaultWsQueueBoxServerService,
     type WsQueueBoxServerService
@@ -50,6 +55,7 @@ const ROOM_SCOPE: StateScope = { applicationId: ROOM.applicationId, workspaceId:
 for (const cacheState of ['absent', 'before-presence', 'wrong-scope'] as const) {
     Deno.test(`room live delivery uses current authority with ${cacheState} local cache`, async () => {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             const snapshot = createRoomSnapshot();
             harness.state.cached = cacheState === 'absent' ? undefined : {
@@ -74,8 +80,12 @@ for (const cacheState of ['absent', 'before-presence', 'wrong-scope'] as const) 
             assert.equal(harness.state.cached, cachedBefore);
             assert.deepEqual(await harness.outbox.getAllKeys(), []);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     });
 }
@@ -83,6 +93,7 @@ for (const cacheState of ['absent', 'before-presence', 'wrong-scope'] as const) 
 Deno.test('room delivery excludes revoked or expired recipients even when cache and sockets retain them', async () => {
     for (const revocation of ['member', 'session', 'expiry'] as const) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
             harness.state.current = {
@@ -110,8 +121,12 @@ Deno.test('room delivery excludes revoked or expired recipients even when cache 
             assert.deepEqual(revokedFrames, []);
             assert.deepEqual(remainingFrames, [JSON.stringify(message)]);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
@@ -131,6 +146,7 @@ Deno.test('current room denial emits its typed NACK without using a permissive r
         ] as const
     ) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             const snapshot = createRoomSnapshot();
             harness.state.current = denial === 'missing' ? undefined : {
@@ -166,15 +182,21 @@ Deno.test('current room denial emits its typed NACK without using a permissive r
             assert.deepEqual(recipientFrames, []);
             assert.deepEqual(await harness.outbox.getAllKeys(), []);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
 
 Deno.test('a room send behind the server snapshot is retained at ingress with its advisory NACK and delivered once the snapshot advances', async () => {
     for (const floor of ['version', 'roster'] as const) {
-        const harness = createRoomDeliveryHarness();
+        const observations: WsQueueBoxServerReceiptObservation[] = [];
+        const harness = createRoomDeliveryHarness(undefined, (event) => observations.push(event));
+        let bodyFailed = false;
         try {
             harness.router.install();
             const senderFrames = addRecordingConnection(harness.server, 'alice');
@@ -189,6 +211,25 @@ Deno.test('a room send behind the server snapshot is retained at ingress with it
             assert.equal(decodeALNackPayload(JSON.parse(nack.payload.resource)).reason, 'not-yet-in-sync', floor);
             await new Promise((resolve) => setTimeout(resolve, 120));
             assert.deepEqual(recipientFrames, [], floor);
+            const expected = {
+                kind: 'business-socket-decision',
+                serverPeerId: 'room-authority-delivery',
+                msgId: message.id.msgId,
+                senderId: 'alice',
+                typeId: 'chat.message.v1',
+                topicId: 'room.chat',
+                connectionId: 'alice',
+                fromPeerId: 'alice',
+                authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+                scopeDisposition: 'authorized',
+                outcome: 'pending-admission',
+                rejectionCode: undefined
+            };
+            console.log(
+                'Pending business socket effects:',
+                JSON.stringify({ floor, acceptance: accepted.right?.kind, advisoryNack: 'not-yet-in-sync', recipientFrames })
+            );
+            assert.deepEqual(observations, [expected], floor);
 
             const snapshot = createRoomSnapshot();
             harness.state.current = { ...snapshot, group: { ...snapshot.group, snapshotVersion: 3, rosterVersion: 2 } };
@@ -197,14 +238,19 @@ Deno.test('a room send behind the server snapshot is retained at ingress with it
             assert.deepEqual(recipientFrames.map((frame) => decodePersistedALMessage(frame).id), [message.id], floor);
             assert.equal(senderFrames.length, 1, floor);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
 
 Deno.test('room broadcast exclusions preserve an empty authoritative audience without cache fallback', async () => {
     const harness = createRoomDeliveryHarness();
+    let bodyFailed = false;
     try {
         const snapshot = createRoomSnapshot();
         harness.state.current = { ...snapshot, activeSessions: snapshot.activeSessions.filter((session) => session.sessionId === 'alice') };
@@ -221,13 +267,18 @@ Deno.test('room broadcast exclusions preserve an empty authoritative audience wi
         assert.deepEqual(staleFrames, []);
         assert.deepEqual(await harness.outbox.getAllKeys(), []);
     }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
     finally {
-        harness.service.dispose();
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
     }
 });
 
 Deno.test('room reconnect delivers to the current open socket and ignores delayed old-generation close', async () => {
     const harness = createRoomDeliveryHarness();
+    let bodyFailed = false;
     try {
         harness.state.cached = undefined;
         const oldSocket = createOpenTestWebSocket();
@@ -246,13 +297,18 @@ Deno.test('room reconnect delivers to the current open socket and ignores delaye
         await harness.router.route(message);
         assert.deepEqual(currentFrames, [JSON.stringify(message)]);
     }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
     finally {
-        harness.service.dispose();
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
     }
 });
 
 Deno.test('transformed proxy targets never inherit the source room authoritative audience', async () => {
     const harness = createRoomDeliveryHarness();
+    let bodyFailed = false;
     try {
         harness.state.cached = undefined;
         const sourceFrames = addRecordingConnection(harness.server, 'alice');
@@ -273,14 +329,19 @@ Deno.test('transformed proxy targets never inherit the source room authoritative
         assert.deepEqual(sourceFrames, []);
         assert.deepEqual(proxyFrames, [JSON.stringify({ ...message, targets: { mode: 'unicast', toPeerId: 'outsider' } })]);
     }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
     finally {
-        harness.service.dispose();
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
     }
 });
 
 Deno.test('generic custom authorization retains its explicit resolver-owned audience', async () => {
     for (const decision of [true, { authorized: true }] as const) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             const frames = addRecordingConnection(harness.server, 'bob');
             const router = new RallarServerWsRouter(harness.service, { authorizeRoomMessage: () => decision });
@@ -291,8 +352,12 @@ Deno.test('generic custom authorization retains its explicit resolver-owned audi
             assert.deepEqual(frames, [JSON.stringify(message)]);
             assert.equal(harness.state.authorityReads, 0);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
@@ -300,6 +365,7 @@ Deno.test('generic custom authorization retains its explicit resolver-owned audi
 Deno.test('room delivery rechecks session expiry and open sockets after awaited handlers', async () => {
     let nowEpochMs = Date.now();
     const harness = createRoomDeliveryHarness(() => nowEpochMs);
+    let bodyFailed = false;
     try {
         const senderFrames = addRecordingConnection(harness.server, 'alice');
         const recipientFrames = addRecordingConnection(harness.server, 'bob');
@@ -315,14 +381,19 @@ Deno.test('room delivery rechecks session expiry and open sockets after awaited 
         assert.deepEqual(recipientFrames, []);
         assert.equal(harness.state.authorityReads, 1);
     }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
     finally {
-        harness.service.dispose();
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
     }
 });
 
 Deno.test('a handler cannot reuse room authority after changing the target scope or exclusions', async () => {
     for (const mutation of ['scope', 'exclusions'] as const) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             const frames = addRecordingConnection(harness.server, 'bob');
             harness.router.on({ topicId: 'room.chat' }, async (message) => {
@@ -346,14 +417,19 @@ Deno.test('a handler cannot reuse room authority after changing the target scope
 
             assert.deepEqual(frames, []);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
 
 Deno.test('a socket closed during an awaited handler receives no authoritative live frame', async () => {
     const harness = createRoomDeliveryHarness();
+    let bodyFailed = false;
     try {
         const socket = createOpenTestWebSocket();
         let readyState: number = WebSocket.OPEN;
@@ -371,13 +447,18 @@ Deno.test('a socket closed during an awaited handler receives no authoritative l
         assert.deepEqual(frames, []);
         assert.equal(harness.state.authorityReads, 1);
     }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
     finally {
-        harness.service.dispose();
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
     }
 });
 
 Deno.test('a WS-carried receiver room multicast queues durable delivery to the other admitted members, never its origin, and answers it with receipts', async () => {
     const harness = createRoomDeliveryHarness();
+    let bodyFailed = false;
     try {
         const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
         harness.state.current = snapshot;
@@ -420,13 +501,18 @@ Deno.test('a WS-carried receiver room multicast queues durable delivery to the o
         assert.deepEqual(readReceipts(senderFrames)[0]?.expectedRecipientPeerIds, ['bob', 'carol']);
         assert.equal(readReceipts(senderFrames)[0]?.snapshotVersion, 2);
     }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
     finally {
-        harness.service.dispose();
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
     }
 });
 
 Deno.test('a server publication that names an ordering key is published with the sequence its outbound minted, and delivered with it', async () => {
     const harness = createRoomDeliveryHarness();
+    let bodyFailed = false;
     try {
         const aliceFrames = addRecordingConnection(harness.server, 'alice');
         const bobFrames = addRecordingConnection(harness.server, 'bob');
@@ -445,14 +531,19 @@ Deno.test('a server publication that names an ordering key is published with the
         assert.deepEqual(readNoticeOrderings(aliceFrames), minted);
         assert.deepEqual(readNoticeOrderings(bobFrames), minted);
     }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
     finally {
-        harness.service.dispose();
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
     }
 });
 
 Deno.test('a principal broadcast in a room reaches the live sessions of that principal in the room alone, and its receipt and outbox row expect them', async () => {
     for (const fanout of ['live-only', 'outbox'] as const) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             harness.state.current = createSecondSessionSnapshot();
             harness.state.cached = createSecondSessionSnapshot();
@@ -482,8 +573,12 @@ Deno.test('a principal broadcast in a room reaches the live sessions of that pri
                 assert.deepEqual((await readCapturedOutboxPolicy(harness, message))?.admittedAudience, ['alice', 'alice-2']);
             }
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
@@ -491,6 +586,7 @@ Deno.test('a principal broadcast in a room reaches the live sessions of that pri
 Deno.test('a principal broadcast to the sender\'s own principal reaches that principal\'s other session in the room alone, and its receipt expects it', async () => {
     for (const fanout of ['live-only', 'outbox'] as const) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             harness.state.current = createSecondSessionSnapshot();
             harness.state.cached = createSecondSessionSnapshot();
@@ -517,8 +613,12 @@ Deno.test('a principal broadcast to the sender\'s own principal reaches that pri
             }
             assert.deepEqual(readReceipts(frames['alice']!)[0]?.expectedRecipientPeerIds, ['alice-2'], fanout);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
@@ -526,6 +626,7 @@ Deno.test('a principal broadcast to the sender\'s own principal reaches that pri
 Deno.test('a principal broadcast whose principal has no live session in the room reaches no one and is answered with one empty admitted receipt', async () => {
     for (const fanout of ['live-only', 'outbox'] as const) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
             harness.state.current = { ...snapshot, activeSessions: snapshot.activeSessions.filter((session) => session.principalId !== 'carol') };
@@ -548,8 +649,12 @@ Deno.test('a principal broadcast whose principal has no live session in the room
             }
             assert.deepEqual(readReceipts(frames['bob']!).map((receipt) => [receipt.phase, receipt.expectedRecipientPeerIds]), [['admitted', []]], fanout);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
@@ -557,6 +662,7 @@ Deno.test('a principal broadcast whose principal has no live session in the room
 Deno.test('a principal broadcast stamped beyond the server roster is retained at ingress and delivered to that principal once the roster advances', async () => {
     for (const fanout of ['live-only', 'outbox'] as const) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             harness.state.current = createSecondSessionSnapshot();
             harness.state.cached = createSecondSessionSnapshot();
@@ -585,8 +691,12 @@ Deno.test('a principal broadcast stamped beyond the server roster is retained at
             assert.deepEqual(readChatIds(frames['alice-2']!), [message.id.msgId], fanout);
             assert.deepEqual(readChatIds(frames['carol']!), [], fanout);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
@@ -594,6 +704,7 @@ Deno.test('a principal broadcast stamped beyond the server roster is retained at
 Deno.test('a room broadcast from a client reaches the other live sessions in the room and never its sender', async () => {
     for (const fanout of ['live-only', 'outbox'] as const) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             harness.state.current = createRoomSnapshot(['alice', 'bob', 'carol']);
             harness.state.cached = createRoomSnapshot(['alice', 'bob', 'carol']);
@@ -611,8 +722,12 @@ Deno.test('a room broadcast from a client reaches the other live sessions in the
             assert.deepEqual(readChatIds(frames['alice']!), [], fanout);
             assert.deepEqual(readReceipts(frames['alice']!)[0]?.expectedRecipientPeerIds, ['bob', 'carol'], fanout);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
@@ -620,6 +735,7 @@ Deno.test('a room broadcast from a client reaches the other live sessions in the
 Deno.test('a room broadcast with a fixed list reaches the listed sessions in the room alone, and its receipt expects them', async () => {
     for (const fanout of ['live-only', 'outbox'] as const) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             harness.state.current = createRoomSnapshot(['alice', 'bob', 'carol']);
             harness.state.cached = createRoomSnapshot(['alice', 'bob', 'carol']);
@@ -640,8 +756,12 @@ Deno.test('a room broadcast with a fixed list reaches the listed sessions in the
             }
             assert.deepEqual(readReceipts(frames['alice']!).map((receipt) => receipt.expectedRecipientPeerIds), [['carol']], fanout);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
@@ -649,6 +769,7 @@ Deno.test('a room broadcast with a fixed list reaches the listed sessions in the
 Deno.test('a world broadcast reaches each live connection of the authenticated scope of its sender once, and no one else', async () => {
     for (const fanout of ['live-only', 'outbox'] as const) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             harness.router.defineTopic({ topicId: 'app.news', fanout });
             harness.router.install();
@@ -674,14 +795,19 @@ Deno.test('a world broadcast reaches each live connection of the authenticated s
                 assert.deepEqual((await readCapturedOutboxPolicy(harness, message))?.recipientScope, ROOM_SCOPE);
             }
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
 
 Deno.test('an all broadcast from a client is refused unauthorized and reaches no one', async () => {
     const harness = createRoomDeliveryHarness();
+    let bodyFailed = false;
     try {
         harness.router.install();
         const senderFrames = addRecordingConnection(harness.server, 'alice');
@@ -697,14 +823,19 @@ Deno.test('an all broadcast from a client is refused unauthorized and reaches no
         ]);
         assert.deepEqual(bobFrames, []);
     }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
     finally {
-        harness.service.dispose();
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
     }
 });
 
 Deno.test('a group-leader room send reaches the appointed director alone, and its receipt expects the director and completes on its ACK', async () => {
     for (const fanout of ['live-only', 'outbox'] as const) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             harness.state.current = withDirector(createRoomSnapshot(['alice', 'bob', 'carol']), 'carol');
             // The local cache predates the appointment: the audience admitted from current authority decides delivery.
@@ -735,8 +866,12 @@ Deno.test('a group-leader room send reaches the appointed director alone, and it
                 assert.deepEqual((await readCapturedOutboxPolicy(harness, message))?.admittedAudience, ['carol']);
             }
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
@@ -767,6 +902,7 @@ for (
 ) {
     Deno.test(`a group-leader room send is refused no-leader with its typed NACK and reaches no one when ${situation}`, async () => {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
             harness.state.current = director === undefined ? snapshot : withDirector(snapshot, director);
@@ -788,13 +924,34 @@ for (
             }
             assert.deepEqual(await harness.outbox.getAllKeys(), []);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     });
 }
 
-function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarness {
+/** Joins the service's owned cleanup; cleanup diagnostics cannot replace an earlier test failure. */
+async function disposeRoomDeliveryHarness(harness: RoomDeliveryHarness, bodyFailed: boolean): Promise<void> {
+    try {
+        await harness.service.dispose();
+    }
+    catch (caught) {
+        const error = toError(caught);
+        if (!bodyFailed) {
+            throw error;
+        }
+        try {
+            console.error('Room delivery cleanup failed after body failure:', error);
+        }
+        catch { /* Keep the primary test failure even if its cleanup diagnostic fails. */ }
+    }
+}
+
+function createRoomDeliveryHarness(nowEpochMs?: () => number, receiptObserver?: WsQueueBoxServerReceiptObserver): RoomDeliveryHarness {
     const state: RoomDeliveryState = {
         current: createRoomSnapshot(),
         cached: createRoomSnapshot(),
@@ -812,6 +969,7 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarne
                 ? { scope: connectionScopes.get(connection.id) ?? ROOM_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         name: 'room-authority-delivery',
+        receiptObserver,
         forwardsRoomScopedMessages: false,
         targetResolver: createWsServerTargetResolver(server, { findGroupSnapshotByRef: () => state.cached })
     });
