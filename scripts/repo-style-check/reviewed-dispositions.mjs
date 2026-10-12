@@ -5,6 +5,39 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // One engine lifecycle owns registration fences, scheduling and bounded
+    // raw-completion observation. Keeping settlement beside shutdown makes the
+    // exact failure owner visible; this warning-tier cap approves no growth.
+    Object.freeze({
+        path: 'packages/shared/services/inbox-outbox-engine.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 51
+    }),
+    // The exact promise rejection boundary immediately normalizes through
+    // toError before calling the synchronous failure port. No raw value escapes.
+    Object.freeze({
+        path: 'packages/shared/services/inbox-outbox-engine.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // These three process rejection listeners normalize directly to Error for
+    // independent absence assertions; they supply no production input or policy.
+    Object.freeze({
+        path: 'packages/tests/shared/engine.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'onUnhandled',
+        maximumMagnitude: 3
+    }),
+    // The anonymous stop-result callback immediately normalizes its rejection
+    // to Error before the test checks the exact AggregateError membership.
+    Object.freeze({
+        path: 'packages/tests/shared/engine.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
     // Babel parser fields remain raw until object/array/type and consumed scalar
     // checks normalize them. These are the five exact reviewed traversal owners;
     // undefined identifies the current AST index field, not named-owner immunity.
