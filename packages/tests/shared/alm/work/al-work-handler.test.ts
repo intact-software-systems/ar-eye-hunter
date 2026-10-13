@@ -1,4 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
@@ -11,12 +19,17 @@ import type {
 } from '@shared/alm/work/al-work-handler.ts';
 import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
 import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
-import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort, ALWorkRelease } from '@shared/alm/work/al-work-queue-port.ts';
+import type {
+    ALWorkClaim,
+    ALWorkOutcome,
+    ALWorkQueuePort,
+    ALWorkRelease
+} from '@shared/alm/work/al-work-queue-port.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+
 import {
     collectProbe,
     fakePort,
@@ -522,9 +535,10 @@ describe('ALWorkHandler', () => {
     it('flushes the claim a disposed batch already ran before it abandons the rest', async () => {
         const flushes: ALWorkRelease[][] = [];
         const port = recordingPort(['abort-1', 'abort-2'], flushes);
-        let handler: ALWorkHandler | undefined;
-        let disposing: Promise<void> | undefined;
-        handler = new ALWorkHandler({
+        const claimEntered = Promise.withResolvers<void>();
+        const finishClaim = Promise.withResolvers<void>();
+        onTestFinished(() => finishClaim.resolve());
+        const handler = new ALWorkHandler({
             workerId: 'abort-worker',
             port,
             queueEngine: createEngine(),
@@ -536,19 +550,21 @@ describe('ALWorkHandler', () => {
             selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
             claimSuccessor: undefined,
             runClaim: async () => {
-                disposing = handler?.dispose();
+                claimEntered.resolve();
+                await finishClaim.promise;
                 return { status: 'completed' };
             },
             diagnostics: undefined
         });
-        onTestFinished(async () => {
-            await disposing;
-            await handler?.dispose();
-        });
+        onTestFinished(() => handler.dispose());
 
-        await handler.ready();
+        const bootstrap = handler.ready();
+        await claimEntered.promise;
+        const disposing = handler.dispose();
+        finishClaim.resolve();
+        await bootstrap;
+        await disposing;
 
-        // The second claim is never run, and the first is not stranded reserved by the disposal.
         expect(flushes).toHaveLength(1);
         expect(flushes[0]!.map((release) => release.claim.entry.key.contextId)).toEqual(['abort-1']);
     });
@@ -643,7 +659,12 @@ describe('ALWorkHandler', () => {
         });
         await port.retainIfAbsent(newWorkEntry('AL_TEST', 'cas-loser'));
         let attemptCount = 0;
-        const engine = createEngine();
+        const engine = new InboxOutboxEngine({
+            nowEpochMs: () => nowMs,
+            random: () => 0.5,
+            reportTaskFailure: () => undefined
+        });
+        onTestFinished(() => engine.stop());
         const handler = new ALWorkHandler({
             workerId: 'cas-worker',
             port,
@@ -676,7 +697,8 @@ describe('ALWorkHandler', () => {
         expect(attemptCount).toBe(1);
 
         nowMs = 10_001;
-        await engine.executeOnce();
+        expect(await engine.executeOnce()).toBe(true);
+        await engine.stop();
         expect(attemptCount).toBe(2);
 
         // The second loss earns the policy's second delay, so the same passes still buy no attempt.
