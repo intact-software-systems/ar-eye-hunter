@@ -1,3 +1,4 @@
+import { isRoutineBrowserDiagnostic } from '@shared-test/rallar-bb-test/browser/diagnostic-recording/is-routine-browser-diagnostic.ts';
 import {
     toRallarDiagnosticsPorts,
     type RallarDiagnosticsPorts
@@ -69,6 +70,16 @@ export class BlackBoxRallarRuntimeDiagnostics {
 
     emitRoutineDiagnostic = (config: BlackBoxRallarConnectionConfig, topic: string): void => {
         this.emit({ kind: 'diagnostic', topic, ...this.context(config), routineBrowserDiagnostic: true });
+    };
+
+    emitLifecycleDiagnostic = (config: BlackBoxRallarConnectionConfig, topic: string, data: object): void => {
+        this.emit({
+            kind: 'diagnostic',
+            topic,
+            ...this.context(config),
+            data,
+            ...(isRoutineBrowserDiagnostic(topic, data) ? { routineBrowserDiagnostic: true as const } : {})
+        });
     };
 
     emitError = (input: BlackBoxRallarRuntimeDiagnostics.ErrorInput): void => {
@@ -169,7 +180,10 @@ function publishBlackBoxRallarSignalingDiagnostic(
     diagnostics.emit({
         kind: 'diagnostic',
         topic: 'rallar.browser.rtc.signaling_diagnostics',
-        data: native.event ?? { ...event }
+        data: native.event ?? { ...event },
+        ...(!native.recognized && isRoutineBrowserDiagnostic('rallar.browser.rtc.signaling_diagnostics', event)
+            ? { routineBrowserDiagnostic: true as const }
+            : {})
     });
 }
 

@@ -31,6 +31,7 @@ import { BrowserRallarFeatureCommands } from './browser/browser-rallar-feature-c
 import { BrowserRtcCommands } from './browser/browser-rtc-commands.ts';
 import { BrowserRtcStream } from './browser/browser-rtc-stream.ts';
 import { BrowserWebSocketCommands } from './browser/browser-web-socket-commands.ts';
+import { isRoutineBrowserDiagnostic } from './browser/diagnostic-recording/is-routine-browser-diagnostic.ts';
 import { toRallarBrowserEventInput } from './browser/to-rallar-browser-event-input.ts';
 import { computeRallarBlackBoxDiagnosticSeverity } from './diagnostics.ts';
 import { decodeRtcCaptureSupport } from './distributed/rtc-capture-support.ts';
@@ -94,9 +95,10 @@ class BrowserCommandAdapter {
         event: RallarBlackBoxBrowserRallarEvent
     ): RallarBlackBoxTestRuntimeEventInput | undefined {
         const normalized = toRallarBrowserEventInput(event);
-        // Only raw no-data progress is certified; normalized data can be the metadata fallback.
+        // Check raw detail: normalization can replace absent data with event metadata.
         const omit = this.environment.routineBrowserDiagnostics === 'disabled' &&
-            event.kind === 'diagnostic' && event.routineBrowserDiagnostic === true && event.data === undefined &&
+            event.kind === 'diagnostic' && event.routineBrowserDiagnostic === true &&
+            isRoutineBrowserDiagnostic(normalized.topic, event.data) &&
             normalized.kind === 'diagnostic' && normalized.severity === 'info' &&
             computeRallarBlackBoxDiagnosticSeverity({
                     topic: normalized.topic,

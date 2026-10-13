@@ -363,11 +363,11 @@ export class BlackBoxRallarConnectOperation {
         return {
             ...(roomRef ? { unsubscribeFormationDiagnostics: formation.installDiagnostics(roomRef) } : {}),
             unsubscribeWsLifecycle: rallar.ws.onLifecycle(
-                (event) => diagnostics.emitDiagnostic(config, 'rallar.browser.ws.lifecycle', event),
+                (event) => diagnostics.emitLifecycleDiagnostic(config, 'rallar.browser.ws.lifecycle', event),
                 { emitCurrent: true }
             ),
             unsubscribeRtcLifecycle: rallar.rtc.onLifecycle(
-                (event) => diagnostics.emitDiagnostic(config, 'rallar.browser.rtc.lifecycle', event),
+                (event) => diagnostics.emitLifecycleDiagnostic(config, 'rallar.browser.rtc.lifecycle', event),
                 { emitCurrent: true }
             )
         };

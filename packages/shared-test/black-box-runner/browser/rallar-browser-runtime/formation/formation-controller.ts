@@ -1,3 +1,4 @@
+import { isRoutineFormationObservation } from '@shared-test/rallar-bb-test/browser/diagnostic-recording/routine-formation-diagnostics.ts';
 import type {
     RallarRtcFacade,
     RallarRtcRoomTransportStatus
@@ -151,15 +152,7 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
                         : { role: event.layout.role, identity: event.layout.identity })
                 })
             ),
-            this.#dependencies.rtc.onStatus(() => {
-                const summary = this.summary(roomRef);
-                if (summary !== undefined) {
-                    this.#emit(BLACK_BOX_RALLAR_FORMATION_TOPICS.roomStatus, roomRef, {
-                        room: summary.room,
-                        groupRevision: summary.causalRevision.groupRevision
-                    });
-                }
-            })
+            this.#dependencies.rtc.onStatus(() => this.#emitRoomStatus(roomRef))
         ];
         return () => {
             for (const unsubscribe of subscriptions) {
@@ -167,6 +160,29 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
             }
         };
     };
+
+    #emitRoomStatus(roomRef: GroupRef): void {
+        const status = this.#dependencies.formation(roomRef).status();
+        if (status === undefined) {
+            return;
+        }
+        const transport = this.#dependencies.rtc.roomStatus(roomRef);
+        const data = {
+            room: toFormationRoomStatus(transport.rtc),
+            groupRevision: status.snapshot.causalRevision.groupRevision
+        };
+        const topic = BLACK_BOX_RALLAR_FORMATION_TOPICS.roomStatus;
+        const routine = isRoutineFormationObservation(roomRef, status, transport);
+        this.#dependencies.emit({
+            kind: 'diagnostic',
+            topic,
+            roomId: roomRef.groupId,
+            applicationId: roomRef.applicationId,
+            workspaceId: roomRef.workspaceId,
+            data,
+            ...(routine ? { routineBrowserDiagnostic: true as const } : {})
+        });
+    }
 
     #issue = (
         handle: RallarRoomFormation,
