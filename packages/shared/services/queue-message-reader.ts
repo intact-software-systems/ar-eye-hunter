@@ -12,13 +12,13 @@ import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/r
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { readRtcTopologyWorkEntry, RTC_TOPOLOGY_OUTBOX_TOPIC } from '../queuebox/rtc-topology-work-entry-contract.ts';
-
 import { QueueBoxUtilities } from './queue-box-utilities.ts';
 import type { OnQueuedMessageCallback, OnRejectedQueuedMessageCallback } from './queue-message-callbacks.ts';
 
 export namespace QueueMessageReader {
     export interface Config {
         readonly enqueueType: string;
+        readonly creationNow: QueueBoxUtilities.CreationClock;
         readonly dequeueOptions: DequeueResourceEntryOptions;
     }
 }
@@ -48,7 +48,7 @@ export class QueueMessageReader {
 
     async enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry> {
         return await this.repository.enqueueIfAbsent(
-            QueueBoxUtilities.toResourceEntryFromMsg(message, this.config.enqueueType)
+            QueueBoxUtilities.toResourceEntryFromMsg(message, this.config.enqueueType, this.config.creationNow())
         );
     }
 

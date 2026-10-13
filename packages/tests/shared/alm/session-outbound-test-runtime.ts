@@ -1,5 +1,4 @@
-import '../../setup-browser-indexeddb.ts';
-
+import { Temporal } from '@js-temporal/polyfill';
 import { onTestFinished } from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -25,6 +24,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import '../../setup-browser-indexeddb.ts';
 import { GLOBAL_CHECKPOINT_TIMERS, TEST_CHECKPOINT_SETTINGS } from './checkpoint/al-checkpoint-test-support.ts';
 import { createOutboundRuntimeWithWorkTask, createVolatileOutboundTestStores } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
@@ -92,7 +92,7 @@ export function createSessionOutboundTestRuntime<TOwnership extends ALDurableWor
             checkpointStores,
             durableWorkOwnership: ownership,
             carrier: 'ws',
-            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: (msg) => ({
                 msg,

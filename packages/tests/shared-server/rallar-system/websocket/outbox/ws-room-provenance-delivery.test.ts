@@ -1,4 +1,11 @@
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { installQueueBoxPubSubBridge, toPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
@@ -53,7 +60,7 @@ describe('verified direct room row delivery', () => {
             groupRef: ROOM,
             qos: { durability: { algo: 'local-outbox' } }
         });
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         const winner = await fixture.service.enqueueOutboxIfAbsent(message, { admittedAudience: ['winner-peer'], recipientScope: undefined });
         expect(winner.verdict.kind).toBe('admitted');
         const authorities: (ALOutboundPlanningAuthority | undefined)[] = [];
@@ -344,7 +351,7 @@ class RoomFixture {
         const message: ALMessage = corruption === 'principal'
             ? { ...broadcast, targets: { mode: 'broadcast', scope: 'principal', principalRef: { ...SCOPE, principalId: 'principal' } } }
             : broadcast;
-        const raw = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const raw = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         expect(decodePersistedALMessage(raw.resource)).toEqual(message);
         const entry = corruption === 'forged-canonical-key' ? { ...raw, key: { ...raw.key, topicId: 'AL_OUTBOUND_MESSAGE' } } : raw;
         const proof = await createProof(message, entry, { audience, wrongRoom: corruption === 'wrong-room' });

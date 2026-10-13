@@ -1,11 +1,15 @@
-import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
-import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
     it
 } from 'vitest';
+
+import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
+import type { ALOutboundAckTrackingPlan, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
 import {
     createDefaultOutboundTestStores,
     createOutboundCanonicalEntry,
@@ -21,8 +25,10 @@ const HOP: ALOutboundAckTrackingPlan = {
     mode: 'hop'
 };
 
-async function computeTrackedReceiptAlgo(
-    ackTracking: ALOutboundAckTrackingPlan
+async function readTrackedReceiptAlgo(
+    ackTracking: ALOutboundAckTrackingPlan,
+    creationNow: QueueBoxUtilities.CreationClock,
+    clock: ALOutboundMessageRuntime.Clock
 ): Promise<ALAckAlgo> {
     const { admissionStore } = createDefaultOutboundTestStores();
     const message = createOutboundMessage('tracked-receipt-algo');
@@ -40,17 +46,17 @@ async function computeTrackedReceiptAlgo(
     });
     return computeALOutboundDispatch({
         read,
-        outboxEntry: createOutboundCanonicalEntry(admissionStore, read.msg),
-        dispatchAtMs: Date.now(),
+        outboxEntry: createOutboundCanonicalEntry(admissionStore, read.msg, creationNow()),
+        dispatchAtMs: clock.nowMs(),
         intent: 'enqueue',
         phase: 'immediate',
         options: {}
     }).trackedReceiptAlgo;
 }
 
-describe('the receipt an admission reports it tracks (every receipt end settles)', () => {
-    it('reports the mode of a receipt its commit writes a row for', async () => {
-        expect(await computeTrackedReceiptAlgo(HOP)).toBe('hop');
+describe('outbound admission tracked receipt algorithm', () => {
+    it('reports hop when timeout and audience permit a pending receipt', async () => {
+        expect(await readTrackedReceiptAlgo(HOP, Temporal.Now.instant, { nowMs: Date.now })).toBe('hop');
     });
 
     it.each([
@@ -61,18 +67,22 @@ describe('the receipt an admission reports it tracks (every receipt end settles)
             mode: 'receiver' as const,
             timeoutMs: 0
         }]
-    ])('reports none for %s, which no row tracks', async (_label, tracking) => {
-        expect(await computeTrackedReceiptAlgo(tracking)).toBe('none');
+    ])('reports none for %s', async (_label, tracking) => {
+        expect(await readTrackedReceiptAlgo(tracking, Temporal.Now.instant, { nowMs: Date.now })).toBe('none');
     });
 
     it('keeps receiver for an empty expected set: the WS server receipt or the empty frozen audience settles it', async () => {
         expect(
-            await computeTrackedReceiptAlgo({
-                ...HOP,
-                mode: 'receiver',
-                expectedPeerIds: [],
-                nextHopPeerIds: []
-            })
+            await readTrackedReceiptAlgo(
+                {
+                    ...HOP,
+                    mode: 'receiver',
+                    expectedPeerIds: [],
+                    nextHopPeerIds: []
+                },
+                Temporal.Now.instant,
+                { nowMs: Date.now }
+            )
         )
             .toBe('receiver');
     });

@@ -1,5 +1,4 @@
-import '../../../setup-browser-indexeddb.ts';
-
+import { Temporal } from '@js-temporal/polyfill';
 import {
     beforeEach,
     describe,
@@ -18,14 +17,16 @@ import type {
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { waitForIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
 
+import '../../../setup-browser-indexeddb.ts';
 import {
-    computeOutboundTestAdmission,
     createIndexedDbOutboundTestStores,
     createOutboundMessage,
     createRecordingOutboundTestRuntime,
     holdOutboundClaims,
     OUTBOUND_TEST_SEND_PLANNER,
+    readOutboundTestAdmission,
     runOutboundWorkTask,
     trackOutboundTestAcks
 } from '../outbound-runtime-test-fixture.ts';
@@ -71,7 +72,7 @@ async function writeCorruptReceiptRow(dbName: string, message: ALMessage): Promi
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
     });
-    await new Promise<void>((resolve, reject) => {
+    try {
         const transaction = db.transaction(STATE_STORE_NAME, 'readwrite');
         transaction.objectStore(STATE_STORE_NAME).put({
             key,
@@ -79,10 +80,11 @@ async function writeCorruptReceiptRow(dbName: string, message: ALMessage): Promi
             writeToken: 'corrupt',
             expireAtTimestamp: Date.now() + 60_000
         });
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-    });
-    db.close();
+        await waitForIndexedDbTransaction(transaction);
+    }
+    finally {
+        db.close();
+    }
 }
 
 async function admitGuardedMessage(
@@ -91,7 +93,17 @@ async function admitGuardedMessage(
     planner: ALOutboundPlanner<OutboundTestPayload>
 ): Promise<void> {
     await store.ready();
-    expect(await store.commitBundle(await computeOutboundTestAdmission(store, message, planner)))
+    expect(
+        await store.commitBundle(
+            await readOutboundTestAdmission({
+                store: store,
+                message: message,
+                creationNow: () => Temporal.Now.instant(),
+                clock: { nowMs: () => Date.now() },
+                planner: planner
+            })
+        )
+    )
         .toBe('committed');
 }
 
@@ -155,9 +167,10 @@ describe('the guards a prepared send rechecks before its carrier runs', () => {
         const dbName = `send-guards-superseded-${crypto.randomUUID()}`;
         const { admissionStore } = createGuardsTestStores(dbName);
         const older = createOutboundMessage('older');
+        const candidate = createOutboundMessage('newer');
         const newer = {
-            ...createOutboundMessage('newer'),
-            id: { ...createOutboundMessage('newer').id, ts: older.id.ts + 1 }
+            ...candidate,
+            id: { ...candidate.id, ts: older.id.ts + 1 }
         };
         await admitGuardedMessage(admissionStore, older, SUPERSEDING_PLANNER);
         await admitGuardedMessage(admissionStore, newer, SUPERSEDING_PLANNER);

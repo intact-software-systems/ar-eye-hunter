@@ -1,3 +1,11 @@
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
@@ -8,8 +16,11 @@ import {
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toALOrderingTrackKey, type ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import { toALSeqRangesText } from '@shared/al-contracts/al-seq-range.ts';
-import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
-import type { ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
+import {
+    createInMemoryALAdmissionState,
+    InMemoryAdmissionBackend,
+    type ALAdmissionMemoryState
+} from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { decodeALAdmissionControlValue } from '@shared/alm/al-admission-value-validation.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
@@ -30,21 +41,16 @@ import {
     toALOutboundWorkType
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+
 import {
-    describe,
-    expect,
-    it,
-    onTestFinished,
-    vi
-} from 'vitest';
-import {
-    computeOutboundTestAdmission,
     createOutboundTestRuntimeFor,
+    readOutboundTestAdmission,
     runOutboundWorkTask
 } from './outbound-runtime-test-fixture.ts';
 
@@ -54,6 +60,25 @@ interface OutboundObligationInput {
     readonly ackedPeerIds: readonly string[];
     readonly ordering: ALMessage['ordering'];
     readonly retryTracking: ALOutboundRetryTrackingPlan | undefined;
+}
+
+interface ControlAdmissionFixture {
+    readonly backend: InMemoryAdmissionBackend;
+    readonly admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>;
+    readonly state: ALAdmissionMemoryState;
+    readonly workQueue: InMemoryQueueBox;
+    readonly control: ALOutboundControlAdmission<ALOutboundTransportMessage>;
+}
+
+interface ALOutboundCommitObservation {
+    readonly storeKeys: string[];
+    readonly workKinds: string[];
+}
+
+interface ResyncNackInput {
+    readonly toPeerId?: string;
+    /** The ordering hints the NACK carries: the track of the retained send, a foreign track, or none. */
+    readonly hints?: 'retained-track' | 'foreign-track' | 'none';
 }
 
 const TERMINAL_NACK_REASONS = ['expired', 'unauthorized', 'stale', 'membership-fenced'] as const;
@@ -95,7 +120,12 @@ describe('outbound control admission identity', () => {
                 constraints: { expiresAtMs: Date.now() + 30_000 },
                 ordering: { orderingKey: 'ordered-stream/'.repeat(20), seq: 10, epoch: 7 }
             };
-            const admission = await computeOutboundTestAdmission(admissionStore, message);
+            const admission = await readOutboundTestAdmission({
+                store: admissionStore,
+                message: message,
+                creationNow: () => Temporal.Now.instant(),
+                clock: { nowMs: () => Date.now() }
+            });
             await admissionStore.commitBundle({
                 ...admission,
                 mutations: [...admission.mutations, {
@@ -542,11 +572,18 @@ describe('outbound control admission identity', () => {
     });
 
     it('states the not-yet-in-sync exhaustion when its retry budget is spent (D56)', async () => {
-        const { admissionStore, workQueue } = createFixture();
+        const { backend, admissionStore, workQueue } = createFixture();
         await seedDirectObligation(admissionStore, {
             enabled: true,
             maxAttempts: 2,
             retryDelayMs: 5_000
+        });
+        await backend.write(async (transaction) => {
+            await transaction.set('outbound-control:not-yet-in-sync-retry:message', {
+                msgId: 'message',
+                attempts: 2,
+                pendingEffectId: toALOutboundEffectId(['nack-retry', 'message', 'not-yet-in-sync', 2])
+            }, Date.now() + 30_000);
         });
         const settlements: ALDeliverySettlement[] = [];
         const runtime = createOutboundTestRuntimeFor<ALOutboundTransportMessage>({
@@ -563,9 +600,6 @@ describe('outbound control admission identity', () => {
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         await runtime.ready();
-        const exhausted = vi.spyOn(ALOutboundControlAdmission.prototype, 'scheduleNotYetInSyncRetry')
-            .mockResolvedValue({ status: 'exhausted' });
-        onTestFinished(() => exhausted.mockRestore());
 
         expect(await runtime.acceptControlMessage(notYetInSyncNack(), 'peer')).toEqual({
             kind: 'committed'
@@ -799,14 +833,6 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
     });
 });
 
-interface ControlAdmissionFixture {
-    readonly backend: InMemoryAdmissionBackend;
-    readonly admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>;
-    readonly state: ALAdmissionMemoryState;
-    readonly workQueue: InMemoryQueueBox;
-    readonly control: ALOutboundControlAdmission<ALOutboundTransportMessage>;
-}
-
 function createFixture(settlements?: ALOutboundSettlementFact[]): ControlAdmissionFixture {
     const state = createInMemoryALAdmissionState();
     const backend = new InMemoryAdmissionBackend(state, Date.now);
@@ -855,11 +881,6 @@ function toPendingControl(payload: ALOutboundDurableEffect<ALOutboundTransportMe
         throw new Error(`Expected retained admit-control work, received ${payload.kind}`);
     }
     return payload;
-}
-
-interface ALOutboundCommitObservation {
-    readonly storeKeys: string[];
-    readonly workKinds: string[];
 }
 
 /** Records what each backend write commits, so a commit boundary can be asserted rather than coexistence. */
@@ -949,11 +970,13 @@ async function seedReceiptlessRoomObligation(
         constraints: { expiresAtMs: Date.now() + 30_000 },
         ordering: { orderingKey: 'stream', epoch: 0, seq: 300 }
     };
-    const admission = await computeOutboundTestAdmission(
-        admissionStore,
-        msg,
-        (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
-    );
+    const admission = await readOutboundTestAdmission({
+        store: admissionStore,
+        message: msg,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() },
+        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
+    });
     await admissionStore.commitBundle(admission);
 }
 
@@ -968,11 +991,13 @@ async function seedReceiptlessUnicastObligation(
         targets: { mode: 'unicast', toPeerId: 'receiver' },
         constraints: { expiresAtMs: Date.now() + 30_000 }
     };
-    const admission = await computeOutboundTestAdmission(
-        admissionStore,
-        msg,
-        (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
-    );
+    const admission = await readOutboundTestAdmission({
+        store: admissionStore,
+        message: msg,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() },
+        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
+    });
     await admissionStore.commitBundle(admission);
 }
 
@@ -1000,11 +1025,13 @@ async function seedObligation(
         constraints: { expiresAtMs: Date.now() + 30_000 },
         ordering: input.ordering
     };
-    const admission = await computeOutboundTestAdmission(
-        admissionStore,
-        msg,
-        (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], retryTracking: input.retryTracking })
-    );
+    const admission = await readOutboundTestAdmission({
+        store: admissionStore,
+        message: msg,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() },
+        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], retryTracking: input.retryTracking })
+    });
     await admissionStore.commitBundle({
         ...admission,
         mutations: [
@@ -1072,12 +1099,6 @@ function orderedRepairControl(orderingKey: string, missingRanges: readonly ALSeq
             missingRanges
         }
     );
-}
-
-interface ResyncNackInput {
-    readonly toPeerId?: string;
-    /** The ordering hints the NACK carries: the track of the retained send, a foreign track, or none. */
-    readonly hints?: 'retained-track' | 'foreign-track' | 'none';
 }
 
 /** The resync-required NACK a relay sends the origin, with the ordering hints the WS server attaches to it. */

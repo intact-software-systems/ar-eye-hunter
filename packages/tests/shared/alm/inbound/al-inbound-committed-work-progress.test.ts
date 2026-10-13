@@ -274,7 +274,7 @@ it.each(['page-read', 'reservation'] as const)(
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             stores,
-            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
+            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant())
         });
         const runtime = new ALInboundMessageRuntime({
             ...resources,

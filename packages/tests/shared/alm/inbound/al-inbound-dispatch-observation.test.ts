@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     expect,
     it,
@@ -8,6 +9,7 @@ import {
 
 import { planALMessageHandling, type ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
 import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALInboundOrderedDeliveryRead } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery, type ALInboundDeliveryObservation } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
 import { toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
@@ -48,6 +50,20 @@ interface ObservedDispatch {
     readonly observed: ALInboundDeliveryObservation;
 }
 
+interface DispatchResultScenario {
+    readonly returned: 'completed' | 'retry';
+    readonly canDispatch: boolean;
+    readonly disposition: string;
+    readonly calls: readonly string[];
+}
+
+interface OrderedDispatchScenario {
+    readonly outcome: 'completed' | 'retry';
+    readonly completedThrough: number;
+    readonly predecessor: ALInboundOrderedDeliveryRead['predecessor'];
+    readonly disposition: string;
+}
+
 function createDispatchFixture(input: DispatchFixtureInput): DispatchFixture {
     const events: ALInboundRuntimeDiagnosticsEvent[] = [];
     const calls: string[] = [];
@@ -56,7 +72,7 @@ function createDispatchFixture(input: DispatchFixtureInput): DispatchFixture {
         selfPeerId: 'receiver',
         nowMs: () => 100,
         queueEngine: new InboxOutboxEngine(),
-        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
+        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant())
     });
     const delivery = new ALInboundAdmittedDelivery({
         ...resources,
@@ -124,13 +140,13 @@ it.each(
     }]);
 });
 
-it.each(
+it.each<DispatchResultScenario>(
     [
-        ['completed', true, 'port-returned', ['port']],
-        ['retry', true, 'port-retry', ['port']],
-        ['completed', false, 'consumer-unavailable', []]
-    ] as const
-)('records %s with readiness %s without inferring a selected consumer', async (returned, canDispatch, disposition, calls) => {
+        { returned: 'completed', canDispatch: true, disposition: 'port-returned', calls: ['port'] },
+        { returned: 'retry', canDispatch: true, disposition: 'port-retry', calls: ['port'] },
+        { returned: 'completed', canDispatch: false, disposition: 'consumer-unavailable', calls: [] }
+    ]
+)('records $returned with readiness $canDispatch without inferring a selected consumer', async ({ returned, canDispatch, disposition, calls }) => {
     const fixture = createDispatchFixture({ returned, canDispatch, sinkThrows: false });
     const { effect, observed } = createObservedDispatch((plan) => plan);
     expect(await fixture.delivery.deliver(effect, observed)).toBe(canDispatch ? returned : 'retry');
@@ -148,9 +164,12 @@ it('preserves a thrown port error even when the diagnostic sink throws', async (
     expect(JSON.stringify(fixture.events)).not.toContain('private');
 });
 
-it.each([['completed', 1, undefined, 'ordering-completed'], ['retry', 0, { kind: 'effect' }, 'ordering-retry']] as const)(
-    'records ordered %s without invoking the port',
-    async (outcome, completedThrough, predecessor, disposition) => {
+it.each<OrderedDispatchScenario>([
+    { outcome: 'completed', completedThrough: 1, predecessor: undefined, disposition: 'ordering-completed' },
+    { outcome: 'retry', completedThrough: 0, predecessor: { kind: 'effect' }, disposition: 'ordering-retry' }
+])(
+    'records ordered $outcome without invoking the port',
+    async ({ outcome, completedThrough, predecessor, disposition }) => {
         const fixture = createDispatchFixture({ returned: 'completed', canDispatch: true, sinkThrows: false });
         vi.spyOn(fixture.resources.admissionStore, 'readOrderedDelivery').mockResolvedValue({ completedThrough, predecessor });
         const { effect, observed } = createObservedDispatch((plan) => plan, true);

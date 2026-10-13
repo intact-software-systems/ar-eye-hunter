@@ -15,8 +15,7 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
-import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { decodeALInboundWorkEntry, type ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -56,7 +55,7 @@ it('terminalizes a malformed reservation without starving independent timeout re
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
         queueEngine: engine,
-        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
     });
     let available = false;
     const delivered: string[] = [];
@@ -114,7 +113,7 @@ it('retries durable local delivery after restart with a single admission work ow
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
         queueEngine: engine,
-        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
     });
     const attempts: string[] = [];
     const createRuntime = () =>
@@ -175,7 +174,7 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             queueEngine: engine,
-            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
         });
         vi.spyOn(resources.workQueue, 'releaseEntries').mockRejectedValueOnce(
             new Error('Queue finalization temporarily unavailable')
@@ -244,7 +243,7 @@ it.each([
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
         queueEngine: engine,
-        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
     });
     const reserve = resources.workQueue.reserveEntries.bind(resources.workQueue);
     vi.spyOn(resources.workQueue, 'reserveEntries').mockImplementation(async (request) => {
@@ -316,7 +315,7 @@ it('retains predecessor completion through the longest admitted deadline across 
                 selfPeerId: 'receiver',
                 stores: { admissionStore: store, workQueue: state.workQueue },
                 queueEngine: engine,
-                toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+                toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
             }),
             planIncomingMessage: (incoming, _source, observations) =>
                 planALMessageHandling(incoming, { ...observations, selfPeerId: 'receiver', fromPeerId: 'sender' }),
@@ -379,7 +378,7 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
             selfPeerId: 'receiver',
             stores: { admissionStore: store, workQueue: backend.workQueue },
             queueEngine: engine,
-            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
         }),
         planIncomingMessage: (incoming, _source, observations) =>
             planALMessageHandling(incoming, { ...observations, selfPeerId: 'receiver', fromPeerId: 'sender' }),
@@ -446,7 +445,7 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             stores: { admissionStore: store, workQueue: backend.workQueue },
-            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
         }),
 
         planIncomingMessage: (incoming, source, observations) =>
@@ -520,7 +519,7 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
                 selfPeerId: 'receiver',
                 stores: { admissionStore: store, workQueue: backend.workQueue },
                 queueEngine: engine,
-                toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+                toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
             }),
 
             planIncomingMessage: (message, source, observations) =>
@@ -613,7 +612,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
                 selfPeerId: 'receiver',
                 stores: { admissionStore: store, workQueue: state.workQueue },
                 queueEngine: engine,
-                toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+                toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
             }),
 
             planIncomingMessage: (message, source, observations) =>

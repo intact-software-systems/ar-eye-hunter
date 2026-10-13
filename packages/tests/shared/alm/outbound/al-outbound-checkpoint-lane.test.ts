@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -10,9 +11,13 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { createCheckpointALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALCheckpointWriter } from '@shared/alm/checkpoint/al-checkpoint-writer.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundMessageRuntime, ALOutboundSettledSendResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALCheckpointOutboundRuntimeStores,
+    ALOutboundMessageRuntime,
+    ALOutboundSettledSendResult
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
-import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
+import type { ALStorageEvent, ALStorageHealthStatus } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import {
@@ -25,9 +30,6 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import '../../../setup-browser-indexeddb.ts';
-
-import type { ALCheckpointOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { ALStorageHealthStatus } from '@shared/alm/storage/al-storage-event.ts';
 import {
     createTakeableDurableWorkOwnership,
     GLOBAL_CHECKPOINT_TIMERS,
@@ -215,7 +217,7 @@ function createCheckpointTestRuntime(input: CheckpointTestRuntimeInput): Checkpo
             durableWorkOwnership: ownership,
             nowMs,
             carrier: 'ws',
-            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: (msg) => ({
                 msg,

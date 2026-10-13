@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     describe,
@@ -183,7 +184,7 @@ describe('the WS client under its socket\'s backpressure (D184, D185)', () => {
         client.native.bufferedAmount = AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES;
         const message = roomSend('dequeued', 'at-least-once', REJECT_UNDER_CONGESTION);
 
-        await client.service.outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX));
+        await client.service.outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()));
         client.engine.wakeAfterExternalWrite();
         await expect.poll(() => readCongestion(client).length).toBeGreaterThanOrEqual(1);
         client.native.bufferedAmount = 0;

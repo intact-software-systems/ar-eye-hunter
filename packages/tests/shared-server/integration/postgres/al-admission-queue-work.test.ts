@@ -584,7 +584,7 @@ async function runOutboundWorkBatch(
         stores,
         outbox: new InMemoryQueueBox(new Map()),
         decodePreparedMessage: decodeALOutboundTransportMessage,
-        toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
+        toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant()),
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
         planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
         sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
@@ -593,7 +593,7 @@ async function runOutboundWorkBatch(
         await runtime.ready();
     }
     finally {
-        runtime.dispose();
+        await runtime.dispose();
     }
 }
 
@@ -677,7 +677,10 @@ async function readSupersedenceDecision(
     });
     return computeALOutboundDispatch({
         read,
-        outboxEntry: { ...QueueBoxUtilities.toResourceEntryFromMsg(read.msg, 'WS_OUTBOX'), key: toALOutboundCanonicalKey(store.canonicalScope, read.msg) },
+        outboxEntry: {
+            ...QueueBoxUtilities.toResourceEntryFromMsg(read.msg, 'WS_OUTBOX', Temporal.Now.instant()),
+            key: toALOutboundCanonicalKey(store.canonicalScope, read.msg)
+        },
         dispatchAtMs: nowMs(),
         intent: 'enqueue',
         phase: 'immediate',

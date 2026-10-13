@@ -214,6 +214,7 @@ async function assertNativeGroupDurableResult(observation: NativeGroupDurableRes
     const enqueue = toGroupStateCommand(result.command);
     const key = toPhysicalAppInboxQueueKey({
         ...enqueue,
+        resourceId: result.command.request.requestId,
         data: encodeAppInboxCommand(enqueue.data, 'Observed group command')
     });
     const queued = await queueEntries.findAnyByKey(key);
@@ -325,6 +326,7 @@ async function assertNativeGroupSessionAuthority(observation: NativeGroupSession
     const enqueue = toGroupStateCommand(response.command);
     const key = toPhysicalAppInboxQueueKey({
         ...enqueue,
+        resourceId: response.command.request.requestId,
         data: encodeAppInboxCommand(enqueue.data, 'Observed unauthorized command')
     });
     assert.equal(await queueEntries.findAnyByKey(key), null, 'Unauthorized presence must not enqueue');

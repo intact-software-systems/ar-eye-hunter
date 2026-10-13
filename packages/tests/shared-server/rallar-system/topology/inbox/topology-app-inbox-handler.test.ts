@@ -1,6 +1,4 @@
-import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
-import { EnqueuedType } from '@shared/api/api-config.ts';
-import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -9,55 +7,49 @@ import {
 } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { EffectiveGroupTopologyConfig, StoredGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
-import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-
-import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
-
-import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-
-import { authSessionProofSecret } from '@shared-server/rallar-system/auth/sessions/auth-session-proof-secret.ts';
-
-import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
-
-import type { GroupStateAuthorityGuard } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-contracts.ts';
-
 import {
     AppInboxType,
     type AppInboxEnqueueInput,
     type AppInboxMessageContext
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
-import {
-    computeRtcTopologyOutboxInsert,
-    type ComputedRtcTopologyOutbox
-} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
-
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
+import { authSessionProofSecret } from '@shared-server/rallar-system/auth/sessions/auth-session-proof-secret.ts';
+import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import type { GroupStateAuthorityGuard } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-contracts.ts';
+import type { GroupTopologyConfigMutationAttemptRead } from '@shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts';
+import { computeTopologyConfigRuntimeWrites } from '@shared-server/rallar-system/topology/config/mutation/compute-topology-config-runtime-writes.ts';
+import type { GroupTopologyConfigMutationComputed } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
-
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
-
-import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import {
     decodeTopologyAppInboxResult,
     TopologyAppInboxHandler,
     type TopologyAppInboxMutationOwners,
     type TopologyAppInboxResult
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
-
-import { computeTopologyConfigRuntimeWrites } from '@shared-server/rallar-system/topology/config/mutation/compute-topology-config-runtime-writes.ts';
-import type { GroupTopologyConfigMutationComputed } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
-import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
-
-import type { GroupTopologyConfigMutationAttemptRead } from '@shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts';
-
+import {
+    computeRtcTopologyOutboxInsert,
+    type ComputedRtcTopologyOutbox
+} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import type {
     GroupTopologyReconfigureComputed,
     GroupTopologyReconfigureRead
 } from '@shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-contracts.ts';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
+import type {
+    EffectiveGroupTopologyConfig,
+    GroupTopologyConfigMutationReceipt,
+    StoredGroupTopologyConfig
+} from '@shared/api/graph-topology-management-types.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
 import { createTestGroup } from '../../../../create-test-group.ts';
 
 const NOW_EPOCH_MS = 1_000;
@@ -377,20 +369,19 @@ function sessionReader(
 function createMessageContext(
     enqueue: AppInboxEnqueueInput
 ): AppInboxMessageContext<TopologyAppInboxResult> {
-    const wireEnqueue = enqueue;
     const message = newALUntargetedMessage(
         'topology-handler-test',
         newALRoute(
-            wireEnqueue.topicId ?? 'app-inbox.group-state',
-            wireEnqueue.contextId ?? 'topology-handler-context',
-            requireResourceId(wireEnqueue.resourceId)
+            enqueue.topicId ?? 'app-inbox.group-state',
+            enqueue.contextId ?? 'topology-handler-context',
+            requireResourceId(enqueue.resourceId)
         ),
-        wireEnqueue.type,
-        wireEnqueue
+        enqueue.type,
+        enqueue
     );
-    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.APP_INBOX);
+    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.APP_INBOX, Temporal.Now.instant());
     return {
-        enqueue: wireEnqueue,
+        enqueue,
         message,
         attemptTelemetry: { selectedLane: Reservator.NEW, queueAgeMs: 0, dueAgeMs: 0, attempt: 7, selectedDueAtEpochMs: 0 },
         encodeResult: (result) => encodeAppInboxResult(result, 'Topology handler test result'),

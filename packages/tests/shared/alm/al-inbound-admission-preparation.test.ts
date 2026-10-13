@@ -1,4 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -15,6 +23,7 @@ import { validateALInboundCommitBundle } from '@shared/alm/inbound/admission/val
 import type {
     ALInboundAdmissionRead,
     ALInboundAdmissionStore,
+    ALInboundBufferedReleaseReadDto,
     ALInboundCommitBundle
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
@@ -28,13 +37,6 @@ import {
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
 
 describe('inbound admission preparation boundary', () => {
     afterEach(() => {
@@ -582,7 +584,7 @@ function createPreparationDependencies(): ALInboundEffectPreparationDependencies
     return {
         newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'receiver',
-        createInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        createInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
     };
 }
 
@@ -638,7 +640,7 @@ function toBufferedReleaseRead(
     prepared: PreparedAdmission,
     message: ALMessage,
     durability: 'volatile' | 'durable'
-): Parameters<typeof computeALInboundBufferedRelease>[0]['read'] {
+): ALInboundBufferedReleaseReadDto {
     return {
         kind: 'buffered-release',
         orderingTrackTtlMs: prepared.read.orderingTrackTtlMs,

@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -47,7 +48,7 @@ describe('Postgres inbound ordered work recovery', () => {
         await expect.poll(() => firstStore.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() }))
             .toBeDefined();
         expect(received).toEqual([]);
-        first.dispose();
+        await first.dispose();
 
         const second = createRuntime(secondStores, received);
         const firstMessage = createMessage('first', 1);
@@ -55,7 +56,7 @@ describe('Postgres inbound ordered work recovery', () => {
         await expect.poll(() => received).toEqual(['first', 'second']);
         await expect.poll(() => firstStore.readOrderedDelivery(trackKey, 3))
             .toEqual({ completedThrough: 2, predecessor: undefined });
-        second.dispose();
+        await second.dispose();
 
         const completed = await firstStores.workQueue.readWorkPage({
             typeId: toALInboundWorkType(firstStore.namespace, 'ws'),
@@ -266,7 +267,7 @@ function createRuntime(stores: ALInboundRuntimeStores, received: string[], contr
                 fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
                 ...observations
             }),
-        toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'),
+        toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant()),
         dispatchInboxEntry: async (entry) => {
             received.push(decodePersistedALMessage(entry.resource).route.resourceId);
         },
@@ -300,7 +301,7 @@ async function admit(store: ALInboundAdmissionStore, message: ALMessage): Promis
     const facts = readALInboundEffectFacts(nowMs, {
         selfPeerId: 'receiver',
         newControlId: crypto.randomUUID.bind(crypto),
-        createInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        createInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
     });
     expect(await store.commitBundle(computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true }))).toBe('committed');
 }

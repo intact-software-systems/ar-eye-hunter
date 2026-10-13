@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     expect,
     it,
@@ -80,7 +81,7 @@ it.each(['enabled', 'absent', 'construction-throws', 'batch-construction-throws'
                     releasedAtObservation.push(getWorkStatuses(queue, resources.admissionStore.namespace));
                 }
             },
-            toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'receipt-test'),
+            toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'receipt-test', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: plan,
             planDequeuedMessage: plan,

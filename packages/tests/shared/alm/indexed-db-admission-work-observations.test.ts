@@ -1,11 +1,13 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { expect, it } from 'vitest';
 
 import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import '../../setup-browser-indexeddb.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
+import '../../setup-browser-indexeddb.ts';
 
 it('commits queue-only ownership despite an unrelated metadata commit', async () => {
     const backend = new IndexedDbAdmissionBackend({
@@ -79,7 +81,8 @@ it('guards every queue observation and atomically aborts sibling ownership on re
 function workEntry() {
     return QueueBoxUtilities.toResourceEntryFromMsg(
         newALUnicastMessage('sender', newALEventRoute('test', crypto.randomUUID()), 'receiver', 'test', { value: 1 }),
-        'TEST_WORK'
+        'TEST_WORK',
+        Temporal.Now.instant()
     );
 }
 

@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 
@@ -25,7 +26,10 @@ import { InboxOutboxEngine } from '../../shared/services/inbox-outbox-engine.ts'
 import { QueueBoxUtilities } from '../../shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '../../shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '../../shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
-import type { WsQueueBoxServerReceiptObservation } from '../../shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
+import type {
+    WsQueueBoxServerReceiptObservation,
+    WsQueueBoxServerReceiptObserver
+} from '../../shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { WsQueueBoxServerService } from '../../shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '../../shared/websocket/json-web-socket-server.ts';
 import { SimulatedWebSocket } from '../shared/native-websocket-fixture.ts';
@@ -130,7 +134,7 @@ class ReceiptOwnerFixture {
     readonly sink: ReceiptOwnerSink;
     readonly reserve = this.backend.workQueue.reserveEntries.bind(this.backend.workQueue);
     readonly recover = this.backend.workQueue.reserveTimeoutEntries.bind(this.backend.workQueue);
-    readonly observer: ReturnType<typeof createApiV1WsReceiptObserver>;
+    readonly observer: WsQueueBoxServerReceiptObserver | undefined;
     readonly observe: ((event: WsQueueBoxServerReceiptObservation) => void) | undefined;
 
     constructor(sockets: ReceiptOwnerSocket, clock: ReceiptOwnerFixture.Clock, sink: ReceiptOwnerSink) {
@@ -159,13 +163,14 @@ class ReceiptOwnerFixture {
 
     private createServer(): WsQueueBoxServerService {
         return new WsQueueBoxServerService({
+            creationNow: Temporal.Now.instant,
             name: 'server',
             socket: this.socket,
             qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
             inboundRuntime: createDefaultALInboundRuntimeResources({
                 queueEngine: this.engine,
                 selfPeerId: 'server',
-                toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX)
+                toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX, Temporal.Now.instant())
             }),
             outboundRuntime: createDefaultALOutboundRuntimeResources({
                 queueEngine: this.engine,
@@ -410,7 +415,7 @@ async function readCompetingReceiptBundle(store: ALOutboundAdmissionStore<WsQueu
     const computed = computeALOutboundDispatch({
         read,
         outboxEntry: {
-            ...QueueBoxUtilities.toResourceEntryFromMsg(competitor, EnqueuedType.WS_OUTBOX),
+            ...QueueBoxUtilities.toResourceEntryFromMsg(competitor, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()),
             key: toALOutboundCanonicalKey(store.canonicalScope, competitor)
         },
         dispatchAtMs: Date.now(),

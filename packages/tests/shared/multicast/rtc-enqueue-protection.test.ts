@@ -1,9 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
+import { RateLimiter } from '@shared/resilience/Resilience.ts';
 
 import { createOriginSnapshot, createRtcOriginOverlayFixture } from './rtc-origin-overlay-fixture.ts';
 
@@ -56,6 +66,67 @@ describe('RTC enqueue protection', () => {
         expect(recovered.verdict.kind, recovered.reason).toBe('admitted');
     });
 
+    it('recovers quota on its own clock while preserving independent admission time and precise creation', async () => {
+        const quotaStartMs = 1791883286866;
+        let quotaAtMs = quotaStartMs;
+        let admissionAtMs = quotaStartMs + 20_000;
+        vi.setSystemTime(admissionAtMs);
+        const creationInstant = Temporal.Instant.from('2026-10-13T23:59:59.123456789Z');
+        const creationNow = vi.fn(() => creationInstant);
+        const quotaNow = vi.fn(() => quotaAtMs);
+        const fixture = createRtcOriginOverlayFixture({
+            snapshot: createOriginSnapshot(['a', 'b'], 1),
+            nextHopPeerIds: ['b'],
+            creationNow,
+            quotaNow,
+            rateLimiter: RateLimiter.initWithTs(1_000, 20, quotaStartMs)
+        });
+        vi.spyOn(fixture.resources.clock, 'nowMs').mockImplementation(() => admissionAtMs);
+
+        for (let sequence = 0; sequence < 20; sequence++) {
+            const result = await fixture.manager.enqueueIfAbsent(createAck(sequence));
+            expect(result.verdict.kind, result.reason).toBe('admitted');
+            if (sequence === 0) {
+                expect(result.entry?.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123456789');
+                expect(result.entry?.audit.date.toString()).toBe('23:59:59.123456789');
+            }
+        }
+        await vi.advanceTimersByTimeAsync(0);
+        const creationCallsBeforeRefusal = creationNow.mock.calls.length;
+        const controls = [createAck(100), createAck(101)];
+        for (let observation = 0; observation < 2; observation++) {
+            await expect(fixture.manager.handoffControlMessages(controls))
+                .rejects.toMatchObject({ name: 'NotReadyException', delayMs: 1251 });
+        }
+        for (const control of controls) {
+            expect(await fixture.resources.admissionStore.hasSentMessageAdmission(control.id.msgId)).toBe(false);
+        }
+        expect(creationNow).toHaveBeenCalledTimes(creationCallsBeforeRefusal);
+
+        admissionAtMs += 10_000;
+        await expect(fixture.manager.handoffControlMessages(controls))
+            .rejects.toMatchObject({ name: 'NotReadyException', delayMs: 1251 });
+        expect(creationNow).toHaveBeenCalledTimes(creationCallsBeforeRefusal);
+
+        quotaAtMs = quotaStartMs + 1250;
+        await expect(fixture.manager.handoffControlMessages(controls))
+            .rejects.toMatchObject({ name: 'NotReadyException', delayMs: 1 });
+        expect(creationNow).toHaveBeenCalledTimes(creationCallsBeforeRefusal);
+        quotaAtMs = quotaStartMs + 1251;
+        await fixture.manager.handoffControlMessages(controls);
+        for (const control of controls) {
+            expect(await fixture.resources.admissionStore.hasSentMessageAdmission(control.id.msgId)).toBe(true);
+        }
+        expect(creationNow.mock.calls.length).toBeGreaterThan(creationCallsBeforeRefusal);
+        for (let sequence = 200; sequence < 219; sequence++) {
+            const admitted = await fixture.manager.enqueueIfAbsent(createAck(sequence));
+            expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+        }
+        const refused = await fixture.manager.enqueueIfAbsent(createAck(219));
+        expect(refused.verdict).toMatchObject({ kind: 'unroutable', reason: 'rate-limited' });
+        expect(await fixture.resources.admissionStore.hasSentMessageAdmission('ack-219')).toBe(false);
+    });
+
     it('keeps real enqueue failures across neutral quota refusals and recovers through half-open', async () => {
         const circuitBreaker = toCircuitBreaker(1);
         const fixture = createRtcOriginOverlayFixture({
@@ -101,10 +172,12 @@ describe('RTC enqueue protection', () => {
 
     it('reports circuit-open first when both protections refuse an ACK', async () => {
         const circuitBreaker = toCircuitBreaker();
+        const quotaNow = vi.fn(() => Date.now());
         const fixture = createRtcOriginOverlayFixture({
             snapshot: createOriginSnapshot(['a', 'b'], 1),
             nextHopPeerIds: ['b'],
-            circuitBreaker
+            circuitBreaker,
+            quotaNow
         });
         for (let sequence = 0; sequence < 20; sequence++) {
             const result = await fixture.manager.enqueueIfAbsent(createAck(sequence));
@@ -113,10 +186,35 @@ describe('RTC enqueue protection', () => {
         circuitBreaker.failureCount(11);
         expect(circuitBreaker.isOpen()).toBe(true);
 
+        quotaNow.mockClear();
         const suppressed = createAck(20);
         expect((await fixture.manager.enqueueIfAbsent(suppressed)).verdict)
             .toMatchObject({ kind: 'unroutable', reason: 'circuit-open' });
         expect(await fixture.resources.admissionStore.hasSentMessageAdmission(suppressed.id.msgId)).toBe(false);
+        expect(quotaNow).not.toHaveBeenCalled();
+    });
+
+    it('reports disposal before the open circuit without observing either creation or quota time', async () => {
+        const circuitBreaker = toCircuitBreaker();
+        circuitBreaker.failureCount(11);
+        const quotaNow = vi.fn(() => Date.now());
+        const creationNow = vi.fn(() => Temporal.Now.instant());
+        const fixture = createRtcOriginOverlayFixture({
+            snapshot: createOriginSnapshot(['a', 'b'], 1),
+            nextHopPeerIds: ['b'],
+            circuitBreaker,
+            quotaNow,
+            creationNow
+        });
+        await fixture.manager.dispose();
+
+        const message = createAck(400);
+        const result = await fixture.manager.enqueueIfAbsent(message);
+
+        expect(result.verdict).toMatchObject({ kind: 'skipped', reason: 'disposed' });
+        expect(quotaNow).not.toHaveBeenCalled();
+        expect(creationNow).not.toHaveBeenCalled();
+        expect(await fixture.resources.admissionStore.hasSentMessageAdmission(message.id.msgId)).toBe(false);
     });
 
     it('rechecks actual quota after a forecast and admits a whole control batch with one token', async () => {
@@ -172,6 +270,16 @@ describe('RTC enqueue protection', () => {
         const control = { ...createAck(99), constraints: { expiresAtMs: startedAtMs + 1_000 } };
         const handoff = fixture.manager.handoffControlMessages([control]);
         const outcome = handoff.then(() => undefined, (caught) => caught);
+        onTestFinished(async () => {
+            const disposed = fixture.manager.dispose();
+            resume.resolve();
+            const outcomes = await Promise.allSettled([outcome, disposed]);
+            for (const completion of outcomes) {
+                if (completion.status === 'rejected') {
+                    throw completion.reason;
+                }
+            }
+        });
         await Promise.race([
             entered.promise,
             outcome.then((value) => {

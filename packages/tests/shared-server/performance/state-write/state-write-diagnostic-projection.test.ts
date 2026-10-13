@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -6,7 +7,7 @@ import {
 } from 'vitest';
 
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { toAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
+import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
 import type { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-result-waiter.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
@@ -19,6 +20,7 @@ import {
     computeStateWriteDiagnosticPhase,
     type StateWriteDiagnosticPhase
 } from '../../../../../apps/api-v1/scripts/perf/state-write/state-write-diagnostic-projection.ts';
+import { createAppInboxQueueMessageFixture } from '../../rallar-system/app-inbox/test-support/create-app-inbox-queue-message-fixture.ts';
 
 const profile = {
     logicalResourceId: 'PRIVATE:profile-instance:0-profile',
@@ -106,8 +108,16 @@ describe('state-write diagnostic projection', () => {
         const client = new AppInboxCommandClient(
             {
                 queueEntryWriter: {
-                    enqueue: async (enqueue) => toAppInboxResourceEntry(enqueue, 'PRIVATE-worker-a'),
-                    enqueueReplacingTerminal: async (enqueue) => toAppInboxResourceEntry(enqueue, 'PRIVATE-worker-a').key
+                    enqueue: async (enqueue) =>
+                        createAppInboxResourceEntry(enqueue, 'PRIVATE-worker-a', {
+                            creationNow: Temporal.Now.instant,
+                            createMessage: createAppInboxQueueMessageFixture
+                        }),
+                    enqueueReplacingTerminal: async (enqueue) =>
+                        createAppInboxResourceEntry(enqueue, 'PRIVATE-worker-a', {
+                            creationNow: Temporal.Now.instant,
+                            createMessage: createAppInboxQueueMessageFixture
+                        }).key
                 },
                 resultWaiter: {
                     waitForResult: async <Result>(

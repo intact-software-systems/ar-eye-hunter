@@ -1,10 +1,4 @@
-import type { RallarCallSignalEvent, RallarIncomingCallInvite } from '@shared-web/browser/rallar-calls-facade.ts';
-import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
-import { Either } from '@shared/resilience/Either.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import type { OnInboxMessageCallback } from '@shared/services/queue-message-callbacks.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     beforeEach,
     describe,
@@ -12,6 +6,15 @@ import {
     it,
     vi
 } from 'vitest';
+
+import type { RallarCallSignalEvent, RallarIncomingCallInvite } from '@shared-web/browser/rallar-calls-facade.ts';
+import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+import type { OnInboxMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from '../rtc/browser-rtc-peer-test-double.ts';
@@ -300,7 +303,7 @@ describe('Rallar calls', () => {
 
         await findLatestWsAnyMessageCallback()?.onMessage(
             incoming,
-            QueueBoxUtilities.toResourceEntryFromMsg(incoming, incoming.payload.typeId)
+            QueueBoxUtilities.toResourceEntryFromMsg(incoming, incoming.payload.typeId, Temporal.Now.instant())
         );
 
         expect(invites).toHaveLength(1);

@@ -21,6 +21,8 @@ import {
 } from '../queuebox/ResourceEntry.ts';
 
 export namespace QueueBoxUtilities {
+    export type CreationClock = () => Temporal.Instant;
+
     export interface DequeueInput {
         readonly qbox: QueueBoxResourceEntryRepository;
         readonly typesToDequeue: Set<string>;
@@ -76,14 +78,17 @@ export class QueueBoxUtilities {
             );
     }
 
-    static toResourceEntryFromMsg(msg: ALMessage, typeId: string): ResourceEntry {
+    static toResourceEntryFromMsg(
+        msg: ALMessage,
+        typeId: string,
+        createdAt: Temporal.Instant
+    ): ResourceEntry {
         const expireAtMs = resolveALMessageExpireAtMs(msg);
         const expiryTs = expireAtMs !== undefined
             ? Temporal.Instant.fromEpochMilliseconds(expireAtMs)
             : NEVER_EXPIRE_TS;
 
-        // Queue readers reinterpret `createdTs` as UTC wall clock; stamp it from one UTC instant.
-        const createdAt = Temporal.Now.zonedDateTimeISO('UTC');
+        const createdAtUtc = createdAt.toZonedDateTimeISO('UTC');
         return {
             key: {
                 topicId: msg.route.topicId,
@@ -93,10 +98,10 @@ export class QueueBoxUtilities {
             resource: JSON.stringify(msg),
             typeId: typeId,
             audit: {
-                date: createdAt.toPlainTime(),
-                // The stored creator column is 16 characters wide; the message keeps its full audit (R-S3c-i-30).
+                date: createdAtUtc.toPlainTime(),
+                // The stored creator column is 16 characters wide; the message keeps its full audit.
                 createdBy: toAppQueueCreatedBy(msg.audit?.createdBy ?? 'test'),
-                createdTs: createdAt.toPlainDateTime(),
+                createdTs: createdAtUtc.toPlainDateTime(),
                 expiryTs
             },
             status: EntityStatus.NEW,

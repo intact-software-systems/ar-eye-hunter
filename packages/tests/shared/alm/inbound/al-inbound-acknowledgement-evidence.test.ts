@@ -1,5 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    afterEach,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { createBlackBoxRallarCongestionCounters } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-congestion-counters.ts';
 import {
@@ -101,7 +107,7 @@ class AcknowledgementFixture {
                 queueEngine: this.engine,
                 nowMs: input.nowMs,
                 newControlId: () => `generated-${++this.controlSequence}`,
-                toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
+                toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant())
             }),
             carrier: 'rtc',
             effectWorkerId: 'relay-worker',

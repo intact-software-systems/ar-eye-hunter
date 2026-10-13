@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     expect,
     it,
@@ -110,6 +111,7 @@ function createClockFixture(): LiveClockFixture {
 
 function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService {
     const service = new WsQueueBoxServerService({
+        creationNow: Temporal.Now.instant,
         socket: fixture.socket,
         name: 'server',
         qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
@@ -123,7 +125,7 @@ function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService 
         inboundRuntime: createDefaultALInboundRuntimeResources({
             selfPeerId: 'server',
             nowMs: () => fixture.clock.nowMs(),
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX)
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX, Temporal.Now.instant())
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
             decodePrepared: decodeWsQueueBoxServerPreparedMessage,

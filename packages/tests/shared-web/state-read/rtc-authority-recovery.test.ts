@@ -1,5 +1,7 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
+    beforeEach,
     describe,
     expect,
     it,
@@ -24,6 +26,7 @@ import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { browserDeliveryComposition } from '@shared-web/browser/composition/browser-delivery-composition.ts';
 import * as browserMiddleware from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { acceptAuthoritativeGroupStateSnapshot } from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
 import { readStateGroupSnapshot } from '@shared-web/browser/state-read/point-read.ts';
@@ -90,6 +93,13 @@ const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' }
 
 installFakeBroadcastChannelPerTest();
 afterEach(() => vi.mocked(auth.readSession).mockReset());
+beforeEach(() => {
+    onTestFinished(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
+    });
+});
 
 describe('RTC room authority recovery', () => {
     it.each(
@@ -115,8 +125,11 @@ describe('RTC room authority recovery', () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
         const nativeRuntime = installNativeRtcRuntime();
+        onTestFinished(() => nativeRuntime.dispose());
         const receiverRepository = configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
+        onTestFinished(() => receiverRepository.dispose());
         const senderGroups = new LatestRepository<string, GroupSnapshot>();
+        onTestFinished(() => senderGroups.dispose());
         const snapshot = createAcceptedRoomSnapshot();
         senderGroups.set(toScopedOverlayId(room), snapshot);
         const response = Promise.withResolvers<Response>();
@@ -164,13 +177,6 @@ describe('RTC room authority recovery', () => {
         });
         onTestFinished(() => {
             response.resolve(new Response('', { status: 503 }));
-            receiver.close();
-            sender.close();
-            receiverRepository.dispose();
-            senderGroups.dispose();
-            nativeRuntime.dispose();
-            vi.restoreAllMocks();
-            vi.useRealTimers();
         });
         await sender.native.open();
         await receiver.native.open();
@@ -255,8 +261,10 @@ describe('RTC room authority recovery', () => {
         if (scenario === 'unchanged-authority' || scenario === 'newer-authority') {
             await acceptAuthoritativeGroupStateSnapshot(currentSnapshot, room);
         }
+        let receiverDisposal: Promise<void> | undefined;
         if (scenario === 'disposed') {
-            receiver.streamer.dispose();
+            receiverDisposal = receiver.streamer.dispose();
+            void receiverDisposal.catch(() => undefined);
         }
         if (scenario === 'peer-removed' || scenario === 'peer-replaced') {
             await receiver.removePeer(scenario === 'peer-replaced');
@@ -272,6 +280,7 @@ describe('RTC room authority recovery', () => {
                 : snapshotResponse(snapshot, scenario)
         );
         await Promise.all([receiving, ...duplicateAdmissions]);
+        await receiverDisposal;
         await vi.advanceTimersByTimeAsync(0);
         const shouldDeliver = [
             'acknowledged',
@@ -326,8 +335,11 @@ describe('the roster fence at an RTC receiver', () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
         const nativeRuntime = installNativeRtcRuntime();
+        onTestFinished(() => nativeRuntime.dispose());
         const senderGroups = new LatestRepository<string, GroupSnapshot>();
+        onTestFinished(() => senderGroups.dispose());
         const receiverGroups = new LatestRepository<string, GroupSnapshot>();
+        onTestFinished(() => receiverGroups.dispose());
         const stamped = createAcceptedRoomSnapshot();
         senderGroups.set(toScopedOverlayId(room), stamped);
         receiverGroups.set(toScopedOverlayId(room), assembleSenderRemoval(stamped));
@@ -355,15 +367,6 @@ describe('the roster fence at an RTC receiver', () => {
             faultPort: createPassThroughTransportFaultPort(),
             qosProvider: undefined,
             outboundSettlements: undefined
-        });
-        onTestFinished(() => {
-            receiver.close();
-            sender.close();
-            senderGroups.dispose();
-            receiverGroups.dispose();
-            nativeRuntime.dispose();
-            vi.restoreAllMocks();
-            vi.useRealTimers();
         });
         await sender.native.open();
         await receiver.native.open();
@@ -458,7 +461,9 @@ describe('latest-wins receiver delivery and independent ordering', () => {
             vi.useFakeTimers();
             vi.setSystemTime(1_000);
             const nativeRuntime = installNativeRtcRuntime();
+            onTestFinished(() => nativeRuntime.dispose());
             const groups = new LatestRepository<string, GroupSnapshot>();
+            onTestFinished(() => groups.dispose());
             groups.set(toScopedOverlayId(room), createAcceptedRoomSnapshot());
             const faults = createScriptedTransportFaultPort();
             const hold = {
@@ -488,13 +493,6 @@ describe('latest-wins receiver delivery and independent ordering', () => {
                 faultPort: createPassThroughTransportFaultPort(),
                 qosProvider: undefined,
                 outboundSettlements: undefined
-            });
-            onTestFinished(() => {
-                receiver.close();
-                sender.close();
-                groups.dispose();
-                nativeRuntime.dispose();
-                vi.useRealTimers();
             });
             await sender.native.open();
             await receiver.native.open();
@@ -620,7 +618,9 @@ describe('latest-wins receiver delivery and independent ordering', () => {
 it('delivers the canonical generated supersedence specimen through the page decoder and native receiver', async () => {
     vi.useFakeTimers();
     const nativeRuntime = installNativeRtcRuntime();
+    onTestFinished(() => nativeRuntime.dispose());
     const groups = configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
+    onTestFinished(() => groups.dispose());
     const snapshot = createAcceptedRoomSnapshot();
     setGroupStateSnapshot({
         ...snapshot,
@@ -658,14 +658,6 @@ it('delivers the canonical generated supersedence specimen through the page deco
         faultPort: createPassThroughTransportFaultPort(),
         qosProvider: undefined,
         outboundSettlements: undefined
-    });
-    onTestFinished(() => {
-        receiver.close();
-        sender.close();
-        groups.dispose();
-        nativeRuntime.dispose();
-        vi.restoreAllMocks();
-        vi.useRealTimers();
     });
     await sender.native.open();
     await receiver.native.open();
@@ -776,7 +768,7 @@ function createGeneratedSendLedger(sender: NativeAuthorityEndpoint): BlackBoxRal
     });
 }
 
-function createGeneratedSendFacade(sender: NativeAuthorityEndpoint): ReturnType<typeof createRallarFacade> {
+function createGeneratedSendFacade(sender: NativeAuthorityEndpoint): RallarFacade {
     const bootstrap = createDefaultApiMiddlewareTestDouble({
         session: { clientId: 'sender', sessionId: 'sender', username: 'sender', expiresAtEpochMs: Date.now() + 300_000 }
     });
@@ -817,8 +809,11 @@ describe('authoritative room observation freshness', () => {
             vi.useFakeTimers();
             vi.setSystemTime(1_000);
             const nativeRuntime = installNativeRtcRuntime();
+            onTestFinished(() => nativeRuntime.dispose());
             const senderRepository = configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
+            onTestFinished(() => senderRepository.dispose());
             const receiverGroups = new LatestRepository<string, GroupSnapshot>();
+            onTestFinished(() => receiverGroups.dispose());
             const initial = createAcceptedRoomSnapshot();
             const snapshot: GroupSnapshot = {
                 ...initial,
@@ -860,13 +855,6 @@ describe('authoritative room observation freshness', () => {
                     );
                 }
                 return Promise.resolve(snapshotResponse(acquired, 'valid'));
-            });
-            onTestFinished(() => {
-                senderRepository.dispose();
-                receiverGroups.dispose();
-                nativeRuntime.dispose();
-                vi.restoreAllMocks();
-                vi.useRealTimers();
             });
 
             vi.setSystemTime(51_000);
@@ -917,10 +905,6 @@ describe('authoritative room observation freshness', () => {
                 faultPort: createPassThroughTransportFaultPort(),
                 qosProvider: undefined,
                 outboundSettlements: undefined
-            });
-            onTestFinished(() => {
-                receiver.close();
-                sender.close();
             });
             await sender.native.open();
             await receiver.native.open();
@@ -1066,6 +1050,7 @@ class NativeAuthorityEndpoint {
     private readonly peerId: string;
 
     constructor(input: NativeAuthorityEndpoint.Input) {
+        onTestFinished(() => this.overlays.dispose());
         this.peerId = input.peerId;
         this.connection = createNativeRtcConnectionFixture(
             {
@@ -1078,10 +1063,13 @@ class NativeAuthorityEndpoint {
             input.nativeRuntime,
             input.faultPort
         );
+        onTestFinished(() => this.connection.dispose());
         this.connection.service.ensurePeerConnectionStarted(input.peerId, true);
         this.native = this.connection.nativePeer(input.peerId).channels[0];
         this.overlays.set(toScopedOverlayId(room), createOverlay(input.peerId));
         this.multicast = new WebRtcOverlayMulticastManager({
+            quotaNow: Date.now,
+            creationNow: Temporal.Now.instant,
             connectionService: this.connection.service,
             groupCache: input.groups,
             overlayCache: this.overlays,
@@ -1098,6 +1086,7 @@ class NativeAuthorityEndpoint {
             faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
+        onTestFinished(() => this.multicast.dispose());
         this.streamer = createDefaultWebRtcRxStreamerService({
             multicast: this.multicast,
             sessionId: input.sessionId,
@@ -1105,6 +1094,7 @@ class NativeAuthorityEndpoint {
             roomAuthorityRefresh: input.refresh,
             inboundDiagnostics: (event) => this.admissions.push(event)
         });
+        onTestFinished(() => this.streamer.dispose());
         this.streamer.setRttReportingPeerIds([]);
         this.streamer.onAllInboxMessagesDo({
             onMessage: async (message) => {
@@ -1135,13 +1125,6 @@ class NativeAuthorityEndpoint {
             this.streamer.addPeer(this.connection.service.readPeer(this.peerId)!);
             await this.connection.nativePeer(this.peerId).channels[0].open();
         }
-    }
-
-    close(): void {
-        this.streamer.dispose();
-        this.multicast.dispose();
-        this.connection.dispose();
-        this.overlays.dispose();
     }
 }
 

@@ -1,15 +1,12 @@
-import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
     it
 } from 'vitest';
-import {
-    createDefaultOutboundTestStores,
-    createOutboundCanonicalEntry,
-    createOutboundMessage
-} from './outbound-runtime-test-fixture.ts';
 
+import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     createInitialALDeliveryLifecycle,
     type ALDeliveryLifecycle,
@@ -25,6 +22,12 @@ import type {
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import {
+    createDefaultOutboundTestStores,
+    createOutboundCanonicalEntry,
+    createOutboundMessage,
+    type OutboundTestStores
+} from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('outbound admission verdict', () => {
@@ -45,7 +48,7 @@ describe('outbound admission verdict', () => {
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent: 'enqueue',
             phase: 'immediate',
@@ -72,7 +75,7 @@ describe('outbound admission verdict', () => {
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent: 'enqueue',
             phase: 'immediate',
@@ -96,7 +99,7 @@ describe('outbound admission verdict', () => {
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent: 'dequeue',
             phase: 'dequeue',
@@ -122,7 +125,7 @@ describe('outbound admission verdict', () => {
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now() + 1_000_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -150,7 +153,7 @@ describe('outbound admission verdict', () => {
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent: 'enqueue',
             phase: 'immediate',
@@ -182,7 +185,7 @@ describe('outbound admission verdict', () => {
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent: 'enqueue',
             phase: 'immediate',
@@ -216,7 +219,7 @@ describe('outbound admission verdict', () => {
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent: 'enqueue',
             phase: 'immediate',
@@ -250,7 +253,7 @@ describe('outbound admission verdict', () => {
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent: 'enqueue',
             phase: 'immediate',
@@ -283,7 +286,7 @@ describe('outbound admission verdict', () => {
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent: 'enqueue',
             phase: 'immediate',
@@ -396,10 +399,8 @@ describe('outbound admission verdict', () => {
     });
 });
 
-type TestOutboundMessage = ReturnType<typeof createOutboundMessage>;
-
 function toSupersedingCommit(
-    msg: TestOutboundMessage,
+    msg: ALMessage,
     replacesMsgId: string | undefined,
     intent: 'enqueue' | 'dequeue'
 ): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
@@ -419,7 +420,7 @@ function toSupersedingCommit(
     };
 }
 
-function toSupersededFact(predecessor: TestOutboundMessage, replacement: TestOutboundMessage): ALOutboundSettlementFact {
+function toSupersededFact(predecessor: ALMessage, replacement: ALMessage): ALOutboundSettlementFact {
     return {
         kind: 'superseded',
         msgId: predecessor.id.msgId,
@@ -430,7 +431,7 @@ function toSupersededFact(predecessor: TestOutboundMessage, replacement: TestOut
 
 /** The lifecycle a registry reduces for one message from the superseded facts its owner stated. */
 function toSupersededLifecycle(
-    message: TestOutboundMessage,
+    message: ALMessage,
     facts: readonly ALOutboundSettlementFact[]
 ): ALDeliveryLifecycle {
     const settlements = facts.flatMap((fact): ALDeliverySettlement[] =>
@@ -459,14 +460,14 @@ function toSupersededLifecycle(
 }
 
 function createTestOutboundDispatchAdmission(
-    stores: ReturnType<typeof createDefaultOutboundTestStores>,
+    stores: OutboundTestStores,
     settlements: ALOutboundSettlementEmitter = () => {}
 ): ALOutboundDispatchAdmission<OutboundTestPayload> {
     return new ALOutboundDispatchAdmission<OutboundTestPayload>({
         lane: 'durable',
         admissionStore: stores.admissionStore,
         workPort: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
-        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },
         browserLocks: undefined,

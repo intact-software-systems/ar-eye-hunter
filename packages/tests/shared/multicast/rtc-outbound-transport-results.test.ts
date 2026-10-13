@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     beforeEach,
     describe,
@@ -8,16 +9,14 @@ import {
 } from 'vitest';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliverySettlement, ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundEnqueueResult, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
     type ALOutboundTransportMessage
@@ -62,12 +61,13 @@ let settlements: ALDeliverySettlement[] = [];
 
 beforeEach(() => {
     onTestFinished(() => {
-        nativeRuntime.dispose();
         vi.useRealTimers();
     });
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    nativeRuntime = installNativeRtcRuntime();
+    const acquiredRuntime = installNativeRtcRuntime();
+    onTestFinished(() => acquiredRuntime.dispose());
+    nativeRuntime = acquiredRuntime;
     settlements = [];
 });
 
@@ -106,13 +106,7 @@ describe('RTC outbound transport results', () => {
                 qosProvider: { capabilitiesForMessage: () => ({ supportedExpiry: ['ttl-only'] }) }
             })
         );
-        onTestFinished(async () => {
-            const cleanup = await Promise.allSettled([manager.dispose(), ws.close()]);
-            const failure = cleanup.find((outcome) => outcome.status === 'rejected');
-            if (failure?.status === 'rejected') {
-                throw failure.reason;
-            }
-        });
+        onTestFinished(() => ws.close());
         const original = createMessage('fallback', 'peer-1', 5_000);
         const first = await enqueueRtcAndDrain(manager, original);
         expect(first.verdict, first.reason).toMatchObject({ kind: 'admitted', durable: false });
@@ -143,7 +137,6 @@ describe('RTC outbound transport results', () => {
         const native = nativeRuntime.createdConnections[0].channels[0];
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
         const manager = createManager([channel], resources);
-        onTestFinished(() => manager.dispose());
         const message = createMessage('long-readiness');
         await enqueueRtcAndDrain(manager, message);
         await vi.advanceTimersByTimeAsync(1_250);
@@ -164,7 +157,6 @@ describe('RTC outbound transport results', () => {
         blockedNative.bufferedAmount = 128 * 1024;
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
         const manager = createManager([blocked, available], resources);
-        onTestFinished(() => manager.dispose());
         const queuedMessage = createMessage('queued-owner');
 
         await enqueueRtcAndDrain(manager, queuedMessage);
@@ -188,7 +180,6 @@ describe('RTC outbound transport results', () => {
         native.bufferedAmount = 128 * 1024;
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
         const manager = createManager([channel], resources);
-        onTestFinished(() => manager.dispose());
         const message = createMessage('queued-close');
         await enqueueRtcAndDrain(manager, message);
 
@@ -215,7 +206,6 @@ describe('RTC outbound transport results', () => {
         const engine = new InboxOutboxEngine();
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: engine });
         const manager = createManager([channel], resources);
-        onTestFinished(() => manager.dispose());
         const message = createMessage('attempt-lease', 'peer-1', 30_000);
         await enqueueRtcAndDrain(manager, message);
 
@@ -241,7 +231,6 @@ describe('RTC outbound transport results', () => {
         await native.open();
         native.bufferedAmount = 128 * 1024;
         const manager = createManager([channel], createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }));
-        onTestFinished(() => manager.dispose());
 
         await enqueueRtcAndDrain(manager, createMessage('dispose-retained'));
         expect(channel.readHealth().queuedItemCount).toBe(1);
@@ -259,7 +248,6 @@ describe('RTC outbound transport results', () => {
         await native.open();
         native.bufferedAmount = 128 * 1024;
         const manager = createManager([channel], createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }));
-        onTestFinished(() => manager.dispose());
         await enqueueRtcAndDrain(manager, createMessage('expire-retained'));
 
         await vi.advanceTimersByTimeAsync(5_000);
@@ -276,7 +264,6 @@ describe('RTC outbound transport results', () => {
         native.bufferedAmount = 128 * 1024;
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
         const manager = createManager([channel], resources);
-        onTestFinished(() => manager.dispose());
         const message = createMessage('backpressure');
 
         await enqueueRtcAndDrain(manager, message);
@@ -299,7 +286,6 @@ describe('RTC outbound transport results', () => {
         await native.open();
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
         const manager = createManager([channel], resources);
-        onTestFinished(() => manager.dispose());
 
         await enqueueRtcAndDrain(manager, createMessage('submitted'));
 
@@ -340,7 +326,6 @@ describe('RTC outbound transport results', () => {
                     }
                 }
             });
-            onTestFinished(() => manager.dispose());
             const message = createMessage(`native-failure-${mode}`);
             const attempted: string[] = [];
             const nativeFailure = new Error('Native send failed after submission was attempted');
@@ -395,7 +380,6 @@ describe('RTC outbound transport results', () => {
         await native.open();
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
         const manager = createManager([channel], resources);
-        onTestFinished(() => manager.dispose());
         const message = createMessage(`pre-native-${stage}`);
         const failure = new Error('Original pre-native failure');
         const failedPort = stage === 'admission-read'
@@ -500,7 +484,6 @@ describe('RTC outbound transport results', () => {
         const channel = createChannel();
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
         const manager = createManager([channel], resources);
-        onTestFinished(() => manager.dispose());
         const message = { ...createMessage('receiver'), delivery: { reliability: 'at-least-once', ack: 'receiver' } } as const;
 
         const unicast = await enqueueRtcAndDrain(manager, message);
@@ -521,7 +504,6 @@ describe('RTC outbound transport results', () => {
         await native.open();
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
         const manager = createManager([channel], resources);
-        onTestFinished(() => manager.dispose());
         const dropAck = { faultId: 'drop-ack', carrier: 'rtc', match: { controlType: 'ack', typeId: undefined, msgId: undefined } } as const;
 
         faults.inject({ ...dropAck, action: 'drop', remaining: 1 });
@@ -543,7 +525,6 @@ describe('RTC outbound transport results', () => {
         const channel = createChannel();
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
         const manager = createManager([channel], resources);
-        onTestFinished(() => manager.dispose());
 
         const result = await enqueueRtcAndDrain(manager, createMessage('connecting'));
 
@@ -569,12 +550,13 @@ function createChannel(
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
         isPolite: false
     }, new DeterministicRtcOfferIds());
-    peer.connect();
-    const channel = new QRtcDataChannel(peer, { faultPort, peerId, dataChannelName: 'alm', flowControl });
-    channel.connect(true);
     onTestFinished(() => {
         peer.reset();
     });
+    peer.connect();
+    const channel = new QRtcDataChannel(peer, { faultPort, peerId, dataChannelName: 'alm', flowControl });
+    onTestFinished(() => channel.reset());
+    channel.connect(true);
     return channel;
 }
 
@@ -583,8 +565,10 @@ function createManager(
     resources: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>,
     options: RtcTransportManagerOptions = {}
 ): WebRtcOverlayMulticastManager {
-    return createOutboundRuntimeWithWorkTask(() =>
+    const manager = createOutboundRuntimeWithWorkTask(() =>
         new WebRtcOverlayMulticastManager({
+            quotaNow: Date.now,
+            creationNow: Temporal.Now.instant,
             connectionService: {
                 input: { sessionId: 'self' },
                 readyPeerIdsForLane: () => channels.map((channel) => channel.input.peerId),
@@ -611,6 +595,8 @@ function createManager(
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         })
     );
+    onTestFinished(() => manager.dispose());
+    return manager;
 }
 
 /** Observes the next matching real queue write, so retained settlement is not mistaken for its release. */

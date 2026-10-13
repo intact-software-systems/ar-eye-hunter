@@ -112,6 +112,38 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
   complete origin receipt and subsequent SDK receipt admission remain uncaptured. No quota refusal
   joins it. Complete producer/export retention does not establish completed work. No CPU, memory,
   database, quota, queue-task or transport cause is established. Thirty and fifty remain gated.
+- The local fifteen-browser CDP diagnostic passes all 84 shot ACKs, both lifecycle observations,
+  105 readings, 1,155 sampled bounds and all 231 native predicates. All fifteen captures finish
+  complete with zero local counter loss, and complete producer/export reconciliation passes.
+  Exact positive RTC chains cover every successful shot; six leader ACKs are direct and 78 relayed.
+  All 212 recorded attempts use RTC. The canonical WS envelope matches the capture decoder,
+  but the target WS ACK-to-new-receipt family is not exercised. Zero CDP control rows do not prove
+  absence. Local hardware, runtimes and capture overhead qualify this supplemental result; the
+  original hosted failure and capture-off acceptance remain open.
+- The same-source hosted diagnostic with the existing WS observer fails with 81 of 84 shots,
+  34 passing shot ACKs, 45 explicit timeouts and two unfinished observations. Only 103 of 105
+  samples exist; all 1,133 retained sampled bounds pass, but none of the 231 predicates is judged.
+  Complete native producer/export reconciliation and owned cleanup pass. Four failed shots have
+  positive complete server ACK counts and newly generated complete receipts whose send-work
+  reservations begin after the actual sender waits return failure. Their conservative minimum
+  lateness is 1,041–1,055 ms. Admission, dequeue and send use distinct work identities, so the
+  preceding interval is not one queue wait. Six other complete receipts enter an earlier batch;
+  deferred publication timestamps do not establish individual send timing. The exact source trace
+  places the four prepared-send commits before the later run and positively fills all sixteen
+  slots of the preceding serial page. Neutral holds can move eligibility, so elapsed time does
+  not prove continuous queue wait or incorrect selection. API observation is
+  partial; missing rows cannot prove absence. The reason for late receipt work and the other
+  failures remains unresolved. No CPU, memory, database, quota, queue or transport cause is selected.
+- The narrow hosted phase diagnostic also fails. Three positively complete sixteen-claim pages
+  take 510, 421 and 186 ms; serial callback execution occupies 72–89% of those page intervals.
+  Canonical lookup is only 4–7% of their monotonic callback cost. Admission and dequeue callbacks
+  carry most of the unpartitioned remainder; prepared-send callbacks are cheaper in these pages.
+  The new deferred phase flush takes 0.47–0.50 ms, excluding its own write and existing observers;
+  this is not total instrumentation overhead or an uninstrumented comparison. Exact same-run
+  failed subjects join the retained claims, but API capture remains partial without a phase
+  summary. Native recorder/export files match; all control-snapshot events occur in that export,
+  with 577 additional runtime events. Complete producer-to-export parity is unproved. These
+  positive costs narrow the next question without proving a production defect or repair.
 - The valid 5.40% shared-throughput comparison remains failed against the unchanged 5% allowance.
   Conditional IndexedDB scheduling benefit does not establish native or universal performance.
 - The approved guard observation remains inconclusive for a guard defect or causal repair. Partial
@@ -223,17 +255,38 @@ another unchanged acceptance retry is not selected. Retain the existing limiter 
 durable authority, deadlines, ACK semantics, twenty genuine processing attempts and ordinary
 operational failure policy.
 
-Prepare one private diagnostic at the existing Playwright/Chromium boundary. Capture closed
-WebSocket frame-event identities and times for the actor-bound leader/origin pair, joined to its
-same-subject generated ACK. Separate outbound admission, browser-reported frame sent, browser-reported
-receipt frame received and existing SDK receipt admission. The server counts the leader ACK and
-generates a new receipt; join its distinct control ID by exact subject and issued audience. Browser
-frame events do not establish physical wire latency. Preserve source custody and owned capture
-cleanup; retain no credentials or raw frames.
-Require meaningful capture/join tests and complete private support review before executing it once
-with the original workload and deadlines. A new production observer, limiter increase, speculative
-heap hunt or production fix is not selected. Earn a failing-first repair only from a positively
-located failed boundary.
+The reviewed local Playwright/Chromium diagnostic has executed once and passed native predicates,
+but its positive RTC completion chains do not exercise the failed WS family. Preserve its exact
+source, capture quality, producer/export custody and carrier joins; do not repeat it unchanged.
+
+The same-source hosted WS diagnostic has executed once and failed, with complete native exports
+and owned cleanup. Preserve its existing positive joins across exact server ACK count, distinct
+new receipt identity and SDK receipt admission. Four complete receipts have proven late send-work
+reservations; the other complete receipts and failed subjects retain separate unresolved boundaries.
+The source trace now distinguishes admission, dequeue and send identities and positively fills the
+preceding sixteen-claim serial page. The prepared-send commits precede the later run, but neutral
+holds can move eligibility. Neither continuous queue wait nor wrong selection is established.
+Preserve actual failed wait returns and conservative inherited-deadline bounds; outbox observations
+are not immediate enqueue-return timestamps and deferred publication is not individual send timing.
+
+The narrow private phase measurement has executed once. Preserve its positively complete pages,
+exact claim identities and independent API epoch, monotonic duration and stored-reservation clocks.
+Serial callbacks dominate those pages and canonical lookup contributes a small share. The costly
+admission/dequeue callback remainder is still unpartitioned. Recover the existing outbound
+commit-phase and sender-queue diagnostics before adding measurement: distinguish admission read
+and decision, fenced commit, queue wait and other callback work using their actual source owners.
+Keep the original metrics sink active. Reuse the existing bounded, guarded, deferred observer and
+safe codec for the smallest missing measurement; do not create another capture framework or
+duplicate admission algorithm. Direct semantic tests, affected compilation and complete independent
+specification/quality review precede a changed diagnostic. Bind immutable source and measurement
+overlay separately; another unchanged native workload is not selected.
+
+Recorder close and collector EOF establish custody only; ordinary shutdown does not prove producer
+completion. Native control-snapshot coverage and recorder/export equality remain distinct from
+complete producer parity. Partial capture or missing observations cannot prove absence. SQL
+selection/order, admission-context propagation, native/socket timing and shutdown rewrites remain
+outside this measurement. No limiter increase, speculative heap hunt or production fix is selected.
+Earn a failing-first repair only from a positively located defect.
 
 Retain the frozen audience, tree, six-shot cadence, lifecycle events, exact receipts, seven samples
 per actor, storage and metric limits, deadlines, all native predicates, source provenance and owned
@@ -262,14 +315,23 @@ canonical writer directly. Full-file specification and quality review, sensitivi
 semantics, consumer types, browser boundaries and bundle checks pass. No forwarding alias, duplicate
 guard, old-path module or migration code remains.
 
-Prepare the independently identified queue-entry creation-clock closure at its real service owners.
+Complete the implemented, approved queue-entry creation-clock closure at its real service owners.
 Preserve enqueue-time UTC timestamps and submillisecond precision; message creation time and numeric
 AL clocks are not replacements. Keep one deterministic converter with explicit owned instant input.
-Map its public contract and verified WS, RTC and AppInbox consumers before implementation; seek the
-required maintainer decision on the concrete public signature change. Include the nearby reader
-import repair and recursively affected support. Do not reopen already approved controller types or
-awaitable disposal. Each remaining change requires meaningful failing-first coverage, full-file
-review and affected validation before publication.
+The maintainer approved the converter's required instant and required WS/RTC creation-clock inputs,
+with the concrete internal AppInbox key/creation changes and no legacy adapter. Default factories
+retain enqueue-time UTC precision; direct consumers supply the new inputs. Meaningful explicit
+non-UTC nanosecond tests fail before the repair and pass afterward. Focused behavior, affected
+consumer typechecks and native rollback checks pass; remaining complete caller review is open.
+Complete verified WS, RTC and AppInbox caller/test closure, canonical materializer ownership,
+full-file review and affected checks before publication. The changed RTC owner also has a separate
+approved quota-clock contract: preserve the existing RateLimiter policy and keep quota, numeric AL
+and precise creation clocks distinct. Apply the required quota clock at actual admission and
+nonspending retry forecasting. Prove that advancing AL time alone does not restore quota, quota
+time does restore it at the unchanged boundary, and successful queue creation retains precise UTC
+nanoseconds. Quota refusal must not create a row; disposed and circuit gates retain precedence.
+Include the nearby reader import repair and recursively
+affected support. Do not reopen already approved controller types or awaitable disposal.
 
 Keep the original acceptance workload as the priority while this independently evidenced review
 fix proceeds. A failed fifteen-agent result earns exact evidence review and a meaningful

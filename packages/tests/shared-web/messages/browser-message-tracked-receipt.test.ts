@@ -1,4 +1,11 @@
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/browser-delivery-composition.ts';
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
@@ -28,6 +35,7 @@ import {
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
@@ -59,6 +67,20 @@ type CarrierAdmission = (message: ALMessage) => Promise<ALOutboundEnqueueResult>
 interface ExclusiveWsLeg {
     readonly ws: WsQueueBoxClientService;
     readonly harness: DispatchHarness;
+}
+
+interface LeaderRtcLeg {
+    readonly fixture: RtcOriginOverlayFixture;
+    readonly harness: DispatchHarness;
+    readonly wsAdmissions: readonly ALMessage[];
+}
+
+interface CreateServerReceiptInput {
+    readonly msgId: string;
+    readonly phase: ALReceiptPayload['phase'];
+    readonly expectedRecipientPeerIds: readonly string[];
+    readonly confirmedRecipientPeerIds: readonly string[];
+    readonly nowMs: () => number;
 }
 
 describe('the receipt a WS send tracks reaches its handle (R-S3a-4)', () => {
@@ -244,7 +266,7 @@ describe('the leader receipt of a group-leader room send reaches its handle', ()
     it.each(['rtc', 'rtc-with-ws-fallback'] as const)(
         'ends a group-leader send on %s acknowledged when the director session confirms it, with no WS leg',
         async (strategy) => {
-            const leg = await createLeaderRtcLeg(toOriginDirectedSnapshot(createOriginSnapshot(['a', 'b', 'c'], 4), 'c'), strategy);
+            const leg = await createLeaderRtcLeg(toOriginDirectedSnapshot(createOriginSnapshot(['a', 'b', 'c'], 4), 'c', Date.now()), strategy);
             const handle = leg.harness.send(createLeaderSend('a', `leader-acknowledged-${strategy}`));
             await expect.poll(() => handle.lifecycle().evidence.admittedAtMs).toBeDefined();
 
@@ -393,15 +415,9 @@ describe('the claim of an exclusive room send reaches its handle', () => {
     });
 });
 
-interface LeaderRtcLeg {
-    readonly fixture: RtcOriginOverlayFixture;
-    readonly harness: DispatchHarness;
-    readonly wsAdmissions: readonly ALMessage[];
-}
-
 /** The RTC origin `a` and, on the fallback strategy, a WS leg that records every message handed to it. */
 async function createLeaderRtcLeg(
-    snapshot: ReturnType<typeof createOriginSnapshot>,
+    snapshot: GroupSnapshot,
     strategy: 'rtc' | 'rtc-with-ws-fallback'
 ): Promise<LeaderRtcLeg> {
     const registry = createRegistry();
@@ -462,14 +478,6 @@ function createServerNack(msgId: string, reason: ALNackReason, nowMs: () => numb
     );
 }
 
-interface CreateServerReceiptInput {
-    readonly msgId: string;
-    readonly phase: ALReceiptPayload['phase'];
-    readonly expectedRecipientPeerIds: readonly string[];
-    readonly confirmedRecipientPeerIds: readonly string[];
-    readonly nowMs: () => number;
-}
-
 function createServerReceipt(input: CreateServerReceiptInput): ALMessage {
     return newALReceiptControlMessage(
         { v: 3, msgId: `receipt-${input.phase}-${input.msgId}`, senderId: SERVER_PEER_ID, ts: input.nowMs() },
@@ -503,6 +511,7 @@ async function createWsClient(
 ): Promise<WsQueueBoxClientService> {
     vi.stubGlobal('WebSocket', TestWebSocket);
     const client = new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort());
+    onTestFinished(() => client.close());
     const connected = client.connect();
     await Promise.resolve();
     TestWebSocket.instances.at(-1)!.open();
@@ -520,7 +529,9 @@ async function createWsClient(
 }
 
 function createRegistry(): BrowserRallarDeliveryRegistry {
-    return new BrowserRallarDeliveryRegistry({ nowMs: Date.now, ...BROWSER_DELIVERY_RETENTION, cancel: () => {} });
+    const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, ...BROWSER_DELIVERY_RETENTION, cancel: () => {} });
+    onTestFinished(() => registry.releaseAll());
+    return registry;
 }
 
 /** The browser's own dispatch and registry over real carrier admissions; with both carriers it may fall back. */

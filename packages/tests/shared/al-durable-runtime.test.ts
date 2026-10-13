@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     describe,
@@ -80,7 +81,7 @@ describe('AL state retained across runtime recreation', () => {
         });
         await expect.poll(() => dispatchedMsgIds).toEqual([msg.id.msgId]);
 
-        runtime1.dispose();
+        await runtime1.dispose();
         const restartedStores = createRetainedInboundStoreSet(stores);
         const restartedRuntime = createDefaultInboundRuntime(restartedStores, dispatchedMsgIds);
 
@@ -121,7 +122,7 @@ describe('AL state retained across runtime recreation', () => {
         ).toBeDefined();
         expect(dispatchedMsgIds).toEqual([]);
 
-        runtime1.dispose();
+        await runtime1.dispose();
         const runtime2 = createDefaultInboundRuntime(
             createRetainedInboundStoreSet(stores),
             dispatchedMsgIds,
@@ -147,7 +148,7 @@ describe('AL state retained across runtime recreation', () => {
         const runtime = createDefaultOutboundRuntime(stores, sent);
         const firstPresence = createPresenceMessage('presence-1', true);
         const [firstEntry] = await enqueueOutboundOrThrow(runtime, firstPresence);
-        runtime.dispose();
+        await runtime.dispose();
 
         const restartedStores = createRetainedOutboundStoreSet(stores);
         const restarted = createDefaultOutboundRuntime(restartedStores, sent);
@@ -187,7 +188,7 @@ describe('AL state retained across runtime recreation', () => {
         await enqueueOutboundOrThrow(runtime, seq1);
         await enqueueOutboundOrThrow(runtime, seq2);
 
-        runtime.dispose();
+        await runtime.dispose();
         const restartedForRepair = createDefaultOutboundRuntime(
             createRetainedOutboundStoreSet(stores),
             sent
@@ -223,7 +224,7 @@ describe('AL state retained across runtime recreation', () => {
         const msg = createOutboundMessage('msg-timeout');
 
         await enqueueOutboundOrThrow(runtime1, msg);
-        runtime1.dispose();
+        await runtime1.dispose();
 
         const runtime2 = createDefaultOutboundRuntime(
             createRetainedOutboundStoreSet(stores),
@@ -260,8 +261,7 @@ describe('AL state retained across runtime recreation', () => {
         expect(sent.filter((entry) => entry.kind === 'send')).toHaveLength(1);
         expect(sent.filter((entry) => entry.kind === 'repair')).toHaveLength(1);
 
-        runtime1.dispose();
-        runtime2.dispose();
+        await Promise.all([runtime1.dispose(), runtime2.dispose()]);
     });
 });
 
@@ -308,7 +308,7 @@ function createDefaultInboundRuntime(
                 overlayNeighborPeerIds: ['peer-2'],
                 ...observations
             }),
-        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
         dispatchInboxEntry: async (entry: ResourceEntry) => {
             const msg = decodePersistedALMessage(entry.resource);
             dispatchedMsgIds.push(msg.id.msgId);
@@ -355,7 +355,7 @@ function createDefaultOutboundRuntime(
             carrier: 'ws',
             outbox: stores.runtimeStores.workQueue,
             stores: stores.runtimeStores,
-            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: planOutboundTestMessage,

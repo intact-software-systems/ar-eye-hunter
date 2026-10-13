@@ -1,3 +1,12 @@
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/al-policy.ts';
@@ -13,19 +22,13 @@ import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message
 import { validateALOutboundDispatch } from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
 import { RetryableConflictError } from '@shared/resilience/TryWith.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
 import {
     claimOutboundTestWork,
-    computeOutboundTestAdmission,
     createDefaultOutboundTestStores,
     createOutboundCanonicalEntry,
-    createOutboundMessage
+    createOutboundMessage,
+    readOutboundTestAdmission
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -56,7 +59,7 @@ describe('outbound message expiry', () => {
         });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: 2_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -115,7 +118,7 @@ describe('outbound message expiry', () => {
         });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -162,7 +165,7 @@ describe('outbound message expiry', () => {
         });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -199,7 +202,12 @@ describe('outbound message expiry', () => {
         const stores = createDefaultOutboundTestStores();
         const store = stores.admissionStore;
         const message = createOutboundMessage('post-deadline-control', { ttlMs: 10 });
-        const bundle = await computeOutboundTestAdmission(store, message);
+        const bundle = await readOutboundTestAdmission({
+            store: store,
+            message: message,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
         await store.commitBundle({
             ...bundle,
             mutations: [...bundle.mutations, {
@@ -263,7 +271,12 @@ describe('outbound message expiry', () => {
             })
         });
         const message = createOutboundMessage('post-expiry-admission', { ttlMs: 10 });
-        const bundle = await computeOutboundTestAdmission(store, message);
+        const bundle = await readOutboundTestAdmission({
+            store: store,
+            message: message,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
         expect(await store.commitBundle(bundle)).toBe('committed');
 
         vi.setSystemTime(1_010);
@@ -290,7 +303,12 @@ describe('outbound message expiry', () => {
             retention: normalizeALRuntimeStoreRetention()
         });
         const message = createOutboundMessage('foreign-scope-admission');
-        const bundle = await computeOutboundTestAdmission(store, message);
+        const bundle = await readOutboundTestAdmission({
+            store: store,
+            message: message,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
         expect(await store.commitBundle(bundle)).toBe('committed');
         const sent = state.data.get(`scoped-admission:sent:${message.id.msgId}`);
         if (sent === undefined) {
@@ -332,7 +350,7 @@ describe('outbound message expiry', () => {
         const read = await store.readOutgoingMessage({ msg: msg, planner: () => plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -375,7 +393,7 @@ describe('outbound message expiry', () => {
         });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: 2_000,
             intent,
             phase: 'immediate',
@@ -409,7 +427,7 @@ describe('outbound message expiry', () => {
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox');
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant());
         const candidate = computeALOutboundDispatch({
             read,
             outboxEntry: entry,
@@ -443,7 +461,7 @@ describe('outbound message expiry', () => {
         });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',

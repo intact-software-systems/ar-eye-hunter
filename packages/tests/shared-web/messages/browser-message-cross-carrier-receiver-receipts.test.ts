@@ -322,7 +322,7 @@ async function createReceiptLoop(expectation: ReceiptLoopExpectation): Promise<R
     vi.spyOn(Temporal.Now, 'instant').mockImplementation(() => Temporal.Instant.fromEpochMilliseconds(Date.now()));
     const submission: ReceiptLoop['submission'] = { holdFinalAck: false, heldFinalAcks: [] };
     const room = createOriginSnapshot(['a', 'b', 'c'], 4);
-    const snapshot = expectation.mode === 'leader' ? toOriginDirectedSnapshot(room, 'c') : room;
+    const snapshot = expectation.mode === 'leader' ? toOriginDirectedSnapshot(room, 'c', Date.now()) : room;
     const server = await createReceiptLoopServer(snapshot);
     const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, ...BROWSER_DELIVERY_RETENTION, cancel: () => {} });
     registerReceiptLoopCleanup([() => registry.releaseAll()]);
@@ -352,6 +352,7 @@ async function createReceiptLoopServer(snapshot: GroupSnapshot): Promise<Receipt
         socket.addConnection(new ConnectionContext({ id: peerId, socket: native }));
     }
     const engine = new InboxOutboxEngine();
+    registerReceiptLoopCleanup([() => engine.stop()]);
     const receiptObservations: WsQueueBoxServerReceiptObservation[] = [];
     const service = createDefaultWsQueueBoxServerService({
         outbox: new InMemoryQueueBox(),
@@ -371,6 +372,7 @@ async function createReceiptLoopServer(snapshot: GroupSnapshot): Promise<Receipt
                 ? { scope: { applicationId: 'app', workspaceId: 'workspace' }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined
     });
+    registerReceiptLoopCleanup([() => service.dispose()]);
     new RallarServerWsRouter(service, {
         authorizeRoomMessage: createGroupRoomWsAuthorizer({
             readGroupSnapshot: (ref) => {
@@ -383,7 +385,6 @@ async function createReceiptLoopServer(snapshot: GroupSnapshot): Promise<Receipt
         nowEpochMs: Date.now
     }).install();
     engine.start();
-    registerReceiptLoopCleanup([() => service.dispose(), () => engine.stop()]);
     return { sockets, receiptObservations };
 }
 
@@ -393,8 +394,10 @@ async function createReceiptLoopPeer(
     readSubmissionIneligibility: WsQueueBoxClientService.Dependencies['readSubmissionIneligibility']
 ): Promise<ReceiptLoopPeer> {
     const socket = new JsonWebSocketClient(`ws://client/${peerId}`, createPassThroughTransportFaultPort());
+    registerReceiptLoopCleanup([() => socket.close()]);
     const native = await openConnectingWebSocket(socket, socket.connect());
     const engine = new InboxOutboxEngine();
+    registerReceiptLoopCleanup([() => engine.stop()]);
     const inboundStores = createReceiptLoopInboundStores(peerId);
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
         namespace: `receipt-loop/${peerId}/ws-outbound`,
@@ -416,9 +419,9 @@ async function createReceiptLoopPeer(
             settle(settlement);
         }
     });
+    registerReceiptLoopCleanup([() => ws.close()]);
     ws.enableDefaultCallbacks();
     engine.start();
-    registerReceiptLoopCleanup([() => ws.close(), () => engine.stop()]);
     return { ws, socket: native, engine, inboundStores, outboundStores, settlements };
 }
 
@@ -442,7 +445,7 @@ async function createReceiptLoopReceiver(
             selfPeerId: peerId,
             stores: peer.inboundStores,
             queueEngine: peer.engine,
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'rtc-inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'rtc-inbox', Temporal.Now.instant())
         }),
         carrier: 'rtc',
         planIncomingMessage: (message, source, observations) => {

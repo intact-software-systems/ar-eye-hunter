@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     beforeEach,
@@ -43,6 +44,9 @@ afterEach(() => {
 
 it('emits auth restore failure diagnostics when no session or credentials exist', async () => {
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
 
     await expect(runtime.connect({
         connection: 'aliceRtc',
@@ -64,6 +68,9 @@ it('emits auth restore failure diagnostics when no session or credentials exist'
 it('emits login failure diagnostics for bad credentials', async () => {
     facade.behavior.login.mockRejectedValue(new Error('bad credentials'));
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
 
     await expect(runtime.connect({
         connection: 'aliceRtc',
@@ -85,6 +92,9 @@ it('emits login failure diagnostics for bad credentials', async () => {
 
 it('omits browser RTC diagnostics counters from default health snapshots', async () => {
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
 
     await runtime.connect({
         connection: 'aliceRtc',
@@ -108,6 +118,9 @@ it('omits browser RTC diagnostics counters from default health snapshots', async
 
 it('includes browser RTC diagnostics counters in health snapshots when requested', async () => {
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
 
     await runtime.connect({
         connection: 'aliceRtc',
@@ -146,6 +159,10 @@ it('bridges relevant browser console warnings into structured diagnostics', asyn
     const runtime = await loadRuntime();
     const originalWarn = console.warn;
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    onTestFinished(() => warnSpy.mockRestore());
+    onTestFinished(async () => {
+        await runtime.close();
+    });
 
     await runtime.connect({
         connection: 'aliceRtc',
@@ -190,13 +207,9 @@ it('bridges relevant browser console warnings into structured diagnostics', asyn
 it('keeps warning diagnostics serializable when native console arguments are circular', async () => {
     const runtime = await loadRuntime();
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    onTestFinished(() => warnSpy.mockRestore());
     onTestFinished(async () => {
-        try {
-            await runtime.close();
-        }
-        finally {
-            warnSpy.mockRestore();
-        }
+        await runtime.close();
     });
     await runtime.connect({
         connection: 'aliceRtc',
@@ -226,6 +239,9 @@ it('keeps warning diagnostics serializable when native console arguments are cir
 it('emits room join failure diagnostics for permission-style failures', async () => {
     facade.behavior.roomJoin.mockRejectedValue(new Error('forbidden room'));
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
 
     await expect(runtime.connect({
         connection: 'aliceRtc',
@@ -248,6 +264,9 @@ it('emits room join failure diagnostics for permission-style failures', async ()
 it('emits send failure diagnostics for forbidden targets', async () => {
     facade.behavior.realtimeSend.mockRejectedValue(new Error('forbidden target'));
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
 
     await runtime.connect({
         connection: 'aliceRtc',
@@ -272,6 +291,9 @@ it('emits send failure diagnostics for forbidden targets', async () => {
 
 it('emits expected-session and duplicate-session diagnostics', async () => {
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
 
     await runtime.connect({
         connection: 'aliceRtc',
@@ -305,6 +327,9 @@ it('emits expected-session and duplicate-session diagnostics', async () => {
 
 it('records an AL outbound admission diagnostics event into the agent event log', async () => {
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
     await runtime.connect({
         connection: 'diagnostics',
         rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
@@ -340,6 +365,9 @@ it.each([
     { confirmed: ['b', 'c'], unconfirmed: [], complete: true }
 ])('records actual receipt confirmation facts for $confirmed into the agent event log', async ({ confirmed, unconfirmed, complete }) => {
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
     await runtime.connect({
         connection: 'diagnostics',
         rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
@@ -405,6 +433,9 @@ it.each([
 
 it('records an AL inbound admission diagnostics event into the agent event log', async () => {
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
     await runtime.connect({
         connection: 'diagnostics',
         rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
@@ -439,6 +470,9 @@ it('records an AL inbound admission diagnostics event into the agent event log',
 
 it('records an AL storage reset diagnostics event into the agent event log', async () => {
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
     await runtime.connect({
         connection: 'diagnostics',
         rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
@@ -472,6 +506,9 @@ it('records an AL storage reset diagnostics event into the agent event log', asy
 // The reset keeps its own topic and payload; recovery, health and persist share the storage topic.
 it('records AL storage recovery, health and persist events on the storage topic', async () => {
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
     await runtime.connect({
         connection: 'diagnostics',
         rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
@@ -506,6 +543,9 @@ it('records AL storage recovery, health and persist events on the storage topic'
 // The storage waits match a substring of the serialized event, so the key order a store emits must reach the topic.
 it('keeps the key order a store emits its health and recovery in on the storage topic', async () => {
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
     await runtime.connect({
         connection: 'diagnostics',
         rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
@@ -530,6 +570,9 @@ it('keeps the key order a store emits its health and recovery in on the storage 
 
 it('records synchronous connection producer diagnostics once across reconnect', async () => {
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
     const connect = { connection: 'early', rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' } };
     facade.behavior.connect.mockImplementation(async () => {
         const ports = facade.records.defaultWrites.at(-1)?.diagnosticsPorts;
@@ -556,12 +599,12 @@ it('records synchronous connection producer diagnostics once across reconnect', 
 
 it('captures a real terminal ACK through the installed inbound capability and normalized agent event', async () => {
     const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
     await runtime.connect({
         connection: 'diagnostics',
         rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
-    });
-    onTestFinished(async () => {
-        await runtime.close();
     });
     const diagnostics = facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.inboundDiagnostics;
     expect(diagnostics?.acknowledgementCapture).toBeDefined();
@@ -571,7 +614,7 @@ it('captures a real terminal ACK through the installed inbound capability and no
         carrier: 'ws',
         diagnostics,
         queueEngine: new InboxOutboxEngine(),
-        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
         planIncomingMessage: (msg, _source, observations) => planALMessageHandling(msg, { ...observations, selfPeerId: 'origin' }),
         dispatchInboxEntry: async () => {},
         sendControlMessages: async () => {

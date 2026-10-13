@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -16,11 +17,12 @@ import {
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch, type ALOutboundComputedDto } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
-    computeOutboundTestAdmission,
     createOutboundCanonicalEntry,
-    createOutboundMessage
+    createOutboundMessage,
+    readOutboundTestAdmission
 } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../../../shared/alm/outbound-test-payload.ts';
 import {
@@ -28,6 +30,15 @@ import {
     requirePostgresDatabaseUrl,
     type PostgresSql
 } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
+
+/** One durable copy per message, the sender asking its own outbound for the track's next sequence. */
+const MINTING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
+    msg,
+    dropReasonCode: undefined,
+    lane: 'durable',
+    preparedMessages: [{ text: msg.id.msgId }],
+    mintsSequence: true
+});
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
@@ -53,25 +64,38 @@ describe('Postgres outbound sequence minting', () => {
         const [first, second] = await createStores();
         const loser = createMintRequest('mint-loser');
         const winner = createMintRequest('mint-winner');
-        const losingBundle = await computeOutboundTestAdmission(first, loser, MINTING_PLANNER);
-        const winningBundle = await computeOutboundTestAdmission(second, winner, MINTING_PLANNER);
+        const losingBundle = await readOutboundTestAdmission({
+            store: first,
+            message: loser,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() },
+            planner: MINTING_PLANNER
+        });
+        const winningBundle = await readOutboundTestAdmission({
+            store: second,
+            message: winner,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() },
+            planner: MINTING_PLANNER
+        });
 
         expect(await second.commitBundle(winningBundle)).toBe('committed');
         expect(await first.commitBundle(losingBundle)).toBe('conflict');
-        expect(await first.commitBundle(await computeOutboundTestAdmission(first, loser, MINTING_PLANNER))).toBe('committed');
+        expect(
+            await first.commitBundle(
+                await readOutboundTestAdmission({
+                    store: first,
+                    message: loser,
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() },
+                    planner: MINTING_PLANNER
+                })
+            )
+        ).toBe('committed');
 
         expect((await first.readSentMessage(winner.id.msgId))?.msg.ordering?.seq).toBe(1);
         expect((await second.readSentMessage(loser.id.msgId))?.msg.ordering?.seq).toBe(2);
     });
-});
-
-/** One durable copy per message, the sender asking its own outbound for the track's next sequence. */
-const MINTING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
-    msg,
-    dropReasonCode: undefined,
-    lane: 'durable',
-    preparedMessages: [{ text: msg.id.msgId }],
-    mintsSequence: true
 });
 
 function createMintRequest(resourceId: string): ALMessage {
@@ -80,10 +104,11 @@ function createMintRequest(resourceId: string): ALMessage {
 
 async function createStores(): Promise<readonly [ALOutboundAdmissionStore<OutboundTestPayload>, ALOutboundAdmissionStore<OutboundTestPayload>]> {
     const namespace = `outbound-supersedence-${crypto.randomUUID()}`;
+    const canonicalKey = toALOutboundCanonicalKey(namespace, createOutboundMessage('any-message'));
     const first = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl());
     onTestFinished(async () => {
         try {
-            await deleteNamespaceRows(first, namespace);
+            await deleteNamespaceRows(first, namespace, canonicalKey);
         }
         finally {
             await first.end();
@@ -110,13 +135,12 @@ async function createStores(): Promise<readonly [ALOutboundAdmissionStore<Outbou
  * namespace (one topic and resource id, the effect id in the context) and the canonical and identity
  * rows of its scope (one resource id per scope, the message in the context).
  */
-async function deleteNamespaceRows(sql: PostgresSql, namespace: string): Promise<void> {
+async function deleteNamespaceRows(sql: PostgresSql, namespace: string, canonicalKey: Key): Promise<void> {
     const work = toALOutboundWorkKey(namespace, 'any-effect-id');
-    const canonical = toALOutboundCanonicalKey(namespace, createOutboundMessage('any-message'));
     await sql`
         delete from resource_inbox
         where (ri_topic_id = ${work.topicId} and ri_resource_id = ${work.resourceId})
-            or ri_resource_id = ${canonical.resourceId}
+            or ri_resource_id = ${canonicalKey.resourceId}
     `;
     await sql`delete from runtime_state_store where store_namespace = ${namespace}`;
 }
@@ -144,7 +168,7 @@ async function readSupersedingDecision(
     });
     return computeALOutboundDispatch({
         read,
-        outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+        outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
         dispatchAtMs: Date.now(),
         intent: 'enqueue',
         phase: 'immediate',

@@ -6,6 +6,7 @@ import {
 } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { decodePersistedAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import {
     AppInboxType,
     type AppInboxEnqueueInput,
@@ -16,8 +17,7 @@ import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '@shared-server/rallar-system/app-inbox/app-inbox-persistence-ports.ts';
 import { encodeAppInboxCommand } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { CLIENT_STATE_APP_INBOX_TOPIC, GROUP_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-topics.ts';
-import type { AppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
-import { createAppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
+import { createAppInboxClientRuntime, type AppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-runtime.ts';
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
@@ -252,7 +252,7 @@ describe('AppInbox command lifecycle', () => {
             enqueue.type,
             enqueue
         );
-        const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.APP_INBOX);
+        const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.APP_INBOX, Temporal.Now.instant());
         const entry = {
             ...queued,
             audit: {
@@ -485,9 +485,7 @@ describe('AppInbox command lifecycle', () => {
         if (queuedEntry === undefined) {
             throw new Error('Expected the first AppInbox command to remain available for replay');
         }
-        const stored = readEnqueuedData<{
-            request: { metadata: JsonWireObject; };
-        }>(queuedEntry);
+        const stored = decodeProtoPayload(decodePersistedAppInboxEnqueue(queuedEntry).data);
         expect(Object.hasOwn(stored.request.metadata, '__proto__')).toBe(true);
         expect(stored.request.metadata.__proto__).toEqual({ flag: 'first' });
     });
@@ -858,19 +856,6 @@ async function readEntries(queue: InMemoryQueueBox): Promise<ResourceEntry[]> {
     const entries = await Promise.all((await queue.getAllKeys()).map((key) => queue.getItem(key)));
 
     return entries.filter((entry): entry is ResourceEntry => entry !== undefined);
-}
-
-function readEnqueuedData<V>(entry: ResourceEntry): V {
-    const message = JSON.parse(entry.resource) as {
-        payload: {
-            resource: string;
-        };
-    };
-    const enqueue = JSON.parse(message.payload.resource) as {
-        data: V;
-    };
-
-    return enqueue.data;
 }
 
 function createResilience(): ResourceInboxResilience {

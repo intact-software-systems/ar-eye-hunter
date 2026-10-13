@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -113,9 +114,12 @@ describe('PSql admission optimistic retry', () => {
         const runtime = createInboundTestRuntime(stores, deliveredMessageIds, controls);
         await runtime.ready();
         const retain = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
+        let disposal: Promise<void> | undefined;
         const retention = vi.spyOn(stores.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
             const observed = await retain(entry);
-            runtime.dispose(); // Stop after durable retention, before its first worker claim.
+            disposal = runtime.dispose(); // Stop synchronously before the first worker claim.
+            // The post-admission join and registered runtime cleanup retain this failure.
+            void disposal.catch(() => undefined);
             return observed;
         });
         const msg = createInboundMessage('inbound-runtime-retry');
@@ -123,6 +127,8 @@ describe('PSql admission optimistic retry', () => {
         const source = { kind: 'ws-client' as const, peerId: 'peer-1', authenticatedScope: AUTHENTICATED_SCOPE };
 
         const conflicted = await runtime.admitIncomingMessage(msg, source);
+        expect(disposal).toBeDefined();
+        await disposal;
 
         expect(conflicted.right).toEqual({ kind: 'pending-admission' });
         expect(deliveredMessageIds).toEqual([]);
@@ -262,14 +268,19 @@ describe('PSql admission optimistic retry', () => {
             return await commit(candidate);
         });
         const retain = store.retainPendingAdmission.bind(store);
+        let disposal: Promise<void> | undefined;
         vi.spyOn(store, 'retainPendingAdmission').mockImplementationOnce(async (input) => {
             const status = await retain(input);
-            runtime.dispose(); // Retention owns the message; admission has not activated physical work.
+            disposal = runtime.dispose(); // Retention stops activation before admission returns.
+            // Observe rejection now; join after admission rather than from its active retention callback.
+            void disposal.catch(() => undefined);
             return status;
         });
         const message = createOutboundMessage('outbound-runtime-conflict');
 
         const result = await runtime.enqueueIfAbsent(message);
+        expect(disposal).toBeDefined();
+        await disposal;
 
         expect(result).toMatchObject({ verdict: { kind: 'pending' }, message });
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
@@ -316,7 +327,7 @@ function createInboundTestRuntime(
                 overlayNeighborPeerIds: [],
                 ...observations
             }),
-        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
         dispatchInboxEntry: async (entry) => {
             deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
@@ -336,7 +347,7 @@ function createOutboxOnlyTestRuntime(
         carrier: 'ws',
         outbox: stores.workQueue,
         stores,
-        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
         decodePreparedMessage: decodeALOutboundPreparedMessage,
         planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
