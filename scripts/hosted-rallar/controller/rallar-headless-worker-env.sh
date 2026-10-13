@@ -17,7 +17,7 @@ write_rallar_headless_worker_env_var() {
 	local destination="$1"
 	local key="$2"
 	local value="${!key-}"
-	if [[ -n "${value}" ]]; then
+	if [[ -n "${value}" || ( "${key}" == RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS && "${!key+x}" == x ) ]]; then
 		local quoted_value
 		quoted_value="$(to_rallar_headless_worker_env_value "${value}")" || return $?
 		printf '%s=%s\n' "${key}" "${quoted_value}" >>"${destination}" || return $?

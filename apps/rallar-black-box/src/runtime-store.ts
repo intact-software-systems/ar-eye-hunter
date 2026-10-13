@@ -285,6 +285,12 @@ class RallarBlackBoxRuntimeStore {
     }
 
     async configureLocalWorkbenchOnly(): Promise<void> {
+        const refusal = toRallarBlackBoxBootstrapRefusal(this.bootstrapConfig);
+        if (refusal !== undefined) {
+            this.setLocalWorkbenchConfigurationFailure(refusal);
+            return;
+        }
+
         try {
             const runNumber = this.runSequence++;
             this.snapshot = {
@@ -571,6 +577,11 @@ class RallarBlackBoxRuntimeStore {
     private async resetForRun(
         lastAction: string
     ): Promise<Either<string, RallarBlackBoxTestConfig>> {
+        const refusal = toRallarBlackBoxBootstrapRefusal(this.bootstrapConfig);
+        if (refusal !== undefined) {
+            return Either.ofLeft(refusal);
+        }
+
         const runNumber = this.runSequence++;
         this.snapshot = {
             ...this.snapshot,

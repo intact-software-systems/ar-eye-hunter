@@ -119,4 +119,61 @@ describe('fresh browser recording selection', () => {
         }));
         store.disconnectControl();
     });
+    it('refuses malformed recording selection through normal local browser bootstrap before Configure', async () => {
+        window.history.replaceState(
+            {},
+            '',
+            '/?provider=browser-rallar&autoConnect=0&apiBaseUrl=https%3A%2F%2Ffixture.test&rallarUsername=fixture-user&rallarPassword=fixture-password&routineBrowserDiagnostics=off'
+        );
+        const { rallarBlackBoxRuntimeStore: store } = await import('../../../apps/rallar-black-box/src/runtime-store.ts');
+        expect(store.getSnapshot().bootstrap).toMatchObject({
+            mode: 'local-workbench',
+            issues: [{ launchKey: 'routineBrowserDiagnostics', message: expect.any(String) }]
+        });
+        store.startBootstrapOnce();
+        await vi.waitFor(() => expect(store.getSnapshot().bootstrapping).toBe(false));
+        expect(store.getSnapshot()).toMatchObject({
+            control: { state: 'idle' },
+            state: { commandHistory: [] },
+            runState: 'failed',
+            lastError: expect.stringContaining('routineBrowserDiagnostics')
+        });
+        store.disconnectControl();
+    });
+
+    it('refuses invalid launch defaults before the local reset/configure flow', async () => {
+        window.history.replaceState(
+            {},
+            '',
+            '/?provider=browser-rallar&autoConnect=0&apiBaseUrl=https%3A%2F%2Ffixture.test&rallarUsername=fixture-user&rallarPassword=fixture-password&routineBrowserDiagnostics=off'
+        );
+        const { rallarBlackBoxRuntimeStore: store } = await import('../../../apps/rallar-black-box/src/runtime-store.ts');
+        await store.resetWorkbench();
+        expect(store.getSnapshot()).toMatchObject({
+            control: { state: 'idle' },
+            state: { commandHistory: [] },
+            runState: 'failed',
+            lastError: expect.stringContaining('routineBrowserDiagnostics')
+        });
+        store.disconnectControl();
+    });
+
+    it('still configures valid local browser launches through normal bootstrap', async () => {
+        window.history.replaceState(
+            {},
+            '',
+            '/?provider=browser-rallar&autoConnect=0&apiBaseUrl=https%3A%2F%2Ffixture.test&rallarUsername=fixture-user&rallarPassword=fixture-password&routineBrowserDiagnostics=disabled'
+        );
+        const { rallarBlackBoxRuntimeStore: store } = await import('../../../apps/rallar-black-box/src/runtime-store.ts');
+        store.startBootstrapOnce();
+        await vi.waitFor(() => expect(store.getSnapshot().bootstrapping).toBe(false));
+        expect(store.getSnapshot()).toMatchObject({
+            control: { state: 'idle' },
+            runState: 'waiting',
+            lastAction: 'Local browser-rallar workbench configured',
+            lastError: undefined
+        });
+        expect(store.getSnapshot().state.commandHistory.map((result) => ({ kind: result.kind, ok: result.ok }))).toEqual([{ kind: 'configure', ok: true }]);
+        store.disconnectControl();
+    });
 });
