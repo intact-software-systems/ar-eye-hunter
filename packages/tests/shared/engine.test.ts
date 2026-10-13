@@ -1,6 +1,3 @@
-import { TrackedTask } from '@shared/resilience/ComputeAsyncTask.ts';
-import { toError } from '@shared/resilience/to-error.ts';
-import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     beforeEach,
     describe,
@@ -9,6 +6,10 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+
+import { TrackedTask } from '@shared/resilience/ComputeAsyncTask.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 beforeEach(() =>
     onTestFinished(() => {
@@ -142,7 +143,9 @@ describe('engine', () => {
         const unhandled: Error[] = [];
         const onUnhandled = (error: unknown) => unhandled.push(toError(error));
         process.on('unhandledRejection', onUnhandled);
-        onTestFinished(() => process.off('unhandledRejection', onUnhandled));
+        onTestFinished(() => {
+            process.off('unhandledRejection', onUnhandled);
+        });
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
         let available = true;
         let released = false;
@@ -187,7 +190,9 @@ describe('engine', () => {
         const unhandled: Error[] = [];
         const onUnhandled = (error: unknown) => unhandled.push(toError(error));
         process.on('unhandledRejection', onUnhandled);
-        onTestFinished(() => process.off('unhandledRejection', onUnhandled));
+        onTestFinished(() => {
+            process.off('unhandledRejection', onUnhandled);
+        });
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
         let available = true;
         engine.includeTask('owned', {
@@ -222,7 +227,9 @@ describe('engine', () => {
         const unhandled: Error[] = [];
         const onUnhandled = (error: unknown) => unhandled.push(toError(error));
         process.on('unhandledRejection', onUnhandled);
-        onTestFinished(() => process.off('unhandledRejection', onUnhandled));
+        onTestFinished(() => {
+            process.off('unhandledRejection', onUnhandled);
+        });
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
         const entered = Promise.withResolvers<void>();
         const computation = Promise.withResolvers<void>();
