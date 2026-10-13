@@ -33,7 +33,7 @@ export function toControlAgentReport(input: ToControlAgentReportInput): RallarBl
     const summary: ControlAgentReportSummary = {
         status: state.status,
         commands: state.commandHistory.length,
-        events: state.events.length,
+        events: state.eventHistory.totalEvents,
         failures: state.failures.length,
         latestCommandId: state.commandHistory.at(-1)?.commandId,
         latestEventAtEpochMs: state.events.at(-1)?.atEpochMs,

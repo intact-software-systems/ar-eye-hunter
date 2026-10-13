@@ -17,6 +17,12 @@ import type {
 import type { ScriptedStorageFault } from '@shared/persistence/storage-fault-port.ts';
 import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import type {
+    RallarBlackBoxEventHistory,
+    RallarBlackBoxEventHistoryPolicy,
+    RallarBlackBoxEventHistorySequence,
+    RallarBlackBoxTestConnectionFacts
+} from './runtime/event-history.ts';
 
 import type { BlackBoxRallarCrdtConnectionInput } from '../black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { RallarBlackBoxTestMessagesControlFields } from './alm/rallar-black-box-test-messages-control-fields.ts';
@@ -122,6 +128,8 @@ export type RallarBlackBoxTestRuntimeStatus =
     | 'cancelled';
 
 export interface RallarBlackBoxTestConfig {
+    /** Omission leaves the runtime’s selected event history unchanged. */
+    readonly eventHistory?: RallarBlackBoxEventHistoryPolicy;
     readonly runId?: string;
     readonly agentId?: string;
     readonly environment?: string;
@@ -1045,6 +1053,8 @@ export namespace RallarBlackBoxTestEvent {
 
 export type RallarBlackBoxTestEvent<T = unknown> = Readonly<{
     eventId: string;
+    /** Present on runtime events; absent on independently produced controller statistics and reports. */
+    history?: RallarBlackBoxEventHistorySequence;
     kind: RallarBlackBoxTestEventKind;
     topic: string;
     atEpochMs: number;
@@ -1058,7 +1068,7 @@ export type RallarBlackBoxTestEvent<T = unknown> = Readonly<{
     control?: RallarBlackBoxTestEvent.ControlExecution;
 }>;
 
-export type RallarBlackBoxTestRuntimeEventInput = Omit<RallarBlackBoxTestEvent, 'eventId' | 'atEpochMs'>;
+export type RallarBlackBoxTestRuntimeEventInput = Omit<RallarBlackBoxTestEvent, 'eventId' | 'atEpochMs' | 'history'>;
 
 /**
  * The page's session ledger report (D180) beside `orderingTracks`, the ordering snapshots its inbound stores state
@@ -1069,6 +1079,7 @@ export interface RallarBlackBoxTestAlmUsage extends ALVolatileSessionReport {
 }
 
 export interface RallarBlackBoxTestStatsSnapshot {
+    readonly eventHistory: RallarBlackBoxEventHistory;
     readonly atEpochMs: number;
     readonly runId?: string;
     readonly agentId?: string;
@@ -1134,6 +1145,8 @@ export interface RallarBlackBoxTestReportFragment {
 }
 
 export interface RallarBlackBoxTestState {
+    readonly eventHistory: RallarBlackBoxEventHistory;
+    readonly connection: RallarBlackBoxTestConnectionFacts;
     readonly status: RallarBlackBoxTestRuntimeStatus;
     readonly currentConfig?: RallarBlackBoxTestConfig;
     readonly loadedRecipe?: RallarBlackBoxTestRecipe;
@@ -1208,6 +1221,8 @@ export interface RallarBlackBoxTestRuntime {
         controlIdentity?: ControlClientIdentity
     ): Promise<RallarBlackBoxTestResult>;
     state(): RallarBlackBoxTestState;
+    beginEventCapture(identity: ControlClientIdentity): void;
+    recordEventCaptureGap(reason: string): void;
     recordEvent(event: RallarBlackBoxTestRuntimeEventInput): void;
     subscribe(listener: RallarBlackBoxTestStateListener): () => void;
 }

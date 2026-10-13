@@ -1,3 +1,4 @@
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 // @vitest-environment happy-dom
 import {
     act,
@@ -47,7 +48,14 @@ import { validateSchemaAuthoringText } from '../../../apps/rallar-black-box/src/
 import { UI_STORAGE_KEYS } from '../../../apps/rallar-black-box/src/ui-cache/rallar-black-box-ui-storage.ts';
 
 Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
-const state: RallarBlackBoxTestState = { status: 'idle', commandHistory: [], events: [], failures: [], resultCache: {} };
+const state: RallarBlackBoxTestState = {
+    ...createRuntimeStateFixture([]),
+    status: 'idle',
+    commandHistory: [],
+    events: [],
+    failures: [],
+    resultCache: {}
+};
 const bootstrap = resolveRallarBlackBoxBootstrapConfig('?provider=simulated', {}, '');
 
 describe('manual workbench submitted command recording', () => {

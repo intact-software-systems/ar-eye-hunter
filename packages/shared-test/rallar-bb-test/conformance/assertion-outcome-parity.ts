@@ -169,6 +169,7 @@ function createDeterministicRuntime(): RallarBlackBoxTestRuntime {
     let now = 1_000;
     let sequence = 1;
     return createRallarBlackBoxTestRuntime({
+        eventHistory: { mode: 'full' },
         now: () => now++,
         idFactory: (prefix: string) => `${prefix}-${sequence++}`,
         sleep: async (ms: number) => {

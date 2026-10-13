@@ -82,6 +82,7 @@ function snapshotFaultCommand(
 /** Configuration controls SDK selection, capture, defaults, fleet admission and redaction. */
 function snapshotRuntimeConfig(config: RallarBlackBoxTestConfig): RallarBlackBoxTestConfig {
     return snapshotOwnedOptions(config, {
+        eventHistory: config.eventHistory && Object.freeze({ ...config.eventHistory }),
         rallar: config.rallar && snapshotConnectionOptions(config.rallar),
         browser: config.browser && Object.freeze({ ...config.browser }),
         control: config.control && Object.freeze({ ...config.control }),

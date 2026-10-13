@@ -28,6 +28,7 @@ import type {
     RallarBlackBoxTestState
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '../../shared/api/api-config.ts';
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
 const bootstrap = resolveRallarBlackBoxBootstrapConfig(
     '?apiBaseUrl=https%3A%2F%2Fbootstrap.example%2Fapi&applicationId=bootstrap-app&workspaceId=bootstrap-workspace&roomId=bootstrap-room&actor=bootstrap-actor&sessionId=bootstrap-session',
@@ -100,6 +101,7 @@ function state(
     commandHistory: readonly RallarBlackBoxTestResult[] = []
 ): RallarBlackBoxTestState {
     return {
+        ...createRuntimeStateFixture(events),
         status: 'completed',
         currentConfig: {
             roomId: 'group-a',

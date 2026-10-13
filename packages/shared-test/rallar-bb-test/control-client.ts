@@ -32,6 +32,11 @@ import type {
     RallarBlackBoxTestRuntimeStatus,
     RallarBlackBoxTestState
 } from './rallar-black-box-test-contracts.ts';
+import {
+    computeCountedEventHistory,
+    createEventHistory,
+    type RallarBlackBoxEventHistory
+} from './runtime/event-history.ts';
 import { toRuntimeStats } from './runtime/to-runtime-stats.ts';
 
 export type RallarBlackBoxControlConnectionState =
@@ -163,8 +168,11 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     private readonly rtcCaptureSupport: RallarBlackBoxRtcCaptureSupport | undefined;
     private readonly unsubscribeRuntime: () => void;
     private readonly snapshotListeners = new Set<RallarBlackBoxControlSnapshotListener>();
-    private readonly sentEventIds = new Set<string>();
-    private readonly publishedEventIds = new Set<string>();
+    private publishedEvents = new WeakSet<RallarBlackBoxTestEvent>();
+    private eventGeneration = 0;
+    private visitedEventOrdinal = 0;
+    private observedEventOrdinal = 0;
+    private publishedHistory: RallarBlackBoxEventHistory | undefined;
     private readonly completedControlCommandIds = new Set<string>();
     private readonly admittedControlCommandIds = new Set<string>();
     private completedControlResults = new WeakSet<RallarBlackBoxTestResult>();
@@ -214,17 +222,19 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             this.completedControlCommandIds.clear();
             this.completedControlResults = new WeakSet<RallarBlackBoxTestResult>();
             this.admittedControlCommandIds.clear();
-            this.publishedEventIds.clear();
+            this.publishedEvents = new WeakSet<RallarBlackBoxTestEvent>();
             this.lastTerminalReportKey = undefined;
-            // Existing runtime history belongs to the preceding address or local execution.
-            for (const event of this.options.runtime.state().events) {
-                this.sentEventIds.add(event.eventId);
-            }
+            const history = this.options.runtime.state().eventHistory;
+            this.eventGeneration = history.generation;
+            this.visitedEventOrdinal = history.totalEvents;
+            this.observedEventOrdinal = history.totalEvents;
+            this.publishedHistory = createEventHistory(history.policy, history, history.capture);
         }
         for (const commandId of connection.completedCommandIds) {
             this.completedControlCommandIds.add(commandId);
         }
         this.connection = connection;
+        this.options.runtime.beginEventCapture({ runId: connection.runId, agentId: connection.agentId });
         this.manualClose = false;
         this.disconnectReported = false;
         this.stopReconnectTimer();
@@ -624,28 +634,89 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
 
     private sendNewEvents(state: RallarBlackBoxTestState): void {
         const connection = this.connection;
-        if (!connection || !this.isSocketOpen()) {
+        const generation = this.assignmentGeneration;
+        if (!connection) {
             return;
         }
-
+        this.observeEventHistory(state.eventHistory);
+        if (!this.isSocketOpen()) {
+            return;
+        }
         for (const event of state.events) {
-            if (!this.sentEventIds.has(event.eventId)) {
-                this.sentEventIds.add(event.eventId);
-                if (
-                    this.assignmentGeneration > 1 && this.admittedControlCommandIds.size === 0 &&
-                    !event.topic.startsWith('rallar.bb.control.')
-                ) {
-                    continue;
-                }
-                if (
-                    event.kind === 'result' &&
-                    (event.control?.runId !== connection.runId || event.control.agentId !== connection.agentId ||
-                        !this.admittedControlCommandIds.has(event.control.rootCommandId))
-                ) {
-                    continue;
-                }
-                this.publishedEventIds.add(event.eventId);
-                this.sendEnvelope(toControlEventEnvelope(event, connection.runId, connection.agentId));
+            if (generation !== this.assignmentGeneration || !this.isSocketOpen()) {
+                return;
+            }
+            const sequence = event.history;
+            if (
+                !sequence || sequence.runtimeId !== state.eventHistory.runtimeId ||
+                sequence.generation !== this.eventGeneration ||
+                !Number.isSafeInteger(sequence.ordinal) || sequence.ordinal < 1
+            ) {
+                this.options.runtime.recordEventCaptureGap('invalid-runtime-event-sequence');
+                continue;
+            }
+            if (sequence.ordinal <= this.visitedEventOrdinal) {
+                continue;
+            }
+            this.visitedEventOrdinal = sequence.ordinal;
+            if (this.isEventOwnedAtAddress(event, connection)) {
+                this.writeRuntimeEvent(event, connection);
+            }
+        }
+    }
+
+    private observeEventHistory(history: RallarBlackBoxEventHistory): void {
+        if (history.generation !== this.eventGeneration) {
+            if (this.visitedEventOrdinal < this.observedEventOrdinal) {
+                this.options.runtime.recordEventCaptureGap('unsent-events-reset');
+            }
+            this.eventGeneration = history.generation;
+            this.visitedEventOrdinal = 0;
+            this.observedEventOrdinal = 0;
+            this.publishedHistory = createEventHistory(history.policy, history, history.capture);
+        }
+        this.observedEventOrdinal = history.totalEvents;
+        if (this.visitedEventOrdinal < history.evictedEvents) {
+            this.visitedEventOrdinal = history.evictedEvents;
+            this.options.runtime.recordEventCaptureGap('unsent-events-evicted');
+        }
+    }
+
+    private isEventOwnedAtAddress(
+        event: RallarBlackBoxTestEvent,
+        connection: RallarBlackBoxControlConnectOptions
+    ): boolean {
+        if (
+            this.assignmentGeneration > 1 && this.admittedControlCommandIds.size === 0 &&
+            !event.topic.startsWith('rallar.bb.control.')
+        ) {
+            return false;
+        }
+        return event.kind !== 'result' ||
+            (event.control?.runId === connection.runId && event.control.agentId === connection.agentId &&
+                this.admittedControlCommandIds.has(event.control.rootCommandId));
+    }
+
+    private writeRuntimeEvent(event: RallarBlackBoxTestEvent, connection: RallarBlackBoxControlConnectOptions): void {
+        const generation = this.assignmentGeneration;
+        try {
+            this.sendEnvelope(toControlEventEnvelope(event, connection.runId, connection.agentId));
+            if (generation !== this.assignmentGeneration) {
+                return;
+            }
+            this.publishedEvents.add(event);
+            const history = this.publishedHistory;
+            if (history) {
+                this.publishedHistory = computeCountedEventHistory(history, event);
+            }
+        }
+        catch (caught) {
+            if (generation !== this.assignmentGeneration) {
+                return;
+            }
+            this.options.runtime.recordEventCaptureGap('event-publication-failed');
+            if (generation === this.assignmentGeneration) {
+                this.publishSnapshotUpdate({ lastError: toError(caught).message });
             }
         }
     }
@@ -666,8 +737,25 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             activeCommandStartedAtEpochMs: activeCommand ? state.activeCommandStartedAtEpochMs : undefined,
             commandHistory,
             failures: commandHistory.filter((result) => !result.ok),
-            events: state.events.filter((event) => this.publishedEventIds.has(event.eventId)),
+            events: state.events.filter((event) => this.publishedEvents.has(event)),
+            eventHistory: this.toPublishedEventHistory(state),
             latestStats: undefined
+        };
+    }
+
+    private toPublishedEventHistory(state: RallarBlackBoxTestState): RallarBlackBoxEventHistory {
+        const history = this.publishedHistory;
+        if (!history) {
+            return state.eventHistory;
+        }
+        const retainedEvents = state.events.filter((event) => this.publishedEvents.has(event)).length;
+        return {
+            ...state.eventHistory,
+            totalEvents: history.totalEvents,
+            countsByKind: history.countsByKind,
+            reconnects: history.reconnects,
+            retainedEvents,
+            evictedEvents: history.totalEvents - retainedEvents
         };
     }
 

@@ -1,3 +1,4 @@
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 // @vitest-environment happy-dom
 
 import { describe, expect, it } from 'vitest';
@@ -39,6 +40,7 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
         },
         control: controlSnapshot(),
         state: {
+            ...createRuntimeStateFixture([]),
             status: 'configured',
             commandHistory: [],
             events: [],

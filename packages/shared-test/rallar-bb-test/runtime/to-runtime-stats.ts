@@ -15,6 +15,7 @@ export interface RallarBlackBoxTestRuntimeHealth {
     readonly activeCommandId: string | undefined;
     readonly commandCount: number;
     readonly eventCount: number;
+    readonly eventHistory: RallarBlackBoxTestState['eventHistory'];
     readonly failureCount: number;
 }
 
@@ -25,7 +26,8 @@ export function toRuntimeHealth(state: RallarBlackBoxTestState): RallarBlackBoxT
         loadedRecipeId: state.loadedRecipe?.recipeId,
         activeCommandId: state.activeCommand?.commandId,
         commandCount: state.commandHistory.length,
-        eventCount: state.events.length,
+        eventCount: state.eventHistory.totalEvents,
+        eventHistory: state.eventHistory,
         failureCount: state.failures.length
     };
 }
@@ -36,16 +38,17 @@ export function toRuntimeStats(state: RallarBlackBoxTestState, atEpochMs: number
     const durations = state.commandHistory.map((result) => result.durationMs);
     return {
         atEpochMs,
+        eventHistory: state.eventHistory,
         runId: config?.runId,
         agentId: config?.agentId,
         status: state.status,
         counters: {
             commands: state.commandHistory.length,
-            events: events.length,
+            events: state.eventHistory.totalEvents,
             failures: state.failures.length,
-            messages: events.filter((event) => event.kind === 'message').length,
-            diagnostics: events.filter((event) => event.kind === 'diagnostic').length,
-            reconnects: events.filter((event) => event.topic.toLowerCase().includes('reconnect')).length
+            messages: state.eventHistory.countsByKind.message,
+            diagnostics: state.eventHistory.countsByKind.diagnostic,
+            reconnects: state.eventHistory.reconnects
         },
         lastCommandId: state.commandHistory.at(-1)?.commandId,
         lastEventAtEpochMs: events.at(-1)?.atEpochMs,
@@ -183,25 +186,14 @@ function toRuntimeLoadStats(state: RallarBlackBoxTestState): RallarBlackBoxTestS
 }
 
 function toRuntimeConnectionStats(state: RallarBlackBoxTestState): RallarBlackBoxTestStatsSnapshot['rallar'] {
-    const events = state.events;
     const config = state.currentConfig;
-    const lastRallarDiagnostic = events
-        .filter((event) =>
-            event.topic.includes('rtc.connected') ||
-            event.topic.includes('rallar.bb.fake.rtc.connected') ||
-            event.topic.includes('rallar.browser.connect_completed')
-        )
-        .at(-1);
-    const lastRallarPayload = decodeRecord(lastRallarDiagnostic?.payload);
     return {
-        connected: lastRallarDiagnostic !== undefined,
+        connected: state.connection.connected,
         actor: config?.actor,
         sessionId: config?.sessionId,
         roomId: config?.roomId,
         transport: config?.transport,
-        peerCount: typeof lastRallarPayload.peerCount === 'number'
-            ? lastRallarPayload.peerCount
-            : undefined,
-        laneHealth: lastRallarPayload.laneHealth
+        peerCount: state.connection.peerCount,
+        laneHealth: state.connection.laneHealth
     };
 }
