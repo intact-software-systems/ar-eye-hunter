@@ -99,6 +99,8 @@ export interface RallarBlackBoxBrowserRallarRuntime {
 /** Each field appears only when the forwarded page event carries it. */
 export interface RallarBlackBoxBrowserRallarEvent {
     readonly kind?: 'diagnostic' | 'message' | 'close';
+    /** Producer-certified routine progress with no failure or functional evidence; absence is unclassified. */
+    readonly routineBrowserDiagnostic?: true;
     readonly topic?: string;
     readonly connection?: string;
     readonly actor?: string;
@@ -161,12 +163,16 @@ export type RallarBlackBoxBrowserTestRuntime =
         receiveRallarBrowserEvent(event: RallarBlackBoxBrowserRallarEvent): void;
     }>;
 
+export type RallarBlackBoxRoutineBrowserDiagnostics = 'enabled' | 'disabled';
+
 export type CreateRallarBlackBoxBrowserTestRuntimeOptions =
     & Omit<
         CreateRallarBlackBoxTestRuntimeOptions,
         'commandExecutor' | 'cleanup' | 'readAlmUsage' | 'readCongestionCounters'
     >
     & Readonly<{
+        /** Omission records all diagnostics; the resolved selection is fixed for the adapter lifetime. */
+        routineBrowserDiagnostics?: RallarBlackBoxRoutineBrowserDiagnostics;
         rallarRuntime?: RallarBlackBoxBrowserRallarRuntime;
         fetch?: typeof fetch;
         webSocketFactory?: RallarBlackBoxBrowserWebSocketFactory;

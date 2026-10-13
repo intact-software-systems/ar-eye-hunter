@@ -142,7 +142,7 @@ export class BlackBoxRallarConnectOperation {
         if (!config.rallar.apiBaseUrl) {
             throw new Error('rallar.apiBaseUrl is required.');
         }
-        diagnostics.emitDiagnostic(config, 'rallar.browser.connect_started');
+        diagnostics.emitRoutineDiagnostic(config, 'rallar.browser.connect_started');
         attempt.unsubscribeConsoleDiagnostics = this.#input.consoleDiagnostics.install(config);
         this.#prepareConnection(attempt);
         attempt.phase = 'auth';

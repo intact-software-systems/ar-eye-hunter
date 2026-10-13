@@ -67,6 +67,10 @@ export class BlackBoxRallarRuntimeDiagnostics {
         this.emit({ kind: 'diagnostic', topic, ...this.context(config), data });
     };
 
+    emitRoutineDiagnostic = (config: BlackBoxRallarConnectionConfig, topic: string): void => {
+        this.emit({ kind: 'diagnostic', topic, ...this.context(config), routineBrowserDiagnostic: true });
+    };
+
     emitError = (input: BlackBoxRallarRuntimeDiagnostics.ErrorInput): void => {
         this.emit({
             kind: 'diagnostic',

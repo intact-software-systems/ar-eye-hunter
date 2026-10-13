@@ -20,7 +20,8 @@ import type {
     RallarBlackBoxBrowserRallarEvent,
     RallarBlackBoxBrowserTestRuntime,
     RallarBlackBoxBrowserWebSocket,
-    RallarBlackBoxBrowserWebSocketFactory
+    RallarBlackBoxBrowserWebSocketFactory,
+    RallarBlackBoxRoutineBrowserDiagnostics
 } from './browser/browser-command-contracts.ts';
 import { requireBrowserCommandRuntime, type BrowserCommandEnvironment } from './browser/browser-command-environment.ts';
 import { replaceCommandPlaceholders } from './browser/browser-command-placeholders.ts';
@@ -31,6 +32,7 @@ import { BrowserRtcCommands } from './browser/browser-rtc-commands.ts';
 import { BrowserRtcStream } from './browser/browser-rtc-stream.ts';
 import { BrowserWebSocketCommands } from './browser/browser-web-socket-commands.ts';
 import { toRallarBrowserEventInput } from './browser/to-rallar-browser-event-input.ts';
+import { computeRallarBlackBoxDiagnosticSeverity } from './diagnostics.ts';
 import { decodeRtcCaptureSupport } from './distributed/rtc-capture-support.ts';
 import type {
     RallarBlackBoxTestAlmUsage,
@@ -38,12 +40,14 @@ import type {
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestConfig,
-    RallarBlackBoxTestRecord
+    RallarBlackBoxTestRecord,
+    RallarBlackBoxTestRuntimeEventInput
 } from './rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from './runtime/create-rallar-black-box-test-runtime.ts';
 import { sleepWithAbort } from './runtime/sleep-with-abort.ts';
 
 export interface CreateRallarBlackBoxBrowserTestRuntimeInput extends BrowserCommandEnvironment {
+    readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics;
     readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
     readonly idFactory: (prefix: string) => string;
 }
@@ -54,6 +58,13 @@ const DEFAULT_HTTP_BODY_LIMIT = 64_000;
 const FEATURE_COMMAND_PREFIXES: readonly string[] = ['crdt.', 'director.', 'formation.'];
 
 namespace BrowserCommandAdapter {
+    /** Counts browser diagnostic admission for this adapter's lifetime, including command-level reset and close. */
+    export interface DiagnosticsReceipt {
+        readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics;
+        readonly omittedRoutineBrowserDiagnostics: number;
+        readonly forwardedBrowserDiagnostics: number;
+    }
+
     export interface ClosedResources {
         readonly webSocketCount: number;
         /** Absent without a page runtime, or when its close returned no result record. */
@@ -68,6 +79,8 @@ class BrowserCommandAdapter {
     private readonly http: BrowserHttpRequests;
     private readonly rtc: BrowserRtcCommands;
     private readonly features: BrowserRallarFeatureCommands;
+    private omittedRoutineBrowserDiagnostics = 0;
+    private forwardedBrowserDiagnostics = 0;
 
     constructor(environment: CreateRallarBlackBoxBrowserTestRuntimeInput) {
         this.environment = environment;
@@ -75,6 +88,37 @@ class BrowserCommandAdapter {
         this.http = new BrowserHttpRequests(environment);
         this.rtc = new BrowserRtcCommands(environment);
         this.features = new BrowserRallarFeatureCommands(environment);
+    }
+
+    receiveRallarBrowserEvent(
+        event: RallarBlackBoxBrowserRallarEvent
+    ): RallarBlackBoxTestRuntimeEventInput | undefined {
+        const normalized = toRallarBrowserEventInput(event);
+        // Only raw no-data progress is certified; normalized data can be the metadata fallback.
+        const omit = this.environment.routineBrowserDiagnostics === 'disabled' &&
+            event.kind === 'diagnostic' && event.routineBrowserDiagnostic === true && event.data === undefined &&
+            normalized.kind === 'diagnostic' && normalized.severity === 'info' &&
+            computeRallarBlackBoxDiagnosticSeverity({
+                    topic: normalized.topic,
+                    error: normalized.payload.error,
+                    detail: normalized.payload.data
+                }) === 'info';
+        if (omit) {
+            this.omittedRoutineBrowserDiagnostics++;
+            return undefined;
+        }
+        if (normalized.kind === 'diagnostic') {
+            this.forwardedBrowserDiagnostics++;
+        }
+        return normalized;
+    }
+
+    private getDiagnosticsReceipt(): BrowserCommandAdapter.DiagnosticsReceipt {
+        return {
+            routineBrowserDiagnostics: this.environment.routineBrowserDiagnostics,
+            omittedRoutineBrowserDiagnostics: this.omittedRoutineBrowserDiagnostics,
+            forwardedBrowserDiagnostics: this.forwardedBrowserDiagnostics
+        };
     }
 
     async dispatch(
@@ -150,6 +194,7 @@ class BrowserCommandAdapter {
                             includeRtcDiagnostics: command.includeRtcDiagnostics === true
                         }),
                         stats: await context.updateStats(command.commandId),
+                        browserDiagnostics: this.getDiagnosticsReceipt(),
                         webSockets: this.sockets.connectionNames()
                     },
                     nextStatus: context.state().status
@@ -225,6 +270,7 @@ export function createDefaultRallarBlackBoxBrowserTestRuntime(
 ): RallarBlackBoxBrowserTestRuntime {
     let sequence = 1;
     return createRallarBlackBoxBrowserTestRuntime({
+        routineBrowserDiagnostics: options.routineBrowserDiagnostics ?? 'enabled',
         rallarRuntime: options.rallarRuntime,
         fetch: options.fetch ?? globalThis.fetch?.bind(globalThis),
         webSocketFactory: options.webSocketFactory ?? createDefaultBrowserWebSocketFactory(),
@@ -264,7 +310,10 @@ export function createRallarBlackBoxBrowserTestRuntime(
     });
     return Object.assign(runtime, {
         receiveRallarBrowserEvent(event: RallarBlackBoxBrowserRallarEvent): void {
-            runtime.recordEvent(toRallarBrowserEventInput(event));
+            const admitted = adapter.receiveRallarBrowserEvent(event);
+            if (admitted) {
+                runtime.recordEvent(admitted);
+            }
         }
     });
 }
