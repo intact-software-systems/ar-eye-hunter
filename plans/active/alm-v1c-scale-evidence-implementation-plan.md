@@ -173,18 +173,31 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
   authorization naming is implemented, with affected checks passing. The forwarding-only receipt
   writer and import grouping still require complete recursive closure. None identifies the END
   handoff reason; whole-branch review remains open.
-- The current first-guard native-entry diagnostic captures 171 exact own-hop terminal controls
-  from twelve healthy shots belonging to the two previously failing origins. Every selected
-  record joins the complete scoped SDK incoming multiset; observed entry-to-callback gaps are
-  0–1 ms. All fifteen page owners complete without pauses, errors or caps. The same workload
-  still fails: 84 sends pass, 83 shot ACK observations pass and another player fails shot six.
-  The other thirteen players pass 78 explicit receipts; all 105 samples and 1,155 bounds pass.
-  That player's required director control reaches an intermediate relay, whose exact forwarded
-  control has seven pre-deadline throwing handoffs and no recorded SDK submission in the complete
-  export. Its typed handoff reason remains uncaptured. The selector excludes that origin and
-  forwarded control, so its absence cannot supply negative evidence. END, final checks and all
-  231 native predicates remain unexecuted. Complete producer/export parity and reaped cleanup
-  pass. Healthy current native gaps do not explain the earlier late callbacks or hosted failure.
+- The reviewed first-distinct handoff diagnostic now joins five typed `unroutable / rate-limited`
+  refusals to two failed sixth-shot ACKs. All five match exact current control/session identities
+  and their first claim intervals. Another 135 records join 55 acknowledged healthy subjects,
+  so quota refusal alone does not explain final failure. All fifteen page owners finish complete
+  without errors or caps; full producer/export reconciliation and owned cleanup pass. Eighty-four
+  sends, 82 shot ACK observations, 72 explicit shot receipts, 105 readings and 1,155 sampled bounds
+  pass. Two players miss their inherited ACK deadline; END and final storage remain unexecuted,
+  and no result for the 231 declared native predicates is published. One forwarded control
+  completes 129 ms after that deadline; another has no subsequent outcome established. First-distinct
+  capture cannot classify later retry exceptions. These observations do not establish wire latency,
+  memory leaks, a transport cause or repair causality.
+- At the existing owners, the real multicast limiter refuses before outbound storage and stays
+  neutral to its circuit. Rx converts the refusal to an error; the control round tries individual
+  fallback, then remaining errors release inbound work for retry using spent attempts and existing
+  backoff. This source path earns a controlled test through the complete owner path, not a selected
+  policy defect. Existing manager-only recovery tests cannot establish replay, origin receipt or
+  attempt/backoff behavior at that upper boundary.
+- Controlled full-owner quota cases pass with current production behavior. A deliberately later
+  invocation at 1,251 ms proves replay and eventual same-subject ACK. A separate centered-jitter
+  case executes actual persisted due times: claim seven at 1,031 ms still retries; claim eight
+  submits and settles at 3,031 ms, although the real limiter allows at 1,251 ms. The selected
+  three suites pass eighteen tests. Controlled Date and manual engine execution characterize
+  durable retry policy, not browser scheduler latency, native failure causality or the comparative
+  benefit gate. This test increment requires independent specification and quality review before
+  publication.
 - The maintainer approved the public finalization type correction, three awaitable disposal
   methods and exported WS first-refusal callback rename. The callback keeps its function type,
   default and authorization behavior; verified callers and affected support enter complete
@@ -198,45 +211,36 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 
 ### 1. Establish original capture-off fifteen-agent acceptance
 
-The reviewed first-guard QRtc observation has completed one earned diagnostic. Its 171 exact
-controls are healthy; the current failure moves to another player's sixth shot and an intermediate
-forwarded logical-director control with throwing handoffs. The missing discriminator is that
-control's typed handoff reason. Reuse the existing reviewed handoff capability for current variable
-player origins and forwarded logical-director paths. Derive the complete current roster and subject
-joins from the producer, keeping origin, logical recipient, sender, physical peer, target and
-invocation multiplicity distinct. Do not transplant the failed-run identities or require from to
-match logical recipient for forwarded controls.
+The missing first-claim typed reason is now captured for the current failed shot controls. Stop
+expanding the observer and do not repeat its unchanged diagnostic. The controlled full-owner
+cases retain the refused control work, preserve exact identities, prove native frame submission
+and same-origin receipt after recovery, keep the local circuit neutral and allow a healthy subject
+to progress. A deliberately later invocation proves eventual replay; the separate actual-due-time
+case exposes a 1,780 ms gap between positive limiter eligibility and claim-eight submission.
+This uses controlled Date, centered jitter and manual engine execution, not a browser latency proof.
+Require independent specification and quality review of this frozen test increment before
+publication or a runtime change.
 
-Prove the changed selection at the actual compiled current SDK, including a positive forwarded
-refusal, healthy path, typed reason preservation, negative cases, bounded capture and original caller
-effects. Review the exact changed private sources before one earned execution. Preserve one owned
-recorder tail, source/context custody, ordinal reconciliation and cleanup. A cap stays incomplete;
-positive reasons need exact failed-subject joins. The completed native observation does not earn
-an unchanged repeat, and widening an own-hop selector cannot supply a missing typed handoff reason.
-No new framework, quota change, deadline change or heap/CPU hypothesis is selected.
+Then evaluate the existing ALM readiness boundary against this exact quota-induced retry delay,
+using the same real multicast, Rx, inbound stores, engine and native frame fixture. Before choosing
+a runtime change, establish a meaningful failing-first latency/claim case and prove the proposed
+behavior improves it without false completion, lost replay, quota overspend or changed genuine
+failure retry/exhaustion. Preserve limiter defaults, durable authority, deadlines and ACK semantics;
+keep the twenty-attempt processing limit and ordinary operational failure policy. A passing invariant
+remains passing evidence; do not invent RED or infer that later native exceptions are quota refusals.
+No new observer, public error API, limiter increase or heap/CPU hypothesis is selected. Any earned
+behavior change requires independent specification and quality review and proportional affected
+checks. The local improvement would still not satisfy the unchanged comparative benefit gate.
 
-Select a meaningful production repair only when that evidence and the existing owner establish
-a violated invariant. Preserve quotas, storage, deadlines and ACK semantics. A source hypothesis
-alone does not earn a repair; incomplete or clipped capture cannot establish an absent boundary.
-
-The director-origin, frozen-player-recipient observer has completed its failing-first semantic,
-actual rendered SDK, source/currentness and independent review gates. Its first native execution
-is complete and uncapped, but captures START while traffic fails before END. Do not repeat that
-unchanged diagnostic to seek a favorable outcome. The earlier six END predecessor controls and
-their missing typed reason remain open. Reuse the reviewed observer only if an exact missing
-boundary earns a changed current-family selection; keep origin, logical receipt recipient and
-transport target distinct, include actual transit hops, and retain every source/context,
-ordinal, caller-preservation, bounded capture and cleanup gate. Distinguish returned rejection
-from awaited enqueue failure; absent capture remains inconclusive. Review the changed selector
-and its semantic negative/healthy cases before any earned instrumented execution. No new profiling
-framework or heap/CPU hypothesis is selected. Private diagnostics do not replace original
-uninstrumented acceptance.
-
-Earn a meaningful failing-first repair from the observed boundary before another original
-acceptance execution. That execution retains its frozen audience, tree, six-shot cadence, lifecycle
-events, exact receipts, seven samples per actor, storage and metric limits, deadlines, native
-predicates, source provenance and cleanup. Preserve original capture-off settings. Thirty and fifty
-remain gated by fifteen; comparative benefit and final whole-branch review remain open.
+The earlier END predecessor reasons and hosted native-entry delay remain unresolved and are not
+identified by these current shot records. Incomplete capture cannot establish an absent boundary.
+Private diagnostics do not replace original uninstrumented acceptance. Before another original
+acceptance execution, resolve the controlled owner-path result and the exact remaining evidence
+gap; a source hypothesis or unchanged retry is insufficient. The acceptance execution retains
+its frozen audience, tree, six-shot cadence, lifecycle events, exact receipts, seven samples per
+actor, storage and metric limits, deadlines, native predicates, source provenance and cleanup.
+Preserve original capture-off settings. Thirty and fifty remain gated by fifteen; comparative
+benefit and final whole-branch review remain open.
 
 ### 2. Preserve truthful ALM submission evidence and direct boundaries
 
@@ -250,7 +254,7 @@ required in tests instead of arbitrary settlement flushes.
 Preserve the implemented, approved WS callback and protocol authorization names, their function
 types, omission default, original-message handling, first-refusal precedence and lazy relay read.
 Their verified callers and affected support pass the selected semantic, type and browser-boundary
-checks. Complete review and publication of this increment while whole-branch closure stays open.
+checks. Its review and publication are complete; preserve that evidence while whole-branch closure stays open.
 
 Keep the immutable receipt projection, remove its forwarding-only writer and call the canonical
 guarded diagnostic writer at receipt admission. Correct the two external/local import separators.
