@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -30,7 +31,7 @@ Deno.test(
             const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
-            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
             const credentialIssuer = createHmacAuthCredentialIssuer(
                 'pglite-logout-secret-0123456789abcdef'
             );
@@ -122,7 +123,7 @@ Deno.test(
             const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
-            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
             const credentialIssuer = createHmacAuthCredentialIssuer(
                 'pglite-fence-secret-0123456789abcdef'
             );

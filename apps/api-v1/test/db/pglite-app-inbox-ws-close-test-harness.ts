@@ -1,3 +1,6 @@
+import { Temporal } from '@js-temporal/polyfill';
+import assert from 'node:assert/strict';
+
 import {
     createPSqlResourceInboxRepository,
     type PSqlResourceInboxRepository
@@ -5,6 +8,7 @@ import {
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { type ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
@@ -18,17 +22,55 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import {
+    EntityStatus,
+    type Key
+} from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
+import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
+import { waitForPGliteFirstRetryEligibility } from './pglite-app-inbox-test-runtime.ts';
 import { FUTURE_MS } from './pglite-auth-test-harness.ts';
+
+export interface PGliteAppInboxWsCloseHarness {
+    readonly authority: IssuedAuthSession;
+    readonly runtime: PSqlRuntimeStateRepository;
+    readonly resourceInbox: PSqlResourceInboxRepository;
+    readonly reader: InboxQueueReader;
+    readonly secondReader: InboxQueueReader;
+    readonly client: AppClientInboxService;
+    readonly group: GroupStateInboxService;
+    readonly clientState: ClientStateService;
+    readonly groupState: GroupStateService;
+    readonly clients: ClientStateRepository;
+    readonly groups: GroupStateRepository;
+}
+interface PGliteStateInboxConsumerInput {
+    readonly sql: PGliteSql;
+    readonly reader: InboxQueueReader;
+    readonly resourceInbox: PSqlResourceInboxRepository;
+    readonly resourceResults: ResourceInboxResultsRepository;
+    readonly clientState: ClientStateService;
+    readonly groupState: GroupStateService;
+    readonly groups: GroupStateRepository;
+    readonly options: AppInboxOptions;
+}
+interface PGliteStateInboxConsumers {
+    readonly client: AppClientInboxService;
+    readonly group: GroupStateInboxService;
+}
+interface PausedLifecycleRead {
+    readonly reached: Promise<void>;
+    readonly resume: () => void;
+}
 
 export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promise<PGliteAppInboxWsCloseHarness> {
     const runtime = new PSqlRuntimeStateRepository(sql);
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const resourceResults = new ResourceInboxResultsRepository(sql);
-    const reader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
-    const secondReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+    const reader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
+    const secondReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
     const authSessions = new AuthSessionRepository(runtime);
     const authority = await createPGliteCloseOwnerSession(authSessions);
     const options = {
@@ -72,7 +114,7 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promis
 
 export function pauseNextPGliteLifecycleRead(
     state: Pick<ClientStateService | GroupStateService, 'sessionGenerationLifecycle'>
-): Readonly<{ reached: Promise<void>; resume(): void; }> {
+): PausedLifecycleRead {
     const lifecycle = state.sessionGenerationLifecycle;
     const originalRead = lifecycle.read.bind(lifecycle);
     const reached = Promise.withResolvers<void>();
@@ -103,18 +145,29 @@ export async function assertPGliteQueuedTypes(
     }
 }
 
-export async function assertPGliteQueueRetriedAndCompleted(
+export async function completePGliteAppInboxRetry(
     sql: PGliteSql,
-    key: Readonly<{ topicId: string; resourceId: string; contextId: string; }>
+    reader: InboxQueueReader,
+    key: Key
 ): Promise<void> {
-    const [row] = await sql<{ status: string; attempts: number; }[]>`
-    select ri_status as status, ri_attempts as attempts from resource_inbox
-    where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
-      and fk_ext_bank_id = ${key.contextId}
-  `;
-    if (row?.status !== 'COMPLETED' || Number(row.attempts) < 2) {
-        throw new Error('Expected AppInbox to complete after a full retry');
+    const results = new ResourceInboxResultsRepository(sql);
+    const afterFirst = await reader.inbox.getItem(key);
+    assert.ok(afterFirst);
+    if (afterFirst.status === EntityStatus.RETRY) {
+        assert.equal(afterFirst.dequeueAudit.attempts, 1);
+        assert.ok(afterFirst.dequeueAudit.nextTs);
+        assert.equal(await results.findAnyByKey(key), null);
+        await waitForPGliteFirstRetryEligibility(sql, key);
+        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
     }
+    else {
+        assert.equal(afterFirst.status, EntityStatus.COMPLETED);
+    }
+    const completed = await reader.inbox.getItem(key);
+    assert.ok(completed);
+    assert.equal(completed.status, EntityStatus.COMPLETED);
+    assert.equal(completed.dequeueAudit.attempts, 2);
+    assert.equal((await results.findAnyByKey(key))?.status, EntityStatus.COMPLETED);
 }
 
 function assertPGliteQueueRow(found: boolean, type: AppInboxType): void {
@@ -123,38 +176,6 @@ function assertPGliteQueueRow(found: boolean, type: AppInboxType): void {
     }
 }
 
-export interface PGliteAppInboxWsCloseHarness {
-    readonly authority: IssuedAuthSession;
-    readonly runtime: PSqlRuntimeStateRepository;
-    readonly resourceInbox: PSqlResourceInboxRepository;
-    readonly reader: InboxQueueReader;
-    readonly secondReader: InboxQueueReader;
-    readonly client: AppClientInboxService;
-    readonly group: GroupStateInboxService;
-    readonly clientState: ClientStateService;
-    readonly groupState: GroupStateService;
-    readonly clients: ClientStateRepository;
-    readonly groups: GroupStateRepository;
-}
-interface PGliteStateInboxConsumerInput {
-    readonly sql: PGliteSql;
-    readonly reader: InboxQueueReader;
-    readonly resourceInbox: PSqlResourceInboxRepository;
-    readonly resourceResults: ResourceInboxResultsRepository;
-    readonly clientState: ClientStateService;
-    readonly groupState: GroupStateService;
-    readonly groups: GroupStateRepository;
-    readonly options: {
-        readonly waitMaxElapsedMsecs: number;
-        readonly waitRetryIntervalMsecs: number;
-        readonly waitMaxRetryIntervalMsecs: number;
-        readonly waitJitterRatio: number;
-    };
-}
-interface PGliteStateInboxConsumers {
-    readonly client: AppClientInboxService;
-    readonly group: GroupStateInboxService;
-}
 function createPGliteStateInboxConsumers(input: PGliteStateInboxConsumerInput): PGliteStateInboxConsumers {
     const client = new AppClientInboxService(
         {

@@ -20,7 +20,10 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -219,7 +222,7 @@ describe('row-bound WS producer provenance', () => {
             created_by: entry.audit.createdBy,
             created_ts: createdTs.toString({ fractionalSecondDigits: 6 }),
             expire_ts: entry.audit.expiryTs.toZonedDateTimeISO('UTC').toPlainDateTime().toString({ fractionalSecondDigits: 6 }),
-            start_ts: null,
+            start_ts: createdTs.toString({ fractionalSecondDigits: 6 }),
             end_ts: null,
             next_ts: null
         });

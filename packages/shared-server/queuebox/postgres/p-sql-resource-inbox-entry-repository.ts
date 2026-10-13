@@ -136,8 +136,11 @@ export class PSqlResourceInboxEntryRepository {
     }
 
     async replace(entry: ResourceEntry): Promise<ResourceEntry> {
-        const values = computeResourceInboxEntryInsertValues(entry);
+        return await this.replaceComputed(computeResourceInboxEntryInsertValues(entry));
+    }
 
+    async replaceComputed(values: ResourceInboxEntryInsertValues): Promise<ResourceEntry> {
+        const { entry } = values;
         const rows = await this.sql<ResourceInboxRow[]>`
             insert into resource_inbox (ri_resource_id,
                                         ri_topic_id,
@@ -189,12 +192,16 @@ export class PSqlResourceInboxEntryRepository {
     }
 
     async writeIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry> {
-        const written = await this.tryWriteIfAbsentOrReplaceExpired(entry);
+        return await this.writeComputedIfAbsentOrReplaceExpired(computeResourceInboxEntryInsertValues(entry));
+    }
+
+    async writeComputedIfAbsentOrReplaceExpired(values: ResourceInboxEntryInsertValues): Promise<ResourceEntry> {
+        const written = await this.tryWriteComputedIfAbsentOrReplaceExpired(values);
         if (written) {
             return written;
         }
 
-        const existing = await this.findAnyByKey(entry.key);
+        const existing = await this.findAnyByKey(values.entry.key);
         if (existing) {
             return existing;
         }
@@ -208,9 +215,10 @@ export class PSqlResourceInboxEntryRepository {
         placeholder: ResourceEntry,
         materialize: () => Promise<ResourceEntry>
     ): Promise<ResourceEntry> {
+        const placeholderValues = computeResourceInboxEntryInsertValues(placeholder);
         return await this.sql.begin(async (transactionSql) => {
             const transaction = new PSqlResourceInboxEntryRepository(transactionSql, this.now);
-            const reserved = await transaction.tryWriteIfAbsentOrReplaceExpired(placeholder);
+            const reserved = await transaction.tryWriteComputedIfAbsentOrReplaceExpired(placeholderValues);
             if (!reserved) {
                 const existing = await transaction.findAnyByKey(placeholder.key);
                 if (existing) {
@@ -226,9 +234,10 @@ export class PSqlResourceInboxEntryRepository {
                     'Materialized resource inbox identity differs from its reservation'
                 );
             }
-            return await transaction.replace({
-                ...reserved,
-                resource: materialized.resource
+            const reservedValues = computeResourceInboxEntryInsertValues(reserved);
+            return await transaction.replaceComputed({
+                ...reservedValues,
+                entry: { ...reserved, resource: materialized.resource }
             });
         });
     }

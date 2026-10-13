@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+
 import assert from 'node:assert/strict';
 
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
@@ -20,6 +20,7 @@ import {
     writeCoalescedAppOutboxWork
 } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
+import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
@@ -31,13 +32,22 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { computeResourceInboxRelease } from '@shared/queuebox/compute-resource-inbox-release.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { readPGliteDatabaseEpochMs } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
-import { CRDT_DOCUMENT_REF, createResourceEntry } from './pglite-queue-crdt-test-runtime.ts';
-import { advanceCoalescedGeneration, topologyGroupSnapshotWithSessionIds } from './pglite-topology-test-runtime.ts';
+import {
+    CRDT_DOCUMENT_REF,
+    createResourceEntry
+} from './pglite-queue-crdt-test-runtime.ts';
+import {
+    advanceCoalescedGeneration,
+    topologyGroupSnapshotWithSessionIds
+} from './pglite-topology-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');
@@ -102,19 +112,27 @@ Deno.test(
             const expired = createResourceEntry('expired-1', {
                 payload: { text: 'expired' },
                 typeId: 'TYPE_A',
-                expiryTs: PAST_INSTANT
+                expiryTs: PAST_INSTANT,
+                createdTs: Temporal.PlainDateTime.from('1999-01-01T00:00:00')
             });
             const exhausted = {
                 ...createResourceEntry('exhausted-ordinary', {
                     payload: { text: 'exhausted ordinary' },
-                    typeId: 'TYPE_EXHAUSTED'
+                    typeId: 'TYPE_EXHAUSTED',
+                    status: EntityStatus.RETRY
                 }),
-                dequeueAudit: { attempts: 2 }
+                dequeueAudit: {
+                    attempts: 2,
+                    startTs: Temporal.Instant.from('2026-06-01T12:00:01Z'),
+                    endTs: Temporal.Instant.from('2026-06-01T12:00:02Z'),
+                    nextTs: Temporal.Instant.from('2026-06-01T12:00:03Z')
+                }
             };
             const exhaustedTimeout = {
                 ...createResourceEntry('exhausted-timeout', {
                     payload: { text: 'exhausted timeout' },
-                    typeId: 'TYPE_EXHAUSTED_TIMEOUT'
+                    typeId: 'TYPE_EXHAUSTED_TIMEOUT',
+                    createdTs: Temporal.PlainDateTime.from('2019-01-01T00:00:00')
                 }),
                 status: EntityStatus.RESERVED,
                 dequeueAudit: {
@@ -131,7 +149,7 @@ Deno.test(
             assert.equal(
                 await inbox.reservations.isEntriesToLock(
                     new Set([exhausted.typeId]),
-                    new Set([EntityStatus.NEW]),
+                    new Set([EntityStatus.RETRY]),
                     2
                 ),
                 false
@@ -139,7 +157,7 @@ Deno.test(
             assert.equal(
                 await inbox.reservations.isEntriesToLock(
                     new Set([exhausted.typeId]),
-                    new Set([EntityStatus.NEW])
+                    new Set([EntityStatus.RETRY])
                 ),
                 true
             );
@@ -161,7 +179,8 @@ Deno.test(
             const databaseClockTimeout = {
                 ...createResourceEntry('database-clock-timeout', {
                     payload: { text: 'database clock timeout' },
-                    typeId: 'TYPE_DATABASE_CLOCK_TIMEOUT'
+                    typeId: 'TYPE_DATABASE_CLOCK_TIMEOUT',
+                    createdTs: Temporal.PlainDateTime.from('2019-01-01T00:00:00')
                 }),
                 status: EntityStatus.RESERVED,
                 dequeueAudit: {
@@ -177,40 +196,35 @@ Deno.test(
         and ri_resource_id = ${databaseClockTimeout.key.resourceId}
         and fk_ext_bank_id = ${databaseClockTimeout.key.contextId}
     `;
-            const originalDateNow = Date.now;
-            Date.now = () => Date.parse('1900-01-01T00:00:00Z');
-            try {
-                assert.equal(
-                    (await inbox.transaction((transactionInbox) =>
-                        transactionInbox.reservations.findTimedOutReservedEntriesSkipLocked({
-                            typeIds: new Set([databaseClockTimeout.typeId]),
-                            timeSinceStartMs: 30_000,
-                            reservationInput: { maxToReserve: 1, maxAttempts: 2 }
-                        })
-                    )).size,
-                    0
-                );
-                await sql`
+            const databaseClockInbox = createPSqlResourceInboxRepository(sql, () => new Date('1900-01-01T00:00:00Z'));
+
+            assert.equal(
+                (await databaseClockInbox.transaction((transactionInbox) =>
+                    transactionInbox.reservations.findTimedOutReservedEntriesSkipLocked({
+                        typeIds: new Set([databaseClockTimeout.typeId]),
+                        timeSinceStartMs: 30_000,
+                        reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+                    })
+                )).size,
+                0
+            );
+            await sql`
         update resource_inbox
         set start_ts = (now() - interval '31 seconds') at time zone 'UTC'
         where ri_topic_id = ${databaseClockTimeout.key.topicId}
           and ri_resource_id = ${databaseClockTimeout.key.resourceId}
           and fk_ext_bank_id = ${databaseClockTimeout.key.contextId}
       `;
-                assert.equal(
-                    (await inbox.transaction((transactionInbox) =>
-                        transactionInbox.reservations.findTimedOutReservedEntriesSkipLocked({
-                            typeIds: new Set([databaseClockTimeout.typeId]),
-                            timeSinceStartMs: 30_000,
-                            reservationInput: { maxToReserve: 1, maxAttempts: 2 }
-                        })
-                    )).size,
-                    1
-                );
-            }
-            finally {
-                Date.now = originalDateNow;
-            }
+            assert.equal(
+                (await databaseClockInbox.transaction((transactionInbox) =>
+                    transactionInbox.reservations.findTimedOutReservedEntriesSkipLocked({
+                        typeIds: new Set([databaseClockTimeout.typeId]),
+                        timeSinceStartMs: 30_000,
+                        reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+                    })
+                )).size,
+                1
+            );
 
             const immutable = {
                 ...createResourceEntry('immutable-replay', {
@@ -379,7 +393,7 @@ Deno.test(
             const secondReserved = secondReservation.right;
             assert.ok(firstReserved);
             assert.ok(secondReserved);
-            const queueBox = new PSqlQueueBox(inbox);
+            const queueBox = new PSqlQueueBox(inbox, Temporal.Now.instant);
             await assert.rejects(
                 () =>
                     queueBox.releaseEntries([{ entry: firstReserved, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }, {
@@ -426,7 +440,8 @@ Deno.test(
                     topicId: 'result-topic',
                     typeId: 'RESULT',
                     status: EntityStatus.COMPLETED,
-                    expiryTs: PAST_INSTANT
+                    expiryTs: PAST_INSTANT,
+                    createdTs: Temporal.PlainDateTime.from('1999-01-01T00:00:00')
                 })
             );
             assert.equal(await results.deleteExpired(), 1);
@@ -440,7 +455,7 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const repository = createPSqlResourceInboxRepository(sql, () => new Date());
-            const queue = new PSqlQueueBox(repository);
+            const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
             const firstWrite = createInitialCoalescedTopologyWork('transactional-overlay');
             await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, firstWrite));
             const first = firstWrite.entryWrite.entry;
@@ -457,7 +472,7 @@ Deno.test(
             const statusFirst = statusFirstWrite.entryWrite.entry;
             await sql`
       update resource_inbox
-      set ri_status = ${EntityStatus.RETRY}
+      set ri_status = ${EntityStatus.RETRY}, next_ts = '1970-01-01T00:00:01Z'
       where ri_topic_id = ${statusFirst.key.topicId}
         and ri_resource_id = ${statusFirst.key.resourceId}
         and fk_ext_bank_id = ${statusFirst.key.contextId}
@@ -526,7 +541,7 @@ Deno.test(
 Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in place', async () => {
     await withPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
-        const queue = new PSqlQueueBox(repository);
+        const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
         const firstWrite = createInitialCoalescedTopologyWork('revive-overlay');
         await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, firstWrite));
         const first = firstWrite.entryWrite.entry;
@@ -542,7 +557,7 @@ Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in plac
                 observedReserved.key,
                 observedReserved.dequeueAudit.attempts,
                 EntityStatus.COMPLETED,
-                new Date(600)
+                new Date()
             )
         );
         const finished = await repository.entries.findAnyByKey(first.key);
@@ -599,7 +614,7 @@ Deno.test(
                 () => nowEpochMs
             );
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
-            const queue = new PSqlQueueBox(resourceInbox);
+            const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
             const outboxQueueReader = new OutboxQueueReader(queue);
             const handler = createRtcTopologyWorkHandler({
                 outboxQueueReader,

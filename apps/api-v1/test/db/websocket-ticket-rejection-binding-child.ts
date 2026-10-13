@@ -1,7 +1,11 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
-import { RequestAuthFailure, requireWsAuthSession } from '@shared-server/http/request-auth-service.ts';
+import {
+    RequestAuthFailure,
+    requireWsAuthSession
+} from '@shared-server/http/request-auth-service.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
@@ -61,7 +65,7 @@ async function createTicketRejectionFixture(sql: PGliteSql): Promise<TicketRejec
     const sessions = new AuthSessionRepository(runtime);
     const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
-    const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+    const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
     const mutationRejections: Error[] = [];
     const mutationService = createAuthMutationService({ runtimeRepository: runtime, serviceId: 'ticket-binding' });
     const appAuth = new AppAuthInboxService({

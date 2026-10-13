@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -38,7 +39,7 @@ export class RealEngineAdminPruneFixture {
     private constructor(sql: PGliteSql, now: number) {
         this.now = now;
         const repository = createPSqlResourceInboxRepository(sql, () => new Date(this.now));
-        const queue = new PSqlQueueBox(repository);
+        const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
         const inbox = new InboxQueueReader(queue);
         const outbox = new OutboxQueueReader(queue);
         const resilience = createApiV1TestQueueResilience();
@@ -57,7 +58,7 @@ export class RealEngineAdminPruneFixture {
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
             database: sql,
             serviceId: 'server-1',
-            options: { waitMaxElapsedMsecs: 10_000, nowEpochMs: () => this.now },
+            options: { waitMaxElapsedMsecs: 10_000, nowEpochMs: Date.now },
             currentAuthority: {
                 readSession: () => Promise.resolve(this.adminAuthority()),
                 adminClientIds: ['admin']

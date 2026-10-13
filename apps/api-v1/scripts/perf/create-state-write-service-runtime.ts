@@ -2,10 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { Sql } from 'postgres';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -16,7 +13,10 @@ import type { GroupStateService } from '@shared-server/rallar-system/group-state
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import type {
+    RallarTimingEvent,
+    RallarTimingSink
+} from '@shared-server/rallar-system/observability/timing.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
@@ -32,7 +32,10 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { toApiV1PostgresClient } from '../../src/db/api-v1-database-lifecycle.ts';
-import { createInstrumentedStateWriteSql, type StateWriteSqlMetrics } from './create-instrumented-state-write-sql.ts';
+import {
+    createInstrumentedStateWriteSql,
+    type StateWriteSqlMetrics
+} from './create-instrumented-state-write-sql.ts';
 import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
 import { STATE_WRITE_REQUIRED_CONCURRENCY } from './state-write/api-v1-state-write-benchmark-options.ts';
 
@@ -58,6 +61,29 @@ export interface CreateStateWriteServiceRuntimeInput {
     readonly timing: RallarTimingSink;
 }
 
+interface StateWriteDomainServiceInput {
+    readonly database: PSqlSql;
+    readonly serviceId: string;
+    readonly timing: RallarTimingSink;
+}
+
+interface StateWriteDomainServices {
+    readonly runtimeRepository: PSqlRuntimeStateRepository;
+    readonly clientState: ClientStateService;
+    readonly groupStateRepository: GroupStateRepository;
+    readonly groupState: GroupStateService;
+}
+
+interface StateWriteTopologyServiceInput extends StateWriteDomainServiceInput {
+    readonly nowEpochMs: () => number;
+    readonly runtimeRepository: PSqlRuntimeStateRepository;
+    readonly groupState: GroupStateService;
+    readonly groupStateRepository: GroupStateRepository;
+    readonly inboxQueueReader: InboxQueueReader;
+    readonly resourceInboxRepository: TopologyInboxService.Dependencies['resourceInboxRepository'];
+    readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
+}
+
 export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRuntimeInput): StateWriteServiceRuntime {
     const { sql, serviceId, context, timing } = input;
     const nowEpochMs = Date.now;
@@ -72,16 +98,19 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
         timing
     });
     const resourceInbox = createPSqlResourceInboxRepository(instrumentedSql, () => new Date(nowEpochMs()));
-    const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox), {
+    const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
         onAttemptReleaseTelemetry: (event) => context.attemptReleases.push(event)
     });
     const results = new ResourceInboxResultsRepository(instrumentedSql);
+    const appInboxDependencies = {
+        inboxQueueReader: inbox,
+        resourceInboxRepository: resourceInbox.entries,
+        resourceInboxResultsRepository: results,
+        database: instrumentedSql
+    };
     const client = new AppClientInboxService(
         {
-            inboxQueueReader: inbox,
-            resourceInboxRepository: resourceInbox.entries,
-            resourceInboxResultsRepository: results,
-            database: instrumentedSql,
+            ...appInboxDependencies,
             clientStateService: clientState
         },
         {
@@ -92,10 +121,7 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
     );
     const group = new GroupStateInboxService(
         {
-            inboxQueueReader: inbox,
-            resourceInboxRepository: resourceInbox.entries,
-            resourceInboxResultsRepository: results,
-            database: instrumentedSql,
+            ...appInboxDependencies,
             groupStateService: groupState,
             resultReader: groupStateRepository
         },
@@ -106,31 +132,15 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
         }
     );
     const topology = createStateWriteTopologyService({
+        ...appInboxDependencies,
         nowEpochMs,
-        database: instrumentedSql,
         serviceId,
         timing,
         runtimeRepository,
         groupState,
-        groupStateRepository,
-        inbox,
-        resourceInbox,
-        results
+        groupStateRepository
     });
     return { client, group, topology, inbox, resilience: createBenchmarkResilience(), serviceId };
-}
-
-interface StateWriteDomainServiceInput {
-    readonly database: PSqlSql;
-    readonly serviceId: string;
-    readonly timing: RallarTimingSink;
-}
-
-interface StateWriteDomainServices {
-    readonly runtimeRepository: PSqlRuntimeStateRepository;
-    readonly clientState: ClientStateService;
-    readonly groupStateRepository: GroupStateRepository;
-    readonly groupState: GroupStateService;
 }
 
 function createStateWriteDomainServices(
@@ -156,16 +166,6 @@ function createStateWriteDomainServices(
     return { runtimeRepository, clientState, groupStateRepository, groupState };
 }
 
-interface StateWriteTopologyServiceInput extends StateWriteDomainServiceInput {
-    readonly nowEpochMs: () => number;
-    readonly runtimeRepository: PSqlRuntimeStateRepository;
-    readonly groupState: GroupStateService;
-    readonly groupStateRepository: GroupStateRepository;
-    readonly inbox: InboxQueueReader;
-    readonly resourceInbox: PSqlResourceInboxRepository;
-    readonly results: ResourceInboxResultsRepository;
-}
-
 function createStateWriteTopologyService({
     nowEpochMs,
     database,
@@ -174,9 +174,9 @@ function createStateWriteTopologyService({
     runtimeRepository,
     groupState,
     groupStateRepository,
-    inbox,
-    resourceInbox,
-    results
+    inboxQueueReader,
+    resourceInboxRepository,
+    resourceInboxResultsRepository
 }: StateWriteTopologyServiceInput): TopologyInboxService {
     const topologyConfigRepository = new GroupTopologyConfigRepository(runtimeRepository);
     const topologyRuntimeOwners = createGroupTopologyRuntimeOwners({
@@ -196,9 +196,9 @@ function createStateWriteTopologyService({
     });
     return new TopologyInboxService(
         {
-            inboxQueueReader: inbox,
-            resourceInboxRepository: resourceInbox.entries,
-            resourceInboxResultsRepository: results,
+            inboxQueueReader,
+            resourceInboxRepository,
+            resourceInboxResultsRepository,
             database: database,
             groupStateService: groupState,
             mutationOwners: {

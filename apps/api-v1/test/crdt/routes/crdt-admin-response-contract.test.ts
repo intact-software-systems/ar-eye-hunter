@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
@@ -10,7 +11,10 @@ import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { createCrdtMutationService, type CrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
+import {
+    createCrdtMutationService,
+    type CrdtMutationService
+} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 import {
     PSqlCrdtMutationRepository,
@@ -156,10 +160,10 @@ async function verifyCrdtAdminResponseContract(
 async function createCrdtAdminRouteHarness(
     sql: PGliteSql
 ): Promise<CrdtAdminRouteHarness> {
-    const now = Date.now() + 12 * 60 * 60 * 1_000;
+    const now = Date.now();
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(now));
     const results = new ResourceInboxResultsRepository(sql);
-    const queue = new PSqlQueueBox(resourceInbox);
+    const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
     const inbox = new InboxQueueReader(queue);
     const outbox = new OutboxQueueReader(queue);
     const mutationService = createTestCrdtMutationService(sql);
@@ -284,7 +288,7 @@ function createAdminAppCrdt(input: CreateAdminAppCrdtInput): AppCrdtInboxService
                 waitRetryIntervalMsecs: 1,
                 waitMaxRetryIntervalMsecs: 4,
                 waitJitterRatio: 0,
-                nowEpochMs: () => input.now + 1
+                nowEpochMs: Date.now
             }
         }
     );

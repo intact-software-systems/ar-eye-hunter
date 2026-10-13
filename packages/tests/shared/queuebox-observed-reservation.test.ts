@@ -9,8 +9,14 @@ import {
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
-import { IndexedDbConnection, openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
+import {
+    readIndexedDbRequest,
+    readIndexedDbTransaction
+} from '@shared/persistence/indexed-db-request.ts';
+import {
+    IndexedDbConnection,
+    openIndexedDbWithStores
+} from '@shared/persistence/open-indexed-db.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toIndexedDbQueueStoreDefinition } from '@shared/queuebox/indexed-db-queue-box-store.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
@@ -246,7 +252,7 @@ async function createQueue(storage: 'memory' | 'indexeddb' | 'pglite'): Promise<
         }
         case 'pglite': {
             const { sql } = await createPSqlAdmissionTestStorage();
-            return new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()));
+            return new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()), Temporal.Now.instant);
         }
     }
 }

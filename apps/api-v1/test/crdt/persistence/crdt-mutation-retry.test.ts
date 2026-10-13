@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -61,7 +62,7 @@ function createRetryMutationScenario(sql: PGliteSql, now: number): RetryMutation
         membershipAllowed = false;
     });
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(now));
-    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
     return {
         service: createApiCrdtInboxService({
             inboxQueueReader,

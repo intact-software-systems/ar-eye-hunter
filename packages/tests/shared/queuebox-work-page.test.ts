@@ -11,8 +11,14 @@ import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postg
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { PSqlResourceInboxReservationRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-reservation-repository.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
-import { IndexedDbConnection, openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
+import {
+    readIndexedDbRequest,
+    readIndexedDbTransaction
+} from '@shared/persistence/indexed-db-request.ts';
+import {
+    IndexedDbConnection,
+    openIndexedDbWithStores
+} from '@shared/persistence/open-indexed-db.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toIndexedDbQueueStoreDefinition } from '@shared/queuebox/indexed-db-queue-box-store.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
@@ -35,6 +41,14 @@ interface QueueWorkQueryPlan {
     readonly Plans?: readonly QueueWorkQueryPlan[];
 }
 
+const FINISHED_ATTEMPT = {
+    attempts: 1,
+    startTs: Temporal.Instant.from('2026-01-01T12:00:01Z'),
+    endTs: Temporal.Instant.from('2026-01-01T12:00:02Z')
+};
+
+const DUE_RETRY = { ...FINISHED_ATTEMPT, nextTs: Temporal.Instant.from('2026-01-01T12:00:03Z') };
+
 it.each(['ascending', 'descending', 'shuffled'] as const)('drains memory work pages after %s insertion and unrelated status changes', async (order) => {
     const queue = new InMemoryQueueBox();
     const count = 4_096;
@@ -44,7 +58,7 @@ it.each(['ascending', 'descending', 'shuffled'] as const)('drains memory work pa
         await queue.enqueue(entries[position]);
     }
     for (let index = 1; index < count; index += 2) {
-        await queue.enqueue({ ...entries[index], status: EntityStatus.RETRY });
+        await queue.enqueue({ ...entries[index], status: EntityStatus.RETRY, dequeueAudit: DUE_RETRY });
     }
     const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 31, cursor: null } as const;
     let page = await queue.readWorkPage(request);
@@ -76,8 +90,8 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s QueueBox work page
             const entry of [
                 first,
                 { ...createEntry('other-type'), typeId: 'another-work-type' },
-                { ...createEntry('completed'), status: EntityStatus.COMPLETED },
-                { ...createEntry('malformed-terminal'), status: EntityStatus.NON_RETRYABLE },
+                { ...createEntry('completed'), status: EntityStatus.COMPLETED, dequeueAudit: FINISHED_ATTEMPT },
+                { ...createEntry('malformed-terminal'), status: EntityStatus.NON_RETRYABLE, dequeueAudit: FINISHED_ATTEMPT },
                 second,
                 third
             ]
@@ -117,7 +131,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s QueueBox work page
                 createEntry('second'),
                 createEntry('third'),
                 { ...createEntry('other-type'), typeId: 'another-work-type' },
-                { ...createEntry('retried'), status: EntityStatus.RETRY, dequeueAudit: { attempts: 1, nextTs: Temporal.Now.instant() } }
+                { ...createEntry('retried'), status: EntityStatus.RETRY, dequeueAudit: DUE_RETRY }
             ]
         ) {
             await queue.enqueue(entry);
@@ -147,7 +161,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s QueueBox work page
         const entry = createEntry('transition');
         await queue.enqueue(entry);
         const pending = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 2, cursor: null } as const;
-        const retry = { ...entry, status: EntityStatus.RETRY, dequeueAudit: { attempts: 1, nextTs: Temporal.Now.instant() } };
+        const retry = { ...entry, status: EntityStatus.RETRY, dequeueAudit: DUE_RETRY };
         await queue.enqueue(retry);
         expect((await queue.readWorkPage(pending)).entries).toEqual([]);
         const page = await queue.readWorkPage({ ...pending, status: EntityStatus.RETRY });
@@ -172,7 +186,15 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s QueueBox work page
     it('keeps expiry reads observational and returns independently owned values', async () => {
         const queue = await createQueue(storage);
         const entry = createEntry('expired');
-        await queue.enqueue({ ...entry, audit: { ...entry.audit, expiryTs: Temporal.Instant.from('2020-01-01T00:00:00Z') } });
+        await queue.enqueue({
+            ...entry,
+            audit: {
+                ...entry.audit,
+                date: Temporal.PlainTime.from('00:00:00'),
+                createdTs: Temporal.PlainDateTime.from('2019-01-01T00:00:00'),
+                expiryTs: Temporal.Instant.from('2020-01-01T00:00:00Z')
+            }
+        });
         const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 2, cursor: null } as const;
         const observed = await queue.readWorkPage(request);
         expect(observed.entries).toMatchObject([{ resource: 'expired', status: EntityStatus.NEW }]);
@@ -310,12 +332,17 @@ async function createQueue(storage: 'memory' | 'indexeddb' | 'pglite'): Promise<
             return (await createIndexedDbQueue()).queue;
         case 'pglite': {
             const { sql } = await createPSqlAdmissionTestStorage();
-            return new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()));
+            return new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()), Temporal.Now.instant);
         }
     }
 }
 
-async function createIndexedDbQueue() {
+interface IndexedDbQueueFixture {
+    readonly db: IDBDatabase;
+    readonly queue: IndexedDbQueueBox;
+}
+
+async function createIndexedDbQueue(): Promise<IndexedDbQueueFixture> {
     const dbName = `queuebox-work-page-${crypto.randomUUID()}`;
     const connection = new IndexedDbConnection(() => openIndexedDbWithStores(dbName, [toIndexedDbQueueStoreDefinition('entries')]));
     const db = await connection.open();
@@ -333,7 +360,7 @@ function createEntry(resourceId: string): ResourceEntry {
         resource: resourceId,
         status: EntityStatus.NEW,
         audit: {
-            date: Temporal.PlainTime.from('12:00:00'),
+            date: Temporal.PlainTime.from('12:00:00.123456'),
             createdBy: 'sender',
             createdTs: Temporal.PlainDateTime.from('2026-01-01T12:00:00.123456'),
             expiryTs: NEVER_EXPIRE_TS

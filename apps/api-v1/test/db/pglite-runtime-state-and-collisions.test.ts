@@ -1,3 +1,5 @@
+import { Temporal } from '@js-temporal/polyfill';
+
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -624,7 +626,7 @@ Deno.test(
                     return released;
                 }
             }
-            const inboxReader = new InboxQueueReader(new RetryObservedQueueBox(resourceInbox));
+            const inboxReader = new InboxQueueReader(new RetryObservedQueueBox(resourceInbox, Temporal.Now.instant));
             const authority: IssuedAuthSession = {
                 clientId: 'owner',
                 sessionId: 'cross-target-owner-session',
@@ -712,7 +714,7 @@ Deno.test(
                         waitRetryIntervalMsecs: 1,
                         waitMaxRetryIntervalMsecs: 4,
                         waitJitterRatio: 0,
-                        nowEpochMs: () => nowEpochMs
+                        nowEpochMs: Date.now
                     }
                 }
             );

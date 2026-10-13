@@ -1,8 +1,13 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import {
+    toDomain,
+    type ResourceInboxRow
+} from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -33,7 +38,10 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { assertGroupPresenceSummaryAppToWsLifecycle } from '../../../../packages/tests/shared-server/rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
-import { readPGliteAppInboxFailure, waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
+import {
+    readPGliteAppInboxFailure,
+    waitForPGliteQueueRow
+} from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
@@ -209,7 +217,7 @@ Deno.test(
             const nowEpochMs = Date.parse('2026-07-22T00:00:00.000Z');
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
-            const queue = new PSqlQueueBox(resourceInbox);
+            const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
             const inboxReader = new InboxQueueReader(queue);
             const outboxReader = new OutboxQueueReader(queue);
 
@@ -262,7 +270,7 @@ Deno.test(
                         waitRetryIntervalMsecs: 1,
                         waitMaxRetryIntervalMsecs: 4,
                         waitJitterRatio: 0,
-                        nowEpochMs: () => nowEpochMs
+                        nowEpochMs: Date.now
                     }
                 }
             );
@@ -272,7 +280,7 @@ Deno.test(
                 runtimeRepository: runtime,
                 database: sql,
                 serviceId: 'pglite-group-service',
-                now: () => nowEpochMs
+                now: Date.now
             });
             outboxReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
                 onMessage: async (message, entry) => await summaryWork.processReservedEntry(message, entry)
@@ -403,6 +411,16 @@ Deno.test(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
                 createApiV1TestQueueResilience()
             );
+            const persistedSummaryRows = await sql<ResourceInboxRow[]>`
+                select * from resource_inbox where ri_type_id = 'APP_OUTBOX'
+                and ri_topic_id = ${GROUP_PRESENCE_SUMMARY_TOPIC}
+            `;
+            assert.equal(persistedSummaryRows.length, 3);
+            for (const row of persistedSummaryRows) {
+                const entry = toDomain(row);
+                assert.equal(entry.status, EntityStatus.COMPLETED);
+                assert.ok(entry.dequeueAudit.endTs!.epochNanoseconds >= entry.dequeueAudit.startTs!.epochNanoseconds);
+            }
             const afterSummary = await sql<ResourceInboxLifecycleRow[]>`
       select ri_resource_id, ri_topic_id, ri_type_id, ri_status, ri_resource
       from resource_inbox order by ri_row_id
@@ -433,7 +451,7 @@ Deno.test(
             const nowEpochMs = Date.parse('2026-07-22T00:00:00.000Z');
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
-            const queue = new PSqlQueueBox(resourceInbox);
+            const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
             const inboxReader = new InboxQueueReader(queue);
 
             const authority = {
@@ -474,7 +492,7 @@ Deno.test(
                         waitRetryIntervalMsecs: 1,
                         waitMaxRetryIntervalMsecs: 4,
                         waitJitterRatio: 0,
-                        nowEpochMs: () => nowEpochMs
+                        nowEpochMs: Date.now
                     }
                 }
             );
@@ -534,7 +552,7 @@ Deno.test(
             const summaryBefore = await groups.findPresenceSummaryEntry(ref);
             const work = new GroupPresenceSummaryWork({
                 outboxQueueReader: new OutboxQueueReader(
-                    new PSqlQueueBox(resourceInbox)
+                    new PSqlQueueBox(resourceInbox, Temporal.Now.instant)
                 ),
                 recomputeDebounceMs: 0,
                 runtimeRepository: runtime,

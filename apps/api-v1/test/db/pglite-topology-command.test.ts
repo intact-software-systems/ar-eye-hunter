@@ -1,3 +1,5 @@
+import { Temporal } from '@js-temporal/polyfill';
+
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -22,7 +24,10 @@ import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
-import type { GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    GroupPresenceSummary,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
@@ -338,7 +343,7 @@ Deno.test(
                 }
             }
             const outboxReader = new OutboxQueueReader(
-                new RetryObservedQueueBox(resourceInbox)
+                new RetryObservedQueueBox(resourceInbox, Temporal.Now.instant)
             );
             const executionRepository = new RtcTopologyExecutionRepository(
                 runtimeRepository,

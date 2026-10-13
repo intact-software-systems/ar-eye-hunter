@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import {
@@ -53,13 +54,19 @@ import type {
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type {
+    Key,
+    ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { readPGliteDatabaseEpochMs } from './pglite-app-inbox-test-runtime.ts';
-import { canonicalAuditStamp, groupFixture } from './pglite-state-mutation-test-runtime.ts';
+import {
+    canonicalAuditStamp,
+    groupFixture
+} from './pglite-state-mutation-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 interface RtcTopologyDeliveryState {
@@ -334,7 +341,7 @@ async function planTopologyWorkPublication(
 
 async function registerTopologyWorkDelivery(setup: PGliteTopologyWorkSetup): Promise<PGliteTopologyWorkDelivery> {
     const { sql, resourceInbox, topologyManagement, executionRepository } = setup;
-    const queue = new PSqlQueueBox(resourceInbox);
+    const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
     const publisherStreamId = '00000000-0000-4000-8000-000000000001';
     const topologyDelivery = new PSqlRtcTopologyDeliveryRepository(sql);
     let appendCount = 0;

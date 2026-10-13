@@ -394,11 +394,12 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const inbox = createPSqlResourceInboxRepository(sql, () => new Date());
-            const queue = new PSqlQueueBox(inbox);
+            const queue = new PSqlQueueBox(inbox, Temporal.Now.instant);
             const exhausted = {
                 ...createResourceEntry('pglite-finalization-recovery', {
                     payload: { text: 'recover finalization' },
-                    typeId: 'APP_INBOX'
+                    typeId: 'APP_INBOX',
+                    createdTs: Temporal.PlainDateTime.from('2019-01-01T00:00:00')
                 }),
                 status: EntityStatus.RESERVED,
                 dequeueAudit: {
