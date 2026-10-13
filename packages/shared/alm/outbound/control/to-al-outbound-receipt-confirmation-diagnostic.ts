@@ -1,11 +1,9 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 import type { ALOutboundPendingAckSnapshot } from '../../al-runtime-state-stores.ts';
-import {
-    writeALOutboundRuntimeDiagnostic,
-    type ALOutboundCommitBundleOutcome,
-    type ALOutboundRuntimeDiagnosticsSink,
-    type ALOutboundSettlementFact
+import type {
+    ALOutboundCommitBundleOutcome,
+    ALOutboundSettlementFact
 } from '../al-outbound-message-runtime.ts';
 import type { ALOutboundReceiptAdmissionCandidate } from './compute-al-outbound-receipt-admission.ts';
 
@@ -41,13 +39,6 @@ export interface ALOutboundReceiptConfirmationDiagnosticInput {
     readonly attempt: number;
     readonly commitOutcome: ALOutboundCommitBundleOutcome;
     readonly settlement: ALOutboundSettlementFact | undefined;
-}
-
-export function writeALOutboundReceiptConfirmationDiagnostic(
-    diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined,
-    confirmation: ALOutboundReceiptConfirmationDiagnostic
-): void {
-    writeALOutboundRuntimeDiagnostic(diagnostics, confirmation);
 }
 
 export function toALOutboundReceiptConfirmationDiagnostic(
