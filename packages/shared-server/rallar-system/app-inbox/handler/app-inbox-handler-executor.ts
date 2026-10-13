@@ -63,6 +63,7 @@ export namespace AppInboxHandlerExecutor {
     export interface Dependencies {
         readonly resultRepository: AppInboxResultRepository;
         readonly transactionWriter: AppInboxTransactionWriter;
+        readonly nowEpochMs: () => number;
     }
 
     export interface Config {
@@ -75,6 +76,7 @@ export namespace AppInboxHandlerExecutor {
 export class AppInboxHandlerExecutor {
     private readonly resultRepository: AppInboxResultRepository;
     private readonly transactionWriter: AppInboxTransactionWriter;
+    private readonly nowEpochMs: () => number;
     private readonly serviceId: string;
     private readonly timing: RallarTimingSink | undefined;
     private readonly options: AppInboxOptions;
@@ -85,6 +87,7 @@ export class AppInboxHandlerExecutor {
     ) {
         this.resultRepository = dependencies.resultRepository;
         this.transactionWriter = dependencies.transactionWriter;
+        this.nowEpochMs = dependencies.nowEpochMs;
         this.serviceId = config.serviceId;
         this.timing = config.timing;
         this.options = config.options ?? {};
@@ -121,7 +124,7 @@ export class AppInboxHandlerExecutor {
     async rejectMalformedMessage(attempt: ResourceInboxAttempt): Promise<ResourceEntry> {
         const completionInput = {
             entry: attempt.entry,
-            completedAtEpochMs: (this.options.nowEpochMs ?? Date.now)(),
+            completedAtEpochMs: this.nowEpochMs(),
             durableResult: toTerminalAppInboxFailure({
                 code: 'app-inbox-malformed-command',
                 status: 400,

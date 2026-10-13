@@ -84,13 +84,13 @@ export async function createClientMutationTransactionBoundaryFixture(
                 return snapshot;
             }
         },
-        transactionWriter: new AppInboxTransactionWriter({ database }, {
-            serviceId: 'client-inbox-service',
+        transactionWriter: new AppInboxTransactionWriter({
+            database,
             nowEpochMs: () => {
                 actions.push('completion');
                 return context.message.id.ts;
             }
-        }),
+        }, { serviceId: 'client-inbox-service' }),
         mutationTiming: {
             serviceId: 'client-inbox-service',
             sink: options.recordMutationTiming

@@ -21,6 +21,22 @@ import {
     seedRetry
 } from './app-inbox/fair-service-fixture.ts';
 
+interface ScalarControllerDependencies {
+    readonly maxNumToDequeue: number;
+    readonly maxToReserve: () => number;
+    readonly reserve: (types: Set<string>, numToReserve: number) => Promise<Map<string, string>>;
+}
+
+function createScalarController(dependencies: ScalarControllerDependencies): DequeueController<string, string, string> {
+    return DequeueController.create<string, string, string>({ debug: () => {}, warn: () => {}, error: () => {} })
+        .withMaxNumToDequeue(dependencies.maxNumToDequeue)
+        .withMaxNumToReserve(dependencies.maxToReserve)
+        .withInboxTypesToDequeue(() => new Set(['APP_INBOX']))
+        .withReturnDequeuedEntries(true)
+        .onNewEntriesReserveDo(dependencies.reserve)
+        .onReleaseEntriesDo(async (entries) => entries, async (entries) => entries);
+}
+
 function laneBudgets(maxNumToDequeue: number): DequeueController.LaneBudgets {
     return {
         FINALIZATION: { maxToReserve: 1, maxNumToDequeue: 1 },
@@ -32,6 +48,114 @@ function laneBudgets(maxNumToDequeue: number): DequeueController.LaneBudgets {
 }
 
 describe('DequeueController lane budgets', () => {
+    it.each([0, -1, 1.5, Number.POSITIVE_INFINITY, Number.NaN, Number.MAX_SAFE_INTEGER + 1])(
+        'rejects scalar service limit %s before accepting configuration',
+        (invalid) => {
+            expect(() => DequeueController.create().withMaxNumToDequeue(invalid)).toThrow(Error);
+        }
+    );
+
+    it.each([1.5, Number.NaN])('prevents malformed actual scalar reservation %s from reaching storage', async (invalid) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        try {
+            const reserve = vi.fn(async () => new Map<string, string>());
+            const controller = createScalarController({ maxNumToDequeue: 10, maxToReserve: () => invalid, reserve });
+            const draining = controller.dequeueForCompute(async () => 'unexpected');
+            await vi.runAllTimersAsync();
+            const results = await draining;
+
+            expect(reserve).not.toHaveBeenCalled();
+            expect(results.get(Reservator.NEW)?.size).toBe(0);
+            expect(Date.now()).toBe(31_000);
+        }
+        finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it.each([Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1, 2.5])(
+        'retains finite ordinary-lane clamping for scalar reservation %s',
+        async (requested) => {
+            const reserve = vi.fn(async (_types: Set<string>, numToReserve: number) => {
+                if (numToReserve !== 2) {
+                    throw new Error('Storage received an invalid count');
+                }
+                return new Map([['first', 'work'], ['second', 'work']]);
+            });
+            const controller = createScalarController({ maxNumToDequeue: 2, maxToReserve: () => requested, reserve });
+
+            const results = await controller.dequeueForCompute(async (key) => key);
+
+            expect([...results.get(Reservator.NEW)!.values()].map((result) => result.right?.computedValue)).toEqual(['first', 'second']);
+            expect(reserve).toHaveBeenCalledWith(new Set(['APP_INBOX']), 2);
+        }
+    );
+
+    it.each([0, -1, Number.NEGATIVE_INFINITY])('preserves scalar reservation %s as no work for all configured lanes', async (requested) => {
+        const reserve = vi.fn(async () => new Map<string, string>());
+        const controller = createScalarController({ maxNumToDequeue: 1, maxToReserve: () => requested, reserve })
+            .onRetryEntriesReserveDo(reserve)
+            .onFairnessEntriesReserveDo(reserve)
+            .onTimeoutEntriesReserveDo(reserve)
+            .onFinalizationEntriesReserveDo(reserve)
+            .onFinalizationEntriesDo(async (key) => key);
+
+        const results = await controller.dequeueForCompute(async () => 'unexpected');
+
+        expect([...results.values()].every((lane) => lane.size === 0)).toBe(true);
+        expect(reserve).not.toHaveBeenCalled();
+    });
+
+    it.each([1.5, Number.POSITIVE_INFINITY, Number.NaN, Number.MAX_SAFE_INTEGER + 1])(
+        'rejects invalid scalar finalization reservation %s before any claim',
+        async (requested) => {
+            const reserve = vi.fn(async () => new Map<string, string>());
+            const controller = createScalarController({ maxNumToDequeue: 1, maxToReserve: () => requested, reserve })
+                .onFinalizationEntriesReserveDo(reserve)
+                .onFinalizationEntriesDo(async (key) => key);
+
+            await expect(controller.dequeueForCompute(async () => 'unexpected')).rejects.toBeInstanceOf(TypeError);
+            expect(reserve).not.toHaveBeenCalled();
+        }
+    );
+
+    it('preserves a valid scalar finalization batch larger than the ordinary service limit', async () => {
+        const reserveFinalization = vi.fn(async (_types: Set<string>, numToReserve: number) => {
+            if (numToReserve !== 3) {
+                throw new Error('Finalization batch changed');
+            }
+            return new Map([['a', 'work'], ['b', 'work'], ['c', 'work']]);
+        });
+        const controller = createScalarController({ maxNumToDequeue: 1, maxToReserve: () => 3, reserve: async () => new Map() })
+            .onFinalizationEntriesReserveDo(reserveFinalization)
+            .onFinalizationEntriesDo(async (key) => key);
+
+        const results = await controller.dequeueForCompute(async () => 'unexpected');
+
+        expect([...results.get(Reservator.FINALIZATION)!.values()].map((result) => result.right?.computedValue)).toEqual(['a', 'b', 'c']);
+    });
+
+    it('recovers from malformed scalar reservation without charging an unclaimed batch', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        try {
+            const maxToReserve = vi.fn().mockReturnValueOnce(Number.NaN).mockReturnValue(2);
+            const reserve = vi.fn(async () => new Map([['a', 'work'], ['b', 'work']]));
+            const controller = createScalarController({ maxNumToDequeue: 2, maxToReserve, reserve });
+            const draining = controller.dequeueForCompute(async (key) => key);
+            await vi.runAllTimersAsync();
+            const results = await draining;
+
+            expect([...results.get(Reservator.NEW)!.values()].map((result) => result.right?.computedValue)).toEqual(['a', 'b']);
+            expect(reserve).toHaveBeenCalledWith(new Set(['APP_INBOX']), 2);
+            expect(Date.now()).toBe(1_000);
+        }
+        finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('keeps numeric limits per lane when no budget callback is configured', async () => {
         let now = Temporal.Now.instant();
         const queue = new InMemoryQueueBox(new Map(), () => now);

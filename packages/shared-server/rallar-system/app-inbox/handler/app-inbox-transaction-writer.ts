@@ -38,18 +38,19 @@ export interface AppInboxMutationTransactionWriter {
 export namespace AppInboxTransactionWriter {
     export interface Dependencies {
         readonly database: PSqlSql;
+        readonly nowEpochMs: () => number;
     }
 
     export interface Config {
         readonly serviceId: string;
         readonly timing?: RallarTimingSink;
-        readonly nowEpochMs?: () => number;
     }
 }
 
 export class AppInboxTransactionWriter implements AppInboxMutationTransactionWriter {
     private readonly finalizationByContext = new WeakMap<object, AppInboxHandlerFinalization>();
     private readonly database: PSqlSql;
+    private readonly nowEpochMs: () => number;
     private readonly config: AppInboxTransactionWriter.Config;
 
     constructor(
@@ -57,6 +58,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         config: AppInboxTransactionWriter.Config
     ) {
         this.database = dependencies.database;
+        this.nowEpochMs = dependencies.nowEpochMs;
         this.config = config;
     }
 
@@ -162,10 +164,6 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
             context.entry,
             context.attemptTelemetry
         );
-    }
-
-    private nowEpochMs(): number {
-        return this.config.nowEpochMs?.() ?? Date.now();
     }
 }
 

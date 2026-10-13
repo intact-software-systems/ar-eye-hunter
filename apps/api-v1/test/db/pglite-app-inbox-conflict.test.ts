@@ -32,15 +32,16 @@ for (const owner of ['handler', 'retry-finalizer'] as const) {
                 contextId: 'conflict-group',
                 data: { requestId: `conflict-${owner}` }
             } as const;
+            const reservationStartedAt = Temporal.Now.instant();
             const entry: ResourceEntry = {
                 ...createAppInboxResourceEntry(enqueue, 'conflict-test', {
-                    creationNow: Temporal.Now.instant,
+                    creationNow: () => reservationStartedAt,
                     createMessage: createAppInboxQueueMessageFixture
                 }),
                 status: EntityStatus.RESERVED,
-                dequeueAudit: { attempts: 2 }
+                dequeueAudit: { attempts: 2, startTs: reservationStartedAt }
             };
-            const current = { ...entry, dequeueAudit: { attempts: 3 } };
+            const current = { ...entry, dequeueAudit: { attempts: 3, startTs: reservationStartedAt } };
             const dependent = createResourceEntry(`dependent-${owner}`);
             await repository.entries.write(current);
             await repository.entries.write(dependent);
@@ -93,7 +94,7 @@ for (const owner of ['handler', 'retry-finalizer'] as const) {
             };
             const operation = owner === 'handler'
                 ? () =>
-                    new AppInboxTransactionWriter({ database: sql }, { serviceId: 'conflict-test' })
+                    new AppInboxTransactionWriter({ database: sql, nowEpochMs: Date.now }, { serviceId: 'conflict-test' })
                         .writeComputedMutation(context, completion, async (transaction) => {
                             await transaction`update resource_inbox set ri_resource = 'uncommitted'
                             where ri_resource_id = ${dependent.key.resourceId}`;

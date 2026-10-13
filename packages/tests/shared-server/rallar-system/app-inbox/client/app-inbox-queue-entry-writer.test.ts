@@ -30,7 +30,9 @@ describe('AppInbox durable enqueue', () => {
         const queue = new TestResourceInbox(new Map());
         const createdAt = Temporal.Instant.from('2026-10-13T23:59:59.123456789Z');
         const creationNow = () => createdAt;
-        const newResourceId = vi.fn(() => 'generated-command');
+        const newResourceId = vi.fn((): string => {
+            throw new Error('A supplied resource ID must not require another generated ID');
+        }).mockReturnValueOnce('generated-command');
         const writer = new AppInboxQueueEntryWriter({
             repository: queue,
             inboxQueueReader: new InboxQueueReader(queue, undefined, creationNow),
@@ -48,7 +50,6 @@ describe('AppInbox durable enqueue', () => {
             contextId: 'app:workspace:principal'
         });
         expect(supplied.key.resourceId).toBe('durable-command-1');
-        expect(newResourceId).toHaveBeenCalledTimes(1);
         expect(generated.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123456789');
         expect(generated.dequeueAudit).toEqual({ attempts: 0 });
     });

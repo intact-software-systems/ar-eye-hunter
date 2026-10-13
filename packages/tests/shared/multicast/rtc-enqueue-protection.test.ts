@@ -92,7 +92,9 @@ describe('RTC enqueue protection', () => {
             }
         }
         await vi.advanceTimersByTimeAsync(0);
-        const creationCallsBeforeRefusal = creationNow.mock.calls.length;
+        creationNow.mockImplementation(() => {
+            throw new Error('Creation clock must not be observed during quota refusal');
+        });
         const controls = [createAck(100), createAck(101)];
         for (let observation = 0; observation < 2; observation++) {
             await expect(fixture.manager.handoffControlMessages(controls))
@@ -101,23 +103,20 @@ describe('RTC enqueue protection', () => {
         for (const control of controls) {
             expect(await fixture.resources.admissionStore.hasSentMessageAdmission(control.id.msgId)).toBe(false);
         }
-        expect(creationNow).toHaveBeenCalledTimes(creationCallsBeforeRefusal);
 
         admissionAtMs += 10_000;
         await expect(fixture.manager.handoffControlMessages(controls))
             .rejects.toMatchObject({ name: 'NotReadyException', delayMs: 1251 });
-        expect(creationNow).toHaveBeenCalledTimes(creationCallsBeforeRefusal);
 
         quotaAtMs = quotaStartMs + 1250;
         await expect(fixture.manager.handoffControlMessages(controls))
             .rejects.toMatchObject({ name: 'NotReadyException', delayMs: 1 });
-        expect(creationNow).toHaveBeenCalledTimes(creationCallsBeforeRefusal);
         quotaAtMs = quotaStartMs + 1251;
+        creationNow.mockImplementation(() => creationInstant);
         await fixture.manager.handoffControlMessages(controls);
         for (const control of controls) {
             expect(await fixture.resources.admissionStore.hasSentMessageAdmission(control.id.msgId)).toBe(true);
         }
-        expect(creationNow.mock.calls.length).toBeGreaterThan(creationCallsBeforeRefusal);
         for (let sequence = 200; sequence < 219; sequence++) {
             const admitted = await fixture.manager.enqueueIfAbsent(createAck(sequence));
             expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
@@ -186,19 +185,24 @@ describe('RTC enqueue protection', () => {
         circuitBreaker.failureCount(11);
         expect(circuitBreaker.isOpen()).toBe(true);
 
-        quotaNow.mockClear();
+        quotaNow.mockImplementation(() => {
+            throw new Error('Open circuit must refuse before observing quota time');
+        });
         const suppressed = createAck(20);
         expect((await fixture.manager.enqueueIfAbsent(suppressed)).verdict)
             .toMatchObject({ kind: 'unroutable', reason: 'circuit-open' });
         expect(await fixture.resources.admissionStore.hasSentMessageAdmission(suppressed.id.msgId)).toBe(false);
-        expect(quotaNow).not.toHaveBeenCalled();
     });
 
     it('reports disposal before the open circuit without observing either creation or quota time', async () => {
         const circuitBreaker = toCircuitBreaker();
         circuitBreaker.failureCount(11);
-        const quotaNow = vi.fn(() => Date.now());
-        const creationNow = vi.fn(() => Temporal.Now.instant());
+        const quotaNow = () => {
+            throw new Error('Disposed carrier must refuse before observing quota time');
+        };
+        const creationNow = () => {
+            throw new Error('Disposed carrier must refuse before observing creation time');
+        };
         const fixture = createRtcOriginOverlayFixture({
             snapshot: createOriginSnapshot(['a', 'b'], 1),
             nextHopPeerIds: ['b'],
@@ -212,8 +216,6 @@ describe('RTC enqueue protection', () => {
         const result = await fixture.manager.enqueueIfAbsent(message);
 
         expect(result.verdict).toMatchObject({ kind: 'skipped', reason: 'disposed' });
-        expect(quotaNow).not.toHaveBeenCalled();
-        expect(creationNow).not.toHaveBeenCalled();
         expect(await fixture.resources.admissionStore.hasSentMessageAdmission(message.id.msgId)).toBe(false);
     });
 

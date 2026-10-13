@@ -82,7 +82,7 @@ describe('Postgres transaction write boundary', () => {
         'keeps rejected-message result and queue failure atomic when %s',
         async (failure) => {
             const database = createTransactionalDatabase({ failCompletion: failure === 'completion-failed' });
-            const writer = new AppInboxTransactionWriter({ database: database.sql }, { serviceId: 'server-1' });
+            const writer = new AppInboxTransactionWriter({ database: database.sql, nowEpochMs: Date.now }, { serviceId: 'server-1' });
             const entry = {
                 ...incomingEntry,
                 resource: '{"corrupt":',
@@ -121,7 +121,7 @@ describe('Postgres transaction write boundary', () => {
             }
         });
         const transactionWriter = new AppInboxTransactionWriter(
-            { database: database.sql },
+            { database: database.sql, nowEpochMs: Date.now },
             { serviceId: 'server-1' }
         );
         const enqueue = {

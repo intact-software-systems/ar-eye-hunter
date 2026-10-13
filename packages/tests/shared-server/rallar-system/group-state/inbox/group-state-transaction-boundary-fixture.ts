@@ -154,11 +154,8 @@ function createTransactionBoundaryExecution(
 ): TransactionBoundaryExecution {
     let wakeCount = 0;
     const transactionWriter = new AppInboxTransactionWriter(
-        { database: storage.database },
-        {
-            serviceId: 'server-12345678',
-            nowEpochMs: () => NOW_EPOCH_MS
-        }
+        { database: storage.database, nowEpochMs: () => NOW_EPOCH_MS },
+        { serviceId: 'server-12345678' }
     );
     const formationMutationEvents: GroupFormationGroupMutationEvent[] = [];
     const handler = new GroupStateInboxHandler({
